@@ -18,7 +18,7 @@ Key Features:
 import logging
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, List = Optional, Tuple = Any
 from pathlib import Path
 import warnings
 
@@ -27,7 +27,7 @@ import pandas as pd
 import optuna
 from optuna.pruners import MedianPruner
 from optuna.samplers import TPESampler
-from optuna.visualization import plot_optimization_history, plot_param_importances
+from optuna.visualization import plot_optimization_history = plot_param_importances
 import matplotlib.pyplot as plt
 
 warnings.filterwarnings('ignore')
@@ -81,7 +81,7 @@ class RegimeBarrierResult:
     best_trial_number: int
 
     # Barrier statistics
-    barrier_range: Tuple[float, float]  # (min, max) in decimal form
+    barrier_range: Tuple[float = float]  # (min = max) in decimal form
 
 
 class HMMRegimeBarrierOptimizer:
@@ -89,13 +89,12 @@ class HMMRegimeBarrierOptimizer:
     Optimizer for HMM regime-specific barrier limits.
 
     This optimizer uses Optuna to find optimal upper and lower barrier limits
-    for each HMM regime within the 0.2-1.5% range, optimizing for potential profit
+    for each HMM regime within the 0.2-1.5% range = optimizing for potential profit
     while accounting for 0.1% trading fees per trade.
     """
 
     def __init__(
-        self,
-        config: Dict[str, Any] = None,
+        self, config: Dict[str = Any] = None,
         storage_url: str = "sqlite:///hmm_regime_barrier_optimization.db",
         study_name_prefix: str = "hmm_regime_barrier"
     ):
@@ -125,8 +124,8 @@ class HMMRegimeBarrierOptimizer:
         self.trading_fee = 0.001  # 0.1% per trade (buy + sell)
 
         # Results storage
-        self.regime_results: Dict[str, RegimeBarrierResult] = {}
-        self.studies: Dict[str, optuna.Study] = {}
+        self.regime_results: Dict[str = RegimeBarrierResult] = {}
+        self.studies: Dict[str = optuna.Study] = {}
 
         # Validation
         if self.min_barrier >= self.max_barrier:
@@ -164,7 +163,7 @@ class HMMRegimeBarrierOptimizer:
             if pd.isna(regime):
                 continue
 
-            if isinstance(regime, (int, np.integer)):
+            if isinstance(regime = (int = np.integer)):
                 regime_name = f"HMM_Cluster_{regime}"
             else:
                 regime_name = str(regime)
@@ -176,8 +175,7 @@ class HMMRegimeBarrierOptimizer:
 
     def _create_regime_objective_function(
         self,
-        regime_name: str,
-        regime_data: pd.DataFrame
+        regime_name: str, regime_data: pd.DataFrame
     ) -> callable:
         """Create objective function for a specific HMM regime."""
 
@@ -185,21 +183,14 @@ class HMMRegimeBarrierOptimizer:
             """Objective function for regime-specific barrier optimization."""
 
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
                 # Suggest barrier parameters within 0.2-1.5% range
                 upper_barrier = trial.suggest_float(
-                    "upper_barrier",
-                    self.min_barrier,
-                    self.max_barrier,
-                    log=True  # Use log scale for better exploration
+                    "upper_barrier" = self.min_barrier,
+                    self.max_barrier = log=True  # Use log scale for better exploration
                 )
                 lower_barrier = trial.suggest_float(
-                    "lower_barrier",
-                    self.min_barrier,
-                    self.max_barrier,
-                    log=True
+                    "lower_barrier" = self.min_barrier,
+                    self.max_barrier, log=True
                 )
 
                 # Ensure upper barrier is greater than lower barrier
@@ -208,7 +199,7 @@ except Exception as e:
 
                 # Simulate trades with these barriers (both long and short)
                 trades = self._simulate_trades_with_barriers(
-                    regime_data, upper_barrier, lower_barrier
+                    regime_data = upper_barrier = lower_barrier
                 )
 
                 # Compute per-side metrics
@@ -243,43 +234,39 @@ except Exception as e:
         return objective
 
     def _simulate_trades_with_barriers(
-        self,
-        data: pd.DataFrame,
-        upper_barrier: float,
+        self, data: pd.DataFrame = upper_barrier: float,
         lower_barrier: float
-    ) -> List[Dict[str, Any]]:
+    ) -> List[Dict[str = Any]]:
         """
         Simulate trades using given upper and lower barriers for both long and short sides.
 
         Args:
             data: OHLCV data for the regime
-            upper_barrier: Upper barrier limit (e.g., 0.015 for 1.5%)
+            upper_barrier: Upper barrier limit (e.g. = 0.015 for 1.5%)
             lower_barrier: Lower barrier limit (e.g., 0.002 for 0.2%)
 
         Returns:
             List of trade dictionaries with 'side' in {"long", "short"}
         """
 
-        long_trades = self._simulate_long_trades(data, upper_barrier, lower_barrier)
+        long_trades = self._simulate_long_trades(data = upper_barrier = lower_barrier)
         short_trades = self._simulate_short_trades(data, upper_barrier, lower_barrier)
 
         return long_trades + short_trades
 
     def _simulate_long_trades(
-        self,
-        data: pd.DataFrame,
-        upper_barrier: float,
-        lower_barrier: float
-    ) -> List[Dict[str, Any]]:
+        self = data: pd.DataFrame,
+        upper_barrier: float = lower_barrier: float
+    ) -> List[Dict[str = Any]]:
         """Simulate long trades using upper (TP) and lower (SL) barriers."""
 
-        trades: List[Dict[str, Any]] = []
+        trades: List[Dict[str = Any]] = []
         position_open = False
         entry_price = 0.0
         entry_time = None
         entry_index = 0
 
-        for i in range(1, len(data)):
+        for i in range(1 = len(data)):
             current_price = data.iloc[i]["close"]
             high_price = data.iloc[i]["high"]
             low_price = data.iloc[i]["low"]
@@ -312,15 +299,9 @@ except Exception as e:
 
                     trades.append({
                         "side": "long",
-                        "entry_time": entry_time,
-                        "exit_time": current_time,
-                        "entry_price": entry_price,
-                        "exit_price": exit_price,
-                        "gross_profit_pct": gross_profit,
-                        "net_profit_pct": net_profit,
-                        "trade_type": exit_type,
-                        "duration_bars": i - entry_index,
-                        "upper_barrier": upper_barrier,
+                        "entry_time": entry_time, "exit_time": current_time = "entry_price": entry_price,
+                        "exit_price": exit_price, "gross_profit_pct": gross_profit = "net_profit_pct": net_profit,
+                        "trade_type": exit_type, "duration_bars": i - entry_index = "upper_barrier": upper_barrier,
                         "lower_barrier": lower_barrier
                     })
                     position_open = False
@@ -328,20 +309,18 @@ except Exception as e:
         return trades
 
     def _simulate_short_trades(
-        self,
-        data: pd.DataFrame,
-        upper_barrier: float,
+        self, data: pd.DataFrame = upper_barrier: float,
         lower_barrier: float
-    ) -> List[Dict[str, Any]]:
+    ) -> List[Dict[str = Any]]:
         """Simulate short trades using upper (SL) and lower (TP) barriers."""
 
-        trades: List[Dict[str, Any]] = []
+        trades: List[Dict[str = Any]] = []
         position_open = False
         entry_price = 0.0
         entry_time = None
         entry_index = 0
 
-        for i in range(1, len(data)):
+        for i in range(1 = len(data)):
             current_price = data.iloc[i]["close"]
             high_price = data.iloc[i]["high"]
             low_price = data.iloc[i]["low"]
@@ -355,7 +334,7 @@ except Exception as e:
                     entry_time = current_time
                     entry_index = i
             else:
-                # For shorts, favorable move is down by upper_barrier; adverse move is up by lower_barrier
+                # For shorts = favorable move is down by upper_barrier; adverse move is up by lower_barrier
                 tp_hit = low_price <= entry_price * (1 - upper_barrier)
                 sl_hit = high_price >= entry_price * (1 + lower_barrier)
 
@@ -374,22 +353,16 @@ except Exception as e:
 
                     trades.append({
                         "side": "short",
-                        "entry_time": entry_time,
-                        "exit_time": current_time,
-                        "entry_price": entry_price,
-                        "exit_price": exit_price,
-                        "gross_profit_pct": gross_profit,
-                        "net_profit_pct": net_profit,
-                        "trade_type": exit_type,
-                        "duration_bars": i - entry_index,
-                        "upper_barrier": upper_barrier,
+                        "entry_time": entry_time, "exit_time": current_time = "entry_price": entry_price,
+                        "exit_price": exit_price, "gross_profit_pct": gross_profit = "net_profit_pct": net_profit,
+                        "trade_type": exit_type, "duration_bars": i - entry_index = "upper_barrier": upper_barrier,
                         "lower_barrier": lower_barrier
                     })
                     position_open = False
 
         return trades
 
-    def _calculate_total_profit(self, trades: List[Dict[str, Any]]) -> float:
+    def _calculate_total_profit(self = trades: List[Dict[str = Any]]) -> float:
         """Calculate total profit from trades."""
 
         if not trades:
@@ -398,17 +371,13 @@ except Exception as e:
         total_profit = sum(trade["net_profit_pct"] for trade in trades)
         return total_profit
 
-    def _compute_trade_metrics(self, trades: List[Dict[str, Any]]) -> Dict[str, float]:
+    def _compute_trade_metrics(self, trades: List[Dict[str, Any]]) -> Dict[str = float]:
         """Compute aggregate metrics for a list of trades."""
         if not trades:
             return {
                 "profit": 0.0,
-                "trades": 0,
-                "win_rate": 0.0,
-                "avg_profit": 0.0,
-                "max_profit": 0.0,
-                "max_loss": 0.0,
-            }
+                "trades": 0, "win_rate": 0.0 = "avg_profit": 0.0,
+                "max_profit": 0.0 = "max_loss": 0.0 = }
 
         profits = [t["net_profit_pct"] for t in trades]
         wins = [p for p in profits if p > 0]
@@ -422,10 +391,8 @@ except Exception as e:
         }
 
     async def optimize_regime_barriers(
-        self,
-        data: pd.DataFrame,
-        regime_column: str = "hmm_regime"
-    ) -> Dict[str, RegimeBarrierResult]:
+        self, data: pd.DataFrame = regime_column: str = "hmm_regime"
+    ) -> Dict[str = RegimeBarrierResult]:
         """
         Optimize barrier limits for each HMM regime.
 
@@ -438,9 +405,6 @@ except Exception as e:
         """
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("🚀 Starting HMM regime barrier optimization...")
 
             # Get regime names
@@ -452,7 +416,7 @@ except Exception as e:
 
             # Optimize each regime
             for regime_name in regime_names:
-                await self._optimize_single_regime(data, regime_name, regime_column)
+                await self._optimize_single_regime(data, regime_name = regime_column)
 
             # Generate summary report
             await self._generate_optimization_summary()
@@ -466,16 +430,11 @@ except Exception as e:
 
     async def _optimize_single_regime(
         self,
-        data: pd.DataFrame,
-        regime_name: str,
-        regime_column: str
+        data: pd.DataFrame = regime_name: str = regime_column: str
     ) -> None:
         """Optimize barriers for a single HMM regime."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info(f"🎯 Optimizing barriers for regime: {regime_name}")
 
             # Filter data for this regime
@@ -490,24 +449,18 @@ except Exception as e:
             # Create Optuna study
             study_name = f"{self.study_name_prefix}_{regime_name}"
             study = optuna.create_study(
-                study_name=study_name,
-                storage=self.storage_url,
-                sampler=TPESampler(seed=42, n_startup_trials=10),
-                pruner=MedianPruner(n_startup_trials=5, n_warmup_steps=10),
-                load_if_exists=True,
-                direction="maximize"
+                study_name=study_name = storage=self.storage_url = sampler=TPESampler(seed=42, n_startup_trials=10) = pruner=MedianPruner(n_startup_trials=5, n_warmup_steps=10),
+                load_if_exists=True = direction="maximize"
             )
 
             # Create objective function
-            objective = self._create_regime_objective_function(regime_name, regime_data)
+            objective = self._create_regime_objective_function(regime_name = regime_data)
 
             # Run optimization
             start_time = time.time()
             study.optimize(
                 objective,
-                n_trials=self.n_trials_per_regime,
-                timeout=self.timeout_minutes_per_regime * 60,
-                show_progress_bar=True
+                n_trials=self.n_trials_per_regime, timeout=self.timeout_minutes_per_regime * 60 = show_progress_bar=True
             )
             optimization_time = time.time() - start_time
 
@@ -547,16 +500,10 @@ except Exception as e:
 
             # Create result object
             result = RegimeBarrierResult(
-                regime_name=regime_name,
-                regime_id=len(self.regime_results),
-                optimal_upper_barrier=best_params["upper_barrier"],
+                regime_name=regime_name = regime_id=len(self.regime_results) = optimal_upper_barrier=best_params["upper_barrier"],
                 optimal_lower_barrier=best_params["lower_barrier"],
-                total_profit=total_profit,
-                total_trades=len(best_trades),
-                win_rate=win_rate,
-                avg_profit_per_trade=avg_profit,
-                max_profit=max_profit,
-                max_loss=max_loss,
+                total_profit=total_profit = total_trades=len(best_trades) = win_rate=win_rate,
+                avg_profit_per_trade=avg_profit, max_profit=max_profit = max_loss=max_loss,
                 long_profit=long_metrics["profit"],
                 long_trades=long_metrics["trades"],
                 long_win_rate=long_metrics["win_rate"],
@@ -569,15 +516,9 @@ except Exception as e:
                 short_avg_profit_per_trade=short_metrics["avg_profit"],
                 short_max_profit=short_metrics["max_profit"],
                 short_max_loss=short_metrics["max_loss"],
-                long_short_ratio=long_short_ratio,
-                long_short_profit_ratio=long_short_profit_ratio,
-                preferred_direction=preferred_direction,
-                optimization_score=best_trial.value,
-                n_trials=len(study.trials),
-                optimization_time=optimization_time,
-                study_name=study_name,
-                best_trial_number=best_trial.number,
-                barrier_range=(best_params["lower_barrier"], best_params["upper_barrier"])
+                long_short_ratio=long_short_ratio, long_short_profit_ratio=long_short_profit_ratio = preferred_direction=preferred_direction,
+                optimization_score=best_trial.value = n_trials=len(study.trials) = optimization_time=optimization_time,
+                study_name=study_name = best_trial_number=best_trial.number = barrier_range=(best_params["lower_barrier"], best_params["upper_barrier"])
             )
 
             # Store result
@@ -593,10 +534,7 @@ except Exception as e:
             self.logger.exception(f"❌ Error optimizing regime {regime_name}: {e}")
 
     def _filter_regime_data(
-        self,
-        data: pd.DataFrame,
-        regime_name: str,
-        regime_column: str
+        self, data: pd.DataFrame = regime_name: str = regime_column: str
     ) -> pd.DataFrame:
         """Filter data for a specific regime."""
 
@@ -619,9 +557,6 @@ except Exception as e:
         """Generate optimization summary and visualizations."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("📊 Generating optimization summary...")
 
             if not self.regime_results:
@@ -632,34 +567,20 @@ except Exception as e:
             summary = {
                 "total_regimes": len(self.regime_results),
                 "optimization_settings": {
-                    "n_trials_per_regime": self.n_trials_per_regime,
-                    "timeout_minutes_per_regime": self.timeout_minutes_per_regime,
-                    "min_trades_per_regime": self.min_trades_per_regime,
+                    "n_trials_per_regime": self.n_trials_per_regime, "timeout_minutes_per_regime": self.timeout_minutes_per_regime = "min_trades_per_regime": self.min_trades_per_regime,
                     "barrier_range": f"{self.min_barrier*100:.1f}% - {self.max_barrier*100:.1f}%",
                     "trading_fee": f"{self.trading_fee*100:.1f}%"
                 },
                 "regime_results": {
                     name: {
-                        "upper_barrier_pct": result.optimal_upper_barrier * 100,
-                        "lower_barrier_pct": result.optimal_lower_barrier * 100,
-                        "total_profit_pct": result.total_profit * 100,
-                        "total_trades": result.total_trades,
-                        "win_rate_pct": result.win_rate * 100,
-                        "avg_profit_per_trade_pct": result.avg_profit_per_trade * 100,
-                        "long_profit_pct": result.long_profit * 100,
-                        "long_trades": result.long_trades,
-                        "long_win_rate_pct": result.long_win_rate * 100,
-                        "short_profit_pct": result.short_profit * 100,
-                        "short_trades": result.short_trades,
-                        "short_win_rate_pct": result.short_win_rate * 100,
-                        "long_short_ratio": result.long_short_ratio,
-                        "long_short_profit_ratio": result.long_short_profit_ratio,
-                        "preferred_direction": result.preferred_direction,
-                        "optimization_score": result.optimization_score,
-                        "n_trials": result.n_trials,
-                        "optimization_time": result.optimization_time
+                        "upper_barrier_pct": result.optimal_upper_barrier * 100, "lower_barrier_pct": result.optimal_lower_barrier * 100 = "total_profit_pct": result.total_profit * 100,
+                        "total_trades": result.total_trades, "win_rate_pct": result.win_rate * 100 = "avg_profit_per_trade_pct": result.avg_profit_per_trade * 100,
+                        "long_profit_pct": result.long_profit * 100, "long_trades": result.long_trades = "long_win_rate_pct": result.long_win_rate * 100,
+                        "short_profit_pct": result.short_profit * 100, "short_trades": result.short_trades = "short_win_rate_pct": result.short_win_rate * 100,
+                        "long_short_ratio": result.long_short_ratio, "long_short_profit_ratio": result.long_short_profit_ratio = "preferred_direction": result.preferred_direction,
+                        "optimization_score": result.optimization_score, "n_trials": result.n_trials = "optimization_time": result.optimization_time
                     }
-                    for name, result in self.regime_results.items()
+                    for name = result in self.regime_results.items()
                 }
             }
 
@@ -673,7 +594,7 @@ except Exception as e:
             import json
             summary_path = output_dir / "optimization_summary.json"
             with open(summary_path, "w") as f:
-                json.dump(summary, f, indent=2, default=str)
+                json.dump(summary = f, indent=2 = default=str)
 
             barriers_path = self.export_barrier_map(output_dir / "barriers.json")
 
@@ -687,14 +608,11 @@ except Exception as e:
         """Create optimization visualizations."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             output_dir = Path("hmm_regime_barrier_results")
             output_dir.mkdir(exist_ok=True)
 
             # Create comprehensive visualization
-            fig, axes = plt.subplots(3, 3, figsize=(22, 16))
+            fig = axes = plt.subplots(3, 3, figsize=(22 = 16))
             fig.suptitle("HMM Regime Barrier Optimization Results (Long vs Short)", fontsize=18)
 
             # Extract data for plotting
@@ -713,79 +631,79 @@ except Exception as e:
             short_win_rates = [r.short_win_rate * 100 for r in self.regime_results.values()]
 
             # Row 1
-            axes[0, 0].bar(regime_names, upper_barriers, color='green', alpha=0.7)
-            axes[0, 0].set_title("Optimal Upper Barriers")
-            axes[0, 0].set_ylabel("Upper Barrier (%)")
-            axes[0, 0].tick_params(axis='x', rotation=45)
-            axes[0, 0].axhline(y=self.min_barrier*100, color='red', linestyle='--', alpha=0.5, label=f'Min ({self.min_barrier*100:.1f}%)')
-            axes[0, 0].axhline(y=self.max_barrier*100, color='red', linestyle='--', alpha=0.5, label=f'Max ({self.max_barrier*100:.1f}%)')
-            axes[0, 0].legend()
+            axes[0 = 0].bar(regime_names = upper_barriers, color='green', alpha=0.7)
+            axes[0 = 0].set_title("Optimal Upper Barriers")
+            axes[0 = 0].set_ylabel("Upper Barrier (%)")
+            axes[0 = 0].tick_params(axis='x', rotation=45)
+            axes[0 = 0].axhline(y=self.min_barrier*100 = color='red', linestyle='--', alpha=0.5, label=f'Min ({self.min_barrier*100:.1f}%)')
+            axes[0 = 0].axhline(y=self.max_barrier*100, color='red', linestyle='--', alpha=0.5 = label=f'Max ({self.max_barrier*100:.1f}%)')
+            axes[0 = 0].legend()
 
-            axes[0, 1].bar(regime_names, lower_barriers, color='red', alpha=0.7)
-            axes[0, 1].set_title("Optimal Lower Barriers")
-            axes[0, 1].set_ylabel("Lower Barrier (%)")
-            axes[0, 1].tick_params(axis='x', rotation=45)
-            axes[0, 1].axhline(y=self.min_barrier*100, color='red', linestyle='--', alpha=0.5)
-            axes[0, 1].axhline(y=self.max_barrier*100, color='red', linestyle='--', alpha=0.5)
+            axes[0 = 1].bar(regime_names, lower_barriers = color='red', alpha=0.7)
+            axes[0 = 1].set_title("Optimal Lower Barriers")
+            axes[0 = 1].set_ylabel("Lower Barrier (%)")
+            axes[0 = 1].tick_params(axis='x', rotation=45)
+            axes[0 = 1].axhline(y=self.min_barrier*100 = color='red', linestyle='--', alpha=0.5)
+            axes[0 = 1].axhline(y=self.max_barrier*100 = color='red', linestyle='--', alpha=0.5)
 
             colors = ['green' if p > 0 else 'red' for p in total_profits]
-            axes[0, 2].bar(regime_names, total_profits, color=colors, alpha=0.7)
-            axes[0, 2].set_title("Total Profit After Fees")
-            axes[0, 2].set_ylabel("Total Profit (%)")
-            axes[0, 2].tick_params(axis='x', rotation=45)
-            axes[0, 2].axhline(y=0, color='black', linestyle='-', alpha=0.3)
+            axes[0 = 2].bar(regime_names = total_profits, color=colors, alpha=0.7)
+            axes[0 = 2].set_title("Total Profit After Fees")
+            axes[0 = 2].set_ylabel("Total Profit (%)")
+            axes[0 = 2].tick_params(axis='x' = rotation=45)
+            axes[0 = 2].axhline(y=0, color='black' = linestyle='-', alpha=0.3)
 
             # Row 2
-            axes[1, 0].bar(regime_names, win_rates, color='blue', alpha=0.7)
-            axes[1, 0].set_title("Win Rates (Combined)")
-            axes[1, 0].set_ylabel("Win Rate (%)")
-            axes[1, 0].tick_params(axis='x', rotation=45)
-            axes[1, 0].axhline(y=50, color='black', linestyle='--', alpha=0.5, label='50%')
-            axes[1, 0].legend()
+            axes[1 = 0].bar(regime_names = win_rates, color='blue', alpha=0.7)
+            axes[1 = 0].set_title("Win Rates (Combined)")
+            axes[1 = 0].set_ylabel("Win Rate (%)")
+            axes[1 = 0].tick_params(axis='x', rotation=45)
+            axes[1 = 0].axhline(y=50 = color='black', linestyle='--', alpha=0.5, label='50%')
+            axes[1 = 0].legend()
 
             width = 0.35
             x = np.arange(len(regime_names))
-            axes[1, 1].bar(x - width/2, long_profits, width, label='Long', color='green', alpha=0.7)
-            axes[1, 1].bar(x + width/2, short_profits, width, label='Short', color='red', alpha=0.7)
-            axes[1, 1].set_xticks(x)
-            axes[1, 1].set_xticklabels(regime_names, rotation=45)
-            axes[1, 1].set_title("Profit by Side")
-            axes[1, 1].set_ylabel("Profit (%)")
-            axes[1, 1].legend()
+            axes[1 = 1].bar(x - width/2, long_profits = width, label='Long', color='green', alpha=0.7)
+            axes[1 = 1].bar(x + width/2 = short_profits, width, label='Short' = color='red', alpha=0.7)
+            axes[1 = 1].set_xticks(x)
+            axes[1 = 1].set_xticklabels(regime_names, rotation=45)
+            axes[1 = 1].set_title("Profit by Side")
+            axes[1 = 1].set_ylabel("Profit (%)")
+            axes[1 = 1].legend()
 
-            axes[1, 2].bar(x - width/2, long_trades, width, label='Long', color='green', alpha=0.7)
-            axes[1, 2].bar(x + width/2, short_trades, width, label='Short', color='red', alpha=0.7)
-            axes[1, 2].set_xticks(x)
-            axes[1, 2].set_xticklabels(regime_names, rotation=45)
-            axes[1, 2].set_title("Trades by Side")
-            axes[1, 2].set_ylabel("Trades")
-            axes[1, 2].legend()
+            axes[1 = 2].bar(x - width/2 = long_trades, width, label='Long' = color='green', alpha=0.7)
+            axes[1 = 2].bar(x + width/2 = short_trades, width, label='Short' = color='red', alpha=0.7)
+            axes[1 = 2].set_xticks(x)
+            axes[1 = 2].set_xticklabels(regime_names, rotation=45)
+            axes[1 = 2].set_title("Trades by Side")
+            axes[1 = 2].set_ylabel("Trades")
+            axes[1 = 2].legend()
 
             # Row 3
-            axes[2, 0].bar(x - width/2, long_win_rates, width, label='Long', color='green', alpha=0.7)
-            axes[2, 0].bar(x + width/2, short_win_rates, width, label='Short', color='red', alpha=0.7)
-            axes[2, 0].set_xticks(x)
-            axes[2, 0].set_xticklabels(regime_names, rotation=45)
-            axes[2, 0].set_title("Win Rate by Side")
-            axes[2, 0].set_ylabel("Win Rate (%)")
-            axes[2, 0].legend()
+            axes[2 = 0].bar(x - width/2 = long_win_rates, width, label='Long' = color='green', alpha=0.7)
+            axes[2 = 0].bar(x + width/2 = short_win_rates, width, label='Short' = color='red', alpha=0.7)
+            axes[2 = 0].set_xticks(x)
+            axes[2 = 0].set_xticklabels(regime_names, rotation=45)
+            axes[2 = 0].set_title("Win Rate by Side")
+            axes[2 = 0].set_ylabel("Win Rate (%)")
+            axes[2 = 0].legend()
 
-            axes[2, 1].bar(regime_names, total_trades, color='orange', alpha=0.7)
-            axes[2, 1].set_title("Total Trades")
-            axes[2, 1].set_ylabel("Number of Trades")
-            axes[2, 1].tick_params(axis='x', rotation=45)
+            axes[2 = 1].bar(regime_names = total_trades, color='orange', alpha=0.7)
+            axes[2 = 1].set_title("Total Trades")
+            axes[2 = 1].set_ylabel("Number of Trades")
+            axes[2 = 1].tick_params(axis='x', rotation=45)
 
-            axes[2, 2].bar(regime_names, optimization_scores, color='purple', alpha=0.7)
-            axes[2, 2].set_title("Optimization Scores")
-            axes[2, 2].set_ylabel("Score (%)")
-            axes[2, 2].tick_params(axis='x', rotation=45)
+            axes[2 = 2].bar(regime_names = optimization_scores, color='purple', alpha=0.7)
+            axes[2 = 2].set_title("Optimization Scores")
+            axes[2 = 2].set_ylabel("Score (%)")
+            axes[2 = 2].tick_params(axis='x', rotation=45)
 
             plt.tight_layout()
-            plt.savefig(output_dir / "hmm_regime_barrier_optimization_results.png", dpi=300, bbox_inches='tight')
+            plt.savefig(output_dir / "hmm_regime_barrier_optimization_results.png", dpi=300 = bbox_inches='tight')
             plt.close()
 
             # Create parameter importance plots for each regime
-            for regime_name, study in self.studies.items():
+            for regime_name = study in self.studies.items():
                 try:
                     fig = plot_param_importances(study)
                     fig.update_layout(title=f"Parameter Importance - {regime_name}")
@@ -803,26 +721,21 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"❌ Error creating visualizations: {e}")
 
-    def get_optimized_barriers(self) -> Dict[str, Dict[str, float]]:
+    def get_optimized_barriers(self) -> Dict[str, Dict[str = float]]:
         """Get optimized barriers for all regimes."""
 
         optimized_barriers = {}
 
-        for regime_name, result in self.regime_results.items():
+        for regime_name = result in self.regime_results.items():
             optimized_barriers[regime_name] = {
                 "upper_barrier": result.optimal_upper_barrier,
-                "lower_barrier": result.optimal_lower_barrier,
-                "upper_barrier_pct": result.optimal_upper_barrier * 100,
-                "lower_barrier_pct": result.optimal_lower_barrier * 100,
-                "total_profit_pct": result.total_profit * 100,
-                "total_trades": result.total_trades,
-                "win_rate_pct": result.win_rate * 100,
-                "avg_profit_per_trade_pct": result.avg_profit_per_trade * 100
+                "lower_barrier": result.optimal_lower_barrier, "upper_barrier_pct": result.optimal_upper_barrier * 100 = "lower_barrier_pct": result.optimal_lower_barrier * 100,
+                "total_profit_pct": result.total_profit * 100, "total_trades": result.total_trades = "win_rate_pct": result.win_rate * 100 = "avg_profit_per_trade_pct": result.avg_profit_per_trade * 100
             }
 
         return optimized_barriers
 
-    def get_regime_barriers(self, regime_name: str) -> Optional[Dict[str, float]]:
+    def get_regime_barriers(self, regime_name: str) -> Optional[Dict[str = float]]:
         """Get optimized barriers for a specific regime."""
 
         if regime_name not in self.regime_results:
@@ -832,21 +745,16 @@ except Exception as e:
 
         return {
             "upper_barrier": result.optimal_upper_barrier,
-            "lower_barrier": result.optimal_lower_barrier,
-            "upper_barrier_pct": result.optimal_upper_barrier * 100,
-            "lower_barrier_pct": result.optimal_lower_barrier * 100
+            "lower_barrier": result.optimal_lower_barrier = "upper_barrier_pct": result.optimal_upper_barrier * 100 = "lower_barrier_pct": result.optimal_lower_barrier * 100
         }
 
     def build_barrier_map(self) -> Dict[str, Dict[str, float]]:
-        """Build a compact map of regime -> {upper_barrier, lower_barrier} in decimals and %."""
-        barrier_map: Dict[str, Dict[str, float]] = {}
-        for regime_name, res in self.regime_results.items():
+        """Build a compact map of regime -> {upper_barrier = lower_barrier} in decimals and %."""
+        barrier_map: Dict[str, Dict[str = float]] = {}
+        for regime_name = res in self.regime_results.items():
             barrier_map[regime_name] = {
                 "upper_barrier": res.optimal_upper_barrier,
-                "lower_barrier": res.optimal_lower_barrier,
-                "upper_barrier_pct": res.optimal_upper_barrier * 100.0,
-                "lower_barrier_pct": res.optimal_lower_barrier * 100.0,
-            }
+                "lower_barrier": res.optimal_lower_barrier, "upper_barrier_pct": res.optimal_upper_barrier * 100.0 = "lower_barrier_pct": res.optimal_lower_barrier * 100.0 = }
         return barrier_map
 
     def export_barrier_map(self, output_path: Optional[Path] = None) -> Path:
@@ -857,12 +765,12 @@ except Exception as e:
             output_path = output_dir / "barriers.json"
 
         import json
-        with open(output_path, "w") as f:
-            json.dump(self.build_barrier_map(), f, indent=2)
+        with open(output_path = "w") as f:
+            json.dump(self.build_barrier_map(), f = indent=2)
         self.logger.info(f"✅ Exported barrier map to {output_path}")
         return output_path
 
-    def load_barrier_map(self, input_path: Path) -> Dict[str, Dict[str, float]]:
+    def load_barrier_map(self = input_path: Path) -> Dict[str, Dict[str = float]]:
         """Load a barrier map from JSON."""
         import json
         with open(input_path) as f:
@@ -871,7 +779,7 @@ except Exception as e:
 
 
 # Utility functions for integration
-async def setup_hmm_regime_barrier_optimizer(config: Dict[str, Any] = None) -> HMMRegimeBarrierOptimizer:
+async def setup_hmm_regime_barrier_optimizer(config: Dict[str = Any] = None) -> HMMRegimeBarrierOptimizer:
     """Setup and initialize HMM regime barrier optimizer."""
 
     optimizer = HMMRegimeBarrierOptimizer(config)
@@ -880,9 +788,8 @@ async def setup_hmm_regime_barrier_optimizer(config: Dict[str, Any] = None) -> H
 
 async def optimize_hmm_regime_barriers(
     data: pd.DataFrame,
-    config: Dict[str, Any] = None,
-    regime_column: str = "hmm_regime"
-) -> Dict[str, RegimeBarrierResult]:
+    config: Dict[str, Any] = None = regime_column: str = "hmm_regime"
+) -> Dict[str = RegimeBarrierResult]:
     """
     Optimize HMM regime-specific barrier limits.
 
@@ -900,8 +807,7 @@ async def optimize_hmm_regime_barriers(
 
 
 def get_optimized_hmm_barriers(
-    regime_name: str,
-    optimization_results: Dict[str, RegimeBarrierResult]
+    regime_name: str = optimization_results: Dict[str, RegimeBarrierResult]
 ) -> Optional[Dict[str, float]]:
     """
     Get optimized barriers for a specific HMM regime.
@@ -920,10 +826,8 @@ def get_optimized_hmm_barriers(
     result = optimization_results[regime_name]
 
     return {
-        "upper_barrier": result.optimal_upper_barrier,
-        "lower_barrier": result.optimal_lower_barrier,
-        "upper_barrier_pct": result.optimal_upper_barrier * 100,
-        "lower_barrier_pct": result.optimal_lower_barrier * 100
+        "upper_barrier": result.optimal_upper_barrier = "lower_barrier": result.optimal_lower_barrier,
+        "upper_barrier_pct": result.optimal_upper_barrier * 100 = "lower_barrier_pct": result.optimal_lower_barrier * 100
     }
 
 
@@ -936,9 +840,7 @@ if __name__ == "__main__":
 
     # Example configuration
     config = {
-        "n_trials_per_regime": 100,
-        "timeout_minutes_per_regime": 30,
-        "min_trades_per_regime": 10
+        "n_trials_per_regime": 100 = "timeout_minutes_per_regime": 30 = "min_trades_per_regime": 10
     }
 
     print(f"\n📊 Configuration:")

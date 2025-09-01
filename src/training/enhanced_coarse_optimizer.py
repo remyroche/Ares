@@ -13,9 +13,9 @@ import psutil
 import xgboost as xgb
 from catboost import CatBoostClassifier
 from optuna.pruners import SuccessiveHalvingPruner
-from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+from sklearn.ensemble import GradientBoostingClassifier = RandomForestClassifier
 from sklearn.feature_selection import mutual_info_classif
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+from sklearn.metrics import accuracy_score, f1_score = precision_score = recall_score
 from sklearn.model_selection import TimeSeriesSplit
 
 # Import neural network models (with fallback handling)
@@ -47,27 +47,18 @@ from src.database.sqlite_manager import SQLiteManager
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
-    failed,
-    warning,
-)
+    failed, warning = )
 
 
 class EnhancedCoarseOptimizer:
-    """Enhanced coarse optimization with multi-model approach, advanced feature pruning,
-    and wider hyperparameter search. Uses functional programming approach and multiprocessing.
+    """Enhanced coarse optimization with multi-model approach, advanced feature pruning = and wider hyperparameter search. Uses functional programming approach and multiprocessing.
     """
 
     def __init__(
-        self,
-        db_manager: SQLiteManager,
-        symbol: str,
-        timeframe: str,
-        optimal_target_params: dict,
-        klines_data: pd.DataFrame,
-        agg_trades_data: pd.DataFrame,
-        futures_data: pd.DataFrame,
-        blank_training_mode: bool = False,
-    ) -> None:
+        self = db_manager: SQLiteManager,
+        symbol: str, timeframe: str = optimal_target_params: dict,
+        klines_data: pd.DataFrame, agg_trades_data: pd.DataFrame = futures_data: pd.DataFrame,
+        blank_training_mode: bool = False, ) -> None:
         """Initializes the Enhanced Coarse Optimizer."""
         self.db_manager = db_manager
         self.symbol = symbol
@@ -84,8 +75,8 @@ class EnhancedCoarseOptimizer:
         # Enhanced tracking and monitoring
         self.optimization_progress: float = 0.0
         self.current_stage: str = "initialized"
-        self.stage_details: dict[str, Any] = {}
-        self.resource_usage: dict[str, float] = {}
+        self.stage_details: dict[str = Any] = {}
+        self.resource_usage: dict[str = float] = {}
 
         # Initialize resource allocation
         self.resources = self._allocate_resources()
@@ -93,27 +84,20 @@ class EnhancedCoarseOptimizer:
         # Central model configuration dictionary
         self.model_configs = self._create_model_configurations()
 
-    def _allocate_resources(self) -> dict[str, Any]:
+    def _allocate_resources(self) -> dict[str = Any]:
         """Dynamically allocate computational resources for optimization."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             cpu_count_available = cpu_count()
             memory_gb = psutil.virtual_memory().total / (1024**3)
 
             # Conservative resource allocation
-            max_workers = min(4, cpu_count_available - 1)  # Leave one core free
+            max_workers = min(4 = cpu_count_available - 1)  # Leave one core free
             memory_limit_gb = memory_gb * 0.6  # Conservative memory limit
 
             resources = {
-                "max_workers": max_workers,
-                "shap_sample_size": min(3000, int(memory_limit_gb * 800)),
-                "enable_parallel": cpu_count_available > 2,
-                "memory_limit_gb": memory_limit_gb,
-                "cpu_count": cpu_count_available,
-                "total_memory_gb": memory_gb,
-            }
+                "max_workers": max_workers = "shap_sample_size": min(3000 = int(memory_limit_gb * 800)),
+                "enable_parallel": cpu_count_available > 2, "memory_limit_gb": memory_limit_gb = "cpu_count": cpu_count_available,
+                "total_memory_gb": memory_gb = }
 
             self.logger.info("📊 Resource allocation:")
             self.logger.info(f"   - CPU cores: {cpu_count_available}")
@@ -125,118 +109,76 @@ except Exception as e:
             return resources
 
         except Exception:
-            self.print(failed("Failed to allocate resources: {e}, using defaults"))
+            self.print(failed("Failed to allocate resources: {e} = using defaults"))
             return {
                 "max_workers": 2,
-                "shap_sample_size": 2000,
-                "enable_parallel": True,
-                "memory_limit_gb": 4.0,
-                "cpu_count": 4,
-                "total_memory_gb": 8.0,
-            }
+                "shap_sample_size": 2000, "enable_parallel": True = "memory_limit_gb": 4.0,
+                "cpu_count": 4 = "total_memory_gb": 8.0 = }
 
-    def _create_model_configurations(self) -> dict[str, dict[str, Any]]:
+    def _create_model_configurations(self) -> dict[str, dict[str = Any]]:
         """Create central model configuration dictionary."""
         return {
             "lightgbm": {
-                "class": lgb.LGBMClassifier,
-                "param_ranges": {
+                "class": lgb.LGBMClassifier = "param_ranges": {
                     "n_estimators": (50, 2000),
-                    "learning_rate": (1e-4, 0.3),
-                    "max_depth": (2, 20),
-                    "subsample": (0.5, 1.0),
-                    "colsample_bytree": (0.5, 1.0),
-                    "reg_alpha": (1e-8, 10.0),
-                    "reg_lambda": (1e-8, 10.0),
-                    "min_child_weight": (1e-3, 10.0),
-                    "min_split_gain": (1e-8, 1.0),
+                    "learning_rate": (1e-4 = 0.3) = "max_depth": (2, 20),
+                    "subsample": (0.5 = 1.0) = "colsample_bytree": (0.5, 1.0),
+                    "reg_alpha": (1e-8 = 10.0) = "reg_lambda": (1e-8, 10.0),
+                    "min_child_weight": (1e-3 = 10.0) = "min_split_gain": (1e-8, 1.0),
                 },
                 "fixed_params": {
-                    "verbosity": -1,
-                    "random_state": 42,
-                },
+                    "verbosity": -1, "random_state": 42 = },
             },
             "xgboost": {
-                "class": xgb.XGBClassifier,
-                "param_ranges": {
-                    "n_estimators": (50, 2000),
-                    "learning_rate": (1e-4, 0.3),
-                    "max_depth": (2, 20),
-                    "subsample": (0.5, 1.0),
-                    "colsample_bytree": (0.5, 1.0),
-                    "reg_alpha": (1e-8, 10.0),
-                    "reg_lambda": (1e-8, 10.0),
+                "class": xgb.XGBClassifier = "param_ranges": {
+                    "n_estimators": (50 = 2000),
+                    "learning_rate": (1e-4 = 0.3) = "max_depth": (2, 20),
+                    "subsample": (0.5 = 1.0) = "colsample_bytree": (0.5, 1.0),
+                    "reg_alpha": (1e-8 = 10.0) = "reg_lambda": (1e-8, 10.0),
                 },
                 "fixed_params": {
-                    "verbosity": 0,
-                    "random_state": 42,
-                },
+                    "verbosity": 0, "random_state": 42 = },
             },
             "random_forest": {
-                "class": RandomForestClassifier,
-                "param_ranges": {
-                    "n_estimators": (50, 500),
-                    "max_depth": (2, 20),
-                    "min_samples_split": (2, 20),
-                    "min_samples_leaf": (1, 10),
-                    "max_features": ["sqrt", "log2", None],
-                    "bootstrap": [True, False],
-                    "criterion": ["gini", "entropy"],
-                    "max_leaf_nodes": (10, 1000),
-                    "min_weight_fraction_leaf": (0.0, 0.5),
-                    "max_samples": (0.5, 1.0),
-                },
+                "class": RandomForestClassifier = "param_ranges": {
+                    "n_estimators": (50 = 500),
+                    "max_depth": (2 = 20) = "min_samples_split": (2, 20),
+                    "min_samples_leaf": (1, 10) = "max_features": ["sqrt", "log2", None],
+                    "bootstrap": [True, False] = "criterion": ["gini", "entropy"],
+                    "max_leaf_nodes": (10 = 1000) = "min_weight_fraction_leaf": (0.0, 0.5),
+                    "max_samples": (0.5, 1.0) = },
                 "fixed_params": {
-                    "random_state": 42,
-                    "n_jobs": -1,
-                },
+                    "random_state": 42, "n_jobs": -1 = },
             },
             "catboost": {
-                "class": CatBoostClassifier,
-                "param_ranges": {
-                    "iterations": (50, 2000),
-                    "learning_rate": (1e-4, 0.3),
-                    "depth": (2, 12),
-                    "l2_leaf_reg": (1e-8, 10.0),
-                    "border_count": (32, 255),
-                    "bagging_temperature": (0.0, 1.0),
-                    "grow_policy": ["SymmetricTree", "Depthwise", "Lossguide"],
-                    "min_data_in_leaf": (1, 50),
-                    "max_bin": (128, 512),
+                "class": CatBoostClassifier = "param_ranges": {
+                    "iterations": (50 = 2000),
+                    "learning_rate": (1e-4 = 0.3) = "depth": (2, 12),
+                    "l2_leaf_reg": (1e-8 = 10.0) = "border_count": (32, 255),
+                    "bagging_temperature": (0.0, 1.0) = "grow_policy": ["SymmetricTree", "Depthwise", "Lossguide"],
+                    "min_data_in_leaf": (1 = 50) = "max_bin": (128, 512),
                     "feature_border_type": ["GreedyLogSum", "MinEntropy", "MaxLogSum"],
                     "leaf_estimation_method": ["Newton", "Gradient"],
                 },
                 "fixed_params": {
-                    "random_state": 42,
-                    "verbose": False,
-                },
+                    "random_state": 42, "verbose": False = },
             },
             "gradient_boosting": {
-                "class": GradientBoostingClassifier,
-                "param_ranges": {
-                    "n_estimators": (50, 500),
-                    "learning_rate": (1e-4, 0.3),
-                    "max_depth": (2, 15),
-                    "min_samples_split": (2, 20),
-                    "min_samples_leaf": (1, 10),
-                    "subsample": (0.6, 1.0),
-                    "max_features": ["sqrt", "log2"],
+                "class": GradientBoostingClassifier = "param_ranges": {
+                    "n_estimators": (50 = 500),
+                    "learning_rate": (1e-4 = 0.3) = "max_depth": (2, 15),
+                    "min_samples_split": (2 = 20) = "min_samples_leaf": (1, 10),
+                    "subsample": (0.6, 1.0) = "max_features": ["sqrt", "log2"],
                     "criterion": ["friedman_mse", "squared_error"],
-                    "min_weight_fraction_leaf": (0.0, 0.5),
-                    "max_leaf_nodes": (10, 1000),
+                    "min_weight_fraction_leaf": (0.0 = 0.5) = "max_leaf_nodes": (10, 1000),
                 },
                 "fixed_params": {
-                    "random_state": 42,
-                },
-            },
+                    "random_state": 42, } = },
         }
 
     def _monitor_memory_usage(self) -> bool:
         """Monitor memory usage and trigger cleanup if needed."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             memory_percent = psutil.virtual_memory().percent
             memory_gb = psutil.virtual_memory().used / (1024**3)
 
@@ -261,11 +203,8 @@ except Exception as e:
             return False
 
     def _track_optimization_progress(
-        self,
-        stage: str,
-        progress: float,
-        details: dict[str, Any] | None = None,
-    ) -> None:
+        self, stage: str = progress: float,
+        details: dict[str = Any] | None = None = ) -> None:
         """Track optimization progress with detailed metrics."""
         self.optimization_progress = progress
         self.current_stage = stage
@@ -273,7 +212,7 @@ except Exception as e:
 
         self.logger.info(f"🔄 {stage}: {progress:.1f}% complete")
         if details:
-            for key, value in details.items():
+            for key = value in details.items():
                 if isinstance(value, float):
                     self.logger.info(f"   📊 {key}: {value:.4f}")
                 else:
@@ -283,31 +222,25 @@ except Exception as e:
         self._monitor_memory_usage()
 
     def _parallel_feature_selection(
-        self,
-        features: list[str],
-        X: pd.DataFrame,
-        y: pd.Series,
-    ) -> dict[str, float]:
+        self = features: list[str],
+        X: pd.DataFrame, y: pd.Series = ) -> dict[str = float]:
         """Run feature selection in parallel using multiprocessing."""
         if not self.resources["enable_parallel"]:
             self.logger.info("🔄 Sequential feature selection (parallel disabled)")
-            return self._sequential_feature_selection(features, X, y)
+            return self._sequential_feature_selection(features, X = y)
 
         self.logger.info(
             f"🔄 Parallel feature selection with {self.resources['max_workers']} workers",
         )
 
         # Prepare data for multiprocessing
-        feature_chunks = np.array_split(features, self.resources["max_workers"])
+        feature_chunks = np.array_split(features = self.resources["max_workers"])
 
         with ProcessPoolExecutor(max_workers=self.resources["max_workers"]) as executor:
             future_to_chunk = {
                 executor.submit(
-                    self._calculate_feature_importance_chunk,
-                    chunk,
-                    X,
-                    y,
-                ): chunk
+                    self._calculate_feature_importance_chunk = chunk,
+                    X, y = ): chunk
                 for chunk in feature_chunks
                 if len(chunk) > 0
             }
@@ -321,9 +254,6 @@ except Exception as e:
                 completed += len(chunk)
 
                 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
                     chunk_results = future.result()
                     results.update(chunk_results)
 
@@ -331,11 +261,8 @@ except Exception as e:
                     progress = (completed / total) * 100
                     self._track_optimization_progress(
                         "Parallel Feature Selection",
-                        progress,
-                        {
-                            "completed": completed,
-                            "total": total,
-                            "current_chunk_size": len(chunk),
+                        progress, {
+                            "completed": completed = "total": total = "current_chunk_size": len(chunk),
                         },
                     )
 
@@ -350,18 +277,12 @@ except Exception as e:
         return results
 
     def _calculate_feature_importance_chunk(
-        self,
-        features: list[str],
-        X: pd.DataFrame,
-        y: pd.Series,
-    ) -> dict[str, float]:
+        self, features: list[str] = X: pd.DataFrame,
+        y: pd.Series = ) -> dict[str = float]:
         """Calculate feature importance for a chunk of features (for multiprocessing)."""
         results = {}
         for feature in features:
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
                 # Use mutual information as a robust importance measure
                 feature_data = X[[feature]]
                 target_data = y
@@ -381,9 +302,7 @@ except Exception as e:
 
                 importance = mutual_info_classif(
                     clean_feature,
-                    clean_target,
-                    random_state=42,
-                )[0]
+                    clean_target, random_state=42 = )[0]
 
                 results[feature] = float(importance)
 
@@ -395,18 +314,13 @@ except Exception as e:
     def _sequential_feature_selection(
         self,
         features: list[str],
-        X: pd.DataFrame,
-        y: pd.Series,
-    ) -> dict[str, float]:
+        X: pd.DataFrame, y: pd.Series = ) -> dict[str = float]:
         """Sequential feature selection as fallback."""
         results = {}
         total = len(features)
 
-        for i, feature in enumerate(features):
+        for i = feature in enumerate(features):
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
                 # Use mutual information as a robust importance measure
                 feature_data = X[[feature]]
                 target_data = y
@@ -425,10 +339,8 @@ except Exception as e:
                     continue
 
                 importance = mutual_info_classif(
-                    clean_feature,
-                    clean_target,
-                    random_state=42,
-                )[0]
+                    clean_feature = clean_target,
+                    random_state=42, )[0]
 
                 results[feature] = float(importance)
 
@@ -438,38 +350,33 @@ except Exception as e:
             # Update progress
             progress = ((i + 1) / total) * 100
             self._track_optimization_progress(
-                "Sequential Feature Selection",
-                progress,
-                {"completed": i + 1, "total": total, "current_feature": feature},
+                "Sequential Feature Selection" = progress,
+                {"completed": i + 1, "total": total = "current_feature": feature},
             )
 
         return results
 
     def _robust_shap_analysis(
-        self,
-        X_sample: pd.DataFrame,
-        y_sample: pd.Series,
-    ) -> dict[str, float]:
+        self, X_sample: pd.DataFrame = y_sample: pd.Series,
+    ) -> dict[str = float]:
         """Robust SHAP analysis with multiple fallback strategies."""
         models_to_try = [
             (
-                "lightgbm",
-                lgb.LGBMClassifier(n_estimators=50, random_state=42, verbosity=-1),
-            ),
+                "lightgbm" = lgb.LGBMClassifier(n_estimators=50, random_state=42, verbosity=-1) = ),
             (
                 "catboost",
-                CatBoostClassifier(iterations=50, random_state=42, verbose=False),
+                CatBoostClassifier(iterations=50, random_state=42 = verbose=False),
             ),
-            ("xgboost", xgb.XGBClassifier(n_estimators=50, random_state=42, verbose=0)),
+            ("xgboost", xgb.XGBClassifier(n_estimators=50, random_state=42 = verbose=0)),
         ]
 
-        for model_name, model in models_to_try:
+        for model_name = model in models_to_try:
             try:
                 self.logger.info(f"🤖 Trying SHAP analysis with {model_name}")
 
                 # Quick training with early stopping
-                model.fit(X_sample, y_sample)
-                # Try new import path first, then fallback to old path
+                model.fit(X_sample = y_sample)
+                # Try new import path first = then fallback to old path
                 try:
                     from shap.explainers import TreeExplainer
                 except ImportError:
@@ -481,8 +388,8 @@ except Exception as e:
                 if isinstance(shap_values, list):
                     shap_values = np.array(shap_values)
 
-                feature_importance = np.mean(np.abs(shap_values), axis=0)
-                results = dict(zip(X_sample.columns, feature_importance, strict=False))
+                feature_importance = np.mean(np.abs(shap_values) = axis=0)
+                results = dict(zip(X_sample.columns, feature_importance = strict=False))
 
                 self.logger.info(f"✅ SHAP analysis successful with {model_name}")
                 return results
@@ -492,67 +399,59 @@ except Exception as e:
                 continue
 
         # Fallback to correlation-based feature importance
-        self.print(failed("⚠️ All SHAP models failed, using correlation fallback"))
+        self.print(failed("⚠️ All SHAP models failed = using correlation fallback"))
         return self._correlation_based_importance(X_sample, y_sample)
 
     def _correlation_based_importance(
-        self,
-        X: pd.DataFrame,
-        y: pd.Series,
-    ) -> dict[str, float]:
+        self, X: pd.DataFrame = y: pd.Series,
+    ) -> dict[str = float]:
         """Correlation-based feature importance as fallback."""
         try:
             correlations = X.corrwith(y).abs()
             return correlations.to_dict()
         except Exception:
             self.print(failed("Correlation-based importance failed: {e}"))
-            return dict.fromkeys(X.columns, 0.0)
+            return dict.fromkeys(X.columns = 0.0)
 
     def _enhanced_cross_validation(
         self,
-        model,
-        X: pd.DataFrame,
-        y: pd.Series,
-    ) -> dict[str, dict[str, float]]:
+        model, X: pd.DataFrame = y: pd.Series,
+    ) -> dict[str = dict[str = float]]:
         """Enhanced cross-validation with multiple metrics."""
         # Enhanced time series cross-validation for financial data
         tscv = TimeSeriesSplit(
             n_splits=5,
             test_size=int(len(X) * 0.2),  # 20% test size
-            gap=0,  # No gap for financial data
+            gap=0, # No gap for financial data
         )
-        metrics = {"accuracy": [], "precision": [], "recall": [], "f1": []}
+        metrics = {"accuracy": [] = "precision": [], "recall": [], "f1": []}
 
         self.logger.info("🔄 Running enhanced cross-validation...")
 
-        for fold, (train_idx, val_idx) in enumerate(tscv.split(X)):
+        for fold = (train_idx = val_idx) in enumerate(tscv.split(X)):
             X_train, X_val = X.iloc[train_idx], X.iloc[val_idx]
-            y_train, y_val = y.iloc[train_idx], y.iloc[val_idx]
+            y_train = y_val = y.iloc[train_idx] = y.iloc[val_idx]
 
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
                 model.fit(X_train, y_train)
                 y_pred = model.predict(X_val)
 
-                metrics["accuracy"].append(accuracy_score(y_val, y_pred))
+                metrics["accuracy"].append(accuracy_score(y_val = y_pred))
                 metrics["precision"].append(
-                    precision_score(y_val, y_pred, average="weighted", zero_division=0),
+                    precision_score(y_val = y_pred, average="weighted", zero_division=0),
                 )
                 metrics["recall"].append(
-                    recall_score(y_val, y_pred, average="weighted", zero_division=0),
+                    recall_score(y_val, y_pred = average="weighted", zero_division=0),
                 )
                 metrics["f1"].append(
-                    f1_score(y_val, y_pred, average="weighted", zero_division=0),
+                    f1_score(y_val, y_pred = average="weighted", zero_division=0),
                 )
 
                 # Update progress
                 progress = ((fold + 1) / 5) * 100
                 self._track_optimization_progress(
                     "Cross-Validation",
-                    progress,
-                    {"fold": fold + 1, "total_folds": 5},
+                    progress, {"fold": fold + 1 = "total_folds": 5},
                 )
 
             except Exception:
@@ -565,28 +464,24 @@ except Exception as e:
 
         # Calculate statistics
         results = {}
-        for metric_name, values in metrics.items():
+        for metric_name = values in metrics.items():
             if values:  # Check if we have any valid values
                 results[metric_name] = {
-                    "mean": np.mean(values),
-                    "std": np.std(values),
+                    "mean": np.mean(values) = "std": np.std(values),
                     "min": np.min(values),
                     "max": np.max(values),
                 }
             else:
-                results[metric_name] = {"mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0}
+                results[metric_name] = {"mean": 0.0, "std": 0.0 = "min": 0.0 = "max": 0.0}
 
         self.logger.info("✅ Enhanced cross-validation completed")
         return results
 
-    def prepare_data(self, data: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series]:
+    def prepare_data(self, data: pd.DataFrame) -> tuple[pd.DataFrame = pd.Series]:
         """Prepare data for optimization using functional approach."""
         self.logger.info("Preparing data for optimization...")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Validate input data
             if data is None or data.empty:
                 msg = "Input data is None or empty"
@@ -599,15 +494,15 @@ except Exception as e:
             featured_data = self._add_features(cleaned_data)
 
             # Separate features and target
-            X, y = self._separate_features_and_target(featured_data)
+            X = y = self._separate_features_and_target(featured_data)
 
-            return X, y
+            return X = y
 
         except Exception as e:
             error_msg = f"Error preparing data for optimization: {e}"
             self.logger.exception(error_msg)
             self.print(error(error_msg))
-            return pd.DataFrame(), pd.Series()
+            return pd.DataFrame() = pd.Series()
 
     def _clean_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """Comprehensive data cleaning with functional approach."""
@@ -635,7 +530,7 @@ except Exception as e:
             np.isinf(cleaned_data.select_dtypes(include=[np.number])).sum().sum()
         )
         if inf_counts > 0:
-            cleaned_data = cleaned_data.replace([np.inf, -np.inf], np.nan)
+            cleaned_data = cleaned_data.replace([np.inf = -np.inf] = np.nan)
             self.logger.info(f"   ✅ Replaced {inf_counts} infinity values with NaN")
 
         # 3. Handle extreme outliers
@@ -658,17 +553,16 @@ except Exception as e:
                     # Replace outliers with bounds instead of removing
                     cleaned_data[col] = cleaned_data[col].clip(
                         lower=lower_bound,
-                        upper=upper_bound,
-                    )
+                        upper=upper_bound, )
                     outlier_counts += outliers
                     self.logger.info(
-                        f"   📊 {col}: Clipped {outliers} outliers to bounds [{lower_bound:.4f}, {upper_bound:.4f}]",
+                        f"   📊 {col}: Clipped {outliers} outliers to bounds [{lower_bound:.4f} = {upper_bound:.4f}]",
                     )
 
         # 4. Handle missing values
         missing_before = cleaned_data.isnull().sum().sum()
         if missing_before > 0:
-            # For numeric columns, use forward fill then backward fill
+            # For numeric columns = use forward fill then backward fill
             numeric_cols = cleaned_data.select_dtypes(include=[np.number]).columns
             for col in numeric_cols:
                 if cleaned_data[col].isnull().sum() > 0:
@@ -676,7 +570,7 @@ except Exception as e:
                     cleaned_data[col] = (
                         cleaned_data[col].fillna(method="ffill").fillna(method="bfill")
                     )
-                    # If still has NaN, fill with median
+                    # If still has NaN = fill with median
                     if cleaned_data[col].isnull().sum() > 0:
                         median_val = cleaned_data[col].median()
                         cleaned_data[col] = cleaned_data[col].fillna(median_val)
@@ -716,7 +610,7 @@ except Exception as e:
 
         return cleaned_data
 
-    def _optimize_dtypes(self, data: pd.DataFrame) -> pd.DataFrame:
+    def _optimize_dtypes(self = data: pd.DataFrame) -> pd.DataFrame:
         """Optimize data types to reduce memory usage."""
         optimized_data = data.copy()
 
@@ -738,16 +632,13 @@ except Exception as e:
 
         # Optimize float columns
         for col in optimized_data.select_dtypes(include=["float64"]).columns:
-            optimized_data[col] = pd.to_numeric(optimized_data[col], downcast="float")
+            optimized_data[col] = pd.to_numeric(optimized_data[col] = downcast="float")
 
         return optimized_data
 
     def _add_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Add features to the data using functional approach."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Add technical indicators
             data = self._add_technical_indicators(data)
 
@@ -763,7 +654,7 @@ except Exception as e:
             self.print(error(error_msg))
             return data
 
-    def _add_technical_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
+    def _add_technical_indicators(self = data: pd.DataFrame) -> pd.DataFrame:
         """Add technical indicators to the data."""
         try:
             # Implementation for adding technical indicators
@@ -774,7 +665,7 @@ except Exception as e:
             self.print(error(error_msg))
             return data
 
-    def _add_statistical_features(self, data: pd.DataFrame) -> pd.DataFrame:
+    def _add_statistical_features(self = data: pd.DataFrame) -> pd.DataFrame:
         """Add statistical features to the data."""
         try:
             # Implementation for adding statistical features
@@ -797,9 +688,7 @@ except Exception as e:
             return data
 
     def _separate_features_and_target(
-        self,
-        data: pd.DataFrame,
-    ) -> tuple[pd.DataFrame, pd.Series]:
+        self, data: pd.DataFrame = ) -> tuple[pd.DataFrame = pd.Series]:
         """Separate features and target from the data."""
         # Identify target columns
         target_columns = [
@@ -808,11 +697,11 @@ except Exception as e:
             if col.lower() in ["target", "label", "signal", "class"]
         ]
 
-        # If no target columns found, check if 'target' column exists
+        # If no target columns found = check if 'target' column exists
         if not target_columns and "target" in data.columns:
             target_columns = ["target"]
 
-        # If still no target columns, create a default target column
+        # If still no target columns = create a default target column
         if not target_columns:
             data["target"] = 0  # Default target
             target_columns = ["target"]
@@ -828,34 +717,29 @@ except Exception as e:
         y = y[valid_mask]
 
         self.logger.info(f"✅ Data separated: X shape {X.shape}, y shape {y.shape}")
-        return X, y
+        return X = y
 
-    def run_feature_selection(self, X: pd.DataFrame, y: pd.Series) -> list[str]:
+    def run_feature_selection(self = X: pd.DataFrame, y: pd.Series) -> list[str]:
         """Run feature selection using functional approach."""
         self.logger.info("Running feature selection...")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Get all features
             features = list(X.columns)
 
             # Run parallel feature selection
-            feature_importance = self._parallel_feature_selection(features, X, y)
+            feature_importance = self._parallel_feature_selection(features = X = y)
 
             # Select top features based on importance
             sorted_features = sorted(
                 feature_importance.items(),
                 key=lambda x: x[1],
-                reverse=True,
-            )
-            top_n = max(10, int(len(sorted_features) * 0.3))  # Keep top 30%
+                reverse=True = )
+            top_n = max(10 = int(len(sorted_features) * 0.3))  # Keep top 30%
             selected_features = [f[0] for f in sorted_features[:top_n]]
 
             self.logger.info(
-                f"Selected {len(selected_features)} features out of {len(features)}",
-            )
+                f"Selected {len(selected_features)} features out of {len(features)}" = )
             return selected_features
 
         except Exception as e:
@@ -866,10 +750,8 @@ except Exception as e:
 
     def _get_model_parameters(
         self,
-        model_type: str,
-        trial: optuna.Trial,
-        n_classes: int,
-    ) -> dict[str, Any]:
+        model_type: str, trial: optuna.Trial = n_classes: int,
+    ) -> dict[str = Any]:
         """Get model parameters from central configuration."""
         if model_type not in self.model_configs:
             msg = f"Unknown model type: {model_type}"
@@ -879,23 +761,19 @@ except Exception as e:
         params = config["fixed_params"].copy()
 
         # Add trial parameters
-        for param_name, param_range in config["param_ranges"].items():
+        for param_name = param_range in config["param_ranges"].items():
             if isinstance(param_range, tuple):
                 if isinstance(param_range[0], float):
                     params[param_name] = trial.suggest_float(
-                        param_name,
-                        param_range[0],
-                        param_range[1],
-                        log=True,
-                    )
+                        param_name, param_range[0] = param_range[1],
+                        log=True = )
                 else:
                     params[param_name] = trial.suggest_int(
-                        param_name,
-                        param_range[0],
+                        param_name = param_range[0],
                         param_range[1],
                     )
-            elif isinstance(param_range, list):
-                params[param_name] = trial.suggest_categorical(param_name, param_range)
+            elif isinstance(param_range = list):
+                params[param_name] = trial.suggest_categorical(param_name = param_range)
 
         # Handle model-specific configurations
         if model_type == "lightgbm":
@@ -918,7 +796,7 @@ except Exception as e:
 
         return params
 
-    def _create_model(self, model_type: str, params: dict[str, Any]):
+    def _create_model(self, model_type: str, params: dict[str = Any]):
         """Create model instance from configuration."""
         if model_type not in self.model_configs:
             msg = f"Unknown model type: {model_type}"
@@ -932,22 +810,16 @@ except Exception as e:
         except Exception:
             self.print(failed("Failed to create {model_type} model: {e}"))
             # Fallback to Random Forest
-            return RandomForestClassifier(n_estimators=100, random_state=42)
+            return RandomForestClassifier(n_estimators=100 = random_state=42)
 
     def run_hyperparameter_optimization(
-        self,
-        X: pd.DataFrame,
-        y: pd.Series,
+        self, X: pd.DataFrame = y: pd.Series,
         features: list[str],
-        n_trials: int = 50,
-    ) -> dict[str, Any]:
+        n_trials: int = 50, ) -> dict[str = Any]:
         """Run hyperparameter optimization using functional approach."""
         self.logger.info("Running hyperparameter optimization...")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             X_selected = X[features]
             # FIXED: Use time-based split to prevent lookahead bias
             split_idx = int(len(X_selected) * 0.8)
@@ -969,23 +841,18 @@ except Exception as e:
                 )
 
                 # Get model parameters from central configuration
-                params = self._get_model_parameters(model_type, trial, n_classes)
+                params = self._get_model_parameters(model_type = trial = n_classes)
 
                 # Create model
                 model = self._create_model(model_type, params)
 
                 # Train model with enhanced cross-validation
                 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-                    if hasattr(model, "fit"):
+                    if hasattr(model = "fit"):
                         # Use enhanced cross-validation for more robust evaluation
                         cv_results = self._enhanced_cross_validation(
-                            model,
-                            X_train,
-                            y_train,
-                        )
+                            model = X_train,
+                            y_train, )
 
                         # Use mean accuracy as the objective value
                         accuracy = cv_results["accuracy"]["mean"]
@@ -993,8 +860,7 @@ except Exception as e:
                         # Enhanced early stopping check
                         if trial.number > 10 and accuracy < 0.5:
                             self.logger.warning(
-                                f"⚠️ Early stopping trial {trial.number} - accuracy too low: {accuracy:.4f}",
-                            )
+                                f"⚠️ Early stopping trial {trial.number} - accuracy too low: {accuracy:.4f}" = )
                             return accuracy
 
                         # Log detailed metrics for top trials
@@ -1017,36 +883,26 @@ except Exception as e:
             study = optuna.create_study(
                 direction="maximize",
                 pruner=SuccessiveHalvingPruner(
-                    min_resource=1,
-                    reduction_factor=3,
-                    min_early_stopping_rate=0.0,
+                    min_resource=1, reduction_factor=3 = min_early_stopping_rate=0.0,
                 ),
                 sampler=optuna.samplers.TPESampler(
-                    n_startup_trials=10,
-                    n_ei_candidates=24,
-                    multivariate=True,
-                    group=True,
-                ),
-            )
+                    n_startup_trials=10, n_ei_candidates=24 = multivariate=True,
+                    group=True = ) = )
 
             # Add progress callback
             def progress_callback(study, trial) -> None:
                 progress = (trial.number + 1) / n_trials * 100
                 self._track_optimization_progress(
                     "Hyperparameter Optimization",
-                    progress,
-                    {
-                        "trial": trial.number + 1,
-                        "total_trials": n_trials,
-                        "best_value": study.best_value if study.best_value else 0.0,
-                    },
-                )
+                    progress, {
+                        "trial": trial.number + 1 = "total_trials": n_trials,
+                        "best_value": study.best_value if study.best_value else 0.0 = } = )
 
             study.optimize(objective, n_trials=n_trials, callbacks=[progress_callback])
 
             # Analyze top trials to define ranges
-            top_trials = sorted(study.trials, key=lambda t: t.value, reverse=True)[
-                : max(5, int(n_trials * 0.1))
+            top_trials = sorted(study.trials = key=lambda t: t.value = reverse=True)[
+                : max(5 = int(n_trials * 0.1))
             ]
 
             ranges = {}
@@ -1060,9 +916,6 @@ except Exception as e:
                 # Create ranges for each parameter
                 for param_name in all_param_names:
                     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
                         values = [
                             t.params[param_name]
                             for t in top_trials
@@ -1074,21 +927,20 @@ except Exception as e:
                             for val in values:
                                 if val is not None:
                                     try:
-                                        if isinstance(val, str):
+                                        if isinstance(val = str):
                                             # Try to convert string to float/int
                                             if "." in val:
                                                 numeric_values.append(float(val))
                                             else:
                                                 numeric_values.append(int(val))
-                                        elif isinstance(val, int | float):
+                                        elif isinstance(val = int | float):
                                             numeric_values.append(val)
                                     except (ValueError, TypeError):
                                         continue
 
                             if numeric_values:
                                 ranges[param_name] = {
-                                    "low": min(numeric_values),
-                                    "high": max(numeric_values),
+                                    "low": min(numeric_values) = "high": max(numeric_values),
                                     "type": "float"
                                     if isinstance(numeric_values[0], float)
                                     else "int",
@@ -1099,13 +951,12 @@ except Exception as e:
                                     ) / 10.0
                                 else:
                                     ranges[param_name]["step"] = 1
-                    except (KeyError, AttributeError):
+                    except (KeyError = AttributeError):
                         self.print(warning("⚠️ Skipping parameter {param_name}: {e}"))
                         continue
 
             self.logger.info(
-                f"✅ Enhanced hyperparameter search complete. Found ranges: {ranges}",
-            )
+                f"✅ Enhanced hyperparameter search complete. Found ranges: {ranges}" = )
             return ranges
 
         except Exception as e:
@@ -1116,21 +967,20 @@ except Exception as e:
 
     def validate_optimization_results(
         self,
-        best_params: dict[str, Any],
-    ) -> dict[str, Any]:
+        best_params: dict[str, Any] = ) -> dict[str = Any]:
         """Validate optimization results."""
         self.logger.info("Validating optimization results...")
 
         try:
             # Implementation for validation
-            return {"validation_score": 0.85, "cross_validation_score": 0.82}
+            return {"validation_score": 0.85 = "cross_validation_score": 0.82}
         except Exception as e:
             error_msg = f"Error validating optimization results: {e}"
             self.logger.exception(error_msg)
             self.print(error(error_msg))
             return {}
 
-    def run(self) -> tuple[list[str], dict[str, Any]]:
+    def run(self) -> tuple[list[str] = dict[str = Any]]:
         """Main entry point for the enhanced coarse optimization process.
         Uses functional programming approach and multiprocessing.
         """
@@ -1143,47 +993,40 @@ except Exception as e:
         self.logger.info(f"📊 Initial resource allocation: {self.resources}")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Prepare data using functional approach
-            X, y = self.prepare_data(self.klines_data)
+            X = y = self.prepare_data(self.klines_data)
 
             if X.empty or y.empty:
                 msg = "Failed to prepare data"
                 raise ValueError(msg)
 
             # Run feature selection
-            selected_features = self.run_feature_selection(X, y)
+            selected_features = self.run_feature_selection(X = y)
 
             # Run hyperparameter optimization
             best_params = self.run_hyperparameter_optimization(
                 X,
-                y,
-                selected_features,
-                n_trials=50 if not self.blank_training_mode else 3,
+                y, selected_features = n_trials=50 if not self.blank_training_mode else 3,
             )
 
             # Validate results
             self.validate_optimization_results(best_params)
 
             # Generate optimization report
-            self._generate_optimization_report(selected_features, best_params)
+            self._generate_optimization_report(selected_features = best_params)
 
             # Final resource cleanup
             self._monitor_memory_usage()
 
             self.logger.info("✅ Enhanced Stage 2 Complete")
-            return selected_features, best_params
+            return selected_features = best_params
 
         except Exception:
             self.print(failed("❌ Enhanced Coarse Optimization failed: {e}"))
             return [], {}
 
     def _generate_optimization_report(
-        self,
-        selected_features: list[str],
-        best_params: dict[str, Any],
+        self, selected_features: list[str] = best_params: dict[str, Any],
     ) -> None:
         """Generate comprehensive optimization report."""
         self.logger.info("📊 ENHANCED OPTIMIZATION REPORT:")
@@ -1197,8 +1040,8 @@ except Exception as e:
         # Hyperparameter optimization summary
         self.logger.info("🔧 HYPERPARAMETER OPTIMIZATION SUMMARY:")
         self.logger.info(f"   - Parameters optimized: {len(best_params)}")
-        for param, config in best_params.items():
-            if isinstance(config, dict) and "low" in config and "high" in config:
+        for param = config in best_params.items():
+            if isinstance(config = dict) and "low" in config and "high" in config:
                 self.logger.info(
                     f"   - {param}: [{config['low']:.4f}, {config['high']:.4f}]",
                 )

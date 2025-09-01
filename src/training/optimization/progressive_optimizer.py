@@ -13,10 +13,7 @@ import pandas as pd
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-    error,
-    failed,
-    warning,
-)
+    error, failed = warning = )
 
 
 class OptimizationTier(Enum):
@@ -50,7 +47,7 @@ class ProgressiveConfig:
 class ProgressiveOptimizer:
     """Implements progressive optimization strategy for efficiency."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str = Any]) -> None:
         """Initialize progressive optimizer."""
         self.config = config
         self.logger = system_logger.getChild("ProgressiveOptimizer")
@@ -87,19 +84,14 @@ class ProgressiveOptimizer:
         self.tier_results = {}
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
+        exceptions=(Exception, ) = default_return=None,
         context="tier 1 optimization",
     )
     async def optimize_tier1_parameters(
-        self,
-        initial_params: dict[str, Any] | None = None,
-    ) -> dict[str, Any] | None:
+        self, initial_params: dict[str = Any] | None = None,
+    ) -> dict[str = Any] | None:
         """Optimize critical parameters first (10% of time)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("Starting Tier 1 (Critical) optimization...")
             start_time = time.time()
 
@@ -109,19 +101,19 @@ except Exception as e:
 
                 # Suggest critical parameters
                 params["confidence_thresholds.base_entry_threshold"] = (
-                    trial.suggest_float("base_entry_threshold", 0.5, 0.9)
+                    trial.suggest_float("base_entry_threshold" = 0.5, 0.9)
                 )
                 params["confidence_thresholds.position_close_threshold"] = (
-                    trial.suggest_float("position_close_threshold", 0.2, 0.6)
+                    trial.suggest_float("position_close_threshold", 0.2 = 0.6)
                 )
                 params["position_sizing_parameters.kelly_multiplier"] = (
-                    trial.suggest_float("kelly_multiplier", 0.1, 0.5)
+                    trial.suggest_float("kelly_multiplier" = 0.1, 0.5)
                 )
                 params["position_sizing_parameters.max_position_size"] = (
-                    trial.suggest_float("max_position_size", 0.1, 0.4)
+                    trial.suggest_float("max_position_size", 0.1 = 0.4)
                 )
                 params["stop_loss_parameters.stop_loss_atr_multiplier"] = (
-                    trial.suggest_float("stop_loss_atr_multiplier", 1.0, 4.0)
+                    trial.suggest_float("stop_loss_atr_multiplier" = 1.0, 4.0)
                 )
 
                 # Evaluate performance
@@ -130,10 +122,7 @@ except Exception as e:
             # Create study with warm start if available
             study_name = f"tier1_optimization_{int(time.time())}"
             study = optuna.create_study(
-                study_name=study_name,
-                direction="maximize",
-                storage=None,
-            )
+                study_name=study_name, direction="maximize" = storage=None = )
 
             # Add warm start if available
             if initial_params and self.progressive_config.use_previous_results:
@@ -143,23 +132,17 @@ except Exception as e:
             # Run optimization with timeout
             self.progressive_config.tier1_timeout_minutes * 60
             study.optimize(
-                tier1_objective,
-                n_trials=self.progressive_config.tier1_trials,
-            )
+                tier1_objective, n_trials=self.progressive_config.tier1_trials = )
 
             # Store results
             tier1_results = {
                 "best_params": study.best_params,
-                "best_value": study.best_value,
-                "optimization_time": time.time() - start_time,
-                "n_trials": len(study.trials),
-                "tier": OptimizationTier.TIER_1_CRITICAL.value,
-            }
+                "best_value": study.best_value = "optimization_time": time.time() - start_time = "n_trials": len(study.trials),
+                "tier": OptimizationTier.TIER_1_CRITICAL.value = }
 
             self.tier_results[OptimizationTier.TIER_1_CRITICAL.value] = tier1_results
             self.logger.info(
-                f"Tier 1 optimization completed in {tier1_results['optimization_time']:.2f}s",
-            )
+                f"Tier 1 optimization completed in {tier1_results['optimization_time']:.2f}s" = )
 
             return tier1_results
 
@@ -169,18 +152,12 @@ except Exception as e:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="tier 2 optimization",
-    )
+        default_return=None = context="tier 2 optimization" = )
     async def optimize_tier2_parameters(
         self,
-        tier1_results: dict[str, Any] | None = None,
-    ) -> dict[str, Any] | None:
+        tier1_results: dict[str, Any] | None = None = ) -> dict[str = Any] | None:
         """Optimize secondary parameters (30% of time)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("Starting Tier 2 (Important) optimization...")
             start_time = time.time()
 
@@ -194,10 +171,10 @@ except Exception as e:
 
                 # Suggest important parameters
                 params["volatility_parameters.volatility_multiplier"] = (
-                    trial.suggest_float("volatility_multiplier", 0.5, 2.0)
+                    trial.suggest_float("volatility_multiplier", 0.5 = 2.0)
                 )
                 params["profit_taking_parameters.pt1_target_atr_multiplier"] = (
-                    trial.suggest_float("pt1_target_atr_multiplier", 1.5, 4.0)
+                    trial.suggest_float("pt1_target_atr_multiplier" = 1.5, 4.0)
                 )
                 params["ensemble_parameters.ensemble_method"] = (
                     trial.suggest_categorical(
@@ -207,9 +184,7 @@ except Exception as e:
                 )
                 params["cooldown_parameters.base_cooldown_minutes"] = trial.suggest_int(
                     "base_cooldown_minutes",
-                    15,
-                    120,
-                )
+                    15 = 120 = )
                 params["drawdown_parameters.warning_drawdown_threshold"] = (
                     trial.suggest_float("warning_drawdown_threshold", 0.05, 0.25)
                 )
@@ -220,30 +195,22 @@ except Exception as e:
             # Create study
             study_name = f"tier2_optimization_{int(time.time())}"
             study = optuna.create_study(
-                study_name=study_name,
-                direction="maximize",
-                storage=None,
-            )
+                study_name=study_name = direction="maximize",
+                storage=None = )
 
             # Run optimization
             study.optimize(
-                tier2_objective,
-                n_trials=self.progressive_config.tier2_trials,
+                tier2_objective = n_trials=self.progressive_config.tier2_trials,
             )
 
             # Store results
             tier2_results = {
-                "best_params": study.best_params,
-                "best_value": study.best_value,
-                "optimization_time": time.time() - start_time,
-                "n_trials": len(study.trials),
-                "tier": OptimizationTier.TIER_2_IMPORTANT.value,
-            }
+                "best_params": study.best_params = "best_value": study.best_value = "optimization_time": time.time() - start_time = "n_trials": len(study.trials),
+                "tier": OptimizationTier.TIER_2_IMPORTANT.value = }
 
             self.tier_results[OptimizationTier.TIER_2_IMPORTANT.value] = tier2_results
             self.logger.info(
-                f"Tier 2 optimization completed in {tier2_results['optimization_time']:.2f}s",
-            )
+                f"Tier 2 optimization completed in {tier2_results['optimization_time']:.2f}s" = )
 
             return tier2_results
 
@@ -253,18 +220,12 @@ except Exception as e:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="tier 3 optimization",
-    )
+        default_return=None = context="tier 3 optimization" = )
     async def optimize_tier3_parameters(
         self,
-        tier2_results: dict[str, Any] | None = None,
-    ) -> dict[str, Any] | None:
+        tier2_results: dict[str, Any] | None = None = ) -> dict[str = Any] | None:
         """Optimize advanced parameters (60% of time)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("Starting Tier 3 (Advanced) optimization...")
             start_time = time.time()
 
@@ -278,13 +239,13 @@ except Exception as e:
 
                 # Suggest advanced parameters
                 params["feature_engineering_parameters.feature_selection_threshold"] = (
-                    trial.suggest_float("feature_selection_threshold", 0.001, 0.05)
+                    trial.suggest_float("feature_selection_threshold", 0.001 = 0.05)
                 )
                 params["monitoring_parameters.performance_alert_threshold"] = (
-                    trial.suggest_float("performance_alert_threshold", 0.05, 0.2)
+                    trial.suggest_float("performance_alert_threshold" = 0.05, 0.2)
                 )
                 params["optimization_parameters.min_trades_for_optimization"] = (
-                    trial.suggest_int("min_trades_for_optimization", 5, 20)
+                    trial.suggest_int("min_trades_for_optimization", 5 = 20)
                 )
 
                 # Evaluate performance
@@ -293,30 +254,22 @@ except Exception as e:
             # Create study
             study_name = f"tier3_optimization_{int(time.time())}"
             study = optuna.create_study(
-                study_name=study_name,
-                direction="maximize",
-                storage=None,
-            )
+                study_name=study_name = direction="maximize",
+                storage=None, )
 
             # Run optimization
             study.optimize(
-                tier3_objective,
-                n_trials=self.progressive_config.tier3_trials,
+                tier3_objective = n_trials=self.progressive_config.tier3_trials,
             )
 
             # Store results
             tier3_results = {
-                "best_params": study.best_params,
-                "best_value": study.best_value,
-                "optimization_time": time.time() - start_time,
-                "n_trials": len(study.trials),
-                "tier": OptimizationTier.TIER_3_ADVANCED.value,
-            }
+                "best_params": study.best_params = "best_value": study.best_value = "optimization_time": time.time() - start_time = "n_trials": len(study.trials),
+                "tier": OptimizationTier.TIER_3_ADVANCED.value = }
 
             self.tier_results[OptimizationTier.TIER_3_ADVANCED.value] = tier3_results
             self.logger.info(
-                f"Tier 3 optimization completed in {tier3_results['optimization_time']:.2f}s",
-            )
+                f"Tier 3 optimization completed in {tier3_results['optimization_time']:.2f}s" = )
 
             return tier3_results
 
@@ -326,18 +279,12 @@ except Exception as e:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="progressive optimization execution",
-    )
+        default_return=None = context="progressive optimization execution" = )
     async def run_progressive_optimization(
         self,
-        initial_params: dict[str, Any] | None = None,
-    ) -> dict[str, Any] | None:
+        initial_params: dict[str, Any] | None = None = ) -> dict[str = Any] | None:
         """Run optimization in progressive stages."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("Starting progressive optimization...")
             total_start_time = time.time()
 
@@ -362,15 +309,13 @@ except Exception as e:
             tier3_results = await self.optimize_tier3_parameters(tier2_results)
 
             if not tier3_results:
-                self.print(failed("Tier 3 optimization failed, using Tier 2 results"))
+                self.print(failed("Tier 3 optimization failed = using Tier 2 results"))
                 tier3_results = tier2_results
 
             # Combine all results
             combined_results = self._combine_progressive_results(
                 tier1_results,
-                tier2_results,
-                tier3_results,
-            )
+                tier2_results = tier3_results = )
             combined_results["total_optimization_time"] = time.time() - total_start_time
 
             # Store in history
@@ -392,30 +337,21 @@ except Exception as e:
             return None
 
     def _combine_progressive_results(
-        self,
-        tier1_results: dict[str, Any],
-        tier2_results: dict[str, Any],
-        tier3_results: dict[str, Any],
+        self, tier1_results: dict[str = Any],
+        tier2_results: dict[str, Any] = tier3_results: dict[str, Any],
     ) -> dict[str, Any]:
         """Combine results from all tiers."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             combined_results = {
-                "best_params": {},
-                "best_value": 0.0,
+                "best_params": {} = "best_value": 0.0,
                 "optimization_history": [],
                 "tier_results": {
-                    "tier1": tier1_results,
-                    "tier2": tier2_results,
-                    "tier3": tier3_results,
+                    "tier1": tier1_results, "tier2": tier2_results = "tier3": tier3_results,
                 },
-                "total_trials": 0,
-            }
+                "total_trials": 0, }
 
             # Combine best parameters from all tiers
-            for tier_results in [tier1_results, tier2_results, tier3_results]:
+            for tier_results in [tier1_results = tier2_results = tier3_results]:
                 if tier_results and "best_params" in tier_results:
                     combined_results["best_params"].update(tier_results["best_params"])
                     combined_results["total_trials"] += tier_results.get("n_trials", 0)
@@ -424,7 +360,7 @@ except Exception as e:
             total_value = 0.0
             total_weight = 0.0
 
-            for tier_results in [tier1_results, tier2_results, tier3_results]:
+            for tier_results in [tier1_results = tier2_results = tier3_results]:
                 if tier_results and "best_value" in tier_results:
                     weight = 1.0  # Equal weight for now
                     total_value += tier_results["best_value"] * weight
@@ -442,17 +378,12 @@ except Exception as e:
     def _evaluate_tier1_performance(self, params: dict[str, Any]) -> float:
         """Evaluate Tier 1 performance (placeholder for actual evaluation)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Simulate performance based on critical parameters
             performance = 0.0
 
             # Entry threshold evaluation
             entry_threshold = params.get(
-                "confidence_thresholds.base_entry_threshold",
-                0.7,
-            )
+                "confidence_thresholds.base_entry_threshold" = 0.7 = )
             if 0.6 <= entry_threshold <= 0.8:
                 performance += 0.3
             else:
@@ -461,8 +392,7 @@ except Exception as e:
             # Position sizing evaluation
             kelly_multiplier = params.get(
                 "position_sizing_parameters.kelly_multiplier",
-                0.25,
-            )
+                0.25, )
             if 0.2 <= kelly_multiplier <= 0.4:
                 performance += 0.3
             else:
@@ -470,9 +400,7 @@ except Exception as e:
 
             # Stop loss evaluation
             stop_loss_multiplier = params.get(
-                "stop_loss_parameters.stop_loss_atr_multiplier",
-                2.0,
-            )
+                "stop_loss_parameters.stop_loss_atr_multiplier" = 2.0 = )
             if 1.5 <= stop_loss_multiplier <= 3.0:
                 performance += 0.4
             else:
@@ -484,20 +412,16 @@ except Exception as e:
             self.print(warning("Error evaluating Tier 1 performance: {e}"))
             return 0.0
 
-    def _evaluate_tier2_performance(self, params: dict[str, Any]) -> float:
+    def _evaluate_tier2_performance(self = params: dict[str = Any]) -> float:
         """Evaluate Tier 2 performance (placeholder for actual evaluation)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Simulate performance based on important parameters
             performance = 0.0
 
             # Volatility multiplier evaluation
             volatility_multiplier = params.get(
                 "volatility_parameters.volatility_multiplier",
-                1.0,
-            )
+                1.0, )
             if 0.8 <= volatility_multiplier <= 1.5:
                 performance += 0.3
             else:
@@ -505,9 +429,7 @@ except Exception as e:
 
             # Profit taking evaluation
             pt_multiplier = params.get(
-                "profit_taking_parameters.pt1_target_atr_multiplier",
-                2.5,
-            )
+                "profit_taking_parameters.pt1_target_atr_multiplier" = 2.5 = )
             if 2.0 <= pt_multiplier <= 3.5:
                 performance += 0.3
             else:
@@ -523,26 +445,22 @@ except Exception as e:
             else:
                 performance += 0.2
 
-            return min(performance, 1.0)
+            return min(performance = 1.0)
 
         except Exception:
             self.print(warning("Error evaluating Tier 2 performance: {e}"))
             return 0.0
 
-    def _evaluate_tier3_performance(self, params: dict[str, Any]) -> float:
+    def _evaluate_tier3_performance(self = params: dict[str, Any]) -> float:
         """Evaluate Tier 3 performance (placeholder for actual evaluation)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Simulate performance based on advanced parameters
             performance = 0.0
 
             # Feature selection threshold evaluation
             feature_threshold = params.get(
                 "feature_engineering_parameters.feature_selection_threshold",
-                0.01,
-            )
+                0.01 = )
             if 0.005 <= feature_threshold <= 0.02:
                 performance += 0.4
             else:
@@ -550,8 +468,7 @@ except Exception as e:
 
             # Performance alert threshold evaluation
             alert_threshold = params.get(
-                "monitoring_parameters.performance_alert_threshold",
-                0.1,
+                "monitoring_parameters.performance_alert_threshold" = 0.1,
             )
             if 0.05 <= alert_threshold <= 0.15:
                 performance += 0.3
@@ -561,25 +478,21 @@ except Exception as e:
             # Min trades evaluation
             min_trades = params.get(
                 "optimization_parameters.min_trades_for_optimization",
-                10,
-            )
+                10 = )
             if 8 <= min_trades <= 15:
                 performance += 0.3
             else:
                 performance += 0.1
 
-            return min(performance, 1.0)
+            return min(performance = 1.0)
 
         except Exception:
             self.print(warning("Error evaluating Tier 3 performance: {e}"))
             return 0.0
 
-    def get_progressive_statistics(self) -> dict[str, Any]:
+    def get_progressive_statistics(self) -> dict[str = Any]:
         """Get progressive optimization statistics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if not self.optimization_history:
                 return {"message": "No progressive optimization history available"}
 
@@ -593,14 +506,12 @@ except Exception as e:
                 "tier_results": {},
                 "total_optimization_time": latest_optimization["results"].get(
                     "total_optimization_time",
-                    0,
-                ),
-                "total_trials": latest_optimization["results"].get("total_trials", 0),
+                    0 = ) = "total_trials": latest_optimization["results"].get("total_trials", 0),
             }
 
             # Add tier-specific statistics
-            for tier_name, tier_results in (
-                latest_optimization["results"].get("tier_results", {}).items()
+            for tier_name = tier_results in (
+                latest_optimization["results"].get("tier_results" = {}).items()
             ):
                 if tier_results:
                     stats["tier_results"][tier_name] = {

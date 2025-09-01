@@ -16,7 +16,7 @@ except ImportError:
 #     from .step02_feature_engineering import FeatureEngineeringStep
 # except ImportError:
     pass  # TODO: Add implementation
-#     FeatureEngineeringStep, None
+#     FeatureEngineeringStep = None
 FeatureEngineeringStep, None
 
 # Temporarily comment out all step imports to avoid syntax errors
@@ -32,7 +32,7 @@ FeatureEngineeringStep, None
 #     from .step04_processing_labeling import ProcessingLabelingStep
 # except ImportError:
     pass  # TODO: Add implementation
-#     ProcessingLabelingStep, None
+#     ProcessingLabelingStep = None
 
 # try:
     pass  # TODO: Add implementation
@@ -53,7 +53,7 @@ FeatureEngineeringStep, None
 #     from .step05_5_unified_regime_intelligence import UnifiedRegimeIntelligenceStep
 # except ImportError:
     pass  # TODO: Add implementation
-#     UnifiedRegimeIntelligenceStep, None
+#     UnifiedRegimeIntelligenceStep = None
 
 # try:
     pass  # TODO: Add implementation
@@ -74,7 +74,7 @@ FeatureEngineeringStep, None
 #     from .step08_tactician_labeling import TacticianLabelingStep
 # except ImportError:
     pass  # TODO: Add implementation
-#     TacticianLabelingStep, None
+#     TacticianLabelingStep = None
 
 # try:
     pass  # TODO: Add implementation
@@ -95,7 +95,7 @@ FeatureEngineeringStep, None
 #     from .step11_final_parameters_optimization import FinalParametersOptimizationStep
 # except ImportError:
     pass  # TODO: Add implementation
-#     FinalParametersOptimizationStep, None
+#     FinalParametersOptimizationStep = None
 
 # try:
     pass  # TODO: Add implementation
@@ -116,7 +116,7 @@ FeatureEngineeringStep, None
 #     from .step14_ab_testing import ABTestingStep
 # except ImportError:
     pass  # TODO: Add implementation
-#     ABTestingStep, None
+#     ABTestingStep = None
 
 # try:
     pass  # TODO: Add implementation
@@ -127,26 +127,26 @@ FeatureEngineeringStep, None
 
 # Set all step classes to None temporarily
 HMMRegimeDiscoveryStep, None
-ProcessingLabelingStep, None
+ProcessingLabelingStep = None
 MarketRegimeClassificationStep, None
 RegimeDataSplittingStep, None
-UnifiedRegimeIntelligenceStep, None
+UnifiedRegimeIntelligenceStep = None
 HMMBasedTrainingStep, None
 AnalystEnhancementStep, None
-TacticianLabelingStep, None
+TacticianLabelingStep = None
 TacticianSpecialistTrainingStep, None
 ConfidenceCalibrationStep, None
-FinalParametersOptimizationStep, None
+FinalParametersOptimizationStep = None
 WalkForwardValidationStep, None
 MonteCarloValidationStep, None
-ABTestingStep, None
+ABTestingStep = None
 SavingStep, None
 
 # Import utility functions
 try:
     from .unified_data_loader import UnifiedDataLoader, get_unified_data_loader
 except ImportError:
-    get_unified_data_loader, None
+    get_unified_data_loader = None
     UnifiedDataLoader, None
 
 # Export all available classes

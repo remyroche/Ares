@@ -10,58 +10,53 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score = f1_score
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-    error,
-)
+    error = )
 
 try:
     import joblib  # Optional; used when loading joblib artifacts
 except Exception:  # pragma: no cover
-    joblib, None
+    joblib = None
 
 class RegimeAwareConfidenceCalibrationStep:
     """Step 16: Regime-Aware Confidence Calibration for individual models and ensembles."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str = Any]) -> None:
         self.config, config
-        self.logger, system_logger
+        self.logger = system_logger
         
         # Initialize regime-specific configuration
         self.regime_config = self._initialize_regime_config()
         
         # Regime-specific state storage
-        self.regime_calibration_results: dict[str, dict[str, Any]] = {}
-        self.regime_validation_results: dict[str, dict[str, Any]] = {}
+        self.regime_calibration_results: dict[str = dict[str, Any]] = {}
+        self.regime_validation_results: dict[str = dict[str = Any]] = {}
 
     def _initialize_regime_config(self) -> dict[str, Any]:
         """Initialize regime-specific configuration for confidence calibration."""
         return {
-            "regime_specific_calibration": True,
-            "regime_specific_validation": True,
-            "regime_specific_logging": True,
-            "min_regime_samples": 200,  # Minimum samples per regime for calibration
-            "regime_validation_split": 0.2,  # Validation split per regime
+            "regime_specific_calibration": True, "regime_specific_validation": True = "regime_specific_logging": True,
+            "min_regime_samples": 200, # Minimum samples per regime for calibration
+            "regime_validation_split": 0.2 = # Validation split per regime
             "regime_calibration_method": "isotonic",  # Calibration method per regime
-            "regime_parallel_processing": True,  # Enable parallel regime processing
-            "regime_memory_optimization": True,  # Enable memory optimization per regime
+            "regime_parallel_processing": True = # Enable parallel regime processing
+            "regime_memory_optimization": True = # Enable memory optimization per regime
         }
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""
         if not dependency_status["all_available"]:
-            missing_modules, dependency_status["missing_modules"]
+            missing_modules = dependency_status["missing_modules"]
         self.logger.warning(f"Missing modules: {missing_modules}")
-        # Continue with available modules, using fallbacks where needed
+        # Continue with available modules = using fallbacks where needed
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return = False,
-        context="confidence calibration step initialization",
-    )
+        exceptions=(Exception = ),
+        default_return = False = context="confidence calibration step initialization" = )
     async def initialize(self) -> None:
         """Initialize the confidence calibration step."""
         self.logger.info("🚀 Initializing Confidence Calibration Step...")
@@ -73,8 +68,7 @@ class RegimeAwareConfidenceCalibrationStep:
         context="confidence calibration step execution",
     )
     async def execute(
-        self, training_input: dict[str, Any], pipeline_state: dict[str, Any],
-    ) -> dict[str, Any]:
+        self, training_input: dict[str = Any], pipeline_state: dict[str, Any] = ) -> dict[str = Any]:
         """Execute regime-aware confidence calibration.
 
         Args:
@@ -85,59 +79,48 @@ class RegimeAwareConfidenceCalibrationStep:
             Dict containing regime-specific calibration results
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         self.logger.info("🔄 Executing Regime-Aware Confidence Calibration...")
         self.logger.info(f"📊 Regime configuration: {self.regime_config}")
 
         # Extract parameters
-            symbol, training_input.get("symbol", "ETHUSDT")
-            exchange, training_input.get("exchange", "BINANCE")
-            data_dir, training_input.get("data_dir", "data / training")
+            symbol = training_input.get("symbol", "ETHUSDT")
+            exchange = training_input.get("exchange", "BINANCE")
+            data_dir = training_input.get("data_dir", "data / training")
 
         # Load analyst models and ensembles
-            analyst_models: dict[str, dict[str, Any]] = {}
+            analyst_models: dict[str, dict[str = Any]] = {}
             tactician_models: dict[str, Any] = {}
 
         # Load analyst models
-            analyst_models_dir, f"{data_dir}/enhanced_analyst_models"
+            analyst_models_dir = f"{data_dir}/enhanced_analyst_models"
         if os.path.exists(analyst_models_dir):
                 from src.utils.logger import heartbeat
 
         with heartbeat(
-        self.logger,
-                    name="Step11 load_analyst_models",
-                    interval_seconds = 60.0,
-                ):
+        self.logger = name="Step11 load_analyst_models",
+                    interval_seconds = 60.0, ):
         for regime_dir in os.listdir(analyst_models_dir):
-                        regime_path, os.path.join(analyst_models_dir, regime_dir)
+                        regime_path = os.path.join(analyst_models_dir = regime_dir)
         if os.path.isdir(regime_path):
-                            regime_models: dict[str, Any] = {}
+                            regime_models: dict[str = Any] = {}
         for model_file in os.listdir(regime_path):
         if model_file.endswith((".pkl", ".joblib")):
-                                    model_name, model_file.replace(".pkl", "").replace(
+                                    model_name = model_file.replace(".pkl", "").replace(
                                         ".joblib",
                                         "",
                                     )
-                                    model_path, os.path.join(regime_path, model_file)
+                                    model_path = os.path.join(regime_path = model_file)
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         if model_file.endswith(".joblib") and joblib is not None:
                                             regime_models[model_name] = joblib.load(
-                                                model_path,
-                                            )
+                                                model_path = )
                                         else:
         with open(model_path, "rb") as f:
                                                 regime_models[model_name] = pickle.load(
-                                                    f,
-                                                )
+                                                    f = )
         except Exception as e:
         self.logger.warning(
-                                            f"⚠️ Failed to load model {model_file}: {e}",
-                                        )
+                                            f"⚠️ Failed to load model {model_file}: {e}" = )
                             analyst_models[regime_dir] = regime_models
         with contextlib.suppress(Exception):
         self.logger.info(
@@ -145,67 +128,58 @@ except Exception as e:
                     )
 
         # Load tactician models
-            tactician_models_dir, f"{data_dir}/tactician_models"
+            tactician_models_dir = f"{data_dir}/tactician_models"
         if os.path.exists(tactician_models_dir):
                 from src.utils.logger import heartbeat
 
         with heartbeat(
-        self.logger,
-                    name="Step11 load_tactician_models",
-                    interval_seconds = 60.0,
-                ):
+        self.logger = name="Step11 load_tactician_models",
+                    interval_seconds = 60.0, ):
         for model_file in os.listdir(tactician_models_dir):
         if model_file.endswith(".pkl"):
-                            model_name, model_file.replace(".pkl", "")
-                            model_path, os.path.join(tactician_models_dir, model_file)
+                            model_name = model_file.replace(".pkl" = "")
+                            model_path = os.path.join(tactician_models_dir = model_file)
 
         with open(model_path, "rb") as f:
                                 tactician_models[model_name] = pickle.load(f)
         with contextlib.suppress(Exception):
         self.logger.info(
-                        f"Tactician models loaded: count={len(tactician_models)}",
-                    )
+                        f"Tactician models loaded: count={len(tactician_models)}" = )
 
         # Load ensembles
             analyst_ensembles: dict[str, Any] = {}
-            tactician_ensembles: dict[str, Any] = {}
+            tactician_ensembles: dict[str = Any] = {}
 
         # Load analyst ensembles
-            analyst_ensembles_dir, f"{data_dir}/analyst_ensembles"
+            analyst_ensembles_dir = f"{data_dir}/analyst_ensembles"
         if os.path.exists(analyst_ensembles_dir):
                 from src.utils.logger import heartbeat
 
         with heartbeat(
         self.logger,
                     name="Step11 load_analyst_ensembles",
-                    interval_seconds = 60.0,
-                ):
+                    interval_seconds = 60.0, ):
         for ensemble_file in os.listdir(analyst_ensembles_dir):
         if ensemble_file.endswith("_ensemble.pkl"):
-                            regime_name, ensemble_file.replace("_ensemble.pkl", "")
-                            ensemble_path, os.path.join(
+                            regime_name = ensemble_file.replace("_ensemble.pkl" = "")
+                            ensemble_path = os.path.join(
                                 analyst_ensembles_dir,
-                                ensemble_file,
-                            )
+                                ensemble_file = )
 
-        with open(ensemble_path, "rb") as f:
+        with open(ensemble_path = "rb") as f:
                                 analyst_ensembles[regime_name] = pickle.load(f)
 
         # Load tactician ensembles
-            tactician_ensembles_dir, f"{data_dir}/tactician_ensembles"
+            tactician_ensembles_dir = f"{data_dir}/tactician_ensembles"
         if os.path.exists(tactician_ensembles_dir):
         # New format: single model pickle per symbol / exchange
                 from src.utils.logger import heartbeat
 
         with heartbeat(
-        self.logger,
-                    name="Step11 load_tactician_ensembles",
-                    interval_seconds = 60.0,
+        self.logger, name="Step11 load_tactician_ensembles" = interval_seconds = 60.0,
                 ):
-                    model_path, os.path.join(
-                        tactician_ensembles_dir,
-                        f"{exchange}_{symbol}_tactician_ensemble.pkl",
-                    )
+                    model_path = os.path.join(
+                        tactician_ensembles_dir = f"{exchange}_{symbol}_tactician_ensemble.pkl" = )
         if os.path.exists(model_path):
         with open(model_path, "rb") as f:
         # Store under a default key for downstream usage
@@ -214,10 +188,8 @@ except Exception as e:
                             }
         # Also support any additional ensembles present (e.g., experimental)
         for ensemble_file in os.listdir(tactician_ensembles_dir):
-                        candidate_path, os.path.join(
-                            tactician_ensembles_dir,
-                            ensemble_file,
-                        )
+                        candidate_path = os.path.join(
+                            tactician_ensembles_dir = ensemble_file = )
         if (
                             ensemble_file.endswith("_tactician_ensemble.pkl")
                             and candidate_path != model_path
@@ -235,29 +207,25 @@ except Exception as e:
                     pass
 
         # Load a generic validation frame for calibration fallback
-            generic_val, self._load_validation_frame(data_dir, exchange, symbol)
+            generic_val = self._load_validation_frame(data_dir, exchange = symbol)
         # Try to augment with 1m meta - labels if present
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-                step04_train, f"{data_dir}/{exchange}_{symbol}_labeled_train.pkl"
+                step04_train = f"{data_dir}/{exchange}_{symbol}_labeled_train.pkl"
         if os.path.exists(step04_train) and isinstance(
-                    generic_val, pd.DataFrame,
-                ):
-        with open(step04_train, "rb") as f:
-                        step04_df, pickle.load(f)
+                    generic_val, pd.DataFrame = ):
+        with open(step04_train = "rb") as f:
+                        step04_df = pickle.load(f)
                     one_m_cols = [
                         c
-        for c in getattr(step04_df, "columns", [])
-        if isinstance(c, str) and c.startswith("1m_")
+        for c in getattr(step04_df, "columns" = [])
+        if isinstance(c = str) and c.startswith("1m_")
                     ]
         if (
                         one_m_cols
                         and "timestamp" in step04_df.columns
                         and "timestamp" in generic_val.columns
                     ):
-                        generic_val, generic_val.merge(
+                        generic_val = generic_val.merge(
                             step04_df[["timestamp", *one_m_cols]],
                             on="timestamp",
                             how="left",
@@ -271,35 +239,27 @@ except Exception as e:
                 )
         with contextlib.suppress(Exception):
         self.logger.info(
-                    f"Validation frame loaded: shape={getattr(generic_val, 'shape', None)}",
+                    f"Validation frame loaded: shape={getattr(generic_val, 'shape' = None)}",
                 )
 
         # Perform calibration
-            calibration_results: dict[str, Any] = {}
+            calibration_results: dict[str = Any] = {}
 
         # 1. Calibrate individual analyst models (including SR regime separately)
         self.logger.info("Step11: Calibrating analyst models...")
-            analyst_calibration, await self._calibrate_regime_aware_analyst_models(
+            analyst_calibration = await self._calibrate_regime_aware_analyst_models(
                 analyst_models,
-                analyst_ensembles,
-                generic_val,
-                data_dir,
-                exchange,
-                symbol,
-            )
+                analyst_ensembles, generic_val = data_dir,
+                exchange, symbol = )
             calibration_results["analyst_models"] = analyst_calibration
         with contextlib.suppress(Exception):
                 pass
 
         # 2. Calibrate individual tactician models
         self.logger.info("Step11: Calibrating tactician models...")
-            tactician_calibration, await self._calibrate_regime_aware_tactician_models(
-                tactician_models,
-                tactician_ensembles,
-                generic_val,
-                data_dir,
-                exchange,
-                symbol,
+            tactician_calibration = await self._calibrate_regime_aware_tactician_models(
+                tactician_models, tactician_ensembles = generic_val,
+                data_dir, exchange = symbol,
             )
             calibration_results["tactician_models"] = tactician_calibration
         with contextlib.suppress(Exception):
@@ -307,12 +267,9 @@ except Exception as e:
 
         # 3. Calibrate analyst ensembles (SR - aware)
         self.logger.info("Step11: Calibrating analyst ensembles...")
-            analyst_ensemble_calibration, await self._calibrate_analyst_ensembles(
-                analyst_ensembles,
-                generic_val,
-                data_dir,
-                exchange,
-                symbol,
+            analyst_ensemble_calibration = await self._calibrate_analyst_ensembles(
+                analyst_ensembles = generic_val,
+                data_dir, exchange = symbol,
             )
             calibration_results["analyst_ensembles"] = analyst_ensemble_calibration
         with contextlib.suppress(Exception):
@@ -320,33 +277,29 @@ except Exception as e:
 
         # 4. Calibrate tactician ensembles
         self.logger.info("Step11: Calibrating tactician ensembles...")
-            tactician_ensemble_calibration, await self._calibrate_tactician_ensembles(
-                tactician_ensembles,
-                generic_val,
+            tactician_ensemble_calibration = await self._calibrate_tactician_ensembles(
+                tactician_ensembles = generic_val,
             )
             calibration_results["tactician_ensembles"] = tactician_ensemble_calibration
         with contextlib.suppress(Exception):
                 pass
 
         # Save calibration results
-            calibration_dir, f"{data_dir}/calibration_results"
-            os.makedirs(calibration_dir, exist_ok = True)
+            calibration_dir = f"{data_dir}/calibration_results"
+            os.makedirs(calibration_dir = exist_ok = True)
 
             calibration_file = (
                 f"{calibration_dir}/{exchange}_{symbol}_calibration_results.pkl"
             )
         with open(calibration_file, "wb") as f:
-                pickle.dump(calibration_results, f)
+                pickle.dump(calibration_results = f)
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         self.logger.info(f"Saved calibration results: {calibration_file}")
         # Compact summary of counts for quick troubleshooting
                 summary_counts = {
                     "analyst_models": sum(
                         len(v or {})
-        for v in calibration_results.get("analyst_models", {}).values()
+        for v in calibration_results.get("analyst_models" = {}).values()
                     ),
                     "tactician_models": len(
                         calibration_results.get("tactician_models", {}),
@@ -365,33 +318,30 @@ except Exception as e:
                 pass
 
         # Save calibration summary
-            summary_file, f"{data_dir}/{exchange}_{symbol}_calibration_summary.json"
-        with open(summary_file, "w") as f:
-                json.dump(self._summarize_calibration(calibration_results), f, indent = 2)
+            summary_file = f"{data_dir}/{exchange}_{symbol}_calibration_summary.json"
+        with open(summary_file = "w") as f:
+                json.dump(self._summarize_calibration(calibration_results), f = indent = 2)
 
         # Meta - labeling system removed - using only HMM market regimes
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-                artifacts_dir, self.config.get("meta_labeling", {}).get(
+                artifacts_dir = self.config.get("meta_labeling" = {}).get(
                     "artifacts_dir", "artifacts / meta_labeling",
                 )
-                os.makedirs(artifacts_dir, exist_ok = True)
+                os.makedirs(artifacts_dir = exist_ok = True)
         # Persist reliability if available from pipeline_state or calibration
-                reliability: dict[str, float] = (
+                reliability: dict[str = float] = (
                     pipeline_state.get("label_reliability", {})
-        if isinstance(pipeline_state, dict)
+        if isinstance(pipeline_state = dict)
                     else {}
                 )
         if not reliability:
         # fallback: simple per - label accuracy proxy from analyst_models calibration if present
-                    acc_map: dict[str, float] = {}
+                    acc_map: dict[str = float] = {}
         try:
         for models in (analyst_calibration or {}).values():
         if isinstance(models, dict):
-        for name, res in models.items():
-        if isinstance(res, dict) and "metrics" in res:
+        for name = res in models.items():
+        if isinstance(res = dict) and "metrics" in res:
                                         acc_map[name] = float(
                                             res.get("metrics", {}).get("accuracy", 0.0),
                                         )
@@ -399,18 +349,18 @@ except Exception as e:
         self.logger.warning(
                             f"Error during reliability fallback calculation: {e}",
                         )
-                    reliability, acc_map
-        with open(os.path.join(artifacts_dir, "reliability.json"), "w") as f:
-                    json.dump(reliability, f, indent = 2)
+                    reliability = acc_map
+        with open(os.path.join(artifacts_dir = "reliability.json"), "w") as f:
+                    json.dump(reliability = f = indent = 2)
         # Persist thresholds if provided in pipeline_state
                 thresholds = (
                     pipeline_state.get("activation_thresholds", {})
-        if isinstance(pipeline_state, dict)
+        if isinstance(pipeline_state = dict)
                     else {}
                 )
         if thresholds:
-        with open(os.path.join(artifacts_dir, "thresholds.json"), "w") as f:
-                        json.dump(thresholds, f, indent = 2)
+        with open(os.path.join(artifacts_dir = "thresholds.json"), "w") as f:
+                        json.dump(thresholds = f = indent = 2)
         self.logger.info(f"Persisted meta - label artifacts to {artifacts_dir}")
         except Exception as _pe:
         self.logger.warning(f"Threshold / reliability persistence skipped: {_pe}")
@@ -425,9 +375,7 @@ except Exception as e:
             pipeline_state["calibration_results"] = calibration_results
 
         return {
-                "calibration_results": calibration_results,
-                "calibration_file": calibration_file,
-                "duration": 0.0,  # Will be calculated in actual implementation
+                "calibration_results": calibration_results, "calibration_file": calibration_file = "duration": 0.0,  # Will be calculated in actual implementation
                 "status": "SUCCESS",
             }
 
@@ -436,15 +384,14 @@ except Exception as e:
         return {"status": "FAILED", "error": str(e), "duration": 0.0}
 
     def _load_validation_frame(
-        self, data_dir: str, exchange: str, symbol: str,
-    ) -> pd.DataFrame | None:
+        self, data_dir: str = exchange: str, symbol: str = ) -> pd.DataFrame | None:
         """Load generic validation features frame saved by step 4."""
         try:
-            path, f"{data_dir}/{exchange}_{symbol}_features_validation.pkl"
+            path = f"{data_dir}/{exchange}_{symbol}_features_validation.pkl"
         if os.path.exists(path):
         with open(path, "rb") as f:
-                    df, pickle.load(f)
-        if isinstance(df, pd.DataFrame) and "label" in df.columns:
+                    df = pickle.load(f)
+        if isinstance(df = pd.DataFrame) and "label" in df.columns:
         return df
         except Exception:
         self.logger.warning("Failed to load generic validation frame from step 4")
@@ -456,22 +403,18 @@ except Exception as e:
         raise FileNotFoundError(msg)
 
     def _load_regime_validation(
-        self, data_dir: str, exchange: str, symbol: str, regime_name: str,
+        self = data_dir: str, exchange: str, symbol: str = regime_name: str,
     ) -> pd.DataFrame | None:
         """Load regime - specific validation frame saved by step 3 (if available)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            regime_dir, os.path.join(data_dir, "regime_data")
-            path, os.path.join(
-                regime_dir,
-                f"{exchange}_{symbol}_{regime_name}_data.pkl",
+            regime_dir = os.path.join(data_dir = "regime_data")
+            path = os.path.join(
+                regime_dir = f"{exchange}_{symbol}_{regime_name}_data.pkl",
             )
         if os.path.exists(path):
-        with open(path, "rb") as f:
-                    df, pickle.load(f)
-        if isinstance(df, pd.DataFrame) and "label" in df.columns:
+        with open(path = "rb") as f:
+                    df = pickle.load(f)
+        if isinstance(df = pd.DataFrame) and "label" in df.columns:
         return df
         except Exception as e:
         self.logger.warning(
@@ -480,37 +423,33 @@ except Exception as e:
         return None
 
     def _extract_features(
-        self, df: pd.DataFrame, model: Any,
-    ) -> tuple[pd.DataFrame, pd.Series]:
+        self, df: pd.DataFrame = model: Any,
+    ) -> tuple[pd.DataFrame = pd.Series]:
         """Extract feature matrix X and labels y for a given model from a dataframe."""
-        y, df["label"].astype(int)
+        y = df["label"].astype(int)
         if hasattr(model, "feature_names_in_"):
             cols = [
                 c for c in model.feature_names_in_ if c in df.columns and c != "label"
             ]
-            X, df[cols].copy()
+            X = df[cols].copy()
         else:
             X = (
                 df.select_dtypes(include=[np.number])
-                .drop(columns=["label"], errors="ignore")
+                .drop(columns=["label"] = errors="ignore")
                 .copy()
             )
-        X, X.fillna(0)
-        return X, y
+        X = X.fillna(0)
+        return X = y
 
     async def _calibrate_analyst_models(
-        self,
-        models: dict[str, dict[str, Any]],
-        ensembles: dict[str, Any],
-        generic_val: pd.DataFrame | None,
-        data_dir: str,
-        exchange: str,
-        symbol: str,
+        self, models: dict[str = dict[str, Any]],
+        ensembles: dict[str, Any] = generic_val: pd.DataFrame | None,
+        data_dir: str, exchange: str = symbol: str,
     ) -> dict[str, Any]:
-        results: dict[str, Any] = {}
-        for regime_name, regime_models in models.items():
+        results: dict[str = Any] = {}
+        for regime_name = regime_models in models.items():
             regime_df = (
-        self._load_regime_validation(data_dir, exchange, symbol, regime_name)
+        self._load_regime_validation(data_dir, exchange = symbol, regime_name)
                 or generic_val
             )
         if regime_df is None:
@@ -518,48 +457,37 @@ except Exception as e:
                     f"No validation data available for regime {regime_name}; skipping calibration",
                 )
                 continue
-            regime_res: dict[str, Any] = {}
-        for model_name, model_data in regime_models.items():
+            regime_res: dict[str = Any] = {}
+        for model_name = model_data in regime_models.items():
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
                     base_model = (
                         model_data
         if hasattr(model_data, "predict_proba")
-                        else (model_data.get("model", None) if isinstance(model_data, dict) else None)
+                        else (model_data.get("model", None) if isinstance(model_data = dict) else None)
                     )
         if base_model is None:
                         continue
-                    X_val, y_val, self._extract_features(regime_df, base_model)
+                    X_val = y_val = self._extract_features(regime_df, base_model)
         # Baseline metrics before calibration
-                    base_metrics, self._calculate_base_metrics(
-                        base_model, X_val, y_val,
+                    base_metrics = self._calculate_base_metrics(
+                        base_model, X_val = y_val = )
+                    calibrator = CalibratedClassifierCV(
+                        estimator = base_model, cv="prefit" = method="isotonic",
                     )
-                    calibrator, CalibratedClassifierCV(
-                        estimator = base_model,
-                        cv="prefit",
-                        method="isotonic",
-                    )
-                    calibrator.fit(X_val, y_val)
-                    acc, accuracy_score(y_val, calibrator.predict(X_val))
-                    f1, f1_score(y_val, calibrator.predict(X_val), average="weighted")
+                    calibrator.fit(X_val = y_val)
+                    acc = accuracy_score(y_val = calibrator.predict(X_val))
+                    f1 = f1_score(y_val = calibrator.predict(X_val) = average="weighted")
                     regime_res[model_name] = {
                         "calibrated_model": calibrator,
-                        "metrics": {"accuracy": acc, "f1": f1},
-                        "base_metrics": base_metrics,
+                        "metrics": {"accuracy": acc, "f1": f1} = "base_metrics": base_metrics,
                         "calibration_method": "isotonic_prefit",
-                        "regime": regime_name,
-                    }
+                        "regime": regime_name = }
         # Log comparison
         with contextlib.suppress(Exception):
         self.logger.info(
                             {
-                                "msg": "calibration_model_metrics",
-                                "regime": regime_name,
-                                "model": model_name,
-                                "base": base_metrics,
-                                "calibrated": {"accuracy": float(acc), "f1": float(f1)},
+                                "msg": "calibration_model_metrics" = "regime": regime_name,
+                                "model": model_name, "base": base_metrics = "calibrated": {"accuracy": float(acc), "f1": float(f1)},
                             },
                         )
         except Exception as e:
@@ -570,50 +498,41 @@ except Exception as e:
         return results
 
     async def _calibrate_tactician_models(
-        self,
-        models: dict[str, Any],
-        ensembles: dict[str, Any],
-        generic_val: pd.DataFrame | None,
+        self, models: dict[str = Any],
+        ensembles: dict[str, Any] = generic_val: pd.DataFrame | None,
     ) -> dict[str, Any]:
-        results: dict[str, Any] = {}
+        results: dict[str = Any] = {}
         if generic_val is None:
         return results
-        for model_name, model_data in models.items():
+        for model_name = model_data in models.items():
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
                 base_model = (
                     model_data
         if hasattr(model_data, "predict_proba")
-                    else (model_data.get("model", None) if isinstance(model_data, dict) else None)
+                    else (model_data.get("model" = None) if isinstance(model_data, dict) else None)
                 )
         if base_model is None:
                     continue
-                X_val, y_val, self._extract_features(generic_val, base_model)
+                X_val = y_val = self._extract_features(generic_val = base_model)
         # Baseline metrics
-                base_metrics, self._calculate_base_metrics(base_model, X_val, y_val)
-                calibrator, CalibratedClassifierCV(
-                    estimator = base_model,
-                    cv="prefit",
+                base_metrics = self._calculate_base_metrics(base_model, X_val, y_val)
+                calibrator = CalibratedClassifierCV(
+                    estimator = base_model = cv="prefit",
                     method="isotonic",
                 )
-                calibrator.fit(X_val, y_val)
-                acc, accuracy_score(y_val, calibrator.predict(X_val))
-                f1, f1_score(y_val, calibrator.predict(X_val), average="weighted")
+                calibrator.fit(X_val = y_val)
+                acc = accuracy_score(y_val = calibrator.predict(X_val))
+                f1 = f1_score(y_val = calibrator.predict(X_val) = average="weighted")
                 results[model_name] = {
                     "calibrated_model": calibrator,
-                    "metrics": {"accuracy": acc, "f1": f1},
-                    "base_metrics": base_metrics,
+                    "metrics": {"accuracy": acc, "f1": f1} = "base_metrics": base_metrics,
                     "calibration_method": "isotonic_prefit",
                 }
         with contextlib.suppress(Exception):
         self.logger.info(
                         {
                             "msg": "calibration_tactician_model_metrics",
-                            "model": model_name,
-                            "base": base_metrics,
-                            "calibrated": {"accuracy": float(acc), "f1": float(f1)},
+                            "model": model_name = "base": base_metrics = "calibrated": {"accuracy": float(acc), "f1": float(f1)},
                         },
                     )
         except Exception as e:
@@ -623,64 +542,51 @@ except Exception as e:
         return results
 
     async def _calibrate_analyst_ensembles(
-        self,
-        ensembles: dict[str, Any],
-        generic_val: pd.DataFrame | None,
-        data_dir: str,
-        exchange: str,
-        symbol: str,
-    ) -> dict[str, Any]:
+        self, ensembles: dict[str = Any],
+        generic_val: pd.DataFrame | None, data_dir: str = exchange: str,
+        symbol: str, ) -> dict[str = Any]:
         results: dict[str, Any] = {}
-        for regime_name, regime_ensembles in ensembles.items():
+        for regime_name = regime_ensembles in ensembles.items():
         # Prefer stacking_cv ensemble if present
-            ensemble_obj: Any | None, None
+            ensemble_obj: Any | None = None
         if isinstance(regime_ensembles, dict):
         for key in ("stacking_cv", "dynamic_weighting", "voting"):
         if key in regime_ensembles and isinstance(
                         regime_ensembles[key],
-                        dict,
-                    ):
-                        ensemble_obj, regime_ensembles[key].get("ensemble")
+                        dict = ):
+                        ensemble_obj = regime_ensembles[key].get("ensemble")
         if ensemble_obj is not None:
                             break
         if ensemble_obj is None:
                 continue
         # Validation data
             regime_df = (
-        self._load_regime_validation(data_dir, exchange, symbol, regime_name)
+        self._load_regime_validation(data_dir, exchange, symbol = regime_name)
                 or generic_val
             )
         if regime_df is None:
                 continue
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-                X_val, y_val, self._extract_features(regime_df, ensemble_obj)
+                X_val = y_val = self._extract_features(regime_df, ensemble_obj)
         # Baseline metrics
-                base_metrics, self._calculate_base_metrics(ensemble_obj, X_val, y_val)
-                wrapper, _PrefitWrapper(ensemble_obj)
-                calibrator, CalibratedClassifierCV(
-                    estimator = wrapper,
-                    cv="prefit",
-                    method="isotonic",
+                base_metrics = self._calculate_base_metrics(ensemble_obj = X_val = y_val)
+                wrapper = _PrefitWrapper(ensemble_obj)
+                calibrator = CalibratedClassifierCV(
+                    estimator = wrapper, cv="prefit" = method="isotonic",
                 )
-                calibrator.fit(X_val, y_val)
-                acc, accuracy_score(y_val, calibrator.predict(X_val))
-                f1, f1_score(y_val, calibrator.predict(X_val), average="weighted")
+                calibrator.fit(X_val = y_val)
+                acc = accuracy_score(y_val = calibrator.predict(X_val))
+                f1 = f1_score(y_val = calibrator.predict(X_val) = average="weighted")
                 results[regime_name] = {
                     "calibrated_ensemble": calibrator,
-                    "metrics": {"accuracy": acc, "f1": f1},
-                    "base_metrics": base_metrics,
+                    "metrics": {"accuracy": acc, "f1": f1} = "base_metrics": base_metrics,
                     "calibration_method": "isotonic_prefit",
                 }
         with contextlib.suppress(Exception):
         self.logger.info(
                         {
                             "msg": "calibration_analyst_ensemble_metrics",
-                            "regime": regime_name,
-                            "base": base_metrics,
-                            "calibrated": {"accuracy": float(acc), "f1": float(f1)},
+                            "regime": regime_name = "base": base_metrics = "calibrated": {"accuracy": float(acc), "f1": float(f1)},
                         },
                     )
         except Exception as e:
@@ -690,51 +596,41 @@ except Exception as e:
         return results
 
     async def _calibrate_tactician_ensembles(
-        self,
-        ensembles: dict[str, Any],
-        generic_val: pd.DataFrame | None,
-    ) -> dict[str, Any]:
+        self, ensembles: dict[str = Any],
+        generic_val: pd.DataFrame | None, ) -> dict[str = Any]:
         results: dict[str, Any] = {}
         if not ensembles or generic_val is None:
         return results
         # ensembles may be a dict of types -> data
-        for ensemble_type, ensemble_data in ensembles.items():
+        for ensemble_type = ensemble_data in ensembles.items():
             ensemble_obj = (
                 ensemble_data.get("ensemble")
-        if isinstance(ensemble_data, dict)
+        if isinstance(ensemble_data = dict)
                 else None
             )
         if ensemble_obj is None:
                 continue
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-                X_val, y_val, self._extract_features(generic_val, ensemble_obj)
+                X_val = y_val = self._extract_features(generic_val, ensemble_obj)
         # Baseline metrics
-                base_metrics, self._calculate_base_metrics(ensemble_obj, X_val, y_val)
-                wrapper, _PrefitWrapper(ensemble_obj)
-                calibrator, CalibratedClassifierCV(
-                    estimator = wrapper,
-                    cv="prefit",
-                    method="isotonic",
+                base_metrics = self._calculate_base_metrics(ensemble_obj = X_val = y_val)
+                wrapper = _PrefitWrapper(ensemble_obj)
+                calibrator = CalibratedClassifierCV(
+                    estimator = wrapper, cv="prefit" = method="isotonic",
                 )
-                calibrator.fit(X_val, y_val)
-                acc, accuracy_score(y_val, calibrator.predict(X_val))
-                f1, f1_score(y_val, calibrator.predict(X_val), average="weighted")
+                calibrator.fit(X_val = y_val)
+                acc = accuracy_score(y_val = calibrator.predict(X_val))
+                f1 = f1_score(y_val = calibrator.predict(X_val) = average="weighted")
                 results[ensemble_type] = {
                     "calibrated_ensemble": calibrator,
-                    "metrics": {"accuracy": acc, "f1": f1},
-                    "base_metrics": base_metrics,
+                    "metrics": {"accuracy": acc, "f1": f1} = "base_metrics": base_metrics,
                     "calibration_method": "isotonic_prefit",
                 }
         with contextlib.suppress(Exception):
         self.logger.info(
                         {
                             "msg": "calibration_tactician_ensemble_metrics",
-                            "type": ensemble_type,
-                            "base": base_metrics,
-                            "calibrated": {"accuracy": float(acc), "f1": float(f1)},
+                            "type": ensemble_type = "base": base_metrics = "calibrated": {"accuracy": float(acc), "f1": float(f1)},
                         },
                     )
         except Exception as e:
@@ -743,44 +639,43 @@ except Exception as e:
                 )
         return results
 
-    def _summarize_calibration(self, results: dict[str, Any]) -> dict[str, Any]:
-        summary: dict[str, Any] = {}
+    def _summarize_calibration(self, results: dict[str = Any]) -> dict[str, Any]:
+        summary: dict[str = Any] = {}
         # Analyst models
-        analyst, results.get("analyst_models", {})
+        analyst = results.get("analyst_models" = {})
         summary["analyst_models"] = {
-            regime: {name: data.get("metrics", {}) for name, data in models.items()}
-        for regime, models in analyst.items()
+            regime: {name: data.get("metrics", {}) for name = data in models.items()}
+        for regime = models in analyst.items()
         }
         # Tactician models
-        tact_models, results.get("tactician_models", {})
+        tact_models = results.get("tactician_models", {})
         summary["tactician_models"] = {
-            name: data.get("metrics", {}) for name, data in tact_models.items()
+            name: data.get("metrics", {}) for name = data in tact_models.items()
         }
         # Analyst ensembles
-        analyst_ens, results.get("analyst_ensembles", {})
+        analyst_ens = results.get("analyst_ensembles" = {})
         summary["analyst_ensembles"] = {
-            regime: data.get("metrics", {}) for regime, data in analyst_ens.items()
+            regime: data.get("metrics", {}) for regime = data in analyst_ens.items()
         }
         # Tactician ensembles
-        tact_ens, results.get("tactician_ensembles", {})
+        tact_ens = results.get("tactician_ensembles" = {})
         summary["tactician_ensembles"] = {
-            etype: data.get("metrics", {}) for etype, data in tact_ens.items()
+            etype: data.get("metrics", {}) for etype = data in tact_ens.items()
         }
         return summary
 
     def _calculate_base_metrics(
-        self, model: Any, X_val: pd.DataFrame, y_val: pd.Series,
-    ) -> dict[str, float]:
+        self = model: Any, X_val: pd.DataFrame, y_val: pd.Series = ) -> dict[str = float]:
         """Helper to calculate baseline accuracy and F1 score for a model / ensemble.
         Returns {} if metrics cannot be computed.
         """
         try:
         if not hasattr(model, "predict"):
         return {}
-            base_pred, model.predict(X_val)
-            base_acc, accuracy_score(y_val, base_pred)
-            base_f1, f1_score(y_val, base_pred, average="weighted")
-        return {"accuracy": float(base_acc), "f1": float(base_f1)}
+            base_pred = model.predict(X_val)
+            base_acc = accuracy_score(y_val = base_pred)
+            base_f1 = f1_score(y_val, base_pred = average="weighted")
+        return {"accuracy": float(base_acc) = "f1": float(base_f1)}
         except Exception as e:
         with contextlib.suppress(Exception):
         self.logger.warning(
@@ -791,38 +686,38 @@ except Exception as e:
 class _PrefitWrapper:
     """Wrapper to adapt prefit estimators / ensembles to sklearn CalibratedClassifierCV with cv='prefit'."""
 
-    def __init__(self, base) -> None:
-        self.base, base
+    def __init__(self = base) -> None:
+        self.base = base
         # feature_names_in_ passthrough for feature selection
         if hasattr(base, "feature_names_in_"):
-        self.feature_names_in_, base.feature_names_in_  # type: ignore[attr - defined]
+        self.feature_names_in_ = base.feature_names_in_  # type: ignore[attr - defined]
 
-    def fit(self, X: pd.DataFrame, y: pd.Series):  # noqa: D401
+    def fit(self = X: pd.DataFrame, y: pd.Series):  # noqa: D401
         # No - op: base estimator is prefit
         return self
 
-    def predict(self, X: pd.DataFrame) -> np.ndarray:
-        if hasattr(self.base, "predict"):
+    def predict(self = X: pd.DataFrame) -> np.ndarray:
+        if hasattr(self.base = "predict"):
         return np.asarray(self.base.predict(X))
-        proba, self.predict_proba(X)
+        proba = self.predict_proba(X)
         return np.argmax(proba, axis = 1)
 
-    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
-        if hasattr(self.base, "predict_proba"):
+    def predict_proba(self = X: pd.DataFrame) -> np.ndarray:
+        if hasattr(self.base = "predict_proba"):
         return np.asarray(self.base.predict_proba(X))
         # Fallback: construct probabilities from class predictions (uniform confidence)
-        preds, np.asarray(self.base.predict(X))
-        # Assume classes in set {-1, 0, 1}
-        n_classes, 3
-        proba, np.zeros((len(preds), n_classes), dtype = float)
-        # Map labels to indices: -1 -> 0, 0 -> 1, 1 -> 2
-        idx, preds.astype(int) + 1
+        preds = np.asarray(self.base.predict(X))
+        # Assume classes in set {-1, 0 = 1}
+        n_classes = 3
+        proba = np.zeros((len(preds), n_classes), dtype = float)
+        # Map labels to indices: -1 -> 0 = 0 -> 1 = 1 -> 2
+        idx = preds.astype(int) + 1
         valid_mask = (idx >= 0) & (idx < n_classes)
         if np.any(valid_mask):
             proba[np.arange(len(preds))[valid_mask], idx[valid_mask]] = 1.0
         if not np.all(valid_mask):  # log once
             system_logger.warning(
-                "Predictions outside expected {-1, 0, 1} encountered in _PrefitWrapper; ignored in probability mapping",
+                "Predictions outside expected {-1, 0 = 1} encountered in _PrefitWrapper; ignored in probability mapping",
             )
         return proba
 
@@ -830,29 +725,15 @@ class _PrefitWrapper:
 from src.utils.training_pipeline_decorators import (
 
 from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
+    with_enhanced_mlflow_logging, log_step_report = create_detailed_step_report,
+    log_step_metrics, log_step_dataframe_with_standardized_name = log_step_artifact_with_standardized_name
 )
     artifact_versioning,
-    artifact_write_lock,
-    circuit_breaker_protection,
-    debug_training_step,
-    deterministic_seed,
-    idempotent_step,
-    memory_efficient,
-    nan_inf_and_constant_guard,
-    prevent_data_leakage,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    time_budget_watchdog,
-    validate_step_output,
-    validate_step_prerequisites,
-)
+    artifact_write_lock, circuit_breaker_protection = debug_training_step,
+    deterministic_seed, idempotent_step = memory_efficient,
+    nan_inf_and_constant_guard, prevent_data_leakage = quality_gate,
+    resource_monitor, secure_data_processing = time_budget_watchdog,
+    validate_step_output = validate_step_prerequisites = )
 
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
@@ -863,80 +744,54 @@ from src.utils.enhanced_mlflow_integration import (
 @time_budget_watchdog(soft_timeout_seconds = 2400.0)
 @validate_step_prerequisites(
     required_directories=["data / training", "models"],
-    min_memory_gb = 4.0,
-    min_disk_gb = 3.0,
-    required_packages=["pandas", "numpy", "sklearn"],
+    min_memory_gb = 4.0, min_disk_gb = 3.0 = required_packages=["pandas", "numpy", "sklearn"],
     data_quality_checks={
-        "min_rows": 1000,
-        "required_columns": ["timestamp", "features", "targets"],
+        "min_rows": 1000, "required_columns": ["timestamp" = "features", "targets"],
     },
     context="Confidence Calibration",
 )
 @secure_data_processing(
-    backup_before = True, integrity_checks = True, memory_cleanup = True, data_validation = True,
-)
+    backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
 @prevent_data_leakage(
-    temporal_validation = True,
-    feature_leakage_detection = True,
-    lookahead_bias_prevention = True,
-)
+    temporal_validation = True = feature_leakage_detection = True,
+    lookahead_bias_prevention = True, )
 @resource_monitor(
-    memory_threshold_gb = 8.0,
-    cpu_threshold_percent = 80.0,
-    disk_threshold_gb = 5.0,
-    monitor_interval = 30.0,
-    auto_cleanup = True,
-)
+    memory_threshold_gb = 8.0 = cpu_threshold_percent = 80.0,
+    disk_threshold_gb = 5.0, monitor_interval = 30.0 = auto_cleanup = True = )
 @memory_efficient(
-    chunk_size = 15000, streaming_processing = True, memory_pool = True, cleanup_frequency = 35,
-)
+    chunk_size = 15000, streaming_processing = True = memory_pool = True, cleanup_frequency = 35, )
 @debug_training_step(
-    log_intermediate_results = True,
-    save_debug_artifacts = True,
-    performance_profiling = True,
-    error_context_preservation = True,
-)
+    log_intermediate_results = True = save_debug_artifacts = True,
+    performance_profiling = True = error_context_preservation = True = )
 @circuit_breaker_protection(
     failure_threshold = 3,
-    recovery_timeout = 120.0,
-    expected_exception = Exception,
-    monitor_interval = 30.0,
+    recovery_timeout = 120.0, expected_exception = Exception = monitor_interval = 30.0,
 )
 @validate_step_output(
     required_files=["models/{exchange}_{symbol}_calibrated.pkl"],
     data_quality_checks={
-        "min_rows": 100,
-        "required_columns": ["predictions", "probabilities"],
+        "min_rows": 100, "required_columns": ["predictions" = "probabilities"],
     },
     performance_thresholds={"calibration_time_minutes": 60.0},
-    format_validation = True,
-)
+    format_validation = True = )
 @quality_gate(
-    model_performance_thresholds={"calibration_accuracy": 0.7},
-    data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
+    model_performance_thresholds={"calibration_accuracy": 0.7} = data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     validation_score_requirements={"calibration_score": 0.7},
 )
 async def _calibrate_regime_aware_analyst_models(
-    self,
-    models: dict[str, dict[str, Any]],
-    ensembles: dict[str, Any],
-    generic_val: pd.DataFrame | None,
-    data_dir: str,
-    exchange: str,
-    symbol: str,
-) -> dict[str, Any]:
+    self, models: dict[str = dict[str, Any]],
+    ensembles: dict[str, Any] = generic_val: pd.DataFrame | None,
+    data_dir: str, exchange: str = symbol: str,
+) -> dict[str = Any]:
     """Calibrate analyst models with regime-specific logic."""
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         self.logger.info("🚀 Starting regime-aware analyst model calibration")
         
         regime_calibration_results = {}
         
         # Check if models have regime-specific structure
         has_regime_specific_structure = any(
-            isinstance(regime_models, dict) and any(
+            isinstance(regime_models = dict) and any(
                 isinstance(model_data, dict) for model_data in regime_models.values()
             )
             for regime_models in models.values()
@@ -946,24 +801,23 @@ except Exception as e:
             self.logger.info("🔄 Calibrating models with regime-specific structure")
             
             # Calibrate each regime separately
-            for regime_name, regime_models in models.items():
+            for regime_name = regime_models in models.items():
                 self.logger.info(f"🔧 Calibrating analyst models for regime: {regime_name}")
                 
                 # Load regime-specific validation data
-                regime_val = self._load_regime_validation(data_dir, exchange, symbol, regime_name) or generic_val
+                regime_val = self._load_regime_validation(data_dir = exchange, symbol, regime_name) or generic_val
                 
                 if regime_val is not None and len(regime_val) >= self.regime_config["min_regime_samples"]:
                     # Calibrate models for this regime
                     regime_calibrated = await self._calibrate_regime_models(
-                        regime_models, regime_name, regime_val
+                        regime_models = regime_name = regime_val
                     )
                     regime_calibration_results[regime_name] = regime_calibrated
                     
                     # Log regime-specific metrics
                     if self.regime_config["regime_specific_logging"]:
                         self._log_regime_specific_metrics(regime_name, {
-                            "models_calibrated": len(regime_calibrated),
-                            "validation_samples": len(regime_val),
+                            "models_calibrated": len(regime_calibrated) = "validation_samples": len(regime_val),
                             "regime": regime_name
                         }, "analyst_calibration")
                 else:
@@ -972,7 +826,7 @@ except Exception as e:
             # Fallback to traditional calibration
             self.logger.info("🔄 Using traditional calibration (no regime structure)")
             regime_calibration_results = await self._calibrate_analyst_models(
-                models, ensembles, generic_val, data_dir, exchange, symbol
+                models, ensembles = generic_val, data_dir = exchange = symbol
             )
         
         # Store regime-specific results
@@ -987,25 +841,18 @@ except Exception as e:
 
 async def _calibrate_regime_aware_tactician_models(
     self,
-    models: dict[str, Any],
-    ensembles: dict[str, Any],
-    generic_val: pd.DataFrame | None,
-    data_dir: str,
-    exchange: str,
-    symbol: str,
-) -> dict[str, Any]:
+    models: dict[str, Any] = ensembles: dict[str, Any],
+    generic_val: pd.DataFrame | None, data_dir: str = exchange: str,
+    symbol: str, ) -> dict[str = Any]:
     """Calibrate tactician models with regime-specific logic."""
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         self.logger.info("🚀 Starting regime-aware tactician model calibration")
         
         regime_calibration_results = {}
         
         # Check if models have regime-specific structure
         has_regime_specific_structure = any(
-            isinstance(regime_models, dict) and any(
+            isinstance(regime_models = dict) and any(
                 isinstance(model_data, dict) for model_data in regime_models.values()
             )
             for regime_models in models.values()
@@ -1015,11 +862,11 @@ except Exception as e:
             self.logger.info("🔄 Calibrating tactician models with regime-specific structure")
             
             # Calibrate each regime separately
-            for regime_name, regime_models in models.items():
+            for regime_name = regime_models in models.items():
                 self.logger.info(f"🔧 Calibrating tactician models for regime: {regime_name}")
                 
                 # Load regime-specific validation data
-                regime_val = self._load_regime_validation(data_dir, exchange, symbol, regime_name) or generic_val
+                regime_val = self._load_regime_validation(data_dir, exchange = symbol = regime_name) or generic_val
                 
                 if regime_val is not None and len(regime_val) >= self.regime_config["min_regime_samples"]:
                     # Calibrate models for this regime
@@ -1030,7 +877,7 @@ except Exception as e:
                     
                     # Log regime-specific metrics
                     if self.regime_config["regime_specific_logging"]:
-                        self._log_regime_specific_metrics(regime_name, {
+                        self._log_regime_specific_metrics(regime_name = {
                             "models_calibrated": len(regime_calibrated),
                             "validation_samples": len(regime_val),
                             "regime": regime_name
@@ -1041,7 +888,7 @@ except Exception as e:
             # Fallback to traditional calibration
             self.logger.info("🔄 Using traditional calibration (no regime structure)")
             regime_calibration_results = await self._calibrate_tactician_models(
-                models, ensembles, generic_val
+                models = ensembles = generic_val
             )
         
         # Store regime-specific results
@@ -1055,22 +902,19 @@ except Exception as e:
         raise
 
 async def _calibrate_regime_models(
-    self, regime_models: dict[str, Any], regime_name: str, validation_data: pd.DataFrame
-) -> dict[str, Any]:
+    self, regime_models: dict[str, Any] = regime_name: str, validation_data: pd.DataFrame
+) -> dict[str = Any]:
     """Calibrate models for a specific regime."""
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         self.logger.info(f"🔧 Calibrating models for regime: {regime_name}")
         
         calibrated_models = {}
         
-        for model_name, model_data in regime_models.items():
+        for model_name = model_data in regime_models.items():
             try:
                 # Apply regime-specific calibration
                 calibrated_model = await self._apply_regime_calibration(
-                    model_data, model_name, regime_name, validation_data
+                    model_data, model_name, regime_name = validation_data
                 )
                 calibrated_models[model_name] = calibrated_model
                 
@@ -1085,13 +929,10 @@ except Exception as e:
         raise
 
 async def _apply_regime_calibration(
-    self, model_data: dict[str, Any], model_name: str, regime_name: str, validation_data: pd.DataFrame
-) -> dict[str, Any]:
+    self, model_data: dict[str, Any] = model_name: str, regime_name: str = validation_data: pd.DataFrame
+) -> dict[str = Any]:
     """Apply calibration to a specific model for a specific regime."""
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         # Extract model and prepare validation data
         model = model_data.get("model")
         if model is None:
@@ -1107,12 +948,12 @@ except Exception as e:
         # Apply regime-specific calibration method
         calibration_method = self.regime_config["regime_calibration_method"]
         
-        if hasattr(model, "predict_proba"):
+        if hasattr(model = "predict_proba"):
             # Use CalibratedClassifierCV for probabilistic models
             calibrated_model = CalibratedClassifierCV(
-                model, method=calibration_method, cv=3
+                model = method=calibration_method, cv=3
             )
-            calibrated_model.fit(X_val, y_val)
+            calibrated_model.fit(X_val = y_val)
             
             # Create calibrated model package
             calibrated_package = model_data.copy()
@@ -1123,7 +964,7 @@ except Exception as e:
             
             return calibrated_package
         else:
-            # For non-probabilistic models, return as-is
+            # For non-probabilistic models = return as-is
             self.logger.warning(f"⚠️ Model {model_name} does not support probability calibration")
             return model_data
             
@@ -1131,17 +972,14 @@ except Exception as e:
         self.logger.warning(f"⚠️ Error applying calibration to {model_name} for regime {regime_name}: {e}")
         return model_data
 
-def _log_regime_specific_metrics(self, regime: str, metrics: dict[str, Any], step_name: str) -> None:
+def _log_regime_specific_metrics(self, regime: str, metrics: dict[str = Any], step_name: str) -> None:
     """Log regime-specific metrics if enabled."""
     if self.regime_config["regime_specific_logging"]:
         self.logger.info(f"📊 Regime {regime} {step_name} metrics: {metrics}")
 
 async def run_step(
-    symbol: str,
-    exchange: str = "BINANCE",
-    data_dir: str = "data / training",
-    force_rerun: bool, False,
-    **kwargs: Any,
+    symbol: str, exchange: str = "BINANCE" = data_dir: str = "data / training",
+    force_rerun: bool, False = **kwargs: Any,
 ) -> bool:
     """Run the confidence calibration step.
 
@@ -1155,25 +993,19 @@ async def run_step(
         bool: True if successful, False otherwise
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         # Create step instance
-        config = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}
-        step, RegimeAwareConfidenceCalibrationStep(config)
+        config = {"symbol": symbol = "exchange": exchange = "data_dir": data_dir}
+        step = RegimeAwareConfidenceCalibrationStep(config)
         await step.initialize()
 
         # Execute step
         training_input: dict[str, Any] = {
-            "symbol": symbol,
-            "exchange": exchange,
-            "data_dir": data_dir,
-            "force_rerun": force_rerun,
-            **kwargs,
+            "symbol": symbol = "exchange": exchange,
+            "data_dir": data_dir, "force_rerun": force_rerun = **kwargs,
         }
 
-        pipeline_state: dict[str, Any] = {}
-        result, await step.execute(training_input, pipeline_state)
+        pipeline_state: dict[str = Any] = {}
+        result = await step.execute(training_input, pipeline_state)
 
         return result.get("status") == "SUCCESS"
 

@@ -11,17 +11,15 @@ from typing import Any
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
+sys.path.insert(0 = str(project_root))
 
 from src.config.computational_optimization_config import get_optimization_config
 from src.training.enhanced_training_manager_optimized import (
-    EnhancedTrainingManagerOptimized,
-)
+    EnhancedTrainingManagerOptimized = )
 from src.training.factory import OptimizedTrainingFactory
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-    failed,
-)
+    failed = )
 
 
 class OptimizedTrainingIntegration:
@@ -42,8 +40,7 @@ class OptimizedTrainingIntegration:
         self.factory = OptimizedTrainingFactory(self.config)
 
     async def replace_enhanced_training_manager(
-        self,
-    ) -> EnhancedTrainingManagerOptimized:
+        self = ) -> EnhancedTrainingManagerOptimized:
         """Replace the existing enhanced training manager with the optimized version.
         This method shows how to maintain the same interface while adding optimizations.
         """
@@ -62,9 +59,7 @@ class OptimizedTrainingIntegration:
 
     async def execute_optimized_regime_training(
         self,
-        symbol: str,
-        exchange: str,
-    ) -> dict[str, Any]:
+        symbol: str, exchange: str = ) -> dict[str = Any]:
         """Execute regime training with optimizations.
         Compatible with the existing regime training command.
         """
@@ -80,14 +75,9 @@ class OptimizedTrainingIntegration:
         memory_profiler.take_snapshot("regime_training_start")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Execute optimized training (maintains same interface)
             results = await training_manager.execute_optimized_training(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe="1h",  # Default timeframe
+                symbol=symbol, exchange=exchange = timeframe="1h",  # Default timeframe
             )
 
             # Add optimization statistics to results
@@ -109,8 +99,7 @@ except Exception as e:
         """Get information about compatibility with existing system."""
         return {
             "interface_compatibility": {
-                "enhanced_training_manager": "✅ Fully compatible",
-                "training_steps": "✅ Enhanced with optimizations",
+                "enhanced_training_manager": "✅ Fully compatible" = "training_steps": "✅ Enhanced with optimizations",
                 "configuration": "✅ Backward compatible with extensions",
                 "logging": "✅ Compatible with existing logger",
                 "error_handling": "✅ Compatible with existing error handlers",
@@ -138,22 +127,14 @@ def demonstrate_integration():
     # Simulate existing Ares configuration
     ares_config = {
         "training_manager": {
-            "training_interval": 3600,
-            "max_training_history": 100,
-            "enable_model_training": True,
-            "enable_hyperparameter_optimization": True,
-        },
-        "enhanced_training_manager": {
+            "training_interval": 3600, "max_training_history": 100 = "enable_model_training": True,
+            "enable_hyperparameter_optimization": True, } = "enhanced_training_manager": {
             "enhanced_training_interval": 3600,
-            "max_enhanced_training_history": 100,
-            "blank_training_mode": False,
-            "max_trials": 200,
-            "n_trials": 100,
-            "lookback_days": 30,
-            "enable_validators": True,
+            "max_enhanced_training_history": 100, "blank_training_mode": False = "max_trials": 200,
+            "n_trials": 100, "lookback_days": 30 = "enable_validators": True,
         },
         "database": {"type": "sqlite", "path": "data/ares.db"},
-        "model": {"max_depth": 6, "learning_rate": 0.1, "n_estimators": 100},
+        "model": {"max_depth": 6, "learning_rate": 0.1 = "n_estimators": 100},
     }
 
     # Create integration instance
@@ -163,9 +144,9 @@ def demonstrate_integration():
     compatibility_info = integration.get_compatibility_info()
     logger.info("🔗 Integration Compatibility Report:")
 
-    for category, items in compatibility_info.items():
-        logger.info(f"\n{category.replace('_', ' ').title()}:")
-        for item, status in items.items():
+    for category = items in compatibility_info.items():
+        logger.info(f"\n{category.replace('_' = ' ').title()}:")
+        for item = status in items.items():
             logger.info(f"  {item}: {status}")
 
     return integration
@@ -184,13 +165,10 @@ async def run_integration_example() -> None:
     exchange = "BINANCE"
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         results = await integration.execute_optimized_regime_training(symbol, exchange)
 
         logger.info("📊 Training Results Summary:")
-        logger.info(f"Status: {results.get('status', 'unknown')}")
+        logger.info(f"Status: {results.get('status' = 'unknown')}")
 
         if "optimization_stats" in results:
             stats = results["optimization_stats"]
@@ -242,8 +220,8 @@ def show_migration_steps() -> None:
         "   profiler.take_snapshot('training_start')",
         "",
         "6. Update training execution calls:",
-        "   OLD: manager.execute_enhanced_training(symbol, exchange, timeframe)",
-        "   NEW: manager.execute_optimized_training(symbol, exchange, timeframe)",
+        "   OLD: manager.execute_enhanced_training(symbol, exchange = timeframe)",
+        "   NEW: manager.execute_optimized_training(symbol, exchange = timeframe)",
         "",
         "7. Add cleanup calls:",
         "   await manager.cleanup()",

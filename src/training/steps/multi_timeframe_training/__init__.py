@@ -5,18 +5,10 @@
 This package contains components for multi - timeframe training and analysis.
 """
 
-    connection_error,
-    critical,
-    error,
-    execution_error,
-    failed,
-    initialization_error,
-    invalid,
-    missing,
-    problem,
-    timeout,
-    validation_error,
-    warning,
+    connection_error, critical = error,
+    execution_error, failed = initialization_error,
+    invalid, missing = problem,
+    timeout, validation_error = warning,
 )
 
 from .multi_timeframe_training_manager import MultiTimeframeTrainingManager

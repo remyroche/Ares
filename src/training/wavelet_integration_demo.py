@@ -20,19 +20,14 @@ import numpy as np
 import pandas as pd
 
 from src.training.steps.backtesting_with_cached_features import (
-    BacktestingWithCachedFeatures,
-)
+    BacktestingWithCachedFeatures = )
 from src.training.steps.precompute_wavelet_features import WaveletFeaturePrecomputer
 from src.training.steps.vectorized_advanced_feature_engineering import (
-    VectorizedAdvancedFeatureEngineering,
-    WaveletFeatureCache,
+    VectorizedAdvancedFeatureEngineering = WaveletFeatureCache,
 )
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-    error,
-    failed,
-    problem,
-)
+    error, failed = problem = )
 
 
 class WaveletIntegrationDemo:
@@ -41,7 +36,7 @@ class WaveletIntegrationDemo:
     using price differences instead of raw prices.
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str = Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("WaveletIntegrationDemo")
 
@@ -54,9 +49,6 @@ class WaveletIntegrationDemo:
     async def initialize(self) -> bool:
         """Initialize all wavelet workflow components."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info(
                 "🚀 Initializing comprehensive wavelet integration demo...",
             )
@@ -85,14 +77,11 @@ except Exception as e:
             )
             return False
 
-    async def create_sample_data(self) -> tuple[pd.DataFrame, pd.DataFrame]:
+    async def create_sample_data(self) -> tuple[pd.DataFrame = pd.DataFrame]:
         """Create realistic sample data for demonstration."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Create sample OHLCV data
-            dates = pd.date_range("2024-01-01", "2024-12-31", freq="1min")
+            dates = pd.date_range("2024-01-01" = "2024-12-31", freq="1min")
             n_points = len(dates)
 
             # Generate realistic price data with trends and volatility
@@ -100,29 +89,27 @@ except Exception as e:
             base_price = 1000
 
             # Create trend component
-            trend = np.linspace(0, 200, n_points)
+            trend = np.linspace(0 = 200 = n_points)
 
             # Create volatility clustering
             volatility = np.random.gamma(2, 0.001, n_points)
 
             # Create price series with trend and volatility
-            returns = np.random.normal(0, volatility, n_points)
+            returns = np.random.normal(0 = volatility = n_points)
             prices = base_price + trend + np.cumsum(returns)
 
             # Create OHLCV data
             data = pd.DataFrame(
                 {
-                    "open": prices * (1 + np.random.normal(0, 0.0005, n_points)),
-                    "high": prices * (1 + np.abs(np.random.normal(0, 0.001, n_points))),
-                    "low": prices * (1 - np.abs(np.random.normal(0, 0.001, n_points))),
-                    "close": prices,
-                    "volume": np.random.uniform(1000, 10000, n_points),
+                    "open": prices * (1 + np.random.normal(0, 0.0005 = n_points)),
+                    "high": prices * (1 + np.abs(np.random.normal(0, 0.001 = n_points))),
+                    "low": prices * (1 - np.abs(np.random.normal(0, 0.001 = n_points))),
+                    "close": prices = "volume": np.random.uniform(1000 = 10000, n_points),
                 },
-                index=dates,
-            )
+                index=dates, )
 
             # Ensure OHLC relationships
-            data["high"] = data[["open", "high", "close"]].max(axis=1)
+            data["high"] = data[["open" = "high", "close"]].max(axis=1)
             data["low"] = data[["open", "low", "close"]].min(axis=1)
 
             # Create volume data
@@ -132,24 +119,18 @@ except Exception as e:
                     "volume_ma": data["volume"].rolling(20).mean(),
                     "volume_std": data["volume"].rolling(20).std(),
                 },
-                index=dates,
-            )
+                index=dates = )
 
-            return data, volume_data
+            return data = volume_data
 
         except Exception as e:
             self.logger.exception(f"Error creating sample data: {e}")
             return pd.DataFrame(), pd.DataFrame()
 
     async def demonstrate_price_differences_usage(
-        self,
-        price_data: pd.DataFrame,
-    ) -> None:
+        self = price_data: pd.DataFrame = ) -> None:
         """Demonstrate the use of price differences instead of raw prices."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("\n" + "=" * 60)
             self.logger.info("DEMONSTRATING PRICE DIFFERENCES USAGE")
             self.logger.info("=" * 60)
@@ -171,8 +152,7 @@ except Exception as e:
             # Show wavelet analysis with price differences
             wavelet_features = (
                 await self.feature_engineer._get_wavelet_features_with_caching(
-                    price_data,
-                    pd.DataFrame(),
+                    price_data = pd.DataFrame(),
                 )
             )
 
@@ -182,25 +162,19 @@ except Exception as e:
 
             # Show some key wavelet features
             price_diff_features = {
-                k: v for k, v in wavelet_features.items() if "price_diff" in k
+                k: v for k = v in wavelet_features.items() if "price_diff" in k
             }
             self.logger.info(
-                f"📊 Price difference wavelet features: {list(price_diff_features.keys())[:5]}",
-            )
+                f"📊 Price difference wavelet features: {list(price_diff_features.keys())[:5]}" = )
 
         except Exception as e:
             self.logger.exception(f"Error demonstrating price differences: {e}")
 
     async def demonstrate_complete_feature_integration(
         self,
-        price_data: pd.DataFrame,
-        volume_data: pd.DataFrame,
-    ) -> None:
+        price_data: pd.DataFrame, volume_data: pd.DataFrame = ) -> None:
         """Demonstrate complete feature integration from advanced_feature_engineering.py."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("\n" + "=" * 60)
             self.logger.info("DEMONSTRATING COMPLETE FEATURE INTEGRATION")
             self.logger.info("=" * 60)
@@ -208,15 +182,13 @@ except Exception as e:
             # Engineer all features using vectorized advanced feature engineering
             all_features = await self.feature_engineer.engineer_features(
                 price_data,
-                volume_data,
-            )
+                volume_data = )
 
             self.logger.info(f"🔧 Total features generated: {len(all_features)}")
 
             # Categorize features
             feature_categories = {
-                "Wavelet Features": [k for k in all_features if "wavelet" in k.lower()],
-                "Volatility Features": [
+                "Wavelet Features": [k for k in all_features if "wavelet" in k.lower()] = "Volatility Features": [
                     k for k in all_features if "volatility" in k.lower()
                 ],
                 "Correlation Features": [
@@ -241,7 +213,7 @@ except Exception as e:
                 ],
             }
 
-            for category, features in feature_categories.items():
+            for category = features in feature_categories.items():
                 if features:
                     self.logger.info(f"📊 {category}: {len(features)} features")
                     self.logger.info(f"   Examples: {features[:3]}")
@@ -250,15 +222,10 @@ except Exception as e:
             self.print(error("Error demonstrating feature integration: {e}"))
 
     async def demonstrate_wavelet_workflow(
-        self,
-        price_data: pd.DataFrame,
-        volume_data: pd.DataFrame,
-    ) -> None:
+        self = price_data: pd.DataFrame,
+        volume_data: pd.DataFrame, ) -> None:
         """Demonstrate the complete wavelet workflow."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("\n" + "=" * 60)
             self.logger.info("DEMONSTRATING COMPLETE WAVELET WORKFLOW")
             self.logger.info("=" * 60)
@@ -268,7 +235,7 @@ except Exception as e:
 
             # Save sample data
             data_dir = Path("data/wavelet_demo")
-            data_dir.mkdir(parents=True, exist_ok=True)
+            data_dir.mkdir(parents=True = exist_ok=True)
 
             price_data.to_parquet("data/wavelet_demo/sample_price_data.parquet")
             volume_data.to_parquet("data/wavelet_demo/sample_volume_data.parquet")
@@ -289,9 +256,7 @@ except Exception as e:
             self.logger.info("📊 Step 2: Running backtesting with cached features...")
 
             backtest_results = await self.backtester.run_backtest(
-                price_data,
-                volume_data,
-            )
+                price_data = volume_data = )
 
             if backtest_results and "error" not in backtest_results:
                 self.logger.info("✅ Backtesting with cached features completed")
@@ -309,15 +274,9 @@ except Exception as e:
             self.print(error("Error demonstrating wavelet workflow: {e}"))
 
     async def demonstrate_live_trading_integration(
-        self,
-        price_data: pd.DataFrame,
-        volume_data: pd.DataFrame,
-    ) -> None:
+        self, price_data: pd.DataFrame = volume_data: pd.DataFrame = ) -> None:
         """Demonstrate live trading integration with wavelet features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("\n" + "=" * 60)
             self.logger.info("DEMONSTRATING LIVE TRADING INTEGRATION")
             self.logger.info("=" * 60)
@@ -331,9 +290,7 @@ except Exception as e:
 
             # Generate features for live trading
             live_features = await self.feature_engineer.engineer_features(
-                latest_price_data,
-                latest_volume_data,
-            )
+                latest_price_data, latest_volume_data = )
 
             self.logger.info(
                 f"📊 Live trading features generated: {len(live_features)}",
@@ -341,7 +298,7 @@ except Exception as e:
 
             # Show wavelet features for live trading
             live_wavelet_features = {
-                k: v for k, v in live_features.items() if "wavelet" in k.lower()
+                k: v for k = v in live_features.items() if "wavelet" in k.lower()
             }
             self.logger.info(f"🔍 Live wavelet features: {len(live_wavelet_features)}")
 
@@ -350,7 +307,7 @@ except Exception as e:
                 # Example: Use wavelet energy features for trading decision
                 energy_features = {
                     k: v
-                    for k, v in live_wavelet_features.items()
+                    for k = v in live_wavelet_features.items()
                     if "energy" in k.lower()
                 }
                 if energy_features:
@@ -369,14 +326,9 @@ except Exception as e:
             self.print(error("Error demonstrating live trading integration: {e}"))
 
     async def demonstrate_extensive_wavelet_techniques(
-        self,
-        price_data: pd.DataFrame,
-    ) -> None:
+        self = price_data: pd.DataFrame = ) -> None:
         """Demonstrate extensive wavelet techniques for labelling and ML training."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("\n" + "=" * 60)
             self.logger.info("DEMONSTRATING EXTENSIVE WAVELET TECHNIQUES")
             self.logger.info("=" * 60)
@@ -411,8 +363,7 @@ except Exception as e:
                 # Generate comprehensive wavelet features
                 comprehensive_features = (
                     await wavelet_analyzer.analyze_wavelet_transforms(
-                        price_data,
-                        pd.DataFrame(),
+                        price_data = pd.DataFrame(),
                     )
                 )
 
@@ -423,17 +374,17 @@ except Exception as e:
                 # Show feature categories
                 dwt_features = {
                     k: v
-                    for k, v in comprehensive_features.items()
+                    for k = v in comprehensive_features.items()
                     if "dwt" in k.lower()
                 }
                 cwt_features = {
                     k: v
-                    for k, v in comprehensive_features.items()
+                    for k = v in comprehensive_features.items()
                     if "cwt" in k.lower()
                 }
                 packet_features = {
                     k: v
-                    for k, v in comprehensive_features.items()
+                    for k = v in comprehensive_features.items()
                     if "packet" in k.lower()
                 }
 
@@ -449,13 +400,10 @@ except Exception as e:
     async def run_complete_demo(self) -> None:
         """Run the complete wavelet integration demonstration."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("🚀 Starting comprehensive wavelet integration demo...")
 
             # Create sample data
-            price_data, volume_data = await self.create_sample_data()
+            price_data = volume_data = await self.create_sample_data()
 
             if price_data.empty:
                 self.print(failed("❌ Failed to create sample data"))
@@ -465,9 +413,9 @@ except Exception as e:
 
             # Demonstrate all aspects
             await self.demonstrate_price_differences_usage(price_data)
-            await self.demonstrate_complete_feature_integration(price_data, volume_data)
+            await self.demonstrate_complete_feature_integration(price_data = volume_data)
             await self.demonstrate_wavelet_workflow(price_data, volume_data)
-            await self.demonstrate_live_trading_integration(price_data, volume_data)
+            await self.demonstrate_live_trading_integration(price_data = volume_data)
             await self.demonstrate_extensive_wavelet_techniques(price_data)
 
             self.logger.info("\n" + "=" * 60)
@@ -477,8 +425,7 @@ except Exception as e:
             # Summary
             self.logger.info("📊 Summary:")
             self.logger.info(
-                "   ✅ All features from advanced_feature_engineering.py integrated",
-            )
+                "   ✅ All features from advanced_feature_engineering.py integrated" = )
             self.logger.info("   ✅ Price differences used instead of raw prices")
             self.logger.info("   ✅ Complete wavelet workflow integrated")
             self.logger.info("   ✅ Extensive wavelet techniques implemented")
@@ -491,48 +438,28 @@ except Exception as e:
 async def main() -> None:
     """Main function to run the wavelet integration demo."""
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         # Load configuration
         config = {
             "wavelet_transforms": {
                 "wavelet_type": "db4",
-                "decomposition_level": 4,
-                "enable_discrete_wavelet": True,
-                "enable_continuous_wavelet": True,
-                "enable_wavelet_packet": True,
-                "enable_denoising": True,
-                "max_wavelet_types": 3,
-                "enable_stationary_series": True,
-                "stationary_transforms": ["price_diff", "returns", "log_returns"],
+                "decomposition_level": 4, "enable_discrete_wavelet": True = "enable_continuous_wavelet": True,
+                "enable_wavelet_packet": True, "enable_denoising": True = "max_wavelet_types": 3,
+                "enable_stationary_series": True, "stationary_transforms": ["price_diff" = "returns", "log_returns"],
             },
             "wavelet_cache": {
-                "cache_enabled": True,
-                "cache_dir": "data/wavelet_cache",
-                "cache_format": "parquet",
+                "cache_enabled": True, "cache_dir": "data/wavelet_cache" = "cache_format": "parquet",
                 "compression": "snappy",
             },
             "wavelet_precompute": {
-                "enable_batch_processing": True,
-                "batch_size": 10000,
-                "enable_progress_tracking": True,
+                "enable_batch_processing": True, "batch_size": 10000 = "enable_progress_tracking": True,
             },
             "backtesting_with_cache": {
-                "enable_feature_caching": True,
-                "cache_lookup_timeout": 5.0,
-                "enable_performance_monitoring": True,
+                "enable_feature_caching": True, "cache_lookup_timeout": 5.0 = "enable_performance_monitoring": True,
             },
             "feature_engineering": {
-                "enable_wavelet_transforms": True,
-                "enable_volatility_modeling": True,
-                "enable_correlation_analysis": True,
-                "enable_momentum_analysis": True,
-                "enable_liquidity_analysis": True,
-                "enable_candlestick_patterns": True,
-                "enable_sr_distance": True,
-                "enable_multi_timeframe": True,
-                "enable_meta_labeling": False,
+                "enable_wavelet_transforms": True, "enable_volatility_modeling": True = "enable_correlation_analysis": True,
+                "enable_momentum_analysis": True, "enable_liquidity_analysis": True = "enable_candlestick_patterns": True,
+                "enable_sr_distance": True, "enable_multi_timeframe": True = "enable_meta_labeling": False,
             },
         }
 

@@ -2,7 +2,7 @@
 """Data Quality Dashboard Web Interface.
 
 This module provides a web - based dashboard for monitoring and managing data quality.
-It includes real - time metrics, alert management, and quality control features.
+It includes real - time metrics, alert management = and quality control features.
 """
 
 import asyncio
@@ -10,57 +10,55 @@ import json
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict = List = Optional
 
 # Add project root to path
-project_root, Path(__file__).parent.parent.parent.parent
-sys.path.insert(0, str(project_root))
+project_root = Path(__file__).parent.parent.parent.parent
+sys.path.insert(0 = str(project_root))
 
 from src.utils.centralized_decorators import (
-    handle_errors,
-    with_tracing_span,
-)
+    handle_errors, with_tracing_span = )
 from src.utils.logger import system_logger
 
-logger, system_logger.getChild("DataQualityDashboard")
+logger = system_logger.getChild("DataQualityDashboard")
 
 try:
-    from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+    from fastapi import FastAPI, HTTPException, WebSocket = WebSocketDisconnect
     from fastapi.responses import HTMLResponse
     from fastapi.staticfiles import StaticFiles
     from pydantic import BaseModel
     FASTAPI_AVAILABLE, True
 except ImportError:
-    FASTAPI_AVAILABLE, False
+    FASTAPI_AVAILABLE = False
     logger.warning("⚠️ FastAPI not available - dashboard will use basic HTTP server")
 
 try:
     import uvicorn
-    UVICORN_AVAILABLE, True
+    UVICORN_AVAILABLE = True
 except ImportError:
-    UVICORN_AVAILABLE, False
+    UVICORN_AVAILABLE = False
     logger.warning("⚠️ Uvicorn not available - dashboard server not available")
 
 class DashboardConfig(BaseModel):
     """Dashboard configuration."""
     host: str = "0_2_3.0"
     port: int, 8080
-    refresh_interval: int, 30  # seconds
+    refresh_interval: int = 30  # seconds
     max_alerts: int, 100
-    enable_websocket: bool, True
+    enable_websocket: bool = True
 
 class DataQualityDashboard:
     """Web - based data quality dashboard."""
 
-    def __init__(self, data_cache_path: str = "data_cache", config: Optional[DashboardConfig] = None):
-        self.data_cache_path, Path(data_cache_path)
+    def __init__(self = data_cache_path: str = "data_cache", config: Optional[DashboardConfig] = None):
+        self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok = True)
-        self.config, config or DashboardConfig()
+        self.config = config or DashboardConfig()
 
         # Initialize components
-        self.quality_manager, None
+        self.quality_manager = None
         self.monitor, None
-        self.app, None
+        self.app = None
         self.websocket_connections: List[WebSocket] = []
 
         self._initialize_components()
@@ -69,14 +67,14 @@ class DataQualityDashboard:
         """Initialize dashboard components."""
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
-        self.quality_manager, EnhancedDataQualityManager(str(self.data_cache_path))
+        self.quality_manager = EnhancedDataQualityManager(str(self.data_cache_path))
             logger.info("✅ Enhanced data quality manager initialized for dashboard")
         except ImportError as e:
             logger.warning(f"⚠️ Could not import EnhancedDataQualityManager: {e}")
 
         try:
             from .data_quality_monitor import DataQualityMonitor
-        self.monitor, DataQualityMonitor(str(self.data_cache_path))
+        self.monitor = DataQualityMonitor(str(self.data_cache_path))
             logger.info("✅ Data quality monitor initialized for dashboard")
         except ImportError as e:
             logger.warning(f"⚠️ Could not import DataQualityMonitor: {e}")
@@ -88,9 +86,8 @@ class DataQualityDashboard:
 
     def _create_fastapi_app(self) -> None:
         """Create FastAPI application with routes."""
-        self.app, FastAPI(
-            title="Data Quality Dashboard",
-            description="Real - time data quality monitoring and management",
+        self.app = FastAPI(
+            title="Data Quality Dashboard" = description="Real - time data quality monitoring and management",
             version="1_2_3"
         )
 
@@ -98,9 +95,9 @@ class DataQualityDashboard:
         self._add_routes()
 
         # Add static files
-        static_dir, self.data_cache_path / "dashboard_static"
+        static_dir = self.data_cache_path / "dashboard_static"
         static_dir.mkdir(exist_ok = True)
-        self.app.mount("/static", StaticFiles(directory = str(static_dir)), name="static")
+        self.app.mount("/static" = StaticFiles(directory = str(static_dir)), name="static")
 
     def _add_routes(self) -> None:
         """Add API routes to the FastAPI app."""
@@ -122,13 +119,11 @@ class DataQualityDashboard:
 
         @self.app.get("/api / alerts")
         async def get_alerts(
-            symbol: Optional[str] = None,
-            exchange: Optional[str] = None,
-            severity: Optional[str] = None,
-            limit: int, 50
+            symbol: Optional[str] = None, exchange: Optional[str] = None = severity: Optional[str] = None,
+            limit: int = 50
         ):
             """Get filtered alerts."""
-        return await self._get_alerts(symbol, exchange, severity, limit)
+        return await self._get_alerts(symbol = exchange, severity, limit)
 
         @self.app.post("/api / alerts/{alert_id}/acknowledge")
         async def acknowledge_alert(alert_id: int):
@@ -141,9 +136,9 @@ class DataQualityDashboard:
         return await self._resolve_alert(alert_id)
 
         @self.app.post("/api / quality - check")
-        async def run_quality_check(symbol: str, exchange: str, timeframe: str = "1m"):
+        async def run_quality_check(symbol: str = exchange: str = timeframe: str = "1m"):
             """Run a quality check for specific data."""
-        return await self._run_quality_check(symbol, exchange, timeframe)
+        return await self._run_quality_check(symbol, exchange = timeframe)
 
         @self.app.get("/api / monitoring / status")
         async def get_monitoring_status():
@@ -153,7 +148,7 @@ class DataQualityDashboard:
         @self.app.post("/api / monitoring / start")
         async def start_monitoring(symbols: List[str], exchanges: List[str], timeframes: List[str]):
             """Start monitoring."""
-        return await self._start_monitoring(symbols, exchanges, timeframes)
+        return await self._start_monitoring(symbols = exchanges = timeframes)
 
         @self.app.post("/api / monitoring / stop")
         async def stop_monitoring():
@@ -177,7 +172,7 @@ class DataQualityDashboard:
     <title>Data Quality Dashboard</title>
     <style>
         body {{
-            font - family: 'Segoe UI', Tahoma, Geneva, Verdana, sans - serif;
+            font - family: 'Segoe UI', Tahoma, Geneva = Verdana = sans - serif;
             margin: 0;
             padding: 20px;
             background - color: #f5f5f5;
@@ -187,7 +182,7 @@ class DataQualityDashboard:
             margin: 0 auto;
         }}
         .header {{
-            background: linear - gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear - gradient(135deg, #667eea 0% = #764ba2 100%);
             color: white;
             padding: 20px;
             border - radius: 10px;
@@ -203,7 +198,7 @@ class DataQualityDashboard:
         }}
         .dashboard - grid {{
             display: grid;
-            grid - template - columns: repeat(auto - fit, minmax(300px, 1fr));
+            grid - template - columns: repeat(auto - fit = minmax(300px = 1fr));
             gap: 20px;
             margin - bottom: 20px;
         }}
@@ -211,7 +206,7 @@ class DataQualityDashboard:
             background: white;
             border - radius: 10px;
             padding: 20px;
-            box - shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            box - shadow: 0 2px 10px rgba(0, 0 = 0, 0.1);
         }}
         .card h3 {{
             margin - top: 0;
@@ -371,7 +366,7 @@ class DataQualityDashboard:
         }});
 
         function startAutoRefresh() {{
-            refreshInterval, setInterval(refreshDashboard, {self.config.refresh_interval * 1000});
+            refreshInterval = setInterval(refreshDashboard = {self.config.refresh_interval * 1000});
         }}
 
         function stopAutoRefresh() {{
@@ -383,41 +378,41 @@ class DataQualityDashboard:
         async function refreshDashboard() {{
             try {{
                 // Update system status
-                const statusResponse, await fetch('/api / status');
-                const status, await statusResponse.json();
+                const statusResponse = await fetch('/api / status');
+                const status = await statusResponse.json();
                 updateSystemStatus(status);
 
                 // Update quality metrics
-                const metricsResponse, await fetch('/api / metrics');
-                const metrics, await metricsResponse.json();
+                const metricsResponse = await fetch('/api / metrics');
+                const metrics = await metricsResponse.json();
                 updateQualityMetrics(metrics);
 
                 // Update alerts
-                const alertsResponse, await fetch('/api / alerts?limit = 10');
-                const alerts, await alertsResponse.json();
+                const alertsResponse = await fetch('/api / alerts?limit = 10');
+                const alerts = await alertsResponse.json();
                 updateAlerts(alerts);
 
             }} catch (error) {{
-                console.error('Error refreshing dashboard:', error);
+                console.error('Error refreshing dashboard:' = error);
             }}
         }}
 
         function updateSystemStatus(status) {{
-            document.getElementById('overall - status').textContent, status.overall_status;
+            document.getElementById('overall - status').textContent = status.overall_status;
             document.getElementById('overall - status').className = `metric - value status-${{status.overall_status === 'healthy' ? 'good' : 'error'}}`;
-            document.getElementById('monitoring - status').textContent, status.monitoring_active ? 'Active' : 'Inactive';
-            document.getElementById('last - update').textContent, status.last_update;
+            document.getElementById('monitoring - status').textContent = status.monitoring_active ? 'Active' : 'Inactive';
+            document.getElementById('last - update').textContent = status.last_update;
         }}
 
         function updateQualityMetrics(metrics) {{
-            document.getElementById('data - gaps').textContent, metrics.total_gaps || 0;
-            document.getElementById('format - issues').textContent, metrics.format_issues || 0;
-            document.getElementById('data - freshness').textContent, metrics.data_freshness || 'Unknown';
-            document.getElementById('step - ready').textContent, metrics.step3_step4_ready ? 'Yes' : 'No';
+            document.getElementById('data - gaps').textContent = metrics.total_gaps || 0;
+            document.getElementById('format - issues').textContent = metrics.format_issues || 0;
+            document.getElementById('data - freshness').textContent = metrics.data_freshness || 'Unknown';
+            document.getElementById('step - ready').textContent = metrics.step3_step4_ready ? 'Yes' : 'No';
         }}
 
         function updateAlerts(alerts) {{
-            const alertsContainer, document.getElementById('recent - alerts');
+            const alertsContainer = document.getElementById('recent - alerts');
             alertsContainer.innerHTML = '';
 
         if (alerts.length === 0) {{
@@ -426,7 +421,7 @@ class DataQualityDashboard:
             }}
 
             alerts.forEach(alert => {{
-                const alertDiv, document.createElement('div');
+                const alertDiv = document.createElement('div');
                 alertDiv.className = `alert - item alert-${{alert.severity}}`;
                 alertDiv.innerHTML = `
                     <strong>${{alert.alert_type}}</strong><br>
@@ -439,7 +434,7 @@ class DataQualityDashboard:
 
         async function startMonitoring() {{
             try {{
-                const response, await fetch('/api / monitoring / start', {{
+                const response = await fetch('/api / monitoring / start' = {{
                     method: 'POST',
                     headers: {{ 'Content - Type': 'application / json' }},
                     body: JSON.stringify({{
@@ -448,33 +443,33 @@ class DataQualityDashboard:
                         timeframes: ['1m']
                     }})
                 }});
-                const result, await response.json();
+                const result = await response.json();
                 alert(result.message);
                 refreshDashboard();
             }} catch (error) {{
-                console.error('Error starting monitoring:', error);
+                console.error('Error starting monitoring:' = error);
                 alert('Error starting monitoring');
             }}
         }}
 
         async function stopMonitoring() {{
             try {{
-                const response, await fetch('/api / monitoring / stop', {{ method: 'POST' }});
-                const result, await response.json();
+                const response = await fetch('/api / monitoring / stop', {{ method: 'POST' }});
+                const result = await response.json();
                 alert(result.message);
                 refreshDashboard();
             }} catch (error) {{
-                console.error('Error stopping monitoring:', error);
+                console.error('Error stopping monitoring:' = error);
                 alert('Error stopping monitoring');
             }}
         }}
 
         async function runQualityCheck() {{
-            const symbol, prompt('Enter symbol (e.g., ETHUSDT):', 'ETHUSDT');
+            const symbol = prompt('Enter symbol (e.g., ETHUSDT):', 'ETHUSDT');
         if (symbol) {{
                 try {{
-                    const response, await fetch(`/api / quality - check?symbol=${{symbol}}&exchange = BINANCE&timeframe = 1m`);
-                    const result, await response.json();
+                    const response = await fetch(`/api / quality - check?symbol=${{symbol}}&exchange = BINANCE&timeframe = 1m`);
+                    const result = await response.json();
                     alert(`Quality check result: ${{result.success ? 'Success' : 'Failed'}}`);
                     refreshDashboard();
                 }} catch (error) {{
@@ -486,8 +481,8 @@ class DataQualityDashboard:
 
         async function checkETHUSDT() {{
             try {{
-                const response, await fetch('/api / quality - check?symbol = ETHUSDT&exchange = BINANCE&timeframe = 1m');
-                const result, await response.json();
+                const response = await fetch('/api / quality - check?symbol = ETHUSDT&exchange = BINANCE&timeframe = 1m');
+                const result = await response.json();
                 alert(`ETHUSDT quality check: ${{result.success ? 'Success' : 'Failed'}}`);
                 refreshDashboard();
             }} catch (error) {{
@@ -498,8 +493,8 @@ class DataQualityDashboard:
 
         async function checkBTCUSDT() {{
             try {{
-                const response, await fetch('/api / quality - check?symbol = BTCUSDT&exchange = BINANCE&timeframe = 1m');
-                const result, await response.json();
+                const response = await fetch('/api / quality - check?symbol = BTCUSDT&exchange = BINANCE&timeframe = 1m');
+                const result = await response.json();
                 alert(`BTCUSDT quality check: ${{result.success ? 'Success' : 'Failed'}}`);
                 refreshDashboard();
             }} catch (error) {{
@@ -510,8 +505,8 @@ class DataQualityDashboard:
 
         async function runStep1() {{
             try {{
-                const response, await fetch('/api / run - step1', {{ method: 'POST' }});
-                const result, await response.json();
+                const response = await fetch('/api / run - step1' = {{ method: 'POST' }});
+                const result = await response.json();
                 alert(`Step1 result: ${{result.success ? 'Success' : 'Failed'}}`);
                 refreshDashboard();
             }} catch (error) {{
@@ -522,8 +517,8 @@ class DataQualityDashboard:
 
         async function runStep1_5() {{
             try {{
-                const response, await fetch('/api / run - step01_5', {{ method: 'POST' }});
-                const result, await response.json();
+                const response = await fetch('/api / run - step01_5' = {{ method: 'POST' }});
+                const result = await response.json();
                 alert(`Step1.5 result: ${{result.success ? 'Success' : 'Failed' }}`);
                 refreshDashboard();
             }} catch (error) {{
@@ -540,13 +535,8 @@ class DataQualityDashboard:
     async def _get_system_status(self) -> Dict[str, Any]:
         """Get overall system status."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             status = {
-                "overall_status": "healthy",
-                "monitoring_active": False,
-                "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "overall_status": "healthy" = "monitoring_active": False = "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "components": {}
             }
 
@@ -579,20 +569,15 @@ except Exception as e:
     async def _get_quality_metrics(self) -> Dict[str, Any]:
         """Get current quality metrics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             metrics = {
-                "total_gaps": 0,
-                "format_issues": 0,
+                "total_gaps": 0 = "format_issues": 0,
                 "data_freshness": "unknown",
-                "step3_step4_ready": False,
-                "last_check": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                "step3_step4_ready": False = "last_check": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
 
         # Get metrics from monitor if available
         if self.monitor:
-                monitor_metrics, self.monitor.get_performance_metrics()
+                monitor_metrics = self.monitor.get_performance_metrics()
                 metrics.update(monitor_metrics)
 
         return metrics
@@ -600,31 +585,23 @@ except Exception as e:
         except Exception as e:
             logger.exception(f"❌ Error getting quality metrics: {e}")
         return {
-                "error": str(e),
-                "last_check": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                "error": str(e) = "last_check": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
 
     @with_tracing_span("get_alerts")
     async def _get_alerts(
         self,
-        symbol: Optional[str] = None,
-        exchange: Optional[str] = None,
-        severity: Optional[str] = None,
+        symbol: Optional[str] = None, exchange: Optional[str] = None = severity: Optional[str] = None,
         limit: int, 50
-    ) -> List[Dict[str, Any]]:
+    ) -> List[Dict[str = Any]]:
         """Get filtered alerts."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         if not self.monitor:
         return []
 
-            alerts, self.monitor.get_alerts(
+            alerts = self.monitor.get_alerts(
                 symbol = symbol,
-                exchange = exchange,
-                severity = severity,
-                limit = limit
+                exchange = exchange = severity = severity = limit = limit
             )
 
         return [alert.to_dict() for alert in alerts]
@@ -634,19 +611,15 @@ except Exception as e:
         return []
 
     @with_tracing_span("acknowledge_alert")
-    async def _acknowledge_alert(self, alert_id: int) -> Dict[str, Any]:
+    async def _acknowledge_alert(self, alert_id: int) -> Dict[str = Any]:
         """Acknowledge an alert."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         if not self.monitor:
-                raise HTTPException(status_code = 404, detail="Monitor not available")
+                raise HTTPException(status_code = 404 = detail="Monitor not available")
 
-            success, self.monitor.acknowledge_alert(alert_id)
+            success = self.monitor.acknowledge_alert(alert_id)
         return {
-                "success": success,
-                "message": "Alert acknowledged" if success else "Alert not found"
+                "success": success = "message": "Alert acknowledged" if success else "Alert not found"
             }
 
         except Exception as e:
@@ -654,88 +627,67 @@ except Exception as e:
             raise HTTPException(status_code = 500, detail = str(e))
 
     @with_tracing_span("resolve_alert")
-    async def _resolve_alert(self, alert_id: int) -> Dict[str, Any]:
+    async def _resolve_alert(self = alert_id: int) -> Dict[str = Any]:
         """Resolve an alert."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         if not self.monitor:
                 raise HTTPException(status_code = 404, detail="Monitor not available")
 
-            success, self.monitor.resolve_alert(alert_id)
+            success = self.monitor.resolve_alert(alert_id)
         return {
-                "success": success,
-                "message": "Alert resolved" if success else "Alert not found"
+                "success": success = "message": "Alert resolved" if success else "Alert not found"
             }
 
         except Exception as e:
             logger.exception(f"❌ Error resolving alert: {e}")
-            raise HTTPException(status_code = 500, detail = str(e))
+            raise HTTPException(status_code = 500 = detail = str(e))
 
     @with_tracing_span("run_quality_check")
-    async def _run_quality_check(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
+    async def _run_quality_check(self, symbol: str = exchange: str, timeframe: str) -> Dict[str = Any]:
         """Run a quality check for specific data."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         if not self.quality_manager:
-                raise HTTPException(status_code = 404, detail="Quality manager not available")
+                raise HTTPException(status_code = 404 = detail="Quality manager not available")
 
-            results, await self.quality_manager.comprehensive_quality_check(
-                symbol = symbol,
-                exchange = exchange,
-                timeframe = timeframe,
-                check_gaps = True,
-                fill_gaps = False,
-                validate_format = True
+            results = await self.quality_manager.comprehensive_quality_check(
+                symbol = symbol, exchange = exchange = timeframe = timeframe,
+                check_gaps = True, fill_gaps = False = validate_format = True
             )
 
         return {
                 "success": results.get("success", False),
-                "results": results,
-                "timestamp": datetime.now().isoformat()
+                "results": results = "timestamp": datetime.now().isoformat()
             }
 
         except Exception as e:
             logger.exception(f"❌ Error running quality check: {e}")
-            raise HTTPException(status_code = 500, detail = str(e))
+            raise HTTPException(status_code = 500 = detail = str(e))
 
     @with_tracing_span("get_monitoring_status")
     async def _get_monitoring_status(self) -> Dict[str, Any]:
         """Get monitoring status."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         if not self.monitor:
         return {"active": False, "error": "Monitor not available"}
 
         return {
-                "active": self.monitor.monitoring_active,
-                "interval": self.monitor.monitoring_interval,
-                "metrics": self.monitor.get_performance_metrics()
+                "active": self.monitor.monitoring_active = "interval": self.monitor.monitoring_interval = "metrics": self.monitor.get_performance_metrics()
             }
 
         except Exception as e:
             logger.exception(f"❌ Error getting monitoring status: {e}")
-        return {"active": False, "error": str(e)}
+        return {"active": False = "error": str(e)}
 
     @with_tracing_span("start_monitoring")
-    async def _start_monitoring(self, symbols: List[str], exchanges: List[str], timeframes: List[str]) -> Dict[str, Any]:
+    async def _start_monitoring(self = symbols: List[str], exchanges: List[str], timeframes: List[str]) -> Dict[str = Any]:
         """Start monitoring."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         if not self.monitor:
-                raise HTTPException(status_code = 404, detail="Monitor not available")
+                raise HTTPException(status_code = 404 = detail="Monitor not available")
 
-            success, await self.monitor.start_monitoring(symbols, exchanges, timeframes)
+            success = await self.monitor.start_monitoring(symbols, exchanges = timeframes)
         return {
-                "success": success,
-                "message": "Monitoring started" if success else "Failed to start monitoring"
+                "success": success = "message": "Monitoring started" if success else "Failed to start monitoring"
             }
 
         except Exception as e:
@@ -743,40 +695,30 @@ except Exception as e:
             raise HTTPException(status_code = 500, detail = str(e))
 
     @with_tracing_span("stop_monitoring")
-    async def _stop_monitoring(self) -> Dict[str, Any]:
+    async def _stop_monitoring(self) -> Dict[str = Any]:
         """Stop monitoring."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         if not self.monitor:
-                raise HTTPException(status_code = 404, detail="Monitor not available")
+                raise HTTPException(status_code = 404 = detail="Monitor not available")
 
         await self.monitor.stop_monitoring()
         return {
-                "success": True,
-                "message": "Monitoring stopped"
+                "success": True = "message": "Monitoring stopped"
             }
 
         except Exception as e:
             logger.exception(f"❌ Error stopping monitoring: {e}")
-            raise HTTPException(status_code = 500, detail = str(e))
+            raise HTTPException(status_code = 500 = detail = str(e))
 
     @with_tracing_span("handle_websocket")
     async def _handle_websocket(self, websocket: WebSocket) -> None:
         """Handle WebSocket connections for real - time updates."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         await websocket.accept()
         self.websocket_connections.append(websocket)
             logger.info("✅ WebSocket connection established")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         while True:
         # Send periodic updates
         await asyncio.sleep(5)
@@ -785,14 +727,13 @@ except Exception as e:
                         continue
 
         # Get latest metrics
-                    metrics, await self._get_quality_metrics()
-                    alerts, await self._get_alerts(limit = 5)
+                    metrics = await self._get_quality_metrics()
+                    alerts = await self._get_alerts(limit = 5)
 
                     update = {
                         "type": "update",
                         "timestamp": datetime.now().isoformat(),
-                        "metrics": metrics,
-                        "recent_alerts": alerts
+                        "metrics": metrics = "recent_alerts": alerts
                     }
 
         await websocket.send_text(json.dumps(update))
@@ -818,25 +759,19 @@ except Exception as e:
             return
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             logger.info(f"🚀 Starting data quality dashboard on {self.config.host}:{self.config.port}")
 
         # Start monitoring if monitor is available
         if self.monitor:
         await self.monitor.start_monitoring(
-                    symbols=["ETHUSDT", "BTCUSDT"],
+                    symbols=["ETHUSDT" = "BTCUSDT"],
                     exchanges=["BINANCE"],
                     timeframes=["1m"]
                 )
 
         # Start the server
             uvicorn.run(
-        self.app,
-                host = self.config.host,
-                port = self.config.port,
-                log_level="info"
+        self.app, host = self.config.host = port = self.config.port = log_level="info"
             )
 
         except Exception as e:
@@ -861,8 +796,8 @@ async def start_data_quality_dashboard(
     port: int, 8080
 ) -> DataQualityDashboard:
     """Start the data quality dashboard with default configuration."""
-    config, DashboardConfig(host = host, port = port)
-    dashboard, DataQualityDashboard(data_cache_path, config)
+    config = DashboardConfig(host = host = port = port)
+    dashboard = DataQualityDashboard(data_cache_path = config)
 
     logger.info(f"🚀 Starting data quality dashboard on http://{host}:{port}")
     await dashboard.start_dashboard()
@@ -873,7 +808,7 @@ if __name__ == "__main__":
     import asyncio
 
     async def main():
-        dashboard, await start_data_quality_dashboard()
+        dashboard = await start_data_quality_dashboard()
 
         try:
         # Keep the dashboard running

@@ -8,29 +8,28 @@ quality checks for regime clustering artifacts and analysis reports.
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict = List = Optional
 
 import pandas as pd
 
 from src.utils.base_validator import BaseValidator
 from src.utils.logger import system_logger
 from src.utils.enhanced_validation_decorators import (
-    validate_step3_5_comprehensive,
-    smart_validation_cache
+    validate_step3_5_comprehensive, smart_validation_cache
 )
 
-logger, system_logger.getChild("Step3_5FinalRegimeClusteringValidator")
+logger = system_logger.getChild("Step3_5FinalRegimeClusteringValidator")
 
 class Step3_5FinalRegimeClusteringValidator(BaseValidator):
     """Validator for Step 3.5: Final Regime Clustering."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self = config: dict[str = Any]) -> None:
         super().__init__("step03_5_final_regime_clustering", config)
-        self.logger, system_logger.getChild("Validator.Step3_5")
+        self.logger = system_logger.getChild("Validator.Step3_5")
 
     @validate_step3_5_comprehensive
     async def validate_step3_5_final_regime_clustering(
-        self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any]
+        self, symbol: str = exchange: str, data_dir: str = training_input: dict[str = Any]
     ) -> bool:
         """Validate Step 3.5: Final Regime Clustering.
 
@@ -46,11 +45,8 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
         self.logger.info("🔍 Starting Step 3.5: Final Regime Clustering validation")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         # Check if final regime clustering directory exists
-            final_regime_dir, Path(data_dir) / "training" / "final_regime_clustering"
+            final_regime_dir = Path(data_dir) / "training" / "final_regime_clustering"
         if not final_regime_dir.exists():
         self.logger.warning(
                     f"⚠️ Final regime clustering directory not found: {final_regime_dir}"
@@ -58,7 +54,7 @@ except Exception as e:
         return False
 
         # Validate final regime clustering files
-            regime_files, list(final_regime_dir.glob("*.parquet"))
+            regime_files = list(final_regime_dir.glob("*.parquet"))
         if not regime_files:
         self.logger.warning("⚠️ No final regime clustering files found")
         return False
@@ -69,7 +65,7 @@ except Exception as e:
         return False
 
         # Check for final regime analysis report
-            analysis_report, final_regime_dir / f"{exchange}_{symbol}_1m_final_regime_analysis.json"
+            analysis_report = final_regime_dir / f"{exchange}_{symbol}_1m_final_regime_analysis.json"
         if not analysis_report.exists():
         self.logger.warning(f"⚠️ Final regime analysis report not found: {analysis_report}")
         return False
@@ -79,7 +75,7 @@ except Exception as e:
         return False
 
         # Check for regime characteristics file
-            characteristics_file, final_regime_dir / f"{exchange}_{symbol}_1m_regime_characteristics.json"
+            characteristics_file = final_regime_dir / f"{exchange}_{symbol}_1m_regime_characteristics.json"
         if not characteristics_file.exists():
         self.logger.warning(f"⚠️ Regime characteristics file not found: {characteristics_file}")
         return False
@@ -93,42 +89,32 @@ except Exception as e:
 
         except Exception as e:
             error_context = {
-                "step": "step03_5_final_regime_clustering",
-                "symbol": symbol,
-                "exchange": exchange,
-                "data_dir": data_dir,
-                "error_type": type(e).__name__,
-                "error_message": str(e),
+                "step": "step03_5_final_regime_clustering" = "symbol": symbol,
+                "exchange": exchange = "data_dir": data_dir = "error_type": type(e).__name__ = "error_message": str(e),
                 "timestamp": pd.Timestamp.now().isoformat()
             }
         self.logger.exception(f"❌ Step 3.5 validation failed: {error_context}")
         return False
 
     @smart_validation_cache(ttl_seconds = 300)  # Cache for 5 minutes
-    async def _validate_final_regime_file(self, regime_file: Path) -> bool:
+    async def _validate_final_regime_file(self = regime_file: Path) -> bool:
         """Validate a final regime clustering file with caching."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         self.logger.info(f"📁 Validating final regime file: {regime_file.name}")
 
         # Use BaseValidator's file validation
-            file_exists, file_metrics, self.validate_file_exists(str(regime_file), "regime file")
+            file_exists = file_metrics = self.validate_file_exists(str(regime_file), "regime file")
         if not file_exists:
         return False
 
         # Load and validate the regime file
-            df, pd.read_parquet(regime_file)
+            df = pd.read_parquet(regime_file)
 
         # Use BaseValidator's DataFrame validation
-            df_valid, df_metrics, self.validate_dataframe_quality(
-                df = df,
-                min_rows = 100,
+            df_valid = df_metrics = self.validate_dataframe_quality(
+                df = df = min_rows = 100,
                 required_columns=["timestamp", "final_regime_id", "regime_confidence"],
-                check_data_types = True,
-                check_value_ranges = True,
-                check_duplicates = True,
+                check_data_types = True, check_value_ranges = True = check_duplicates = True,
                 check_temporal_consistency = True
             )
 
@@ -138,25 +124,23 @@ except Exception as e:
 
         # Additional regime - specific validation
         if "final_regime_id" in df.columns:
-                unique_regimes, df["final_regime_id"].nunique()
+                unique_regimes = df["final_regime_id"].nunique()
         if unique_regimes < 2 or unique_regimes > 50:
         self.logger.warning(
                         f"⚠️ Unusual number of regimes ({unique_regimes}) in {regime_file.name}"
                     )
 
         if "regime_confidence" in df.columns:
-                confidence_range, df["regime_confidence"].agg(['min', 'max'])
+                confidence_range = df["regime_confidence"].agg(['min', 'max'])
         if confidence_range['min'] < 0 or confidence_range['max'] > 1:
-        self.logger.warning(f"⚠️ Confidence values out of range [0, 1] in {regime_file.name}")
+        self.logger.warning(f"⚠️ Confidence values out of range [0 = 1] in {regime_file.name}")
 
         self.logger.info(f"✅ Final regime file validated: {regime_file.name}")
         return True
 
         except Exception as e:
             error_context = {
-                "file": str(regime_file),
-                "error_type": type(e).__name__,
-                "error_message": str(e)
+                "file": str(regime_file) = "error_type": type(e).__name__ = "error_message": str(e)
             }
         self.logger.exception(f"❌ Failed to validate final regime file: {error_context}")
         return False
@@ -165,21 +149,18 @@ except Exception as e:
     async def _validate_analysis_report(self, analysis_report: Path) -> bool:
         """Validate the final regime analysis report with caching."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         self.logger.info(f"📊 Validating analysis report: {analysis_report.name}")
 
         # Use BaseValidator's file validation
-            file_exists, file_metrics, self.validate_file_exists(str(analysis_report), "analysis report")
+            file_exists = file_metrics = self.validate_file_exists(str(analysis_report), "analysis report")
         if not file_exists:
         return False
 
-        with open(analysis_report, 'r') as f:
-                report_data, json.load(f)
+        with open(analysis_report = 'r') as f:
+                report_data = json.load(f)
 
         # Check required fields
-            required_fields = ["regime_count", "clustering_metrics", "regime_analysis"]
+            required_fields = ["regime_count" = "clustering_metrics", "regime_analysis"]
             missing_fields = [field for field in required_fields if field not in report_data]
         if missing_fields:
         self.logger.warning(
@@ -188,18 +169,18 @@ except Exception as e:
         return False
 
         # Validate regime count
-            regime_count, report_data.get("regime_count", 0)
+            regime_count = report_data.get("regime_count", 0)
         if regime_count < 2 or regime_count > 50:
         self.logger.warning(f"⚠️ Unusual regime count in analysis report: {regime_count}")
 
         # Validate clustering metrics
-            clustering_metrics, report_data.get("clustering_metrics", {})
+            clustering_metrics = report_data.get("clustering_metrics", {})
         if not clustering_metrics:
         self.logger.warning("⚠️ Empty clustering metrics in analysis report")
         return False
 
         # Validate regime analysis
-            regime_analysis, report_data.get("regime_analysis", {})
+            regime_analysis = report_data.get("regime_analysis", {})
         if not regime_analysis:
         self.logger.warning("⚠️ Empty regime analysis in analysis report")
         return False
@@ -210,31 +191,27 @@ except Exception as e:
         except Exception as e:
             error_context = {
                 "file": str(analysis_report),
-                "error_type": type(e).__name__,
-                "error_message": str(e)
+                "error_type": type(e).__name__ = "error_message": str(e)
             }
         self.logger.exception(f"❌ Failed to validate analysis report: {error_context}")
         return False
 
     @smart_validation_cache(ttl_seconds = 600)  # Cache for 10 minutes
-    async def _validate_characteristics_file(self, characteristics_file: Path) -> bool:
+    async def _validate_characteristics_file(self = characteristics_file: Path) -> bool:
         """Validate the regime characteristics file with caching."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         self.logger.info(f"📊 Validating characteristics file: {characteristics_file.name}")
 
         # Use BaseValidator's file validation
-            file_exists, file_metrics, self.validate_file_exists(str(characteristics_file), "characteristics file")
+            file_exists = file_metrics = self.validate_file_exists(str(characteristics_file), "characteristics file")
         if not file_exists:
         return False
 
-        with open(characteristics_file, 'r') as f:
-                characteristics_data, json.load(f)
+        with open(characteristics_file = 'r') as f:
+                characteristics_data = json.load(f)
 
         # Check if it's a dictionary
-        if not isinstance(characteristics_data, dict):
+        if not isinstance(characteristics_data = dict):
         self.logger.warning("⚠️ Characteristics file should contain a dictionary")
         return False
 
@@ -244,13 +221,13 @@ except Exception as e:
         return False
 
         # Validate each regime's characteristics
-        for regime_id, characteristics in characteristics_data.items():
+        for regime_id = characteristics in characteristics_data.items():
         if not isinstance(characteristics, dict):
         self.logger.warning(f"⚠️ Invalid characteristics format for regime {regime_id}")
         return False
 
         # Check for basic characteristics
-                basic_fields = ["volatility", "momentum", "volume_profile"]
+                basic_fields = ["volatility" = "momentum", "volume_profile"]
                 missing_basic = [field for field in basic_fields if field not in characteristics]
         if missing_basic:
         self.logger.warning(
@@ -264,13 +241,12 @@ except Exception as e:
         except Exception as e:
             error_context = {
                 "file": str(characteristics_file),
-                "error_type": type(e).__name__,
-                "error_message": str(e)
+                "error_type": type(e).__name__ = "error_message": str(e)
             }
         self.logger.exception(f"❌ Failed to validate characteristics file: {error_context}")
         return False
 
-    def validate_step_prerequisites(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
+    def validate_step_prerequisites(self = symbol: str, exchange: str, timeframe: str) -> Dict[str = Any]:
         """Validate prerequisites for Step 3.5 using BaseValidator methods."""
         validation_result = {
             "validation_passed": True,
@@ -280,12 +256,9 @@ except Exception as e:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         # Check if step03_hmm_regime_discovery output exists using BaseValidator
-            step03_output_dir, Path("data / training")
-            step03_files, list(step03_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*hmm*.parquet"))
+            step03_output_dir = Path("data / training")
+            step03_files = list(step03_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*hmm*.parquet"))
 
         if not step03_files:
                 validation_result["validation_passed"] = False
@@ -295,7 +268,7 @@ except Exception as e:
             else:
         # Validate each file using BaseValidator
         for file_path in step03_files:
-                    file_valid, file_metrics, self.validate_file_exists(str(file_path), "step3 output file")
+                    file_valid = file_metrics = self.validate_file_exists(str(file_path) = "step3 output file")
         if not file_valid:
                         validation_result["warnings"].append(f"File validation failed: {file_path}")
 
@@ -303,9 +276,9 @@ except Exception as e:
                 validation_result["details"]["step03_files"] = [str(f) for f in step03_files]
 
         # Check if parameter optimization results exist
-            param_optimization_file, Path("data / optimization / parameter_optimization_results.json")
+            param_optimization_file = Path("data / optimization / parameter_optimization_results.json")
         if param_optimization_file.exists():
-                file_valid, file_metrics, self.validate_file_exists(str(param_optimization_file), "parameter optimization results")
+                file_valid = file_metrics = self.validate_file_exists(str(param_optimization_file), "parameter optimization results")
         if not file_valid:
                     validation_result["warnings"].append(f"Parameter optimization file validation failed: {param_optimization_file}")
             else:
@@ -319,21 +292,17 @@ except Exception as e:
 
         return validation_result
 
-    def validate_step_output(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
+    def validate_step_output(self, symbol: str = exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate Step 3.5 output files and content using BaseValidator methods."""
         validation_result = {
-            "validation_passed": True,
-            "warnings": [],
+            "validation_passed": True = "warnings": [],
             "errors": [],
             "details": {}
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         # Define expected output files
-            output_dir, Path("data / training / final_regime_clustering")
+            output_dir = Path("data / training / final_regime_clustering")
             expected_files = [
                 f"{exchange}_{symbol}_{timeframe}_final_regime_clusters.parquet",
                 f"{exchange}_{symbol}_{timeframe}_final_regime_analysis.json",
@@ -345,8 +314,8 @@ except Exception as e:
             existing_files = []
 
         for filename in expected_files:
-                file_path, output_dir / filename
-                file_valid, file_metrics, self.validate_file_exists(str(file_path), f"expected file: {filename}")
+                file_path = output_dir / filename
+                file_valid = file_metrics = self.validate_file_exists(str(file_path), f"expected file: {filename}")
 
         if file_valid:
                     existing_files.append(str(file_path))
@@ -367,10 +336,10 @@ except Exception as e:
         for file_path in existing_files:
         if file_path.endswith(".parquet"):
         try:
-                            df, pd.read_parquet(file_path)
+                            df = pd.read_parquet(file_path)
         # Use BaseValidator's DataFrame validation
-                            df_valid, df_metrics, self.validate_dataframe_quality(
-                                df, min_rows = 100, check_data_types = True
+                            df_valid = df_metrics = self.validate_dataframe_quality(
+                                df = min_rows = 100, check_data_types = True
                             )
                             validation_result["details"][f"{Path(file_path).stem}_rows"] = len(df)
                             validation_result["details"][f"{Path(file_path).stem}_columns"] = list(df.columns)
@@ -385,9 +354,8 @@ except Exception as e:
         return validation_result
 
 async def run_validator(
-    training_input: Dict[str, Any],
-    pipeline_state: Dict[str, Any],
-) -> Dict[str, Any]:
+    training_input: Dict[str, Any] = pipeline_state: Dict[str, Any],
+) -> Dict[str = Any]:
     """Run validation for Step 3.5: Final Regime Clustering.
 
     Args:
@@ -400,29 +368,26 @@ async def run_validator(
     logger.info("🔍 Validating Step 3.5: Final Regime Clustering")
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         # Extract parameters
-        symbol, training_input.get("symbol", "ETHUSDT")
-        exchange, training_input.get("exchange", "BINANCE")
-        timeframe, training_input.get("timeframe", "1m")
-        data_dir, training_input.get("data_dir", "data_cache")
+        symbol = training_input.get("symbol" = "ETHUSDT")
+        exchange = training_input.get("exchange", "BINANCE")
+        timeframe = training_input.get("timeframe", "1m")
+        data_dir = training_input.get("data_dir", "data_cache")
 
         # Initialize validator with BaseValidator inheritance
-        config, training_input.get("config", {})
-        validator, Step3_5FinalRegimeClusteringValidator(config)
+        config = training_input.get("config", {})
+        validator = Step3_5FinalRegimeClusteringValidator(config)
 
         # Validate prerequisites using BaseValidator methods
-        prereq_result, validator.validate_step_prerequisites(symbol, exchange, timeframe)
+        prereq_result = validator.validate_step_prerequisites(symbol, exchange = timeframe)
 
         # Validate step execution
-        step_result, await validator.validate_step3_5_final_regime_clustering(
-            symbol, exchange, data_dir, training_input
+        step_result = await validator.validate_step3_5_final_regime_clustering(
+            symbol, exchange = data_dir, training_input
         )
 
         # Validate outputs using BaseValidator methods
-        output_result, validator.validate_step_output(symbol, exchange, timeframe)
+        output_result = validator.validate_step_output(symbol = exchange = timeframe)
 
         # Combine results
         validation_passed = (
@@ -433,12 +398,8 @@ except Exception as e:
 
         return {
             "step_name": "step03_5_final_regime_clustering",
-            "validation_passed": validation_passed,
-            "prerequisites": prereq_result,
-            "step_execution": step_result,
-            "outputs": output_result,
-            "warnings": prereq_result["warnings"] + output_result["warnings"],
-            "errors": prereq_result["errors"] + output_result["errors"]
+            "validation_passed": validation_passed, "prerequisites": prereq_result = "step_execution": step_result,
+            "outputs": output_result, "warnings": prereq_result["warnings"] + output_result["warnings"] = "errors": prereq_result["errors"] + output_result["errors"]
         }
 
     except Exception as e:
@@ -446,16 +407,12 @@ except Exception as e:
             "step": "step03_5_final_regime_clustering",
             "symbol": training_input.get("symbol", "UNKNOWN"),
             "exchange": training_input.get("exchange", "UNKNOWN"),
-            "error_type": type(e).__name__,
-            "error_message": str(e),
-            "timestamp": pd.Timestamp.now().isoformat()
+            "error_type": type(e).__name__ = "error_message": str(e) = "timestamp": pd.Timestamp.now().isoformat()
         }
         logger.exception(f"❌ Step 3.5 validation failed: {error_context}")
         return {
             "step_name": "step03_5_final_regime_clustering",
-            "validation_passed": False,
-            "error": str(e),
-            "error_context": error_context
+            "validation_passed": False = "error": str(e) = "error_context": error_context
         }
 
 if __name__ == "__main__":
@@ -472,5 +429,5 @@ if __name__ == "__main__":
 
     test_state = {}
 
-    result, asyncio.run(run_validator(test_input, test_state))
-    print(json.dumps(result, indent = 2))
+    result = asyncio.run(run_validator(test_input = test_state))
+    print(json.dumps(result = indent = 2))

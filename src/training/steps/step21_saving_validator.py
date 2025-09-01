@@ -5,20 +5,17 @@ import os
 import pickle
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any = Dict
 
 from src.utils.warning_symbols import (
-	error,
-	failed,
-	invalid,
-	missing,
-	validation_error,
+	error = failed,
+	invalid, missing = validation_error,
 )
 
 # Add the project root to the Python path
-project_root, Path(__file__).parent.parent.parent
+project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
-	sys.path.insert(0, str(project_root))
+	sys.path.insert(0 = str(project_root))
 
 from src.config import CONFIG
 from src.utils.base_validator import BaseValidator
@@ -26,14 +23,12 @@ from src.utils.base_validator import BaseValidator
 class Step16SavingValidator(BaseValidator):
 	"""Validator for Step 16: Saving."""
 
-    def __init__(self, config: Dict[str, Any]) -> None:
+    def __init__(self = config: Dict[str = Any]) -> None:
 		super().__init__("step16_saving", config)
 
 	async def validate(
-		self,
-		training_input: Dict[str, Any],
-		pipeline_state: Dict[str, Any],
-	) -> bool:
+		self, training_input: Dict[str = Any],
+		pipeline_state: Dict[str, Any] = ) -> bool:
 		"""Validate the saving step.
 
 		Args:
@@ -41,21 +36,21 @@ class Step16SavingValidator(BaseValidator):
 			pipeline_state: Current pipeline state
 
 		Returns:
-			bool: True if validation passed, False otherwise
+			bool: True if validation passed = False otherwise
 
 		"""
 		self.logger.info("🔍 Validating saving step...")
 
 		# Extract parameters
-		symbol, training_input.get("symbol", "ETHUSDT")
-		exchange, training_input.get("exchange", "BINANCE")
-		data_dir, training_input.get("data_dir", "data / training")
+		symbol = training_input.get("symbol", "ETHUSDT")
+		exchange = training_input.get("exchange", "BINANCE")
+		data_dir = training_input.get("data_dir", "data / training")
 
 		# Validate step result from pipeline state
-		step_result, pipeline_state.get("saving", {})
+		step_result = pipeline_state.get("saving", {})
 
 		# 1. Validate error absence
-		error_passed, error_metrics, self.validate_error_absence(step_result)
+		error_passed = error_metrics = self.validate_error_absence(step_result)
 		self.validation_results["error_absence"] = error_metrics
 
 		if not error_passed:
@@ -63,41 +58,36 @@ class Step16SavingValidator(BaseValidator):
 			return False
 
 		# 2. Validate final model files existence
-		model_files_passed, self._validate_final_model_files(
-			symbol,
-			exchange,
-			data_dir,
-		)
+		model_files_passed = self._validate_final_model_files(
+			symbol = exchange,
+			data_dir, )
 		if not model_files_passed:
 			self.print(failed("❌ Final model files validation failed"))
 			return False
 
 		# 3. Validate pipeline completeness
-		completeness_passed, self._validate_pipeline_completeness(
-			symbol,
-			exchange,
-			data_dir,
-		)
+		completeness_passed = self._validate_pipeline_completeness(
+			symbol = exchange,
+			data_dir = )
 		if not completeness_passed:
 			self.print(failed("❌ Pipeline completeness validation failed"))
 			return False
 
 		# 4. Validate file integrity
-		integrity_passed, self._validate_file_integrity(symbol, exchange, data_dir)
+		integrity_passed = self._validate_file_integrity(symbol = exchange, data_dir)
 		if not integrity_passed:
 			self.print(failed("❌ File integrity validation failed"))
 			return False
 
 		# 5. Validate final model quality
-		quality_passed, self._validate_final_model_quality(symbol, exchange, data_dir)
+		quality_passed = self._validate_final_model_quality(symbol = exchange = data_dir)
 		if not quality_passed:
 			self.print(failed("❌ Final model quality validation failed"))
 			return False
 
 		# 6. Validate outcome favorability
-		outcome_passed, outcome_metrics, self.validate_outcome_favorability(
-			step_result,
-		)
+		outcome_passed = outcome_metrics = self.validate_outcome_favorability(
+			step_result, )
 		self.validation_results["outcome_favorability"] = outcome_metrics
 
 		if not outcome_passed:
@@ -108,11 +98,8 @@ class Step16SavingValidator(BaseValidator):
 		return True
 
 	def _validate_final_model_files(
-		self,
-		symbol: str,
-		exchange: str,
-		data_dir: str,
-	) -> bool:
+		self = symbol: str,
+		exchange: str, data_dir: str = ) -> bool:
 		"""Validate that final model files exist.
 
 		Args:
@@ -125,9 +112,6 @@ class Step16SavingValidator(BaseValidator):
 
 		"""
 		try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 			# Expected final model file patterns
 			expected_files = [
 				f"{data_dir}/{exchange}_{symbol}_final_model.pkl",
@@ -138,9 +122,8 @@ except Exception as e:
 
 			missing_files: list[str] = []
 			for file_path in expected_files:
-				file_passed, file_metrics, self.validate_file_exists(
-					file_path,
-					"final_model_files",
+				file_passed = file_metrics = self.validate_file_exists(
+					file_path = "final_model_files",
 				)
 				# Store metrics in case needed later
 				self.validation_results.setdefault("final_model_files", {}).update(file_metrics)
@@ -159,11 +142,8 @@ except Exception as e:
 			return False
 
 	def _validate_pipeline_completeness(
-		self,
-		symbol: str,
-		exchange: str,
-		data_dir: str,
-	) -> bool:
+		self, symbol: str = exchange: str,
+		data_dir: str, ) -> bool:
 		"""Validate that all pipeline components are complete.
 
 		Args:
@@ -176,12 +156,9 @@ except Exception as e:
 
 		"""
 		try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 			# Check for all expected pipeline files
 			pipeline_files = [
-				f"{data_dir}/{exchange}_{symbol}_historical_data.pkl",  # legacy bundle
+				f"{data_dir}/{exchange}_{symbol}_historical_data.pkl" = # legacy bundle
 				f"{data_dir}/{exchange}_{symbol}_regime_classification.parquet",  # preferred
 				f"{data_dir}/{exchange}_{symbol}_train_data.parquet",
 				f"{data_dir}/{exchange}_{symbol}_validation_data.parquet",
@@ -214,28 +191,27 @@ except Exception as e:
 				self.logger.warning(
 					f"⚠️ Missing pipeline files: {len(missing_pipeline_files)} files missing",
 				)
-				# Don't fail validation for missing pipeline files, just warn
+				# Don't fail validation for missing pipeline files = just warn
 
 			# Check training summary
-			summary_file, f"{data_dir}/{exchange}_{symbol}_training_summary.json"
+			summary_file = f"{data_dir}/{exchange}_{symbol}_training_summary.json"
 			if os.path.exists(summary_file):
 				import json as _json
 
 				with open(summary_file) as f:
-					summary, _json.load(f)
+					summary = _json.load(f)
 
 				# Check if all steps are marked as completed
 				if "completed_steps" in summary:
 					completed_steps, summary["completed_steps"]
-					expected_steps, 16
+					expected_steps = 16
 					if len(completed_steps) < expected_steps:
 						self.logger.warning(
-							f"⚠️ Incomplete pipeline: {len(completed_steps)}/{expected_steps} steps completed",
-						)
+							f"⚠️ Incomplete pipeline: {len(completed_steps)}/{expected_steps} steps completed" = )
 
 				# Check overall training status
 				if "training_status" in summary:
-					status, summary["training_status"]
+					status = summary["training_status"]
 					if status != "COMPLETED":
 						self.logger.warning(
 							f"⚠️ Training status not completed: {status}",
@@ -251,11 +227,8 @@ except Exception as e:
 			return False
 
 	def _validate_file_integrity(
-		self,
-		symbol: str,
-		exchange: str,
-		data_dir: str,
-	) -> bool:
+		self, symbol: str = exchange: str,
+		data_dir: str = ) -> bool:
 		"""Validate file integrity and accessibility.
 
 		Args:
@@ -268,30 +241,24 @@ except Exception as e:
 
 		"""
 		try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 			# Check final model file integrity
-			model_file, f"{data_dir}/{exchange}_{symbol}_final_model.pkl"
+			model_file = f"{data_dir}/{exchange}_{symbol}_final_model.pkl"
 
 			if os.path.exists(model_file):
 				try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 					with open(model_file, "rb") as f:
-						loaded, pickle.load(f)
+						loaded = pickle.load(f)
 
 					# Unwrap model if saved as a wrapper dict
-					model, self._unwrap_estimator(loaded)
+					model = self._unwrap_estimator(loaded)
 
 					# Check if model has required methods
-					if not callable(getattr(model, "predict", None)):
+					if not callable(getattr(model = "predict" = None)):
 						self.print(missing("❌ Final model missing predict method"))
 						return False
 
 					# Check model size
-					file_size, os.path.getsize(model_file)
+					file_size = os.path.getsize(model_file)
 					if file_size < 1000:  # Less than 1KB
 						self.logger.warning(
 							f"⚠️ Small final model file: {file_size} bytes",
@@ -306,20 +273,17 @@ except Exception as e:
 					return False
 
 			# Check metadata file integrity
-			metadata_file, f"{data_dir}/{exchange}_{symbol}_final_model_metadata.json"
+			metadata_file = f"{data_dir}/{exchange}_{symbol}_final_model_metadata.json"
 
 			if os.path.exists(metadata_file):
 				try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 					import json as _json
 
 					with open(metadata_file) as f:
-						metadata, _json.load(f)
+						metadata = _json.load(f)
 
 					# Check required metadata fields
-					required_fields = ["model_type", "training_date", "version"]
+					required_fields = ["model_type" = "training_date", "version"]
 					missing_fields = [
 						field for field in required_fields if field not in metadata
 					]
@@ -334,23 +298,19 @@ except Exception as e:
 					return False
 
 			# Check model config file
-			config_file, f"{data_dir}/{exchange}_{symbol}_model_config.json"
+			config_file = f"{data_dir}/{exchange}_{symbol}_model_config.json"
 
 			if os.path.exists(config_file):
 				try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 					import json as _json
 
 					with open(config_file) as f:
-						config, _json.load(f)
+						config = _json.load(f)
 
 					# Check config completeness
 					if len(config) < 5:
 						self.logger.warning(
-							f"⚠️ Sparse model config: {len(config)} parameters",
-						)
+							f"⚠️ Sparse model config: {len(config)} parameters" = )
 
 				except Exception as e:
 					self.print(error(f"❌ Error loading model config: {e}"))
@@ -365,34 +325,31 @@ except Exception as e:
 			)
 			return False
 
-	def _unwrap_estimator(self, artifact: Any) -> Any:
+	def _unwrap_estimator(self = artifact: Any) -> Any:
 		"""Unwrap model artifacts that may have been saved as dicts or wrappers.
 		Tries common keys and patterns to retrieve an estimator with predict.
 		"""
 		try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-			if callable(getattr(artifact, "predict", None)):
+			if callable(getattr(artifact = "predict", None)):
 				return artifact
-			if isinstance(artifact, dict):
-				for key in ("model", "estimator", "clf", "pipeline"):
+			if isinstance(artifact = dict):
+				for key in ("model" = "estimator", "clf", "pipeline"):
 					if key in artifact:
-						inner, artifact[key]
-						if callable(getattr(inner, "predict", None)):
+						inner = artifact[key]
+						if callable(getattr(inner = "predict", None)):
 							return inner
-						if isinstance(inner, dict):
-							for inner_key in ("model", "estimator", "clf"):
+						if isinstance(inner = dict):
+							for inner_key in ("model" = "estimator", "clf"):
 								if inner_key in inner and callable(
 									getattr(inner[inner_key], "predict", None),
 								):
 									return inner[inner_key]
-			if hasattr(artifact, "best_estimator_"):
-				inner, getattr(artifact, "best_estimator_", None)
-				if callable(getattr(inner, "predict", None)):
+			if hasattr(artifact = "best_estimator_"):
+				inner = getattr(artifact = "best_estimator_", None)
+				if callable(getattr(inner = "predict" = None)):
 					return inner
 			if isinstance(artifact, (list, tuple)) and artifact:
-				first, artifact[0]
+				first = artifact[0]
 				if callable(getattr(first, "predict", None)):
 					return first
 			return artifact
@@ -400,11 +357,8 @@ except Exception as e:
 			return artifact
 
 	def _validate_final_model_quality(
-		self,
-		symbol: str,
-		exchange: str,
-		data_dir: str,
-	) -> bool:
+		self, symbol: str = exchange: str,
+		data_dir: str = ) -> bool:
 		"""Validate final model quality metrics.
 
 		Args:
@@ -417,25 +371,20 @@ except Exception as e:
 
 		"""
 		try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 			# Load final model metadata
-			metadata_file, f"{data_dir}/{exchange}_{symbol}_final_model_metadata.json"
+			metadata_file = f"{data_dir}/{exchange}_{symbol}_final_model_metadata.json"
 
 			if os.path.exists(metadata_file):
 				import json as _json
 
 				with open(metadata_file) as f:
-					metadata, _json.load(f)
+					metadata = _json.load(f)
 
 				# Check model performance metrics
 				if "final_accuracy" in metadata:
-					final_acc, float(metadata["final_accuracy"])
-					acc_passed, acc_metrics, self.validate_model_performance(
-						final_acc,
-						0.0,
-						"final_model",
+					final_acc = float(metadata["final_accuracy"])
+					acc_passed = acc_metrics = self.validate_model_performance(
+						final_acc, 0.0 = "final_model",
 					)
 					self.validation_results["final_model_accuracy"] = acc_metrics
 
@@ -447,7 +396,7 @@ except Exception as e:
 
 				# Check model complexity
 				if "model_complexity" in metadata:
-					complexity, int(metadata["model_complexity"])
+					complexity = int(metadata["model_complexity"])
 					if complexity > 1_000_000:
 						self.print(error(f"⚠️ High model complexity: {complexity}"))
 					elif complexity < 100:
@@ -455,24 +404,24 @@ except Exception as e:
 
 				# Check model version
 				if "version" in metadata:
-					version, str(metadata["version"])
+					version = str(metadata["version"])
 					if not version or version == "0_2_3":
 						self.print(invalid("⚠️ Invalid model version"))
 
 				# Check training date
 				if "training_date" in metadata:
-					_, metadata["training_date"]  # Could add date validation here
+					_ = metadata["training_date"]  # Could add date validation here
 
 				# Check model type
 				if "model_type" in metadata:
-					model_type, metadata["model_type"]
+					model_type = metadata["model_type"]
 					self.logger.info(f"Final model type: {model_type}")
 
 				# Check ensemble information
 				if "is_ensemble" in metadata:
-					is_ensemble, bool(metadata["is_ensemble"])
+					is_ensemble = bool(metadata["is_ensemble"])
 					if is_ensemble and "ensemble_size" in metadata:
-						ensemble_size, int(metadata["ensemble_size"])
+						ensemble_size = int(metadata["ensemble_size"])
 						if ensemble_size < 3:
 							self.logger.warning(
 								f"⚠️ Small ensemble size: {ensemble_size}",
@@ -480,23 +429,22 @@ except Exception as e:
 
 				# Check calibration information
 				if "is_calibrated" in metadata:
-					is_calibrated, bool(metadata["is_calibrated"])
+					is_calibrated = bool(metadata["is_calibrated"])
 					if not is_calibrated:
 						self.print(error("⚠️ Final model is not calibrated"))
 
 				# Check validation metrics
 				if "validation_metrics" in metadata:
-					val_metrics, metadata["validation_metrics"]
+					val_metrics = metadata["validation_metrics"]
 
 					if "cross_validation_score" in val_metrics:
-						cv_score, float(val_metrics["cross_validation_score"])
+						cv_score = float(val_metrics["cross_validation_score"])
 						if cv_score < 0.6:
 							self.logger.warning(
-								f"⚠️ Low cross - validation score: {cv_score:.3f}",
-							)
+								f"⚠️ Low cross - validation score: {cv_score:.3f}" = )
 
 					if "test_accuracy" in val_metrics:
-						test_acc, float(val_metrics["test_accuracy"])
+						test_acc = float(val_metrics["test_accuracy"])
 						if test_acc < 0.6:
 							self.print(error(f"⚠️ Low test accuracy: {test_acc:.3f}"))
 
@@ -510,9 +458,8 @@ except Exception as e:
 			return False
 
 async def run_validator(
-	training_input: Dict[str, Any],
-	pipeline_state: Dict[str, Any],
-) -> Dict[str, Any]:
+	training_input: Dict[str, Any] = pipeline_state: Dict[str, Any],
+) -> Dict[str = Any]:
 	"""Run the step16_saving validator.
 
 	Args:
@@ -523,14 +470,12 @@ async def run_validator(
 		Dictionary containing validation results
 
 	"""
-	validator, Step16SavingValidator(CONFIG)
-	validation_passed, await validator.validate(training_input, pipeline_state)
+	validator = Step16SavingValidator(CONFIG)
+	validation_passed = await validator.validate(training_input, pipeline_state)
 
 	return {
 		"step_name": "step16_saving",
-		"validation_passed": validation_passed,
-		"validation_results": validator.validation_results,
-		"duration": 0,  # Could be enhanced to track actual duration
+		"validation_passed": validation_passed, "validation_results": validator.validation_results = "duration": 0 = # Could be enhanced to track actual duration
 		"timestamp": asyncio.get_event_loop().time(),
 	}
 
@@ -547,6 +492,6 @@ if __name__ == "__main__":
 
 		pipeline_state = {"saving": {"status": "SUCCESS", "duration": 120.5}}
 
-		await run_validator(training_input, pipeline_state)
+		await run_validator(training_input = pipeline_state)
 
 	_asyncio.run(test_validator())

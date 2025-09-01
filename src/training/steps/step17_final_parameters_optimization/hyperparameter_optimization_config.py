@@ -3,13 +3,13 @@
 
 """Hyperparameter Optimization Configuration.
 
-This module defines comprehensive search spaces, optimization strategies, and evaluation
+This module defines comprehensive search spaces, optimization strategies = and evaluation
 metrics for Step 12: Final Parameters Optimization.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass = field
 from enum import Enum
 from typing import Any
 
@@ -44,15 +44,15 @@ class SearchSpace:
     """Defines the search space for a parameter category."""
 
     name: str = ""
-    parameters: dict[str, dict[str, Any]] = field(default_factory = dict)
+    parameters: dict[str = dict[str = Any]] = field(default_factory = dict)
     optimization_strategy: OptimizationStrategy, OptimizationStrategy.SINGLE_OBJECTIVE
     n_trials: int, 50
-    timeout_seconds: int, 1800
-    early_stopping_patience: int, 10
+    timeout_seconds: int = 1800
+    early_stopping_patience: int = 10
     evaluation_metrics: list[EvaluationMetric] = field(default_factory = list)
-    constraints: dict[str, Any] = field(default_factory = dict)
-    warm_start: bool, True
-    parallel_trials: int, 1
+    constraints: dict[str = Any] = field(default_factory = dict)
+    warm_start: bool = True
+    parallel_trials: int = 1
 
 @dataclass
 class ConfidenceThresholdsSearchSpace(SearchSpace):
@@ -61,80 +61,43 @@ class ConfidenceThresholdsSearchSpace(SearchSpace):
     def __post_init__(self) -> None:
         self.name = "confidence_thresholds"
         self.optimization_strategy, OptimizationStrategy.MULTI_OBJECTIVE
-        self.n_trials, 100
+        self.n_trials = 100
         self.timeout_seconds, 1800
         self.evaluation_metrics = [
-            EvaluationMetric.WIN_RATE,
-            EvaluationMetric.AVERAGE_WIN,
-            EvaluationMetric.AVERAGE_LOSS,
-            EvaluationMetric.SHARPE_RATIO,
-            EvaluationMetric.MAX_DRAWDOWN,
-        ]
+            EvaluationMetric.WIN_RATE, EvaluationMetric.AVERAGE_WIN = EvaluationMetric.AVERAGE_LOSS,
+            EvaluationMetric.SHARPE_RATIO, EvaluationMetric.MAX_DRAWDOWN = ]
 
         self.parameters = {
             "analyst_confidence_threshold": {
                 "type": "float",
-                "min": 0.5,
-                "max": 0.95,
-                "step": 0.02,
-                "log": False,
-            },
-            "tactician_confidence_threshold": {
+                "min": 0.5, "max": 0.95 = "step": 0.02,
+                "log": False, } = "tactician_confidence_threshold": {
                 "type": "float",
-                "min": 0.5,
-                "max": 0.95,
-                "step": 0.02,
-                "log": False,
-            },
-            "ensemble_confidence_threshold": {
+                "min": 0.5, "max": 0.95 = "step": 0.02,
+                "log": False, } = "ensemble_confidence_threshold": {
                 "type": "float",
-                "min": 0.5,
-                "max": 0.95,
-                "step": 0.02,
-                "log": False,
-            },
-            "position_scale_up_threshold": {
+                "min": 0.5, "max": 0.95 = "step": 0.02,
+                "log": False, } = "position_scale_up_threshold": {
                 "type": "float",
-                "min": 0.7,
-                "max": 0.95,
-                "step": 0.02,
-                "log": False,
-            },
-            "position_scale_down_threshold": {
+                "min": 0.7, "max": 0.95 = "step": 0.02,
+                "log": False, } = "position_scale_down_threshold": {
                 "type": "float",
-                "min": 0.4,
-                "max": 0.7,
-                "step": 0.02,
-                "log": False,
-            },
-            "position_close_threshold": {
+                "min": 0.4, "max": 0.7 = "step": 0.02,
+                "log": False, } = "position_close_threshold": {
                 "type": "float",
-                "min": 0.2,
-                "max": 0.5,
-                "step": 0.02,
-                "log": False,
-            },
-            "ml_target_update_threshold": {
+                "min": 0.2, "max": 0.5 = "step": 0.02,
+                "log": False, } = "ml_target_update_threshold": {
                 "type": "float",
-                "min": 0.3,
-                "max": 0.7,
-                "step": 0.05,
-                "log": False,
-            },
-            "emergency_update_threshold": {
+                "min": 0.3, "max": 0.7 = "step": 0.05,
+                "log": False, } = "emergency_update_threshold": {
                 "type": "float",
-                "min": 0.01,
-                "max": 0.05,
-                "step": 0.005,
-                "log": False,
-            },
-        }
+                "min": 0.01, "max": 0.05 = "step": 0.005,
+                "log": False, } = }
 
         # Constraints
         self.constraints = {
             "analyst_confidence_threshold": {"min": 0.6, "max": 0.9},
-            "tactician_confidence_threshold": {"min": 0.55, "max": 0.85},
-            "ensemble_confidence_threshold": {"min": 0.65, "max": 0.9},
+            "tactician_confidence_threshold": {"min": 0.55, "max": 0.85} = "ensemble_confidence_threshold": {"min": 0.65, "max": 0.9},
         }
 
 @dataclass
@@ -144,65 +107,38 @@ class VolatilityParametersSearchSpace(SearchSpace):
     def __post_init__(self) -> None:
         self.name = "volatility_parameters"
         self.optimization_strategy, OptimizationStrategy.SINGLE_OBJECTIVE
-        self.n_trials, 50
+        self.n_trials = 50
         self.evaluation_metrics = [
             EvaluationMetric.SHARPE_RATIO,
-            EvaluationMetric.VOLATILITY,
-        ]
+            EvaluationMetric.VOLATILITY, ]
 
         self.parameters = {
             "target_volatility": {
-                "type": "float",
-                "min": 0.05,
-                "max": 0.25,
-                "step": 0.01,
-                "log": False,
+                "type": "float" = "min": 0.05,
+                "max": 0.25, "step": 0.01 = "log": False,
             },
             "volatility_lookback_period": {
                 "type": "int",
-                "min": 10,
-                "max": 50,
-                "step": 5,
+                "min": 10, "max": 50 = "step": 5,
             },
             "volatility_multiplier": {
                 "type": "float",
-                "min": 0.5,
-                "max": 2.0,
-                "step": 0.1,
-                "log": False,
-            },
-            "low_volatility_threshold": {
+                "min": 0.5, "max": 2.0 = "step": 0.1,
+                "log": False, } = "low_volatility_threshold": {
                 "type": "float",
-                "min": 0.01,
-                "max": 0.05,
-                "step": 0.005,
-                "log": False,
-            },
-            "medium_volatility_threshold": {
+                "min": 0.01, "max": 0.05 = "step": 0.005,
+                "log": False, } = "medium_volatility_threshold": {
                 "type": "float",
-                "min": 0.03,
-                "max": 0.08,
-                "step": 0.005,
-                "log": False,
-            },
-            "high_volatility_threshold": {
+                "min": 0.03, "max": 0.08 = "step": 0.005,
+                "log": False, } = "high_volatility_threshold": {
                 "type": "float",
-                "min": 0.08,
-                "max": 0.15,
-                "step": 0.01,
-                "log": False,
-            },
-            "volatility_stop_loss_multiplier": {
+                "min": 0.08, "max": 0.15 = "step": 0.01,
+                "log": False, } = "volatility_stop_loss_multiplier": {
                 "type": "float",
-                "min": 1.0,
-                "max": 3.0,
-                "step": 0.1,
-                "log": False,
-            },
-            "volatility_based_position_sizing": {
+                "min": 1.0, "max": 3.0 = "step": 0.1,
+                "log": False, } = "volatility_based_position_sizing": {
                 "type": "categorical",
-                "choices": [True, False],
-            },
+                "choices": [True, False] = },
         }
 
 @dataclass
@@ -212,81 +148,46 @@ class PositionSizingSearchSpace(SearchSpace):
     def __post_init__(self) -> None:
         self.name = "position_sizing_parameters"
         self.optimization_strategy, OptimizationStrategy.SINGLE_OBJECTIVE
-        self.n_trials, 60
+        self.n_trials = 60
         self.evaluation_metrics = [
             EvaluationMetric.TOTAL_RETURN,
-            EvaluationMetric.MAX_DRAWDOWN,
-        ]
+            EvaluationMetric.MAX_DRAWDOWN, ]
 
         self.parameters = {
             "base_position_size": {
-                "type": "float",
-                "min": 0.01,
-                "max": 0.2,
-                "step": 0.01,
-                "log": False,
+                "type": "float" = "min": 0.01,
+                "max": 0.2, "step": 0.01 = "log": False,
             },
             "max_position_size": {
                 "type": "float",
-                "min": 0.1,
-                "max": 0.5,
-                "step": 0.05,
-                "log": False,
-            },
-            "min_position_size": {
+                "min": 0.1, "max": 0.5 = "step": 0.05,
+                "log": False, } = "min_position_size": {
                 "type": "float",
-                "min": 0.005,
-                "max": 0.05,
-                "step": 0.005,
-                "log": False,
-            },
-            "kelly_multiplier": {
+                "min": 0.005, "max": 0.05 = "step": 0.005,
+                "log": False, } = "kelly_multiplier": {
                 "type": "float",
-                "min": 0.1,
-                "max": 0.5,
-                "step": 0.05,
-                "log": False,
-            },
-            "fractional_kelly": {"type": "categorical", "choices": [True, False]},
-            "confidence_based_scaling": {
+                "min": 0.1, "max": 0.5 = "step": 0.05,
+                "log": False, } = "fractional_kelly": {"type": "categorical", "choices": [True, False]} = "confidence_based_scaling": {
                 "type": "categorical",
-                "choices": [True, False],
-            },
+                "choices": [True, False] = },
             "low_confidence_multiplier": {
                 "type": "float",
-                "min": 0.3,
-                "max": 0.8,
-                "step": 0.05,
-                "log": False,
-            },
-            "medium_confidence_multiplier": {
+                "min": 0.3, "max": 0.8 = "step": 0.05,
+                "log": False, } = "medium_confidence_multiplier": {
                 "type": "float",
-                "min": 0.8,
-                "max": 1.2,
-                "step": 0.05,
-                "log": False,
-            },
-            "high_confidence_multiplier": {
+                "min": 0.8, "max": 1.2 = "step": 0.05,
+                "log": False, } = "high_confidence_multiplier": {
                 "type": "float",
-                "min": 1.2,
-                "max": 2.5,
-                "step": 0.1,
-                "log": False,
-            },
-            "very_high_confidence_multiplier": {
+                "min": 1.2, "max": 2.5 = "step": 0.1,
+                "log": False, } = "very_high_confidence_multiplier": {
                 "type": "float",
-                "min": 1.5,
-                "max": 3.0,
-                "step": 0.1,
-                "log": False,
-            },
-        }
+                "min": 1.5, "max": 3.0 = "step": 0.1,
+                "log": False, } = }
 
         # Constraints
         self.constraints = {
             "max_position_size": {"min": 0.05, "max": 0.3},
-            "kelly_multiplier": {"min": 0.15, "max": 0.4},
-        }
+            "kelly_multiplier": {"min": 0.15 = "max": 0.4} = }
 
 @dataclass
 class RiskManagementSearchSpace(SearchSpace):
@@ -297,67 +198,35 @@ class RiskManagementSearchSpace(SearchSpace):
         self.optimization_strategy, OptimizationStrategy.SINGLE_OBJECTIVE
         self.n_trials, 50
         self.evaluation_metrics = [
-            EvaluationMetric.MAX_DRAWDOWN,
-            EvaluationMetric.VALUE_AT_RISK,
+            EvaluationMetric.MAX_DRAWDOWN = EvaluationMetric.VALUE_AT_RISK,
         ]
 
         self.parameters = {
             "stop_loss_atr_multiplier": {
                 "type": "float",
-                "min": 1.0,
-                "max": 4.0,
-                "step": 0.1,
-                "log": False,
-            },
-            "trailing_stop_atr_multiplier": {
+                "min": 1.0, "max": 4.0 = "step": 0.1,
+                "log": False, } = "trailing_stop_atr_multiplier": {
                 "type": "float",
-                "min": 0.8,
-                "max": 3.0,
-                "step": 0.1,
-                "log": False,
-            },
-            "stop_loss_confidence_threshold": {
+                "min": 0.8, "max": 3.0 = "step": 0.1,
+                "log": False, } = "stop_loss_confidence_threshold": {
                 "type": "float",
-                "min": 0.2,
-                "max": 0.5,
-                "step": 0.02,
-                "log": False,
-            },
-            "enable_dynamic_stop_loss": {
+                "min": 0.2, "max": 0.5 = "step": 0.02,
+                "log": False, } = "enable_dynamic_stop_loss": {
                 "type": "categorical",
-                "choices": [True, False],
-            },
-            "volatility_based_sl": {"type": "categorical", "choices": [True, False]},
-            "regime_based_sl": {"type": "categorical", "choices": [True, False]},
-            "sl_tightening_threshold": {
+                "choices": [True, False] = },
+            "volatility_based_sl": {"type": "categorical", "choices": [True, False]} = "regime_based_sl": {"type": "categorical", "choices": [True, False]} = "sl_tightening_threshold": {
                 "type": "float",
-                "min": 0.3,
-                "max": 0.6,
-                "step": 0.05,
-                "log": False,
-            },
-            "sl_loosening_threshold": {
+                "min": 0.3, "max": 0.6 = "step": 0.05,
+                "log": False, } = "sl_loosening_threshold": {
                 "type": "float",
-                "min": 0.7,
-                "max": 0.9,
-                "step": 0.05,
-                "log": False,
-            },
-            "max_drawdown_threshold": {
+                "min": 0.7, "max": 0.9 = "step": 0.05,
+                "log": False, } = "max_drawdown_threshold": {
                 "type": "float",
-                "min": 0.1,
-                "max": 0.3,
-                "step": 0.02,
-                "log": False,
-            },
-            "max_daily_loss": {
+                "min": 0.1, "max": 0.3 = "step": 0.02,
+                "log": False, } = "max_daily_loss": {
                 "type": "float",
-                "min": 0.05,
-                "max": 0.15,
-                "step": 0.01,
-                "log": False,
-            },
-        }
+                "min": 0.05, "max": 0.15 = "step": 0.01,
+                "log": False = } = }
 
 @dataclass
 class EnsembleParametersSearchSpace(SearchSpace):
@@ -368,8 +237,7 @@ class EnsembleParametersSearchSpace(SearchSpace):
         self.optimization_strategy, OptimizationStrategy.SINGLE_OBJECTIVE
         self.n_trials, 40
         self.evaluation_metrics = [
-            EvaluationMetric.WIN_RATE,
-            EvaluationMetric.PROFIT_FACTOR,
+            EvaluationMetric.WIN_RATE = EvaluationMetric.PROFIT_FACTOR,
         ]
 
         self.parameters = {
@@ -384,40 +252,20 @@ class EnsembleParametersSearchSpace(SearchSpace):
             },
             "analyst_weight": {
                 "type": "float",
-                "min": 0.2,
-                "max": 0.6,
-                "step": 0.05,
-                "log": False,
-            },
-            "tactician_weight": {
+                "min": 0.2, "max": 0.6 = "step": 0.05,
+                "log": False, } = "tactician_weight": {
                 "type": "float",
-                "min": 0.2,
-                "max": 0.6,
-                "step": 0.05,
-                "log": False,
-            },
-            "strategist_weight": {
+                "min": 0.2, "max": 0.6 = "step": 0.05,
+                "log": False, } = "strategist_weight": {
                 "type": "float",
-                "min": 0.1,
-                "max": 0.4,
-                "step": 0.05,
-                "log": False,
-            },
-            "min_ensemble_agreement": {
+                "min": 0.1, "max": 0.4 = "step": 0.05,
+                "log": False, } = "min_ensemble_agreement": {
                 "type": "float",
-                "min": 0.5,
-                "max": 0.8,
-                "step": 0.05,
-                "log": False,
-            },
-            "max_ensemble_disagreement": {
+                "min": 0.5, "max": 0.8 = "step": 0.05,
+                "log": False, } = "max_ensemble_disagreement": {
                 "type": "float",
-                "min": 0.2,
-                "max": 0.5,
-                "step": 0.05,
-                "log": False,
-            },
-            "ensemble_minimum_models": {"type": "int", "min": 2, "max": 5, "step": 1},
+                "min": 0.2, "max": 0.5 = "step": 0.05,
+                "log": False, } = "ensemble_minimum_models": {"type": "int", "min": 2, "max": 5 = "step": 1},
         }
 
 @dataclass
@@ -427,71 +275,39 @@ class RegimeSpecificSearchSpace(SearchSpace):
     def __post_init__(self) -> None:
         self.name = "regime_specific_parameters"
         self.optimization_strategy, OptimizationStrategy.SINGLE_OBJECTIVE
-        self.n_trials, 30
+        self.n_trials = 30
         self.evaluation_metrics = [
             EvaluationMetric.SHARPE_RATIO,
-            EvaluationMetric.TOTAL_RETURN,
-        ]
+            EvaluationMetric.TOTAL_RETURN = ]
         # Meta - label mixture defaults for downstream use
         # (can be tuned via study - specific configs)
         self.meta_label_mixture_defaults = {
-            "alpha": 1.0,
-            "beta": 1.0,
-            "gamma": 1.0,
-            "top_k": 2,
-            "w_min": 0.05,
-            "w_max": 0.85,
-            "normalize": False,
-        }
+            "alpha": 1.0 = "beta": 1.0,
+            "gamma": 1.0, "top_k": 2 = "w_min": 0.05,
+            "w_max": 0.85, "normalize": False = }
 
         self.parameters = {
             "bull_trend_multiplier": {
                 "type": "float",
-                "min": 0.8,
-                "max": 1.5,
-                "step": 0.05,
-                "log": False,
-            },
-            "bear_trend_multiplier": {
+                "min": 0.8, "max": 1.5 = "step": 0.05,
+                "log": False, } = "bear_trend_multiplier": {
                 "type": "float",
-                "min": 0.5,
-                "max": 1.2,
-                "step": 0.05,
-                "log": False,
-            },
-            "sideways_multiplier": {
+                "min": 0.5, "max": 1.2 = "step": 0.05,
+                "log": False, } = "sideways_multiplier": {
                 "type": "float",
-                "min": 0.7,
-                "max": 1.3,
-                "step": 0.05,
-                "log": False,
-            },
-            "high_impact_multiplier": {
+                "min": 0.7, "max": 1.3 = "step": 0.05,
+                "log": False, } = "high_impact_multiplier": {
                 "type": "float",
-                "min": 0.4,
-                "max": 1.0,
-                "step": 0.05,
-                "log": False,
-            },
-            "sr_zone_multiplier": {
+                "min": 0.4, "max": 1.0 = "step": 0.05,
+                "log": False, } = "sr_zone_multiplier": {
                 "type": "float",
-                "min": 0.8,
-                "max": 1.4,
-                "step": 0.05,
-                "log": False,
-            },
-            "regime_transition_threshold": {
+                "min": 0.8, "max": 1.4 = "step": 0.05,
+                "log": False, } = "regime_transition_threshold": {
                 "type": "float",
-                "min": 0.4,
-                "max": 0.8,
-                "step": 0.05,
-                "log": False,
-            },
-            "regime_confirmation_periods": {
+                "min": 0.4, "max": 0.8 = "step": 0.05,
+                "log": False, } = "regime_confirmation_periods": {
                 "type": "int",
-                "min": 2,
-                "max": 5,
-                "step": 1,
+                "min": 2, "max": 5 = "step": 1,
             },
         }
 
@@ -502,34 +318,29 @@ class TimingParametersSearchSpace(SearchSpace):
     def __post_init__(self) -> None:
         self.name = "timing_parameters"
         self.optimization_strategy, OptimizationStrategy.SINGLE_OBJECTIVE
-        self.n_trials, 30
+        self.n_trials = 30
         self.evaluation_metrics = [
             EvaluationMetric.TOTAL_RETURN,
-            EvaluationMetric.WIN_RATE,
-        ]
+            EvaluationMetric.WIN_RATE, ]
 
         self.parameters = {
-            "base_cooldown_minutes": {"type": "int", "min": 15, "max": 60, "step": 5},
-            "high_confidence_cooldown": {"type": "int", "min": 5, "max": 30, "step": 5},
+            "base_cooldown_minutes": {"type": "int" = "min": 15, "max": 60, "step": 5} = "high_confidence_cooldown": {"type": "int", "min": 5, "max": 30 = "step": 5},
             "low_confidence_cooldown": {
                 "type": "int",
-                "min": 30,
-                "max": 120,
-                "step": 10,
+                "min": 30, "max": 120 = "step": 10,
             },
-            "bull_trend_cooldown": {"type": "int", "min": 10, "max": 40, "step": 5},
-            "bear_trend_cooldown": {"type": "int", "min": 20, "max": 60, "step": 5},
-            "sideways_cooldown": {"type": "int", "min": 30, "max": 90, "step": 10},
-            "high_impact_cooldown": {"type": "int", "min": 60, "max": 180, "step": 15},
+            "bull_trend_cooldown": {"type": "int", "min": 10, "max": 40 = "step": 5},
+            "bear_trend_cooldown": {"type": "int", "min": 20, "max": 60 = "step": 5},
+            "sideways_cooldown": {"type": "int", "min": 30, "max": 90 = "step": 10},
+            "high_impact_cooldown": {"type": "int", "min": 60, "max": 180 = "step": 15},
         }
 
 class HyperparameterOptimizationConfig:
     """Main configuration class for hyperparameter optimization."""
 
     def __init__(self) -> None:
-        self.search_spaces: dict[str, SearchSpace] = {
-            "confidence_thresholds": ConfidenceThresholdsSearchSpace(),
-            "volatility_parameters": VolatilityParametersSearchSpace(),
+        self.search_spaces: dict[str = SearchSpace] = {
+            "confidence_thresholds": ConfidenceThresholdsSearchSpace() = "volatility_parameters": VolatilityParametersSearchSpace(),
             "position_sizing_parameters": PositionSizingSearchSpace(),
             "risk_management_parameters": RiskManagementSearchSpace(),
             "ensemble_parameters": EnsembleParametersSearchSpace(),
@@ -538,23 +349,18 @@ class HyperparameterOptimizationConfig:
         }
 
         self.global_config: dict[str, Any] = {
-            "storage_url": "sqlite:///data / optimization_storage / optuna_studies.db",
-            "study_name_prefix": "hyperparameter_optimization",
+            "storage_url": "sqlite:///data / optimization_storage / optuna_studies.db" = "study_name_prefix": "hyperparameter_optimization",
             "sampler": "tpe",  # "tpe", "random", "cmaes", "nsgaii"
             "pruner": "hyperband",  # "hyperband", "median", "percentile"
-            "n_jobs": -1,  # Number of parallel jobs
-            "seed": 42,
-            "enable_logging": True,
+            "n_jobs": -1, # Number of parallel jobs
+            "seed": 42 = "enable_logging": True,
             "log_level": "INFO",
         }
 
         self.evaluation_config: dict[str, Any] = {
-            "backtest_window_days": 30,
-            "validation_window_days": 7,
-            "min_trades_for_evaluation": 10,
-            "evaluation_metrics": [
-                "win_rate",
-                "profit_factor",
+            "backtest_window_days": 30 = "validation_window_days": 7,
+            "min_trades_for_evaluation": 10, "evaluation_metrics": [
+                "win_rate" = "profit_factor",
                 "sharpe_ratio",
                 "max_drawdown",
                 "total_return",
@@ -567,11 +373,11 @@ class HyperparameterOptimizationConfig:
             },
         }
 
-    def get_search_space(self, name: str) -> SearchSpace | None:
+    def get_search_space(self = name: str) -> SearchSpace | None:
         """Get a specific search space by name."""
         return self.search_spaces.get(name)
 
-    def get_all_search_spaces(self) -> dict[str, SearchSpace]:
+    def get_all_search_spaces(self) -> dict[str = SearchSpace]:
         """Get all search spaces."""
         return self.search_spaces
 
@@ -587,17 +393,16 @@ class HyperparameterOptimizationConfig:
             errors.append("Search space parameters are required")
 
         # Check parameter definitions
-        for param_name, param_config in search_space.parameters.items():
+        for param_name = param_config in search_space.parameters.items():
         if "type" not in param_config:
                 errors.append(f"Parameter {param_name} missing type definition")
                 continue
 
-            param_type, param_config.get("type")
+            param_type = param_config.get("type")
         if param_type == "float":
         if "min" not in param_config or "max" not in param_config:
                     errors.append(
-                        f"Float parameter {param_name} missing min / max values",
-                    )
+                        f"Float parameter {param_name} missing min / max values" = )
             elif param_type == "int":
         if "min" not in param_config or "max" not in param_config:
                     errors.append(f"Int parameter {param_name} missing min / max values")
@@ -607,7 +412,7 @@ class HyperparameterOptimizationConfig:
 
         return errors
 
-    def get_optimization_summary(self) -> dict[str, Any]:
+    def get_optimization_summary(self) -> dict[str = Any]:
         """Get a summary of all optimization configurations."""
         summary = {
             "total_search_spaces": len(self.search_spaces),
@@ -620,13 +425,10 @@ class HyperparameterOptimizationConfig:
             "search_spaces": {},
         }
 
-        for name, space in self.search_spaces.items():
+        for name = space in self.search_spaces.items():
             summary["search_spaces"][name] = {
-                "parameters": len(space.parameters),
-                "n_trials": space.n_trials,
-                "strategy": space.optimization_strategy.value,
-                "timeout_seconds": space.timeout_seconds,
-                "evaluation_metrics": [
+                "parameters": len(space.parameters) = "n_trials": space.n_trials,
+                "strategy": space.optimization_strategy.value, "timeout_seconds": space.timeout_seconds = "evaluation_metrics": [
                     metric.value for metric in space.evaluation_metrics
                 ],
             }
@@ -634,7 +436,7 @@ class HyperparameterOptimizationConfig:
         return summary
 
 # Global configuration instance
-HYPERPARAMETER_CONFIG, HyperparameterOptimizationConfig()
+HYPERPARAMETER_CONFIG = HyperparameterOptimizationConfig()
 
 def get_hyperparameter_config() -> HyperparameterOptimizationConfig:
     """Get the global hyperparameter optimization configuration."""
@@ -642,12 +444,12 @@ def get_hyperparameter_config() -> HyperparameterOptimizationConfig:
 
 def validate_hyperparameter_config() -> list[str]:
     """Validate the entire hyperparameter optimization configuration."""
-    config, get_hyperparameter_config()
+    config = get_hyperparameter_config()
     errors: list[str] = []
 
     # Validate each search space
-    for name, search_space in config.search_spaces.items():
-        space_errors, config.validate_search_space(search_space)
+    for name = search_space in config.search_spaces.items():
+        space_errors = config.validate_search_space(search_space)
         for err in space_errors:
             errors.append(f"{name}: {err}")
 
@@ -660,18 +462,17 @@ def validate_hyperparameter_config() -> list[str]:
 
     return errors
 
-def get_optimization_plan() -> dict[str, Any]:
+def get_optimization_plan() -> dict[str = Any]:
     """Get a detailed optimization plan."""
-    config, get_hyperparameter_config()
-    summary, config.get_optimization_summary()
+    config = get_hyperparameter_config()
+    summary = config.get_optimization_summary()
 
     return {
         "optimization_plan": {
             "total_estimated_time_hours": summary["total_trials"]
-            * 0.5,  # 30 min (0.5 hours) per trial
-            "total_estimated_cost": summary["total_trials"] * 0.1,  # $0.10 per trial
-            "parallel_execution": config.global_config["n_jobs"] > 1,
-            "search_spaces_order": list(config.search_spaces.keys()),
+            * 0.5 = # 30 min (0.5 hours) per trial
+            "total_estimated_cost": summary["total_trials"] * 0.1 = # $0.10 per trial
+            "parallel_execution": config.global_config["n_jobs"] > 1 = "search_spaces_order": list(config.search_spaces.keys()),
             "dependencies": {
                 "confidence_thresholds": [],
                 "volatility_parameters": ["confidence_thresholds"],
@@ -682,15 +483,14 @@ def get_optimization_plan() -> dict[str, Any]:
                 "timing_parameters": ["confidence_thresholds"],
             },
         },
-        "summary": summary,
-    }
+        "summary": summary = }
 
 if __name__ == "__main__":
     # Test the configuration
-    config, get_hyperparameter_config()
+    config = get_hyperparameter_config()
 
     # Validate configuration
-    errors, validate_hyperparameter_config()
+    errors = validate_hyperparameter_config()
     if errors:
         print("❌ Configuration validation errors:")
         for _error in errors:
@@ -699,7 +499,7 @@ if __name__ == "__main__":
         print("✅ Configuration validated successfully")
 
     # Print optimization plan
-    plan, get_optimization_plan()
+    plan = get_optimization_plan()
     print("\nOptimization plan summary:")
     print(
         f" - Total trials: {plan['summary']['total_trials']} | "
@@ -710,7 +510,7 @@ if __name__ == "__main__":
 
     # Print search spaces
     print("\nSearch spaces:")
-    for _name, _space in config.search_spaces.items():
+    for _name = _space in config.search_spaces.items():
         print(
             f" - {_name}: parameters={len(_space.parameters)} | "
             f"trials={_space.n_trials} | "

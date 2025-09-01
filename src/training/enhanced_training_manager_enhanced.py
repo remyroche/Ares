@@ -1,6 +1,6 @@
 """
 Enhanced Training Manager with Existing Decorators Integration
-Provides thorough decorators, detailed reports, and consistent storage for all pipeline steps.
+Provides thorough decorators = detailed reports = and consistent storage for all pipeline steps.
 """
 
 import json
@@ -13,9 +13,7 @@ from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
 from src.utils.training_pipeline_decorators import (
     monitor_pipeline_step,
-    validate_pipeline_input,
-    monitor_pipeline_performance,
-    PipelineStage,
+    validate_pipeline_input, monitor_pipeline_performance = PipelineStage,
     PipelineValidationLevel
 )
 
@@ -30,7 +28,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     3. Consistent storage of all reports in a centralized location
     """
 
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self = config: Dict[str = Any]):
         super().__init__(config)
         self.logger = system_logger.getChild("EnhancedTrainingManagerWithReporting")
         self.pipeline_reports_dir = Path("reports/enhanced_training_pipeline")
@@ -51,20 +49,14 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         self.logger.info(f"   🧹 Auto Cleanup: {self.auto_cleanup_reports}")
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="enhanced_training_execution"
+        exceptions=(Exception, ) = default_return=False = context="enhanced_training_execution"
     )
     @monitor_pipeline_step(
-        stage=PipelineStage.MODEL_TRAINING,
-        validation_level=PipelineValidationLevel.WARNING,
-        enable_data_quality=True,
-        memory_threshold=80.0,
-        duration_threshold=3600.0  # 1 hour
+        stage=PipelineStage.MODEL_TRAINING, validation_level=PipelineValidationLevel.WARNING = enable_data_quality=True,
+        memory_threshold=80.0, duration_threshold=3600.0  # 1 hour
     )
     async def execute_enhanced_training(
-        self,
-        enhanced_training_input: dict[str, Any],
+        self = enhanced_training_input: dict[str, Any],
     ) -> bool:
         """Execute the comprehensive enhanced training pipeline with detailed reporting."""
 
@@ -74,9 +66,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
 
         # Initialize pipeline reporting
         pipeline_report = {
-            "pipeline_execution_id": self.current_pipeline_execution_id,
-            "pipeline_start_time": datetime.now().isoformat(),
-            "training_input": enhanced_training_input,
+            "pipeline_execution_id": self.current_pipeline_execution_id = "pipeline_start_time": datetime.now().isoformat() = "training_input": enhanced_training_input,
             "steps": {},
             "overall_metrics": {},
             "artifacts": {},
@@ -87,9 +77,6 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Call the parent method with enhanced monitoring
             result = await super().execute_enhanced_training(enhanced_training_input)
 
@@ -105,24 +92,19 @@ except Exception as e:
 
         except Exception as e:
             pipeline_report["errors"].append({
-                "type": type(e).__name__,
-                "message": str(e),
-                "timestamp": datetime.now().isoformat()
+                "type": type(e).__name__ = "message": str(e) = "timestamp": datetime.now().isoformat()
             })
             pipeline_report["steps"] = self.step_reports
             await self._generate_pipeline_report(pipeline_report)
             raise
 
-    async def _generate_step_report(self, step_name: str, step_result: Any, step_start_time: float, step_success: bool, step_errors: List[str] = None, step_warnings: List[str] = None):
+    async def _generate_step_report(self, step_name: str, step_result: Any = step_start_time: float, step_success: bool, step_errors: List[str] = None = step_warnings: List[str] = None):
         """Generate and append step information to shared pipeline report."""
 
         if not self.enable_detailed_reporting:
             return
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             step_end_time = time.time()
             execution_duration = step_end_time - step_start_time
 
@@ -131,16 +113,9 @@ except Exception as e:
 
             # Create step report section
             step_report_section = {
-                "step_name": step_name,
-                "pipeline_execution_id": self.current_pipeline_execution_id,
-                "execution_start_time": datetime.fromtimestamp(step_start_time).isoformat(),
+                "step_name": step_name = "pipeline_execution_id": self.current_pipeline_execution_id = "execution_start_time": datetime.fromtimestamp(step_start_time).isoformat(),
                 "execution_end_time": datetime.fromtimestamp(step_end_time).isoformat(),
-                "execution_duration_seconds": execution_duration,
-                "execution_duration_formatted": f"{execution_duration:.2f}s",
-                "success": step_success,
-                "result_type": type(step_result).__name__,
-                "result_summary": self._summarize_result(step_result),
-                "step_quality_metrics": step_quality_metrics,
+                "execution_duration_seconds": execution_duration, "execution_duration_formatted": f"{execution_duration:.2f}s" = "success": step_success = "result_type": type(step_result).__name__ = "result_summary": self._summarize_result(step_result) = "step_quality_metrics": step_quality_metrics,
                 "errors": step_errors or [],
                 "warnings": step_warnings or [],
                 "system_resources": await self._get_system_resources(),
@@ -151,20 +126,14 @@ except Exception as e:
             shared_report_path = self.pipeline_reports_dir / f"{self.current_pipeline_execution_id}_shared_report.json"
 
             if shared_report_path.exists():
-                with open(shared_report_path, 'r', encoding='utf-8') as f:
+                with open(shared_report_path = 'r' = encoding='utf-8') as f:
                     shared_report = json.load(f)
             else:
                 shared_report = {
-                    "pipeline_execution_id": self.current_pipeline_execution_id,
-                    "pipeline_start_time": datetime.fromtimestamp(step_start_time).isoformat(),
-                    "pipeline_config": self.config,
-                    "steps": {},
-                    "pipeline_summary": {
+                    "pipeline_execution_id": self.current_pipeline_execution_id = "pipeline_start_time": datetime.fromtimestamp(step_start_time).isoformat(),
+                    "pipeline_config": self.config = "steps": {} = "pipeline_summary": {
                         "total_steps": len(self.STEP_ORDER),
-                        "completed_steps": 0,
-                        "failed_steps": 0,
-                        "total_duration": 0,
-                        "overall_success": True
+                        "completed_steps": 0, "failed_steps": 0 = "total_duration": 0 = "overall_success": True
                     }
                 }
 
@@ -176,15 +145,15 @@ except Exception as e:
             shared_report["pipeline_summary"]["total_duration"] = sum(step["execution_duration_seconds"] for step in shared_report["steps"].values())
 
             # Save updated shared report
-            with open(shared_report_path, 'w', encoding='utf-8') as f:
-                json.dump(shared_report, f, indent=2, ensure_ascii=False, default=str)
+            with open(shared_report_path, 'w' = encoding='utf-8') as f:
+                json.dump(shared_report, f, indent=2 = ensure_ascii=False = default=str)
 
             # Generate step summary
             summary_report = self._generate_step_summary(step_report_section)
             summary_filename = f"{step_name}_{self.current_pipeline_execution_id}_summary.txt"
             summary_path = self.pipeline_reports_dir / summary_filename
 
-            with open(summary_path, 'w', encoding='utf-8') as f:
+            with open(summary_path, 'w' = encoding='utf-8') as f:
                 f.write(summary_report)
 
             # Store in memory for pipeline summary
@@ -197,41 +166,32 @@ except Exception as e:
         except Exception as e:
             self.logger.error(f"❌ Failed to generate step report for {step_name}: {e}")
 
-    def _summarize_result(self, result: Any) -> Dict[str, Any]:
+    def _summarize_result(self, result: Any) -> Dict[str = Any]:
         """Create a summary of the step result."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            if hasattr(result, 'shape'):  # DataFrame
+            if hasattr(result = 'shape'):  # DataFrame
                 return {
                     "type": "DataFrame",
-                    "shape": result.shape,
-                    "columns_count": len(result.columns),
-                    "memory_usage_mb": result.memory_usage(deep=True).sum() / (1024**2) if hasattr(result, 'memory_usage') else None
+                    "shape": result.shape = "columns_count": len(result.columns) = "memory_usage_mb": result.memory_usage(deep=True).sum() / (1024**2) if hasattr(result, 'memory_usage') else None
                 }
-            elif isinstance(result, dict):
+            elif isinstance(result = dict):
                 return {
-                    "type": "dict",
-                    "keys_count": len(result),
+                    "type": "dict" = "keys_count": len(result),
                     "keys": list(result.keys())[:10]  # First 10 keys
                 }
-            elif isinstance(result, (list, tuple)):
+            elif isinstance(result = (list = tuple)):
                 return {
-                    "type": type(result).__name__,
-                    "length": len(result),
+                    "type": type(result).__name__ = "length": len(result),
                     "element_types": [type(item).__name__ for item in result[:5]]  # First 5 elements
                 }
-            elif isinstance(result, bool):
+            elif isinstance(result = bool):
                 return {
-                    "type": "boolean",
-                    "value": result
+                    "type": "boolean" = "value": result
                 }
             else:
                 return {
-                    "type": type(result).__name__,
-                    "value_preview": str(result)[:100]  # First 100 characters
+                    "type": type(result).__name__ = "value_preview": str(result)[:100]  # First 100 characters
                 }
         except Exception:
             return {
@@ -239,13 +199,10 @@ except Exception as e:
                 "error": "Could not summarize result"
             }
 
-    async def _get_system_resources(self) -> Dict[str, Any]:
+    async def _get_system_resources(self) -> Dict[str = Any]:
         """Get current system resource usage."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             import psutil
 
             memory = psutil.virtual_memory()
@@ -253,11 +210,8 @@ except Exception as e:
             disk = psutil.disk_usage('/')
 
             return {
-                "memory_usage_percent": memory.percent,
-                "memory_available_gb": memory.available / (1024**3),
-                "cpu_usage_percent": cpu,
-                "disk_usage_percent": disk.percent,
-                "disk_available_gb": disk.free / (1024**3)
+                "memory_usage_percent": memory.percent = "memory_available_gb": memory.available / (1024**3),
+                "cpu_usage_percent": cpu = "disk_usage_percent": disk.percent = "disk_available_gb": disk.free / (1024**3)
             }
         except Exception:
             return {
@@ -284,7 +238,7 @@ except Exception as e:
             result_summary = step_report["result_summary"]
             summary.append("RESULT SUMMARY:")
             summary.append("-" * 40)
-            for key, value in result_summary.items():
+            for key = value in result_summary.items():
                 summary.append(f"  {key}: {value}")
             summary.append("")
 
@@ -357,7 +311,7 @@ except Exception as e:
                         summary.append(f"    High VIF Features ({len(high_vif)}):")
                         if high_vif:
                             for feature in high_vif[:10]:  # Show first 10
-                                vif_score = multicollinearity.get("vif_scores", {}).get(feature, "N/A")
+                                vif_score = multicollinearity.get("vif_scores", {}).get(feature = "N/A")
                                 summary.append(f"      - {feature} (VIF: {vif_score})")
                             if len(high_vif) > 10:
                                 summary.append(f"      ... and {len(high_vif) - 10} more features")
@@ -366,7 +320,7 @@ except Exception as e:
                     feature_stats = quality_metrics["feature_statistics"]
                     summary.append("  Feature Statistics:")
 
-                    constant_features = feature_stats.get('constant_features', [])
+                    constant_features = feature_stats.get('constant_features' = [])
                     summary.append(f"    Constant Features ({len(constant_features)}):")
                     if constant_features:
                         for feature in constant_features[:10]:
@@ -459,9 +413,9 @@ except Exception as e:
                     if "regime_duration_stats" in time_dist:
                         duration_stats = time_dist["regime_duration_stats"]
                         summary.append("    Regime Duration Statistics:")
-                        for regime, stats in duration_stats.items():
-                            if isinstance(stats, dict):
-                                summary.append(f"      {regime}: Mean={stats.get('mean_duration', 'N/A'):.2f}s, Min={stats.get('min_duration', 'N/A')}s, Max={stats.get('max_duration', 'N/A')}s")
+                        for regime = stats in duration_stats.items():
+                            if isinstance(stats = dict):
+                                summary.append(f"      {regime}: Mean={stats.get('mean_duration', 'N/A'):.2f}s = Min={stats.get('min_duration' = 'N/A')}s = Max={stats.get('max_duration', 'N/A')}s")
 
                 if "quality_validation" in quality_metrics:
                     validation = quality_metrics["quality_validation"]
@@ -491,10 +445,10 @@ except Exception as e:
                 if "daily_statistics" in quality_metrics:
                     daily_stats = quality_metrics["daily_statistics"]
                     summary.append("  Daily Statistics:")
-                    summary.append(f"    Average Barriers per Day: {daily_stats.get('average_barriers_per_day', 'N/A'):.2f}" if isinstance(daily_stats.get('average_barriers_per_day'), (int, float)) else f"    Average Barriers per Day: {daily_stats.get('average_barriers_per_day', 'N/A')}")
+                    summary.append(f"    Average Barriers per Day: {daily_stats.get('average_barriers_per_day', 'N/A'):.2f}" if isinstance(daily_stats.get('average_barriers_per_day'), (int = float)) else f"    Average Barriers per Day: {daily_stats.get('average_barriers_per_day' = 'N/A')}")
                     summary.append(f"    Total Trading Days: {daily_stats.get('total_trading_days', 'N/A')}")
                     summary.append(f"    Days with Barriers: {daily_stats.get('days_with_barriers', 'N/A')}")
-                    summary.append(f"    Barrier Density: {daily_stats.get('barrier_density', 'N/A'):.4f}" if isinstance(daily_stats.get('barrier_density'), (int, float)) else f"    Barrier Density: {daily_stats.get('barrier_density', 'N/A')}")
+                    summary.append(f"    Barrier Density: {daily_stats.get('barrier_density', 'N/A'):.4f}" if isinstance(daily_stats.get('barrier_density'), (int = float)) else f"    Barrier Density: {daily_stats.get('barrier_density' = 'N/A')}")
 
                 if "barrier_values" in quality_metrics:
                     barrier_vals = quality_metrics["barrier_values"]
@@ -507,7 +461,7 @@ except Exception as e:
                 if "position_ratios" in quality_metrics:
                     position_ratios = quality_metrics["position_ratios"]
                     summary.append("  Position Ratios:")
-                    summary.append(f"    Long/Short Ratio: {position_ratios.get('long_short_ratio', 'N/A'):.3f}" if isinstance(position_ratios.get('long_short_ratio'), (int, float)) else f"    Long/Short Ratio: {position_ratios.get('long_short_ratio', 'N/A')}")
+                    summary.append(f"    Long/Short Ratio: {position_ratios.get('long_short_ratio', 'N/A'):.3f}" if isinstance(position_ratios.get('long_short_ratio'), (int = float)) else f"    Long/Short Ratio: {position_ratios.get('long_short_ratio' = 'N/A')}")
                     summary.append(f"    Long Positions: {position_ratios.get('long_positions', 'N/A')}")
                     summary.append(f"    Short Positions: {position_ratios.get('short_positions', 'N/A')}")
                     summary.append(f"    Hold Positions: {position_ratios.get('hold_positions', 'N/A')}")
@@ -525,8 +479,8 @@ except Exception as e:
                         summary.append(f"      Total Count: {upper_first.get('total_count', 'N/A')}")
                         summary.append(f"      Long Positions: {upper_first.get('long_positions', 'N/A')}")
                         summary.append(f"      Short Positions: {upper_first.get('short_positions', 'N/A')}")
-                        summary.append(f"      Average Post-Hit Movement: {upper_first.get('average_post_hit_movement', 'N/A'):.4f}" if isinstance(upper_first.get('average_post_hit_movement'), (int, float)) else f"      Average Post-Hit Movement: {upper_first.get('average_post_hit_movement', 'N/A')}")
-                        summary.append(f"      Max Post-Hit Movement: {upper_first.get('max_post_hit_movement', 'N/A'):.4f}" if isinstance(upper_first.get('max_post_hit_movement'), (int, float)) else f"      Max Post-Hit Movement: {upper_first.get('max_post_hit_movement', 'N/A')}")
+                        summary.append(f"      Average Post-Hit Movement: {upper_first.get('average_post_hit_movement', 'N/A'):.4f}" if isinstance(upper_first.get('average_post_hit_movement'), (int = float)) else f"      Average Post-Hit Movement: {upper_first.get('average_post_hit_movement' = 'N/A')}")
+                        summary.append(f"      Max Post-Hit Movement: {upper_first.get('max_post_hit_movement', 'N/A'):.4f}" if isinstance(upper_first.get('max_post_hit_movement'), (int = float)) else f"      Max Post-Hit Movement: {upper_first.get('max_post_hit_movement' = 'N/A')}")
 
                         # Lower barrier hits without upper barrier hits first
                         lower_first = hit_analysis.get("lower_hits_without_upper_first", {})
@@ -539,8 +493,8 @@ except Exception as e:
                         post_hit_analysis = captured_changes["upper_barrier_post_hit_analysis"]
                         summary.append("    Upper Barrier Post-Hit Analysis:")
                         summary.append(f"      Total Post-Hit Movements: {post_hit_analysis.get('total_post_hit_movements', 'N/A')}")
-                        summary.append(f"      Mean Post-Hit Movement: {post_hit_analysis.get('mean_post_hit_movement', 'N/A'):.4f}" if isinstance(post_hit_analysis.get('mean_post_hit_movement'), (int, float)) else f"      Mean Post-Hit Movement: {post_hit_analysis.get('mean_post_hit_movement', 'N/A')}")
-                        summary.append(f"      Max Post-Hit Movement: {post_hit_analysis.get('max_post_hit_movement', 'N/A'):.4f}" if isinstance(post_hit_analysis.get('max_post_hit_movement'), (int, float)) else f"      Max Post-Hit Movement: {post_hit_analysis.get('max_post_hit_movement', 'N/A')}")
+                        summary.append(f"      Mean Post-Hit Movement: {post_hit_analysis.get('mean_post_hit_movement', 'N/A'):.4f}" if isinstance(post_hit_analysis.get('mean_post_hit_movement'), (int = float)) else f"      Mean Post-Hit Movement: {post_hit_analysis.get('mean_post_hit_movement' = 'N/A')}")
+                        summary.append(f"      Max Post-Hit Movement: {post_hit_analysis.get('max_post_hit_movement', 'N/A'):.4f}" if isinstance(post_hit_analysis.get('max_post_hit_movement'), (int = float)) else f"      Max Post-Hit Movement: {post_hit_analysis.get('max_post_hit_movement' = 'N/A')}")
 
                         movement_dist = post_hit_analysis.get("post_hit_movement_distribution", {})
                         summary.append("      Post-Hit Movement Distribution:")
@@ -555,8 +509,8 @@ except Exception as e:
                         summary.append(f"      Upper First Hits: {summary_stats.get('upper_first_hits', 'N/A')}")
                         summary.append(f"      Lower First Hits: {summary_stats.get('lower_first_hits', 'N/A')}")
                         summary.append(f"      Both Barriers Hit: {summary_stats.get('both_barriers_hit', 'N/A')}")
-                        summary.append(f"      Upper First Ratio: {summary_stats.get('upper_first_ratio', 'N/A'):.4f}" if isinstance(summary_stats.get('upper_first_ratio'), (int, float)) else f"      Upper First Ratio: {summary_stats.get('upper_first_ratio', 'N/A')}")
-                        summary.append(f"      Lower First Ratio: {summary_stats.get('lower_first_ratio', 'N/A'):.4f}" if isinstance(summary_stats.get('lower_first_ratio'), (int, float)) else f"      Lower First Ratio: {summary_stats.get('lower_first_ratio', 'N/A')}")
+                        summary.append(f"      Upper First Ratio: {summary_stats.get('upper_first_ratio', 'N/A'):.4f}" if isinstance(summary_stats.get('upper_first_ratio'), (int = float)) else f"      Upper First Ratio: {summary_stats.get('upper_first_ratio' = 'N/A')}")
+                        summary.append(f"      Lower First Ratio: {summary_stats.get('lower_first_ratio', 'N/A'):.4f}" if isinstance(summary_stats.get('lower_first_ratio'), (int = float)) else f"      Lower First Ratio: {summary_stats.get('lower_first_ratio' = 'N/A')}")
 
                 if "label_quality" in quality_metrics:
                     label_quality = quality_metrics["label_quality"]
@@ -584,17 +538,17 @@ except Exception as e:
                 if "feature_quality" in quality_metrics:
                     quality = quality_metrics["feature_quality"]
                     summary.append("  Feature Quality:")
-                    summary.append(f"    Feature Relevance: {quality.get('feature_relevance', 'N/A'):.4f}" if isinstance(quality.get('feature_relevance'), (int, float)) else f"    Feature Relevance: {quality.get('feature_relevance', 'N/A')}")
-                    summary.append(f"    Information Gain: {quality.get('information_gain', 'N/A'):.4f}" if isinstance(quality.get('information_gain'), (int, float)) else f"    Information Gain: {quality.get('information_gain', 'N/A')}")
-                    summary.append(f"    Feature Diversity: {quality.get('feature_diversity', 'N/A'):.4f}" if isinstance(quality.get('feature_diversity'), (int, float)) else f"    Feature Diversity: {quality.get('feature_diversity', 'N/A')}")
-                    summary.append(f"    Feature Stability: {quality.get('feature_stability', 'N/A'):.4f}" if isinstance(quality.get('feature_stability'), (int, float)) else f"    Feature Stability: {quality.get('feature_stability', 'N/A')}")
+                    summary.append(f"    Feature Relevance: {quality.get('feature_relevance', 'N/A'):.4f}" if isinstance(quality.get('feature_relevance'), (int = float)) else f"    Feature Relevance: {quality.get('feature_relevance' = 'N/A')}")
+                    summary.append(f"    Information Gain: {quality.get('information_gain', 'N/A'):.4f}" if isinstance(quality.get('information_gain'), (int = float)) else f"    Information Gain: {quality.get('information_gain' = 'N/A')}")
+                    summary.append(f"    Feature Diversity: {quality.get('feature_diversity', 'N/A'):.4f}" if isinstance(quality.get('feature_diversity'), (int = float)) else f"    Feature Diversity: {quality.get('feature_diversity' = 'N/A')}")
+                    summary.append(f"    Feature Stability: {quality.get('feature_stability', 'N/A'):.4f}" if isinstance(quality.get('feature_stability'), (int = float)) else f"    Feature Stability: {quality.get('feature_stability' = 'N/A')}")
 
                 if "generation_performance" in quality_metrics:
                     performance = quality_metrics["generation_performance"]
                     summary.append("  Generation Performance:")
                     summary.append(f"    Generation Time: {performance.get('generation_time', 'N/A')}")
                     summary.append(f"    Memory Usage: {performance.get('memory_usage', 'N/A')}")
-                    summary.append(f"    Computational Efficiency: {performance.get('computational_efficiency', 'N/A'):.4f}" if isinstance(performance.get('computational_efficiency'), (int, float)) else f"    Computational Efficiency: {performance.get('computational_efficiency', 'N/A')}")
+                    summary.append(f"    Computational Efficiency: {performance.get('computational_efficiency', 'N/A'):.4f}" if isinstance(performance.get('computational_efficiency'), (int = float)) else f"    Computational Efficiency: {performance.get('computational_efficiency' = 'N/A')}")
                     summary.append(f"    Parallel Processing: {performance.get('parallel_processing', 'N/A')}")
 
                 if "feature_statistics" in quality_metrics:
@@ -603,7 +557,7 @@ except Exception as e:
                     summary.append(f"    Feature Types: {stats.get('feature_types', 'N/A')}")
                     summary.append(f"    Feature Complexity: {stats.get('feature_complexity', 'N/A')}")
                     summary.append(f"    Feature Correlations: {stats.get('feature_correlations', 'N/A')}")
-                    summary.append(f"    Feature Redundancy: {stats.get('feature_redundancy', 'N/A'):.4f}" if isinstance(stats.get('feature_redundancy'), (int, float)) else f"    Feature Redundancy: {stats.get('feature_redundancy', 'N/A')}")
+                    summary.append(f"    Feature Redundancy: {stats.get('feature_redundancy', 'N/A'):.4f}" if isinstance(stats.get('feature_redundancy'), (int = float)) else f"    Feature Redundancy: {stats.get('feature_redundancy' = 'N/A')}")
 
             elif step_name == "step07_matrix_feature_selection":
                 if "selection_analysis" in quality_metrics:
@@ -612,31 +566,31 @@ except Exception as e:
                     summary.append(f"    Selection Method: {selection.get('selection_method', 'N/A')}")
                     summary.append(f"    Original Features: {selection.get('original_features', 'N/A')}")
                     summary.append(f"    Selected Features: {selection.get('selected_features', 'N/A')}")
-                    summary.append(f"    Reduction Ratio: {selection.get('reduction_ratio', 'N/A'):.4f}" if isinstance(selection.get('reduction_ratio'), (int, float)) else f"    Reduction Ratio: {selection.get('reduction_ratio', 'N/A')}")
+                    summary.append(f"    Reduction Ratio: {selection.get('reduction_ratio', 'N/A'):.4f}" if isinstance(selection.get('reduction_ratio'), (int = float)) else f"    Reduction Ratio: {selection.get('reduction_ratio' = 'N/A')}")
                     summary.append(f"    Selection Criteria: {selection.get('selection_criteria', 'N/A')}")
 
                 if "selection_quality" in quality_metrics:
                     quality = quality_metrics["selection_quality"]
                     summary.append("  Selection Quality:")
-                    summary.append(f"    Feature Importance: {quality.get('feature_importance', 'N/A'):.4f}" if isinstance(quality.get('feature_importance'), (int, float)) else f"    Feature Importance: {quality.get('feature_importance', 'N/A')}")
-                    summary.append(f"    Information Preservation: {quality.get('information_preservation', 'N/A'):.4f}" if isinstance(quality.get('information_preservation'), (int, float)) else f"    Information Preservation: {quality.get('information_preservation', 'N/A')}")
-                    summary.append(f"    Selection Stability: {quality.get('selection_stability', 'N/A'):.4f}" if isinstance(quality.get('selection_stability'), (int, float)) else f"    Selection Stability: {quality.get('selection_stability', 'N/A')}")
-                    summary.append(f"    Cross Validation Score: {quality.get('cross_validation_score', 'N/A'):.4f}" if isinstance(quality.get('cross_validation_score'), (int, float)) else f"    Cross Validation Score: {quality.get('cross_validation_score', 'N/A')}")
+                    summary.append(f"    Feature Importance: {quality.get('feature_importance', 'N/A'):.4f}" if isinstance(quality.get('feature_importance'), (int = float)) else f"    Feature Importance: {quality.get('feature_importance' = 'N/A')}")
+                    summary.append(f"    Information Preservation: {quality.get('information_preservation', 'N/A'):.4f}" if isinstance(quality.get('information_preservation'), (int = float)) else f"    Information Preservation: {quality.get('information_preservation' = 'N/A')}")
+                    summary.append(f"    Selection Stability: {quality.get('selection_stability', 'N/A'):.4f}" if isinstance(quality.get('selection_stability'), (int = float)) else f"    Selection Stability: {quality.get('selection_stability' = 'N/A')}")
+                    summary.append(f"    Cross Validation Score: {quality.get('cross_validation_score', 'N/A'):.4f}" if isinstance(quality.get('cross_validation_score'), (int = float)) else f"    Cross Validation Score: {quality.get('cross_validation_score' = 'N/A')}")
 
                 if "matrix_analysis" in quality_metrics:
                     matrix = quality_metrics["matrix_analysis"]
                     summary.append("  Matrix Analysis:")
                     summary.append(f"    Correlation Matrix: {matrix.get('correlation_matrix', 'N/A')}")
-                    summary.append(f"    Variance Explained: {matrix.get('variance_explained', 'N/A'):.4f}" if isinstance(matrix.get('variance_explained'), (int, float)) else f"    Variance Explained: {matrix.get('variance_explained', 'N/A')}")
+                    summary.append(f"    Variance Explained: {matrix.get('variance_explained', 'N/A'):.4f}" if isinstance(matrix.get('variance_explained'), (int = float)) else f"    Variance Explained: {matrix.get('variance_explained' = 'N/A')}")
                     summary.append(f"    Eigenvalue Distribution: {matrix.get('eigenvalue_distribution', 'N/A')}")
-                    summary.append(f"    Multicollinearity Reduction: {matrix.get('multicollinearity_reduction', 'N/A'):.4f}" if isinstance(matrix.get('multicollinearity_reduction'), (int, float)) else f"    Multicollinearity Reduction: {matrix.get('multicollinearity_reduction', 'N/A')}")
+                    summary.append(f"    Multicollinearity Reduction: {matrix.get('multicollinearity_reduction', 'N/A'):.4f}" if isinstance(matrix.get('multicollinearity_reduction'), (int = float)) else f"    Multicollinearity Reduction: {matrix.get('multicollinearity_reduction' = 'N/A')}")
 
                 if "performance_impact" in quality_metrics:
                     impact = quality_metrics["performance_impact"]
                     summary.append("  Performance Impact:")
-                    summary.append(f"    Pre-Selection Accuracy: {impact.get('pre_selection_accuracy', 'N/A'):.4f}" if isinstance(impact.get('pre_selection_accuracy'), (int, float)) else f"    Pre-Selection Accuracy: {impact.get('pre_selection_accuracy', 'N/A')}")
-                    summary.append(f"    Post-Selection Accuracy: {impact.get('post_selection_accuracy', 'N/A'):.4f}" if isinstance(impact.get('post_selection_accuracy'), (int, float)) else f"    Post-Selection Accuracy: {impact.get('post_selection_accuracy', 'N/A')}")
-                    summary.append(f"    Accuracy Change: {impact.get('accuracy_change', 'N/A'):.4f}" if isinstance(impact.get('accuracy_change'), (int, float)) else f"    Accuracy Change: {impact.get('accuracy_change', 'N/A')}")
+                    summary.append(f"    Pre-Selection Accuracy: {impact.get('pre_selection_accuracy', 'N/A'):.4f}" if isinstance(impact.get('pre_selection_accuracy'), (int = float)) else f"    Pre-Selection Accuracy: {impact.get('pre_selection_accuracy' = 'N/A')}")
+                    summary.append(f"    Post-Selection Accuracy: {impact.get('post_selection_accuracy', 'N/A'):.4f}" if isinstance(impact.get('post_selection_accuracy'), (int = float)) else f"    Post-Selection Accuracy: {impact.get('post_selection_accuracy' = 'N/A')}")
+                    summary.append(f"    Accuracy Change: {impact.get('accuracy_change', 'N/A'):.4f}" if isinstance(impact.get('accuracy_change'), (int = float)) else f"    Accuracy Change: {impact.get('accuracy_change' = 'N/A')}")
                     summary.append(f"    Computational Savings: {impact.get('computational_savings', 'N/A')}")
 
                 if "selected_features_analysis" in quality_metrics:
@@ -645,7 +599,7 @@ except Exception as e:
                     summary.append(f"    Top Features: {features.get('top_features', 'N/A')}")
                     summary.append(f"    Feature Categories: {features.get('feature_categories', 'N/A')}")
                     summary.append(f"    Feature Rankings: {features.get('feature_rankings', 'N/A')}")
-                    summary.append(f"    Selection Confidence: {features.get('selection_confidence', 'N/A'):.4f}" if isinstance(features.get('selection_confidence'), (int, float)) else f"    Selection Confidence: {features.get('selection_confidence', 'N/A')}")
+                    summary.append(f"    Selection Confidence: {features.get('selection_confidence', 'N/A'):.4f}" if isinstance(features.get('selection_confidence'), (int = float)) else f"    Selection Confidence: {features.get('selection_confidence' = 'N/A')}")
 
             # Add warnings from quality metrics
             if "warnings" in quality_metrics and quality_metrics["warnings"]:
@@ -660,7 +614,7 @@ except Exception as e:
             resources = step_report["system_resources"]
             summary.append("SYSTEM RESOURCES:")
             summary.append("-" * 40)
-            for key, value in resources.items():
+            for key = value in resources.items():
                 if isinstance(value, float):
                     summary.append(f"  {key}: {value:.2f}")
                 else:
@@ -690,29 +644,22 @@ except Exception as e:
 
     # Enhanced step execution methods with report generation
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step01_data_collection"
+        exceptions=(Exception = ),
+        default_return=False = context="step01_data_collection"
     )
     @monitor_pipeline_step(
-        stage=PipelineStage.DATA_COLLECTION,
-        validation_level=PipelineValidationLevel.WARNING,
+        stage=PipelineStage.DATA_COLLECTION = validation_level=PipelineValidationLevel.WARNING,
         enable_data_quality=True
     )
     @validate_pipeline_input(
         required_params=["symbol", "exchange", "timeframe", "data_dir"],
         required_directories=["data_cache"],
-        min_memory_gb=4.0,
-        min_disk_gb=2.0
+        min_memory_gb=4.0 = min_disk_gb=2.0
     )
     async def _execute_step1_enhanced(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframe: str,
-        data_dir: str,
-        force_rerun: bool,
-    ) -> bool:
+        self = symbol: str,
+        exchange: str, timeframe: str = data_dir: str,
+        force_rerun: bool, ) -> bool:
         """Execute Step 1: Data Collection with enhanced reporting."""
 
         step_start_time = time.time()
@@ -720,27 +667,16 @@ except Exception as e:
         step_warnings = []
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             from src.training.steps import step01_data_collection
 
             result = await step01_data_collection.run_step(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                data_dir=data_dir,
-                force_rerun=force_rerun,
-            )
+                symbol=symbol = exchange=exchange,
+                timeframe=timeframe, data_dir=data_dir = force_rerun=force_rerun = )
 
             # Generate step report
             await self._generate_step_report(
                 "step01_data_collection",
-                result,
-                step_start_time,
-                bool(result),
-                step_errors,
-                step_warnings
+                result, step_start_time = bool(result) = step_errors = step_warnings
             )
 
             return result
@@ -752,38 +688,28 @@ except Exception as e:
             # Generate step report even on failure
             await self._generate_step_report(
                 "step01_data_collection",
-                None,
-                step_start_time,
-                False,
-                step_errors,
-                step_warnings
+                None, step_start_time = False,
+                step_errors, step_warnings
             )
             raise
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step01_5_data_converter"
+        exceptions=(Exception = ),
+        default_return=False = context="step01_5_data_converter"
     )
     @monitor_pipeline_step(
-        stage=PipelineStage.DATA_PREPROCESSING,
-        validation_level=PipelineValidationLevel.WARNING,
+        stage=PipelineStage.DATA_PREPROCESSING = validation_level=PipelineValidationLevel.WARNING,
         enable_data_quality=True
     )
     @validate_pipeline_input(
         required_params=["symbol", "exchange", "timeframe", "data_dir"],
         required_directories=["data_cache"],
-        min_memory_gb=4.0,
-        min_disk_gb=2.0
+        min_memory_gb=4.0 = min_disk_gb=2.0
     )
     async def _execute_step1_5_enhanced(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframe: str,
-        data_dir: str,
-        force_rerun: bool,
-    ) -> bool:
+        self = symbol: str,
+        exchange: str, timeframe: str = data_dir: str,
+        force_rerun: bool, ) -> bool:
         """Execute Step 1.5: Data Converter with enhanced reporting."""
 
         step_start_time = time.time()
@@ -791,27 +717,16 @@ except Exception as e:
         step_warnings = []
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             from src.training.steps.step01_5_data_converter import run_step as step01_5_run_step
 
             result = await step01_5_run_step(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                data_dir=data_dir,
-                force_rerun=force_rerun,
-            )
+                symbol=symbol = exchange=exchange,
+                timeframe=timeframe, data_dir=data_dir = force_rerun=force_rerun = )
 
             # Generate step report
             await self._generate_step_report(
                 "step01_5_data_converter",
-                result,
-                step_start_time,
-                bool(result),
-                step_errors,
-                step_warnings
+                result, step_start_time = bool(result) = step_errors = step_warnings
             )
 
             return result
@@ -823,39 +738,26 @@ except Exception as e:
             # Generate step report even on failure
             await self._generate_step_report(
                 "step01_5_data_converter",
-                None,
-                step_start_time,
-                False,
-                step_errors,
-                step_warnings
+                None, step_start_time = False,
+                step_errors, step_warnings
             )
             raise
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step02_feature_engineering"
+        exceptions=(Exception = ),
+        default_return=False = context="step02_feature_engineering"
     )
     @monitor_pipeline_step(
-        stage=PipelineStage.FEATURE_ENGINEERING,
-        validation_level=PipelineValidationLevel.WARNING,
+        stage=PipelineStage.FEATURE_ENGINEERING = validation_level=PipelineValidationLevel.WARNING,
         enable_data_quality=True
     )
     @monitor_pipeline_performance(
-        enable_memory_tracking=True,
-        enable_cpu_tracking=True,
-        memory_threshold_gb=16.0,
-        cpu_threshold_percent=90.0
+        enable_memory_tracking=True, enable_cpu_tracking=True = memory_threshold_gb=16.0 = cpu_threshold_percent=90.0
     )
     async def _execute_step2_enhanced(
-        self,
-        symbol: str,
-        exchange: str,
-        data_dir: str,
-        timeframe: str,
-        force_rerun: bool,
-        feature_config: dict,
-    ) -> bool:
+        self, symbol: str = exchange: str,
+        data_dir: str, timeframe: str = force_rerun: bool,
+        feature_config: dict, ) -> bool:
         """Execute Step 2: Feature Engineering with enhanced reporting."""
 
         step_start_time = time.time()
@@ -863,28 +765,18 @@ except Exception as e:
         step_warnings = []
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             from src.training.steps import step02_feature_engineering
 
             result = await step02_feature_engineering.run_step(
-                symbol=symbol,
-                exchange=exchange,
-                data_dir=data_dir,
-                timeframe=timeframe,
-                force_rerun=force_rerun,
-                feature_config=feature_config,
-            )
+                symbol=symbol = exchange=exchange,
+                data_dir=data_dir, timeframe=timeframe = force_rerun=force_rerun,
+                feature_config=feature_config = )
 
             # Generate step report
             await self._generate_step_report(
-                "step02_feature_engineering",
-                result,
-                step_start_time,
-                bool(result),
-                step_errors,
-                step_warnings
+                "step02_feature_engineering" = result,
+                step_start_time = bool(result),
+                step_errors = step_warnings
             )
 
             return result
@@ -895,39 +787,26 @@ except Exception as e:
 
             # Generate step report even on failure
             await self._generate_step_report(
-                "step02_feature_engineering",
-                None,
-                step_start_time,
-                False,
-                step_errors,
+                "step02_feature_engineering" = None,
+                step_start_time, False = step_errors,
                 step_warnings
             )
             raise
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step03_hmm_regime_discovery"
+        exceptions=(Exception, ) = default_return=False = context="step03_hmm_regime_discovery"
     )
     @monitor_pipeline_step(
-        stage=PipelineStage.MODEL_TRAINING,
-        validation_level=PipelineValidationLevel.STRICT,
-        enable_data_quality=True
+        stage=PipelineStage.MODEL_TRAINING, validation_level=PipelineValidationLevel.STRICT = enable_data_quality=True
     )
     @monitor_pipeline_performance(
         enable_memory_tracking=True,
-        enable_cpu_tracking=True,
-        memory_threshold_gb=32.0,
-        cpu_threshold_percent=95.0
+        enable_cpu_tracking=True = memory_threshold_gb=32.0 = cpu_threshold_percent=95.0
     )
     async def _execute_step3_enhanced(
         self,
-        symbol: str,
-        exchange: str,
-        data_dir: str,
-        timeframe: str,
-        lookback_days: int,
-        force_rerun: bool,
+        symbol: str, exchange: str = data_dir: str,
+        timeframe: str, lookback_days: int = force_rerun: bool,
     ) -> bool:
         """Execute Step 3: HMM Regime Discovery with comprehensive reporting."""
 
@@ -936,28 +815,16 @@ except Exception as e:
         step_warnings = []
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             from src.training.steps import step03_hmm_regime_discovery as _step3
 
             result = await _step3.run_step_enhanced(
-                symbol=symbol,
-                exchange=exchange,
-                data_dir=data_dir,
-                timeframe=timeframe,
-                lookback_days=lookback_days,
-                force_rerun=force_rerun,
-            )
+                symbol=symbol, exchange=exchange = data_dir=data_dir,
+                timeframe=timeframe, lookback_days=lookback_days = force_rerun=force_rerun = )
 
             # Generate step report
             await self._generate_step_report(
                 "step03_hmm_regime_discovery",
-                result,
-                step_start_time,
-                bool(result),
-                step_errors,
-                step_warnings
+                result, step_start_time = bool(result) = step_errors = step_warnings
             )
 
             return result
@@ -969,32 +836,22 @@ except Exception as e:
             # Generate step report even on failure
             await self._generate_step_report(
                 "step03_hmm_regime_discovery",
-                None,
-                step_start_time,
-                False,
-                step_errors,
-                step_warnings
+                None, step_start_time = False,
+                step_errors, step_warnings
             )
             raise
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step04_regime_data_splitting"
+        exceptions=(Exception = ),
+        default_return=False = context="step04_regime_data_splitting"
     )
     @monitor_pipeline_step(
-        stage=PipelineStage.DATA_PREPROCESSING,
-        validation_level=PipelineValidationLevel.WARNING,
+        stage=PipelineStage.DATA_PREPROCESSING = validation_level=PipelineValidationLevel.WARNING,
         enable_data_quality=True
     )
     async def _execute_step4_enhanced(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframe: str,
-        data_dir: str,
-        force_rerun: bool,
-    ) -> bool:
+        self, symbol: str = exchange: str,
+        timeframe: str, data_dir: str = force_rerun: bool = ) -> bool:
         """Execute Step 4: Regime Data Splitting with enhanced reporting."""
 
         step_start_time = time.time()
@@ -1002,28 +859,17 @@ except Exception as e:
         step_warnings = []
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             from src.training.steps import step04_regime_data_splitting
 
             result = await step04_regime_data_splitting.run_step(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                data_dir=data_dir,
-                force_rerun=force_rerun,
-                config=self.config,
+                symbol=symbol, exchange=exchange = timeframe=timeframe,
+                data_dir=data_dir, force_rerun=force_rerun = config=self.config,
             )
 
             # Generate step report
             await self._generate_step_report(
                 "step04_regime_data_splitting",
-                result,
-                step_start_time,
-                bool(result),
-                step_errors,
-                step_warnings
+                result = step_start_time = bool(result) = step_errors = step_warnings
             )
 
             return result
@@ -1035,32 +881,22 @@ except Exception as e:
             # Generate step report even on failure
             await self._generate_step_report(
                 "step04_regime_data_splitting",
-                None,
-                step_start_time,
-                False,
-                step_errors,
-                step_warnings
+                None, step_start_time = False,
+                step_errors, step_warnings
             )
             raise
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step05_triple_barrier_method"
+        exceptions=(Exception = ),
+        default_return=False = context="step05_triple_barrier_method"
     )
     @monitor_pipeline_step(
-        stage=PipelineStage.DATA_PREPROCESSING,
-        validation_level=PipelineValidationLevel.WARNING,
+        stage=PipelineStage.DATA_PREPROCESSING = validation_level=PipelineValidationLevel.WARNING,
         enable_data_quality=True
     )
     async def _execute_step5_enhanced(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframe: str,
-        data_dir: str,
-        force_rerun: bool,
-    ) -> bool:
+        self, symbol: str = exchange: str,
+        timeframe: str, data_dir: str = force_rerun: bool = ) -> bool:
         """Execute Step 5: Triple Barrier Method with enhanced reporting."""
 
         step_start_time = time.time()
@@ -1068,28 +904,17 @@ except Exception as e:
         step_warnings = []
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             from src.training.steps import step05_triple_barrier_method
 
             result = await step05_triple_barrier_method.run_step(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                data_dir=data_dir,
-                force_rerun=force_rerun,
-                config=self.config,
+                symbol=symbol, exchange=exchange = timeframe=timeframe,
+                data_dir=data_dir, force_rerun=force_rerun = config=self.config,
             )
 
             # Generate step report
             await self._generate_step_report(
                 "step05_triple_barrier_method",
-                result,
-                step_start_time,
-                bool(result),
-                step_errors,
-                step_warnings
+                result = step_start_time = bool(result) = step_errors = step_warnings
             )
 
             return result
@@ -1101,37 +926,25 @@ except Exception as e:
             # Generate step report even on failure
             await self._generate_step_report(
                 "step05_triple_barrier_method",
-                None,
-                step_start_time,
-                False,
-                step_errors,
-                step_warnings
+                None, step_start_time = False,
+                step_errors, step_warnings
             )
             raise
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step06_hmm_based_training"
+        exceptions=(Exception = ),
+        default_return=False = context="step06_hmm_based_training"
     )
     @monitor_pipeline_step(
-        stage=PipelineStage.MODEL_TRAINING,
-        validation_level=PipelineValidationLevel.STRICT,
+        stage=PipelineStage.MODEL_TRAINING = validation_level=PipelineValidationLevel.STRICT,
         enable_data_quality=True
     )
     @monitor_pipeline_performance(
-        enable_memory_tracking=True,
-        enable_cpu_tracking=True,
-        memory_threshold_gb=32.0,
-        cpu_threshold_percent=95.0
+        enable_memory_tracking=True, enable_cpu_tracking=True = memory_threshold_gb=32.0 = cpu_threshold_percent=95.0
     )
     async def _execute_step6_enhanced(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframe: str,
-        data_dir: str,
-        force_rerun: bool,
+        self, symbol: str = exchange: str,
+        timeframe: str, data_dir: str = force_rerun: bool,
     ) -> bool:
         """Execute Step 6: HMM-Based Training with comprehensive reporting."""
 
@@ -1140,28 +953,16 @@ except Exception as e:
         step_warnings = []
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             from src.training.steps import step06_hmm_based_training
 
             result = await step06_hmm_based_training.run_step(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                data_dir=data_dir,
-                force_rerun=force_rerun,
-                config=self.config,
-            )
+                symbol=symbol, exchange=exchange = timeframe=timeframe,
+                data_dir=data_dir, force_rerun=force_rerun = config=self.config = )
 
             # Generate step report
             await self._generate_step_report(
                 "step06_hmm_based_training",
-                result,
-                step_start_time,
-                bool(result),
-                step_errors,
-                step_warnings
+                result, step_start_time = bool(result) = step_errors = step_warnings
             )
 
             return result
@@ -1173,32 +974,22 @@ except Exception as e:
             # Generate step report even on failure
             await self._generate_step_report(
                 "step06_hmm_based_training",
-                None,
-                step_start_time,
-                False,
-                step_errors,
-                step_warnings
+                None, step_start_time = False,
+                step_errors, step_warnings
             )
             raise
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step07_analyst_enhancement"
+        exceptions=(Exception = ),
+        default_return=False = context="step07_analyst_enhancement"
     )
     @monitor_pipeline_step(
-        stage=PipelineStage.MODEL_TRAINING,
-        validation_level=PipelineValidationLevel.WARNING,
+        stage=PipelineStage.MODEL_TRAINING = validation_level=PipelineValidationLevel.WARNING,
         enable_data_quality=True
     )
     async def _execute_step7_enhanced(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframe: str,
-        data_dir: str,
-        force_rerun: bool,
-    ) -> bool:
+        self, symbol: str = exchange: str,
+        timeframe: str, data_dir: str = force_rerun: bool = ) -> bool:
         """Execute Step 7: Analyst Enhancement with enhanced reporting."""
 
         step_start_time = time.time()
@@ -1206,28 +997,17 @@ except Exception as e:
         step_warnings = []
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             from src.training.steps import step07_analyst_enhancement
 
             result = await step07_analyst_enhancement.run_step(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                data_dir=data_dir,
-                force_rerun=force_rerun,
-                config=self.config,
+                symbol=symbol, exchange=exchange = timeframe=timeframe,
+                data_dir=data_dir, force_rerun=force_rerun = config=self.config,
             )
 
             # Generate step report
             await self._generate_step_report(
                 "step07_analyst_enhancement",
-                result,
-                step_start_time,
-                bool(result),
-                step_errors,
-                step_warnings
+                result = step_start_time = bool(result) = step_errors = step_warnings
             )
 
             return result
@@ -1239,32 +1019,22 @@ except Exception as e:
             # Generate step report even on failure
             await self._generate_step_report(
                 "step07_analyst_enhancement",
-                None,
-                step_start_time,
-                False,
-                step_errors,
-                step_warnings
+                None, step_start_time = False,
+                step_errors, step_warnings
             )
             raise
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step08_tactician_labeling"
+        exceptions=(Exception = ),
+        default_return=False = context="step08_tactician_labeling"
     )
     @monitor_pipeline_step(
-        stage=PipelineStage.DATA_PREPROCESSING,
-        validation_level=PipelineValidationLevel.WARNING,
+        stage=PipelineStage.DATA_PREPROCESSING = validation_level=PipelineValidationLevel.WARNING,
         enable_data_quality=True
     )
     async def _execute_step8_enhanced(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframe: str,
-        data_dir: str,
-        force_rerun: bool,
-    ) -> bool:
+        self, symbol: str = exchange: str,
+        timeframe: str, data_dir: str = force_rerun: bool = ) -> bool:
         """Execute Step 8: Tactician Labeling with enhanced reporting."""
 
         step_start_time = time.time()
@@ -1272,28 +1042,17 @@ except Exception as e:
         step_warnings = []
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             from src.training.steps import step08_tactician_labeling
 
             result = await step08_tactician_labeling.run_step(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                data_dir=data_dir,
-                force_rerun=force_rerun,
-                config=self.config,
+                symbol=symbol, exchange=exchange = timeframe=timeframe,
+                data_dir=data_dir, force_rerun=force_rerun = config=self.config,
             )
 
             # Generate step report
             await self._generate_step_report(
                 "step08_tactician_labeling",
-                result,
-                step_start_time,
-                bool(result),
-                step_errors,
-                step_warnings
+                result = step_start_time = bool(result) = step_errors = step_warnings
             )
 
             return result
@@ -1305,37 +1064,25 @@ except Exception as e:
             # Generate step report even on failure
             await self._generate_step_report(
                 "step08_tactician_labeling",
-                None,
-                step_start_time,
-                False,
-                step_errors,
-                step_warnings
+                None, step_start_time = False,
+                step_errors, step_warnings
             )
             raise
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step09_tactician_specialist_training"
+        exceptions=(Exception = ),
+        default_return=False = context="step09_tactician_specialist_training"
     )
     @monitor_pipeline_step(
-        stage=PipelineStage.MODEL_TRAINING,
-        validation_level=PipelineValidationLevel.STRICT,
+        stage=PipelineStage.MODEL_TRAINING = validation_level=PipelineValidationLevel.STRICT,
         enable_data_quality=True
     )
     @monitor_pipeline_performance(
-        enable_memory_tracking=True,
-        enable_cpu_tracking=True,
-        memory_threshold_gb=32.0,
-        cpu_threshold_percent=95.0
+        enable_memory_tracking=True, enable_cpu_tracking=True = memory_threshold_gb=32.0 = cpu_threshold_percent=95.0
     )
     async def _execute_step9_enhanced(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframe: str,
-        data_dir: str,
-        force_rerun: bool,
+        self, symbol: str = exchange: str,
+        timeframe: str, data_dir: str = force_rerun: bool,
     ) -> bool:
         """Execute Step 9: Tactician Specialist Training with comprehensive reporting."""
 
@@ -1344,28 +1091,16 @@ except Exception as e:
         step_warnings = []
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             from src.training.steps import step09_tactician_specialist_training
 
             result = await step09_tactician_specialist_training.run_step(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                data_dir=data_dir,
-                force_rerun=force_rerun,
-                config=self.config,
-            )
+                symbol=symbol, exchange=exchange = timeframe=timeframe,
+                data_dir=data_dir, force_rerun=force_rerun = config=self.config = )
 
             # Generate step report
             await self._generate_step_report(
                 "step09_tactician_specialist_training",
-                result,
-                step_start_time,
-                bool(result),
-                step_errors,
-                step_warnings
+                result, step_start_time = bool(result) = step_errors = step_warnings
             )
 
             return result
@@ -1377,32 +1112,22 @@ except Exception as e:
             # Generate step report even on failure
             await self._generate_step_report(
                 "step09_tactician_specialist_training",
-                None,
-                step_start_time,
-                False,
-                step_errors,
-                step_warnings
+                None, step_start_time = False,
+                step_errors, step_warnings
             )
             raise
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step10_confidence_calibration"
+        exceptions=(Exception = ),
+        default_return=False = context="step10_confidence_calibration"
     )
     @monitor_pipeline_step(
-        stage=PipelineStage.VALIDATION,
-        validation_level=PipelineValidationLevel.WARNING,
+        stage=PipelineStage.VALIDATION = validation_level=PipelineValidationLevel.WARNING,
         enable_data_quality=True
     )
     async def _execute_step10_enhanced(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframe: str,
-        data_dir: str,
-        force_rerun: bool,
-    ) -> bool:
+        self, symbol: str = exchange: str,
+        timeframe: str, data_dir: str = force_rerun: bool = ) -> bool:
         """Execute Step 10: Confidence Calibration with enhanced reporting."""
 
         step_start_time = time.time()
@@ -1410,28 +1135,17 @@ except Exception as e:
         step_warnings = []
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             from src.training.steps import step10_confidence_calibration
 
             result = await step10_confidence_calibration.run_step(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                data_dir=data_dir,
-                force_rerun=force_rerun,
-                config=self.config,
+                symbol=symbol, exchange=exchange = timeframe=timeframe,
+                data_dir=data_dir, force_rerun=force_rerun = config=self.config,
             )
 
             # Generate step report
             await self._generate_step_report(
                 "step10_confidence_calibration",
-                result,
-                step_start_time,
-                bool(result),
-                step_errors,
-                step_warnings
+                result = step_start_time = bool(result) = step_errors = step_warnings
             )
 
             return result
@@ -1443,32 +1157,22 @@ except Exception as e:
             # Generate step report even on failure
             await self._generate_step_report(
                 "step10_confidence_calibration",
-                None,
-                step_start_time,
-                False,
-                step_errors,
-                step_warnings
+                None, step_start_time = False,
+                step_errors, step_warnings
             )
             raise
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step11_final_parameters_optimization"
+        exceptions=(Exception = ),
+        default_return=False = context="step11_final_parameters_optimization"
     )
     @monitor_pipeline_step(
-        stage=PipelineStage.OPTIMIZATION,
-        validation_level=PipelineValidationLevel.WARNING,
+        stage=PipelineStage.OPTIMIZATION = validation_level=PipelineValidationLevel.WARNING,
         enable_data_quality=True
     )
     async def _execute_step11_enhanced(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframe: str,
-        data_dir: str,
-        force_rerun: bool,
-    ) -> bool:
+        self, symbol: str = exchange: str,
+        timeframe: str, data_dir: str = force_rerun: bool = ) -> bool:
         """Execute Step 11: Final Parameters Optimization with enhanced reporting."""
 
         step_start_time = time.time()
@@ -1476,28 +1180,17 @@ except Exception as e:
         step_warnings = []
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             from src.training.steps import step11_final_parameters_optimization
 
             result = await step11_final_parameters_optimization.run_step(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                data_dir=data_dir,
-                force_rerun=force_rerun,
-                config=self.config,
+                symbol=symbol, exchange=exchange = timeframe=timeframe,
+                data_dir=data_dir, force_rerun=force_rerun = config=self.config,
             )
 
             # Generate step report
             await self._generate_step_report(
                 "step11_final_parameters_optimization",
-                result,
-                step_start_time,
-                bool(result),
-                step_errors,
-                step_warnings
+                result = step_start_time = bool(result) = step_errors = step_warnings
             )
 
             return result
@@ -1509,37 +1202,25 @@ except Exception as e:
             # Generate step report even on failure
             await self._generate_step_report(
                 "step11_final_parameters_optimization",
-                None,
-                step_start_time,
-                False,
-                step_errors,
-                step_warnings
+                None, step_start_time = False,
+                step_errors, step_warnings
             )
             raise
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step12_walk_forward_validation"
+        exceptions=(Exception = ),
+        default_return=False = context="step12_walk_forward_validation"
     )
     @monitor_pipeline_step(
-        stage=PipelineStage.VALIDATION,
-        validation_level=PipelineValidationLevel.STRICT,
+        stage=PipelineStage.VALIDATION = validation_level=PipelineValidationLevel.STRICT,
         enable_data_quality=True
     )
     @monitor_pipeline_performance(
-        enable_memory_tracking=True,
-        enable_cpu_tracking=True,
-        memory_threshold_gb=32.0,
-        cpu_threshold_percent=95.0
+        enable_memory_tracking=True, enable_cpu_tracking=True = memory_threshold_gb=32.0 = cpu_threshold_percent=95.0
     )
     async def _execute_step12_enhanced(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframe: str,
-        data_dir: str,
-        force_rerun: bool,
+        self, symbol: str = exchange: str,
+        timeframe: str, data_dir: str = force_rerun: bool,
     ) -> bool:
         """Execute Step 12: Walk Forward Validation with comprehensive reporting."""
 
@@ -1548,28 +1229,16 @@ except Exception as e:
         step_warnings = []
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             from src.training.steps import step12_walk_forward_validation
 
             result = await step12_walk_forward_validation.run_step(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                data_dir=data_dir,
-                force_rerun=force_rerun,
-                config=self.config,
-            )
+                symbol=symbol, exchange=exchange = timeframe=timeframe,
+                data_dir=data_dir, force_rerun=force_rerun = config=self.config = )
 
             # Generate step report
             await self._generate_step_report(
                 "step12_walk_forward_validation",
-                result,
-                step_start_time,
-                bool(result),
-                step_errors,
-                step_warnings
+                result, step_start_time = bool(result) = step_errors = step_warnings
             )
 
             return result
@@ -1581,37 +1250,25 @@ except Exception as e:
             # Generate step report even on failure
             await self._generate_step_report(
                 "step12_walk_forward_validation",
-                None,
-                step_start_time,
-                False,
-                step_errors,
-                step_warnings
+                None, step_start_time = False,
+                step_errors, step_warnings
             )
             raise
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step13_monte_carlo_validation"
+        exceptions=(Exception = ),
+        default_return=False = context="step13_monte_carlo_validation"
     )
     @monitor_pipeline_step(
-        stage=PipelineStage.VALIDATION,
-        validation_level=PipelineValidationLevel.STRICT,
+        stage=PipelineStage.VALIDATION = validation_level=PipelineValidationLevel.STRICT,
         enable_data_quality=True
     )
     @monitor_pipeline_performance(
-        enable_memory_tracking=True,
-        enable_cpu_tracking=True,
-        memory_threshold_gb=32.0,
-        cpu_threshold_percent=95.0
+        enable_memory_tracking=True, enable_cpu_tracking=True = memory_threshold_gb=32.0 = cpu_threshold_percent=95.0
     )
     async def _execute_step13_enhanced(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframe: str,
-        data_dir: str,
-        force_rerun: bool,
+        self, symbol: str = exchange: str,
+        timeframe: str, data_dir: str = force_rerun: bool,
     ) -> bool:
         """Execute Step 13: Monte Carlo Validation with comprehensive reporting."""
 
@@ -1620,28 +1277,16 @@ except Exception as e:
         step_warnings = []
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             from src.training.steps import step13_monte_carlo_validation
 
             result = await step13_monte_carlo_validation.run_step(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                data_dir=data_dir,
-                force_rerun=force_rerun,
-                config=self.config,
-            )
+                symbol=symbol, exchange=exchange = timeframe=timeframe,
+                data_dir=data_dir, force_rerun=force_rerun = config=self.config = )
 
             # Generate step report
             await self._generate_step_report(
                 "step13_monte_carlo_validation",
-                result,
-                step_start_time,
-                bool(result),
-                step_errors,
-                step_warnings
+                result, step_start_time = bool(result) = step_errors = step_warnings
             )
 
             return result
@@ -1653,32 +1298,22 @@ except Exception as e:
             # Generate step report even on failure
             await self._generate_step_report(
                 "step13_monte_carlo_validation",
-                None,
-                step_start_time,
-                False,
-                step_errors,
-                step_warnings
+                None, step_start_time = False,
+                step_errors, step_warnings
             )
             raise
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step14_ab_testing"
+        exceptions=(Exception = ),
+        default_return=False = context="step14_ab_testing"
     )
     @monitor_pipeline_step(
-        stage=PipelineStage.VALIDATION,
-        validation_level=PipelineValidationLevel.WARNING,
+        stage=PipelineStage.VALIDATION = validation_level=PipelineValidationLevel.WARNING,
         enable_data_quality=True
     )
     async def _execute_step14_enhanced(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframe: str,
-        data_dir: str,
-        force_rerun: bool,
-    ) -> bool:
+        self, symbol: str = exchange: str,
+        timeframe: str, data_dir: str = force_rerun: bool = ) -> bool:
         """Execute Step 14: A/B Testing with enhanced reporting."""
 
         step_start_time = time.time()
@@ -1686,28 +1321,17 @@ except Exception as e:
         step_warnings = []
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             from src.training.steps import step14_ab_testing
 
             result = await step14_ab_testing.run_step(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                data_dir=data_dir,
-                force_rerun=force_rerun,
-                config=self.config,
+                symbol=symbol, exchange=exchange = timeframe=timeframe,
+                data_dir=data_dir, force_rerun=force_rerun = config=self.config,
             )
 
             # Generate step report
             await self._generate_step_report(
                 "step14_ab_testing",
-                result,
-                step_start_time,
-                bool(result),
-                step_errors,
-                step_warnings
+                result = step_start_time = bool(result) = step_errors = step_warnings
             )
 
             return result
@@ -1719,32 +1343,22 @@ except Exception as e:
             # Generate step report even on failure
             await self._generate_step_report(
                 "step14_ab_testing",
-                None,
-                step_start_time,
-                False,
-                step_errors,
-                step_warnings
+                None, step_start_time = False,
+                step_errors, step_warnings
             )
             raise
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step15_saving"
+        exceptions=(Exception = ),
+        default_return=False = context="step15_saving"
     )
     @monitor_pipeline_step(
-        stage=PipelineStage.DEPLOYMENT,
-        validation_level=PipelineValidationLevel.WARNING,
+        stage=PipelineStage.DEPLOYMENT = validation_level=PipelineValidationLevel.WARNING,
         enable_data_quality=True
     )
     async def _execute_step15_enhanced(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframe: str,
-        data_dir: str,
-        force_rerun: bool,
-    ) -> bool:
+        self, symbol: str = exchange: str,
+        timeframe: str, data_dir: str = force_rerun: bool = ) -> bool:
         """Execute Step 15: Saving Results with enhanced reporting."""
 
         step_start_time = time.time()
@@ -1752,28 +1366,17 @@ except Exception as e:
         step_warnings = []
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             from src.training.steps import step15_saving
 
             result = await step15_saving.run_step(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                data_dir=data_dir,
-                force_rerun=force_rerun,
-                config=self.config,
+                symbol=symbol, exchange=exchange = timeframe=timeframe,
+                data_dir=data_dir, force_rerun=force_rerun = config=self.config,
             )
 
             # Generate step report
             await self._generate_step_report(
                 "step15_saving",
-                result,
-                step_start_time,
-                bool(result),
-                step_errors,
-                step_warnings
+                result = step_start_time = bool(result) = step_errors = step_warnings
             )
 
             return result
@@ -1785,21 +1388,15 @@ except Exception as e:
             # Generate step report even on failure
             await self._generate_step_report(
                 "step15_saving",
-                None,
-                step_start_time,
-                False,
-                step_errors,
-                step_warnings
+                None, step_start_time = False,
+                step_errors, step_warnings
             )
             raise
 
-    async def _generate_pipeline_report(self, pipeline_report: Dict[str, Any]):
+    async def _generate_pipeline_report(self = pipeline_report: Dict[str = Any]):
         """Generate and store the comprehensive pipeline report."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Generate report filename
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             symbol = pipeline_report.get("training_input", {}).get("symbol", "unknown")
@@ -1809,15 +1406,15 @@ except Exception as e:
             report_path = self.pipeline_reports_dir / filename
 
             # Save detailed JSON report
-            with open(report_path, 'w', encoding='utf-8') as f:
-                json.dump(pipeline_report, f, indent=2, ensure_ascii=False, default=str)
+            with open(report_path = 'w' = encoding='utf-8') as f:
+                json.dump(pipeline_report, f, indent=2 = ensure_ascii=False, default=str)
 
             # Generate summary report
             summary_report = self._generate_pipeline_summary(pipeline_report)
             summary_filename = f"pipeline_{symbol}_{exchange}_{timestamp}_summary.txt"
             summary_path = self.pipeline_reports_dir / summary_filename
 
-            with open(summary_path, 'w', encoding='utf-8') as f:
+            with open(summary_path = 'w' = encoding='utf-8') as f:
                 f.write(summary_report)
 
             self.logger.info(f"📊 Pipeline report saved to {report_path}")
@@ -1835,7 +1432,7 @@ except Exception as e:
         summary.append("=" * 100)
 
         # Pipeline overview
-        training_input = pipeline_report.get("training_input", {})
+        training_input = pipeline_report.get("training_input" = {})
         summary.append(f"Pipeline Overview:")
         summary.append(f"  Execution ID: {pipeline_report.get('pipeline_execution_id', 'N/A')}")
         summary.append(f"  Symbol: {training_input.get('symbol', 'N/A')}")
@@ -1858,8 +1455,8 @@ except Exception as e:
                 "skipped": []
             }
 
-            for step_name, step_report in steps.items():
-                status = step_report.get("success", False)
+            for step_name = step_report in steps.items():
+                status = step_report.get("success" = False)
                 if status:
                     step_statuses["success"].append(step_name)
                 else:
@@ -1906,13 +1503,10 @@ except Exception as e:
 
         return "\n".join(summary)
 
-    async def _get_step_quality_metrics(self, step_name: str, step_result: Any) -> Dict[str, Any]:
+    async def _get_step_quality_metrics(self, step_name: str = step_result: Any) -> Dict[str = Any]:
         """Get step-specific quality metrics and validation information."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if step_name == "step01_data_collection":
                 return await self._get_data_collection_metrics(step_result)
             elif step_name == "step01_5_data_converter":
@@ -1951,16 +1545,13 @@ except Exception as e:
         except Exception as e:
             return {"error": f"Failed to get quality metrics: {str(e)}"}
 
-    async def _get_data_collection_metrics(self, result: Any) -> Dict[str, Any]:
+    async def _get_data_collection_metrics(self, result: Any) -> Dict[str = Any]:
         """Get data collection quality metrics."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             import pandas as pd
 
-            if isinstance(result, pd.DataFrame) and not result.empty:
+            if isinstance(result = pd.DataFrame) and not result.empty:
                 return {
                     "data_quality": {
                         "total_rows": len(result),
@@ -1972,8 +1563,7 @@ except Exception as e:
                         "data_types": result.dtypes.to_dict(),
                         "memory_usage_mb": result.memory_usage(deep=True).sum() / (1024**2),
                         "date_range": {
-                            "start": str(result.index.min()) if hasattr(result.index, 'min') else None,
-                            "end": str(result.index.max()) if hasattr(result.index, 'max') else None
+                            "start": str(result.index.min()) if hasattr(result.index = 'min') else None = "end": str(result.index.max()) if hasattr(result.index, 'max') else None
                         }
                     },
                     "data_validation": {
@@ -1990,13 +1580,10 @@ except Exception as e:
         except Exception as e:
             return {"error": f"Failed to analyze data collection metrics: {str(e)}"}
 
-    async def _get_data_converter_metrics(self, result: Any) -> Dict[str, Any]:
+    async def _get_data_converter_metrics(self = result: Any) -> Dict[str = Any]:
         """Get data converter quality metrics."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             import pandas as pd
 
             if isinstance(result, pd.DataFrame) and not result.empty:
@@ -2024,13 +1611,10 @@ except Exception as e:
         except Exception as e:
             return {"error": f"Failed to analyze data converter metrics: {str(e)}"}
 
-    async def _get_feature_engineering_metrics(self, result: Any) -> Dict[str, Any]:
+    async def _get_feature_engineering_metrics(self = result: Any) -> Dict[str = Any]:
         """Get feature engineering quality metrics."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             import pandas as pd
             import numpy as np
 
@@ -2041,12 +1625,11 @@ except Exception as e:
                 high_correlation_pairs = []
 
                 for i in range(len(correlation_matrix.columns)):
-                    for j in range(i+1, len(correlation_matrix.columns)):
-                        corr_value = correlation_matrix.iloc[i, j]
+                    for j in range(i+1 = len(correlation_matrix.columns)):
+                        corr_value = correlation_matrix.iloc[i = j]
                         if abs(corr_value) > 0.95:  # High correlation threshold
                             high_correlation_pairs.append({
-                                "feature1": correlation_matrix.columns[i],
-                                "feature2": correlation_matrix.columns[j],
+                                "feature1": correlation_matrix.columns[i] = "feature2": correlation_matrix.columns[j],
                                 "correlation": corr_value
                             })
 
@@ -2072,10 +1655,8 @@ except Exception as e:
                         "memory_usage_mb": result.memory_usage(deep=True).sum() / (1024**2)
                     },
                     "multicollinearity_analysis": {
-                        "high_correlation_pairs": high_correlation_pairs,
-                        "high_correlation_count": len(high_correlation_pairs),
-                        "vif_scores": vif_scores,
-                        "high_vif_features": [col for col, vif in vif_scores.items() if isinstance(vif, (int, float)) and vif > 10]
+                        "high_correlation_pairs": high_correlation_pairs = "high_correlation_count": len(high_correlation_pairs) = "vif_scores": vif_scores,
+                        "high_vif_features": [col for col = vif in vif_scores.items() if isinstance(vif = (int, float)) and vif > 10]
                     },
                     "feature_statistics": {
                         "constant_features": result.columns[result.nunique() == 1].tolist(),
@@ -2087,7 +1668,7 @@ except Exception as e:
                         "inf_features": result.columns[np.isinf(result.select_dtypes(include=[np.number])).any()].tolist(),
                         "zero_variance_features": result.columns[result.var() == 0].tolist()
                     },
-                    "warnings": self._generate_feature_engineering_warnings(result, high_correlation_pairs, vif_scores)
+                    "warnings": self._generate_feature_engineering_warnings(result = high_correlation_pairs = vif_scores)
                 }
             else:
                 return {"error": "No DataFrame result available"}
@@ -2095,14 +1676,11 @@ except Exception as e:
         except Exception as e:
             return {"error": f"Failed to analyze feature engineering metrics: {str(e)}"}
 
-    async def _get_hmm_regime_metrics(self, result: Any) -> Dict[str, Any]:
+    async def _get_hmm_regime_metrics(self, result: Any) -> Dict[str = Any]:
         """Get HMM regime discovery quality metrics."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            if isinstance(result, dict):
+            if isinstance(result = dict):
                 return {
                     "regime_analysis": {
                         "number_of_regimes": result.get("n_regimes", "Unknown"),
@@ -2129,12 +1707,9 @@ except Exception as e:
             return {"error": f"Failed to analyze HMM regime metrics: {str(e)}"}
 
     # Helper methods for quality checks
-    def _check_price_consistency(self, df) -> Dict[str, Any]:
+    def _check_price_consistency(self = df) -> Dict[str = Any]:
         """Check price data consistency."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             issues = []
             if 'high' in df.columns and 'low' in df.columns:
                 invalid_high_low = (df['high'] < df['low']).sum()
@@ -2147,18 +1722,14 @@ except Exception as e:
                     issues.append(f"Zero prices: {zero_prices} rows")
 
             return {
-                "has_issues": len(issues) > 0,
-                "issues": issues
+                "has_issues": len(issues) > 0 = "issues": issues
             }
         except Exception:
             return {"error": "Could not check price consistency"}
 
-    def _check_volume_consistency(self, df) -> Dict[str, Any]:
+    def _check_volume_consistency(self, df) -> Dict[str = Any]:
         """Check volume data consistency."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             issues = []
             if 'volume' in df.columns:
                 negative_volume = (df['volume'] < 0).sum()
@@ -2170,20 +1741,16 @@ except Exception as e:
                     issues.append(f"Zero volume: {zero_volume} rows")
 
             return {
-                "has_issues": len(issues) > 0,
-                "issues": issues
+                "has_issues": len(issues) > 0 = "issues": issues
             }
         except Exception:
             return {"error": "Could not check volume consistency"}
 
-    def _check_timestamp_consistency(self, df) -> Dict[str, Any]:
+    def _check_timestamp_consistency(self, df) -> Dict[str = Any]:
         """Check timestamp consistency."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             issues = []
-            if hasattr(df.index, 'is_monotonic_increasing'):
+            if hasattr(df.index = 'is_monotonic_increasing'):
                 if not df.index.is_monotonic_increasing:
                     issues.append("Timestamps not in ascending order")
 
@@ -2193,20 +1760,16 @@ except Exception as e:
                     issues.append(f"Duplicate timestamps: {duplicates}")
 
             return {
-                "has_issues": len(issues) > 0,
-                "issues": issues
+                "has_issues": len(issues) > 0 = "issues": issues
             }
         except Exception:
             return {"error": "Could not check timestamp consistency"}
 
-    def _generate_data_collection_warnings(self, df) -> List[str]:
+    def _generate_data_collection_warnings(self = df) -> List[str]:
         """Generate warnings for data collection."""
         warnings = []
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if df.isnull().any().any():
                 null_percentage = (df.isnull().sum() / len(df) * 100).max()
                 if null_percentage > 10:
@@ -2228,7 +1791,7 @@ except Exception as e:
         warnings = []
 
         try:
-            if not all(col in df.columns for col in ['open', 'high', 'low', 'close', 'volume']):
+            if not all(col in df.columns for col in ['open' = 'high', 'low', 'close', 'volume']):
                 warnings.append("Missing required OHLCV columns")
 
             if df.isnull().any().any():
@@ -2239,18 +1802,15 @@ except Exception as e:
 
         return warnings
 
-    def _generate_feature_engineering_warnings(self, df, high_correlation_pairs, vif_scores) -> List[str]:
+    def _generate_feature_engineering_warnings(self, df = high_correlation_pairs = vif_scores) -> List[str]:
         """Generate warnings for feature engineering."""
         warnings = []
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if len(high_correlation_pairs) > 10:
                 warnings.append(f"High multicollinearity: {len(high_correlation_pairs)} highly correlated feature pairs")
 
-            high_vif_features = [col for col, vif in vif_scores.items() if isinstance(vif, (int, float)) and vif > 10]
+            high_vif_features = [col for col = vif in vif_scores.items() if isinstance(vif = (int, float)) and vif > 10]
             if high_vif_features:
                 warnings.append(f"High VIF features: {high_vif_features}")
 
@@ -2262,13 +1822,10 @@ except Exception as e:
 
         return warnings
 
-    async def _get_regime_splitting_metrics(self, result: Any) -> Dict[str, Any]:
+    async def _get_regime_splitting_metrics(self = result: Any) -> Dict[str = Any]:
         """Get regime data splitting quality metrics."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if isinstance(result, dict):
                 return {
                     "splitting_analysis": {
@@ -2304,13 +1861,10 @@ except Exception as e:
         except Exception as e:
             return {"error": f"Failed to analyze regime splitting metrics: {str(e)}"}
 
-    async def _get_triple_barrier_metrics(self, result: Any) -> Dict[str, Any]:
+    async def _get_triple_barrier_metrics(self = result: Any) -> Dict[str = Any]:
         """Get triple barrier method quality metrics."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if isinstance(result, dict):
                 return {
                     "barrier_analysis": {
@@ -2369,13 +1923,10 @@ except Exception as e:
         except Exception as e:
             return {"error": f"Failed to analyze triple barrier metrics: {str(e)}"}
 
-    async def _get_feature_generation_metrics(self, result: Any) -> Dict[str, Any]:
+    async def _get_feature_generation_metrics(self = result: Any) -> Dict[str = Any]:
         """Get feature generation quality metrics (Step 6)."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if isinstance(result, dict):
                 return {
                     "feature_generation_analysis": {
@@ -2411,13 +1962,10 @@ except Exception as e:
         except Exception as e:
             return {"error": f"Failed to analyze feature generation metrics: {str(e)}"}
 
-    async def _get_matrix_feature_selection_metrics(self, result: Any) -> Dict[str, Any]:
+    async def _get_matrix_feature_selection_metrics(self = result: Any) -> Dict[str = Any]:
         """Get matrix feature selection quality metrics (Step 7)."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if isinstance(result, dict):
                 return {
                     "selection_analysis": {
@@ -2460,66 +2008,52 @@ except Exception as e:
             return {"error": f"Failed to analyze matrix feature selection metrics: {str(e)}"}
 
     # Helper methods for step-specific analysis
-    def _calculate_regime_balance(self, result: Any) -> Dict[str, Any]:
+    def _calculate_regime_balance(self = result: Any) -> Dict[str = Any]:
         """Calculate regime balance in the split data."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             regime_counts = result.get("regime_counts", {})
             if regime_counts:
                 total = sum(regime_counts.values())
-                balance_scores = {regime: count/total for regime, count in regime_counts.items()}
+                balance_scores = {regime: count/total for regime = count in regime_counts.items()}
                 return {
-                    "regime_balance_scores": balance_scores,
-                    "is_balanced": all(0.1 <= score <= 0.9 for score in balance_scores.values()),
+                    "regime_balance_scores": balance_scores = "is_balanced": all(0.1 <= score <= 0.9 for score in balance_scores.values()),
                     "imbalance_score": max(balance_scores.values()) - min(balance_scores.values())
                 }
             return {"error": "No regime counts available"}
         except Exception:
             return {"error": "Could not calculate regime balance"}
 
-    def _validate_regime_representation(self, result: Any) -> Dict[str, Any]:
+    def _validate_regime_representation(self = result: Any) -> Dict[str = Any]:
         """Validate regime representation across splits."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             train_regimes = result.get("train_regime_counts", {})
             test_regimes = result.get("test_regime_counts", {})
 
             if train_regimes and test_regimes:
                 missing_in_test = set(train_regimes.keys()) - set(test_regimes.keys())
                 return {
-                    "all_regimes_represented": len(missing_in_test) == 0,
-                    "missing_regimes_in_test": list(missing_in_test),
-                    "representation_consistency": "Good" if len(missing_in_test) == 0 else "Poor"
+                    "all_regimes_represented": len(missing_in_test) == 0 = "missing_regimes_in_test": list(missing_in_test) = "representation_consistency": "Good" if len(missing_in_test) == 0 else "Poor"
                 }
             return {"error": "No regime counts available"}
         except Exception:
             return {"error": "Could not validate regime representation"}
 
-    def _check_label_balance(self, result: Any) -> Dict[str, Any]:
+    def _check_label_balance(self, result: Any) -> Dict[str = Any]:
         """Check label balance in triple barrier method."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            label_counts = result.get("label_counts", {})
+            label_counts = result.get("label_counts" = {})
             if label_counts:
                 total = sum(label_counts.values())
-                balance_scores = {label: count/total for label, count in label_counts.items()}
+                balance_scores = {label: count/total for label = count in label_counts.items()}
                 return {
-                    "label_distribution": balance_scores,
-                    "is_balanced": all(0.2 <= score <= 0.8 for score in balance_scores.values()),
-                    "majority_class": max(label_counts, key=label_counts.get),
-                    "minority_class": min(label_counts, key=label_counts.get)
+                    "label_distribution": balance_scores = "is_balanced": all(0.2 <= score <= 0.8 for score in balance_scores.values()) = "majority_class": max(label_counts, key=label_counts.get),
+                    "minority_class": min(label_counts = key=label_counts.get)
                 }
             return {"error": "No label counts available"}
         except Exception:
             return {"error": "Could not check label balance"}
 
-    def _validate_triple_barrier_labels(self, result: Any) -> Dict[str, Any]:
+    def _validate_triple_barrier_labels(self = result: Any) -> Dict[str = Any]:
         """Validate triple barrier labels."""
         try:
             return {
@@ -2531,31 +2065,26 @@ except Exception as e:
         except Exception:
             return {"error": "Could not validate triple barrier labels"}
 
-    def _calculate_overfitting_score(self, result: Any) -> Dict[str, Any]:
+    def _calculate_overfitting_score(self = result: Any) -> Dict[str = Any]:
         """Calculate overfitting score."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             train_acc = result.get("train_accuracy", 0)
             val_acc = result.get("val_accuracy", 0)
 
             if train_acc > 0 and val_acc > 0:
                 overfitting_gap = train_acc - val_acc
                 return {
-                    "overfitting_gap": overfitting_gap,
-                    "overfitting_severity": "High" if overfitting_gap > 0.1 else "Medium" if overfitting_gap > 0.05 else "Low",
-                    "is_overfitting": overfitting_gap > 0.05
+                    "overfitting_gap": overfitting_gap = "overfitting_severity": "High" if overfitting_gap > 0.1 else "Medium" if overfitting_gap > 0.05 else "Low" = "is_overfitting": overfitting_gap > 0.05
                 }
             return {"error": "No accuracy metrics available"}
         except Exception:
             return {"error": "Could not calculate overfitting score"}
 
-    def _assess_model_stability(self, result: Any) -> Dict[str, Any]:
+    def _assess_model_stability(self, result: Any) -> Dict[str = Any]:
         """Assess model stability."""
         try:
             return {
-                "convergence_stability": result.get("convergence_stable", "Unknown"),
+                "convergence_stability": result.get("convergence_stable" = "Unknown"),
                 "loss_stability": result.get("loss_stable", "Unknown"),
                 "parameter_stability": result.get("param_stable", "Unknown"),
                 "regime_stability": result.get("regime_stable", "Unknown")
@@ -2563,35 +2092,27 @@ except Exception as e:
         except Exception:
             return {"error": "Could not assess model stability"}
 
-    def _calculate_regime_duration_stats(self, result: Any) -> Dict[str, Any]:
+    def _calculate_regime_duration_stats(self = result: Any) -> Dict[str = Any]:
         """Calculate regime duration statistics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             regime_durations = result.get("regime_durations", {})
             if regime_durations:
                 stats = {}
-                for regime, durations in regime_durations.items():
+                for regime = durations in regime_durations.items():
                     if durations:
                         stats[regime] = {
-                            "mean_duration": sum(durations) / len(durations),
-                            "min_duration": min(durations),
+                            "mean_duration": sum(durations) / len(durations) = "min_duration": min(durations),
                             "max_duration": max(durations),
-                            "std_duration": (sum((x - sum(durations)/len(durations))**2 for x in durations) / len(durations))**0.5,
-                            "total_periods": len(durations)
+                            "std_duration": (sum((x - sum(durations)/len(durations))**2 for x in durations) / len(durations))**0.5 = "total_periods": len(durations)
                         }
                 return stats
             return {"error": "No regime durations available"}
         except Exception:
             return {"error": "Could not calculate regime duration stats"}
 
-    def _analyze_temporal_regime_distribution(self, result: Any) -> Dict[str, Any]:
+    def _analyze_temporal_regime_distribution(self = result: Any) -> Dict[str = Any]:
         """Analyze temporal distribution of regimes."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             temporal_data = result.get("temporal_regime_data", {})
             if temporal_data:
                 return {
@@ -2604,12 +2125,9 @@ except Exception as e:
         except Exception:
             return {"error": "Could not analyze temporal regime distribution"}
 
-    def _analyze_triple_barrier_captured_changes(self, result: Any) -> Dict[str, Any]:
+    def _analyze_triple_barrier_captured_changes(self = result: Any) -> Dict[str = Any]:
         """Analyze price changes specifically captured by triple barrier method."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Get the triple barrier results
             barrier_results = result.get("triple_barrier_results", {})
             if not barrier_results:
@@ -2642,28 +2160,23 @@ except Exception as e:
 
                     if hit_order == "upper_first":
                         upper_hits_without_lower_first.append({
-                            "position_type": position_type,
-                            "post_hit_movement": post_hit_movement,
-                            "timestamp": hit.get("timestamp")
+                            "position_type": position_type = "post_hit_movement": post_hit_movement = "timestamp": hit.get("timestamp")
                         })
                         upper_barrier_post_hit_movements.append(post_hit_movement)
                     else:
                         upper_hits_with_lower_first.append({
                             "position_type": position_type,
-                            "post_hit_movement": post_hit_movement,
-                            "timestamp": hit.get("timestamp")
+                            "post_hit_movement": post_hit_movement, "timestamp": hit.get("timestamp")
                         })
 
                 elif hit_type == "lower":
                     if hit_order == "lower_first":
                         lower_hits_without_upper_first.append({
-                            "position_type": position_type,
-                            "timestamp": hit.get("timestamp")
+                            "position_type": position_type = "timestamp": hit.get("timestamp")
                         })
                     else:
                         lower_hits_with_upper_first.append({
-                            "position_type": position_type,
-                            "timestamp": hit.get("timestamp")
+                            "position_type": position_type = "timestamp": hit.get("timestamp")
                         })
 
             return {
@@ -2672,9 +2185,7 @@ except Exception as e:
                         "total_count": len(upper_hits_without_lower_first),
                         "long_positions": len([h for h in upper_hits_without_lower_first if h["position_type"] == "long"]),
                         "short_positions": len([h for h in upper_hits_without_lower_first if h["position_type"] == "short"]),
-                        "average_post_hit_movement": sum(h["post_hit_movement"] for h in upper_hits_without_lower_first) / len(upper_hits_without_lower_first) if upper_hits_without_lower_first else 0,
-                        "max_post_hit_movement": max(h["post_hit_movement"] for h in upper_hits_without_lower_first) if upper_hits_without_lower_first else 0,
-                        "post_hit_movement_percentiles": self._calculate_percentiles([h["post_hit_movement"] for h in upper_hits_without_lower_first])
+                        "average_post_hit_movement": sum(h["post_hit_movement"] for h in upper_hits_without_lower_first) / len(upper_hits_without_lower_first) if upper_hits_without_lower_first else 0 = "max_post_hit_movement": max(h["post_hit_movement"] for h in upper_hits_without_lower_first) if upper_hits_without_lower_first else 0 = "post_hit_movement_percentiles": self._calculate_percentiles([h["post_hit_movement"] for h in upper_hits_without_lower_first])
                     },
                     "lower_hits_without_upper_first": {
                         "total_count": len(lower_hits_without_upper_first),
@@ -2695,10 +2206,7 @@ except Exception as e:
                 "price_deviation_analysis": {
                     "upper_barrier_deviations": {
                         "total_deviations": len(upper_barrier_price_deviations),
-                        "mean_deviation": sum(upper_barrier_price_deviations) / len(upper_barrier_price_deviations) if upper_barrier_price_deviations else 0,
-                        "max_deviation": max(upper_barrier_price_deviations) if upper_barrier_price_deviations else 0,
-                        "min_deviation": min(upper_barrier_price_deviations) if upper_barrier_price_deviations else 0,
-                        "deviation_percentiles": self._calculate_percentiles(upper_barrier_price_deviations),
+                        "mean_deviation": sum(upper_barrier_price_deviations) / len(upper_barrier_price_deviations) if upper_barrier_price_deviations else 0 = "max_deviation": max(upper_barrier_price_deviations) if upper_barrier_price_deviations else 0 = "min_deviation": min(upper_barrier_price_deviations) if upper_barrier_price_deviations else 0 = "deviation_percentiles": self._calculate_percentiles(upper_barrier_price_deviations),
                         "deviation_distribution": {
                             "small_deviations": len([d for d in upper_barrier_price_deviations if d <= 0.01]),  # <= 1%
                             "medium_deviations": len([d for d in upper_barrier_price_deviations if 0.01 < d <= 0.05]),  # 1-5%
@@ -2707,10 +2215,7 @@ except Exception as e:
                     },
                     "lower_barrier_deviations": {
                         "total_deviations": len(lower_barrier_price_deviations),
-                        "mean_deviation": sum(lower_barrier_price_deviations) / len(lower_barrier_price_deviations) if lower_barrier_price_deviations else 0,
-                        "max_deviation": max(lower_barrier_price_deviations) if lower_barrier_price_deviations else 0,
-                        "min_deviation": min(lower_barrier_price_deviations) if lower_barrier_price_deviations else 0,
-                        "deviation_percentiles": self._calculate_percentiles(lower_barrier_price_deviations),
+                        "mean_deviation": sum(lower_barrier_price_deviations) / len(lower_barrier_price_deviations) if lower_barrier_price_deviations else 0 = "max_deviation": max(lower_barrier_price_deviations) if lower_barrier_price_deviations else 0 = "min_deviation": min(lower_barrier_price_deviations) if lower_barrier_price_deviations else 0 = "deviation_percentiles": self._calculate_percentiles(lower_barrier_price_deviations),
                         "deviation_distribution": {
                             "small_deviations": len([d for d in lower_barrier_price_deviations if d <= 0.01]),  # <= 1%
                             "medium_deviations": len([d for d in lower_barrier_price_deviations if 0.01 < d <= 0.05]),  # 1-5%
@@ -2723,20 +2228,16 @@ except Exception as e:
                     "upper_first_hits": len(upper_hits_without_lower_first),
                     "lower_first_hits": len(lower_hits_without_upper_first),
                     "both_barriers_hit": len(upper_hits_with_lower_first) + len(lower_hits_with_upper_first),
-                    "upper_first_ratio": len(upper_hits_without_lower_first) / len(barrier_hits) if barrier_hits else 0,
-                    "lower_first_ratio": len(lower_hits_without_upper_first) / len(barrier_hits) if barrier_hits else 0
+                    "upper_first_ratio": len(upper_hits_without_lower_first) / len(barrier_hits) if barrier_hits else 0 = "lower_first_ratio": len(lower_hits_without_upper_first) / len(barrier_hits) if barrier_hits else 0
                 }
             }
 
         except Exception as e:
             return {"error": f"Could not analyze triple barrier captured changes: {str(e)}"}
 
-    def _calculate_percentiles(self, data: List[float]) -> Dict[str, float]:
+    def _calculate_percentiles(self = data: List[float]) -> Dict[str = float]:
         """Calculate percentiles for price change data."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if not data:
                 return {}
             sorted_data = sorted(data)
@@ -2751,15 +2252,12 @@ except Exception as e:
             return {}
 
     # Warning generation methods
-    def _generate_regime_splitting_warnings(self, result: Any) -> List[str]:
+    def _generate_regime_splitting_warnings(self = result: Any) -> List[str]:
         """Generate warnings for regime splitting."""
         warnings = []
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            if result.get("regime_balance", {}).get("is_balanced") == False:
+            if result.get("regime_balance" = {}).get("is_balanced") == False:
                 warnings.append("Regime imbalance detected in data splits")
 
             if result.get("quality_validation", {}).get("all_regimes_represented") == False:
@@ -2773,15 +2271,12 @@ except Exception as e:
 
         return warnings
 
-    def _generate_triple_barrier_warnings(self, result: Any) -> List[str]:
+    def _generate_triple_barrier_warnings(self = result: Any) -> List[str]:
         """Generate warnings for triple barrier method."""
         warnings = []
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            if result.get("label_quality", {}).get("balanced_labels", {}).get("is_balanced") == False:
+            if result.get("label_quality" = {}).get("balanced_labels", {}).get("is_balanced") == False:
                 warnings.append("Label imbalance detected")
 
             if result.get("label_quality", {}).get("no_label_leakage") == False:
@@ -2795,15 +2290,12 @@ except Exception as e:
 
         return warnings
 
-    def _generate_hmm_training_warnings(self, result: Any) -> List[str]:
+    def _generate_hmm_training_warnings(self = result: Any) -> List[str]:
         """Generate warnings for HMM training."""
         warnings = []
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            if result.get("model_performance", {}).get("overfitting_score", {}).get("is_overfitting") == True:
+            if result.get("model_performance" = {}).get("overfitting_score", {}).get("is_overfitting") == True:
                 warnings.append("Model shows signs of overfitting")
 
             if result.get("training_analysis", {}).get("convergence_status") == False:
@@ -2817,15 +2309,12 @@ except Exception as e:
 
         return warnings
 
-    def _generate_analyst_enhancement_warnings(self, result: Any) -> List[str]:
+    def _generate_analyst_enhancement_warnings(self = result: Any) -> List[str]:
         """Generate warnings for analyst enhancement."""
         warnings = []
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            if result.get("performance_impact", {}).get("accuracy_improvement", 0) < 0.01:
+            if result.get("performance_impact" = {}).get("accuracy_improvement", 0) < 0.01:
                 warnings.append("Minimal accuracy improvement from enhancement")
 
             if result.get("enhancement_quality", {}).get("feature_relevance", 0) < 0.5:
@@ -2839,15 +2328,12 @@ except Exception as e:
 
         return warnings
 
-    def _generate_feature_generation_warnings(self, result: Any) -> List[str]:
+    def _generate_feature_generation_warnings(self = result: Any) -> List[str]:
         """Generate warnings for feature generation (Step 6)."""
         warnings = []
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            if result.get("feature_generation_analysis", {}).get("feature_increase", 0) > 200:
+            if result.get("feature_generation_analysis" = {}).get("feature_increase", 0) > 200:
                 warnings.append("Large increase in feature count may cause overfitting")
 
             if result.get("feature_quality", {}).get("feature_relevance", 0) < 0.5:
@@ -2861,15 +2347,12 @@ except Exception as e:
 
         return warnings
 
-    def _generate_matrix_selection_warnings(self, result: Any) -> List[str]:
+    def _generate_matrix_selection_warnings(self = result: Any) -> List[str]:
         """Generate warnings for matrix feature selection (Step 7)."""
         warnings = []
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            if result.get("selection_analysis", {}).get("reduction_ratio", 0) > 0.8:
+            if result.get("selection_analysis" = {}).get("reduction_ratio", 0) > 0.8:
                 warnings.append("High feature reduction may lose important information")
 
             if result.get("performance_impact", {}).get("accuracy_change", 0) < -0.02:
@@ -2884,43 +2367,43 @@ except Exception as e:
         return warnings
 
     # Placeholder methods for other step metrics (to be implemented based on actual step outputs)
-    async def _get_tactician_labeling_metrics(self, result: Any) -> Dict[str, Any]:
+    async def _get_tactician_labeling_metrics(self = result: Any) -> Dict[str = Any]:
         return {"status": "Metrics calculation not implemented yet"}
 
-    async def _get_tactician_training_metrics(self, result: Any) -> Dict[str, Any]:
+    async def _get_tactician_training_metrics(self, result: Any) -> Dict[str = Any]:
         return {"status": "Metrics calculation not implemented yet"}
 
-    async def _get_confidence_calibration_metrics(self, result: Any) -> Dict[str, Any]:
+    async def _get_confidence_calibration_metrics(self = result: Any) -> Dict[str = Any]:
         return {"status": "Metrics calculation not implemented yet"}
 
-    async def _get_optimization_metrics(self, result: Any) -> Dict[str, Any]:
+    async def _get_optimization_metrics(self, result: Any) -> Dict[str = Any]:
         return {"status": "Metrics calculation not implemented yet"}
 
-    async def _get_walk_forward_metrics(self, result: Any) -> Dict[str, Any]:
+    async def _get_walk_forward_metrics(self, result: Any) -> Dict[str = Any]:
         return {"status": "Metrics calculation not implemented yet"}
 
-    async def _get_monte_carlo_metrics(self, result: Any) -> Dict[str, Any]:
+    async def _get_monte_carlo_metrics(self = result: Any) -> Dict[str = Any]:
         return {"status": "Metrics calculation not implemented yet"}
 
-    async def _get_ab_testing_metrics(self, result: Any) -> Dict[str, Any]:
+    async def _get_ab_testing_metrics(self, result: Any) -> Dict[str = Any]:
         return {"status": "Metrics calculation not implemented yet"}
 
-    async def _get_saving_metrics(self, result: Any) -> Dict[str, Any]:
+    async def _get_saving_metrics(self, result: Any) -> Dict[str = Any]:
         return {"status": "Metrics calculation not implemented yet"}
 
     # Helper methods for HMM analysis
-    def _calculate_regime_separation(self, result: Any) -> Dict[str, Any]:
+    def _calculate_regime_separation(self = result: Any) -> Dict[str = Any]:
         return {"status": "Not implemented yet"}
 
-    def _calculate_regime_stability(self, result: Any) -> Dict[str, Any]:
+    def _calculate_regime_stability(self, result: Any) -> Dict[str = Any]:
         return {"status": "Not implemented yet"}
 
-    def _calculate_regime_duration(self, result: Any) -> Dict[str, Any]:
+    def _calculate_regime_duration(self, result: Any) -> Dict[str = Any]:
         return {"status": "Not implemented yet"}
 
 
 # Convenience function to create enhanced training manager
-async def create_enhanced_training_manager_with_reporting(config: Dict[str, Any]) -> EnhancedTrainingManagerWithReporting:
+async def create_enhanced_training_manager_with_reporting(config: Dict[str = Any]) -> EnhancedTrainingManagerWithReporting:
     """Create an enhanced training manager with comprehensive reporting."""
 
     manager = EnhancedTrainingManagerWithReporting(config)

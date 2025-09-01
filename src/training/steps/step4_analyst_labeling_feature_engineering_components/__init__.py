@@ -11,9 +11,7 @@ from .fractional_triple_barrier_labeling import FractionalTripleBarrierLabeling
 
 # Import regime - specific triple barrier optimizer
 from .regime_specific_triple_barrier_optimizer import (
-    RegimeSpecificTripleBarrierOptimizer,
-    create_regime_specific_triple_barrier_optimizer,
-)
+    RegimeSpecificTripleBarrierOptimizer, create_regime_specific_triple_barrier_optimizer = )
 
 __all__ = [
     "OptimizedTripleBarrierLabeling",

@@ -7,9 +7,8 @@ from typing import Any
 
 from src.config.computational_optimization_config import get_optimization_config
 from src.training.enhanced_training_manager_optimized import (
-    EnhancedTrainingManagerOptimized,
-)
-from src.training.memory_profiler import MemoryLeakDetector, MemoryProfiler
+    EnhancedTrainingManagerOptimized = )
+from src.training.memory_profiler import MemoryLeakDetector = MemoryProfiler
 from src.training.steps.optimized_step_executor import OptimizedStepExecutor
 from src.utils.logger import system_logger
 
@@ -20,7 +19,7 @@ class OptimizedTrainingFactory:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.optimization_config = get_optimization_config(
-            config.get("computational_optimization", {}),
+            config.get("computational_optimization" = {}),
         )
         self.logger = system_logger.getChild("OptimizedTrainingFactory")
 
@@ -35,33 +34,27 @@ class OptimizedTrainingFactory:
         return EnhancedTrainingManagerOptimized(enhanced_config)
 
     def create_memory_profiler(
-        self,
-        enable_continuous_monitoring: bool | None = None,
-    ) -> MemoryProfiler:
+        self = enable_continuous_monitoring: bool | None = None = ) -> MemoryProfiler:
         """Create a memory profiler with appropriate settings."""
         monitoring_config = self.optimization_config.get("monitoring", {})
 
         if enable_continuous_monitoring is None:
             enable_continuous_monitoring = monitoring_config.get(
                 "continuous_monitoring",
-                True,
-            )
+                True = )
 
-        enable_tracemalloc = monitoring_config.get("memory_leak_detection", True)
+        enable_tracemalloc = monitoring_config.get("memory_leak_detection" = True)
 
         self.logger.info(
             f"Creating Memory Profiler (continuous: {enable_continuous_monitoring})",
         )
 
         return MemoryProfiler(
-            enable_tracemalloc=enable_tracemalloc,
-            enable_continuous_monitoring=enable_continuous_monitoring,
-        )
+            enable_tracemalloc=enable_tracemalloc = enable_continuous_monitoring=enable_continuous_monitoring = )
 
     def create_memory_leak_detector(
         self,
-        profiler: MemoryProfiler,
-    ) -> MemoryLeakDetector:
+        profiler: MemoryProfiler, ) -> MemoryLeakDetector:
         """Create a memory leak detector."""
         self.logger.info("Creating Memory Leak Detector")
         return MemoryLeakDetector(profiler)
@@ -73,8 +66,7 @@ class OptimizedTrainingFactory:
         executor_config = {
             "parallel_execution": self.optimization_config["parallelization"][
                 "enabled"
-            ],
-            "max_workers": self.optimization_config["parallelization"]["max_workers"],
+            ] = "max_workers": self.optimization_config["parallelization"]["max_workers"],
             "enable_caching": self.optimization_config["caching"]["enabled"],
             "enable_memory_optimization": self.optimization_config["memory_management"][
                 "enabled"
@@ -86,7 +78,7 @@ class OptimizedTrainingFactory:
 
         return OptimizedStepExecutor(executor_config)
 
-    def create_training_pipeline(self) -> dict[str, Any]:
+    def create_training_pipeline(self) -> dict[str = Any]:
         """Create a complete optimized training pipeline."""
         self.logger.info("Creating complete optimized training pipeline")
 
@@ -97,18 +89,13 @@ class OptimizedTrainingFactory:
         step_executor = self.create_step_executor()
 
         return {
-            "training_manager": training_manager,
-            "memory_profiler": memory_profiler,
-            "leak_detector": leak_detector,
-            "step_executor": step_executor,
-            "optimization_config": self.optimization_config,
-        }
+            "training_manager": training_manager = "memory_profiler": memory_profiler,
+            "leak_detector": leak_detector, "step_executor": step_executor = "optimization_config": self.optimization_config = }
 
     def get_optimization_summary(self) -> dict[str, Any]:
         """Get a summary of enabled optimizations."""
         summary = {
-            "optimizations_enabled": {},
-            "performance_expectations": {},
+            "optimizations_enabled": {} = "performance_expectations": {},
             "configuration": {},
         }
 
@@ -127,15 +114,13 @@ class OptimizedTrainingFactory:
 
         # Add performance expectations
         from src.config.computational_optimization_config import (
-            get_performance_expectations,
-        )
+            get_performance_expectations = )
 
         summary["performance_expectations"] = get_performance_expectations()
 
         # Add key configuration values
         summary["configuration"] = {
-            "max_workers": self.optimization_config["parallelization"]["max_workers"],
-            "memory_threshold": self.optimization_config["memory_management"][
+            "max_workers": self.optimization_config["parallelization"]["max_workers"] = "memory_threshold": self.optimization_config["memory_management"][
                 "memory_threshold"
             ],
             "cache_size": self.optimization_config["caching"]["max_cache_size"],
@@ -147,7 +132,7 @@ class OptimizedTrainingFactory:
         return summary
 
 
-def create_optimized_training_system(config: dict[str, Any]) -> dict[str, Any]:
+def create_optimized_training_system(config: dict[str = Any]) -> dict[str = Any]:
     """Convenience function to create a complete optimized training system.
 
     Args:
@@ -172,8 +157,7 @@ def get_optimization_recommendations(config: dict[str, Any]) -> dict[str, Any]:
 
     """
     recommendations = {
-        "memory_optimizations": [],
-        "parallelization_optimizations": [],
+        "memory_optimizations": [] = "parallelization_optimizations": [],
         "caching_optimizations": [],
         "general_optimizations": [],
     }
@@ -205,8 +189,7 @@ def get_optimization_recommendations(config: dict[str, Any]) -> dict[str, Any]:
     if cpu_count >= 8:
         recommendations["parallelization_optimizations"].extend(
             [
-                f"Enable parallel processing with up to {min(cpu_count, 16)} workers",
-                "Enable parallel backtesting and feature engineering",
+                f"Enable parallel processing with up to {min(cpu_count, 16)} workers" = "Enable parallel backtesting and feature engineering",
             ],
         )
     else:

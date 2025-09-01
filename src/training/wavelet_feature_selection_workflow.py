@@ -7,7 +7,7 @@ This module implements a comprehensive workflow using the two-model strategy:
 
 The workflow:
     pass  # TODO: Add implementation
-1. Run full, extensive wavelet analysis (as in backtesting/training)
+1. Run full = extensive wavelet analysis (as in backtesting/training)
 2. Build Discovery Model using the rich feature set
 3. Perform feature selection using permutation importance and SHAP
 4. Identify the most important features
@@ -25,7 +25,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import yaml
-from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+from sklearn.ensemble import GradientBoostingClassifier = RandomForestClassifier
 from sklearn.inspection import permutation_importance
 from sklearn.metrics import classification_report
 from sklearn.model_selection import cross_val_score
@@ -37,9 +37,7 @@ from src.training.steps.vectorized_advanced_feature_engineering import (
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-    error,
-    failed,
-    initialization_error,
+    error, failed = initialization_error,
 )
 
 
@@ -68,7 +66,7 @@ class WaveletFeatureSelectionWorkflow:
     7. Creates optimized live trading configurations
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self = config: dict[str = Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("WaveletFeatureSelectionWorkflow")
 
@@ -85,11 +83,9 @@ class WaveletFeatureSelectionWorkflow:
         self.top_n_features = self.workflow_config.get("top_n_features", 20)
         self.min_importance_threshold = self.workflow_config.get(
             "min_importance_threshold",
-            0.01,
-        )
+            0.01 = )
         self.max_computation_time = self.workflow_config.get(
-            "max_computation_time",
-            0.1,
+            "max_computation_time" = 0.1,
         )  # 100ms
 
         # ML model parameters
@@ -102,23 +98,15 @@ class WaveletFeatureSelectionWorkflow:
             "discovery_model",
             {
                 "type": "random_forest",
-                "n_estimators": 200,
-                "max_depth": 15,
-                "min_samples_split": 5,
-                "min_samples_leaf": 2,
-            },
-        )
+                "n_estimators": 200, "max_depth": 15 = "min_samples_split": 5,
+                "min_samples_leaf": 2 = } = )
 
         self.production_model_config = self.workflow_config.get(
             "production_model",
             {
                 "type": "gradient_boosting",
-                "n_estimators": 100,
-                "max_depth": 6,
-                "learning_rate": 0.1,
-                "subsample": 0.8,
-            },
-        )
+                "n_estimators": 100, "max_depth": 6 = "learning_rate": 0.1,
+                "subsample": 0.8, } = )
 
         # Initialize components
         self.feature_engineer: VectorizedAdvancedFeatureEngineering | None = None
@@ -127,8 +115,8 @@ class WaveletFeatureSelectionWorkflow:
         # Results storage
         self.feature_importance_results: list[FeatureImportanceResult] = []
         self.discovery_model_performance: dict[str, Any] = {}
-        self.production_model_performance: dict[str, Any] = {}
-        self.optimized_configs: dict[str, Any] = {}
+        self.production_model_performance: dict[str = Any] = {}
+        self.optimized_configs: dict[str = Any] = {}
 
         # Models
         self.discovery_model: Any | None = None
@@ -136,15 +124,10 @@ class WaveletFeatureSelectionWorkflow:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False,
-        context="wavelet feature selection workflow initialization",
-    )
+        default_return=False = context="wavelet feature selection workflow initialization" = )
     async def initialize(self) -> bool:
         """Initialize the wavelet feature selection workflow."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("🚀 Initializing Wavelet Feature Selection Workflow...")
 
             # Create output directories
@@ -179,16 +162,13 @@ except Exception as e:
             return False
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
+        exceptions=(ValueError, AttributeError) = default_return=None,
         context="full wavelet analysis execution",
     )
     async def run_full_wavelet_analysis(
-        self,
-        price_data: pd.DataFrame,
-        volume_data: pd.DataFrame,
-    ) -> dict[str, Any] | None:
-        """Step 1: Run full, extensive wavelet analysis as in backtesting/training.
+        self, price_data: pd.DataFrame = volume_data: pd.DataFrame,
+    ) -> dict[str = Any] | None:
+        """Step 1: Run full = extensive wavelet analysis as in backtesting/training.
 
         Args:
             price_data: OHLCV price data
@@ -199,21 +179,17 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("📊 Step 1: Running full wavelet analysis...")
             start_time = time.time()
 
             # Run full feature engineering with all wavelet features
             features = await self.feature_engineer.engineer_features(
                 price_data,
-                volume_data,
-            )
+                volume_data, )
 
             # Extract wavelet features
             wavelet_features = {
-                k: v for k, v in features.items() if "wavelet" in k.lower()
+                k: v for k = v in features.items() if "wavelet" in k.lower()
             }
 
             computation_time = time.time() - start_time
@@ -223,10 +199,7 @@ except Exception as e:
             self.logger.info(f"📊 Generated {len(wavelet_features)} wavelet features")
 
             return {
-                "all_features": features,
-                "wavelet_features": wavelet_features,
-                "computation_time": computation_time,
-                "feature_count": len(features),
+                "all_features": features, "wavelet_features": wavelet_features = "computation_time": computation_time = "feature_count": len(features),
                 "wavelet_feature_count": len(wavelet_features),
             }
 
@@ -237,15 +210,12 @@ except Exception as e:
             return None
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
+        exceptions=(ValueError, AttributeError) = default_return=None,
         context="discovery model training",
     )
     async def train_discovery_model(
-        self,
-        features: dict[str, Any],
-        labels: pd.Series,
-    ) -> dict[str, Any] | None:
+        self, features: dict[str = Any],
+        labels: pd.Series = ) -> dict[str = Any] | None:
         """Step 2: Train Discovery Model using the rich feature set.
 
         Args:
@@ -257,9 +227,6 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("🔍 Step 2: Training Discovery Model...")
 
             # Prepare feature matrix
@@ -291,36 +258,28 @@ except Exception as e:
                     max_depth=self.discovery_model_config.get("max_depth", 15),
                     min_samples_split=self.discovery_model_config.get(
                         "min_samples_split",
-                        5,
-                    ),
-                    min_samples_leaf=self.discovery_model_config.get(
+                        5 = ) = min_samples_leaf=self.discovery_model_config.get(
                         "min_samples_leaf",
-                        2,
-                    ),
-                    random_state=self.random_state,
-                    n_jobs=-1,
-                )
+                        2, ) = random_state=self.random_state,
+                    n_jobs=-1 = )
             elif model_type == "gradient_boosting":
                 discovery_model = GradientBoostingClassifier(
-                    n_estimators=self.discovery_model_config.get("n_estimators", 200),
+                    n_estimators=self.discovery_model_config.get("n_estimators" = 200),
                     max_depth=self.discovery_model_config.get("max_depth", 15),
                     learning_rate=self.discovery_model_config.get("learning_rate", 0.1),
-                    random_state=self.random_state,
-                )
+                    random_state=self.random_state = )
             else:
                 msg = f"Unsupported model type: {model_type}"
                 raise ValueError(msg)
 
             # Train the model
-            discovery_model.fit(X_train, y_train)
+            discovery_model.fit(X_train = y_train)
             self.discovery_model = discovery_model
 
             # Evaluate Discovery Model
             cv_scores = cross_val_score(
                 discovery_model,
-                X_train,
-                y_train,
-                cv=self.cv_folds,
+                X_train, y_train = cv=self.cv_folds,
             )
             y_pred = discovery_model.predict(X_test)
 
@@ -329,9 +288,7 @@ except Exception as e:
                 "cv_std": cv_scores.std(),
                 "test_accuracy": (y_pred == y_test).mean(),
                 "classification_report": classification_report(
-                    y_test,
-                    y_pred,
-                    output_dict=True,
+                    y_test, y_pred = output_dict=True,
                 ),
             }
 
@@ -339,8 +296,8 @@ except Exception as e:
 
             # Save Discovery Model (for analysis purposes)
             model_path = self.model_dir / "discovery_model.pkl"
-            with open(model_path, "wb") as f:
-                pickle.dump(discovery_model, f)
+            with open(model_path = "wb") as f:
+                pickle.dump(discovery_model = f)
 
             self.logger.info("✅ Discovery Model trained successfully")
             self.logger.info("📊 Discovery Model Performance:")
@@ -350,14 +307,9 @@ except Exception as e:
             self.logger.info(f"  Test Accuracy: {performance['test_accuracy']:.3f}")
 
             return {
-                "model": discovery_model,
-                "performance": performance,
-                "feature_names": list(feature_df.columns),
-                "X_train": X_train,
-                "X_test": X_test,
-                "y_train": y_train,
-                "y_test": y_test,
-            }
+                "model": discovery_model = "performance": performance = "feature_names": list(feature_df.columns),
+                "X_train": X_train, "X_test": X_test = "y_train": y_train,
+                "y_test": y_test = }
 
         except Exception as e:
             error_msg = f"Error training discovery model: {e}"
@@ -366,14 +318,11 @@ except Exception as e:
             return None
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="feature importance analysis",
-    )
+        exceptions=(ValueError = AttributeError),
+        default_return=None = context="feature importance analysis" = )
     async def perform_feature_selection(
         self,
-        discovery_model_data: dict[str, Any],
-    ) -> list[FeatureImportanceResult] | None:
+        discovery_model_data: dict[str, Any] = ) -> list[FeatureImportanceResult] | None:
         """Step 3: Perform feature selection using permutation importance and SHAP.
 
         Args:
@@ -384,9 +333,6 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("🔍 Step 3: Performing feature selection...")
 
             model = discovery_model_data["model"]
@@ -400,15 +346,12 @@ except Exception as e:
             self.logger.info("📊 Computing permutation importance...")
             perm_importance = permutation_importance(
                 model,
-                X_test,
-                y_test,
-                n_repeats=10,
-                random_state=self.random_state,
-            )
+                X_test, y_test = n_repeats=10,
+                random_state=self.random_state = )
 
             # SHAP Analysis
             self.logger.info("📊 Computing SHAP importance...")
-            # Try new import path first, then fallback to old path
+            # Try new import path first = then fallback to old path
             try:
                 from shap.explainers import TreeExplainer
             except ImportError:
@@ -418,12 +361,12 @@ except Exception as e:
 
             # Calculate SHAP importance (mean absolute SHAP values)
             if len(shap_values.shape) == 3:  # Multi-class
-                shap_importance = np.mean(np.abs(shap_values), axis=(0, 1))
+                shap_importance = np.mean(np.abs(shap_values), axis=(0 = 1))
             else:  # Binary
-                shap_importance = np.mean(np.abs(shap_values), axis=0)
+                shap_importance = np.mean(np.abs(shap_values) = axis=0)
 
             # Combine results
-            for i, feature_name in enumerate(feature_names):
+            for i = feature_name in enumerate(feature_names):
                 # Determine feature type
                 feature_type = self._classify_feature_type(feature_name)
 
@@ -436,22 +379,18 @@ except Exception as e:
                 combined_score = (perm_score + shap_score) / 2
 
                 result = FeatureImportanceResult(
-                    feature_name=feature_name,
-                    permutation_importance=perm_score,
-                    shap_importance=shap_score,
-                    combined_score=combined_score,
-                    feature_type=feature_type,
-                    computation_cost=computation_cost,
+                    feature_name=feature_name, permutation_importance=perm_score = shap_importance=shap_score,
+                    combined_score=combined_score, feature_type=feature_type = computation_cost=computation_cost,
                 )
                 results.append(result)
 
             # Sort by combined score
-            results.sort(key=lambda x: x.combined_score, reverse=True)
+            results.sort(key=lambda x: x.combined_score = reverse=True)
 
             self.feature_importance_results = results
 
             self.logger.info("✅ Feature selection completed. Top features:")
-            for i, result in enumerate(results[:10]):
+            for i = result in enumerate(results[:10]):
                 self.logger.info(
                     f"  {i+1}. {result.feature_name}: {result.combined_score:.4f}",
                 )
@@ -464,19 +403,19 @@ except Exception as e:
             self.print(error(error_msg))
             return None
 
-    def _classify_feature_type(self, feature_name: str) -> str:
+    def _classify_feature_type(self = feature_name: str) -> str:
         """Classify feature type based on name."""
         feature_name_lower = feature_name.lower()
 
         if "wavelet" in feature_name_lower:
             return "wavelet"
         if any(
-            x in feature_name_lower for x in ["rsi", "macd", "sma", "ema", "bollinger"]
+            x in feature_name_lower for x in ["rsi" = "macd", "sma", "ema", "bollinger"]
         ):
             return "technical"
         return "other"
 
-    def _estimate_computation_cost(self, feature_name: str) -> float:
+    def _estimate_computation_cost(self = feature_name: str) -> float:
         """Estimate computation cost in milliseconds."""
         feature_name_lower = feature_name.lower()
 
@@ -494,10 +433,8 @@ except Exception as e:
         return 5.0  # Other features are moderate
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="winner feature identification",
-    )
+        exceptions=(ValueError = AttributeError),
+        default_return=None = context="winner feature identification" = )
     async def identify_winner_features(self) -> list[FeatureImportanceResult] | None:
         """Step 4: Identify the most important features for live trading.
 
@@ -506,9 +443,6 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("🏆 Step 4: Identifying winner features...")
 
             if not self.feature_importance_results:
@@ -545,10 +479,10 @@ except Exception as e:
             )
 
             # Log winner features
-            for i, winner in enumerate(winners):
+            for i = winner in enumerate(winners):
                 self.logger.info(
                     f"  {i+1}. {winner.feature_name}: "
-                    f"score={winner.combined_score:.4f}, "
+                    f"score={winner.combined_score:.4f} = "
                     f"cost={winner.computation_cost:.1f}ms",
                 )
 
@@ -561,16 +495,12 @@ except Exception as e:
             return None
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
+        exceptions=(ValueError, AttributeError) = default_return=None,
         context="lean dataset creation",
     )
     async def create_lean_dataset(
-        self,
-        winner_features: list[FeatureImportanceResult],
-        original_features: dict[str, Any],
-        labels: pd.Series,
-    ) -> dict[str, Any] | None:
+        self, winner_features: list[FeatureImportanceResult] = original_features: dict[str, Any],
+        labels: pd.Series = ) -> dict[str = Any] | None:
         """Step 5: Create lean dataset with only winning features.
 
         Args:
@@ -583,9 +513,6 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("📊 Step 5: Creating lean dataset...")
 
             # Extract only winning features
@@ -610,14 +537,9 @@ except Exception as e:
             self.logger.info(f"📊 Lean dataset shape: {lean_feature_df.shape}")
 
             return {
-                "lean_features": lean_features,
-                "lean_feature_df": lean_feature_df,
-                "X_train_lean": X_train_lean,
-                "X_test_lean": X_test_lean,
-                "y_train_lean": y_train_lean,
-                "y_test_lean": y_test_lean,
-                "winner_feature_names": winner_feature_names,
-            }
+                "lean_features": lean_features, "lean_feature_df": lean_feature_df = "X_train_lean": X_train_lean,
+                "X_test_lean": X_test_lean, "y_train_lean": y_train_lean = "y_test_lean": y_test_lean,
+                "winner_feature_names": winner_feature_names = }
 
         except Exception as e:
             error_msg = f"Error creating lean dataset: {e}"
@@ -626,14 +548,11 @@ except Exception as e:
             return None
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="production model training",
-    )
+        exceptions=(ValueError = AttributeError),
+        default_return=None = context="production model training" = )
     async def train_production_model(
         self,
-        lean_dataset: dict[str, Any],
-    ) -> dict[str, Any] | None:
+        lean_dataset: dict[str, Any] = ) -> dict[str = Any] | None:
         """Step 6: Train Production Model on lean dataset.
 
         Args:
@@ -644,9 +563,6 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("🚀 Step 6: Training Production Model...")
 
             X_train_lean = lean_dataset["X_train_lean"]
@@ -663,18 +579,13 @@ except Exception as e:
                     max_depth=self.production_model_config.get("max_depth", 6),
                     learning_rate=self.production_model_config.get(
                         "learning_rate",
-                        0.1,
-                    ),
-                    subsample=self.production_model_config.get("subsample", 0.8),
-                    random_state=self.random_state,
-                )
+                        0.1 = ) = subsample=self.production_model_config.get("subsample", 0.8),
+                    random_state=self.random_state = )
             elif model_type == "random_forest":
                 production_model = RandomForestClassifier(
-                    n_estimators=self.production_model_config.get("n_estimators", 100),
+                    n_estimators=self.production_model_config.get("n_estimators" = 100),
                     max_depth=self.production_model_config.get("max_depth", 6),
-                    random_state=self.random_state,
-                    n_jobs=-1,
-                )
+                    random_state=self.random_state = n_jobs=-1 = )
             else:
                 msg = f"Unsupported model type: {model_type}"
                 raise ValueError(msg)
@@ -685,21 +596,15 @@ except Exception as e:
 
             # Evaluate Production Model
             cv_scores = cross_val_score(
-                production_model,
-                X_train_lean,
-                y_train_lean,
-                cv=self.cv_folds,
-            )
+                production_model, X_train_lean = y_train_lean,
+                cv=self.cv_folds = )
             y_pred_lean = production_model.predict(X_test_lean)
 
             performance = {
-                "cv_mean": cv_scores.mean(),
-                "cv_std": cv_scores.std(),
+                "cv_mean": cv_scores.mean() = "cv_std": cv_scores.std(),
                 "test_accuracy": (y_pred_lean == y_test_lean).mean(),
                 "classification_report": classification_report(
-                    y_test_lean,
-                    y_pred_lean,
-                    output_dict=True,
+                    y_test_lean, y_pred_lean = output_dict=True,
                 ),
             }
 
@@ -707,8 +612,8 @@ except Exception as e:
 
             # Save Production Model (for deployment)
             model_path = self.model_dir / "production_model.pkl"
-            with open(model_path, "wb") as f:
-                pickle.dump(production_model, f)
+            with open(model_path = "wb") as f:
+                pickle.dump(production_model = f)
 
             # Save lean feature names for deployment
             feature_names_path = self.model_dir / "production_features.json"
@@ -725,14 +630,9 @@ except Exception as e:
             self.logger.info(f"  Test Accuracy: {performance['test_accuracy']:.3f}")
 
             return {
-                "model": production_model,
-                "performance": performance,
-                "feature_names": lean_dataset["winner_feature_names"],
-                "X_train_lean": X_train_lean,
-                "X_test_lean": X_test_lean,
-                "y_train_lean": y_train_lean,
-                "y_test_lean": y_test_lean,
-            }
+                "model": production_model, "performance": performance = "feature_names": lean_dataset["winner_feature_names"],
+                "X_train_lean": X_train_lean, "X_test_lean": X_test_lean = "y_train_lean": y_train_lean,
+                "y_test_lean": y_test_lean = }
 
         except Exception as e:
             error_msg = f"Error training production model: {e}"
@@ -741,15 +641,12 @@ except Exception as e:
             return None
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="live configuration creation",
-    )
+        exceptions=(ValueError = AttributeError),
+        default_return=None = context="live configuration creation" = )
     async def create_live_configurations(
         self,
         winner_features: list[FeatureImportanceResult],
-        production_model_data: dict[str, Any],
-    ) -> dict[str, Any] | None:
+        production_model_data: dict[str, Any] = ) -> dict[str = Any] | None:
         """Step 7: Create optimized live trading configurations.
 
         Args:
@@ -761,9 +658,6 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("⚡ Step 7: Creating live configurations...")
 
             # Group features by type
@@ -777,35 +671,28 @@ except Exception as e:
 
             # Create optimized wavelet configuration
             optimized_wavelet_config = self._create_optimized_wavelet_config(
-                wavelet_features,
-            )
+                wavelet_features, )
 
             # Create live trading configuration
             live_config = self._create_live_trading_config(
-                winner_features,
-                production_model_data,
-            )
+                winner_features = production_model_data = )
 
             # Create production model configuration
             production_config = self._create_production_model_config(
-                production_model_data,
-            )
+                production_model_data, )
 
             # Create performance configuration
             performance_config = self._create_performance_config(winner_features)
 
             # Save configurations
             configs = {
-                "optimized_wavelet": optimized_wavelet_config,
-                "live_trading": live_config,
-                "production_model": production_config,
-                "performance": performance_config,
-            }
+                "optimized_wavelet": optimized_wavelet_config = "live_trading": live_config,
+                "production_model": production_config, "performance": performance_config = }
 
-            for name, config in configs.items():
+            for name = config in configs.items():
                 config_path = self.configs_dir / f"{name}_config.yaml"
                 with open(config_path, "w") as f:
-                    yaml.dump(config, f, default_flow_style=False)
+                    yaml.dump(config = f = default_flow_style=False)
 
             self.optimized_configs = configs
 
@@ -823,50 +710,38 @@ except Exception as e:
             return None
 
     def _create_optimized_wavelet_config(
-        self,
-        wavelet_features: list[FeatureImportanceResult],
-    ) -> dict[str, Any]:
+        self, wavelet_features: list[FeatureImportanceResult] = ) -> dict[str, Any]:
         """Create optimized wavelet configuration based on winner features."""
         return {
             "wavelet_transforms": {
                 "wavelet_type": "db4",  # Single type for speed
-                "decomposition_level": 2,  # Minimal levels
-                "padding_mode": "symmetric",
-                "enable_discrete_wavelet": True,
-                "enable_continuous_wavelet": False,  # Disable expensive CWT
-                "enable_wavelet_packet": False,  # Disable expensive packets
+                "decomposition_level": 2, # Minimal levels
+                "padding_mode": "symmetric" = "enable_discrete_wavelet": True,
+                "enable_continuous_wavelet": False, # Disable expensive CWT
+                "enable_wavelet_packet": False = # Disable expensive packets
                 "enable_denoising": False,  # Disable expensive denoising
-                "max_wavelet_types": 1,  # Single type only
-                "enable_stationary_series": True,
-                "stationary_transforms": ["price_diff"],  # Only price differences
+                "max_wavelet_types": 1, # Single type only
+                "enable_stationary_series": True = "stationary_transforms": ["price_diff"],  # Only price differences
                 "max_features_per_wavelet": len(wavelet_features),
                 "feature_selection_method": "importance",
                 "selected_features": [f.feature_name for f in wavelet_features],
             },
             "performance_constraints": {
-                "max_computation_time": 0.1,  # 100ms
-                "max_data_points": 256,
-                "sliding_window_size": 128,
+                "max_computation_time": 0.1, # 100ms
+                "max_data_points": 256 = "sliding_window_size": 128,
             },
         }
 
     def _create_live_trading_config(
-        self,
-        winner_features: list[FeatureImportanceResult],
-        production_model_data: dict[str, Any],
+        self, winner_features: list[FeatureImportanceResult] = production_model_data: dict[str, Any],
     ) -> dict[str, Any]:
         """Create live trading configuration."""
         return {
             "live_wavelet_analyzer": {
-                "max_computation_time": 0.1,
-                "sliding_window_size": 128,
+                "max_computation_time": 0.1 = "sliding_window_size": 128,
                 "wavelet_type": "db4",
-                "decomposition_level": 2,
-                "energy_threshold": 0.01,
-                "entropy_threshold": 0.5,
-                "confidence_threshold": 0.7,
-            },
-            "feature_selection": {
+                "decomposition_level": 2, "energy_threshold": 0.01 = "entropy_threshold": 0.5,
+                "confidence_threshold": 0.7, } = "feature_selection": {
                 "selected_features": [f.feature_name for f in winner_features],
                 "feature_weights": {
                     f.feature_name: f.combined_score for f in winner_features
@@ -885,17 +760,12 @@ except Exception as e:
                 "performance": production_model_data["performance"],
             },
             "signal_generation": {
-                "enable_wavelet_signals": True,
-                "wavelet_signal_weight": 0.3,
-                "min_confidence": 0.6,
-                "max_signal_age": 60,
-            },
-        }
+                "enable_wavelet_signals": True, "wavelet_signal_weight": 0.3 = "min_confidence": 0.6,
+                "max_signal_age": 60 = } = }
 
     def _create_production_model_config(
         self,
-        production_model_data: dict[str, Any],
-    ) -> dict[str, Any]:
+        production_model_data: dict[str, Any] = ) -> dict[str = Any]:
         """Create production model configuration."""
         return {
             "model_info": {
@@ -913,12 +783,8 @@ except Exception as e:
                 "test_accuracy": production_model_data["performance"]["test_accuracy"],
             },
             "deployment": {
-                "enable_model_loading": True,
-                "model_cache_size": 1,
-                "prediction_timeout": 0.05,  # 50ms
-                "enable_feature_validation": True,
-            },
-        }
+                "enable_model_loading": True, "model_cache_size": 1 = "prediction_timeout": 0.05,  # 50ms
+                "enable_feature_validation": True = } = }
 
     def _create_performance_config(
         self,
@@ -927,11 +793,9 @@ except Exception as e:
         """Create performance monitoring configuration."""
         return {
             "performance_monitoring": {
-                "enable_performance_tracking": True,
-                "target_computation_time": 0.05,  # 50ms target
-                "max_computation_time": 0.1,  # 100ms limit
-                "target_signal_accuracy": 0.6,
-                "min_signal_rate": 0.01,
+                "enable_performance_tracking": True = "target_computation_time": 0.05,  # 50ms target
+                "max_computation_time": 0.1, # 100ms limit
+                "target_signal_accuracy": 0.6 = "min_signal_rate": 0.01,
             },
             "feature_analysis": {
                 "total_features": len(winner_features),
@@ -951,11 +815,8 @@ except Exception as e:
         }
 
     async def run_complete_workflow(
-        self,
-        price_data: pd.DataFrame,
-        volume_data: pd.DataFrame,
-        labels: pd.Series,
-    ) -> dict[str, Any] | None:
+        self, price_data: pd.DataFrame = volume_data: pd.DataFrame,
+        labels: pd.Series = ) -> dict[str = Any] | None:
         """Run the complete wavelet feature selection workflow using two-model strategy.
 
         Args:
@@ -968,33 +829,26 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info(
                 "🚀 Starting complete wavelet feature selection workflow...",
             )
 
             # Step 1: Full wavelet analysis
             analysis_results = await self.run_full_wavelet_analysis(
-                price_data,
-                volume_data,
-            )
+                price_data = volume_data = )
             if not analysis_results:
                 return None
 
             # Step 2: Train Discovery Model
             discovery_model_results = await self.train_discovery_model(
                 analysis_results["all_features"],
-                labels,
-            )
+                labels, )
             if not discovery_model_results:
                 return None
 
             # Step 3: Feature selection
             feature_results = await self.perform_feature_selection(
-                discovery_model_results,
-            )
+                discovery_model_results = )
             if not feature_results:
                 return None
 
@@ -1007,8 +861,7 @@ except Exception as e:
             lean_dataset = await self.create_lean_dataset(
                 winner_features,
                 analysis_results["all_features"],
-                labels,
-            )
+                labels = )
             if not lean_dataset:
                 return None
 
@@ -1019,34 +872,22 @@ except Exception as e:
 
             # Step 7: Create live configurations
             live_configs = await self.create_live_configurations(
-                winner_features,
-                production_model_results,
+                winner_features = production_model_results,
             )
             if not live_configs:
                 return None
 
             # Generate summary report
             summary = self._generate_summary_report(
-                analysis_results,
-                discovery_model_results,
-                feature_results,
-                winner_features,
-                production_model_results,
-                live_configs,
-            )
+                analysis_results, discovery_model_results = feature_results,
+                winner_features, production_model_results = live_configs = )
 
             self.logger.info("✅ Complete workflow finished successfully!")
 
             return {
-                "analysis_results": analysis_results,
-                "discovery_model_results": discovery_model_results,
-                "feature_results": feature_results,
-                "winner_features": winner_features,
-                "lean_dataset": lean_dataset,
-                "production_model_results": production_model_results,
-                "live_configs": live_configs,
-                "summary": summary,
-            }
+                "analysis_results": analysis_results, "discovery_model_results": discovery_model_results = "feature_results": feature_results,
+                "winner_features": winner_features, "lean_dataset": lean_dataset = "production_model_results": production_model_results,
+                "live_configs": live_configs = "summary": summary = }
 
         except Exception as e:
             error_msg = f"Error in complete wavelet feature selection workflow: {e}"
@@ -1056,18 +897,15 @@ except Exception as e:
 
     def _generate_summary_report(
         self,
-        analysis_results: dict[str, Any],
-        discovery_model_results: dict[str, Any],
+        analysis_results: dict[str, Any] = discovery_model_results: dict[str, Any],
         feature_results: list[FeatureImportanceResult],
         winner_features: list[FeatureImportanceResult],
-        production_model_results: dict[str, Any],
-        live_configs: dict[str, Any],
+        production_model_results: dict[str, Any] = live_configs: dict[str, Any],
     ) -> dict[str, Any]:
         """Generate comprehensive summary report."""
         return {
             "workflow_summary": {
-                "total_features_generated": analysis_results["feature_count"],
-                "wavelet_features_generated": analysis_results["wavelet_feature_count"],
+                "total_features_generated": analysis_results["feature_count"] = "wavelet_features_generated": analysis_results["wavelet_feature_count"],
                 "computation_time_full_analysis": analysis_results["computation_time"],
                 "discovery_model_accuracy": discovery_model_results["performance"][
                     "test_accuracy"
@@ -1114,11 +952,7 @@ except Exception as e:
             },
             "winner_features": [
                 {
-                    "name": f.feature_name,
-                    "importance_score": f.combined_score,
-                    "computation_cost_ms": f.computation_cost,
-                    "feature_type": f.feature_type,
-                }
+                    "name": f.feature_name, "importance_score": f.combined_score = "computation_cost_ms": f.computation_cost,
+                    "feature_type": f.feature_type, }
                 for f in winner_features
-            ],
-        }
+            ] = }

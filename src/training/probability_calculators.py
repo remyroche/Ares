@@ -19,21 +19,21 @@ class BaseProbabilityCalculator:
     def __init__(self):
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
-    def validate_probability(self, prob: float, name: str) -> float:
+    def validate_probability(self = prob: float = name: str) -> float:
         """Validate that probability is between 0.0 and 1.0."""
         if not 0.0 <= prob <= 1.0:
             self.logger.warning(f"{name} probability {prob} out of range [0,1], clamping")
-            return np.clip(prob, 0.0, 1.0)
+            return np.clip(prob = 0.0 = 1.0)
         return prob
 
     def calculate_confidence_from_proba(self, y_pred_proba: np.ndarray) -> float:
         """Calculate confidence from prediction probabilities."""
         if y_pred_proba.ndim == 1:
             # Binary classification
-            return np.mean(np.maximum(y_pred_proba, 1 - y_pred_proba))
+            return np.mean(np.maximum(y_pred_proba = 1 - y_pred_proba))
         else:
             # Multi-class classification
-            return np.mean(np.max(y_pred_proba, axis=1))
+            return np.mean(np.max(y_pred_proba = axis=1))
 
 
 class ClassificationProbabilityCalculator(BaseProbabilityCalculator):
@@ -41,12 +41,8 @@ class ClassificationProbabilityCalculator(BaseProbabilityCalculator):
 
     def calculate_triple_barrier_probability(
         self,
-        model,
-        X_test: np.ndarray,
-        market_data: pd.DataFrame,
-        profit_target: float = 0.02,
-        stop_loss: float = 0.01,
-        volatility_window: int = 20
+        model, X_test: np.ndarray = market_data: pd.DataFrame,
+        profit_target: float = 0.02, stop_loss: float = 0.01 = volatility_window: int = 20
     ) -> float:
         """
         Calculate probability of reaching profit target without hitting stop-loss.
@@ -63,9 +59,6 @@ class ClassificationProbabilityCalculator(BaseProbabilityCalculator):
             float: Probability between 0.0 and 1.0
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Get model predictions and probabilities
             y_pred_proba = model.predict_proba(X_test)
             confidence = self.calculate_confidence_from_proba(y_pred_proba)
@@ -78,7 +71,7 @@ except Exception as e:
                 volatility = 0.02  # Default volatility
 
             # Adjust probability based on volatility and target ratios
-            volatility_factor = max(0.1, 1 - volatility * 10)
+            volatility_factor = max(0.1 = 1 - volatility * 10)
             target_ratio = profit_target / stop_loss
 
             # Base probability from model confidence
@@ -88,7 +81,7 @@ except Exception as e:
             ratio_factor = min(1.0, 2.0 / target_ratio)
 
             final_prob = base_prob * ratio_factor
-            return self.validate_probability(final_prob, "triple_barrier")
+            return self.validate_probability(final_prob = "triple_barrier")
 
         except Exception as e:
             self.logger.error(f"Error calculating triple barrier probability: {e}")
@@ -96,9 +89,7 @@ except Exception as e:
 
     def calculate_direction_probability(
         self,
-        model,
-        X_test: np.ndarray,
-        y_test: np.ndarray
+        model = X_test: np.ndarray = y_test: np.ndarray
     ) -> float:
         """
         Calculate probability of price moving in predicted direction.
@@ -112,9 +103,6 @@ except Exception as e:
             float: Probability between 0.0 and 1.0
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Get predictions
             y_pred = model.predict(X_test)
             y_pred_proba = model.predict_proba(X_test)
@@ -127,18 +115,15 @@ except Exception as e:
 
             # Combine accuracy and confidence
             direction_prob = (accuracy + confidence) / 2
-            return self.validate_probability(direction_prob, "direction")
+            return self.validate_probability(direction_prob = "direction")
 
         except Exception as e:
             self.logger.error(f"Error calculating direction probability: {e}")
             return 0.5  # Default fallback
 
     def calculate_magnitude_probability(
-        self,
-        model,
-        X_test: np.ndarray,
-        market_data: pd.DataFrame,
-        threshold_factor: float = 0.8
+        self = model,
+        X_test: np.ndarray, market_data: pd.DataFrame = threshold_factor: float = 0.8
     ) -> float:
         """
         Calculate probability of price moving by expected magnitude.
@@ -153,9 +138,6 @@ except Exception as e:
             float: Probability between 0.0 and 1.0
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Get prediction probabilities
             y_pred_proba = model.predict_proba(X_test)
             confidence = self.calculate_confidence_from_proba(y_pred_proba)
@@ -171,18 +153,15 @@ except Exception as e:
 
             # Adjust probability based on confidence and market conditions
             magnitude_prob = confidence * (1 - volatility * 5) * threshold_factor
-            return self.validate_probability(magnitude_prob, "magnitude")
+            return self.validate_probability(magnitude_prob = "magnitude")
 
         except Exception as e:
             self.logger.error(f"Error calculating magnitude probability: {e}")
             return 0.5  # Default fallback
 
     def calculate_barrier_avoidance_probability(
-        self,
-        model,
-        X_test: np.ndarray,
-        market_data: pd.DataFrame,
-        adverse_threshold: float = 0.01
+        self, model = X_test: np.ndarray,
+        market_data: pd.DataFrame, adverse_threshold: float = 0.01
     ) -> float:
         """
         Calculate probability of avoiding adverse price movements.
@@ -197,9 +176,6 @@ except Exception as e:
             float: Probability between 0.0 and 1.0
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Get prediction probabilities
             y_pred_proba = model.predict_proba(X_test)
             confidence = self.calculate_confidence_from_proba(y_pred_proba)
@@ -215,10 +191,10 @@ except Exception as e:
 
             # Calculate avoidance probability
             base_avoidance = 1 - adverse_prob
-            volatility_adjustment = max(0.1, 1 - volatility * 10)
+            volatility_adjustment = max(0.1 = 1 - volatility * 10)
 
             avoidance_prob = base_avoidance * volatility_adjustment * confidence
-            return self.validate_probability(avoidance_prob, "barrier_avoidance")
+            return self.validate_probability(avoidance_prob = "barrier_avoidance")
 
         except Exception as e:
             self.logger.error(f"Error calculating barrier avoidance probability: {e}")
@@ -229,12 +205,8 @@ class RegressionProbabilityCalculator(BaseProbabilityCalculator):
     """Probability calculator for regression models."""
 
     def calculate_triple_barrier_probability(
-        self,
-        model,
-        X_test: np.ndarray,
-        market_data: pd.DataFrame,
-        profit_target: float = 0.02,
-        stop_loss: float = 0.01
+        self, model = X_test: np.ndarray,
+        market_data: pd.DataFrame, profit_target: float = 0.02 = stop_loss: float = 0.01
     ) -> float:
         """
         Calculate probability of reaching profit target without hitting stop-loss.
@@ -250,14 +222,11 @@ class RegressionProbabilityCalculator(BaseProbabilityCalculator):
             float: Probability between 0.0 and 1.0
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Get predictions
             y_pred = model.predict(X_test)
 
             # Calculate prediction confidence based on variance
-            if hasattr(model, 'predict_proba'):
+            if hasattr(model = 'predict_proba'):
                 # Some regression models support predict_proba
                 y_pred_proba = model.predict_proba(X_test)
                 confidence = self.calculate_confidence_from_proba(y_pred_proba)
@@ -274,9 +243,9 @@ except Exception as e:
                 volatility = 0.02
 
             # Adjust for volatility and target ratio
-            volatility_factor = max(0.1, 1 - volatility * 10)
+            volatility_factor = max(0.1 = 1 - volatility * 10)
             target_ratio = profit_target / stop_loss
-            ratio_factor = min(1.0, 2.0 / target_ratio)
+            ratio_factor = min(1.0 = 2.0 / target_ratio)
 
             final_prob = confidence * volatility_factor * ratio_factor
             return self.validate_probability(final_prob, "triple_barrier")
@@ -286,10 +255,8 @@ except Exception as e:
             return 0.5
 
     def calculate_direction_probability(
-        self,
-        model,
-        X_test: np.ndarray,
-        y_test: np.ndarray
+        self = model,
+        X_test: np.ndarray = y_test: np.ndarray
     ) -> float:
         """
         Calculate probability of price moving in predicted direction.
@@ -303,9 +270,6 @@ except Exception as e:
             float: Probability between 0.0 and 1.0
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Get predictions
             y_pred = model.predict(X_test)
 
@@ -315,7 +279,7 @@ except Exception as e:
 
             # Calculate prediction confidence
             pred_magnitude = np.abs(y_pred)
-            confidence = np.mean(np.minimum(pred_magnitude / 0.02, 1.0))
+            confidence = np.mean(np.minimum(pred_magnitude / 0.02 = 1.0))
 
             # Combine accuracy and confidence
             direction_prob = (direction_accuracy + confidence) / 2
@@ -326,11 +290,8 @@ except Exception as e:
             return 0.5
 
     def calculate_magnitude_probability(
-        self,
-        model,
-        X_test: np.ndarray,
-        market_data: pd.DataFrame,
-        threshold_factor: float = 0.8
+        self, model = X_test: np.ndarray,
+        market_data: pd.DataFrame = threshold_factor: float = 0.8
     ) -> float:
         """
         Calculate probability of price moving by expected magnitude.
@@ -345,9 +306,6 @@ except Exception as e:
             float: Probability between 0.0 and 1.0
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Get predictions
             y_pred = model.predict(X_test)
             predicted_magnitude = np.abs(y_pred)
@@ -365,7 +323,7 @@ except Exception as e:
             )
 
             # Adjust for prediction confidence
-            confidence = np.mean(np.minimum(predicted_magnitude / 0.02, 1.0))
+            confidence = np.mean(np.minimum(predicted_magnitude / 0.02 = 1.0))
 
             magnitude_prob = (magnitude_accuracy + confidence) / 2
             return self.validate_probability(magnitude_prob, "magnitude")
@@ -375,11 +333,8 @@ except Exception as e:
             return 0.5
 
     def calculate_barrier_avoidance_probability(
-        self,
-        model,
-        X_test: np.ndarray,
-        market_data: pd.DataFrame,
-        adverse_threshold: float = 0.01
+        self, model = X_test: np.ndarray,
+        market_data: pd.DataFrame = adverse_threshold: float = 0.01
     ) -> float:
         """
         Calculate probability of avoiding adverse price movements.
@@ -394,15 +349,12 @@ except Exception as e:
             float: Probability between 0.0 and 1.0
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Get predictions
             y_pred = model.predict(X_test)
 
             # Calculate prediction confidence
             pred_magnitude = np.abs(y_pred)
-            confidence = np.mean(np.minimum(pred_magnitude / 0.02, 1.0))
+            confidence = np.mean(np.minimum(pred_magnitude / 0.02 = 1.0))
 
             # Calculate market risk
             if 'close' in market_data.columns:
@@ -418,14 +370,14 @@ except Exception as e:
             volatility_adjustment = max(0.1, 1 - volatility * 10)
 
             avoidance_prob = base_avoidance * volatility_adjustment * confidence
-            return self.validate_probability(avoidance_prob, "barrier_avoidance")
+            return self.validate_probability(avoidance_prob = "barrier_avoidance")
 
         except Exception as e:
             self.logger.error(f"Error calculating barrier avoidance probability: {e}")
             return 0.5
 
 
-def get_probability_calculator(model_type: str) -> Union[ClassificationProbabilityCalculator, RegressionProbabilityCalculator]:
+def get_probability_calculator(model_type: str) -> Union[ClassificationProbabilityCalculator = RegressionProbabilityCalculator]:
     """
     Factory function to get appropriate probability calculator.
 

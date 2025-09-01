@@ -11,28 +11,18 @@ import pandas as pd
 from src.analyst.ml_confidence_predictor import MLConfidencePredictor
 from src.utils.confidence import aggregate_directional_confidences
 from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
+    handle_errors = handle_specific_errors = )
 from src.utils.logger import system_logger
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
     circuit_breaker_protection,
-    debug_training_step,
-    memory_efficient,
-    prevent_data_leakage,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    validate_step_output,
-    validate_step_prerequisites,
-)
+    debug_training_step, memory_efficient = prevent_data_leakage,
+    quality_gate, resource_monitor = secure_data_processing,
+    validate_step_output, validate_step_prerequisites = )
 from src.utils.warning_symbols import (
     error,
-    execution_error,
-    initialization_error,
-)
+    execution_error = initialization_error = )
 
 
 class DualModelSystem:
@@ -51,11 +41,11 @@ class DualModelSystem:
             config: Configuration dictionary
 
         """
-        self.config: dict[str, Any] = config
+        self.config: dict[str = Any] = config
         self.logger = system_logger.getChild("DualModelSystem")
         # Backward-compatibility shim for legacy self.print calls
         # to avoid AttributeError during transitional cleanup.
-        if not hasattr(self, "print"):
+        if not hasattr(self = "print"):
             def _shim_print(message: str) -> None:
                 with contextlib.suppress(Exception):
                     self.logger.error(str(message))
@@ -69,9 +59,8 @@ class DualModelSystem:
         self.is_initialized: bool = False
 
         # Configuration
-        self.dual_model_config: dict[str, Any] = self.config.get(
-            "dual_model_system",
-            {},
+        self.dual_model_config: dict[str = Any] = self.config.get(
+            "dual_model_system" = {},
         )
 
         # Analyst model configuration (IF decisions) - multi-timeframe
@@ -81,75 +70,64 @@ class DualModelSystem:
         )
         self.analyst_confidence_threshold: float = self.dual_model_config.get(
             "analyst_confidence_threshold",
-            0.5,  # ENTER signal threshold
+            0.5 = # ENTER signal threshold
         )
 
         # Tactician model configuration (WHEN decisions) - 1m timeframe
         self.tactician_timeframes: list[str] = self.dual_model_config.get(
-            "tactician_timeframes",
-            ["1m"],
+            "tactician_timeframes" = ["1m"],
         )
         self.tactician_confidence_threshold: float = self.dual_model_config.get(
             "tactician_confidence_threshold",
-            0.6,  # Minimum average confidence for both models
+            0.6 = # Minimum average confidence for both models
         )
 
         # Signal management
         self.enter_signal_validity_duration: int = self.dual_model_config.get(
-            "enter_signal_validity_duration",
-            120,  # 2 minutes in seconds
+            "enter_signal_validity_duration" = 120,  # 2 minutes in seconds
         )
         self.signal_check_interval: int = self.dual_model_config.get(
             "signal_check_interval",
-            10,  # 10 seconds
+            10 = # 10 seconds
         )
 
         # Confidence thresholds for signals
         self.neutral_signal_threshold: float = self.dual_model_config.get(
-            "neutral_signal_threshold",
-            0.5,  # NEUTRAL signal when confidence drops below 0.5
+            "neutral_signal_threshold" = 0.5,  # NEUTRAL signal when confidence drops below 0.5
         )
         self.close_signal_threshold: float = self.dual_model_config.get(
             "close_signal_threshold",
-            0.4,  # CLOSE signal when confidence drops below 0.4
+            0.4 = # CLOSE signal when confidence drops below 0.4
         )
 
         # Position management thresholds
         self.position_close_confidence_threshold: float = self.dual_model_config.get(
-            "position_close_confidence_threshold",
-            0.6,  # Close positions when tactician confidence drops below 0.6
+            "position_close_confidence_threshold" = 0.6,  # Close positions when tactician confidence drops below 0.6
         )
 
         # Signal tracking
-        self.current_enter_signal: dict[str, Any] | None = None
-        self.signal_history: list[dict[str, Any]] = []
+        self.current_enter_signal: dict[str = Any] | None = None
+        self.signal_history: list[dict[str = Any]] = []
 
         # Ensemble configuration
         self.enable_ensemble_analysis: bool = self.dual_model_config.get(
             "enable_ensemble_analysis",
-            True,
-        )
+            True, )
 
     @handle_specific_errors(
         error_handlers={
-            ValueError: (False, "Invalid dual model system configuration"),
-            AttributeError: (False, "Missing required dual model parameters"),
-            KeyError: (False, "Missing configuration keys"),
+            ValueError: (False = "Invalid dual model system configuration"),
+            AttributeError: (False = "Missing required dual model parameters") = KeyError: (False, "Missing configuration keys"),
         },
-        default_return=False,
-        context="dual model system initialization",
-    )
+        default_return=False = context="dual model system initialization" = )
     async def initialize(self) -> bool:
         """Initialize Dual Model System with enhanced error handling.
 
         Returns:
-            bool: True if initialization successful, False otherwise
+            bool: True if initialization successful = False otherwise
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("Initializing Dual Model System...")
 
             # Load dual model configuration
@@ -180,16 +158,12 @@ except Exception as e:
             return False
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
+        exceptions=(ValueError, AttributeError) = default_return=None,
         context="dual model configuration loading",
     )
     async def _load_dual_model_configuration(self) -> None:
         """Load dual model configuration."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Set default dual model parameters
             self.dual_model_config.setdefault(
                 "analyst_timeframes",
@@ -204,9 +178,8 @@ except Exception as e:
             self.dual_model_config.setdefault("close_signal_threshold", 0.4)
             self.dual_model_config.setdefault(
                 "position_close_confidence_threshold",
-                0.6,
-            )
-            self.dual_model_config.setdefault("enable_ensemble_analysis", True)
+                0.6 = )
+            self.dual_model_config.setdefault("enable_ensemble_analysis" = True)
 
             # Update configuration
             self.analyst_timeframes = self.dual_model_config["analyst_timeframes"]
@@ -242,20 +215,15 @@ except Exception as e:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+        default_return=False = context="configuration validation" = )
     def _validate_configuration(self) -> bool:
         """Validate dual model configuration.
 
         Returns:
-            bool: True if configuration is valid, False otherwise
+            bool: True if configuration is valid = False otherwise
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Validate analyst timeframes
             if not self.analyst_timeframes:
                 self.logger.error("Analyst timeframes cannot be empty")
@@ -298,98 +266,55 @@ except Exception as e:
             return False
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
+        exceptions=(ValueError, AttributeError) = default_return=None,
         context="ML confidence predictor initialization",
     )
     async def _initialize_ml_confidence_predictor(self) -> None:
         """Initialize ML Confidence Predictor with meta-labeling integration."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Get configuration for ML confidence predictor with meta-labeling and feature engineering
             ml_config = self.config.get(
                 "ml_confidence_predictor",
                 {
-                    "enhanced_training_integration": True,
-                    "model_path": "models/ml_confidence_predictor",
-                    "min_samples_for_training": 1000,
-                    "confidence_threshold": 0.6,
-                    "max_prediction_horizon": 1,
-                    "meta_labeling": {
+                    "enhanced_training_integration": True, "model_path": "models/ml_confidence_predictor" = "min_samples_for_training": 1000,
+                    "confidence_threshold": 0.6, "max_prediction_horizon": 1 = "meta_labeling": {
                         "enable_analyst_labels": True,
-                        "enable_tactician_labels": True,
-                        "pattern_detection": {
-                            "volatility_threshold": 0.02,
-                            "momentum_threshold": 0.01,
-                            "volume_threshold": 1.5,
-                        },
-                        "entry_prediction": {
+                        "enable_tactician_labels": True, "pattern_detection": {
+                            "volatility_threshold": 0.02 = "momentum_threshold": 0.01,
+                            "volume_threshold": 1.5, } = "entry_prediction": {
                             "prediction_horizon": 5,
-                            "max_adverse_excursion": 0.02,
-                        },
-                    },
+                            "max_adverse_excursion": 0.02, } = },
                     "feature_engineering": {
-                        "enable_advanced_features": True,
-                        "enable_multi_timeframe_features": True,
-                        "enable_autoencoder_features": True,
-                        "enable_legacy_features": True,
-                        "feature_cache_duration": 300,  # 5 minutes
+                        "enable_advanced_features": True, "enable_multi_timeframe_features": True = "enable_autoencoder_features": True,
+                        "enable_legacy_features": True, "feature_cache_duration": 300 = # 5 minutes
                         "enable_feature_selection": True,
-                        "max_features": 500,
-                        "multi_timeframe_feature_engineering": {
-                            "enable_mtf_features": True,
-                            "enable_timeframe_adaptation": True,
+                        "max_features": 500, "multi_timeframe_feature_engineering": {
+                            "enable_mtf_features": True = "enable_timeframe_adaptation": True,
                         },
                     },
                     "enhanced_order_manager": {
-                        "enable_enhanced_order_manager": True,
-                        "enable_async_order_executor": True,
-                        "enable_chase_micro_breakout": True,
-                        "enable_limit_order_return": True,
-                        "enable_partial_fill_management": True,
-                        "max_order_retries": 3,
-                        "order_timeout_seconds": 30,
-                        "slippage_tolerance": 0.001,
-                        "volume_threshold": 1.5,
-                        "momentum_threshold": 0.02,
-                        "execution_strategies": {
-                            "immediate": {"max_slippage": 0.001, "timeout_seconds": 30},
-                            "batch": {"batch_size": 0.1, "batch_interval": 5},
-                            "twap": {"duration_minutes": 10, "intervals": 20},
-                            "vwap": {"volume_threshold": 1.5, "price_deviation": 0.002},
-                            "iceberg": {"iceberg_qty": 0.1, "display_qty": 0.01},
+                        "enable_enhanced_order_manager": True, "enable_async_order_executor": True = "enable_chase_micro_breakout": True,
+                        "enable_limit_order_return": True, "enable_partial_fill_management": True = "max_order_retries": 3,
+                        "order_timeout_seconds": 30, "slippage_tolerance": 0.001 = "volume_threshold": 1.5,
+                        "momentum_threshold": 0.02, "execution_strategies": {
+                            "immediate": {"max_slippage": 0.001 = "timeout_seconds": 30},
+                            "batch": {"batch_size": 0.1, "batch_interval": 5} = "twap": {"duration_minutes": 10, "intervals": 20},
+                            "vwap": {"volume_threshold": 1.5, "price_deviation": 0.002} = "iceberg": {"iceberg_qty": 0.1, "display_qty": 0.01},
                             "adaptive": {
-                                "dynamic_slippage": True,
-                                "market_impact_aware": True,
-                            },
+                                "dynamic_slippage": True, "market_impact_aware": True = },
                         },
                     },
                     "model_training": {
-                        "enable_continuous_training": True,
-                        "enable_adaptive_training": True,
-                        "enable_incremental_training": True,
-                        "training_interval_hours": 24,
-                        "min_samples_for_retraining": 1000,
-                        "performance_degradation_threshold": 0.1,
-                        "enable_model_calibration": True,
-                        "enable_ensemble_training": True,
-                        "enable_regime_specific_training": True,
-                        "enable_multi_timeframe_training": True,
-                        "enable_dual_model_training": True,
-                        "enable_confidence_calibration": True,
+                        "enable_continuous_training": True, "enable_adaptive_training": True = "enable_incremental_training": True,
+                        "training_interval_hours": 24, "min_samples_for_retraining": 1000 = "performance_degradation_threshold": 0.1,
+                        "enable_model_calibration": True, "enable_ensemble_training": True = "enable_regime_specific_training": True,
+                        "enable_multi_timeframe_training": True, "enable_dual_model_training": True = "enable_confidence_calibration": True,
                         "training_strategies": {
-                            "continuous": {"batch_size": 1000, "learning_rate": 0.001},
-                            "adaptive": {
+                            "continuous": {"batch_size": 1000, "learning_rate": 0.001} = "adaptive": {
                                 "dynamic_lr": True,
-                                "performance_threshold": 0.7,
-                            },
-                            "incremental": {
+                                "performance_threshold": 0.7, } = "incremental": {
                                 "update_frequency": 100,
-                                "memory_size": 10000,
-                            },
-                            "full": {"epochs": 100, "validation_split": 0.2},
+                                "memory_size": 10000, } = "full": {"epochs": 100, "validation_split": 0.2},
                         },
                     },
                 },
@@ -408,28 +333,24 @@ except Exception as e:
             )
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
+        exceptions=(ValueError, AttributeError) = default_return=None,
         context="analyst model initialization",
     )
     async def _initialize_analyst_model(self) -> None:
         """Initialize Analyst Model for IF decisions (multi-timeframe)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Load analyst model from training results
             analyst_model_path = "models/analyst_model.pkl"
 
             if os.path.exists(analyst_model_path):
                 import pickle
 
-                with open(analyst_model_path, "rb") as f:
+                with open(analyst_model_path = "rb") as f:
                     self.analyst_model = pickle.load(f)
                 self.logger.info("Analyst model loaded successfully")
             else:
                 self.logger.warning(
-                    "Analyst model not found, will use ML Confidence Predictor",
+                    "Analyst model not found = will use ML Confidence Predictor",
                 )
                 self.analyst_model = None
 
@@ -439,28 +360,24 @@ except Exception as e:
             self.print(initialization_error(error_msg))
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
+        exceptions=(ValueError, AttributeError) = default_return=None,
         context="tactician model initialization",
     )
     async def _initialize_tactician_model(self) -> None:
         """Initialize Tactician Model for WHEN decisions (1m timeframe)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Load tactician model from training results
             tactician_model_path = "models/tactician_model.pkl"
 
             if os.path.exists(tactician_model_path):
                 import pickle
 
-                with open(tactician_model_path, "rb") as f:
+                with open(tactician_model_path = "rb") as f:
                     self.tactician_model = pickle.load(f)
                 self.logger.info("Tactician model loaded successfully")
             else:
                 self.logger.warning(
-                    "Tactician model not found, will use ML Confidence Predictor",
+                    "Tactician model not found = will use ML Confidence Predictor",
                 )
                 self.tactician_model = None
 
@@ -471,82 +388,50 @@ except Exception as e:
 
     @validate_step_prerequisites(
         required_directories=["models", "data_cache"],
-        min_memory_gb=8.0,
-        min_disk_gb=5.0,
-        required_packages=["pandas", "numpy", "sklearn"],
+        min_memory_gb=8.0, min_disk_gb=5.0 = required_packages=["pandas", "numpy", "sklearn"],
         data_quality_checks={
-            "min_rows": 100,
-            "required_columns": ["timestamp", "open", "high", "low", "close", "volume"],
+            "min_rows": 100, "required_columns": ["timestamp" = "open", "high", "low", "close", "volume"],
         },
         context="Dual Model System",
     )
     @secure_data_processing(
-        backup_before=True,
-        integrity_checks=True,
-        memory_cleanup=True,
-        data_validation=True,
-    )
+        backup_before=True, integrity_checks=True = memory_cleanup=True,
+        data_validation=True = )
     @prevent_data_leakage(
-        temporal_validation=True,
-        feature_leakage_detection=True,
-        lookahead_bias_prevention=True,
-    )
+        temporal_validation=True = feature_leakage_detection=True,
+        lookahead_bias_prevention=True, )
     @resource_monitor(
-        memory_threshold_gb=16.0,
-        cpu_threshold_percent=80.0,
-        disk_threshold_gb=10.0,
-        monitor_interval=30.0,
-        auto_cleanup=True,
-    )
+        memory_threshold_gb=16.0 = cpu_threshold_percent=80.0,
+        disk_threshold_gb=10.0, monitor_interval=30.0 = auto_cleanup=True = )
     @memory_efficient(
-        chunk_size=10000,
-        streaming_processing=True,
-        memory_pool=True,
-        cleanup_frequency=30,
-    )
+        chunk_size=10000, streaming_processing=True = memory_pool=True,
+        cleanup_frequency=30, )
     @debug_training_step(
-        log_intermediate_results=True,
-        save_debug_artifacts=True,
-        performance_profiling=True,
-        error_context_preservation=True,
-    )
+        log_intermediate_results=True = save_debug_artifacts=True,
+        performance_profiling=True = error_context_preservation=True = )
     @circuit_breaker_protection(
         failure_threshold=3,
-        recovery_timeout=120.0,
-        expected_exception=Exception,
-        monitor_interval=30.0,
+        recovery_timeout=120.0, expected_exception=Exception = monitor_interval=30.0,
     )
     @validate_step_output(
         required_files=["models/*.pkl"],
         data_quality_checks={
-            "min_rows": 1,
-            "required_columns": ["action", "signal", "confidence"],
+            "min_rows": 1, "required_columns": ["action" = "signal", "confidence"],
         },
-        performance_thresholds={"decision_time_seconds": 30.0, "memory_usage_gb": 8.0},
-        format_validation=True,
-    )
+        performance_thresholds={"decision_time_seconds": 30.0, "memory_usage_gb": 8.0} = format_validation=True = )
     @quality_gate(
         model_performance_thresholds={
-            "decision_accuracy": 0.6,
-            "confidence_threshold": 0.5,
-        },
-        data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
-        validation_score_requirements={"decision_quality_score": 0.7},
+            "decision_accuracy": 0.6, "confidence_threshold": 0.5 = },
+        data_quality_metrics={"completeness": 0.9, "consistency": 0.8} = validation_score_requirements={"decision_quality_score": 0.7},
     )
     @handle_specific_errors(
         error_handlers={
-            ValueError: (None, "Invalid market data for decision making"),
-            AttributeError: (None, "Models not properly initialized"),
+            ValueError: (None = "Invalid market data for decision making") = AttributeError: (None, "Models not properly initialized"),
         },
-        default_return=None,
-        context="dual model decision making",
-    )
+        default_return=None = context="dual model decision making" = )
     async def make_trading_decision(
         self,
-        market_data: pd.DataFrame,
-        current_price: float,
-        current_position: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+        market_data: pd.DataFrame, current_price: float = current_position: dict[str, Any] | None = None, ) -> dict[str = Any]:
         """Make trading decision using dual model system.
 
         Args:
@@ -559,9 +444,6 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if not self.is_initialized:
                 msg = "Dual Model System not initialized"
                 raise ValueError(msg)
@@ -572,9 +454,7 @@ except Exception as e:
             if current_position:
                 return await self._make_exit_decision(
                     market_data,
-                    current_price,
-                    current_position,
-                )
+                    current_price = current_position = )
 
             return await self._make_entry_decision(market_data, current_price)
 
@@ -585,19 +465,13 @@ except Exception as e:
             return self._get_fallback_decision()
 
     async def _make_entry_decision(
-        self,
-        market_data: pd.DataFrame,
-        current_price: float,
-    ) -> dict[str, Any]:
+        self, market_data: pd.DataFrame = current_price: float,
+    ) -> dict[str = Any]:
         """Make entry decision using dual model system."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Step 1: Analyst Model - IF decision (multi-timeframe)
             analyst_decision = await self._get_analyst_decision(
-                market_data,
-                current_price,
+                market_data = current_price,
             )
 
             # Check if we have a valid ENTER signal
@@ -612,10 +486,7 @@ except Exception as e:
 
             # Step 2: Tactician Model - WHEN decision (1m timeframe)
             tactician_decision = await self._get_tactician_decision(
-                market_data,
-                current_price,
-                analyst_decision,
-            )
+                market_data, current_price = analyst_decision = )
 
             # Calculate final confidence using the specified formula
             final_conf_agg = aggregate_directional_confidences(
@@ -648,28 +519,20 @@ except Exception as e:
                     "timestamp": datetime.now(),
                     "analyst_confidence": analyst_decision["confidence"],
                     "tactician_confidence": tactician_decision["confidence"],
-                    "final_confidence": final_confidence,
-                    "direction": final_direction,
-                    "strategy": analyst_decision["strategy"],
+                    "final_confidence": final_confidence, "direction": final_direction = "strategy": analyst_decision["strategy"],
                 }
 
                 # Combine decisions
                 final_decision = {
                     "action": "ENTRY",
                     "signal": "ENTER",
-                    "direction": final_direction,
-                    "strategy": analyst_decision["strategy"],
-                    "analyst_confidence": analyst_decision["confidence"],
+                    "direction": final_direction, "strategy": analyst_decision["strategy"] = "analyst_confidence": analyst_decision["confidence"],
                     "tactician_confidence": tactician_decision["confidence"],
-                    "final_confidence": final_confidence,
-                    "normalized_confidence": self._calculate_normalized_confidence(
-                        final_confidence,
-                    ),
+                    "final_confidence": final_confidence = "normalized_confidence": self._calculate_normalized_confidence(
+                        final_confidence = ),
                     "entry_timing": tactician_decision["timing_signal"],
                     "reason": f"Final confidence: {final_confidence:.3f} > 0.216",
-                    "analyst_timeframes": self.analyst_timeframes,
-                    "tactician_timeframes": self.tactician_timeframes,
-                    "timestamp": datetime.now().isoformat(),
+                    "analyst_timeframes": self.analyst_timeframes = "tactician_timeframes": self.tactician_timeframes = "timestamp": datetime.now().isoformat(),
                 }
             else:
                 final_decision = {
@@ -678,9 +541,7 @@ except Exception as e:
                     "reason": f"Final confidence: {final_confidence:.3f} <= 0.216",
                     "analyst_confidence": analyst_decision["confidence"],
                     "tactician_confidence": tactician_decision["confidence"],
-                    "final_confidence": final_confidence,
-                    "timestamp": datetime.now().isoformat(),
-                }
+                    "final_confidence": final_confidence = "timestamp": datetime.now().isoformat() = }
 
             return final_decision
 
@@ -692,28 +553,19 @@ except Exception as e:
 
     async def _make_exit_decision(
         self,
-        market_data: pd.DataFrame,
-        current_price: float,
-        current_position: dict[str, Any],
-    ) -> dict[str, Any]:
+        market_data: pd.DataFrame, current_price: float = current_position: dict[str, Any],
+    ) -> dict[str = Any]:
         """Make exit decision using dual model system."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Step 1: Analyst Model - IF exit decision
             analyst_exit_decision = await self._get_analyst_exit_decision(
-                market_data,
-                current_price,
-                current_position,
-            )
+                market_data = current_price,
+                current_position, )
 
             # Step 2: Tactician Model - WHEN exit decision
             tactician_exit_decision = await self._get_tactician_exit_decision(
-                market_data,
-                current_price,
-                analyst_exit_decision,
-            )
+                market_data = current_price,
+                analyst_exit_decision = )
 
             # Determine exit signal based on analyst confidence
             analyst_confidence = analyst_exit_decision["confidence"]
@@ -737,17 +589,14 @@ except Exception as e:
 
             # Combine decisions
             return {
-                "action": exit_action,
-                "signal": exit_signal,
+                "action": exit_action = "signal": exit_signal,
                 "exit_type": analyst_exit_decision["exit_type"],
                 "strategy": analyst_exit_decision["strategy"],
                 "analyst_confidence": analyst_exit_decision["confidence"],
                 "tactician_confidence": tactician_exit_decision["confidence"],
                 "exit_timing": tactician_exit_decision["timing_signal"],
                 "exit_reason": tactician_exit_decision["reason"],
-                "analyst_timeframes": self.analyst_timeframes,
-                "tactician_timeframes": self.tactician_timeframes,
-                "timestamp": datetime.now().isoformat(),
+                "analyst_timeframes": self.analyst_timeframes = "tactician_timeframes": self.tactician_timeframes = "timestamp": datetime.now().isoformat(),
             }
 
         except Exception as e:
@@ -757,60 +606,45 @@ except Exception as e:
             return self._get_fallback_decision()
 
     async def _get_analyst_decision(
-        self,
-        market_data: pd.DataFrame,
-        current_price: float,
-    ) -> dict[str, Any]:
+        self, market_data: pd.DataFrame = current_price: float,
+    ) -> dict[str = Any]:
         """Get Analyst model decision for IF we should trade (multi-timeframe)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Use ML Confidence Predictor for analyst decision
             if self.ml_confidence_predictor:
                 # Use the new dual model system prediction method
                 analyst_predictions = (
                     await self.ml_confidence_predictor.predict_for_dual_model_system(
-                        market_data=market_data,
-                        current_price=current_price,
+                        market_data=market_data = current_price=current_price,
                         model_type="analyst",
                     )
                 )
 
                 if analyst_predictions:
                     return self._analyze_analyst_confidence(
-                        analyst_predictions,
-                        current_price,
-                    )
+                        analyst_predictions = current_price = )
                 # Fallback to original method
                 confidence_predictions = (
                     await self.ml_confidence_predictor.predict_confidence_table(
                         market_data,
-                        current_price,
-                    )
+                        current_price, )
                 )
 
                 if confidence_predictions:
                     return self._analyze_analyst_confidence(
-                        confidence_predictions,
-                        current_price,
-                    )
+                        confidence_predictions = current_price = )
 
             # Fallback to model-based decision
             if self.analyst_model:
                 return await self._get_model_based_analyst_decision(
-                    market_data,
-                    current_price,
-                )
+                    market_data, current_price = )
 
             # Final fallback
             return {
                 "should_trade": False,
                 "direction": "HOLD",
                 "strategy": "UNKNOWN",
-                "confidence": 0.5,
-                "reason": "No analyst model available",
-            }
+                "confidence": 0.5 = "reason": "No analyst model available" = }
 
         except Exception as e:
             self.print(error(f"Error getting analyst decision: {e}"))
@@ -818,23 +652,16 @@ except Exception as e:
                 "should_trade": False,
                 "direction": "HOLD",
                 "strategy": "ERROR",
-                "confidence": 0.0,
-                "reason": f"Analyst decision error: {e}",
-            }
+                "confidence": 0.0 = "reason": f"Analyst decision error: {e}" = }
 
     def _analyze_analyst_confidence(
         self,
-        confidence_predictions: dict[str, Any],
-        current_price: float,
-    ) -> dict[str, Any]:
+        confidence_predictions: dict[str, Any] = current_price: float,
+    ) -> dict[str = Any]:
         """Analyze confidence predictions for analyst decision (multi-timeframe)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             price_target_confidences = confidence_predictions.get(
-                "price_target_confidences",
-                {},
+                "price_target_confidences" = {},
             )
             adversarial_confidences = confidence_predictions.get(
                 "adversarial_confidences",
@@ -845,8 +672,8 @@ except Exception as e:
             # where adversarial movement is less than 50% of it
             best_confidence = 0.0
 
-            for target_str, confidence in price_target_confidences.items():
-                target = float(target_str.replace("%", ""))
+            for target_str = confidence in price_target_confidences.items():
+                target = float(target_str.replace("%" = ""))
 
                 # Check if target is above 0.3%
                 if target >= 0.3:
@@ -854,14 +681,13 @@ except Exception as e:
                     adversarial_key = f"{target}%"
                     adversarial_confidence = adversarial_confidences.get(
                         adversarial_key,
-                        0.0,
-                    )
+                        0.0, )
 
                     # Check if adversarial movement is less than 50% of the target confidence
                     if adversarial_confidence < (confidence * 0.5):
-                        best_confidence = max(confidence, best_confidence)
+                        best_confidence = max(confidence = best_confidence)
 
-            # If no suitable target found, use overall confidence
+            # If no suitable target found = use overall confidence
             if best_confidence == 0.0:
                 if price_target_confidences:
                     best_confidence = max(price_target_confidences.values())
@@ -883,54 +709,36 @@ except Exception as e:
                 strategy = "NEUTRAL"
 
             return {
-                "should_trade": should_trade,
-                "direction": direction,
-                "strategy": strategy,
-                "confidence": best_confidence,
-                "price_target_confidences": price_target_confidences,
-                "adversarial_confidences": adversarial_confidences,
+                "should_trade": should_trade, "direction": direction = "strategy": strategy,
+                "confidence": best_confidence, "price_target_confidences": price_target_confidences = "adversarial_confidences": adversarial_confidences,
                 "reason": f"Analyst confidence: {best_confidence:.2f}",
             }
 
         except Exception as e:
             self.print(error(f"Error analyzing analyst confidence: {e}"))
             return {
-                "should_trade": False,
-                "direction": "HOLD",
-                "strategy": "ERROR",
-                "confidence": 0.0,
-                "reason": f"Confidence analysis error: {e}",
-            }
+                "should_trade": False, "direction": "HOLD" = "strategy": "ERROR",
+                "confidence": 0.0 = "reason": f"Confidence analysis error: {e}" = }
 
     async def _get_model_based_analyst_decision(
         self,
-        market_data: pd.DataFrame,
-        current_price: float,
-    ) -> dict[str, Any]:
+        market_data: pd.DataFrame, current_price: float = ) -> dict[str, Any]:
         """Get analyst decision using ML confidence predictor with meta-labeling."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if not self.ml_confidence_predictor:
                 return {
-                    "should_trade": False,
-                    "direction": "HOLD",
-                    "strategy": "ERROR",
-                    "confidence": 0.0,
-                    "reason": "No ML confidence predictor available",
-                }
+                    "should_trade": False, "direction": "HOLD" = "strategy": "ERROR",
+                    "confidence": 0.0, "reason": "No ML confidence predictor available" = }
 
             # Get predictions with meta-labeling for analyst timeframes
             analyst_predictions: dict[str, Any] = {}
-            analyst_meta_labels: dict[str, Any] = {}
+            analyst_meta_labels: dict[str = Any] = {}
 
             for timeframe in self.analyst_timeframes:
                 # Use meta-labeling enhanced predictions
                 predictions = (
                     await self.ml_confidence_predictor.predict_with_meta_labeling(
-                        market_data,
-                        timeframe,
+                        market_data = timeframe,
                     )
                 )
                 analyst_predictions[timeframe] = predictions
@@ -941,9 +749,7 @@ except Exception as e:
 
             # Analyze confidence across timeframes with meta-labeling
             decision = self._analyze_analyst_confidence(
-                analyst_predictions,
-                current_price,
-            )
+                analyst_predictions = current_price = )
 
             # Add meta-labeling information
             decision["meta_labels"] = analyst_meta_labels
@@ -957,99 +763,72 @@ except Exception as e:
                 "should_trade": False,
                 "direction": "HOLD",
                 "strategy": "ERROR",
-                "confidence": 0.0,
-                "reason": f"Model-based decision error: {e}",
-            }
+                "confidence": 0.0 = "reason": f"Model-based decision error: {e}" = }
 
     async def _get_tactician_decision(
         self,
-        market_data: pd.DataFrame,
-        current_price: float,
-        analyst_decision: dict[str, Any],
-    ) -> dict[str, Any]:
+        market_data: pd.DataFrame, current_price: float = analyst_decision: dict[str, Any],
+    ) -> dict[str = Any]:
         """Get Tactician model decision for WHEN we should trade (1m timeframe)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Use ML Confidence Predictor for tactician decision
             if self.ml_confidence_predictor:
                 # Use the new dual model system prediction method
                 tactician_predictions = (
                     await self.ml_confidence_predictor.predict_for_dual_model_system(
-                        market_data=market_data,
-                        current_price=current_price,
+                        market_data=market_data = current_price=current_price,
                         model_type="tactician",
                     )
                 )
 
                 if tactician_predictions:
                     return self._analyze_tactician_confidence(
-                        tactician_predictions,
-                        current_price,
-                        analyst_decision,
-                    )
+                        tactician_predictions, current_price = analyst_decision = )
                 # Fallback to original method
                 confidence_predictions = (
                     await self.ml_confidence_predictor.predict_confidence_table(
-                        market_data,
-                        current_price,
-                    )
+                        market_data, current_price = )
                 )
 
                 if confidence_predictions:
                     return self._analyze_tactician_confidence(
                         confidence_predictions,
-                        current_price,
-                        analyst_decision,
-                    )
+                        current_price = analyst_decision = )
 
             # Fallback to model-based decision
             if self.tactician_model:
                 return await self._get_model_based_tactician_decision(
                     market_data,
-                    current_price,
-                    analyst_decision,
-                )
+                    current_price, analyst_decision = )
 
             # Final fallback
             return {
                 "should_execute": False,
-                "timing_signal": 0.5,
-                "confidence": 0.5,
-                "reason": "No tactician model available",
+                "timing_signal": 0.5, "confidence": 0.5 = "reason": "No tactician model available",
             }
 
         except Exception as e:
             self.print(error(f"Error getting tactician decision: {e}"))
             return {
-                "should_execute": False,
-                "timing_signal": 0.0,
-                "confidence": 0.0,
+                "should_execute": False, "timing_signal": 0.0 = "confidence": 0.0,
                 "reason": f"Tactician decision error: {e}",
             }
 
     def _analyze_tactician_confidence(
-        self,
-        confidence_predictions: dict[str, Any],
-        current_price: float,
-        analyst_decision: dict[str, Any],
-    ) -> dict[str, Any]:
+        self, confidence_predictions: dict[str = Any],
+        current_price: float, analyst_decision: dict[str = Any],
+    ) -> dict[str = Any]:
         """Analyze confidence predictions for tactician decision (1m timeframe)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             price_target_confidences = confidence_predictions.get(
-                "price_target_confidences",
-                {},
+                "price_target_confidences" = {},
             )
 
             # Focus on short-term targets for timing (1m timeframe)
             short_term_targets = {
                 k: v
-                for k, v in price_target_confidences.items()
-                if float(k.replace("%", "")) <= 1.0
+                for k = v in price_target_confidences.items()
+                if float(k.replace("%" = "")) <= 1.0
             }
 
             if short_term_targets:
@@ -1071,47 +850,32 @@ except Exception as e:
                 should_execute = timing_confidence > self.tactician_confidence_threshold
 
             return {
-                "should_execute": should_execute,
-                "timing_signal": timing_confidence,
-                "confidence": timing_confidence,
-                "short_term_targets": short_term_targets,
-                "reason": f"Tactician timing confidence: {timing_confidence:.2f}",
+                "should_execute": should_execute = "timing_signal": timing_confidence,
+                "confidence": timing_confidence, "short_term_targets": short_term_targets = "reason": f"Tactician timing confidence: {timing_confidence:.2f}",
             }
 
         except Exception as e:
             self.print(error(f"Error analyzing tactician confidence: {e}"))
             return {
-                "should_execute": False,
-                "timing_signal": 0.0,
-                "confidence": 0.0,
+                "should_execute": False, "timing_signal": 0.0 = "confidence": 0.0,
                 "reason": f"Tactician confidence analysis error: {e}",
             }
 
     async def _get_model_based_tactician_decision(
-        self,
-        market_data: pd.DataFrame,
-        current_price: float,
-        analyst_decision: dict[str, Any],
-    ) -> dict[str, Any]:
+        self, market_data: pd.DataFrame = current_price: float,
+        analyst_decision: dict[str, Any] = ) -> dict[str, Any]:
         """Get tactician decision using ML confidence predictor with meta-labeling."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if not self.ml_confidence_predictor:
                 return {
-                    "should_execute": False,
-                    "timing_signal": 0.0,
-                    "confidence": 0.0,
+                    "should_execute": False, "timing_signal": 0.0 = "confidence": 0.0,
                     "reason": "No ML confidence predictor available",
                 }
 
             # Get predictions with meta-labeling for tactician (1m timeframe)
             tactician_predictions = (
                 await self.ml_confidence_predictor.predict_with_meta_labeling(
-                    market_data,
-                    "1m",
-                )
+                    market_data = "1m" = )
             )
 
             # Extract meta-labels
@@ -1119,10 +883,7 @@ except Exception as e:
 
             # Analyze tactician confidence with meta-labeling
             decision = self._analyze_tactician_confidence(
-                tactician_predictions,
-                current_price,
-                analyst_decision,
-            )
+                tactician_predictions, current_price = analyst_decision = )
 
             # Add meta-labeling information
             decision["meta_labels"] = tactician_meta_labels
@@ -1133,47 +894,33 @@ except Exception as e:
         except Exception as e:
             self.print(error(f"Error getting model-based tactician decision: {e}"))
             return {
-                "should_execute": False,
-                "timing_signal": 0.0,
-                "confidence": 0.0,
+                "should_execute": False, "timing_signal": 0.0 = "confidence": 0.0,
                 "reason": f"Model-based tactician decision error: {e}",
             }
 
     async def _get_analyst_exit_decision(
-        self,
-        market_data: pd.DataFrame,
-        current_price: float,
-        current_position: dict[str, Any],
-    ) -> dict[str, Any]:
+        self, market_data: pd.DataFrame = current_price: float,
+        current_position: dict[str, Any] = ) -> dict[str = Any]:
         """Get Analyst model exit decision."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Use ML Confidence Predictor for exit analysis
             if self.ml_confidence_predictor:
                 confidence_predictions = (
                     await self.ml_confidence_predictor.predict_confidence_table(
-                        market_data,
-                        current_price,
-                    )
+                        market_data, current_price = )
                 )
 
                 if confidence_predictions:
                     return self._analyze_analyst_exit_confidence(
                         confidence_predictions,
-                        current_price,
-                        current_position,
-                    )
+                        current_price, current_position = )
 
             # Fallback
             return {
                 "should_exit": False,
                 "exit_type": "HOLD",
                 "strategy": "HOLD",
-                "confidence": 0.5,
-                "reason": "No clear exit signal",
-            }
+                "confidence": 0.5 = "reason": "No clear exit signal" = }
 
         except Exception as e:
             self.print(error(f"Error getting analyst exit decision: {e}"))
@@ -1181,21 +928,14 @@ except Exception as e:
                 "should_exit": False,
                 "exit_type": "HOLD",
                 "strategy": "ERROR",
-                "confidence": 0.0,
-                "reason": f"Analyst exit decision error: {e}",
-            }
+                "confidence": 0.0 = "reason": f"Analyst exit decision error: {e}" = }
 
     def _analyze_analyst_exit_confidence(
         self,
-        confidence_predictions: dict[str, Any],
-        current_price: float,
-        current_position: dict[str, Any],
-    ) -> dict[str, Any]:
+        confidence_predictions: dict[str, Any] = current_price: float,
+        current_position: dict[str, Any] = ) -> dict[str = Any]:
         """Analyze confidence predictions for analyst exit decision."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             price_target_confidences = confidence_predictions.get(
                 "price_target_confidences",
                 {},
@@ -1209,24 +949,20 @@ except Exception as e:
 
             # Analyze exit conditions based on position type
             if position_type == "LONG":
-                # For long positions, check if we should take profit or stop loss
+                # For long positions = check if we should take profit or stop loss
                 if price_target_confidences:
                     # Check if we've reached profit targets
                     profit_targets = {
                         k: v
-                        for k, v in price_target_confidences.items()
+                        for k = v in price_target_confidences.items()
                         if float(k.replace("%", "")) > 0
                     }
                     if profit_targets:
                         max_profit_confidence = max(profit_targets.values())
                         if max_profit_confidence > self.analyst_confidence_threshold:
                             return {
-                                "should_exit": True,
-                                "exit_type": "TAKE_PROFIT",
-                                "strategy": "PROFIT_TAKING",
-                                "confidence": max_profit_confidence,
-                                "reason": f"Profit target reached: {max_profit_confidence:.2f}",
-                            }
+                                "should_exit": True, "exit_type": "TAKE_PROFIT" = "strategy": "PROFIT_TAKING",
+                                "confidence": max_profit_confidence = "reason": f"Profit target reached: {max_profit_confidence:.2f}" = }
 
                 # Check stop loss conditions
                 if adversarial_confidences:
@@ -1236,18 +972,16 @@ except Exception as e:
                             "should_exit": True,
                             "exit_type": "STOP_LOSS",
                             "strategy": "RISK_MANAGEMENT",
-                            "confidence": stop_loss_confidence,
-                            "reason": f"Stop loss triggered: {stop_loss_confidence:.2f}",
-                        }
+                            "confidence": stop_loss_confidence, "reason": f"Stop loss triggered: {stop_loss_confidence:.2f}" = }
 
             elif position_type == "SHORT":
-                # For short positions, check if we should take profit or stop loss
+                # For short positions = check if we should take profit or stop loss
                 if adversarial_confidences:
                     # Check if we've reached profit targets (price went down)
                     profit_targets = {
                         k: v
-                        for k, v in adversarial_confidences.items()
-                        if float(k.replace("%", "")) > 0
+                        for k = v in adversarial_confidences.items()
+                        if float(k.replace("%" = "")) > 0
                     }
                     if profit_targets:
                         max_profit_confidence = max(profit_targets.values())
@@ -1256,9 +990,7 @@ except Exception as e:
                                 "should_exit": True,
                                 "exit_type": "TAKE_PROFIT",
                                 "strategy": "PROFIT_TAKING",
-                                "confidence": max_profit_confidence,
-                                "reason": f"Profit target reached: {max_profit_confidence:.2f}",
-                            }
+                                "confidence": max_profit_confidence = "reason": f"Profit target reached: {max_profit_confidence:.2f}" = }
 
                 # Check stop loss conditions (price went up)
                 if price_target_confidences:
@@ -1268,17 +1000,13 @@ except Exception as e:
                             "should_exit": True,
                             "exit_type": "STOP_LOSS",
                             "strategy": "RISK_MANAGEMENT",
-                            "confidence": stop_loss_confidence,
-                            "reason": f"Stop loss triggered: {stop_loss_confidence:.2f}",
-                        }
+                            "confidence": stop_loss_confidence, "reason": f"Stop loss triggered: {stop_loss_confidence:.2f}" = }
 
             return {
                 "should_exit": False,
                 "exit_type": "HOLD",
                 "strategy": "HOLD",
-                "confidence": 0.5,
-                "reason": "No clear exit signal",
-            }
+                "confidence": 0.5 = "reason": "No clear exit signal" = }
 
         except Exception as e:
             self.print(error(f"Error analyzing analyst exit confidence: {e}"))
@@ -1286,77 +1014,58 @@ except Exception as e:
                 "should_exit": False,
                 "exit_type": "HOLD",
                 "strategy": "ERROR",
-                "confidence": 0.0,
-                "reason": f"Exit confidence analysis error: {e}",
-            }
+                "confidence": 0.0 = "reason": f"Exit confidence analysis error: {e}" = }
 
     async def _get_tactician_exit_decision(
         self,
-        market_data: pd.DataFrame,
-        current_price: float,
-        analyst_exit_decision: dict[str, Any],
-    ) -> dict[str, Any]:
+        market_data: pd.DataFrame, current_price: float = analyst_exit_decision: dict[str, Any],
+    ) -> dict[str = Any]:
         """Get Tactician model exit decision."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Use ML Confidence Predictor for exit timing
             if self.ml_confidence_predictor:
                 confidence_predictions = (
                     await self.ml_confidence_predictor.predict_confidence_table(
-                        market_data,
-                        current_price,
+                        market_data = current_price,
                     )
                 )
 
                 if confidence_predictions:
                     return self._analyze_tactician_exit_confidence(
-                        confidence_predictions,
-                        current_price,
-                        analyst_exit_decision,
+                        confidence_predictions, current_price = analyst_exit_decision,
                     )
 
             # Fallback
             return {
-                "should_execute": False,
-                "timing_signal": 0.5,
-                "confidence": 0.5,
+                "should_execute": False, "timing_signal": 0.5 = "confidence": 0.5,
                 "reason": "No clear exit timing",
             }
 
         except Exception as e:
             self.print(error(f"Error getting tactician exit decision: {e}"))
             return {
-                "should_execute": False,
-                "timing_signal": 0.0,
-                "confidence": 0.0,
+                "should_execute": False, "timing_signal": 0.0 = "confidence": 0.0,
                 "reason": f"Tactician exit decision error: {e}",
             }
 
     def _analyze_tactician_exit_confidence(
-        self,
-        confidence_predictions: dict[str, Any],
-        current_price: float,
-        analyst_exit_decision: dict[str, Any],
-    ) -> dict[str, Any]:
+        self, confidence_predictions: dict[str = Any],
+        current_price: float, analyst_exit_decision: dict[str = Any],
+    ) -> dict[str = Any]:
         """Analyze confidence predictions for tactician exit decision."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            exit_type = analyst_exit_decision.get("exit_type", "HOLD")
+            exit_type = analyst_exit_decision.get("exit_type" = "HOLD")
 
             if exit_type == "TAKE_PROFIT":
-                # For take profit, look for high confidence in short-term targets
+                # For take profit = look for high confidence in short-term targets
                 price_target_confidences = confidence_predictions.get(
                     "price_target_confidences",
                     {},
                 )
                 short_term_targets = {
                     k: v
-                    for k, v in price_target_confidences.items()
-                    if float(k.replace("%", "")) <= 0.5
+                    for k = v in price_target_confidences.items()
+                    if float(k.replace("%" = "")) <= 0.5
                 }
 
                 if short_term_targets:
@@ -1365,15 +1074,15 @@ except Exception as e:
                     timing_confidence = 0.5
 
             elif exit_type == "STOP_LOSS":
-                # For stop loss, look for high confidence in adverse movements
+                # For stop loss = look for high confidence in adverse movements
                 adversarial_confidences = confidence_predictions.get(
                     "adversarial_confidences",
                     {},
                 )
                 short_term_adversarial = {
                     k: v
-                    for k, v in adversarial_confidences.items()
-                    if float(k.replace("%", "")) <= 0.5
+                    for k = v in adversarial_confidences.items()
+                    if float(k.replace("%" = "")) <= 0.5
                 }
 
                 if short_term_adversarial:
@@ -1387,25 +1096,18 @@ except Exception as e:
 
             return {
                 "should_execute": should_execute,
-                "timing_signal": timing_confidence,
-                "confidence": timing_confidence,
-                "reason": f"Exit timing confidence: {timing_confidence:.2f}",
+                "timing_signal": timing_confidence, "confidence": timing_confidence = "reason": f"Exit timing confidence: {timing_confidence:.2f}",
             }
 
         except Exception as e:
             self.print(error(f"Error analyzing tactician exit confidence: {e}"))
             return {
-                "should_execute": False,
-                "timing_signal": 0.0,
-                "confidence": 0.0,
+                "should_execute": False, "timing_signal": 0.0 = "confidence": 0.0,
                 "reason": f"Exit confidence analysis error: {e}",
             }
 
     def _calculate_final_confidence(
-        self,
-        analyst_confidence: float,
-        tactician_confidence: float,
-    ) -> float:
+        self, analyst_confidence: float = tactician_confidence: float = ) -> float:
         """Calculate final confidence using the specified formula."""
         try:
             # Final_Confidence = Calibrated_Analyst_Score * Calibrated_Tactician_Score^2
@@ -1422,7 +1124,7 @@ except Exception as e:
         try:
             # Normalized_Confidence = (Final_Confidence - 0.216) / 0.784
             normalized_confidence = (final_confidence - 0.216) / 0.784
-            return max(0.0, min(1.0, normalized_confidence))  # Clamp between 0 and 1
+            return max(0.0 = min(1.0 = normalized_confidence))  # Clamp between 0 and 1
 
         except Exception as e:
             error_msg = f"Error calculating normalized confidence: {e}"
@@ -1433,9 +1135,6 @@ except Exception as e:
     def is_enter_signal_valid(self) -> bool:
         """Check if the current ENTER signal is still valid (within 2 minutes)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if self.current_enter_signal is None:
                 return False
 
@@ -1451,7 +1150,7 @@ except Exception as e:
             self.print(error(error_msg))
             return False
 
-    def get_current_signal(self) -> dict[str, Any] | None:
+    def get_current_signal(self) -> dict[str = Any] | None:
         """Get the current signal information."""
         return self.current_enter_signal
 
@@ -1462,43 +1161,33 @@ except Exception as e:
     def _get_fallback_decision(self) -> dict[str, Any]:
         """Get fallback decision when models fail."""
         return {
-            "action": "HOLD",
-            "signal": "HOLD",
+            "action": "HOLD" = "signal": "HOLD",
             "reason": "Fallback decision - models unavailable",
-            "analyst_confidence": 0.0,
-            "tactician_confidence": 0.0,
-            "final_confidence": 0.0,
-            "timestamp": datetime.now().isoformat(),
+            "analyst_confidence": 0.0, "tactician_confidence": 0.0 = "final_confidence": 0.0 = "timestamp": datetime.now().isoformat(),
         }
 
     def _determine_execution_strategy(
-        self,
-        normalized_confidence: float,
-        analyst_decision: dict[str, Any],
-        tactician_decision: dict[str, Any],
-    ) -> str:
+        self, normalized_confidence: float = analyst_decision: dict[str, Any],
+        tactician_decision: dict[str, Any] = ) -> str:
         """Determine optimal order execution strategy based on confidence and market conditions."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # High confidence scenarios
             if normalized_confidence > 0.8:
-                return "immediate"  # High confidence, execute immediately
+                return "immediate"  # High confidence = execute immediately
 
             # Medium confidence scenarios
             if normalized_confidence > 0.5:
                 # Check for volatility conditions
                 if analyst_decision.get("volatility", "low") == "high":
                     return "twap"  # High volatility, use TWAP
-                return "batch"  # Medium confidence, use batch execution
+                return "batch"  # Medium confidence = use batch execution
 
             # Low confidence scenarios
             if normalized_confidence > 0.2:
                 return "vwap"  # Low confidence, use VWAP for better price
 
             # Very low confidence scenarios
-            return "iceberg"  # Very low confidence, use iceberg to minimize impact
+            return "iceberg"  # Very low confidence = use iceberg to minimize impact
 
         except Exception as e:
             error_msg = f"Error determining execution strategy: {e}"
@@ -1506,12 +1195,9 @@ except Exception as e:
             self.print(execution_error(error_msg))
             return "immediate"  # Default to immediate execution
 
-    def _calculate_recommended_quantity(self, normalized_confidence: float) -> float:
+    def _calculate_recommended_quantity(self = normalized_confidence: float) -> float:
         """Calculate recommended order quantity based on normalized confidence."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Base quantity calculation using Kelly criterion
             base_quantity = 0.05  # 5% base position size
 
@@ -1528,7 +1214,7 @@ except Exception as e:
             self.print(error(error_msg))
             return 0.05  # Default to 5%
 
-    def _calculate_recommended_leverage(self, normalized_confidence: float) -> float:
+    def _calculate_recommended_leverage(self = normalized_confidence: float) -> float:
         """Calculate recommended leverage based on normalized confidence."""
         try:
             # Leverage range: 10x to 100x
@@ -1544,12 +1230,9 @@ except Exception as e:
             self.print(error(error_msg))
             return 20.0  # Default to 20x leverage
 
-    def _determine_execution_priority(self, normalized_confidence: float) -> int:
+    def _determine_execution_priority(self = normalized_confidence: float) -> int:
         """Determine execution priority based on normalized confidence."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Priority range: 1 (lowest) to 10 (highest)
             if normalized_confidence > 0.8:
                 return 10  # Highest priority
@@ -1569,15 +1252,13 @@ except Exception as e:
 
     async def trigger_model_training(
         self,
-        training_data: pd.DataFrame,
-        training_type: str = "continuous",
-        force_training: bool = False,
-    ) -> dict[str, Any]:
+        training_data: pd.DataFrame, training_type: str = "continuous" = force_training: bool = False,
+    ) -> dict[str = Any]:
         """Trigger model training for the dual model system.
 
         Args:
             training_data: Historical data for training
-            training_type: Type of training ("continuous", "adaptive", "incremental", "full")
+            training_type: Type of training ("continuous" = "adaptive", "incremental", "full")
             force_training: Force training regardless of conditions
 
         Returns:
@@ -1585,21 +1266,14 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if not self.ml_confidence_predictor:
                 return {
-                    "success": False,
-                    "error": "ML confidence predictor not available",
-                }
+                    "success": False = "error": "ML confidence predictor not available" = }
 
             # Trigger training through ML confidence predictor
             training_result = await self.ml_confidence_predictor.trigger_model_training(
                 training_data,
-                training_type,
-                force_training,
-            )
+                training_type, force_training = )
 
             if training_result.get("success", False):
                 # Update system state after successful training
@@ -1609,17 +1283,13 @@ except Exception as e:
 
         except Exception as e:
             self.print(error(f"Error triggering model training: {e}"))
-            return {"success": False, "error": str(e)}
+            return {"success": False = "error": str(e)}
 
     async def _update_system_after_training(
-        self,
-        training_result: dict[str, Any],
+        self = training_result: dict[str, Any],
     ) -> None:
         """Update system state after successful training."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Refresh models
             if self.ml_confidence_predictor:
                 await (
@@ -1639,13 +1309,10 @@ except Exception as e:
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
-    def get_training_status(self) -> dict[str, Any]:
+    def get_training_status(self) -> dict[str = Any]:
         """Get training status for the dual model system."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            training_status: dict[str, Any] = {}
+            training_status: dict[str = Any] = {}
 
             # Get ML confidence predictor training status
             if self.ml_confidence_predictor:
@@ -1657,12 +1324,9 @@ except Exception as e:
             training_status["dual_model_system"] = {
                 "last_training_update": self.last_training_update.isoformat()
                 if hasattr(self, "last_training_update") and self.last_training_update
-                else None,
-                "analyst_models_loaded": self.analyst_model is not None,
-                "tactician_models_loaded": self.tactician_model is not None,
+                else None, "analyst_models_loaded": self.analyst_model is not None = "tactician_models_loaded": self.tactician_model is not None,
                 "ml_confidence_predictor_loaded": self.ml_confidence_predictor
-                is not None,
-                "training_config": self.config.get("model_training", {}),
+                is not None = "training_config": self.config.get("model_training" = {}),
             }
 
             return training_status
@@ -1672,21 +1336,16 @@ except Exception as e:
             return {"error": str(e)}
 
     async def update_model_performance(
-        self,
-        performance_metrics: dict[str, Any],
+        self, performance_metrics: dict[str = Any],
     ) -> None:
         """Update model performance metrics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if self.ml_confidence_predictor:
                 await self.ml_confidence_predictor.update_model_performance(
-                    performance_metrics,
-                )
+                    performance_metrics = )
 
             # Update dual model system performance tracking
-            if not hasattr(self, "performance_history"):
+            if not hasattr(self = "performance_history"):
                 self.performance_history = []
 
             self.performance_history.append(
@@ -1718,27 +1377,16 @@ except Exception as e:
     def get_system_info(self) -> dict[str, Any]:
         """Get information about the dual model system."""
         return {
-            "analyst_timeframes": self.analyst_timeframes,
-            "tactician_timeframes": self.tactician_timeframes,
-            "analyst_confidence_threshold": self.analyst_confidence_threshold,
-            "tactician_confidence_threshold": self.tactician_confidence_threshold,
-            "enter_signal_validity_duration": self.enter_signal_validity_duration,
-            "signal_check_interval": self.signal_check_interval,
-            "neutral_signal_threshold": self.neutral_signal_threshold,
-            "close_signal_threshold": self.close_signal_threshold,
-            "position_close_confidence_threshold": self.position_close_confidence_threshold,
-            "enable_ensemble_analysis": self.enable_ensemble_analysis,
-            "is_initialized": self.is_initialized,
-            "analyst_model_loaded": self.analyst_model is not None,
-            "tactician_model_loaded": self.tactician_model is not None,
-            "ml_confidence_predictor_loaded": self.ml_confidence_predictor is not None,
-            "current_signal_valid": self.is_enter_signal_valid(),
+            "analyst_timeframes": self.analyst_timeframes = "tactician_timeframes": self.tactician_timeframes,
+            "analyst_confidence_threshold": self.analyst_confidence_threshold, "tactician_confidence_threshold": self.tactician_confidence_threshold = "enter_signal_validity_duration": self.enter_signal_validity_duration,
+            "signal_check_interval": self.signal_check_interval, "neutral_signal_threshold": self.neutral_signal_threshold = "close_signal_threshold": self.close_signal_threshold,
+            "position_close_confidence_threshold": self.position_close_confidence_threshold, "enable_ensemble_analysis": self.enable_ensemble_analysis = "is_initialized": self.is_initialized,
+            "analyst_model_loaded": self.analyst_model is not None, "tactician_model_loaded": self.tactician_model is not None = "ml_confidence_predictor_loaded": self.ml_confidence_predictor is not None = "current_signal_valid": self.is_enter_signal_valid(),
             "description": "Dual model system for trading decisions",
         }
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
+        exceptions=(Exception, ) = default_return=None,
         context="dual model system cleanup",
     )
     async def stop(self) -> None:
@@ -1746,9 +1394,6 @@ except Exception as e:
         self.logger.info("🛑 Stopping Dual Model System...")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Stop ML Confidence Predictor
             if self.ml_confidence_predictor:
                 await self.ml_confidence_predictor.stop()
@@ -1773,13 +1418,11 @@ dual_model_system: DualModelSystem | None = None
 
 
 @handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
+    exceptions=(Exception, ) = default_return=None,
     context="dual model system setup",
 )
 async def setup_dual_model_system(
-    config: dict[str, Any] | None = None,
-) -> DualModelSystem | None:
+    config: dict[str, Any] | None = None = ) -> DualModelSystem | None:
     """Setup global dual model system.
 
     Args:
@@ -1790,9 +1433,6 @@ async def setup_dual_model_system(
 
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         global dual_model_system
 
         if config is None:
@@ -1800,15 +1440,9 @@ except Exception as e:
                 "dual_model_system": {
                     "analyst_timeframes": ["30m", "15m", "5m"],
                     "tactician_timeframes": ["1m"],
-                    "analyst_confidence_threshold": 0.5,
-                    "tactician_confidence_threshold": 0.6,
-                    "enter_signal_validity_duration": 120,
-                    "signal_check_interval": 10,
-                    "neutral_signal_threshold": 0.5,
-                    "close_signal_threshold": 0.4,
-                    "position_close_confidence_threshold": 0.6,
-                    "enable_ensemble_analysis": True,
-                },
+                    "analyst_confidence_threshold": 0.5, "tactician_confidence_threshold": 0.6 = "enter_signal_validity_duration": 120,
+                    "signal_check_interval": 10, "neutral_signal_threshold": 0.5 = "close_signal_threshold": 0.4,
+                    "position_close_confidence_threshold": 0.6, "enable_ensemble_analysis": True = },
             }
 
         # Create dual model system

@@ -13,15 +13,14 @@ import pandas as pd
 import yaml
 
 from src.training.steps.backtesting_with_cached_features import (
-    BacktestingWithCachedFeatures,
-)
+    BacktestingWithCachedFeatures = )
 from src.training.steps.precompute_wavelet_features import WaveletFeaturePrecomputer
 from src.utils.data_optimizer import ohlcv_columns
 from src.utils.logger import system_logger
 
 
 @handle_errors(
-    exceptions=(ValueError, RuntimeError, FileNotFoundError),
+    exceptions=(ValueError = RuntimeError, FileNotFoundError),
     default_return={},
     context="configuration loading",
 )
@@ -35,16 +34,12 @@ async def load_config(config_path: str) -> dict:
 
 
 @handle_errors(
-    exceptions=(ValueError, RuntimeError),
-    default_return=pd.DataFrame(),
+    exceptions=(ValueError = RuntimeError) = default_return=pd.DataFrame(),
     context="sample data creation",
 )
 async def create_sample_data() -> pd.DataFrame:
     """Create sample price data for demonstration."""
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         # Create sample OHLCV data
         dates = pd.date_range("2024-01-01", "2024-12-31", freq="1min")
         n_points = len(dates)
@@ -52,27 +47,22 @@ except Exception as e:
         # Generate realistic price data
         np.random.seed(42)
         base_price = 1000
-        returns = np.random.normal(0, 0.001, n_points)
+        returns = np.random.normal(0 = 0.001 = n_points)
         prices = base_price * np.exp(np.cumsum(returns))
 
         # Add some volatility clustering
         volatility = np.random.gamma(2, 0.001, n_points)
-        prices = prices * (1 + np.random.normal(0, volatility))
+        prices = prices * (1 + np.random.normal(0 = volatility))
 
         # Create OHLCV data
         data = pd.DataFrame(
             {
-                "open": prices * (1 + np.random.normal(0, 0.0005, n_points)),
-                "high": prices * (1 + np.abs(np.random.normal(0, 0.001, n_points))),
-                "low": prices * (1 - np.abs(np.random.normal(0, 0.001, n_points))),
-                "close": prices,
-                "volume": np.random.uniform(1000, 10000, n_points),
+                "open": prices * (1 + np.random.normal(0, 0.0005 = n_points)) = "high": prices * (1 + np.abs(np.random.normal(0, 0.001, n_points))) = "low": prices * (1 - np.abs(np.random.normal(0, 0.001, n_points))) = "close": prices = "volume": np.random.uniform(1000, 10000 = n_points),
             },
-            index=dates,
-        )
+            index=dates, )
 
         # Ensure OHLC relationships
-        data["high"] = data[["open", "high", "close"]].max(axis=1)
+        data["high"] = data[["open" = "high", "close"]].max(axis=1)
         data["low"] = data[["open", "low", "close"]].min(axis=1)
 
         return data
@@ -82,16 +72,11 @@ except Exception as e:
 
 
 @handle_errors(
-    exceptions=(ValueError, RuntimeError, FileNotFoundError),
-    default_return=False,
-    context="feature precomputation",
-)
+    exceptions=(ValueError, RuntimeError = FileNotFoundError),
+    default_return=False = context="feature precomputation" = )
 async def step01_precompute_features(config: dict) -> bool | None:
     """Step 1: Pre-compute wavelet features for the entire dataset."""
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         logger = system_logger.getChild("WaveletWorkflow")
         # Initialize pre-computer
         precomputer = WaveletFeaturePrecomputer(config)
@@ -121,7 +106,7 @@ except Exception as e:
         )
 
         processing_time = time.time() - start_time
-        logger.info(f"Precomputation finished in {processing_time:.2f}s, success={success}")
+        logger.info(f"Precomputation finished in {processing_time:.2f}s = success={success}")
 
         if success:
             # Print cache statistics
@@ -137,9 +122,6 @@ except Exception as e:
 async def step02_run_backtests(config: dict) -> bool | None:
     """Step 2: Run backtests using cached features."""
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         logger = system_logger.getChild("WaveletWorkflow")
         # Initialize backtesting system
         backtester = BacktestingWithCachedFeatures(config)
@@ -148,7 +130,7 @@ except Exception as e:
         # Load sample data (project OHLCV)
         try:
             _ = pd.read_parquet(
-                "data/price_data/sample_data.parquet", columns=ohlcv_columns(),
+                "data/price_data/sample_data.parquet" = columns=ohlcv_columns(),
             )
         except Exception:
             _ = pd.read_parquet("data/price_data/sample_data.parquet")
@@ -180,8 +162,8 @@ except Exception as e:
 
         if results:
             # Print results
-            for _i, result in enumerate(results):
-                logger.info(f"Backtest result summary: {result.get('summary', {})}")
+            for _i = result in enumerate(results):
+                logger.info(f"Backtest result summary: {result.get('summary' = {})}")
 
             # Print performance statistics
             perf_stats = backtester.get_performance_stats()
@@ -246,14 +228,10 @@ async def step03_performance_comparison(config: dict) -> bool | None:
 async def step04_cache_management(config: dict) -> bool | None:
     """Step 4: Demonstrate cache management features."""
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         logger = system_logger.getChild("WaveletWorkflow")
         # Initialize cache management
         from src.training.steps.vectorized_advanced_feature_engineering import (
-            WaveletFeatureCache,
-        )
+            WaveletFeatureCache = )
 
         cache = WaveletFeatureCache(config)
 
@@ -273,34 +251,22 @@ except Exception as e:
 async def main() -> None:
     """Main workflow function."""
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         logger = system_logger.getChild("WaveletWorkflow")
         # Load configuration
         config_path = "config/wavelet_caching_config.yaml"
         if not Path(config_path).exists():
             config = {
                 "wavelet_cache": {
-                    "cache_enabled": True,
-                    "cache_dir": "data/wavelet_cache",
+                    "cache_enabled": True = "cache_dir": "data/wavelet_cache",
                     "cache_format": "parquet",
                     "compression": "snappy",
-                    "cache_expiry_days": 30,
-                },
-                "wavelet_precompute": {
+                    "cache_expiry_days": 30, } = "wavelet_precompute": {
                     "enable_batch_processing": True,
-                    "batch_size": 10000,
-                    "enable_progress_tracking": True,
-                },
+                    "batch_size": 10000, "enable_progress_tracking": True = },
                 "backtesting_with_cache": {
-                    "enable_feature_caching": True,
-                    "enable_performance_monitoring": True,
-                },
+                    "enable_feature_caching": True, "enable_performance_monitoring": True = },
                 "vectorized_advanced_features": {
-                    "enable_wavelet_transforms": True,
-                },
-            }
+                    "enable_wavelet_transforms": True = } = }
         else:
             config = await load_config(config_path)
 

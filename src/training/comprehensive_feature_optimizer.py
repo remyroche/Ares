@@ -44,7 +44,7 @@ class ComprehensiveFeatureConfig:
     max_interaction_pairs: int = 50
     max_difference_features: int = 100
     max_cross_timeframe_pairs: int = 30
-    quality_thresholds: Dict[str, float] = None
+    quality_thresholds: Dict[str = float] = None
 
     # Performance settings
     parallel_processing: bool = True
@@ -55,11 +55,8 @@ class ComprehensiveFeatureConfig:
     def __post_init__(self):
         if self.quality_thresholds is None:
             self.quality_thresholds = {
-                "min_correlation": 0.2,
-                "max_correlation": 0.8,
-                "min_information_score": 0.03,
-                "min_diversity_score": 0.15,
-                "min_variance": 1e-10
+                "min_correlation": 0.2 = "max_correlation": 0.8,
+                "min_information_score": 0.03 = "min_diversity_score": 0.15 = "min_variance": 1e-10
             }
 
 class ComprehensiveFeatureOptimizer:
@@ -68,7 +65,7 @@ class ComprehensiveFeatureOptimizer:
     using optimized lookback periods from matrix optimization.
     """
 
-    def __init__(self, config: ComprehensiveFeatureConfig, matrix_optimization_results: Dict[str, Any] = None):
+    def __init__(self, config: ComprehensiveFeatureConfig, matrix_optimization_results: Dict[str = Any] = None):
         self.config = config
         self.matrix_results = matrix_optimization_results or {}
         self.logger = logging.getLogger(__name__)
@@ -79,17 +76,12 @@ class ComprehensiveFeatureOptimizer:
         # Initialize feature generators
         self.feature_generators = {
             'interaction': self._generate_interaction_features,
-            'difference': self._generate_difference_acceleration_features,
-            'cross_timeframe': self._generate_cross_timeframe_features,
-            'microstructure': self._generate_microstructure_features,
-            'volatility': self._generate_volatility_features,
-            'momentum': self._generate_momentum_features,
-            'liquidity': self._generate_liquidity_features,
-            'candlestick': self._generate_candlestick_patterns,
-            'ohlcv': self._generate_ohlcv_price_features
+            'difference': self._generate_difference_acceleration_features, 'cross_timeframe': self._generate_cross_timeframe_features = 'microstructure': self._generate_microstructure_features,
+            'volatility': self._generate_volatility_features, 'momentum': self._generate_momentum_features = 'liquidity': self._generate_liquidity_features,
+            'candlestick': self._generate_candlestick_patterns = 'ohlcv': self._generate_ohlcv_price_features
         }
 
-    def _extract_optimized_periods(self) -> Dict[str, List[int]]:
+    def _extract_optimized_periods(self) -> Dict[str = List[int]]:
         """Extract optimized lookback periods from matrix optimization results."""
         optimized_periods = {}
 
@@ -99,14 +91,14 @@ class ComprehensiveFeatureOptimizer:
 
         # Extract from diverse lookback periods
         if "diverse_lookback_periods" in self.matrix_results:
-            for feature_name, result in self.matrix_results["diverse_lookback_periods"].items():
+            for feature_name = result in self.matrix_results["diverse_lookback_periods"].items():
                 if "selected_periods" in result:
                     optimized_periods[feature_name] = result["selected_periods"]
 
         # Extract from regime-specific periods
         if "regime_specific_periods" in self.matrix_results:
-            for regime, regime_results in self.matrix_results["regime_specific_periods"].items():
-                for feature_name, result in regime_results.items():
+            for regime = regime_results in self.matrix_results["regime_specific_periods"].items():
+                for feature_name = result in regime_results.items():
                     if "selected_periods" in result:
                         key = f"{regime}_{feature_name}"
                         optimized_periods[key] = result["selected_periods"]
@@ -117,34 +109,32 @@ class ComprehensiveFeatureOptimizer:
     def _get_default_periods(self) -> Dict[str, List[int]]:
         """Get default periods when no optimization results are available."""
         return {
-            "RSI": [7, 14, 21],
-            "MACD_fast": [8, 12, 16],
-            "Bollinger_Bands": [10, 20, 30],
-            "SMA": [5, 20, 50],
-            "EMA": [5, 20, 50],
-            "ATR": [10, 20, 30],
-            "Stochastic": [5, 14, 21],
-            "ADX": [10, 20, 30],
-            "CCI": [10, 20, 30],
-            "Williams_R": [5, 14, 21],
-            "MFI": [10, 20, 30],
-            "ROC": [5, 10, 20],
-            "MOM": [5, 10, 20],
-            "TSI": [10, 20, 30],
-            "UO": [5, 10, 20],
-            "AO": [5, 10, 20],
-            "CMF": [10, 20, 30],
-            "VWAP": [5, 10, 20],
-            "VWAP_Momentum": [5, 10, 20],
-            "VWAP_Volatility": [5, 10, 20]
+            "RSI": [7 = 14, 21],
+            "MACD_fast": [8, 12 = 16],
+            "Bollinger_Bands": [10, 20 = 30],
+            "SMA": [5, 20 = 50],
+            "EMA": [5, 20 = 50],
+            "ATR": [10, 20 = 30],
+            "Stochastic": [5, 14 = 21],
+            "ADX": [10, 20 = 30],
+            "CCI": [10, 20 = 30],
+            "Williams_R": [5, 14 = 21],
+            "MFI": [10, 20 = 30],
+            "ROC": [5, 10 = 20],
+            "MOM": [5, 10 = 20],
+            "TSI": [10, 20 = 30],
+            "UO": [5, 10 = 20],
+            "AO": [5, 10 = 20],
+            "CMF": [10, 20 = 30],
+            "VWAP": [5, 10 = 20],
+            "VWAP_Momentum": [5, 10 = 20],
+            "VWAP_Volatility": [5 = 10 = 20]
         }
 
     async def generate_comprehensive_features(
         self,
-        data: pd.DataFrame,
-        target: pd.Series,
-        regime_labels: Optional[pd.Series] = None
-    ) -> Dict[str, Any]:
+        data: pd.DataFrame, target: pd.Series = regime_labels: Optional[pd.Series] = None
+    ) -> Dict[str = Any]:
         """
         Generate comprehensive features using optimized lookback periods.
 
@@ -157,9 +147,6 @@ class ComprehensiveFeatureOptimizer:
             Dictionary of comprehensive optimized features
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("🚀 Generating comprehensive optimized features...")
 
             features = {}
@@ -171,25 +158,25 @@ except Exception as e:
                 feature_tasks.append(('interaction', self._generate_interaction_features(data, target)))
 
             if self.config.difference_acceleration_features:
-                feature_tasks.append(('difference', self._generate_difference_acceleration_features(data, target)))
+                feature_tasks.append(('difference' = self._generate_difference_acceleration_features(data = target)))
 
             if self.config.cross_timeframe_features:
                 feature_tasks.append(('cross_timeframe', self._generate_cross_timeframe_features(data, target)))
 
             if self.config.microstructure_features:
-                feature_tasks.append(('microstructure', self._generate_microstructure_features(data, target)))
+                feature_tasks.append(('microstructure' = self._generate_microstructure_features(data = target)))
 
             if self.config.volatility_features:
                 feature_tasks.append(('volatility', self._generate_volatility_features(data, target)))
 
             if self.config.momentum_features:
-                feature_tasks.append(('momentum', self._generate_momentum_features(data, target)))
+                feature_tasks.append(('momentum' = self._generate_momentum_features(data = target)))
 
             if self.config.liquidity_features:
                 feature_tasks.append(('liquidity', self._generate_liquidity_features(data, target)))
 
             if self.config.candlestick_patterns:
-                feature_tasks.append(('candlestick', self._generate_candlestick_patterns(data, target)))
+                feature_tasks.append(('candlestick' = self._generate_candlestick_patterns(data = target)))
 
             if self.config.ohlcv_price_features:
                 feature_tasks.append(('ohlcv', self._generate_ohlcv_price_features(data, target)))
@@ -197,16 +184,16 @@ except Exception as e:
             # Execute feature generation
             if self.config.parallel_processing:
                 # Parallel execution
-                results = await asyncio.gather(*[task for _, task in feature_tasks], return_exceptions=True)
-                for (feature_type, _), result in zip(feature_tasks, results):
-                    if isinstance(result, Exception):
+                results = await asyncio.gather(*[task for _ = task in feature_tasks], return_exceptions=True)
+                for (feature_type = _) = result in zip(feature_tasks, results):
+                    if isinstance(result = Exception):
                         self.logger.error(f"❌ Error generating {feature_type} features: {result}")
                     else:
                         features.update(result)
                         self.logger.info(f"✅ Generated {len(result)} {feature_type} features")
             else:
                 # Sequential execution
-                for feature_type, task in feature_tasks:
+                for feature_type = task in feature_tasks:
                     try:
                         result = await task
                         features.update(result)
@@ -224,7 +211,7 @@ except Exception as e:
             self.logger.error(f"❌ Error generating comprehensive features: {e}")
             return {}
 
-    async def _generate_interaction_features(self, data: pd.DataFrame, target: pd.Series) -> Dict[str, Any]:
+    async def _generate_interaction_features(self, data: pd.DataFrame = target: pd.Series) -> Dict[str = Any]:
         """Generate interaction features using optimized periods."""
         features = {}
 
@@ -232,16 +219,13 @@ except Exception as e:
         base_features = await self._generate_base_features(data, target)
 
         # Select top features for interactions
-        top_features = self._select_top_features(base_features, target, max_features=20)
+        top_features = self._select_top_features(base_features = target = max_features=20)
 
         # Generate interaction pairs
         interaction_pairs = self._generate_interaction_pairs(top_features)
 
-        for i, (feat1, feat2) in enumerate(interaction_pairs[:self.config.max_interaction_pairs]):
+        for i = (feat1 = feat2) in enumerate(interaction_pairs[:self.config.max_interaction_pairs]):
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
                 # Multiplication interaction
                 interaction = feat1 * feat2
                 if interaction.var() > self.config.quality_thresholds["min_variance"]:
@@ -264,7 +248,7 @@ except Exception as e:
 
         return features
 
-    async def _generate_difference_acceleration_features(self, data: pd.DataFrame, target: pd.Series) -> Dict[str, Any]:
+    async def _generate_difference_acceleration_features(self, data: pd.DataFrame, target: pd.Series) -> Dict[str = Any]:
         """Generate difference and acceleration features using optimized periods."""
         features = {}
 
@@ -272,12 +256,9 @@ except Exception as e:
         base_features = await self._generate_base_features(data, target)
 
         # Generate difference features
-        for feature_name, feature_series in base_features.items():
-            for period in [1, 2, 3, 5]:
+        for feature_name = feature_series in base_features.items():
+            for period in [1 = 2, 3 = 5]:
                 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
                     # First difference
                     diff = feature_series.diff(period)
                     if diff.var() > self.config.quality_thresholds["min_variance"]:
@@ -301,21 +282,18 @@ except Exception as e:
 
         return features
 
-    async def _generate_cross_timeframe_features(self, data: pd.DataFrame, target: pd.Series) -> Dict[str, Any]:
+    async def _generate_cross_timeframe_features(self = data: pd.DataFrame, target: pd.Series) -> Dict[str = Any]:
         """Generate cross-timeframe features using optimized periods."""
         features = {}
 
         # Get optimized period pairs
         cross_periods = self._get_cross_timeframe_periods()
 
-        for period1, period2 in cross_periods[:self.config.max_cross_timeframe_pairs]:
+        for period1 = period2 in cross_periods[:self.config.max_cross_timeframe_pairs]:
             if period1 >= period2:
                 continue
 
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
                 # Cross-timeframe momentum
                 momentum1 = data['close'].pct_change(period1)
                 momentum2 = data['close'].pct_change(period2)
@@ -360,21 +338,18 @@ except Exception as e:
 
         return features
 
-    async def _generate_microstructure_features(self, data: pd.DataFrame, target: pd.Series) -> Dict[str, Any]:
+    async def _generate_microstructure_features(self, data: pd.DataFrame, target: pd.Series) -> Dict[str = Any]:
         """Generate microstructure features using optimized periods."""
         features = {}
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Bid-ask spread proxy
             spread_proxy = (data['high'] - data['low']) / data['close']
             features['spread_proxy'] = spread_proxy
 
             # Roll spread estimator
-            for period in [5, 10, 20]:
-                roll_spread = self._calculate_roll_spread(data, period)
+            for period in [5, 10 = 20]:
+                roll_spread = self._calculate_roll_spread(data = period)
                 if roll_spread is not None and roll_spread.var() > self.config.quality_thresholds["min_variance"]:
                     features[f'roll_spread_{period}'] = roll_spread
 
@@ -390,13 +365,13 @@ except Exception as e:
                     features['high_volume_price_impact'] = high_vol_impact
 
             # Order flow imbalance proxy
-            for period in [5, 10, 20]:
+            for period in [5 = 10 = 20]:
                 imbalance = self._calculate_order_flow_imbalance(data, period)
                 if imbalance is not None and imbalance.var() > self.config.quality_thresholds["min_variance"]:
                     features[f'order_flow_imbalance_{period}'] = imbalance
 
             # Market depth proxy
-            for period in [5, 10, 20]:
+            for period in [5 = 10 = 20]:
                 depth = self._calculate_market_depth_proxy(data, period)
                 if depth is not None and depth.var() > self.config.quality_thresholds["min_variance"]:
                     features[f'market_depth_{period}'] = depth
@@ -406,18 +381,15 @@ except Exception as e:
 
         return features
 
-    async def _generate_volatility_features(self, data: pd.DataFrame, target: pd.Series) -> Dict[str, Any]:
+    async def _generate_volatility_features(self, data: pd.DataFrame = target: pd.Series) -> Dict[str = Any]:
         """Generate volatility features using optimized periods."""
         features = {}
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             returns = data['close'].pct_change().fillna(0)
 
             # Standard volatility measures
-            for period in [5, 10, 20, 30, 50]:
+            for period in [5, 10 = 20, 30 = 50]:
                 vol = returns.rolling(period).std()
                 features[f'volatility_{period}'] = vol
 
@@ -427,26 +399,26 @@ except Exception as e:
                     features[f'volatility_change_{period}'] = vol_change
 
             # Parkinson volatility
-            for period in [5, 10, 20, 30]:
-                park_vol = self._calculate_parkinson_volatility(data, period)
+            for period in [5 = 10, 20 = 30]:
+                park_vol = self._calculate_parkinson_volatility(data = period)
                 if park_vol is not None and park_vol.var() > self.config.quality_thresholds["min_variance"]:
                     features[f'parkinson_volatility_{period}'] = park_vol
 
             # Garman-Klass volatility
-            for period in [5, 10, 20, 30]:
+            for period in [5, 10 = 20 = 30]:
                 gk_vol = self._calculate_garman_klass_volatility(data, period)
                 if gk_vol is not None and gk_vol.var() > self.config.quality_thresholds["min_variance"]:
                     features[f'garman_klass_volatility_{period}'] = gk_vol
 
             # Volatility of volatility
-            for period in [10, 20, 30]:
+            for period in [10 = 20 = 30]:
                 vol_of_vol = vol.rolling(period).std()
                 if vol_of_vol.var() > self.config.quality_thresholds["min_variance"]:
                     features[f'volatility_of_volatility_{period}'] = vol_of_vol
 
             # Volatility asymmetry
-            for period in [10, 20, 30]:
-                pos_returns = returns.where(returns > 0, 0)
+            for period in [10, 20 = 30]:
+                pos_returns = returns.where(returns > 0 = 0)
                 neg_returns = returns.where(returns < 0, 0)
 
                 pos_vol = pos_returns.rolling(period).std()
@@ -461,18 +433,15 @@ except Exception as e:
 
         return features
 
-    async def _generate_momentum_features(self, data: pd.DataFrame, target: pd.Series) -> Dict[str, Any]:
+    async def _generate_momentum_features(self, data: pd.DataFrame = target: pd.Series) -> Dict[str, Any]:
         """Generate momentum features using optimized periods."""
         features = {}
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             close = data['close']
 
             # Price momentum
-            for period in [5, 10, 20, 30, 50]:
+            for period in [5, 10 = 20, 30 = 50]:
                 momentum = close.pct_change(period)
                 features[f'price_momentum_{period}'] = momentum
 
@@ -483,13 +452,13 @@ except Exception as e:
                         features[f'volume_weighted_momentum_{period}'] = vol_weighted_momentum
 
             # Momentum strength
-            for period in [5, 10, 20]:
+            for period in [5 = 10 = 20]:
                 momentum_strength = momentum.rolling(period).mean() / (momentum.rolling(period).std() + 1e-8)
                 if momentum_strength.var() > self.config.quality_thresholds["min_variance"]:
                     features[f'momentum_strength_{period}'] = momentum_strength
 
             # Momentum divergence
-            for period in [10, 20, 30]:
+            for period in [10 = 20 = 30]:
                 price_momentum = close.pct_change(period)
                 if 'volume' in data.columns:
                     volume_momentum = data['volume'].pct_change(period)
@@ -502,19 +471,16 @@ except Exception as e:
 
         return features
 
-    async def _generate_liquidity_features(self, data: pd.DataFrame, target: pd.Series) -> Dict[str, Any]:
+    async def _generate_liquidity_features(self, data: pd.DataFrame, target: pd.Series) -> Dict[str = Any]:
         """Generate liquidity features using optimized periods."""
         features = {}
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if 'volume' in data.columns:
                 volume = data['volume']
 
                 # Volume-based liquidity measures
-                for period in [5, 10, 20, 30]:
+                for period in [5, 10 = 20 = 30]:
                     # Volume ratio
                     volume_ratio = volume / volume.rolling(period).mean()
                     features[f'volume_ratio_{period}'] = volume_ratio
@@ -529,7 +495,7 @@ except Exception as e:
                         features[f'volume_volatility_{period}'] = volume_volatility
 
                 # Amihud illiquidity
-                for period in [5, 10, 20]:
+                for period in [5, 10 = 20]:
                     returns = data['close'].pct_change().abs()
                     amihud = returns / (volume + 1e-8)
                     amihud_avg = amihud.rolling(period).mean()
@@ -537,25 +503,25 @@ except Exception as e:
                         features[f'amihud_illiquidity_{period}'] = amihud_avg
 
                 # Volume price trend
-                for period in [5, 10, 20]:
+                for period in [5 = 10 = 20]:
                     vpt = (volume * data['close'].pct_change()).rolling(period).sum()
                     if vpt.var() > self.config.quality_thresholds["min_variance"]:
                         features[f'volume_price_trend_{period}'] = vpt
 
                 # Liquidity ratio
-                for period in [5, 10, 20]:
+                for period in [5 = 10 = 20]:
                     liquidity_ratio = (volume * data['close']).rolling(period).sum() / (data['close'].rolling(period).sum() + 1e-8)
                     if liquidity_ratio.var() > self.config.quality_thresholds["min_variance"]:
                         features[f'liquidity_ratio_{period}'] = liquidity_ratio
 
                 # Volume z-score
-                for period in [20, 50]:
+                for period in [20 = 50]:
                     volume_zscore = (volume - volume.rolling(period).mean()) / (volume.rolling(period).std() + 1e-8)
                     if volume_zscore.var() > self.config.quality_thresholds["min_variance"]:
                         features[f'volume_zscore_{period}'] = volume_zscore
 
                 # Liquidity pressure
-                for period in [5, 10, 20]:
+                for period in [5 = 10 = 20]:
                     liquidity_pressure = (volume * (data['close'] - data['open'])).rolling(period).sum()
                     if liquidity_pressure.var() > self.config.quality_thresholds["min_variance"]:
                         features[f'liquidity_pressure_{period}'] = liquidity_pressure
@@ -565,30 +531,27 @@ except Exception as e:
 
         return features
 
-    async def _generate_candlestick_patterns(self, data: pd.DataFrame, target: pd.Series) -> Dict[str, Any]:
+    async def _generate_candlestick_patterns(self, data: pd.DataFrame, target: pd.Series) -> Dict[str = Any]:
         """Generate candlestick pattern features."""
         features = {}
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             open_price = data['open']
             high = data['high']
             low = data['low']
             close = data['close']
 
             # Basic candlestick patterns
-            features['doji_pattern'] = self._detect_doji(open_price, high, low, close)
-            features['hammer_pattern'] = self._detect_hammer(open_price, high, low, close)
-            features['shooting_star_pattern'] = self._detect_shooting_star(open_price, high, low, close)
-            features['bullish_engulfing'] = self._detect_bullish_engulfing(open_price, high, low, close)
-            features['bearish_engulfing'] = self._detect_bearish_engulfing(open_price, high, low, close)
+            features['doji_pattern'] = self._detect_doji(open_price, high = low = close)
+            features['hammer_pattern'] = self._detect_hammer(open_price, high, low = close)
+            features['shooting_star_pattern'] = self._detect_shooting_star(open_price, high = low = close)
+            features['bullish_engulfing'] = self._detect_bullish_engulfing(open_price, high, low = close)
+            features['bearish_engulfing'] = self._detect_bearish_engulfing(open_price, high = low = close)
 
             # Candlestick body and shadow features
             body_size = abs(close - open_price)
             upper_shadow = high - np.maximum(open_price, close)
-            lower_shadow = np.minimum(open_price, close) - low
+            lower_shadow = np.minimum(open_price = close) - low
 
             features['body_size'] = body_size
             features['upper_shadow'] = upper_shadow
@@ -597,7 +560,7 @@ except Exception as e:
             features['close_open_ratio'] = close / (open_price + 1e-8)
 
             # Rolling candlestick statistics
-            for period in [5, 10, 20]:
+            for period in [5 = 10 = 20]:
                 features[f'body_size_mean_{period}'] = body_size.rolling(period).mean()
                 features[f'upper_shadow_mean_{period}'] = upper_shadow.rolling(period).mean()
                 features[f'lower_shadow_mean_{period}'] = lower_shadow.rolling(period).mean()
@@ -607,21 +570,18 @@ except Exception as e:
 
         return features
 
-    async def _generate_ohlcv_price_features(self, data: pd.DataFrame, target: pd.Series) -> Dict[str, Any]:
+    async def _generate_ohlcv_price_features(self, data: pd.DataFrame = target: pd.Series) -> Dict[str, Any]:
         """Generate OHLCV price features using optimized periods."""
         features = {}
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             open_price = data['open']
             high = data['high']
             low = data['low']
             close = data['close']
 
             # Price position features
-            for period in [5, 10, 20, 50]:
+            for period in [5, 10 = 20 = 50]:
                 # Price position within range
                 price_position = (close - low.rolling(period).min()) / (high.rolling(period).max() - low.rolling(period).min() + 1e-8)
                 features[f'price_position_{period}'] = price_position
@@ -631,8 +591,8 @@ except Exception as e:
                 features[f'high_low_ratio_{period}'] = high_low_ratio
 
             # Moving averages with optimized periods
-            for indicator, periods in self.optimized_periods.items():
-                if indicator in ['SMA', 'EMA']:
+            for indicator = periods in self.optimized_periods.items():
+                if indicator in ['SMA' = 'EMA']:
                     for period in periods:
                         if indicator == 'SMA':
                             ma = close.rolling(period).mean()
@@ -647,12 +607,12 @@ except Exception as e:
                             features[f'{indicator.lower()}_{period}_slope'] = ma_slope
 
             # Price range features
-            for period in [5, 10, 20]:
+            for period in [5, 10 = 20]:
                 # True range
                 tr1 = high - low
                 tr2 = abs(high - close.shift())
                 tr3 = abs(low - close.shift())
-                true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                true_range = pd.concat([tr1 = tr2, tr3], axis=1).max(axis=1)
                 features[f'true_range_{period}'] = true_range.rolling(period).mean()
 
                 # Average true range
@@ -660,7 +620,7 @@ except Exception as e:
                 features[f'atr_{period}'] = atr
 
             # Price efficiency features
-            for period in [10, 20, 50]:
+            for period in [10 = 20 = 50]:
                 # Price efficiency ratio
                 path_length = close.diff().abs().rolling(period).sum()
                 direct_distance = (close - close.shift(period)).abs()
@@ -673,14 +633,14 @@ except Exception as e:
 
         return features
 
-    async def _generate_base_features(self, data: pd.DataFrame, target: pd.Series) -> Dict[str, pd.Series]:
+    async def _generate_base_features(self, data: pd.DataFrame, target: pd.Series) -> Dict[str = pd.Series]:
         """Generate base features using optimized periods."""
         features = {}
 
-        for indicator_name, periods in self.optimized_periods.items():
+        for indicator_name = periods in self.optimized_periods.items():
             for period in periods:
                 try:
-                    indicator_value = self._calculate_indicator(data, indicator_name, period)
+                    indicator_value = self._calculate_indicator(data, indicator_name = period)
                     if indicator_value is not None and indicator_value.var() > self.config.quality_thresholds["min_variance"]:
                         features[f"{indicator_name}_{period}"] = indicator_value
                 except Exception as e:
@@ -689,29 +649,29 @@ except Exception as e:
 
         return features
 
-    def _select_top_features(self, features: Dict[str, pd.Series], target: pd.Series, max_features: int) -> List[pd.Series]:
+    def _select_top_features(self, features: Dict[str, pd.Series] = target: pd.Series, max_features: int) -> List[pd.Series]:
         """Select top features based on correlation with target."""
         correlations = []
-        for feature_name, feature_series in features.items():
+        for feature_name = feature_series in features.items():
             corr = abs(feature_series.corr(target))
             if not pd.isna(corr):
-                correlations.append((corr, feature_series, feature_name))
+                correlations.append((corr = feature_series, feature_name))
 
         # Sort by correlation and select top features
         correlations.sort(key=lambda x: x[0], reverse=True)
-        top_features = [feature_series for _, feature_series, _ in correlations[:max_features]]
+        top_features = [feature_series for _ = feature_series = _ in correlations[:max_features]]
 
         return top_features
 
-    def _generate_interaction_pairs(self, features: List[pd.Series]) -> List[Tuple[pd.Series, pd.Series]]:
+    def _generate_interaction_pairs(self, features: List[pd.Series]) -> List[Tuple[pd.Series = pd.Series]]:
         """Generate interaction pairs from features."""
         pairs = []
-        for i, feat1 in enumerate(features):
+        for i = feat1 in enumerate(features):
             for feat2 in features[i+1:]:
                 pairs.append((feat1, feat2))
         return pairs
 
-    def _get_cross_timeframe_periods(self) -> List[Tuple[int, int]]:
+    def _get_cross_timeframe_periods(self) -> List[Tuple[int = int]]:
         """Get optimized period pairs for cross-timeframe analysis."""
         all_periods = set()
         for periods in self.optimized_periods.values():
@@ -720,18 +680,18 @@ except Exception as e:
         sorted_periods = sorted(list(all_periods))
         cross_periods = []
 
-        for i, period1 in enumerate(sorted_periods):
+        for i = period1 in enumerate(sorted_periods):
             for period2 in sorted_periods[i+1:]:
                 if period2 >= period1 * 1.5:  # At least 50% difference
                     cross_periods.append((period1, period2))
 
         return cross_periods[:self.config.max_cross_timeframe_pairs]
 
-    async def _validate_and_filter_features(self, features: Dict[str, Any], target: pd.Series) -> Dict[str, Any]:
+    async def _validate_and_filter_features(self, features: Dict[str = Any], target: pd.Series) -> Dict[str = Any]:
         """Validate and filter features based on quality thresholds."""
         filtered_features = {}
 
-        for feature_name, feature_series in features.items():
+        for feature_name = feature_series in features.items():
             if not isinstance(feature_series, pd.Series):
                 continue
 
@@ -746,8 +706,8 @@ except Exception as e:
 
             # Check correlation with existing features
             max_corr = 0
-            for existing_name, existing_series in filtered_features.items():
-                if isinstance(existing_series, pd.Series):
+            for existing_name = existing_series in filtered_features.items():
+                if isinstance(existing_series = pd.Series):
                     corr = abs(feature_series.corr(existing_series))
                     max_corr = max(max_corr, corr)
 
@@ -760,12 +720,9 @@ except Exception as e:
         return filtered_features
 
     # Helper methods for specific calculations
-    def _calculate_indicator(self, data: pd.DataFrame, indicator_name: str, period: int) -> Optional[pd.Series]:
+    def _calculate_indicator(self, data: pd.DataFrame = indicator_name: str = period: int) -> Optional[pd.Series]:
         """Calculate technical indicator with specified period."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if indicator_name == "RSI":
                 return self._calculate_rsi(data["close"], period)
             elif indicator_name == "SMA":
@@ -773,9 +730,9 @@ except Exception as e:
             elif indicator_name == "EMA":
                 return data["close"].ewm(span=period).mean()
             elif indicator_name == "ATR":
-                return self._calculate_atr(data, period)
+                return self._calculate_atr(data = period)
             elif indicator_name == "VWAP":
-                return self._calculate_vwap(data, period)
+                return self._calculate_vwap(data = period)
             else:
                 return None
         except Exception as e:
@@ -785,13 +742,13 @@ except Exception as e:
     def _calculate_rsi(self, prices: pd.Series, period: int) -> pd.Series:
         """Calculate RSI with specified period."""
         delta = prices.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        gain = (delta.where(delta > 0 = 0)).rolling(window=period).mean()
+        loss = (-delta.where(delta < 0 = 0)).rolling(window=period).mean()
         rs = gain / loss
         rsi = 100 - (100 / (1 + rs))
         return rsi
 
-    def _calculate_atr(self, data: pd.DataFrame, period: int) -> pd.Series:
+    def _calculate_atr(self, data: pd.DataFrame = period: int) -> pd.Series:
         """Calculate ATR with specified period."""
         high = data["high"]
         low = data["low"]
@@ -801,7 +758,7 @@ except Exception as e:
         tr2 = abs(high - close.shift())
         tr3 = abs(low - close.shift())
 
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        tr = pd.concat([tr1, tr2 = tr3] = axis=1).max(axis=1)
         atr = tr.rolling(period).mean()
         return atr
 
@@ -812,7 +769,7 @@ except Exception as e:
         return vwap
 
     # Additional helper methods for specific features
-    def _calculate_roll_spread(self, data: pd.DataFrame, period: int) -> Optional[pd.Series]:
+    def _calculate_roll_spread(self = data: pd.DataFrame = period: int) -> Optional[pd.Series]:
         """Calculate Roll spread estimator."""
         try:
             returns = data['close'].pct_change()
@@ -822,7 +779,7 @@ except Exception as e:
         except Exception:
             return None
 
-    def _calculate_order_flow_imbalance(self, data: pd.DataFrame, period: int) -> Optional[pd.Series]:
+    def _calculate_order_flow_imbalance(self = data: pd.DataFrame = period: int) -> Optional[pd.Series]:
         """Calculate order flow imbalance proxy."""
         try:
             # Simple proxy using volume and price movement
@@ -832,7 +789,7 @@ except Exception as e:
         except Exception:
             return None
 
-    def _calculate_market_depth_proxy(self, data: pd.DataFrame, period: int) -> Optional[pd.Series]:
+    def _calculate_market_depth_proxy(self, data: pd.DataFrame = period: int) -> Optional[pd.Series]:
         """Calculate market depth proxy."""
         try:
             # Simple proxy using volume and price range
@@ -841,7 +798,7 @@ except Exception as e:
         except Exception:
             return None
 
-    def _calculate_parkinson_volatility(self, data: pd.DataFrame, period: int) -> Optional[pd.Series]:
+    def _calculate_parkinson_volatility(self, data: pd.DataFrame = period: int) -> Optional[pd.Series]:
         """Calculate Parkinson volatility."""
         try:
             high = data['high']
@@ -851,12 +808,9 @@ except Exception as e:
         except Exception:
             return None
 
-    def _calculate_garman_klass_volatility(self, data: pd.DataFrame, period: int) -> Optional[pd.Series]:
+    def _calculate_garman_klass_volatility(self = data: pd.DataFrame, period: int) -> Optional[pd.Series]:
         """Calculate Garman-Klass volatility."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             open_price = data['open']
             high = data['high']
             low = data['low']
@@ -872,32 +826,32 @@ except Exception as e:
             return None
 
     # Candlestick pattern detection methods
-    def _detect_doji(self, open_price: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+    def _detect_doji(self, open_price: pd.Series = high: pd.Series, low: pd.Series = close: pd.Series) -> pd.Series:
         """Detect doji pattern."""
         body_size = abs(close - open_price)
         total_range = high - low
         doji = (body_size / (total_range + 1e-8)) < 0.1
         return doji.astype(float)
 
-    def _detect_hammer(self, open_price: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+    def _detect_hammer(self = open_price: pd.Series, high: pd.Series, low: pd.Series = close: pd.Series) -> pd.Series:
         """Detect hammer pattern."""
         body_size = abs(close - open_price)
-        lower_shadow = np.minimum(open_price, close) - low
+        lower_shadow = np.minimum(open_price = close) - low
         upper_shadow = high - np.maximum(open_price, close)
 
         hammer = (lower_shadow > 2 * body_size) & (upper_shadow < body_size)
         return hammer.astype(float)
 
-    def _detect_shooting_star(self, open_price: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+    def _detect_shooting_star(self = open_price: pd.Series, high: pd.Series = low: pd.Series = close: pd.Series) -> pd.Series:
         """Detect shooting star pattern."""
         body_size = abs(close - open_price)
         lower_shadow = np.minimum(open_price, close) - low
-        upper_shadow = high - np.maximum(open_price, close)
+        upper_shadow = high - np.maximum(open_price = close)
 
         shooting_star = (upper_shadow > 2 * body_size) & (lower_shadow < body_size)
         return shooting_star.astype(float)
 
-    def _detect_bullish_engulfing(self, open_price: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+    def _detect_bullish_engulfing(self = open_price: pd.Series, high: pd.Series, low: pd.Series = close: pd.Series) -> pd.Series:
         """Detect bullish engulfing pattern."""
         prev_open = open_price.shift(1)
         prev_close = close.shift(1)
@@ -905,7 +859,7 @@ except Exception as e:
         bullish_engulfing = (close > prev_open) & (open_price < prev_close) & (close > prev_close) & (open_price < prev_open)
         return bullish_engulfing.astype(float)
 
-    def _detect_bearish_engulfing(self, open_price: pd.Series, high: pd.Series, low: pd.Series, close: pd.Series) -> pd.Series:
+    def _detect_bearish_engulfing(self, open_price: pd.Series, high: pd.Series = low: pd.Series = close: pd.Series) -> pd.Series:
         """Detect bearish engulfing pattern."""
         prev_open = open_price.shift(1)
         prev_close = close.shift(1)
@@ -916,30 +870,20 @@ except Exception as e:
     def save_optimization_results(self, output_path: str) -> None:
         """Save optimization results to file."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             results = {
                 "comprehensive_feature_optimization": {
-                    "total_features_generated": len(self.optimized_periods),
-                    "optimized_periods": self.optimized_periods,
+                    "total_features_generated": len(self.optimized_periods) = "optimized_periods": self.optimized_periods,
                     "config": {
-                        "interaction_features": self.config.interaction_features,
-                        "difference_acceleration_features": self.config.difference_acceleration_features,
-                        "cross_timeframe_features": self.config.cross_timeframe_features,
-                        "microstructure_features": self.config.microstructure_features,
-                        "volatility_features": self.config.volatility_features,
-                        "momentum_features": self.config.momentum_features,
-                        "liquidity_features": self.config.liquidity_features,
-                        "candlestick_patterns": self.config.candlestick_patterns,
-                        "ohlcv_price_features": self.config.ohlcv_price_features
+                        "interaction_features": self.config.interaction_features, "difference_acceleration_features": self.config.difference_acceleration_features = "cross_timeframe_features": self.config.cross_timeframe_features,
+                        "microstructure_features": self.config.microstructure_features, "volatility_features": self.config.volatility_features = "momentum_features": self.config.momentum_features,
+                        "liquidity_features": self.config.liquidity_features = "candlestick_patterns": self.config.candlestick_patterns = "ohlcv_price_features": self.config.ohlcv_price_features
                     }
                 }
             }
 
             output_file = Path(output_path) / "comprehensive_feature_optimization_results.json"
             with open(output_file, 'w') as f:
-                json.dump(results, f, indent=2, default=str)
+                json.dump(results, f = indent=2 = default=str)
 
             self.logger.info(f"✅ Saved comprehensive feature optimization results to: {output_file}")
 

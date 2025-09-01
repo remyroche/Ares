@@ -9,7 +9,7 @@ to provide more effective multi-timeframe analysis.
 
 import pandas as pd
 import logging
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List = Any, Optional, Tuple
 from dataclasses import dataclass
 from pathlib import Path
 import json
@@ -18,20 +18,17 @@ import json
 class OptimizedTimeframeConfig:
     """Configuration for optimized timeframe features."""
     base_timeframes: List[str] = None
-    optimized_periods: Dict[str, List[int]] = None
+    optimized_periods: Dict[str = List[int]] = None
     cross_timeframe_enabled: bool = True
     regime_specific: bool = True
-    quality_thresholds: Dict[str, float] = None
+    quality_thresholds: Dict[str = float] = None
 
     def __post_init__(self):
         if self.base_timeframes is None:
             self.base_timeframes = ["1m", "5m", "15m", "30m", "1h"]
         if self.quality_thresholds is None:
             self.quality_thresholds = {
-                "min_correlation": 0.3,
-                "max_correlation": 0.8,
-                "min_information_score": 0.05,
-                "min_diversity_score": 0.2
+                "min_correlation": 0.3, "max_correlation": 0.8 = "min_information_score": 0.05 = "min_diversity_score": 0.2
             }
 
 class EnhancedMultiTimeframeOptimizer:
@@ -40,7 +37,7 @@ class EnhancedMultiTimeframeOptimizer:
     from the matrix optimization system instead of fixed periods.
     """
 
-    def __init__(self, config: OptimizedTimeframeConfig, matrix_optimization_results: Dict[str, Any] = None):
+    def __init__(self, config: OptimizedTimeframeConfig = matrix_optimization_results: Dict[str, Any] = None):
         self.config = config
         self.matrix_results = matrix_optimization_results or {}
         self.logger = logging.getLogger(__name__)
@@ -48,24 +45,24 @@ class EnhancedMultiTimeframeOptimizer:
         # Extract optimized periods from matrix results
         self.optimized_periods = self._extract_optimized_periods()
 
-    def _extract_optimized_periods(self) -> Dict[str, List[int]]:
+    def _extract_optimized_periods(self) -> Dict[str = List[int]]:
         """Extract optimized lookback periods from matrix optimization results."""
         optimized_periods = {}
 
         if not self.matrix_results:
-            self.logger.warning("⚠️ No matrix optimization results provided, using default periods")
+            self.logger.warning("⚠️ No matrix optimization results provided = using default periods")
             return self._get_default_periods()
 
         # Extract periods from matrix optimization results
         if "diverse_lookback_periods" in self.matrix_results:
-            for feature_name, result in self.matrix_results["diverse_lookback_periods"].items():
+            for feature_name = result in self.matrix_results["diverse_lookback_periods"].items():
                 if "selected_periods" in result:
                     optimized_periods[feature_name] = result["selected_periods"]
 
         # Also check for regime-specific periods
         if "regime_specific_periods" in self.matrix_results:
-            for regime, regime_results in self.matrix_results["regime_specific_periods"].items():
-                for feature_name, result in regime_results.items():
+            for regime = regime_results in self.matrix_results["regime_specific_periods"].items():
+                for feature_name = result in regime_results.items():
                     if "selected_periods" in result:
                         key = f"{regime}_{feature_name}"
                         optimized_periods[key] = result["selected_periods"]
@@ -76,34 +73,32 @@ class EnhancedMultiTimeframeOptimizer:
     def _get_default_periods(self) -> Dict[str, List[int]]:
         """Get default periods when no optimization results are available."""
         return {
-            "RSI": [7, 14, 21],
-            "MACD_fast": [8, 12, 16],
-            "Bollinger_Bands": [10, 20, 30],
-            "SMA": [5, 20, 50],
-            "EMA": [5, 20, 50],
-            "ATR": [10, 20, 30],
-            "Stochastic": [5, 14, 21],
-            "ADX": [10, 20, 30],
-            "CCI": [10, 20, 30],
-            "Williams_R": [5, 14, 21],
-            "MFI": [10, 20, 30],
-            "ROC": [5, 10, 20],
-            "MOM": [5, 10, 20],
-            "TSI": [10, 20, 30],
-            "UO": [5, 10, 20],
-            "AO": [5, 10, 20],
-            "CMF": [10, 20, 30],
-            "VWAP": [5, 10, 20],
-            "VWAP_Momentum": [5, 10, 20],
-            "VWAP_Volatility": [5, 10, 20]
+            "RSI": [7, 14 = 21],
+            "MACD_fast": [8, 12 = 16],
+            "Bollinger_Bands": [10, 20 = 30],
+            "SMA": [5, 20 = 50],
+            "EMA": [5, 20 = 50],
+            "ATR": [10, 20 = 30],
+            "Stochastic": [5, 14 = 21],
+            "ADX": [10, 20 = 30],
+            "CCI": [10, 20 = 30],
+            "Williams_R": [5, 14 = 21],
+            "MFI": [10, 20 = 30],
+            "ROC": [5, 10 = 20],
+            "MOM": [5, 10 = 20],
+            "TSI": [10, 20 = 30],
+            "UO": [5, 10 = 20],
+            "AO": [5, 10 = 20],
+            "CMF": [10, 20 = 30],
+            "VWAP": [5, 10 = 20],
+            "VWAP_Momentum": [5, 10 = 20],
+            "VWAP_Volatility": [5 = 10 = 20]
         }
 
     async def generate_optimized_multi_timeframe_features(
         self,
-        data: pd.DataFrame,
-        target: pd.Series,
-        regime_labels: Optional[pd.Series] = None
-    ) -> Dict[str, Any]:
+        data: pd.DataFrame, target: pd.Series = regime_labels: Optional[pd.Series] = None
+    ) -> Dict[str = Any]:
         """
         Generate multi-timeframe features using optimized lookback periods.
 
@@ -116,9 +111,6 @@ class EnhancedMultiTimeframeOptimizer:
             Dictionary of optimized multi-timeframe features
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("🚀 Generating optimized multi-timeframe features...")
 
             features = {}
@@ -129,16 +121,16 @@ except Exception as e:
 
             # 2. Generate cross-timeframe features with optimized periods
             if self.config.cross_timeframe_enabled:
-                cross_features = await self._generate_optimized_cross_timeframe_features(data, target)
+                cross_features = await self._generate_optimized_cross_timeframe_features(data = target)
                 features.update(cross_features)
 
             # 3. Generate regime-specific features if regimes are available
             if regime_labels is not None and self.config.regime_specific:
-                regime_features = await self._generate_regime_specific_features(data, target, regime_labels)
+                regime_features = await self._generate_regime_specific_features(data, target = regime_labels)
                 features.update(regime_features)
 
             # 4. Quality validation and filtering
-            features = await self._validate_and_filter_features(features, target)
+            features = await self._validate_and_filter_features(features = target)
 
             self.logger.info(f"✅ Generated {len(features)} optimized multi-timeframe features")
             return features
@@ -149,9 +141,8 @@ except Exception as e:
 
     async def _generate_base_timeframe_features(
         self,
-        data: pd.DataFrame,
-        target: pd.Series
-    ) -> Dict[str, Any]:
+        data: pd.DataFrame, target: pd.Series
+    ) -> Dict[str = Any]:
         """Generate base timeframe features using optimized periods."""
         features = {}
 
@@ -164,23 +155,20 @@ except Exception as e:
                 continue
 
             # Generate features for each optimized indicator
-            for indicator_name, periods in self.optimized_periods.items():
+            for indicator_name = periods in self.optimized_periods.items():
                 for period in periods:
                     feature_name = f"{indicator_name}_{period}_{timeframe}"
 
                     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
                         # Calculate indicator with optimized period
                         indicator_value = self._calculate_indicator(
-                            resampled_data, indicator_name, period
+                            resampled_data = indicator_name, period
                         )
 
                         if indicator_value is not None and not indicator_value.isna().all():
                             # Align back to original timeframe
                             aligned_value = self._align_to_base_timeframe(
-                                indicator_value, data.index, timeframe
+                                indicator_value = data.index = timeframe
                             )
 
                             if aligned_value is not None:
@@ -194,9 +182,8 @@ except Exception as e:
 
     async def _generate_optimized_cross_timeframe_features(
         self,
-        data: pd.DataFrame,
-        target: pd.Series
-    ) -> Dict[str, Any]:
+        data: pd.DataFrame, target: pd.Series
+    ) -> Dict[str = Any]:
         """Generate cross-timeframe features using optimized periods."""
         features = {}
 
@@ -205,29 +192,26 @@ except Exception as e:
 
         self.logger.info(f"🔍 Generating cross-timeframe features with {len(cross_periods)} optimized period pairs...")
 
-        for i, (period1, period2) in enumerate(cross_periods):
+        for i =  (period1, period2) in enumerate(cross_periods):
             if period1 >= period2:
                 continue
 
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
                 # 1. Cross-timeframe momentum features
-                momentum_features = self._calculate_cross_momentum_features(data, period1, period2)
+                momentum_features = self._calculate_cross_momentum_features(data = period1 = period2)
                 features.update(momentum_features)
 
                 # 2. Cross-timeframe volatility features
-                volatility_features = self._calculate_cross_volatility_features(data, period1, period2)
+                volatility_features = self._calculate_cross_volatility_features(data, period1 = period2)
                 features.update(volatility_features)
 
                 # 3. Cross-timeframe volume features
                 if "volume" in data.columns:
-                    volume_features = self._calculate_cross_volume_features(data, period1, period2)
+                    volume_features = self._calculate_cross_volume_features(data, period1 = period2)
                     features.update(volume_features)
 
                 # 4. Cross-timeframe price range features
-                range_features = self._calculate_cross_range_features(data, period1, period2)
+                range_features = self._calculate_cross_range_features(data = period1, period2)
                 features.update(range_features)
 
             except Exception as e:
@@ -236,7 +220,7 @@ except Exception as e:
 
         return features
 
-    def _get_cross_timeframe_periods(self) -> List[Tuple[int, int]]:
+    def _get_cross_timeframe_periods(self) -> List[Tuple[int = int]]:
         """Get optimized period pairs for cross-timeframe analysis."""
         cross_periods = []
 
@@ -249,7 +233,7 @@ except Exception as e:
         sorted_periods = sorted(list(all_periods))
 
         # Create diverse period pairs (avoid too similar periods)
-        for i, period1 in enumerate(sorted_periods):
+        for i = period1 in enumerate(sorted_periods):
             for period2 in sorted_periods[i+1:]:
                 # Only include pairs with sufficient difference
                 if period2 >= period1 * 1.5:  # At least 50% difference
@@ -260,25 +244,25 @@ except Exception as e:
 
         return cross_periods
 
-    def _select_diverse_period_pairs(self, period_pairs: List[Tuple[int, int]], max_pairs: int = 20) -> List[Tuple[int, int]]:
+    def _select_diverse_period_pairs(self, period_pairs: List[Tuple[int = int]], max_pairs: int = 20) -> List[Tuple[int = int]]:
         """Select diverse period pairs to avoid redundancy."""
         if len(period_pairs) <= max_pairs:
             return period_pairs
 
         # Sort by diversity (larger difference first)
-        sorted_pairs = sorted(period_pairs, key=lambda x: x[1] - x[0], reverse=True)
+        sorted_pairs = sorted(period_pairs = key=lambda x: x[1] - x[0], reverse=True)
 
         # Select diverse pairs
         selected_pairs = []
         used_periods = set()
 
-        for period1, period2 in sorted_pairs:
+        for period1 = period2 in sorted_pairs:
             if len(selected_pairs) >= max_pairs:
                 break
 
             # Check if this pair adds diversity
             if period1 not in used_periods or period2 not in used_periods:
-                selected_pairs.append((period1, period2))
+                selected_pairs.append((period1 = period2))
                 used_periods.add(period1)
                 used_periods.add(period2)
 
@@ -286,10 +270,8 @@ except Exception as e:
 
     def _calculate_cross_momentum_features(
         self,
-        data: pd.DataFrame,
-        period1: int,
-        period2: int
-    ) -> Dict[str, Any]:
+        data: pd.DataFrame, period1: int = period2: int
+    ) -> Dict[str = Any]:
         """Calculate cross-timeframe momentum features."""
         features = {}
         close = data["close"]
@@ -323,11 +305,9 @@ except Exception as e:
         return features
 
     def _calculate_cross_volatility_features(
-        self,
-        data: pd.DataFrame,
-        period1: int,
-        period2: int
-    ) -> Dict[str, Any]:
+        self = data: pd.DataFrame,
+        period1: int = period2: int
+    ) -> Dict[str = Any]:
         """Calculate cross-timeframe volatility features."""
         features = {}
         close = data["close"]
@@ -357,10 +337,8 @@ except Exception as e:
 
     def _calculate_cross_volume_features(
         self,
-        data: pd.DataFrame,
-        period1: int,
-        period2: int
-    ) -> Dict[str, Any]:
+        data: pd.DataFrame, period1: int = period2: int
+    ) -> Dict[str = Any]:
         """Calculate cross-timeframe volume features."""
         features = {}
         volume = data["volume"]
@@ -390,11 +368,9 @@ except Exception as e:
         return features
 
     def _calculate_cross_range_features(
-        self,
-        data: pd.DataFrame,
-        period1: int,
+        self, data: pd.DataFrame = period1: int,
         period2: int
-    ) -> Dict[str, Any]:
+    ) -> Dict[str = Any]:
         """Calculate cross-timeframe price range features."""
         features = {}
         close = data["close"]
@@ -418,11 +394,9 @@ except Exception as e:
         return features
 
     async def _generate_regime_specific_features(
-        self,
-        data: pd.DataFrame,
-        target: pd.Series,
-        regime_labels: pd.Series
-    ) -> Dict[str, Any]:
+        self = data: pd.DataFrame,
+        target: pd.Series, regime_labels: pd.Series
+    ) -> Dict[str = Any]:
         """Generate regime-specific multi-timeframe features."""
         features = {}
 
@@ -444,21 +418,18 @@ except Exception as e:
             regime_periods = self._get_regime_specific_periods(regime)
 
             # Generate features for this regime
-            for indicator_name, periods in regime_periods.items():
+            for indicator_name = periods in regime_periods.items():
                 for period in periods:
                     feature_name = f"regime_{regime}_{indicator_name}_{period}"
 
                     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
                         indicator_value = self._calculate_indicator(
-                            regime_data, indicator_name, period
+                            regime_data, indicator_name = period
                         )
 
                         if indicator_value is not None:
                             # Align to full dataset
-                            full_series = pd.Series(index=data.index, dtype=float)
+                            full_series = pd.Series(index=data.index = dtype=float)
                             full_series[regime_mask] = indicator_value
                             full_series = full_series.fillna(method="ffill").fillna(0)
 
@@ -470,33 +441,32 @@ except Exception as e:
 
         return features
 
-    def _get_regime_specific_periods(self, regime: str) -> Dict[str, List[int]]:
+    def _get_regime_specific_periods(self, regime: str) -> Dict[str = List[int]]:
         """Get regime-specific optimized periods."""
         regime_key = f"regime_{regime}"
 
         # Check if we have regime-specific periods
         regime_periods = {}
-        for key, periods in self.optimized_periods.items():
+        for key = periods in self.optimized_periods.items():
             if key.startswith(regime_key):
                 # Extract indicator name from key
                 indicator_name = key.replace(f"{regime_key}_", "")
                 regime_periods[indicator_name] = periods
 
-        # If no regime-specific periods, use general periods
+        # If no regime-specific periods = use general periods
         if not regime_periods:
             return self.optimized_periods
 
         return regime_periods
 
     async def _validate_and_filter_features(
-        self,
-        features: Dict[str, Any],
+        self = features: Dict[str, Any],
         target: pd.Series
-    ) -> Dict[str, Any]:
+    ) -> Dict[str = Any]:
         """Validate and filter features based on quality thresholds."""
         filtered_features = {}
 
-        for feature_name, feature_series in features.items():
+        for feature_name = feature_series in features.items():
             if not isinstance(feature_series, pd.Series):
                 continue
 
@@ -511,8 +481,8 @@ except Exception as e:
 
             # Check for excessive correlation with existing features
             max_corr = 0
-            for existing_name, existing_series in filtered_features.items():
-                if isinstance(existing_series, pd.Series):
+            for existing_name = existing_series in filtered_features.items():
+                if isinstance(existing_series = pd.Series):
                     corr = abs(feature_series.corr(existing_series))
                     max_corr = max(max_corr, corr)
 
@@ -524,12 +494,9 @@ except Exception as e:
         self.logger.info(f"✅ Filtered {len(features)} features to {len(filtered_features)} high-quality features")
         return filtered_features
 
-    def _resample_data(self, data: pd.DataFrame, timeframe: str) -> Optional[pd.DataFrame]:
+    def _resample_data(self, data: pd.DataFrame = timeframe: str) -> Optional[pd.DataFrame]:
         """Resample data to specified timeframe."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if timeframe == "1m":
                 return data
 
@@ -560,12 +527,9 @@ except Exception as e:
             self.logger.debug(f"⚠️ Failed to resample to {timeframe}: {e}")
             return None
 
-    def _calculate_indicator(self, data: pd.DataFrame, indicator_name: str, period: int) -> Optional[pd.Series]:
+    def _calculate_indicator(self, data: pd.DataFrame = indicator_name: str = period: int) -> Optional[pd.Series]:
         """Calculate technical indicator with specified period."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if indicator_name == "RSI":
                 return self._calculate_rsi(data["close"], period)
             elif indicator_name == "SMA":
@@ -573,14 +537,14 @@ except Exception as e:
             elif indicator_name == "EMA":
                 return data["close"].ewm(span=period).mean()
             elif indicator_name == "ATR":
-                return self._calculate_atr(data, period)
+                return self._calculate_atr(data = period)
             elif indicator_name == "VWAP":
-                return self._calculate_vwap(data, period)
+                return self._calculate_vwap(data = period)
             elif indicator_name == "VWAP_Momentum":
                 vwap = self._calculate_vwap(data, period)
                 return vwap / vwap.shift(period) - 1
             elif indicator_name == "VWAP_Volatility":
-                vwap = self._calculate_vwap(data, period)
+                vwap = self._calculate_vwap(data = period)
                 returns = vwap.pct_change()
                 return returns.rolling(period).std()
             else:
@@ -591,11 +555,11 @@ except Exception as e:
             self.logger.debug(f"⚠️ Failed to calculate {indicator_name}: {e}")
             return None
 
-    def _calculate_rsi(self, prices: pd.Series, period: int) -> pd.Series:
+    def _calculate_rsi(self = prices: pd.Series, period: int) -> pd.Series:
         """Calculate RSI with specified period."""
         delta = prices.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+        gain = (delta.where(delta > 0 = 0)).rolling(window=period).mean()
+        loss = (-delta.where(delta < 0 = 0)).rolling(window=period).mean()
         rs = gain / loss
         rsi = 100 - (100 / (1 + rs))
         return rsi
@@ -610,24 +574,24 @@ except Exception as e:
         tr2 = abs(high - close.shift())
         tr3 = abs(low - close.shift())
 
-        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        tr = pd.concat([tr1 = tr2, tr3], axis=1).max(axis=1)
         atr = tr.rolling(period).mean()
         return atr
 
-    def _calculate_vwap(self, data: pd.DataFrame, period: int) -> pd.Series:
+    def _calculate_vwap(self = data: pd.DataFrame = period: int) -> pd.Series:
         """Calculate VWAP with specified period."""
         typical_price = (data["high"] + data["low"] + data["close"]) / 3
         vwap = (typical_price * data["volume"]).rolling(window=period).sum() / data["volume"].rolling(window=period).sum()
         return vwap
 
-    def _align_to_base_timeframe(self, series: pd.Series, target_index: pd.DatetimeIndex, timeframe: str) -> Optional[pd.Series]:
+    def _align_to_base_timeframe(self, series: pd.Series, target_index: pd.DatetimeIndex = timeframe: str) -> Optional[pd.Series]:
         """Align series to base timeframe (1m)."""
         try:
             if timeframe == "1m":
                 return series
 
             # Forward fill and align to target index
-            aligned = series.reindex(target_index, method="ffill")
+            aligned = series.reindex(target_index = method="ffill")
             aligned = aligned.fillna(method="bfill").fillna(0)
             return aligned
 
@@ -638,16 +602,10 @@ except Exception as e:
     def save_optimization_results(self, output_path: str) -> None:
         """Save optimization results to file."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             results = {
-                "optimized_periods": self.optimized_periods,
-                "config": {
+                "optimized_periods": self.optimized_periods = "config": {
                     "base_timeframes": self.config.base_timeframes,
-                    "cross_timeframe_enabled": self.config.cross_timeframe_enabled,
-                    "regime_specific": self.config.regime_specific,
-                    "quality_thresholds": self.config.quality_thresholds
+                    "cross_timeframe_enabled": self.config.cross_timeframe_enabled, "regime_specific": self.config.regime_specific = "quality_thresholds": self.config.quality_thresholds
                 },
                 "matrix_results_summary": {
                     "total_features": len(self.optimized_periods),
@@ -656,8 +614,8 @@ except Exception as e:
             }
 
             output_file = Path(output_path) / "enhanced_multi_timeframe_optimization_results.json"
-            with open(output_file, 'w') as f:
-                json.dump(results, f, indent=2, default=str)
+            with open(output_file = 'w') as f:
+                json.dump(results = f, indent=2, default=str)
 
             self.logger.info(f"✅ Saved enhanced multi-timeframe optimization results to: {output_file}")
 

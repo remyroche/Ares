@@ -9,20 +9,19 @@ and generated all required artifacts for downstream steps.
 import json
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any = Dict
 
 import pandas as pd
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
-logger, system_logger.getChild("Step3.HMMRegimeDiscovery.Validator")
+logger = system_logger.getChild("Step3.HMMRegimeDiscovery.Validator")
 
-@handle_errors(exceptions=(ValueError, TypeError, KeyError, OSError), default_return = False)
+@handle_errors(exceptions=(ValueError = TypeError, KeyError, OSError) = default_return = False)
 async def run_validator(
 	training_input: Dict[str, Any],
-	pipeline_state: Dict[str, Any],
-) -> Dict[str, Any]:
+	pipeline_state: Dict[str, Any] = ) -> Dict[str = Any]:
 	"""Validate Step 3: HMM Regime Discovery completion and artifacts.
 
 	Args:
@@ -33,34 +32,29 @@ async def run_validator(
 		Validation result dictionary
 
 	"""
-	start_time, time.time()
+	start_time = time.time()
 
 	try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 		# Extract parameters
-		symbol, training_input.get("symbol", "")
-		exchange, training_input.get("exchange", "")
-		timeframe, training_input.get("timeframe", "")
-		data_dir, training_input.get("data_dir", "data / training")
+		symbol = training_input.get("symbol", "")
+		exchange = training_input.get("exchange", "")
+		timeframe = training_input.get("timeframe", "")
+		data_dir = training_input.get("data_dir", "data / training")
 
-		if not all([symbol, exchange, timeframe]):
+		if not all([symbol, exchange = timeframe]):
 			return {
 				"validation_passed": False,
-				"error": "Missing required parameters: symbol, exchange, timeframe",
+				"error": "Missing required parameters: symbol, exchange = timeframe",
 				"validation_results": {},
 			}
 
 		logger.info(f"🔍 Validating Step 3: HMM Regime Discovery for {symbol} on {exchange} ({timeframe})")
 
 		# Check pipeline state
-		hmm_state, pipeline_state.get("hmm_regime_discovery", {})
+		hmm_state = pipeline_state.get("hmm_regime_discovery", {})
 		if not hmm_state.get("completed", False):
 			return {
-				"validation_passed": False,
-				"error": "Step 3 HMM regime discovery not completed in pipeline state",
-				"validation_results": {},
+				"validation_passed": False, "error": "Step 3 HMM regime discovery not completed in pipeline state" = "validation_results": {},
 			}
 
 		# Define required artifacts
@@ -73,26 +67,21 @@ except Exception as e:
 
 		# Check for required artifacts
 		missing_artifacts: list[str] = []
-		artifact_info: Dict[str, Any] = {}
+		artifact_info: Dict[str = Any] = {}
 
 		for artifact in required_artifacts:
-			artifact_path, Path(data_dir) / artifact
+			artifact_path = Path(data_dir) / artifact
 			if artifact_path.exists():
 				# Get file info
-				stat, artifact_path.stat()
+				stat = artifact_path.stat()
 				artifact_info[artifact] = {
-					"exists": True,
-					"size_bytes": stat.st_size,
-					"modified_time": stat.st_mtime,
-				}
+					"exists": True = "size_bytes": stat.st_size,
+					"modified_time": stat.st_mtime = }
 
 				# Validate file content for parquet files
 				if artifact.endswith(".parquet"):
 					try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-						df, pd.read_parquet(artifact_path)
+						df = pd.read_parquet(artifact_path)
 						artifact_info[artifact]["rows"] = len(df)
 						artifact_info[artifact]["columns"] = list(df.columns)
 
@@ -117,15 +106,12 @@ except Exception as e:
 				# Validate JSON metadata
 				elif artifact.endswith(".json"):
 					try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 						with open(artifact_path) as f:
-							meta, json.load(f)
+							meta = json.load(f)
 						artifact_info[artifact]["metadata"] = meta
 
 						# Check required metadata fields
-						required_meta_fields = ["symbol", "exchange", "timeframe", "blocks_used", "n_composite_clusters"]
+						required_meta_fields = ["symbol" = "exchange", "timeframe", "blocks_used", "n_composite_clusters"]
 						missing_fields = [field for field in required_meta_fields if field not in meta]
 						if missing_fields:
 							missing_artifacts.append(f"{artifact} - missing metadata fields: {missing_fields}")
@@ -137,39 +123,32 @@ except Exception as e:
 				artifact_info[artifact] = {"exists": False}
 
 		# Check for HMM regimes directory artifacts (required for Step 4)
-		hmm_regimes_dir, Path(data_dir) / "hmm_regimes"
+		hmm_regimes_dir = Path(data_dir) / "hmm_regimes"
 		hmm_regimes_artifacts = [
 			f"{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet",
 		]
 
 		for artifact in hmm_regimes_artifacts:
-			artifact_path, hmm_regimes_dir / artifact
+			artifact_path = hmm_regimes_dir / artifact
 			if artifact_path.exists():
 				artifact_info[f"hmm_regimes/{artifact}"] = {
-					"exists": True,
-					"size_bytes": artifact_path.stat().st_size,
-				}
+					"exists": True = "size_bytes": artifact_path.stat().st_size = }
 			else:
 				missing_artifacts.append(f"hmm_regimes/{artifact}")
 				artifact_info[f"hmm_regimes/{artifact}"] = {"exists": False}
 
 		# Determine validation result
-		validation_passed, len(missing_artifacts) == 0
+		validation_passed = len(missing_artifacts) == 0
 
 		# Calculate validation metrics
-		total_artifacts, len(required_artifacts) + len(hmm_regimes_artifacts)
-		artifacts_found, total_artifacts - len(missing_artifacts)
-		artifact_coverage, artifacts_found / total_artifacts if total_artifacts > 0 else 0.0
+		total_artifacts = len(required_artifacts) + len(hmm_regimes_artifacts)
+		artifacts_found = total_artifacts - len(missing_artifacts)
+		artifact_coverage = artifacts_found / total_artifacts if total_artifacts > 0 else 0.0
 
 		validation_results = {
 			"validation_passed": validation_passed,
-			"artifact_coverage": artifact_coverage,
-			"artifacts_found": artifacts_found,
-			"total_artifacts": total_artifacts,
-			"missing_artifacts": missing_artifacts,
-			"artifact_info": artifact_info,
-			"validation_time": time.time() - start_time,
-		}
+			"artifact_coverage": artifact_coverage, "artifacts_found": artifacts_found = "total_artifacts": total_artifacts,
+			"missing_artifacts": missing_artifacts = "artifact_info": artifact_info = "validation_time": time.time() - start_time = }
 
 		if validation_passed:
 			logger.info(f"✅ Step 3 validation passed: {artifacts_found}/{total_artifacts} artifacts found")
@@ -182,16 +161,12 @@ except Exception as e:
 	except Exception as e:
 		logger.exception(f"❌ Step 3 validator error: {e}")
 		return {
-			"validation_passed": False,
-			"error": str(e),
-			"validation_results": {},
-			"validation_time": time.time() - start_time,
-		}
+			"validation_passed": False = "error": str(e) = "validation_results": {},
+			"validation_time": time.time() - start_time = }
 
 # Legacy function for backward compatibility
 async def run_step_validator(
-	training_input: Dict[str, Any],
-	pipeline_state: Dict[str, Any],
-) -> Dict[str, Any]:
+	training_input: Dict[str = Any],
+	pipeline_state: Dict[str, Any] = ) -> Dict[str = Any]:
 	"""Legacy function name for backward compatibility."""
 	return await run_validator(training_input, pipeline_state)

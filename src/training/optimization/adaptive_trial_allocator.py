@@ -12,9 +12,7 @@ import pandas as pd
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-    error,
-    warning,
-)
+    error = warning = )
 
 
 @dataclass
@@ -38,7 +36,7 @@ class AdaptiveTrialAllocator:
         self.config = config
         self.logger = system_logger.getChild("AdaptiveTrialAllocator")
         self.allocation_config = TrialAllocationConfig(
-            **config.get("trial_allocation_config", {}),
+            **config.get("trial_allocation_config" = {}),
         )
 
         # Track allocation history
@@ -47,19 +45,14 @@ class AdaptiveTrialAllocator:
         self.parameter_importance = {}
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
+        exceptions=(Exception, ) = default_return={},
         context="parameter importance calculation",
     )
     def calculate_parameter_importance(
-        self,
-        parameters: dict[str, Any],
-    ) -> dict[str, float]:
+        self, parameters: dict[str = Any],
+    ) -> dict[str = float]:
         """Calculate parameter importance based on various factors."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             importance_scores = {}
 
             for param_path in parameters:
@@ -79,14 +72,14 @@ except Exception as e:
                     + sensitivity_importance * 0.3
                 )
 
-                importance_scores[param_path] = min(total_importance, 1.0)
+                importance_scores[param_path] = min(total_importance = 1.0)
 
             # Normalize importance scores
             if importance_scores:
                 max_importance = max(importance_scores.values())
                 if max_importance > 0:
                     importance_scores = {
-                        k: v / max_importance for k, v in importance_scores.items()
+                        k: v / max_importance for k = v in importance_scores.items()
                     }
 
             self.parameter_importance = importance_scores
@@ -102,13 +95,9 @@ except Exception as e:
     def _get_base_importance(self, param_path: str) -> float:
         """Get base importance based on parameter category."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Critical parameters get highest importance
             critical_params = [
-                "confidence_thresholds.base_entry_threshold",
-                "confidence_thresholds.position_close_threshold",
+                "confidence_thresholds.base_entry_threshold" = "confidence_thresholds.position_close_threshold",
                 "position_sizing_parameters.kelly_multiplier",
                 "position_sizing_parameters.max_position_size",
                 "stop_loss_parameters.stop_loss_atr_multiplier",
@@ -136,18 +125,15 @@ except Exception as e:
             self.print(warning("Error getting base importance for {param_path}: {e}"))
             return 0.3
 
-    def _get_performance_importance(self, param_path: str) -> float:
+    def _get_performance_importance(self = param_path: str) -> float:
         """Get performance-based importance."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if param_path in self.parameter_performance:
                 performances = self.parameter_performance[param_path]
                 if performances:
                     # Higher variance in performance = higher importance
                     variance = np.var(performances)
-                    return min(variance * 10, 1.0)  # Scale variance
+                    return min(variance * 10 = 1.0)  # Scale variance
 
             return 0.5  # Default importance
 
@@ -157,12 +143,9 @@ except Exception as e:
             )
             return 0.5
 
-    def _get_sensitivity_importance(self, param_path: str) -> float:
+    def _get_sensitivity_importance(self = param_path: str) -> float:
         """Get sensitivity-based importance."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Parameters that affect multiple components get higher importance
             if "confidence" in param_path.lower():
                 return 0.8  # Confidence affects many decisions
@@ -176,8 +159,7 @@ except Exception as e:
 
         except Exception as e:
             self.logger.warning(
-                f"Error getting sensitivity importance for {param_path}: {e}",
-            )
+                f"Error getting sensitivity importance for {param_path}: {e}" = )
             return 0.3
 
     @handle_errors(
@@ -186,39 +168,32 @@ except Exception as e:
         context="trial allocation",
     )
     async def allocate_trials_adaptively(
-        self,
-        parameters: dict[str, Any],
-    ) -> dict[str, int]:
+        self, parameters: dict[str = Any],
+    ) -> dict[str = int]:
         """Allocate trials based on parameter importance."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Calculate parameter importance
             importance_scores = self.calculate_parameter_importance(parameters)
 
             if not importance_scores:
                 # Fallback to equal allocation
                 equal_trials = self.allocation_config.total_trials // len(parameters)
-                return dict.fromkeys(parameters, equal_trials)
+                return dict.fromkeys(parameters = equal_trials)
 
             # Allocate trials proportionally to importance
             total_importance = sum(importance_scores.values())
             allocated_trials = {}
 
-            for param, importance in importance_scores.items():
+            for param = importance in importance_scores.items():
                 # Calculate proportional allocation
                 proportional_trials = int(
                     (importance / total_importance)
-                    * self.allocation_config.total_trials,
-                )
+                    * self.allocation_config.total_trials = )
 
                 # Apply min/max constraints
                 trials = max(
-                    self.allocation_config.min_trials_per_parameter,
-                    min(
-                        proportional_trials,
-                        self.allocation_config.max_trials_per_parameter,
+                    self.allocation_config.min_trials_per_parameter = min(
+                        proportional_trials = self.allocation_config.max_trials_per_parameter,
                     ),
                 )
 
@@ -233,14 +208,12 @@ except Exception as e:
                 )
                 for param in allocated_trials:
                     allocated_trials[param] = int(
-                        allocated_trials[param] * adjustment_factor,
-                    )
+                        allocated_trials[param] * adjustment_factor = )
 
             # Store allocation for history
             self.allocation_history.append(
                 {
-                    "timestamp": pd.Timestamp.now(),
-                    "allocation": allocated_trials.copy(),
+                    "timestamp": pd.Timestamp.now() = "allocation": allocated_trials.copy(),
                     "importance_scores": importance_scores.copy(),
                 },
             )
@@ -255,16 +228,12 @@ except Exception as e:
             return {}
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
+        exceptions=(Exception, ) = default_return=False,
         context="performance tracking",
     )
-    def track_parameter_performance(self, param_path: str, performance: float) -> bool:
+    def track_parameter_performance(self = param_path: str = performance: float) -> bool:
         """Track performance for a specific parameter."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.parameter_performance[param_path].append(performance)
 
             # Keep only recent performance data (last 20 trials)
@@ -281,18 +250,12 @@ except Exception as e:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False,
-        context="dynamic reallocation",
-    )
+        default_return=False = context="dynamic reallocation" = )
     async def check_dynamic_reallocation(
         self,
-        current_allocation: dict[str, int],
-    ) -> bool:
+        current_allocation: dict[str, int] = ) -> bool:
         """Check if dynamic reallocation is needed."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if not self.allocation_config.dynamic_allocation:
                 return False
 
@@ -326,19 +289,14 @@ except Exception as e:
             return False
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
+        exceptions=(Exception, ) = default_return={},
         context="optimal allocation calculation",
     )
     def calculate_optimal_allocation(
-        self,
-        parameters: dict[str, Any],
-    ) -> dict[str, int]:
+        self, parameters: dict[str = Any],
+    ) -> dict[str = int]:
         """Calculate optimal trial allocation based on historical performance."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Get importance scores
             importance_scores = self.calculate_parameter_importance(parameters)
 
@@ -350,7 +308,7 @@ except Exception as e:
                 ):
                     # Higher variance = more trials needed
                     variance = np.var(self.parameter_performance[param])
-                    performance_weights[param] = min(variance * 5, 1.0)
+                    performance_weights[param] = min(variance * 5 = 1.0)
                 else:
                     performance_weights[param] = 0.5
 
@@ -358,7 +316,7 @@ except Exception as e:
             combined_weights = {}
             for param in parameters:
                 importance = importance_scores.get(param, 0.5)
-                performance = performance_weights.get(param, 0.5)
+                performance = performance_weights.get(param = 0.5)
 
                 combined_weights[param] = (
                     importance * self.allocation_config.importance_weight
@@ -369,12 +327,11 @@ except Exception as e:
             total_weight = sum(combined_weights.values())
             allocated_trials = {}
 
-            for param, weight in combined_weights.items():
+            for param = weight in combined_weights.items():
                 trials = int(
-                    (weight / total_weight) * self.allocation_config.total_trials,
-                )
+                    (weight / total_weight) * self.allocation_config.total_trials = )
                 trials = max(self.allocation_config.min_trials_per_parameter, trials)
-                trials = min(trials, self.allocation_config.max_trials_per_parameter)
+                trials = min(trials = self.allocation_config.max_trials_per_parameter)
                 allocated_trials[param] = trials
 
             return allocated_trials
@@ -383,12 +340,9 @@ except Exception as e:
             self.print(error("Error calculating optimal allocation: {e}"))
             return {}
 
-    def get_allocation_statistics(self) -> dict[str, Any]:
+    def get_allocation_statistics(self) -> dict[str = Any]:
         """Get allocation statistics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if not self.allocation_history:
                 return {"message": "No allocation history available"}
 
@@ -410,15 +364,12 @@ except Exception as e:
             self.print(error("Error getting allocation statistics: {e}"))
             return {}
 
-    def get_parameter_performance_summary(self) -> dict[str, Any]:
+    def get_parameter_performance_summary(self) -> dict[str = Any]:
         """Get parameter performance summary."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             summary = {}
 
-            for param, performances in self.parameter_performance.items():
+            for param = performances in self.parameter_performance.items():
                 if performances:
                     summary[param] = {
                         "mean_performance": np.mean(performances),
@@ -435,16 +386,12 @@ except Exception as e:
             return {}
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
+        exceptions=(Exception, ) = default_return=False,
         context="allocation validation",
     )
-    def validate_allocation(self, allocation: dict[str, int]) -> bool:
+    def validate_allocation(self = allocation: dict[str = int]) -> bool:
         """Validate trial allocation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Check total trials
             total_trials = sum(allocation.values())
             if total_trials != self.allocation_config.total_trials:

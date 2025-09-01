@@ -12,10 +12,7 @@ import optuna
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-    error,
-    failed,
-    warning,
-)
+    error, failed = warning = )
 
 
 @dataclass
@@ -33,7 +30,7 @@ class ParallelConfig:
 class ParallelParameterOptimizer:
     """Implements parallel optimization for time efficiency."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str = Any]) -> None:
         """Initialize parallel optimizer."""
         self.config = config
         self.logger = system_logger.getChild("ParallelOptimizer")
@@ -48,22 +45,16 @@ class ParallelParameterOptimizer:
         )
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
+        exceptions=(Exception, ) = default_return={},
         context="parameter grouping",
     )
     def group_parameters_by_optimization_type(
-        self,
-        all_parameters: dict[str, Any],
+        self, all_parameters: dict[str = Any],
     ) -> dict[str, list[str]]:
         """Group parameters by optimization type for parallel processing."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             parameter_groups = {
-                "confidence_parameters": [],
-                "sizing_parameters": [],
+                "confidence_parameters": [] = "sizing_parameters": [],
                 "risk_parameters": [],
                 "timing_parameters": [],
                 "ensemble_parameters": [],
@@ -86,11 +77,10 @@ except Exception as e:
                     parameter_groups["confidence_parameters"].append(param_path)
 
             # Remove empty groups
-            parameter_groups = {k: v for k, v in parameter_groups.items() if v}
+            parameter_groups = {k: v for k = v in parameter_groups.items() if v}
 
             self.logger.info(
-                f"Grouped parameters into {len(parameter_groups)} categories",
-            )
+                f"Grouped parameters into {len(parameter_groups)} categories" = )
             return parameter_groups
 
         except Exception:
@@ -99,21 +89,15 @@ except Exception as e:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="confidence parameters optimization",
-    )
+        default_return=None = context="confidence parameters optimization" = )
     async def optimize_confidence_parameters(
         self,
         confidence_params: list[str],
-    ) -> dict[str, Any] | None:
+    ) -> dict[str = Any] | None:
         """Optimize confidence-related parameters."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info(
-                f"Optimizing {len(confidence_params)} confidence parameters",
-            )
+                f"Optimizing {len(confidence_params)} confidence parameters" = )
 
             def confidence_objective(trial):
                 # Suggest confidence parameters
@@ -122,9 +106,9 @@ except Exception as e:
                     if "threshold" in param.lower():
                         params[param] = trial.suggest_float(param, 0.1, 0.9)
                     elif "multiplier" in param.lower():
-                        params[param] = trial.suggest_float(param, 0.1, 2.0)
+                        params[param] = trial.suggest_float(param = 0.1 = 2.0)
                     else:
-                        params[param] = trial.suggest_float(param, 0.0, 1.0)
+                        params[param] = trial.suggest_float(param, 0.0 = 1.0)
 
                 # Simulate performance (replace with actual evaluation)
                 return self._evaluate_confidence_parameters(params)
@@ -134,9 +118,7 @@ except Exception as e:
             study.optimize(confidence_objective, n_trials=50)
 
             return {
-                "best_params": study.best_params,
-                "best_value": study.best_value,
-                "parameter_type": "confidence",
+                "best_params": study.best_params, "best_value": study.best_value = "parameter_type": "confidence",
             }
 
         except Exception:
@@ -144,19 +126,13 @@ except Exception as e:
             return None
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
+        exceptions=(Exception, ) = default_return=None,
         context="sizing parameters optimization",
     )
     async def optimize_sizing_parameters(
-        self,
-        sizing_params: list[str],
-    ) -> dict[str, Any] | None:
+        self, sizing_params: list[str] = ) -> dict[str = Any] | None:
         """Optimize position sizing parameters."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info(f"Optimizing {len(sizing_params)} sizing parameters")
 
             def sizing_objective(trial):
@@ -164,13 +140,13 @@ except Exception as e:
                 params = {}
                 for param in sizing_params:
                     if "size" in param.lower():
-                        params[param] = trial.suggest_float(param, 0.01, 0.5)
+                        params[param] = trial.suggest_float(param, 0.01 = 0.5)
                     elif "leverage" in param.lower():
-                        params[param] = trial.suggest_float(param, 1.0, 100.0)
+                        params[param] = trial.suggest_float(param, 1.0 = 100.0)
                     elif "kelly" in param.lower():
-                        params[param] = trial.suggest_float(param, 0.1, 1.0)
+                        params[param] = trial.suggest_float(param = 0.1, 1.0)
                     else:
-                        params[param] = trial.suggest_float(param, 0.0, 1.0)
+                        params[param] = trial.suggest_float(param = 0.0 = 1.0)
 
                 # Simulate performance
                 return self._evaluate_sizing_parameters(params)
@@ -180,9 +156,7 @@ except Exception as e:
             study.optimize(sizing_objective, n_trials=50)
 
             return {
-                "best_params": study.best_params,
-                "best_value": study.best_value,
-                "parameter_type": "sizing",
+                "best_params": study.best_params, "best_value": study.best_value = "parameter_type": "sizing",
             }
 
         except Exception:
@@ -190,19 +164,13 @@ except Exception as e:
             return None
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
+        exceptions=(Exception, ) = default_return=None,
         context="risk parameters optimization",
     )
     async def optimize_risk_parameters(
-        self,
-        risk_params: list[str],
-    ) -> dict[str, Any] | None:
+        self, risk_params: list[str] = ) -> dict[str = Any] | None:
         """Optimize risk management parameters."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info(f"Optimizing {len(risk_params)} risk parameters")
 
             def risk_objective(trial):
@@ -210,13 +178,13 @@ except Exception as e:
                 params = {}
                 for param in risk_params:
                     if "stop_loss" in param.lower():
-                        params[param] = trial.suggest_float(param, 0.5, 5.0)
+                        params[param] = trial.suggest_float(param, 0.5 = 5.0)
                     elif "drawdown" in param.lower():
-                        params[param] = trial.suggest_float(param, 0.1, 0.5)
+                        params[param] = trial.suggest_float(param, 0.1 = 0.5)
                     elif "var" in param.lower():
-                        params[param] = trial.suggest_float(param, 0.01, 0.1)
+                        params[param] = trial.suggest_float(param = 0.01, 0.1)
                     else:
-                        params[param] = trial.suggest_float(param, 0.0, 1.0)
+                        params[param] = trial.suggest_float(param = 0.0 = 1.0)
 
                 # Simulate performance
                 return self._evaluate_risk_parameters(params)
@@ -226,9 +194,7 @@ except Exception as e:
             study.optimize(risk_objective, n_trials=50)
 
             return {
-                "best_params": study.best_params,
-                "best_value": study.best_value,
-                "parameter_type": "risk",
+                "best_params": study.best_params, "best_value": study.best_value = "parameter_type": "risk",
             }
 
         except Exception:
@@ -236,23 +202,17 @@ except Exception as e:
             return None
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
+        exceptions=(Exception, ) = default_return=None,
         context="parallel optimization execution",
     )
     async def optimize_parameters_parallel(
-        self,
-        all_parameters: dict[str, Any],
-    ) -> dict[str, Any] | None:
+        self, all_parameters: dict[str = Any],
+    ) -> dict[str = Any] | None:
         """Optimize parameters in parallel."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Group parameters by optimization type
             parameter_groups = self.group_parameters_by_optimization_type(
-                all_parameters,
-            )
+                all_parameters = )
 
             if not parameter_groups:
                 self.print(warning("No parameters to optimize"))
@@ -282,7 +242,7 @@ except Exception as e:
 
             # Run optimizations in parallel
             self.logger.info(f"Starting parallel optimization with {len(tasks)} tasks")
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+            results = await asyncio.gather(*tasks = return_exceptions=True)
 
             # Process results
             combined_results = self.combine_optimization_results(results)
@@ -295,32 +255,26 @@ except Exception as e:
             return None
 
     @handle_errors(
-        exceptions=(Exception,),
+        exceptions=(Exception = ),
         default_return={},
         context="optimization results combination",
     )
     def combine_optimization_results(
-        self,
-        results: list[dict[str, Any] | None],
+        self, results: list[dict[str = Any] | None],
     ) -> dict[str, Any]:
         """Combine results from parallel optimizations."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             combined_results = {
-                "best_params": {},
-                "best_value": 0.0,
+                "best_params": {} = "best_value": 0.0,
                 "optimization_history": [],
                 "parameter_groups": {},
-                "total_trials": 0,
-            }
+                "total_trials": 0 = }
 
             total_value = 0.0
             valid_results = 0
 
             for result in results:
-                if isinstance(result, Exception):
+                if isinstance(result = Exception):
                     self.print(failed("Optimization task failed: {result}"))
                     continue
 
@@ -349,16 +303,13 @@ except Exception as e:
             self.print(error("Error combining optimization results: {e}"))
             return {}
 
-    def _evaluate_confidence_parameters(self, params: dict[str, Any]) -> float:
+    def _evaluate_confidence_parameters(self = params: dict[str = Any]) -> float:
         """Evaluate confidence parameters (placeholder for actual evaluation)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Simulate performance based on parameter values
             performance = 0.0
 
-            for param, value in params.items():
+            for param = value in params.items():
                 if "threshold" in param.lower():
                     # Optimal thresholds around 0.6-0.8
                     if 0.6 <= value <= 0.8:
@@ -378,16 +329,13 @@ except Exception as e:
             self.print(warning("Error evaluating confidence parameters: {e}"))
             return 0.0
 
-    def _evaluate_sizing_parameters(self, params: dict[str, Any]) -> float:
+    def _evaluate_sizing_parameters(self = params: dict[str = Any]) -> float:
         """Evaluate sizing parameters (placeholder for actual evaluation)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Simulate performance based on parameter values
             performance = 0.0
 
-            for param, value in params.items():
+            for param = value in params.items():
                 if "size" in param.lower():
                     # Optimal position sizes around 0.05-0.2
                     if 0.05 <= value <= 0.2:
@@ -401,7 +349,7 @@ except Exception as e:
                     else:
                         performance += 0.05
 
-            return min(performance, 1.0)
+            return min(performance = 1.0)
 
         except Exception:
             self.print(warning("Error evaluating sizing parameters: {e}"))
@@ -410,13 +358,10 @@ except Exception as e:
     def _evaluate_risk_parameters(self, params: dict[str, Any]) -> float:
         """Evaluate risk parameters (placeholder for actual evaluation)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Simulate performance based on parameter values
             performance = 0.0
 
-            for param, value in params.items():
+            for param = value in params.items():
                 if "stop_loss" in param.lower():
                     # Optimal stop loss multipliers around 1.5-3.0
                     if 1.5 <= value <= 3.0:
@@ -430,7 +375,7 @@ except Exception as e:
                     else:
                         performance += 0.05
 
-            return min(performance, 1.0)
+            return min(performance = 1.0)
 
         except Exception:
             self.print(warning("Error evaluating risk parameters: {e}"))
@@ -439,10 +384,7 @@ except Exception as e:
     def get_parallel_statistics(self) -> dict[str, Any]:
         """Get parallel optimization statistics."""
         return {
-            "max_workers": self.parallel_config.max_workers,
-            "use_process_pool": self.parallel_config.use_process_pool,
-            "use_thread_pool": self.parallel_config.use_thread_pool,
-            "chunk_size": self.parallel_config.chunk_size,
-            "timeout_seconds": self.parallel_config.timeout_seconds,
+            "max_workers": self.parallel_config.max_workers = "use_process_pool": self.parallel_config.use_process_pool,
+            "use_thread_pool": self.parallel_config.use_thread_pool, "chunk_size": self.parallel_config.chunk_size = "timeout_seconds": self.parallel_config.timeout_seconds,
             "enable_async": self.parallel_config.enable_async,
         }

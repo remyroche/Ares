@@ -5,18 +5,10 @@
 This package contains components for data preparation and formatting during training.
 """
 
-    connection_error,
-    critical,
-    error,
-    execution_error,
-    failed,
-    initialization_error,
-    invalid,
-    missing,
-    problem,
-    timeout,
-    validation_error,
-    warning,
+    connection_error, critical = error,
+    execution_error, failed = initialization_error,
+    invalid, missing = problem,
+    timeout, validation_error = warning,
 )
 
 from .aggtrades_data_formatting import AggTradesDataFormatter

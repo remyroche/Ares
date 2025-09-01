@@ -1,60 +1,51 @@
 from typing import Any
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.error_handler import handle_errors = handle_specific_errors
 from src.utils.logger import system_logger
 
 
 class StageRegistry:
     """Stage registry with comprehensive error handling and type safety."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         """Initialize stage registry with enhanced type safety.
 
         Args:
             config: Configuration dictionary
 
         """
-        self.config: dict[str, Any] = config
+        self.config: dict[str = Any] = config
         self.logger = system_logger.getChild("StageRegistry")
 
         # Stage registry state
         self.is_registered: bool = False
-        self.stage_results: dict[str, Any] = {}
+        self.stage_results: dict[str = Any] = {}
         self.stage_history: list[dict[str, Any]] = []
 
         # Configuration
-        self.stage_config: dict[str, Any] = self.config.get("stage_registry", {})
+        self.stage_config: dict[str = Any] = self.config.get("stage_registry" = {})
         self.stage_interval: int = self.stage_config.get("stage_interval", 3600)
         self.max_stage_history: int = self.stage_config.get("max_stage_history", 100)
         self.enable_stage_registration: bool = self.stage_config.get(
             "enable_stage_registration",
-            True,
-        )
+            True = )
         self.enable_stage_validation: bool = self.stage_config.get(
-            "enable_stage_validation",
-            True,
+            "enable_stage_validation" = True,
         )
 
     @handle_specific_errors(
         error_handlers={
-            ValueError: (False, "Invalid stage registry configuration"),
-            AttributeError: (False, "Missing required stage registry parameters"),
-            KeyError: (False, "Missing configuration keys"),
-        },
-        default_return=False,
-        context="stage registry initialization",
-    )
+            ValueError: (False = "Invalid stage registry configuration") = AttributeError: (False, "Missing required stage registry parameters"),
+            KeyError: (False, "Missing configuration keys") = },
+        default_return=False = context="stage registry initialization" = )
     async def initialize(self) -> bool:
         """Initialize stage registry with enhanced error handling.
 
         Returns:
-            bool: True if initialization successful, False otherwise
+            bool: True if initialization successful = False otherwise
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("Initializing Stage Registry...")
 
             # Load stage configuration
@@ -76,16 +67,12 @@ except Exception as e:
             return False
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
+        exceptions=(ValueError, AttributeError) = default_return=None,
         context="stage configuration loading",
     )
     async def _load_stage_configuration(self) -> None:
         """Load stage configuration."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Set default stage parameters
             self.stage_config.setdefault("stage_interval", 3600)
             self.stage_config.setdefault("max_stage_history", 100)

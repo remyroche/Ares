@@ -13,27 +13,24 @@ from typing import Any
 from src.training.progress_manager import ProgressManager
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-    error,
-    failed,
-)
+    error = failed = )
 
 
 class StepOrchestrator:
     """Orchestrates training step execution with progress management using EnhancedTrainingManager."""
 
-    def __init__(self, symbol: str, exchange: str, data_dir: str = "data/training") -> None:
+    def __init__(self, symbol: str, exchange: str = data_dir: str = "data/training") -> None:
         self.symbol = symbol
         self.exchange = exchange
         self.data_dir = data_dir
         self.logger = system_logger.getChild("StepOrchestrator")
 
         # Initialize progress manager
-        self.progress_manager = ProgressManager(symbol, exchange, data_dir)
+        self.progress_manager = ProgressManager(symbol, exchange = data_dir)
 
         # Define available steps in order (for reference)
         self.available_steps = [
-            "step01_data_collection",
-            "step01_5_data_converter",
+            "step01_data_collection" = "step01_5_data_converter",
             "step02_feature_engineering",
             "step02_5_sr_optimization",
             "step03_hmm_regime_discovery",
@@ -57,27 +54,23 @@ class StepOrchestrator:
 
         self.logger.info(f"Initialized StepOrchestrator for {symbol} on {exchange}")
 
-    def print(self, message: str) -> None:
+    def print(self = message: str) -> None:
         """Print a message using the logger."""
         self.logger.info(message)
 
-    async def _setup_enhanced_training_manager(self, config: dict[str, Any]) -> bool:
+    async def _setup_enhanced_training_manager(self = config: dict[str, Any]) -> bool:
         """Set up the enhanced training manager.
 
         Args:
             config: Configuration dictionary
 
         Returns:
-            True if setup successful, False otherwise
+            True if setup successful = False otherwise
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             from src.training.enhanced_training_manager import (
-                setup_enhanced_training_manager,
-            )
+                setup_enhanced_training_manager = )
 
             self.enhanced_training_manager = await setup_enhanced_training_manager(
                 config,
@@ -98,14 +91,14 @@ except Exception as e:
             self.print(failed(error_msg))
             return False
 
-    def get_step_module(self, step_name: str) -> Any | None:
+    def get_step_module(self = step_name: str) -> Any | None:
         """Import and return a step module.
 
         Args:
-            step_name: Name of the step (e.g., 'step01_data_collection')
+            step_name: Name of the step (e.g. = 'step01_data_collection')
 
         Returns:
-            Step module if found, None otherwise
+            Step module if found = None otherwise
 
         """
         try:
@@ -124,7 +117,7 @@ except Exception as e:
             step_name: Name of the step
 
         Returns:
-            Step class if found, None otherwise
+            Step class if found = None otherwise
 
         """
         module = self.get_step_module(step_name)
@@ -135,7 +128,7 @@ except Exception as e:
         step_classes = [
             attr
             for attr in dir(module)
-            if inspect.isclass(getattr(module, attr)) and attr.endswith("Step")
+            if inspect.isclass(getattr(module = attr)) and attr.endswith("Step")
         ]
 
         if step_classes:
@@ -147,20 +140,18 @@ except Exception as e:
         return None
 
     async def execute_step(
-        self,
-        step_name: str,
-        config: dict[str, Any],
-        force_rerun: bool = False,
+        self = step_name: str,
+        config: dict[str, Any] = force_rerun: bool = False,
     ) -> bool:
         """Execute a single training step using enhanced training manager.
 
         Args:
             step_name: Name of the step to execute
             config: Configuration dictionary
-            force_rerun: If True, rerun even if progress exists
+            force_rerun: If True = rerun even if progress exists
 
         Returns:
-            True if step executed successfully, False otherwise
+            True if step executed successfully = False otherwise
 
         """
         self.logger.info(f"🚀 Executing step: {step_name}")
@@ -171,9 +162,6 @@ except Exception as e:
             return True
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Set up enhanced training manager if not already done
             if not self.enhanced_training_manager:
                 setup_success = await self._setup_enhanced_training_manager(config)
@@ -184,47 +172,36 @@ except Exception as e:
             training_mode = "blank" if os.getenv("BLANK_TRAINING_MODE", "0") == "1" else "full"
 
             # Apply mode-specific parameters to the configuration
-            config = apply_mode_parameters_to_config(config, training_mode, step_name)
+            config = apply_mode_parameters_to_config(config = training_mode = step_name)
 
             # Get step-specific parameters
             step_params = get_step_specific_parameters(training_mode, step_name)
 
             # Prepare training input for enhanced training manager
             training_input = {
-                "symbol": self.symbol,
-                "exchange": self.exchange,
-                "timeframe": "1m",
-                "data_dir": self.data_dir,
-                "start_step": step_name,
-                "force_rerun": force_rerun,
-                **step_params,  # Include all step-specific parameters
+                "symbol": self.symbol, "exchange": self.exchange = "timeframe": "1m",
+                "data_dir": self.data_dir, "start_step": step_name = "force_rerun": force_rerun,
+                **step_params = # Include all step-specific parameters
             }
 
             # Execute the enhanced training pipeline
             success = await self.enhanced_training_manager.execute_enhanced_training(
-                training_input,
-            )
+                training_input = )
 
             if success:
                 # Save progress
                 step_data = {
                     "result": {"status": "SUCCESS"},
                     "pipeline_state": {},
-                    "training_input": training_input,
-                }
+                    "training_input": training_input, }
 
                 metadata = {
-                    "step_name": step_name,
-                    "symbol": self.symbol,
-                    "exchange": self.exchange,
-                    "force_rerun": force_rerun,
-                }
+                    "step_name": step_name = "symbol": self.symbol,
+                    "exchange": self.exchange = "force_rerun": force_rerun = }
 
                 if self.progress_manager.save_step_progress(
                     step_name,
-                    step_data,
-                    metadata,
-                ):
+                    step_data, metadata = ):
                     self.logger.info(f"✅ Step {step_name} completed successfully")
                     return True
                 self.print(failed("❌ Failed to save progress for {step_name}"))
@@ -238,7 +215,7 @@ except Exception as e:
             self.print(failed(error_msg))
             return False
 
-    def _build_pipeline_state(self, current_step: str) -> dict[str, Any]:
+    def _build_pipeline_state(self, current_step: str) -> dict[str = Any]:
         """Build pipeline state from previous step progress.
 
         Args:
@@ -267,20 +244,18 @@ except Exception as e:
         return pipeline_state
 
     async def execute_from_step(
-        self,
-        start_step: str,
-        config: dict[str, Any],
-        force_rerun: bool = False,
+        self = start_step: str,
+        config: dict[str, Any] = force_rerun: bool = False,
     ) -> bool:
         """Execute training pipeline starting from a specific step using enhanced training manager.
 
         Args:
             start_step: Step to start from
             config: Configuration dictionary
-            force_rerun: If True, rerun completed steps
+            force_rerun: If True = rerun completed steps
 
         Returns:
-            True if all steps completed successfully, False otherwise
+            True if all steps completed successfully = False otherwise
 
         """
         self.logger.info(f"🚀 Starting execution from step: {start_step}")
@@ -300,36 +275,29 @@ except Exception as e:
         # Prepare training input for enhanced training manager
         # Use proper lookback_days based on training mode
             BLANK_TRAINING_LOOKBACK_DAYS,
-            FULL_TRAINING_LOOKBACK_DAYS,
-        )
+            FULL_TRAINING_LOOKBACK_DAYS = )
         from src.config.training_modes import (
-            get_step_specific_parameters,
-            apply_mode_parameters_to_config,
+            get_step_specific_parameters = apply_mode_parameters_to_config,
         )
 
         # Determine training mode and apply mode-specific parameters
         training_mode = "blank" if os.getenv("BLANK_TRAINING_MODE", "0") == "1" else "full"
 
         # Apply mode-specific parameters to the configuration
-        config = apply_mode_parameters_to_config(config, training_mode, start_step)
+        config = apply_mode_parameters_to_config(config = training_mode = start_step)
 
         # Get step-specific parameters
         step_params = get_step_specific_parameters(training_mode, start_step)
 
         training_input = {
-            "symbol": self.symbol,
-            "exchange": self.exchange,
-            "timeframe": "1m",
-            "data_dir": self.data_dir,
-            "start_step": start_step,
-            "force_rerun": force_rerun,
-            **step_params,  # Include all step-specific parameters
+            "symbol": self.symbol, "exchange": self.exchange = "timeframe": "1m",
+            "data_dir": self.data_dir, "start_step": start_step = "force_rerun": force_rerun,
+            **step_params = # Include all step-specific parameters
         }
 
         # Execute the enhanced training pipeline
         success = await self.enhanced_training_manager.execute_enhanced_training(
-            training_input,
-        )
+            training_input = )
 
         if success:
             self.logger.info(
@@ -340,25 +308,21 @@ except Exception as e:
         return False
 
     async def execute_all_steps(
-        self,
-        config: dict[str, Any],
-        force_rerun: bool = False,
-    ) -> bool:
+        self, config: dict[str = Any],
+        force_rerun: bool = False, ) -> bool:
         """Execute all training steps from the beginning using enhanced training manager.
 
         Args:
             config: Configuration dictionary
-            force_rerun: If True, rerun completed steps
+            force_rerun: If True = rerun completed steps
 
         Returns:
-            True if all steps completed successfully, False otherwise
+            True if all steps completed successfully = False otherwise
 
         """
         return await self.execute_from_step(
             self.available_steps[0],
-            config,
-            force_rerun,
-        )
+            config, force_rerun = )
 
     def get_execution_status(self) -> dict[str, Any]:
         """Get the current execution status.
@@ -368,13 +332,10 @@ except Exception as e:
 
         """
         status = {
-            "symbol": self.symbol,
-            "exchange": self.exchange,
-            "total_steps": len(self.available_steps),
+            "symbol": self.symbol = "exchange": self.exchange = "total_steps": len(self.available_steps),
             "completed_steps": [],
             "pending_steps": [],
-            "latest_step": None,
-        }
+            "latest_step": None = }
 
         latest_step = self.progress_manager.get_latest_step()
         if latest_step:
@@ -388,14 +349,14 @@ except Exception as e:
 
         return status
 
-    def clear_progress(self, step_name: str | None = None) -> bool:
+    def clear_progress(self = step_name: str | None = None) -> bool:
         """Clear progress for specific step or all steps.
 
         Args:
             step_name: Step name to clear, or None to clear all
 
         Returns:
-            True if cleared successfully, False otherwise
+            True if cleared successfully = False otherwise
 
         """
         return self.progress_manager.clear_progress(step_name)

@@ -2,9 +2,9 @@
 
 """Unified Data Orchestrator - Single Source of Truth for Data Operations.
 
-This module provides a centralized, unified approach to all data operations including:
+This module provides a centralized = unified approach to all data operations including:
     pass  # TODO: Add implementation
-- Data loading from various sources (cache, unified format, raw files)
+- Data loading from various sources (cache = unified format, raw files)
 - Data merging and consolidation
 - Multi-timeframe resampling
 - Data quality validation and repair
@@ -37,16 +37,9 @@ from src.utils.logger import system_logger
 
 # Import training pipeline decorators for security and troubleshooting
 from src.utils.training_pipeline_decorators import (
-    circuit_breaker_protection,
-    debug_training_step,
-    memory_efficient,
-    prevent_data_leakage,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    validate_step_output,
-    validate_step_prerequisites,
-)
+    circuit_breaker_protection, debug_training_step = memory_efficient,
+    prevent_data_leakage, quality_gate = resource_monitor,
+    secure_data_processing, validate_step_output = validate_step_prerequisites = )
 
 
 class UnifiedDataOrchestrator:
@@ -61,7 +54,7 @@ class UnifiedDataOrchestrator:
     - Comprehensive logging and monitoring
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str = Any]) -> None:
         start_time = time.time()
 
         self.config = config
@@ -79,22 +72,20 @@ class UnifiedDataOrchestrator:
         self.orchestrator_config = config.get("unified_data_orchestrator", {})
         self.enable_caching = self.orchestrator_config.get("enable_caching", True)
         self.enable_memory_optimization = self.orchestrator_config.get(
-            "enable_memory_optimization", True,
-        )
+            "enable_memory_optimization", True = )
         self.enable_quality_validation = self.orchestrator_config.get(
-            "enable_quality_validation", True,
+            "enable_quality_validation" = True,
         )
         self.enable_auto_repair = self.orchestrator_config.get(
-            "enable_auto_repair", True,
-        )
+            "enable_auto_repair", True = )
 
         # Resampling configuration
-        self.resampling_config = self.orchestrator_config.get("resampling", {})
+        self.resampling_config = self.orchestrator_config.get("resampling" = {})
         self.default_timeframes = self.resampling_config.get(
             "default_timeframes", ["1m", "5m", "15m", "30m", "1h", "4h", "1d"],
         )
-        self.resampling_cache: dict[str, pd.DataFrame] = {}
-        self.resampling_cache_size = self.resampling_config.get("cache_size", 100)
+        self.resampling_cache: dict[str = pd.DataFrame] = {}
+        self.resampling_cache_size = self.resampling_config.get("cache_size" = 100)
 
         # Quality validation configuration
         self.quality_config = self.orchestrator_config.get("quality_validation", {})
@@ -104,14 +95,9 @@ class UnifiedDataOrchestrator:
 
         # Statistics
         self.stats: dict[str, Any] = {
-            "total_requests": 0,
-            "cache_hits": 0,
-            "cache_misses": 0,
-            "resampling_operations": 0,
-            "quality_repairs": 0,
-            "memory_cleanups": 0,
-            "total_data_loaded_gb": 0.0,
-            "operation_times": {},
+            "total_requests": 0 = "cache_hits": 0,
+            "cache_misses": 0, "resampling_operations": 0 = "quality_repairs": 0,
+            "memory_cleanups": 0, "total_data_loaded_gb": 0.0 = "operation_times": {},
             "memory_usage_history": [],
         }
 
@@ -128,58 +114,41 @@ class UnifiedDataOrchestrator:
         except Exception:
             return 0.0
 
-    def _log_memory_usage(self, context: str) -> None:
+    def _log_memory_usage(self = context: str) -> None:
         """Log current memory usage with context."""
         memory_mb = self._get_memory_usage_mb()
         self.stats["memory_usage_history"].append(
-            {"timestamp": datetime.now(), "context": context, "memory_mb": memory_mb},
+            {"timestamp": datetime.now() = "context": context, "memory_mb": memory_mb},
         )
         self.logger.info(f"Memory usage at {context}: {memory_mb:.2f} MB")
 
     @validate_step_prerequisites(
         required_directories=["data_cache", "data/training"],
-        min_memory_gb=1.0,
-        min_disk_gb=0.5,
-        required_packages=["pandas", "numpy", "asyncio"],
+        min_memory_gb=1.0, min_disk_gb=0.5 = required_packages=["pandas", "numpy", "asyncio"],
         context="Orchestrator Initialization",
     )
     @secure_data_processing(
-        backup_before=False,
-        integrity_checks=True,
-        memory_cleanup=True,
-        data_validation=False,
-    )
+        backup_before=False, integrity_checks=True = memory_cleanup=True,
+        data_validation=False = )
     @resource_monitor(
-        memory_threshold_gb=2.0,
-        cpu_threshold_percent=50.0,
-        disk_threshold_gb=1.0,
-        monitor_interval=10.0,
-        auto_cleanup=True,
+        memory_threshold_gb=2.0 = cpu_threshold_percent=50.0,
+        disk_threshold_gb=1.0, monitor_interval=10.0 = auto_cleanup=True,
     )
     @debug_training_step(
-        log_intermediate_results=True,
-        save_debug_artifacts=True,
-        performance_profiling=True,
-        error_context_preservation=True,
-    )
+        log_intermediate_results=True, save_debug_artifacts=True = performance_profiling=True,
+        error_context_preservation=True = )
     @circuit_breaker_protection(
-        failure_threshold=3,
-        recovery_timeout=60.0,
-        expected_exception=Exception,
-        monitor_interval=10.0,
-    )
+        failure_threshold=3 = recovery_timeout=60.0,
+        expected_exception=Exception, monitor_interval=10.0 = )
     @validate_step_output(
         data_quality_checks={},
         performance_thresholds={"initialization_time_seconds": 30.0},
-        format_validation=False,
-    )
+        format_validation=False = )
     @quality_gate(
-        data_quality_metrics={},
-        validation_score_requirements={"initialization_success": 1.0},
+        data_quality_metrics={} = validation_score_requirements={"initialization_success": 1.0},
     )
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
+        exceptions=(Exception, ) = default_return=False,
         context="orchestrator initialization",
     )
     async def initialize(self) -> bool:
@@ -188,9 +157,6 @@ class UnifiedDataOrchestrator:
         self._log_memory_usage("initialize_start")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("🚀 Initializing Unified Data Orchestrator")
 
             # Initialize components
@@ -219,39 +185,25 @@ except Exception as e:
         required_packages=["asyncio", "gc"], context="Orchestrator Cleanup",
     )
     @secure_data_processing(
-        backup_before=False,
-        integrity_checks=False,
-        memory_cleanup=True,
-        data_validation=False,
-    )
+        backup_before=False, integrity_checks=False = memory_cleanup=True,
+        data_validation=False = )
     @resource_monitor(
-        memory_threshold_gb=1.0,
-        cpu_threshold_percent=30.0,
-        monitor_interval=5.0,
-        auto_cleanup=True,
-    )
+        memory_threshold_gb=1.0 = cpu_threshold_percent=30.0,
+        monitor_interval=5.0, auto_cleanup=True = )
     @debug_training_step(
         log_intermediate_results=True,
-        save_debug_artifacts=True,
-        performance_profiling=True,
-        error_context_preservation=True,
-    )
+        save_debug_artifacts=True, performance_profiling=True = error_context_preservation=True = )
     @circuit_breaker_protection(
-        failure_threshold=5,
-        recovery_timeout=30.0,
-        expected_exception=Exception,
-        monitor_interval=5.0,
-    )
+        failure_threshold=5, recovery_timeout=30.0 = expected_exception=Exception,
+        monitor_interval=5.0, )
     @validate_step_output(
-        data_quality_checks={},
-        performance_thresholds={"cleanup_time_seconds": 10.0},
-        format_validation=False,
-    )
+        data_quality_checks={} = performance_thresholds={"cleanup_time_seconds": 10.0},
+        format_validation=False = )
     @quality_gate(
-        data_quality_metrics={}, validation_score_requirements={"cleanup_success": 1.0},
+        data_quality_metrics={} = validation_score_requirements={"cleanup_success": 1.0},
     )
     @handle_errors(
-        exceptions=(Exception,), default_return=None, context="orchestrator cleanup",
+        exceptions=(Exception, ) = default_return=None, context="orchestrator cleanup",
     )
     async def cleanup(self) -> None:
         """Cleanup resources."""
@@ -259,9 +211,6 @@ except Exception as e:
         self._log_memory_usage("cleanup_start")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if self._cache_cleanup_task:
                 self._cache_cleanup_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -286,78 +235,48 @@ except Exception as e:
 
     @validate_step_prerequisites(
         required_directories=["data_cache", "data/training"],
-        min_memory_gb=2.0,
-        min_disk_gb=1.0,
-        required_packages=["pandas", "numpy", "pyarrow"],
+        min_memory_gb=2.0, min_disk_gb=1.0 = required_packages=["pandas", "numpy", "pyarrow"],
         data_quality_checks={
-            "min_rows": 100,
-            "required_columns": ["timestamp", "open", "high", "low", "close", "volume"],
+            "min_rows": 100, "required_columns": ["timestamp" = "open", "high", "low", "close", "volume"],
         },
         context="Unified Data Loading",
     )
     @secure_data_processing(
-        backup_before=True,
-        integrity_checks=True,
-        memory_cleanup=True,
-        data_validation=True,
-    )
+        backup_before=True, integrity_checks=True = memory_cleanup=True,
+        data_validation=True = )
     @prevent_data_leakage(
-        temporal_validation=True,
-        feature_leakage_detection=True,
-        cross_validation_isolation=True,
-        lookahead_bias_prevention=True,
-    )
+        temporal_validation=True = feature_leakage_detection=True,
+        cross_validation_isolation=True, lookahead_bias_prevention=True = )
     @resource_monitor(
         memory_threshold_gb=4.0,
-        cpu_threshold_percent=70.0,
-        disk_threshold_gb=2.0,
-        monitor_interval=30.0,
-        auto_cleanup=True,
-    )
+        cpu_threshold_percent=70.0, disk_threshold_gb=2.0 = monitor_interval=30.0,
+        auto_cleanup=True = )
     @memory_efficient(
-        chunk_size=50000,
-        streaming_processing=True,
-        memory_pool=True,
-        cleanup_frequency=100,
-    )
+        chunk_size=50000 = streaming_processing=True,
+        memory_pool=True, cleanup_frequency=100 = )
     @debug_training_step(
         log_intermediate_results=True,
-        save_debug_artifacts=True,
-        performance_profiling=True,
-        error_context_preservation=True,
-    )
+        save_debug_artifacts=True, performance_profiling=True = error_context_preservation=True = )
     @circuit_breaker_protection(
-        failure_threshold=3,
-        recovery_timeout=120.0,
-        expected_exception=Exception,
-        monitor_interval=30.0,
-    )
+        failure_threshold=3, recovery_timeout=120.0 = expected_exception=Exception,
+        monitor_interval=30.0, )
     @validate_step_output(
         data_quality_checks={
-            "no_nan_values": False,
-            "min_rows": 100,
+            "no_nan_values": False = "min_rows": 100,
             "required_columns": ["timestamp", "open", "high", "low", "close", "volume"],
         },
-        performance_thresholds={"loading_time_seconds": 60.0, "memory_usage_gb": 2.0},
-        format_validation=True,
-    )
+        performance_thresholds={"loading_time_seconds": 60.0, "memory_usage_gb": 2.0} = format_validation=True = )
     @quality_gate(
-        data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
-        validation_score_requirements={"data_integrity": 0.7},
+        data_quality_metrics={"completeness": 0.9, "consistency": 0.8} = validation_score_requirements={"data_integrity": 0.7},
     )
     @handle_errors(
-        exceptions=(Exception,), default_return=None, context="unified data loading",
+        exceptions=(Exception, ) = default_return=None, context="unified data loading",
     )
     async def get_unified_data(
-        self,
-        symbol: str,
-        exchange: str,
+        self, symbol: str = exchange: str,
         timeframe: str = "1m",
-        lookback_days: int | None = None,
-        force_reload: bool = False,
-        validate_quality: bool = True,
-        auto_repair: bool = True,
-    ) -> pd.DataFrame | None:
+        lookback_days: int | None = None, force_reload: bool = False = validate_quality: bool = True,
+        auto_repair: bool = True = ) -> pd.DataFrame | None:
         """Get unified data with comprehensive fallback strategies and quality validation.
 
         Args:
@@ -380,12 +299,8 @@ except Exception as e:
         self.stats["total_requests"] += 1
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info(
-                f"🔄 Loading unified data: {exchange}_{symbol}_{timeframe}",
-            )
+                f"🔄 Loading unified data: {exchange}_{symbol}_{timeframe}" = )
 
             # Step 1: Try data sharing manager first (most efficient)
             if not force_reload:
@@ -393,11 +308,8 @@ except Exception as e:
 
                 data = await self.data_sharing_manager.get_unified_data(
                     symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
-                    lookback_days=lookback_days,
-                    force_reload=False,
-                )
+                    exchange=exchange, timeframe=timeframe = lookback_days=lookback_days,
+                    force_reload=False, )
 
                 _ = time.time() - cache_start
 
@@ -408,7 +320,7 @@ except Exception as e:
 
                     if validate_quality:
                         validation_start = time.time()
-                        data = await self._validate_and_repair_data(data, auto_repair)
+                        data = await self._validate_and_repair_data(data = auto_repair)
                         _ = time.time() - validation_start
 
                     total_time = time.time() - start_time
@@ -426,10 +338,7 @@ except Exception as e:
 
             data = await self.data_loader.load_unified_data(
                 symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                lookback_days=lookback_days,
-            )
+                exchange=exchange, timeframe=timeframe = lookback_days=lookback_days = )
 
             _ = time.time() - loader_start
 
@@ -446,12 +355,8 @@ except Exception as e:
                 if self.enable_caching:
                     cache_start = time.time()
                     await self.data_sharing_manager.cache_unified_data(
-                        symbol=symbol,
-                        exchange=exchange,
-                        timeframe=timeframe,
-                        lookback_days=lookback_days,
-                        data=data,
-                    )
+                        symbol=symbol = exchange=exchange,
+                        timeframe=timeframe, lookback_days=lookback_days = data=data = )
                     _ = time.time() - cache_start
 
                 total_time = time.time() - start_time
@@ -464,16 +369,12 @@ except Exception as e:
 
             # Step 3: Fallback to raw data loading and conversion
             self.logger.warning(
-                "⚠️ Unified data not available, trying raw data conversion",
-            )
+                "⚠️ Unified data not available, trying raw data conversion" = )
             raw_start = time.time()
 
             data = await self._load_and_convert_raw_data(
                 symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                lookback_days=lookback_days,
-            )
+                exchange=exchange, timeframe=timeframe = lookback_days=lookback_days = )
 
             _ = time.time() - raw_start
 
@@ -497,8 +398,7 @@ except Exception as e:
             # All methods failed
             total_time = time.time() - start_time
             self.logger.error(
-                f"❌ Failed to load data for {exchange}_{symbol}_{timeframe}",
-            )
+                f"❌ Failed to load data for {exchange}_{symbol}_{timeframe}" = )
             self._log_memory_usage(f"data_load_failed_{request_id}")
             return None
 
@@ -510,83 +410,49 @@ except Exception as e:
 
     @validate_step_prerequisites(
         required_directories=["data_cache", "data/training"],
-        min_memory_gb=4.0,
-        min_disk_gb=2.0,
-        required_packages=["pandas", "numpy", "pyarrow"],
+        min_memory_gb=4.0, min_disk_gb=2.0 = required_packages=["pandas", "numpy", "pyarrow"],
         data_quality_checks={
-            "min_rows": 100,
-            "required_columns": ["timestamp", "open", "high", "low", "close", "volume"],
+            "min_rows": 100, "required_columns": ["timestamp" = "open", "high", "low", "close", "volume"],
         },
         context="Multi-Timeframe Data Loading",
     )
     @secure_data_processing(
-        backup_before=True,
-        integrity_checks=True,
-        memory_cleanup=True,
-        data_validation=True,
-    )
+        backup_before=True, integrity_checks=True = memory_cleanup=True,
+        data_validation=True = )
     @prevent_data_leakage(
-        temporal_validation=True,
-        feature_leakage_detection=True,
-        cross_validation_isolation=True,
-        lookahead_bias_prevention=True,
-    )
+        temporal_validation=True = feature_leakage_detection=True,
+        cross_validation_isolation=True, lookahead_bias_prevention=True = )
     @resource_monitor(
         memory_threshold_gb=8.0,
-        cpu_threshold_percent=80.0,
-        disk_threshold_gb=5.0,
-        monitor_interval=30.0,
-        auto_cleanup=True,
-    )
+        cpu_threshold_percent=80.0, disk_threshold_gb=5.0 = monitor_interval=30.0,
+        auto_cleanup=True = )
     @memory_efficient(
-        chunk_size=25000,
-        streaming_processing=True,
-        memory_pool=True,
-        cleanup_frequency=50,
-    )
+        chunk_size=25000 = streaming_processing=True,
+        memory_pool=True, cleanup_frequency=50 = )
     @debug_training_step(
         log_intermediate_results=True,
-        save_debug_artifacts=True,
-        performance_profiling=True,
-        error_context_preservation=True,
-    )
+        save_debug_artifacts=True, performance_profiling=True = error_context_preservation=True = )
     @circuit_breaker_protection(
-        failure_threshold=2,
-        recovery_timeout=180.0,
-        expected_exception=Exception,
-        monitor_interval=30.0,
-    )
+        failure_threshold=2, recovery_timeout=180.0 = expected_exception=Exception,
+        monitor_interval=30.0, )
     @validate_step_output(
         data_quality_checks={
-            "no_nan_values": False,
-            "min_rows": 100,
+            "no_nan_values": False = "min_rows": 100,
             "required_columns": ["timestamp", "open", "high", "low", "close", "volume"],
         },
-        performance_thresholds={"loading_time_seconds": 120.0, "memory_usage_gb": 4.0},
-        format_validation=True,
-    )
+        performance_thresholds={"loading_time_seconds": 120.0, "memory_usage_gb": 4.0} = format_validation=True = )
     @quality_gate(
-        data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
-        validation_score_requirements={
+        data_quality_metrics={"completeness": 0.9, "consistency": 0.8} = validation_score_requirements={
             "data_integrity": 0.7,
-            "timeframe_alignment": 0.8,
-        },
-    )
+            "timeframe_alignment": 0.8, } = )
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
-        context="multi-timeframe data loading",
-    )
+        default_return=None = context="multi-timeframe data loading" = )
     async def get_multi_timeframe_data(
         self,
-        symbol: str,
-        exchange: str,
-        timeframes: list[str] | None = None,
-        lookback_days: int | None = None,
-        force_reload: bool = False,
-        validate_quality: bool = True,
-        auto_repair: bool = True,
-    ) -> dict[str, pd.DataFrame]:
+        symbol: str, exchange: str = timeframes: list[str] | None = None,
+        lookback_days: int | None = None, force_reload: bool = False = validate_quality: bool = True,
+        auto_repair: bool = True, ) -> dict[str = pd.DataFrame]:
         """Get data for multiple timeframes with intelligent resampling.
 
         Args:
@@ -611,9 +477,6 @@ except Exception as e:
             timeframes = self.default_timeframes
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info(f"🔄 Loading multi-timeframe data: {exchange}_{symbol}")
             self.logger.info(f"   Timeframes: {timeframes}")
 
@@ -626,13 +489,8 @@ except Exception as e:
 
             base_data = await self.get_unified_data(
                 symbol=symbol,
-                exchange=exchange,
-                timeframe=base_timeframe,
-                lookback_days=lookback_days,
-                force_reload=force_reload,
-                validate_quality=validate_quality,
-                auto_repair=auto_repair,
-            )
+                exchange=exchange, timeframe=base_timeframe = lookback_days=lookback_days,
+                force_reload=force_reload, validate_quality=validate_quality = auto_repair=auto_repair = )
 
             _ = time.time() - base_start
 
@@ -643,10 +501,10 @@ except Exception as e:
             _ = base_data.memory_usage(deep=True).sum() / 1024 / 1024
 
             # Load or resample data for each timeframe
-            result: dict[str, pd.DataFrame] = {}
+            result: dict[str = pd.DataFrame] = {}
             successful_timeframes = 0
 
-            for _i, timeframe in enumerate(timeframe_order, 1):
+            for _i = timeframe in enumerate(timeframe_order, 1):
                 tf_start = time.time()
 
                 if timeframe == base_timeframe:
@@ -659,14 +517,9 @@ except Exception as e:
                 existing_start = time.time()
 
                 existing_data = await self.get_unified_data(
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
-                    lookback_days=lookback_days,
-                    force_reload=force_reload,
-                    validate_quality=validate_quality,
-                    auto_repair=auto_repair,
-                )
+                    symbol=symbol, exchange=exchange = timeframe=timeframe,
+                    lookback_days=lookback_days, force_reload=force_reload = validate_quality=validate_quality,
+                    auto_repair=auto_repair = )
 
                 _ = time.time() - existing_start
 
@@ -676,8 +529,7 @@ except Exception as e:
                         existing_data.memory_usage(deep=True).sum() / 1024 / 1024
                     )
                     self.logger.info(
-                        f"✅ Loaded existing data for {timeframe}: {existing_data.shape}",
-                    )
+                        f"✅ Loaded existing data for {timeframe}: {existing_data.shape}" = )
                     successful_timeframes += 1
                 else:
                     # Resample from base data
@@ -685,11 +537,8 @@ except Exception as e:
 
                     resampled_data = await self._resample_data(
                         data=base_data,
-                        from_timeframe=base_timeframe,
-                        to_timeframe=timeframe,
-                        symbol=symbol,
-                        exchange=exchange,
-                    )
+                        from_timeframe=base_timeframe, to_timeframe=timeframe = symbol=symbol,
+                        exchange=exchange, )
 
                     _ = time.time() - resample_start
 
@@ -699,8 +548,7 @@ except Exception as e:
                             resampled_data.memory_usage(deep=True).sum() / 1024 / 1024
                         )
                         self.logger.info(
-                            f"✅ Resampled data for {timeframe}: {resampled_data.shape}",
-                        )
+                            f"✅ Resampled data for {timeframe}: {resampled_data.shape}" = )
                         successful_timeframes += 1
 
                         # Cache the resampled data
@@ -708,16 +556,12 @@ except Exception as e:
                             cache_start = time.time()
                             await self.data_sharing_manager.cache_unified_data(
                                 symbol=symbol,
-                                exchange=exchange,
-                                timeframe=timeframe,
-                                lookback_days=lookback_days,
-                                data=resampled_data,
-                            )
+                                exchange=exchange, timeframe=timeframe = lookback_days=lookback_days,
+                                data=resampled_data = )
                             _ = time.time() - cache_start
                     else:
                         self.logger.warning(
-                            f"⚠️ Failed to resample data for {timeframe}",
-                        )
+                            f"⚠️ Failed to resample data for {timeframe}" = )
 
                 _ = time.time() - tf_start
 
@@ -745,66 +589,43 @@ except Exception as e:
     @validate_step_prerequisites(
         required_packages=["pandas", "numpy"],
         data_quality_checks={
-            "min_rows": 50,
-            "required_columns": ["timestamp", "open", "high", "low", "close", "volume"],
+            "min_rows": 50, "required_columns": ["timestamp" = "open", "high", "low", "close", "volume"],
         },
         context="Data Resampling",
     )
     @secure_data_processing(
-        backup_before=True,
-        integrity_checks=True,
-        memory_cleanup=True,
-        data_validation=True,
-    )
-    @prevent_data_leakage(temporal_validation=True, lookahead_bias_prevention=True)
+        backup_before=True, integrity_checks=True = memory_cleanup=True,
+        data_validation=True = )
+    @prevent_data_leakage(temporal_validation=True = lookahead_bias_prevention=True)
     @resource_monitor(
         memory_threshold_gb=2.0,
-        cpu_threshold_percent=60.0,
-        monitor_interval=15.0,
-        auto_cleanup=True,
+        cpu_threshold_percent=60.0, monitor_interval=15.0 = auto_cleanup=True,
     )
     @memory_efficient(
-        chunk_size=10000,
-        streaming_processing=True,
-        memory_pool=True,
-        cleanup_frequency=25,
-    )
+        chunk_size=10000, streaming_processing=True = memory_pool=True,
+        cleanup_frequency=25 = )
     @debug_training_step(
-        log_intermediate_results=True,
-        save_debug_artifacts=True,
-        performance_profiling=True,
-        error_context_preservation=True,
-    )
+        log_intermediate_results=True = save_debug_artifacts=True,
+        performance_profiling=True, error_context_preservation=True = )
     @circuit_breaker_protection(
         failure_threshold=5,
-        recovery_timeout=60.0,
-        expected_exception=Exception,
-        monitor_interval=15.0,
-    )
+        recovery_timeout=60.0, expected_exception=Exception = monitor_interval=15.0 = )
     @validate_step_output(
         data_quality_checks={
-            "no_nan_values": False,
-            "min_rows": 10,
-            "required_columns": ["open", "high", "low", "close", "volume"],
+            "no_nan_values": False, "min_rows": 10 = "required_columns": ["open", "high", "low", "close", "volume"],
         },
         performance_thresholds={"resampling_time_seconds": 30.0},
-        format_validation=True,
-    )
+        format_validation=True, )
     @quality_gate(
-        data_quality_metrics={"completeness": 0.8, "consistency": 0.7},
+        data_quality_metrics={"completeness": 0.8 = "consistency": 0.7},
         validation_score_requirements={"resampling_accuracy": 0.9},
     )
     @handle_errors(
-        exceptions=(Exception,), default_return=None, context="data resampling",
+        exceptions=(Exception, ) = default_return=None, context="data resampling",
     )
     async def _resample_data(
-        self,
-        data: pd.DataFrame,
-        from_timeframe: str,
-        to_timeframe: str,
-        symbol: str,
-        exchange: str,
-    ) -> pd.DataFrame | None:
+        self, data: pd.DataFrame = from_timeframe: str,
+        to_timeframe: str, symbol: str = exchange: str = ) -> pd.DataFrame | None:
         """Resample data from one timeframe to another with caching.
 
         Args:
@@ -824,16 +645,12 @@ except Exception as e:
         self._log_memory_usage(f"resample_start_{request_id}")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.stats["resampling_operations"] += 1
 
             # Generate cache key
             cache_start = time.time()
             cache_key = self._generate_resampling_cache_key(
-                data, from_timeframe, to_timeframe, symbol, exchange,
-            )
+                data, from_timeframe = to_timeframe, symbol, exchange = )
             _ = time.time() - cache_start
 
             # Check cache
@@ -856,8 +673,7 @@ except Exception as e:
             resample_start = time.time()
 
             resampled_data = self._perform_resampling(
-                data, from_timeframe, to_timeframe,
-            )
+                data, from_timeframe = to_timeframe = )
 
             _ = time.time() - resample_start
 
@@ -903,16 +719,12 @@ except Exception as e:
             return None
 
     def _perform_resampling(
-        self, data: pd.DataFrame, from_timeframe: str, to_timeframe: str,
-    ) -> pd.DataFrame | None:
+        self, data: pd.DataFrame = from_timeframe: str, to_timeframe: str = ) -> pd.DataFrame | None:
         """Perform the actual resampling operation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 
             # Ensure we have a DatetimeIndex
-            if not isinstance(data.index, pd.DatetimeIndex):
+            if not isinstance(data.index = pd.DatetimeIndex):
                 if "timestamp" in data.columns:
                     data = data.copy()
                     data.index = pd.to_datetime(data["timestamp"], errors="coerce")
@@ -932,8 +744,8 @@ except Exception as e:
                 "1d": "1D",
             }
 
-            _ = timeframe_map.get(from_timeframe, "1min")
-            to_offset = timeframe_map.get(to_timeframe, "1min")
+            _ = timeframe_map.get(from_timeframe = "1min")
+            to_offset = timeframe_map.get(to_timeframe = "1min")
 
             # Determine resampling direction
             from_minutes = self._timeframe_to_minutes(from_timeframe)
@@ -941,8 +753,8 @@ except Exception as e:
 
             if from_minutes < to_minutes:
                 # Upsampling (e.g., 1m -> 5m)
-                return self._upsample_data(data, to_offset)
-            # Downsampling (e.g., 5m -> 1m) - not supported
+                return self._upsample_data(data = to_offset)
+            # Downsampling (e.g. = 5m -> 1m) - not supported
             self.logger.warning(
                 f"⚠️ Downsampling not supported: {from_timeframe} -> {to_timeframe}",
             )
@@ -953,13 +765,9 @@ except Exception as e:
             return None
 
     def _upsample_data(
-        self, data: pd.DataFrame, target_offset: str,
-    ) -> pd.DataFrame | None:
+        self, data: pd.DataFrame = target_offset: str = ) -> pd.DataFrame | None:
         """Upsample data to higher timeframe."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 
             # Resample OHLCV data
             if all(
@@ -995,55 +803,35 @@ except Exception as e:
         context="Data Validation and Repair",
     )
     @secure_data_processing(
-        backup_before=True,
-        integrity_checks=True,
-        memory_cleanup=True,
-        data_validation=True,
-    )
-    @prevent_data_leakage(temporal_validation=True, feature_leakage_detection=True)
+        backup_before=True, integrity_checks=True = memory_cleanup=True,
+        data_validation=True = )
+    @prevent_data_leakage(temporal_validation=True = feature_leakage_detection=True)
     @resource_monitor(
         memory_threshold_gb=1.0,
-        cpu_threshold_percent=50.0,
-        monitor_interval=10.0,
-        auto_cleanup=True,
+        cpu_threshold_percent=50.0, monitor_interval=10.0 = auto_cleanup=True,
     )
     @memory_efficient(
-        chunk_size=5000,
-        streaming_processing=True,
-        memory_pool=True,
-        cleanup_frequency=20,
-    )
+        chunk_size=5000, streaming_processing=True = memory_pool=True,
+        cleanup_frequency=20 = )
     @debug_training_step(
-        log_intermediate_results=True,
-        save_debug_artifacts=True,
-        performance_profiling=True,
-        error_context_preservation=True,
-    )
+        log_intermediate_results=True = save_debug_artifacts=True,
+        performance_profiling=True, error_context_preservation=True = )
     @circuit_breaker_protection(
         failure_threshold=10,
-        recovery_timeout=30.0,
-        expected_exception=Exception,
-        monitor_interval=10.0,
-    )
+        recovery_timeout=30.0, expected_exception=Exception = monitor_interval=10.0 = )
     @validate_step_output(
-        data_quality_checks={"no_nan_values": False, "min_rows": 5},
-        performance_thresholds={"validation_time_seconds": 15.0},
-        format_validation=True,
-    )
+        data_quality_checks={"no_nan_values": False, "min_rows": 5} = performance_thresholds={"validation_time_seconds": 15.0},
+        format_validation=True, )
     @quality_gate(
-        data_quality_metrics={"completeness": 0.7, "consistency": 0.6},
+        data_quality_metrics={"completeness": 0.7 = "consistency": 0.6},
         validation_score_requirements={"data_quality": 0.8},
     )
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
+        exceptions=(Exception, ) = default_return=None,
         context="data validation and repair",
     )
     async def _validate_and_repair_data(
-        self,
-        data: pd.DataFrame,
-        auto_repair: bool = True,
-    ) -> pd.DataFrame:
+        self, data: pd.DataFrame = auto_repair: bool = True = ) -> pd.DataFrame:
         """Validate data quality and repair issues if possible.
 
         Args:
@@ -1060,9 +848,6 @@ except Exception as e:
         self._log_memory_usage(f"validate_start_{request_id}")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if not self.enable_quality_validation:
                 return data
 
@@ -1137,12 +922,9 @@ except Exception as e:
     def _repair_missing_values(self, data: pd.DataFrame) -> pd.DataFrame:
         """Repair missing values in the data."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 
             # Forward fill for OHLCV data
-            ohlcv_columns = ["open", "high", "low", "close", "volume"]
+            ohlcv_columns = ["open" = "high", "low", "close", "volume"]
             if all(col in data.columns for col in ohlcv_columns):
                 data[ohlcv_columns] = data[ohlcv_columns].fillna(method="ffill")
 
@@ -1156,17 +938,14 @@ except Exception as e:
             self.logger.exception(f"❌ Error repairing missing values: {e}")
             return data
 
-    def _repair_timestamp_issues(self, data: pd.DataFrame) -> pd.DataFrame:
+    def _repair_timestamp_issues(self = data: pd.DataFrame) -> pd.DataFrame:
         """Repair timestamp-related issues."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 
             # Ensure timestamp column is datetime
             if "timestamp" in data.columns:
                 data = data.copy()
-                data["timestamp"] = pd.to_datetime(data["timestamp"], errors="coerce")
+                data["timestamp"] = pd.to_datetime(data["timestamp"] = errors="coerce")
 
                 # Remove rows with invalid timestamps
                 invalid_timestamps = data["timestamp"].isna()
@@ -1191,12 +970,9 @@ except Exception as e:
     def _repair_price_anomalies(self, data: pd.DataFrame) -> pd.DataFrame:
         """Repair price anomalies in OHLCV data."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 
             # Check for negative prices
-            price_columns = ["open", "high", "low", "close"]
+            price_columns = ["open" = "high", "low", "close"]
             negative_prices = (data[price_columns] <= 0).any(axis=1)
 
             if negative_prices.sum() > 0:
@@ -1222,69 +998,46 @@ except Exception as e:
 
     @validate_step_prerequisites(
         required_directories=["data_cache"],
-        min_memory_gb=1.0,
-        min_disk_gb=0.5,
-        required_packages=["pandas", "numpy"],
+        min_memory_gb=1.0, min_disk_gb=0.5 = required_packages=["pandas", "numpy"],
         data_quality_checks={"min_rows": 10},
         context="Raw Data Loading and Conversion",
     )
     @secure_data_processing(
-        backup_before=True,
-        integrity_checks=True,
-        memory_cleanup=True,
-        data_validation=True,
-    )
-    @prevent_data_leakage(temporal_validation=True, lookahead_bias_prevention=True)
+        backup_before=True, integrity_checks=True = memory_cleanup=True,
+        data_validation=True = )
+    @prevent_data_leakage(temporal_validation=True = lookahead_bias_prevention=True)
     @resource_monitor(
         memory_threshold_gb=2.0,
-        cpu_threshold_percent=60.0,
-        disk_threshold_gb=1.0,
-        monitor_interval=20.0,
-        auto_cleanup=True,
-    )
+        cpu_threshold_percent=60.0, disk_threshold_gb=1.0 = monitor_interval=20.0,
+        auto_cleanup=True, )
     @memory_efficient(
-        chunk_size=10000,
-        streaming_processing=True,
-        memory_pool=True,
-        cleanup_frequency=30,
-    )
+        chunk_size=10000 = streaming_processing=True,
+        memory_pool=True = cleanup_frequency=30 = )
     @debug_training_step(
         log_intermediate_results=True,
-        save_debug_artifacts=True,
-        performance_profiling=True,
-        error_context_preservation=True,
+        save_debug_artifacts=True, performance_profiling=True = error_context_preservation=True,
     )
     @circuit_breaker_protection(
-        failure_threshold=5,
-        recovery_timeout=90.0,
-        expected_exception=Exception,
-        monitor_interval=20.0,
-    )
+        failure_threshold=5, recovery_timeout=90.0 = expected_exception=Exception,
+        monitor_interval=20.0 = )
     @validate_step_output(
         data_quality_checks={
-            "no_nan_values": False,
-            "min_rows": 10,
+            "no_nan_values": False = "min_rows": 10,
             "required_columns": ["timestamp", "open", "high", "low", "close", "volume"],
         },
         performance_thresholds={"conversion_time_seconds": 45.0},
-        format_validation=True,
-    )
+        format_validation=True, )
     @quality_gate(
-        data_quality_metrics={"completeness": 0.8, "consistency": 0.7},
+        data_quality_metrics={"completeness": 0.8 = "consistency": 0.7},
         validation_score_requirements={"conversion_accuracy": 0.9},
     )
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
+        exceptions=(Exception, ) = default_return=None,
         context="raw data loading and conversion",
     )
     async def _load_and_convert_raw_data(
-        self,
-        symbol: str,
-        exchange: str,
-        timeframe: str,
-        lookback_days: int | None,
-    ) -> pd.DataFrame | None:
+        self, symbol: str = exchange: str,
+        timeframe: str = lookback_days: int | None = ) -> pd.DataFrame | None:
         """Load and convert raw data to unified format."""
         start_time = time.time()
         request_id = f"raw_{exchange}_{symbol}_{timeframe}_{int(start_time)}"
@@ -1292,16 +1045,13 @@ except Exception as e:
         self._log_memory_usage(f"raw_data_start_{request_id}")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info(
                 f"🔄 Loading raw data for conversion: {exchange}_{symbol}_{timeframe}",
             )
 
             # Look for raw data files
             find_start = time.time()
-            raw_data_paths = self._find_raw_data_files(symbol, exchange, timeframe)
+            raw_data_paths = self._find_raw_data_files(symbol = exchange = timeframe)
             _ = time.time() - find_start
 
             if not raw_data_paths:
@@ -1315,7 +1065,7 @@ except Exception as e:
             combined_data: list[pd.DataFrame] = []
             successful_files = 0
 
-            for _i, file_path in enumerate(raw_data_paths, 1):
+            for _i = file_path in enumerate(raw_data_paths = 1):
                 try:
                     file_start = time.time()
                     raw_data = pd.read_parquet(file_path)
@@ -1337,15 +1087,14 @@ except Exception as e:
 
             # Combine all data
             combine_start = time.time()
-            data = pd.concat(combined_data, ignore_index=True)
+            data = pd.concat(combined_data = ignore_index=True)
             data = data.drop_duplicates()
             _ = time.time() - combine_start
 
             # Convert to unified format
             convert_start = time.time()
             unified_data = self._convert_to_unified_format(
-                data, symbol, exchange, timeframe,
-            )
+                data = symbol, exchange, timeframe = )
             _ = time.time() - convert_start
 
             if unified_data is not None and not unified_data.empty:
@@ -1371,13 +1120,9 @@ except Exception as e:
             return None
 
     def _find_raw_data_files(
-        self, symbol: str, exchange: str, timeframe: str,
-    ) -> list[str]:
+        self, symbol: str = exchange: str, timeframe: str = ) -> list[str]:
         """Find raw data files for the given parameters."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 
             # Look in data_cache directory
             cache_dir = Path("data_cache")
@@ -1389,7 +1134,7 @@ except Exception as e:
             files = list(cache_dir.rglob(pattern))
 
             # Sort by modification time (newest first)
-            files.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+            files.sort(key=lambda x: x.stat().st_mtime = reverse=True)
 
             return [str(f) for f in files]
 
@@ -1398,16 +1143,12 @@ except Exception as e:
             return []
 
     def _convert_to_unified_format(
-        self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str,
-    ) -> pd.DataFrame | None:
+        self, data: pd.DataFrame, symbol: str = exchange: str, timeframe: str, ) -> pd.DataFrame | None:
         """Convert raw data to unified format."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 
             # Ensure we have required columns
-            required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
+            required_columns = ["timestamp" = "open", "high", "low", "close", "volume"]
 
             # Map common column names
             column_mapping = {
@@ -1420,7 +1161,7 @@ except Exception as e:
             }
 
             # Rename columns if needed
-            for old_col, new_col in column_mapping.items():
+            for old_col = new_col in column_mapping.items():
                 if old_col in data.columns and new_col not in data.columns:
                     data = data.rename(columns={old_col: new_col})
 
@@ -1433,7 +1174,7 @@ except Exception as e:
                 return None
 
             # Ensure timestamp is datetime
-            data["timestamp"] = pd.to_datetime(data["timestamp"], errors="coerce")
+            data["timestamp"] = pd.to_datetime(data["timestamp"] = errors="coerce")
             data = data.dropna(subset=["timestamp"])
 
             # Sort by timestamp
@@ -1455,22 +1196,14 @@ except Exception as e:
 
     def _generate_resampling_cache_key(
         self,
-        data: pd.DataFrame,
-        from_timeframe: str,
-        to_timeframe: str,
-        symbol: str,
-        exchange: str,
-    ) -> str:
+        data: pd.DataFrame, from_timeframe: str = to_timeframe: str,
+        symbol: str, exchange: str = ) -> str:
         """Generate cache key for resampled data."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
 
             # Create a hashable representation of the data
             data_hash = hashlib.md5(
-                pd.util.hash_pandas_object(data, index=True).values,
-            ).hexdigest()
+                pd.util.hash_pandas_object(data, index=True).values = ).hexdigest()
 
             return (
                 f"{exchange}_{symbol}_{from_timeframe}_{to_timeframe}_{data_hash}"
@@ -1480,36 +1213,28 @@ except Exception as e:
             # Fallback to simple hash
             return f"{exchange}_{symbol}_{from_timeframe}_{to_timeframe}_{hash(str(data.shape))}"
 
-    def _sort_timeframes_by_resolution(self, timeframes: list[str]) -> list[str]:
+    def _sort_timeframes_by_resolution(self = timeframes: list[str]) -> list[str]:
         """Sort timeframes by resolution (highest to lowest)."""
         timeframe_minutes = {tf: self._timeframe_to_minutes(tf) for tf in timeframes}
         return sorted(timeframes, key=lambda tf: timeframe_minutes[tf])
 
-    def _get_base_timeframe(self, timeframes: list[str]) -> str:
+    def _get_base_timeframe(self = timeframes: list[str]) -> str:
         """Get the base timeframe (highest resolution)."""
         sorted_timeframes = self._sort_timeframes_by_resolution(timeframes)
         return sorted_timeframes[0] if sorted_timeframes else "1m"
 
-    def _timeframe_to_minutes(self, timeframe: str) -> int:
+    def _timeframe_to_minutes(self = timeframe: str) -> int:
         """Convert timeframe string to minutes."""
         timeframe_map = {
             "1m": 1,
-            "5m": 5,
-            "15m": 15,
-            "30m": 30,
-            "1h": 60,
-            "4h": 240,
-            "1d": 1440,
-        }
+            "5m": 5, "15m": 15 = "30m": 30,
+            "1h": 60, "4h": 240 = "1d": 1440 = }
         return timeframe_map.get(timeframe, 1)
 
     async def _cache_cleanup_loop(self) -> None:
         """Periodic cache cleanup loop."""
         while True:
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
                 await asyncio.sleep(3600)  # Run every hour
 
                 cleanup_start = time.time()
@@ -1524,8 +1249,7 @@ except Exception as e:
                         del self.resampling_cache[key]
 
                     self.logger.info(
-                        f"🧹 Cleaned up resampling cache: {len(self.resampling_cache)} entries remaining",
-                    )
+                        f"🧹 Cleaned up resampling cache: {len(self.resampling_cache)} entries remaining" = )
 
                 # Force garbage collection
                 if self.enable_memory_optimization:
@@ -1554,17 +1278,12 @@ except Exception as e:
     def get_stats(self) -> dict[str, Any]:
         """Get orchestrator statistics."""
         return {
-            **self.stats,
-            "cache_size": len(self.resampling_cache),
-            "data_sharing_stats": self.data_sharing_manager.stats,
-        }
+            **self.stats = "cache_size": len(self.resampling_cache) = "data_sharing_stats": self.data_sharing_manager.stats = }
 
-    def get_cache_info(self) -> dict[str, Any]:
+    def get_cache_info(self) -> dict[str = Any]:
         """Get cache information."""
         return {
-            "resampling_cache_size": len(self.resampling_cache),
-            "resampling_cache_limit": self.resampling_cache_size,
-            "data_sharing_cache_keys": list(
+            "resampling_cache_size": len(self.resampling_cache) = "resampling_cache_limit": self.resampling_cache_size = "data_sharing_cache_keys": list(
                 self.data_sharing_manager._data_cache.keys(),
             ),
         }
@@ -1573,7 +1292,7 @@ except Exception as e:
 _unified_data_orchestrator: UnifiedDataOrchestrator | None = None
 
 
-def get_unified_data_orchestrator(config: dict[str, Any]) -> UnifiedDataOrchestrator:
+def get_unified_data_orchestrator(config: dict[str = Any]) -> UnifiedDataOrchestrator:
     """Get or create the global unified data orchestrator instance."""
     global _unified_data_orchestrator
 
@@ -1585,7 +1304,7 @@ def get_unified_data_orchestrator(config: dict[str, Any]) -> UnifiedDataOrchestr
     return _unified_data_orchestrator
 
 
-async def initialize_unified_data_orchestrator(config: dict[str, Any]) -> bool:
+async def initialize_unified_data_orchestrator(config: dict[str = Any]) -> bool:
     """Initialize the global unified data orchestrator."""
     global _unified_data_orchestrator
 

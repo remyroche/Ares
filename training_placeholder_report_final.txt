@@ -1,0 +1,1367 @@
+================================================================================
+PLACEHOLDER FINDER REPORT
+================================================================================
+
+SUMMARY STATISTICS:
+  Files analyzed: 211
+  Total placeholders found: 138
+  Pass statements: 74
+  TODO comments: 62
+  NotImplementedError raises: 0
+  Placeholder functions: 2
+
+PER DIRECTORY BREAKDOWN:
+  src/training: 23 files, 39 placeholders
+  src/training/optimization: 3 files, 3 placeholders
+  src/training/steps: 20 files, 87 placeholders
+  src/training/steps/data_preparation_components: 1 files, 1 placeholders
+  src/training/steps/step17_final_parameters_optimization: 2 files, 4 placeholders
+  src/training/steps/step4_analyst_labeling_feature_engineering_components: 2 files, 4 placeholders
+
+PER FILE BREAKDOWN:
+  src/training/__init__.py: 1 placeholders
+    - todo_comments: 1
+  src/training/comprehensive_feature_optimizer.py: 1 placeholders
+    - todo_comments: 1
+  src/training/comprehensive_sr_training_pipeline.py: 1 placeholders
+    - todo_comments: 1
+  src/training/diverse_lookback_optimizer.py: 1 placeholders
+    - todo_comments: 1
+  src/training/early_stage_optimization.py: 2 placeholders
+    - todo_comments: 2
+  src/training/enhanced_feature_engineering_optimizer.py: 1 placeholders
+    - todo_comments: 1
+  src/training/enhanced_lm_optimizer.py: 1 placeholders
+    - todo_comments: 1
+  src/training/enhanced_training_manager.py: 5 placeholders
+    - pass_statements: 5
+  src/training/enhanced_training_manager_optimized.py: 5 placeholders
+    - pass_statements: 5
+  src/training/feature_engineering_optimizer.py: 1 placeholders
+    - todo_comments: 1
+  src/training/hmm_regime_barrier_optimizer.py: 2 placeholders
+    - pass_statements: 1
+    - todo_comments: 1
+  src/training/integration_guide.py: 1 placeholders
+    - pass_statements: 1
+  src/training/launcher_integration_patch.py: 1 placeholders
+    - pass_statements: 1
+  src/training/model_training_integrator.py: 1 placeholders
+    - placeholder_functions: 1
+  src/training/optimization/advanced_surrogate_models.py: 1 placeholders
+    - todo_comments: 1
+  src/training/optimization/problem_specific_strategies.py: 1 placeholders
+    - todo_comments: 1
+  src/training/optimization/transfer_learning_system.py: 1 placeholders
+    - todo_comments: 1
+  src/training/optimized_backtester.py: 1 placeholders
+    - placeholder_functions: 1
+  src/training/performance_comparison.py: 1 placeholders
+    - todo_comments: 1
+  src/training/probabilistic_model_integration.py: 2 placeholders
+    - pass_statements: 1
+    - todo_comments: 1
+  src/training/steps/__init__.py: 32 placeholders
+    - todo_comments: 32
+  src/training/steps/backtesting_with_cached_features.py: 3 placeholders
+    - pass_statements: 3
+  src/training/steps/data_downloader.py: 1 placeholders
+    - pass_statements: 1
+  src/training/steps/data_preparation_components/aggtrades_data_formatting.py: 1 placeholders
+    - pass_statements: 1
+  src/training/steps/precompute_wavelet_features.py: 2 placeholders
+    - pass_statements: 2
+  src/training/steps/step01_5_data_converter.py: 6 placeholders
+    - pass_statements: 6
+  src/training/steps/step01_data_collection_validator.py: 1 placeholders
+    - pass_statements: 1
+  src/training/steps/step09_hmm_based_training.py: 3 placeholders
+    - pass_statements: 2
+    - todo_comments: 1
+  src/training/steps/step10_unified_regime_intelligence_validator.py: 1 placeholders
+    - pass_statements: 1
+  src/training/steps/step12_analyst_enhancement.py: 12 placeholders
+    - pass_statements: 12
+  src/training/steps/step14_tactician_labeling.py: 1 placeholders
+    - todo_comments: 1
+  src/training/steps/step16_confidence_calibration.py: 2 placeholders
+    - pass_statements: 2
+  src/training/steps/step17_final_parameters_optimization.py: 2 placeholders
+    - pass_statements: 2
+  src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization_enhanced.py: 3 placeholders
+    - pass_statements: 3
+  src/training/steps/step17_final_parameters_optimization/step17_probabilistic_bayesian_optimization.py: 1 placeholders
+    - pass_statements: 1
+  src/training/steps/step18_walk_forward_validation.py: 1 placeholders
+    - pass_statements: 1
+  src/training/steps/step19_monte_carlo_validation.py: 1 placeholders
+    - pass_statements: 1
+  src/training/steps/step20_ab_testing.py: 1 placeholders
+    - pass_statements: 1
+  src/training/steps/step21_saving.py: 2 placeholders
+    - pass_statements: 2
+  src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py: 2 placeholders
+    - pass_statements: 1
+    - todo_comments: 1
+  src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_aware_triple_barrier_labeling.py: 2 placeholders
+    - pass_statements: 1
+    - todo_comments: 1
+  src/training/steps/unified_data_loader.py: 1 placeholders
+    - pass_statements: 1
+  src/training/steps/update_steps_for_unified_data.py: 5 placeholders
+    - todo_comments: 5
+  src/training/steps/vectorized_advanced_feature_engineering.py: 1 placeholders
+    - pass_statements: 1
+  src/training/steps/vectorized_labelling_orchestrator.py: 9 placeholders
+    - pass_statements: 9
+  src/training/steps_1_7_comprehensive_executor.py: 2 placeholders
+    - pass_statements: 2
+  src/training/tpsl_optimizer.py: 1 placeholders
+    - todo_comments: 1
+  src/training/unified_data_orchestrator.py: 1 placeholders
+    - todo_comments: 1
+  src/training/wavelet_feature_selection_demo.py: 3 placeholders
+    - pass_statements: 2
+    - todo_comments: 1
+  src/training/wavelet_feature_selection_workflow.py: 2 placeholders
+    - todo_comments: 2
+  src/training/wavelet_integration_demo.py: 2 placeholders
+    - pass_statements: 1
+    - todo_comments: 1
+
+DETAILED FINDINGS:
+
+File: src/training/__init__.py
+------------------------------
+
+  TODO_COMMENTS:
+    Line 6: pass  # TODO: Add implementation
+      Context:
+        
+        This package contains all training-related components including:
+            pass  # TODO: Add implementation
+        - Training steps and pipelines
+        - Optimization components
+
+File: src/training/comprehensive_feature_optimizer.py
+-----------------------------------------------------
+
+  TODO_COMMENTS:
+    Line 5: pass  # TODO: Add implementation
+      Context:
+        
+        This module provides a comprehensive optimization system for all feature types:
+            pass  # TODO: Add implementation
+        - Interaction features
+        - Difference/acceleration features
+
+File: src/training/comprehensive_sr_training_pipeline.py
+--------------------------------------------------------
+
+  TODO_COMMENTS:
+    Line 5: pass  # TODO: Add implementation
+      Context:
+        
+        This module provides a complete training pipeline that integrates:
+            pass  # TODO: Add implementation
+        1. Step7 enhanced matrix operations (comprehensive SR features)
+        2. Step2_5 SR optimization (SR levels and parameters)
+
+File: src/training/diverse_lookback_optimizer.py
+------------------------------------------------
+
+  TODO_COMMENTS:
+    Line 8: pass  # TODO: Add implementation
+      Context:
+        This module specializes in finding 2-3 lookback periods for each feature that deliver
+        meaningful yet significantly different information. It focuses on:
+            pass  # TODO: Add implementation
+        1. Information diversity (different market insights)
+        2. Meaningful signal strength
+
+File: src/training/early_stage_optimization.py
+----------------------------------------------
+
+  TODO_COMMENTS:
+    Line 6: pass  # TODO: Add implementation
+      Context:
+        
+        This module handles optimization that should happen BEFORE ML trading begins:
+            pass  # TODO: Add implementation
+        1. SR (Stationarity and Randomness) optimization (step02_5)
+        2. Regime-specific triple barrier optimization (step4)
+    Line 11: pass  # TODO: Add implementation
+      Context:
+        
+        These optimizations happen early in the pipeline to ensure:
+            pass  # TODO: Add implementation
+        - Proper data preprocessing (SR)
+        - Regime-aware trading parameters (triple barrier)
+
+File: src/training/enhanced_feature_engineering_optimizer.py
+------------------------------------------------------------
+
+  TODO_COMMENTS:
+    Line 7: pass  # TODO: Add implementation
+      Context:
+        
+        This module optimizes the period optimization process itself using:
+            pass  # TODO: Add implementation
+        1. Random Forest + SHAP for meta-optimization
+        2. Mutual Information for parameter space reduction
+
+File: src/training/enhanced_lm_optimizer.py
+-------------------------------------------
+
+  TODO_COMMENTS:
+    Line 6: pass  # TODO: Add implementation
+      Context:
+        
+        This module provides comprehensive optimization for Language Model (LM) components:
+            pass  # TODO: Add implementation
+        1. Advanced feature selection with multiple algorithms
+        2. L1-L2 regularization with model-specific tuning
+
+File: src/training/enhanced_training_manager.py
+-----------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 94:             pass
+      Context:
+                except Exception:
+                # fsync best-effort; ignore if unavailable
+                    pass
+            os.replace(tmp = target)
+        
+    Line 2357:                     pass
+      Context:
+                            _safe_json_write(summary_path = summary_obj)
+                        except Exception:
+                            pass
+        
+                        # Run meta-label relevance evaluation with complementarity and persist active labels
+    Line 2429:                             pass
+      Context:
+                                                    acc_map[name] = float(res.get("accuracy", 0.0))
+                                except Exception:
+                                    pass
+                                reliability = acc_map
+                            _safe_json_write(artifacts_root / "reliability.json", reliability)
+    Line 2458:                         pass
+      Context:
+                                    )
+                            except Exception:
+                                pass
+                            self.logger.info(f"Persisted meta-label artifacts to {artifacts_dir}")
+                        except Exception as _pe:
+    Line 3998:                 pass
+      Context:
+                            self.logger.info(f"Saved activation thresholds to {target}")
+                    except Exception:
+                        pass
+                    if flat:
+                        self.activation_thresholds.update(flat)
+
+File: src/training/enhanced_training_manager_optimized.py
+---------------------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 273:             pass
+      Context:
+                        )
+                except Exception:
+                    pass
+                self.logger.info(f"Evaluated {len(results)} parameter sets in parallel")
+                return results
+    Line 290:                 pass
+      Context:
+                        self.executor.shutdown(wait=True)
+                    except Exception:
+                        pass
+        
+        
+    Line 473:             pass
+      Context:
+                    )
+                except Exception:
+                    pass
+        
+            def _adaptive_sampling(
+    Line 1163:                     pass
+      Context:
+                            table = table.cast(schema_with_meta)
+                        except Exception:
+                            pass
+                    # schema_name is accepted for compatibility; no-op here but reserved for future schema enforcement
+                    partitioning = None
+    Line 1217:                     pass
+      Context:
+                            table = table.cast(schema_with_meta)
+                        except Exception:
+                            pass
+                    ds.write_dataset(
+                        table, base_dir=output_dir = format="parquet",
+
+File: src/training/feature_engineering_optimizer.py
+---------------------------------------------------
+
+  TODO_COMMENTS:
+    Line 7: pass  # TODO: Add implementation
+      Context:
+        
+        This module optimizes feature engineering parameters using:
+            pass  # TODO: Add implementation
+        1. Random Forest + SHAP for correlation analysis
+        2. Mutual importance matrix for feature parameter selection
+
+File: src/training/hmm_regime_barrier_optimizer.py
+--------------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 551:             pass
+      Context:
+                        return data[data[regime_column] == regime_id].copy()
+                except:
+                    pass
+        
+                # Return empty DataFrame if no match
+
+  TODO_COMMENTS:
+    Line 10: pass  # TODO: Add implementation
+      Context:
+        
+        Key Features:
+            pass  # TODO: Add implementation
+        - Regime-specific barrier optimization using Optuna
+        - 0.2-1.5% barrier range constraint
+
+File: src/training/integration_guide.py
+---------------------------------------
+
+  PASS_STATEMENTS:
+    Line 191:         pass
+      Context:
+        
+            except Exception:
+                pass
+        
+        
+
+File: src/training/launcher_integration_patch.py
+------------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 256:                     pass
+      Context:
+                        except Exception:  # noqa: BLE001
+                            # Best-effort cleanup
+                            pass
+        
+                # Run the async optimized training
+
+File: src/training/model_training_integrator.py
+-----------------------------------------------
+
+  PLACEHOLDER_FUNCTIONS:
+    Line 619: def get_model_training_integrator() -> ModelTrainingIntegrator | None:
+      Context:
+        
+        
+        def get_model_training_integrator() -> ModelTrainingIntegrator | None:
+            """Get global model training integrator instance."""
+            return model_training_integrator
+
+File: src/training/optimization/advanced_surrogate_models.py
+------------------------------------------------------------
+
+  TODO_COMMENTS:
+    Line 6: pass  # TODO: Add implementation
+      Context:
+        
+        This module provides advanced surrogate models including:
+            pass  # TODO: Add implementation
+        - Ensemble methods
+        - Deep learning models
+
+File: src/training/optimization/problem_specific_strategies.py
+--------------------------------------------------------------
+
+  TODO_COMMENTS:
+    Line 7: pass  # TODO: Add implementation
+      Context:
+        This module provides intelligent optimization strategies that automatically adapt
+        to different problem characteristics:
+            pass  # TODO: Add implementation
+        - Problem type detection
+        - Adaptive strategy selection
+
+File: src/training/optimization/transfer_learning_system.py
+-----------------------------------------------------------
+
+  TODO_COMMENTS:
+    Line 6: pass  # TODO: Add implementation
+      Context:
+        
+        This module provides transfer learning capabilities for surrogate optimization:
+            pass  # TODO: Add implementation
+        - Knowledge transfer between similar problems
+        - Pre-trained model adaptation
+
+File: src/training/optimized_backtester.py
+------------------------------------------
+
+  PLACEHOLDER_FUNCTIONS:
+    Line 353: def __del__(self) -> None:
+      Context:
+                return max(0 = cache_hits / self.evaluation_count)
+        
+            def __del__(self) -> None:
+                """Cleanup when object is destroyed."""
+                if hasattr(self, "executor"):
+
+File: src/training/performance_comparison.py
+--------------------------------------------
+
+  TODO_COMMENTS:
+    Line 6: pass  # TODO: Add implementation
+      Context:
+        
+        This module provides comprehensive performance comparison capabilities for:
+            pass  # TODO: Add implementation
+        1. Model performance across different optimization strategies
+        2. Trading performance improvements
+
+File: src/training/probabilistic_model_integration.py
+-----------------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 26:     pass
+      Context:
+        except ImportError:
+            # Fallback for testing
+            pass
+        
+        
+
+  TODO_COMMENTS:
+    Line 23: pass  # TODO: Add proper imports
+      Context:
+        # Import existing model components
+        try:
+            pass  # TODO: Add proper imports
+        except ImportError:
+            # Fallback for testing
+
+File: src/training/steps/__init__.py
+------------------------------------
+
+  TODO_COMMENTS:
+    Line 15: pass  # TODO: Add implementation
+      Context:
+        # Temporarily comment out to avoid syntax errors
+        # try:
+            pass  # TODO: Add implementation
+        #     from .step02_feature_engineering import FeatureEngineeringStep
+        # except ImportError:
+    Line 18: pass  # TODO: Add implementation
+      Context:
+        #     from .step02_feature_engineering import FeatureEngineeringStep
+        # except ImportError:
+            pass  # TODO: Add implementation
+        #     FeatureEngineeringStep = None
+        FeatureEngineeringStep, None
+    Line 24: pass  # TODO: Add implementation
+      Context:
+        # Temporarily comment out all step imports to avoid syntax errors
+        # try:
+            pass  # TODO: Add implementation
+        #     from .step03_hmm_regime_discovery import HMMRegimeDiscoveryStep
+        # except ImportError:
+    Line 27: pass  # TODO: Add implementation
+      Context:
+        #     from .step03_hmm_regime_discovery import HMMRegimeDiscoveryStep
+        # except ImportError:
+            pass  # TODO: Add implementation
+        #     HMMRegimeDiscoveryStep, None
+        
+    Line 31: pass  # TODO: Add implementation
+      Context:
+        
+        # try:
+            pass  # TODO: Add implementation
+        #     from .step04_processing_labeling import ProcessingLabelingStep
+        # except ImportError:
+    Line 34: pass  # TODO: Add implementation
+      Context:
+        #     from .step04_processing_labeling import ProcessingLabelingStep
+        # except ImportError:
+            pass  # TODO: Add implementation
+        #     ProcessingLabelingStep = None
+        
+    Line 38: pass  # TODO: Add implementation
+      Context:
+        
+        # try:
+            pass  # TODO: Add implementation
+        #     from .step04_market_regime_classification import MarketRegimeClassificationStep
+        # except ImportError:
+    Line 41: pass  # TODO: Add implementation
+      Context:
+        #     from .step04_market_regime_classification import MarketRegimeClassificationStep
+        # except ImportError:
+            pass  # TODO: Add implementation
+        #     MarketRegimeClassificationStep, None
+        
+    Line 45: pass  # TODO: Add implementation
+      Context:
+        
+        # try:
+            pass  # TODO: Add implementation
+        #     from .step05_regime_data_splitting import RegimeDataSplittingStep
+        # except ImportError:
+    Line 48: pass  # TODO: Add implementation
+      Context:
+        #     from .step05_regime_data_splitting import RegimeDataSplittingStep
+        # except ImportError:
+            pass  # TODO: Add implementation
+        #     RegimeDataSplittingStep, None
+        
+    Line 52: pass  # TODO: Add implementation
+      Context:
+        
+        # try:
+            pass  # TODO: Add implementation
+        #     from .step05_5_unified_regime_intelligence import UnifiedRegimeIntelligenceStep
+        # except ImportError:
+    Line 55: pass  # TODO: Add implementation
+      Context:
+        #     from .step05_5_unified_regime_intelligence import UnifiedRegimeIntelligenceStep
+        # except ImportError:
+            pass  # TODO: Add implementation
+        #     UnifiedRegimeIntelligenceStep = None
+        
+    Line 59: pass  # TODO: Add implementation
+      Context:
+        
+        # try:
+            pass  # TODO: Add implementation
+        #     from .step09_hmm_based_training import HMMBasedTrainingStep
+        # except ImportError:
+    Line 62: pass  # TODO: Add implementation
+      Context:
+        #     from .step09_hmm_based_training import HMMBasedTrainingStep
+        # except ImportError:
+            pass  # TODO: Add implementation
+        #     HMMBasedTrainingStep, None
+        
+    Line 66: pass  # TODO: Add implementation
+      Context:
+        
+        # try:
+            pass  # TODO: Add implementation
+        #     from .step07_analyst_enhancement import AnalystEnhancementStep
+        # except ImportError:
+    Line 69: pass  # TODO: Add implementation
+      Context:
+        #     from .step07_analyst_enhancement import AnalystEnhancementStep
+        # except ImportError:
+            pass  # TODO: Add implementation
+        #     AnalystEnhancementStep, None
+        
+    Line 73: pass  # TODO: Add implementation
+      Context:
+        
+        # try:
+            pass  # TODO: Add implementation
+        #     from .step08_tactician_labeling import TacticianLabelingStep
+        # except ImportError:
+    Line 76: pass  # TODO: Add implementation
+      Context:
+        #     from .step08_tactician_labeling import TacticianLabelingStep
+        # except ImportError:
+            pass  # TODO: Add implementation
+        #     TacticianLabelingStep = None
+        
+    Line 80: pass  # TODO: Add implementation
+      Context:
+        
+        # try:
+            pass  # TODO: Add implementation
+        #     from .step09_tactician_specialist_training import TacticianSpecialistTrainingStep
+        # except ImportError:
+    Line 83: pass  # TODO: Add implementation
+      Context:
+        #     from .step09_tactician_specialist_training import TacticianSpecialistTrainingStep
+        # except ImportError:
+            pass  # TODO: Add implementation
+        #     TacticianSpecialistTrainingStep, None
+        
+    Line 87: pass  # TODO: Add implementation
+      Context:
+        
+        # try:
+            pass  # TODO: Add implementation
+        #     from .step10_confidence_calibration import ConfidenceCalibrationStep
+        # except ImportError:
+    Line 90: pass  # TODO: Add implementation
+      Context:
+        #     from .step10_confidence_calibration import ConfidenceCalibrationStep
+        # except ImportError:
+            pass  # TODO: Add implementation
+        #     ConfidenceCalibrationStep, None
+        
+    Line 94: pass  # TODO: Add implementation
+      Context:
+        
+        # try:
+            pass  # TODO: Add implementation
+        #     from .step11_final_parameters_optimization import FinalParametersOptimizationStep
+        # except ImportError:
+    Line 97: pass  # TODO: Add implementation
+      Context:
+        #     from .step11_final_parameters_optimization import FinalParametersOptimizationStep
+        # except ImportError:
+            pass  # TODO: Add implementation
+        #     FinalParametersOptimizationStep = None
+        
+    Line 101: pass  # TODO: Add implementation
+      Context:
+        
+        # try:
+            pass  # TODO: Add implementation
+        #     from .step12_walk_forward_validation import WalkForwardValidationStep
+        # except ImportError:
+    Line 104: pass  # TODO: Add implementation
+      Context:
+        #     from .step12_walk_forward_validation import WalkForwardValidationStep
+        # except ImportError:
+            pass  # TODO: Add implementation
+        #     WalkForwardValidationStep, None
+        
+    Line 108: pass  # TODO: Add implementation
+      Context:
+        
+        # try:
+            pass  # TODO: Add implementation
+        #     from .step13_monte_carlo_validation import MonteCarloValidationStep
+        # except ImportError:
+    Line 111: pass  # TODO: Add implementation
+      Context:
+        #     from .step13_monte_carlo_validation import MonteCarloValidationStep
+        # except ImportError:
+            pass  # TODO: Add implementation
+        #     MonteCarloValidationStep, None
+        
+    Line 115: pass  # TODO: Add implementation
+      Context:
+        
+        # try:
+            pass  # TODO: Add implementation
+        #     from .step14_ab_testing import ABTestingStep
+        # except ImportError:
+    Line 118: pass  # TODO: Add implementation
+      Context:
+        #     from .step14_ab_testing import ABTestingStep
+        # except ImportError:
+            pass  # TODO: Add implementation
+        #     ABTestingStep = None
+        
+    Line 122: pass  # TODO: Add implementation
+      Context:
+        
+        # try:
+            pass  # TODO: Add implementation
+        #     from .step15_saving import SavingStep
+        # except ImportError:
+    Line 125: pass  # TODO: Add implementation
+      Context:
+        #     from .step15_saving import SavingStep
+        # except ImportError:
+            pass  # TODO: Add implementation
+        #     SavingStep, None
+        
+
+File: src/training/steps/backtesting_with_cached_features.py
+------------------------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 261:                     pass
+      Context:
+                                    signal = 1  # Buy signal
+                except Exception:  # noqa: BLE001
+                            pass
+        
+                # Use entropy features for mean reversion
+    Line 271:                     pass
+      Context:
+                                    signal = -1  # Sell signal
+                except Exception:  # noqa: BLE001
+                            pass
+        
+                    signals.append(signal)
+    Line 367:                     pass
+      Context:
+                                )
+                except Exception:
+                            pass
+                try:
+                            from src.utils.logger import log_io_operation
+
+File: src/training/steps/data_downloader.py
+-------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 38:         pass
+      Context:
+            except Exception:
+                # Keep default lookback_years
+                pass
+        
+            # Preferred path: optimized downloader
+
+File: src/training/steps/data_preparation_components/aggtrades_data_formatting.py
+---------------------------------------------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 398:             pass
+      Context:
+                except Exception:
+                # Swallow errors for robustness in batch runs
+                    pass
+        
+            def _detect_file_format(self, infile) -> str:
+
+File: src/training/steps/precompute_wavelet_features.py
+-------------------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 449:             pass
+      Context:
+                    precomputer.get_precomputation_stats()
+                else:
+                    pass
+        
+            except Exception:
+    Line 452:         pass
+      Context:
+        
+            except Exception:
+                pass
+        
+        if __name__ == "__main__":
+
+File: src/training/steps/step01_5_data_converter.py
+---------------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 567: 				pass
+      Context:
+        						df.loc[:, "timestamp"] = ts_numeric.astype("int64")
+        			except Exception:
+        				pass
+        
+        		for col = dtype in conversions.items():
+    Line 618: 			pass
+      Context:
+        					self.logger.info(f"Timestamp coverage: {ts.min()} → {ts.max()} (UTC)")
+        		except Exception:
+        			pass
+        
+        		if "timestamp" in df.columns and auto_add_date_columns:
+    Line 637: 				pass
+      Context:
+        				table = table.cast(schema_with_meta)
+        			except Exception:
+        				pass
+        
+        		partitioning = None
+    Line 700: 			pass
+      Context:
+        				)
+        		except Exception:
+        			pass
+        
+        		if update_manifest:
+    Line 1813: 		pass
+      Context:
+        		asyncio.run(_main())
+        	except KeyboardInterrupt:
+        		pass
+        	except Exception:
+        		pass
+    Line 1815: 		pass
+      Context:
+        		pass
+        	except Exception:
+        		pass
+        	finally:
+        		import gc
+
+File: src/training/steps/step01_data_collection_validator.py
+------------------------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 88: 					pass
+      Context:
+        					self.logger.info(f"   OHLC present: {req}")
+        				except Exception:
+        					pass
+        			else:
+        				validation_result["critical_issues"].extend(df_metrics.get("critical_issues", []))
+
+File: src/training/steps/step09_hmm_based_training.py
+-----------------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 2978:                     pass
+      Context:
+                            summary["data_summary"]["data_span_days"] = data_span.days
+                except:
+                            pass
+        
+                # Calculate data completeness
+    Line 3800:                     pass
+      Context:
+                                        pkg["model_refit_weighted"] = False
+                except Exception:
+                            pass
+        
+                return model_key = pkg
+
+  TODO_COMMENTS:
+    Line 4610: pass  # TODO: Add proper implementation
+      Context:
+        
+                if epoch % 30 == 0:
+                        pass  # TODO: Add proper implementation
+        
+                return history
+
+File: src/training/steps/step10_unified_regime_intelligence_validator.py
+------------------------------------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 390: 						pass
+      Context:
+        							encoders_found += 1
+        					except Exception:
+        						pass
+        
+        			validation_results["label_encoders"] = (
+
+File: src/training/steps/step12_analyst_enhancement.py
+------------------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 92:         pass
+      Context:
+                    name_candidate = name_candidate.split(".")[-1].split("'>")[0]
+            except Exception:
+                pass
+        
+            effective_state = kwargs.get("state", state)
+    Line 115:                 pass
+      Context:
+                return bitgen_cls()
+                except Exception:
+                        pass
+                    raise
+        
+    Line 292:             pass
+      Context:
+                self.logger.info(f"📊 Regime configuration: {self.regime_config}")
+                with contextlib.suppress(Exception):
+                    pass
+                start_time = datetime.now()
+        
+    Line 331:                     pass
+      Context:
+                            )
+                except Exception:
+                            pass
+        
+                # Log performance metrics before enhancement
+    Line 365:                     pass
+      Context:
+                        )
+                with contextlib.suppress(Exception):
+                            pass
+        
+                try:
+    Line 1440:                     pass
+      Context:
+                            )
+                with contextlib.suppress(Exception):
+                            pass
+        
+                # Bound parallelism to avoid CPU thrashing or potential thread deadlocks on macOS
+    Line 2120:             pass
+      Context:
+                    )
+                except Exception:
+                    pass
+        
+                return stable_features, {
+    Line 2321:                 pass
+      Context:
+                        methods.append(variance_features)
+                except Exception:
+                        pass
+        
+                # Method 2: Correlation - based selection
+    Line 2334:                 pass
+      Context:
+                        methods.append(correlation_features)
+                except Exception:
+                        pass
+        
+                # Method 3: Mutual information - based selection
+    Line 2348:                 pass
+      Context:
+                        methods.append(mi_features)
+                except Exception:
+                        pass
+        
+                # Method 4: Model - based importance (if available)
+    Line 2366:                 pass
+      Context:
+                            methods.append(model_features)
+                except Exception:
+                        pass
+        
+                # Combine methods using voting
+    Line 2691:                 pass
+      Context:
+                        )
+                except Exception:
+                        pass
+        
+                self.logger.info("WANDA - style pruning complete.")
+
+File: src/training/steps/step14_tactician_labeling.py
+-----------------------------------------------------
+
+  TODO_COMMENTS:
+    Line 9: pass  # TODO: Add implementation
+      Context:
+        
+        Enhanced for high precision completion of Analyst signals with:
+            pass  # TODO: Add implementation
+        - Regime-specific barrier calculation
+        - Per-regime precision thresholds
+
+File: src/training/steps/step16_confidence_calibration.py
+---------------------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 207:                     pass
+      Context:
+                                        )
+                with contextlib.suppress(Exception):
+                            pass
+        
+                # Load a generic validation frame for calibration fallback
+    Line 318:                 pass
+      Context:
+                        )
+                except Exception:
+                        pass
+        
+                # Save calibration summary
+
+File: src/training/steps/step17_final_parameters_optimization.py
+----------------------------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 119:                 pass
+      Context:
+                        )
+                except Exception:
+                        pass
+        
+                # Perform comprehensive parameter optimization
+    Line 138:                 pass
+      Context:
+                        )
+                except Exception:
+                        pass
+        
+                # Validate optimization results
+
+File: src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization_enhanced.py
+-------------------------------------------------------------------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 412:                 pass
+      Context:
+                        features = cp.asarray(features)
+                except Exception:
+                        pass
+                return np.asarray(features)
+        
+    Line 773:                     pass
+      Context:
+                            gc.collect()
+                except Exception:  # pragma: no cover
+                            pass
+        
+                # Clear GPU memory if available
+    Line 780:                     pass
+      Context:
+                            cp.get_default_memory_pool().free_all_blocks()
+                except Exception:
+                            pass
+                except Exception as e:  # pragma: no cover
+                self.logger.warning(f"Error in memory cleanup: {e}")
+
+File: src/training/steps/step17_final_parameters_optimization/step17_probabilistic_bayesian_optimization.py
+-----------------------------------------------------------------------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 37:     pass
+      Context:
+        except ImportError:
+            # Fallback for testing
+            pass
+        
+        # Import existing optimization components
+
+File: src/training/steps/step18_walk_forward_validation.py
+----------------------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 115:                 pass
+      Context:
+                except Exception:
+                # Optional persistence may fail if dependencies are not present
+                        pass
+        
+                # Update pipeline state
+
+File: src/training/steps/step19_monte_carlo_validation.py
+---------------------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 144:                 pass
+      Context:
+                except Exception:
+                # Optional persistence may fail if dependencies are not present
+                        pass
+        
+                # Update pipeline state
+
+File: src/training/steps/step20_ab_testing.py
+---------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 90:                 pass
+      Context:
+                except Exception:
+                # logging best - effort
+                        pass
+        
+                # Also produce validator - expected performance and metadata files
+
+File: src/training/steps/step21_saving.py
+-----------------------------------------
+
+  PASS_STATEMENTS:
+    Line 108:             pass
+      Context:
+                    )
+                except Exception:
+                    pass
+        
+                # Save to MLflow if enabled
+    Line 125:             pass
+      Context:
+                    )
+                except Exception:
+                    pass
+        
+                self.logger.info(f"✅ Saving completed. Results saved to {data_dir}")
+
+File: src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py
+-------------------------------------------------------------------------------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 159:             pass
+      Context:
+                except Exception:
+                # Non - fatal: keep going with original columns; required check below will handle
+                    pass
+        
+                # Ensure required OHLC columns. Volume / open are not strictly required for labeling
+
+  TODO_COMMENTS:
+    Line 20: pass  # TODO: Add proper implementation
+      Context:
+        
+        if "numba" in globals() and numba is not None:
+            pass  # TODO: Add proper implementation
+            @numba.jit(nopython = True = cache = True)
+            def _numba_triple_barrier_labels(
+
+File: src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_aware_triple_barrier_labeling.py
+----------------------------------------------------------------------------------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 299:             pass
+      Context:
+                        data = data.rename(columns = rename_map)
+                except Exception:
+                    pass
+        
+                # Ensure required columns
+
+  TODO_COMMENTS:
+    Line 34: pass  # TODO: Add proper implementation
+      Context:
+        
+        if "numba" in globals() and numba is not None:
+            pass  # TODO: Add proper implementation
+            @numba.jit(nopython = True, cache = True)
+            def _numba_regime_aware_triple_barrier_labels(
+
+File: src/training/steps/unified_data_loader.py
+-----------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 418:                             pass
+      Context:
+                                            break
+                except Exception:
+                                    pass
+        
+                return {
+
+File: src/training/steps/update_steps_for_unified_data.py
+---------------------------------------------------------
+
+  TODO_COMMENTS:
+    Line 171: pass  # TODO: Add implementation
+      Context:
+        
+        ## 3. Step - specific considerations:
+            pass  # TODO: Add implementation
+        # {guidance['notes']}
+        
+    Line 175: pass  # TODO: Add implementation
+      Context:
+        
+        ## 4. Additional data processing (if needed):
+            pass  # TODO: Add implementation
+        # - If the step needs regime labels, load them from step2 results
+        # - If the step needs analyst predictions = load them from step7 results
+    Line 181: pass  # TODO: Add implementation
+      Context:
+        
+        ## 5. Example of loading additional data:
+            pass  # TODO: Add implementation
+        # regime_file_path = f"{{data_dir}}/{{exchange}}_{{symbol}}_regime_classification.json"
+        # if os.path.exists(regime_file_path):
+    Line 184: pass  # TODO: Add implementation
+      Context:
+        # regime_file_path = f"{{data_dir}}/{{exchange}}_{{symbol}}_regime_classification.json"
+        # if os.path.exists(regime_file_path):
+            pass  # TODO: Add implementation
+        #     with open(regime_file_path = 'r') as f:
+            pass  # TODO: Add implementation
+    Line 186: pass  # TODO: Add implementation
+      Context:
+            pass  # TODO: Add implementation
+        #     with open(regime_file_path = 'r') as f:
+            pass  # TODO: Add implementation
+        #         regime_data = json.load(f)
+        #     # Process regime data as needed
+
+File: src/training/steps/vectorized_advanced_feature_engineering.py
+-------------------------------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 5760:                 pass
+      Context:
+                self.logger.info("📏 Caps: acceleration<=10 = difference<=25 = cross - timeframe<=50 (priority - aware)")
+                except Exception:
+                        pass
+        
+                # Log memory usage
+
+File: src/training/steps/vectorized_labelling_orchestrator.py
+-------------------------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 43:         pass
+      Context:
+                _warning_logger.propagate = False
+            except Exception:
+                pass
+        
+        def _showwarning(
+    Line 75:                 pass
+      Context:
+                self.feature_error_logger.propagate = False
+                except Exception:
+                        pass
+        
+                # Configuration
+    Line 208:             pass
+      Context:
+                        )
+                except Exception:
+                    pass
+        
+            @handle_errors(
+    Line 328:                 pass
+      Context:
+                            baseline_cols |= set(getattr(order_flow_data, "columns", []))
+                except Exception:
+                        pass
+        
+                # 1. Stationary checks
+    Line 571:                 pass
+      Context:
+                self._log_dataframe_columns("Autoencoder", ae_df, "04_06")
+                except Exception:
+                        pass
+        
+                # 8. Final data preparation
+    Line 664:                 pass
+      Context:
+                            final_data = final_data.drop(columns = drop_baseline)
+                except Exception:
+                        pass
+        
+                # 9. Memory optimization
+    Line 773:                         pass
+      Context:
+                return None
+                except Exception:
+                                pass
+                # Skip numeric scalars entirely to avoid constant / leaky columns.
+                return None
+    Line 876:                 pass
+      Context:
+                            combined_data = combined_data.drop(columns = drop_baseline)
+                except Exception:
+                        pass
+        
+                try:
+    Line 895:                 pass
+      Context:
+                            )
+                except Exception:
+                        pass
+        
+                return combined_data
+
+File: src/training/steps_1_7_comprehensive_executor.py
+------------------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 381:                 pass
+      Context:
+                        conversions.append("Converted timestamp to datetime64[ns]")
+                    except Exception:
+                        pass
+        
+                # Convert numeric columns to float64
+    Line 391:                     pass
+      Context:
+                            conversions.append(f"Converted {col} to float64")
+                        except Exception:
+                            pass
+        
+                return conversions
+
+File: src/training/tpsl_optimizer.py
+------------------------------------
+
+  TODO_COMMENTS:
+    Line 9: pass  # TODO: Add implementation
+      Context:
+        
+        try:
+            pass  # TODO: Add implementation
+        except ImportError as e:
+            # pandas_ta is required for this optimizer per project policy
+
+File: src/training/unified_data_orchestrator.py
+-----------------------------------------------
+
+  TODO_COMMENTS:
+    Line 6: pass  # TODO: Add implementation
+      Context:
+        
+        This module provides a centralized = unified approach to all data operations including:
+            pass  # TODO: Add implementation
+        - Data loading from various sources (cache = unified format, raw files)
+        - Data merging and consolidation
+
+File: src/training/wavelet_feature_selection_demo.py
+----------------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 403:         pass
+      Context:
+        
+            except KeyboardInterrupt:
+                pass
+            except Exception:
+                pass
+    Line 405:         pass
+      Context:
+                pass
+            except Exception:
+                pass
+        
+        
+
+  TODO_COMMENTS:
+    Line 4: pass  # TODO: Add implementation
+      Context:
+        
+        This script demonstrates the complete wavelet feature selection workflow using the two-model strategy:
+            pass  # TODO: Add implementation
+        1. Run full wavelet analysis
+        2. Train Discovery Model on rich feature set
+
+File: src/training/wavelet_feature_selection_workflow.py
+--------------------------------------------------------
+
+  TODO_COMMENTS:
+    Line 4: pass  # TODO: Add implementation
+      Context:
+        
+        This module implements a comprehensive workflow using the two-model strategy:
+            pass  # TODO: Add implementation
+        1. Discovery Model: Trained on full feature set to identify winning features
+        2. Production Model: Trained on lean feature set for live deployment
+    Line 9: pass  # TODO: Add implementation
+      Context:
+        
+        The workflow:
+            pass  # TODO: Add implementation
+        1. Run full = extensive wavelet analysis (as in backtesting/training)
+        2. Build Discovery Model using the rich feature set
+
+File: src/training/wavelet_integration_demo.py
+----------------------------------------------
+
+  PASS_STATEMENTS:
+    Line 472:         pass
+      Context:
+        
+            except Exception:
+                pass
+        
+        
+
+  TODO_COMMENTS:
+    Line 7: pass  # TODO: Add implementation
+      Context:
+        
+        This script shows:
+            pass  # TODO: Add implementation
+        1. All features from advanced_feature_engineering.py & feature_engineering_orchestrator.py (except Autoencoder)
+        2. Price differences used instead of raw prices

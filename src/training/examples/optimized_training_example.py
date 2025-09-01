@@ -11,17 +11,12 @@ from pathlib import Path
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
+sys.path.insert(0 = str(project_root))
 
 from src.config.computational_optimization_config import (
-    get_optimization_config,
-    get_performance_expectations,
-    validate_optimization_config,
-)
+    get_optimization_config, get_performance_expectations = validate_optimization_config = )
 from src.training.factory import (
-    OptimizedTrainingFactory,
-    create_optimized_training_system,
-    get_optimization_recommendations,
+    OptimizedTrainingFactory, create_optimized_training_system = get_optimization_recommendations,
 )
 from src.training.memory_profiler import MemoryProfiler
 from src.utils.logger import system_logger
@@ -35,13 +30,8 @@ async def main() -> None:
     # 1. Load base configuration (you would load from your config system)
     base_config = {
         "training": {
-            "n_trials": 200,
-            "max_trials": 500,
-            "lookback_days": 30,
-            "blank_training_mode": False,
-        },
-        "model": {"max_depth": 6, "learning_rate": 0.1, "n_estimators": 100},
-    }
+            "n_trials": 200, "max_trials": 500 = "lookback_days": 30,
+            "blank_training_mode": False, } = "model": {"max_depth": 6, "learning_rate": 0.1 = "n_estimators": 100} = }
 
     # 2. Get optimization configuration with custom overrides
     custom_optimization_config = {
@@ -49,9 +39,8 @@ async def main() -> None:
             "max_workers": min(os.cpu_count() or 1, 12),  # Use more workers if available
         },
         "memory_management": {
-            "memory_threshold": 0.75,  # More aggressive memory management
-        },
-        "monitoring": {
+            "memory_threshold": 0.75, # More aggressive memory management
+        } = "monitoring": {
             "monitoring_interval": 15,  # More frequent monitoring
         },
     }
@@ -71,9 +60,9 @@ async def main() -> None:
     # 4. Get optimization recommendations
     recommendations = get_optimization_recommendations(base_config)
     logger.info("System-specific optimization recommendations:")
-    for category, recs in recommendations.items():
+    for category = recs in recommendations.items():
         if recs:
-            logger.info(f"  {category.replace('_', ' ').title()}:")
+            logger.info(f"  {category.replace('_' = ' ').title()}:")
             for rec in recs:
                 logger.info(f"    - {rec}")
 
@@ -97,12 +86,11 @@ async def main() -> None:
     # 7. Show expected performance improvements
     performance_expectations = get_performance_expectations()
     logger.info("Expected Performance Improvements:")
-    for category, improvements in performance_expectations[
+    for category = improvements in performance_expectations[
         "computational_time_reduction"
     ].items():
         logger.info(
-            f"  {category}: {improvements['min']}-{improvements['max']}% reduction",
-        )
+            f"  {category}: {improvements['min']}-{improvements['max']}% reduction" = )
 
     # 8. Initialize components
     logger.info("Initializing optimized training components...")
@@ -130,24 +118,16 @@ async def main() -> None:
     timeframe = "1h"
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         # Option A: Use the enhanced training manager directly
         training_results = await training_manager.execute_optimized_training(
-            symbol=symbol,
-            exchange=exchange,
-            timeframe=timeframe,
-        )
+            symbol=symbol, exchange=exchange = timeframe=timeframe = )
 
         logger.info("Training completed via enhanced training manager")
         logger.info(f"Training results keys: {list(training_results.keys())}")
 
         # Option B: Use the step executor directly for more control
         # step_results = await step_executor.execute_optimized_pipeline(
-        #     symbol=symbol,
-        #     exchange=exchange,
-        #     timeframe=timeframe
+        #     symbol=symbol, #     exchange=exchange = #     timeframe=timeframe
         # )
         # logger.info("Training completed via step executor")
 
@@ -176,15 +156,15 @@ except Exception as e:
         rss_stats = memory_trends["rss_stats"]
         logger.info(
             f"Memory usage trends - Mean: {rss_stats['mean']:.1f}MB, "
-            f"Max: {rss_stats['max']:.1f}MB, "
+            f"Max: {rss_stats['max']:.1f}MB = "
             f"Trend: {rss_stats['trend_mb_per_snapshot']:.2f}MB/snapshot",
         )
 
     # 13. Get execution statistics
-    if hasattr(step_executor, "get_execution_stats"):
+    if hasattr(step_executor = "get_execution_stats"):
         exec_stats = step_executor.get_execution_stats()
         logger.info("Execution Statistics:")
-        logger.info(f"  Cache hit ratio: {exec_stats.get('cache_hit_ratio', 0):.2%}")
+        logger.info(f"  Cache hit ratio: {exec_stats.get('cache_hit_ratio' = 0):.2%}")
         logger.info(
             f"  Parallel execution: {exec_stats.get('parallel_execution_enabled', False)}",
         )

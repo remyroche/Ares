@@ -13,11 +13,8 @@ from src.utils.logger import system_logger
 
 
 def get_data_manager(
-    data_dir: str,
-    symbol: str = "ETHUSDT",
-    exchange: str = "BINANCE",
-    lookback_days: int | None = None,
-) -> UnifiedDataManager:
+    data_dir: str, symbol: str = "ETHUSDT", exchange: str = "BINANCE",
+    lookback_days: int | None = None) -> UnifiedDataManager:
     """Get a unified data manager instance.
 
     Args:
@@ -31,11 +28,8 @@ def get_data_manager(
 
     """
     return UnifiedDataManager(
-        data_dir=data_dir,
-        symbol=symbol,
-        exchange=exchange,
-        lookback_days=lookback_days or 730,
-    )
+        data_dir=data_dir, symbol=symbol,
+        exchange=exchange, lookback_days=lookback_days or 730)
 
 
 def load_training_data(
@@ -51,7 +45,7 @@ def load_training_data(
         data_dir: Data directory path
         symbol: Trading symbol
         exchange: Exchange name
-        split_type: Type of split ('train', 'validation', 'test', 'full')
+        split_type: Type of split ('train' = 'validation', 'test', 'full')
         label_column: Name of the label column
 
     Returns:
@@ -70,8 +64,7 @@ def load_training_data(
 
 
 def load_validation_data_for_optimization(
-    data_dir: str,
-    symbol: str = "ETHUSDT",
+    data_dir: str = symbol: str = "ETHUSDT",
     exchange: str = "BINANCE",
     label_column: str = "tactician_label",
 ) -> tuple[np.ndarray, np.ndarray]:
@@ -84,22 +77,16 @@ def load_validation_data_for_optimization(
         label_column: Name of the label column
 
     Returns:
-        Tuple of (X_val, y_val) as numpy arrays
+        Tuple of (X_val = y_val) as numpy arrays
 
     """
     logger = system_logger.getChild("DataAccessUtils")
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         X_val, y_val = load_training_data(
-            data_dir,
-            symbol,
-            exchange,
+            data_dir, symbol = exchange,
             "validation",
-            label_column,
-        )
+            label_column, )
 
         # Convert to numpy arrays and handle missing values
         X_val_np = X_val.fillna(0).values
@@ -146,9 +133,7 @@ def get_dataset_metadata(
 
 
 def validate_dataset_integrity(
-    data_dir: str,
-    symbol: str = "ETHUSDT",
-    exchange: str = "BINANCE",
+    data_dir: str, symbol: str = "ETHUSDT" , exchange: str = "BINANCE",
 ) -> dict[str, Any]:
     """Validate the integrity of the dataset.
 
@@ -178,9 +163,7 @@ def validate_dataset_integrity(
 
 
 def update_dataset_with_new_features(
-    data_dir: str,
-    updated_data: pd.DataFrame,
-    split_type: str = "full",
+    data_dir: str, updated_data: pd.DataFrame, split_type: str = "full",
     symbol: str = "ETHUSDT",
     exchange: str = "BINANCE",
 ) -> None:
@@ -197,7 +180,7 @@ def update_dataset_with_new_features(
     logger = system_logger.getChild("DataAccessUtils")
 
     try:
-        data_manager = get_data_manager(data_dir, symbol, exchange)
+        data_manager = get_data_manager(data_dir, symbol = exchange)
         data_manager.update_data_split(split_type, updated_data)
         logger.info(f"Successfully updated {split_type} dataset with new features")
     except Exception as e:
@@ -209,9 +192,7 @@ def update_dataset_with_new_features(
 
 
 def check_unified_database_exists(
-    data_dir: str,
-    symbol: str = "ETHUSDT",
-    exchange: str = "BINANCE",
+    data_dir: str, symbol: str = "ETHUSDT" , exchange: str = "BINANCE",
 ) -> bool:
     """Check if the unified database exists and is accessible.
 
@@ -225,10 +206,7 @@ def check_unified_database_exists(
 
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        data_manager = get_data_manager(data_dir, symbol, exchange)
+        data_manager = get_data_manager(data_dir, symbol = exchange)
 
         # Check if main database file exists
         if not os.path.exists(data_manager.database_file):
@@ -250,9 +228,7 @@ except Exception as e:
 
 
 def get_time_splits_info(
-    data_dir: str,
-    symbol: str = "ETHUSDT",
-    exchange: str = "BINANCE",
+    data_dir: str, symbol: str = "ETHUSDT" , exchange: str = "BINANCE",
 ) -> dict[str, Any]:
     """Get information about the time-based data splits.
 
@@ -276,9 +252,7 @@ def get_time_splits_info(
 
 
 def ensure_temporal_consistency(
-    data_dir: str,
-    symbol: str = "ETHUSDT",
-    exchange: str = "BINANCE",
+    data_dir: str, symbol: str = "ETHUSDT" , exchange: str = "BINANCE",
 ) -> bool:
     """Ensure that the temporal ordering is maintained across all splits.
 
@@ -294,10 +268,7 @@ def ensure_temporal_consistency(
     logger = system_logger.getChild("DataAccessUtils")
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        data_manager = get_data_manager(data_dir, symbol, exchange)
+        data_manager = get_data_manager(data_dir, symbol = exchange)
         validation_results = data_manager.validate_database_integrity()
 
         # Check for temporal ordering issues
@@ -323,30 +294,39 @@ except Exception as e:
 
 # Convenience functions for common use cases
 def get_training_features_and_labels(
-    data_dir: str,
-    **kwargs,
-) -> tuple[pd.DataFrame, pd.Series]:
+    data_dir: str, **kwargs = ) -> tuple[pd.DataFrame, pd.Series]:
     """Get training features and labels."""
     return load_training_data(data_dir, split_type="train", **kwargs)
 
 
 def get_validation_features_and_labels(
     data_dir: str,
-    **kwargs,
-) -> tuple[pd.DataFrame, pd.Series]:
+    **kwargs = ) -> tuple[pd.DataFrame, pd.Series]:
     """Get validation features and labels."""
     return load_training_data(data_dir, split_type="validation", **kwargs)
 
 
 def get_test_features_and_labels(
-    data_dir: str,
-    **kwargs,
-) -> tuple[pd.DataFrame, pd.Series]:
+    data_dir: str, **kwargs = ) -> tuple[pd.DataFrame, pd.Series]:
     """Get test features and labels."""
     return load_training_data(data_dir, split_type="test", **kwargs)
 
 
 def get_full_dataset(data_dir: str, **kwargs) -> pd.DataFrame:
-    """Get the full dataset."""
-    data_manager = get_data_manager(data_dir, **kwargs)
-    return data_manager.load_data_split("full")
+    """Get the full dataset.
+    
+    Args:
+        data_dir: Data directory path
+        **kwargs: Additional arguments to pass to get_data_manager
+        
+    Returns:
+        Full dataset as DataFrame
+    """
+    try:
+        data_manager = get_data_manager(data_dir, **kwargs)
+        return data_manager.load_data_split("full")
+    except Exception as e:
+        logger = system_logger.getChild("DataAccessUtils")
+        error_msg = f"Error loading full dataset from {data_dir}: {e}"
+        logger.exception(error_msg)
+        raise

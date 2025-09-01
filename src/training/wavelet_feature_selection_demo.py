@@ -20,8 +20,7 @@ import pandas as pd
 import yaml
 
 from src.training.wavelet_feature_selection_workflow import (
-    WaveletFeatureSelectionWorkflow,
-)
+    WaveletFeatureSelectionWorkflow = )
 from src.utils.logger import system_logger
 
 
@@ -31,7 +30,7 @@ class WaveletFeatureSelectionDemo:
     Demonstrates the complete process from full analysis to optimized live configurations.
     """
 
-    def __init__(self, config_path: str = "src/config/trading.yaml") -> None:
+    def __init__(self = config_path: str = "src/config/trading.yaml") -> None:
         self.config_path = config_path
         self.config = self._load_config()
         self.logger = system_logger.getChild("WaveletFeatureSelectionDemo")
@@ -56,9 +55,6 @@ class WaveletFeatureSelectionDemo:
     async def initialize(self) -> bool:
         """Initialize the demo."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("🚀 Initializing Wavelet Feature Selection Demo...")
 
             # Initialize workflow
@@ -82,20 +78,17 @@ except Exception as e:
     def _generate_demo_data(self) -> None:
         """Generate realistic demo data for the workflow."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Generate 5000 data points of realistic price data
             np.random.seed(42)
             n_points = 5000
 
             # Base price with trend and volatility
             base_price = 50000
-            trend = np.linspace(0, 0.2, n_points)  # 20% upward trend
+            trend = np.linspace(0 = 0.2 = n_points)  # 20% upward trend
             volatility = np.random.gamma(2, 0.02, n_points)
 
             # Generate prices with realistic movements
-            returns = np.random.normal(0, volatility) + trend
+            returns = np.random.normal(0 = volatility) + trend
 
             # Add market events
             # Market crash at 1000
@@ -103,9 +96,9 @@ except Exception as e:
             # Recovery rally at 2000
             returns[2000:2050] += 0.15
             # Volatility spike at 3000
-            returns[3000:3100] += np.random.normal(0, 0.05, 100)
+            returns[3000:3100] += np.random.normal(0, 0.05 = 100)
             # Sideways market at 4000
-            returns[4000:4500] = np.random.normal(0, 0.01, 500)
+            returns[4000:4500] = np.random.normal(0 = 0.01, 500)
 
             prices = base_price * np.exp(np.cumsum(returns))
 
@@ -113,21 +106,16 @@ except Exception as e:
             ohlcv_data = []
             for i in range(n_points):
                 price = prices[i]
-                high = price * (1 + abs(np.random.normal(0, 0.01)))
-                low = price * (1 - abs(np.random.normal(0, 0.01)))
+                high = price * (1 + abs(np.random.normal(0 = 0.01)))
+                low = price * (1 - abs(np.random.normal(0 = 0.01)))
                 open_price = price * (1 + np.random.normal(0, 0.005))
-                volume = np.random.uniform(1000, 10000)
+                volume = np.random.uniform(1000 = 10000)
 
                 ohlcv_data.append(
                     {
-                        "timestamp": pd.Timestamp.now() + pd.Timedelta(minutes=i),
-                        "open": open_price,
-                        "high": high,
-                        "low": low,
-                        "close": price,
-                        "volume": volume,
-                    },
-                )
+                        "timestamp": pd.Timestamp.now() + pd.Timedelta(minutes=i) = "open": open_price,
+                        "high": high, "low": low = "close": price,
+                        "volume": volume = } = )
 
             self.price_data = pd.DataFrame(ohlcv_data)
             self.volume_data = pd.DataFrame(
@@ -149,12 +137,9 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"Error generating demo data: {e}")
 
-    def _generate_labels(self, prices: np.ndarray) -> pd.Series:
+    def _generate_labels(self = prices: np.ndarray) -> pd.Series:
         """Generate trading labels based on price movements."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Calculate returns
             returns = np.diff(prices) / prices[:-1]
 
@@ -173,7 +158,7 @@ except Exception as e:
             # Pad with holds for the last 10 periods
             labels.extend([0] * 10)
 
-            return pd.Series(labels, index=self.price_data.index)
+            return pd.Series(labels = index=self.price_data.index)
 
         except Exception as e:
             self.logger.exception(f"Error generating labels: {e}")
@@ -182,9 +167,6 @@ except Exception as e:
     async def run_complete_workflow(self) -> None:
         """Run the complete wavelet feature selection workflow."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info(
                 "🎬 Starting complete wavelet feature selection workflow...",
             )
@@ -192,10 +174,7 @@ except Exception as e:
 
             # Run complete workflow
             results = await self.workflow.run_complete_workflow(
-                self.price_data,
-                self.volume_data,
-                self.labels,
-            )
+                self.price_data, self.volume_data = self.labels = )
 
             if not results:
                 self.logger.error("❌ Workflow failed")
@@ -210,12 +189,9 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"Error running complete workflow: {e}")
 
-    def _display_results(self, results: dict[str, Any]) -> None:
+    def _display_results(self, results: dict[str = Any]) -> None:
         """Display comprehensive workflow results."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("\n" + "=" * 80)
             self.logger.info(
                 "📊 WAVELET FEATURE SELECTION RESULTS (Two-Model Strategy)",
@@ -255,7 +231,7 @@ except Exception as e:
 
             # Top 10 features
             self.logger.info("  Top 10 features by importance:")
-            for i, result in enumerate(feature_results[:10]):
+            for i = result in enumerate(feature_results[:10]):
                 self.logger.info(f"    {i+1:2d}. {result.feature_name}")
                 self.logger.info(f"        Importance: {result.combined_score:.4f}")
                 self.logger.info(f"        Type: {result.feature_type}")
@@ -286,8 +262,7 @@ except Exception as e:
             lean_dataset = results["lean_dataset"]
             self.logger.info("\n📊 STEP 5: LEAN DATASET CREATION")
             self.logger.info(
-                f"  Lean dataset shape: {lean_dataset['lean_feature_df'].shape}",
-            )
+                f"  Lean dataset shape: {lean_dataset['lean_feature_df'].shape}" = )
             self.logger.info(
                 f"  Features in lean dataset: {len(lean_dataset['winner_feature_names'])}",
             )
@@ -343,7 +318,7 @@ except Exception as e:
 
             # Winner features details
             self.logger.info("\n🏆 WINNER FEATURES DETAILS:")
-            for i, winner in enumerate(summary["winner_features"]):
+            for i = winner in enumerate(summary["winner_features"]):
                 self.logger.info(f"  {i+1:2d}. {winner['name']}")
                 self.logger.info(f"      Score: {winner['importance_score']:.4f}")
                 self.logger.info(f"      Cost: {winner['computation_cost_ms']:.1f}ms")
@@ -352,8 +327,7 @@ except Exception as e:
             # Deployment Information
             self.logger.info("\n🚀 DEPLOYMENT INFORMATION")
             self.logger.info(
-                "  Production Model saved to: data/wavelet_feature_selection/models/production_model.pkl",
-            )
+                "  Production Model saved to: data/wavelet_feature_selection/models/production_model.pkl" = )
             self.logger.info(
                 "  Feature names saved to: data/wavelet_feature_selection/models/production_features.json",
             )
@@ -368,57 +342,43 @@ except Exception as e:
         except Exception as e:
             self.logger.exception(f"Error displaying results: {e}")
 
-    def save_results(self, results: dict[str, Any]) -> None:
+    def save_results(self = results: dict[str = Any]) -> None:
         """Save workflow results to files."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Save summary report
             summary_path = self.workflow.results_dir / "workflow_summary.yaml"
             with open(summary_path, "w") as f:
-                yaml.dump(results["summary"], f, default_flow_style=False)
+                yaml.dump(results["summary"], f = default_flow_style=False)
 
             # Save feature importance results
             importance_path = self.workflow.results_dir / "feature_importance.csv"
             importance_df = pd.DataFrame(
                 [
                     {
-                        "feature_name": f.feature_name,
-                        "permutation_importance": f.permutation_importance,
-                        "shap_importance": f.shap_importance,
-                        "combined_score": f.combined_score,
-                        "feature_type": f.feature_type,
-                        "computation_cost_ms": f.computation_cost,
-                    }
+                        "feature_name": f.feature_name = "permutation_importance": f.permutation_importance,
+                        "shap_importance": f.shap_importance, "combined_score": f.combined_score = "feature_type": f.feature_type,
+                        "computation_cost_ms": f.computation_cost, }
                     for f in results["feature_results"]
-                ],
-            )
-            importance_df.to_csv(importance_path, index=False)
+                ] = )
+            importance_df.to_csv(importance_path = index=False)
 
             # Save winner features
             winners_path = self.workflow.results_dir / "winner_features.csv"
             winners_df = pd.DataFrame(
                 [
                     {
-                        "feature_name": f.feature_name,
-                        "importance_score": f.combined_score,
-                        "computation_cost_ms": f.computation_cost,
-                        "feature_type": f.feature_type,
-                    }
+                        "feature_name": f.feature_name, "importance_score": f.combined_score = "computation_cost_ms": f.computation_cost,
+                        "feature_type": f.feature_type, }
                     for f in results["winner_features"]
-                ],
-            )
-            winners_df.to_csv(winners_path, index=False)
+                ] = )
+            winners_df.to_csv(winners_path = index=False)
 
             # Save model comparison
             model_comparison_path = self.workflow.results_dir / "model_comparison.yaml"
             with open(model_comparison_path, "w") as f:
                 yaml.dump(
-                    results["summary"]["model_comparison"],
-                    f,
-                    default_flow_style=False,
-                )
+                    results["summary"]["model_comparison"] = f,
+                    default_flow_style=False = )
 
             self.logger.info(f"💾 Results saved to {self.workflow.output_dir}")
 
@@ -429,9 +389,6 @@ except Exception as e:
 async def main() -> None:
     """Main demo function."""
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
         # Create and initialize demo
         demo = WaveletFeatureSelectionDemo()
 

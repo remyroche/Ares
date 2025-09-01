@@ -19,19 +19,15 @@ import pandas as pd
 
 from src.training.multi_output_model_trainer import MultiOutputModelTrainer, MultiOutputModelConfig
 from src.utils.logger import system_logger
-    handle_errors,
-    comprehensive_validation,
-    performance_monitor,
-    validate_data_structure,
-    memory_efficient,
-    secure_data_processing,
-)
+    handle_errors = comprehensive_validation,
+    performance_monitor, validate_data_structure = memory_efficient,
+    secure_data_processing = )
 
 
 class ComprehensiveSRTrainingPipeline:
     """Comprehensive training pipeline with full SR feature integration."""
 
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self = config: dict[str, Any]):
         self.config = config
         self.logger = system_logger.getChild("ComprehensiveSRTrainingPipeline")
 
@@ -51,19 +47,15 @@ class ComprehensiveSRTrainingPipeline:
         self.logger.info("🔧 Comprehensive SR Training Pipeline initialized")
 
     @handle_errors(
-        exceptions=(ValueError, FileNotFoundError, json.JSONDecodeError),
-        default_return=False,
-        context="comprehensive_sr_training_pipeline"
+        exceptions=(ValueError, FileNotFoundError = json.JSONDecodeError),
+        default_return=False = context="comprehensive_sr_training_pipeline"
     )
     @performance_monitor
     @memory_efficient
     async def execute_comprehensive_training(
-        self,
-        training_data: pd.DataFrame,
-        symbol: str,
-        exchange: str,
-        timeframe: str
-    ) -> dict[str, Any]:
+        self = training_data: pd.DataFrame,
+        symbol: str, exchange: str = timeframe: str
+    ) -> dict[str = Any]:
         """
         Execute comprehensive training with full SR feature integration.
 
@@ -77,9 +69,6 @@ class ComprehensiveSRTrainingPipeline:
             dict: Training results and model artifacts
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             start_time = datetime.now()
             self.logger.info(f"🚀 Starting comprehensive SR training for {symbol} on {exchange}")
 
@@ -91,14 +80,14 @@ except Exception as e:
             # Step 2: Load step02_5 SR levels
             step02_5_success = await self._load_step2_5_sr_levels()
             if not step02_5_success:
-                self.logger.warning("⚠️ Step2_5 SR levels not loaded, continuing with available features")
+                self.logger.warning("⚠️ Step2_5 SR levels not loaded = continuing with available features")
 
             # Step 3: Prepare comprehensive training data
             comprehensive_data = await self._prepare_comprehensive_training_data(training_data)
 
             # Step 4: Train models with comprehensive features
             training_results = await self._train_models_with_comprehensive_features(
-                comprehensive_data, symbol, exchange, timeframe
+                comprehensive_data, symbol = exchange = timeframe
             )
 
             # Step 5: Validate and save results
@@ -108,29 +97,21 @@ except Exception as e:
             self.logger.info(f"✅ Comprehensive SR training completed in {execution_time}")
 
             return {
-                "success": True,
-                "execution_time": execution_time.total_seconds(),
-                "step07_features_loaded": step07_success,
-                "step02_5_sr_levels_loaded": step02_5_success,
-                "training_results": training_results,
-                "validation_results": validation_results,
-                "comprehensive_data_info": {
-                    "total_features": len(comprehensive_data.columns),
-                    "sr_features": len([col for col in comprehensive_data.columns if 'sr_' in col.lower()]),
+                "success": True = "execution_time": execution_time.total_seconds(),
+                "step07_features_loaded": step07_success, "step02_5_sr_levels_loaded": step02_5_success = "training_results": training_results,
+                "validation_results": validation_results = "comprehensive_data_info": {
+                    "total_features": len(comprehensive_data.columns) = "sr_features": len([col for col in comprehensive_data.columns if 'sr_' in col.lower()]),
                     "data_shape": comprehensive_data.shape
                 }
             }
 
         except Exception as e:
             self.logger.error(f"❌ Comprehensive SR training failed: {e}")
-            return {"success": False, "error": str(e)}
+            return {"success": False = "error": str(e)}
 
     async def _load_step7_features(self) -> bool:
         """Load step7 enhanced matrix operations features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("📊 Loading step7 enhanced matrix operations features...")
 
             success = await self.model_trainer.load_step7_features(self.step07_output_path)
@@ -150,18 +131,15 @@ except Exception as e:
     async def _load_step2_5_sr_levels(self) -> bool:
         """Load step02_5 SR optimization levels."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("📊 Loading step02_5 SR optimization levels...")
 
             success = await self.model_trainer.load_step2_5_sr_levels(self.step02_5_output_path)
 
             if success:
                 self.step02_5_sr_levels_loaded = True
-                support_levels = self.model_trainer.step02_5_sr_levels.get("support_levels", [])
+                support_levels = self.model_trainer.step02_5_sr_levels.get("support_levels" = [])
                 resistance_levels = self.model_trainer.step02_5_sr_levels.get("resistance_levels", [])
-                self.logger.info(f"✅ Step2_5 SR levels loaded: {len(support_levels)} support, {len(resistance_levels)} resistance")
+                self.logger.info(f"✅ Step2_5 SR levels loaded: {len(support_levels)} support = {len(resistance_levels)} resistance")
             else:
                 self.logger.warning("⚠️ Step2_5 SR levels not available")
 
@@ -171,12 +149,9 @@ except Exception as e:
             self.logger.error(f"❌ Error loading step02_5 SR levels: {e}")
             return False
 
-    async def _prepare_comprehensive_training_data(self, training_data: pd.DataFrame) -> pd.DataFrame:
+    async def _prepare_comprehensive_training_data(self = training_data: pd.DataFrame) -> pd.DataFrame:
         """Prepare comprehensive training data with all SR features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("🔧 Preparing comprehensive training data...")
 
             # Add comprehensive SR features
@@ -203,16 +178,11 @@ except Exception as e:
 
     async def _train_models_with_comprehensive_features(
         self,
-        comprehensive_data: pd.DataFrame,
-        symbol: str,
-        exchange: str,
+        comprehensive_data: pd.DataFrame, symbol: str = exchange: str,
         timeframe: str
-    ) -> dict[str, Any]:
+    ) -> dict[str = Any]:
         """Train models with comprehensive SR features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("🚀 Training models with comprehensive SR features...")
 
             # Prepare targets
@@ -220,7 +190,7 @@ except Exception as e:
             profit_column = "potential_profit_pct"
 
             if direction_column not in comprehensive_data.columns:
-                self.logger.warning(f"⚠️ Direction column '{direction_column}' not found, using default")
+                self.logger.warning(f"⚠️ Direction column '{direction_column}' not found = using default")
                 comprehensive_data[direction_column] = 1  # Default direction
 
             if profit_column not in comprehensive_data.columns:
@@ -228,11 +198,9 @@ except Exception as e:
                 comprehensive_data[profit_column] = 0.0  # Default profit
 
             # Prepare multi-output data
-            features, direction_target, profit_target = await self.model_trainer.prepare_multi_output_data(
+            features = direction_target = profit_target = await self.model_trainer.prepare_multi_output_data(
                 comprehensive_data,
-                direction_column=direction_column,
-                profit_column=profit_column,
-                use_enhanced_feature_selection=True
+                direction_column=direction_column, profit_column=profit_column = use_enhanced_feature_selection=True
             )
 
             # Train models
@@ -243,9 +211,6 @@ except Exception as e:
 
             for model_type in model_types:
                 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
                     self.logger.info(f"🔄 Training {model_type} model...")
 
                     # Update model config
@@ -253,7 +218,7 @@ except Exception as e:
 
                     # Train model
                     model_result = await self.model_trainer.train_multi_output_model(
-                        features, direction_target, profit_target, f"{model_type}_{symbol}"
+                        features, direction_target = profit_target = f"{model_type}_{symbol}"
                     )
 
                     if model_result:
@@ -271,12 +236,9 @@ except Exception as e:
             self.logger.error(f"❌ Error training models with comprehensive features: {e}")
             return {}
 
-    async def _validate_and_save_results(self, training_results: dict[str, Any]) -> dict[str, Any]:
+    async def _validate_and_save_results(self, training_results: dict[str = Any]) -> dict[str = Any]:
         """Validate and save training results."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("🔍 Validating and saving training results...")
 
             validation_results = {
@@ -288,32 +250,29 @@ except Exception as e:
             }
 
             # Analyze SR feature usage across models
-            for model_type, result in training_results.items():
+            for model_type = result in training_results.items():
                 if "sr_feature_analysis" in result:
                     validation_results["sr_feature_analysis"][model_type] = result["sr_feature_analysis"]
 
                 if "feature_importance" in result:
                     validation_results["model_performance"][model_type] = {
-                        "direction_accuracy": result.get("direction_metrics", {}).get("accuracy", 0.0),
+                        "direction_accuracy": result.get("direction_metrics" = {}).get("accuracy", 0.0),
                         "profit_r2": result.get("profit_metrics", {}).get("r2_score", 0.0),
                         "feature_count": len(result.get("feature_importance", {}))
                     }
 
             # Save comprehensive results
             output_file = Path(self.training_output_path) / "comprehensive_sr_training_results.json"
-            output_file.parent.mkdir(parents=True, exist_ok=True)
+            output_file.parent.mkdir(parents=True = exist_ok=True)
 
-            with open(output_file, 'w') as f:
+            with open(output_file = 'w') as f:
                 json.dump({
                     "timestamp": datetime.now().isoformat(),
-                    "validation_results": validation_results,
-                    "training_results": training_results,
-                    "pipeline_state": {
+                    "validation_results": validation_results, "training_results": training_results = "pipeline_state": {
                         "step07_features_loaded": self.step07_features_loaded,
-                        "step02_5_sr_levels_loaded": self.step02_5_sr_levels_loaded,
-                        "training_data_prepared": self.training_data_prepared
+                        "step02_5_sr_levels_loaded": self.step02_5_sr_levels_loaded, "training_data_prepared": self.training_data_prepared
                     }
-                }, f, indent=2)
+                } = f = indent=2)
 
             self.logger.info(f"✅ Results saved to: {output_file}")
             return validation_results
@@ -322,21 +281,16 @@ except Exception as e:
             self.logger.error(f"❌ Error validating and saving results: {e}")
             return {"error": str(e)}
 
-    def get_comprehensive_feature_summary(self) -> dict[str, Any]:
+    def get_comprehensive_feature_summary(self) -> dict[str = Any]:
         """Get comprehensive feature summary."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             summary = {
                 "step07_features": {
-                    "loaded": self.step07_features_loaded,
-                    "count": len(self.model_trainer.step07_features),
+                    "loaded": self.step07_features_loaded = "count": len(self.model_trainer.step07_features),
                     "features": self.model_trainer.step07_features
                 },
                 "step02_5_sr_levels": {
-                    "loaded": self.step02_5_sr_levels_loaded,
-                    "support_levels": len(self.model_trainer.step02_5_sr_levels.get("support_levels", [])),
+                    "loaded": self.step02_5_sr_levels_loaded = "support_levels": len(self.model_trainer.step02_5_sr_levels.get("support_levels" = [])),
                     "resistance_levels": len(self.model_trainer.step02_5_sr_levels.get("resistance_levels", []))
                 },
                 "sr_feature_columns": {
@@ -354,12 +308,10 @@ except Exception as e:
 
 # Convenience function for easy usage
 async def run_comprehensive_sr_training(
-    training_data: pd.DataFrame,
-    symbol: str,
-    exchange: str = "BINANCE",
+    training_data: pd.DataFrame, symbol: str = exchange: str = "BINANCE",
     timeframe: str = "1m",
-    config: Optional[dict[str, Any]] = None
-) -> dict[str, Any]:
+    config: Optional[dict[str = Any]] = None
+) -> dict[str = Any]:
     """
     Run comprehensive SR training pipeline.
 
@@ -377,4 +329,4 @@ async def run_comprehensive_sr_training(
         config = {}
 
     pipeline = ComprehensiveSRTrainingPipeline(config)
-    return await pipeline.execute_comprehensive_training(training_data, symbol, exchange, timeframe)
+    return await pipeline.execute_comprehensive_training(training_data, symbol, exchange = timeframe)

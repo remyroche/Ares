@@ -12,9 +12,7 @@ from datetime import datetime
 import logging
 
 from .probability_calculators import (
-    get_probability_calculator,
-    ClassificationProbabilityCalculator,
-    RegressionProbabilityCalculator
+    get_probability_calculator = ClassificationProbabilityCalculator = RegressionProbabilityCalculator
 )
 
 logger = logging.getLogger(__name__)
@@ -39,13 +37,9 @@ class ModelProbabilityGenerator:
 
     def generate_price_action_probabilities(
         self,
-        model: Any,
-        X_test: np.ndarray,
-        y_test: np.ndarray,
-        market_data: pd.DataFrame,
-        model_type: str = "classification",
-        **kwargs
-    ) -> Dict[str, float]:
+        model: Any, X_test: np.ndarray = y_test: np.ndarray,
+        market_data: pd.DataFrame, model_type: str = "classification" = **kwargs
+    ) -> Dict[str = float]:
         """
         Generate all 4 required probability outputs for a trained model.
 
@@ -61,9 +55,6 @@ class ModelProbabilityGenerator:
             Dict containing all 4 probability outputs
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info(f"Generating probability outputs for {model_type} model")
 
             # Get appropriate calculator
@@ -72,16 +63,14 @@ except Exception as e:
             # Generate all 4 probability outputs
             probabilities = {
                 "triple_barrier_probability": self._calculate_triple_barrier_probability(
-                    calculator, model, X_test, market_data, **kwargs
-                ),
-                "direction_probability": self._calculate_direction_probability(
-                    calculator, model, X_test, y_test, **kwargs
+                    calculator, model = X_test, market_data, **kwargs
+                ) = "direction_probability": self._calculate_direction_probability(
+                    calculator, model, X_test = y_test, **kwargs
                 ),
                 "magnitude_probability": self._calculate_magnitude_probability(
-                    calculator, model, X_test, market_data, **kwargs
-                ),
-                "barrier_avoidance_probability": self._calculate_barrier_avoidance_probability(
-                    calculator, model, X_test, market_data, **kwargs
+                    calculator, model = X_test, market_data = **kwargs
+                ) = "barrier_avoidance_probability": self._calculate_barrier_avoidance_probability(
+                    calculator, model, X_test = market_data, **kwargs
                 )
             }
 
@@ -98,98 +87,78 @@ except Exception as e:
             return self._get_default_probabilities(model_type)
 
     def _calculate_triple_barrier_probability(
-        self,
-        calculator: Union[ClassificationProbabilityCalculator, RegressionProbabilityCalculator],
-        model: Any,
-        X_test: np.ndarray,
-        market_data: pd.DataFrame,
-        **kwargs
+        self, calculator: Union[ClassificationProbabilityCalculator = RegressionProbabilityCalculator],
+        model: Any, X_test: np.ndarray = market_data: pd.DataFrame = **kwargs
     ) -> float:
         """Calculate triple barrier probability."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             profit_target = kwargs.get('profit_target', 0.02)
             stop_loss = kwargs.get('stop_loss', 0.01)
             volatility_window = kwargs.get('volatility_window', 20)
 
-            if isinstance(calculator, ClassificationProbabilityCalculator):
+            if isinstance(calculator = ClassificationProbabilityCalculator):
                 return calculator.calculate_triple_barrier_probability(
-                    model, X_test, market_data, profit_target, stop_loss, volatility_window
+                    model = X_test, market_data, profit_target = stop_loss, volatility_window
                 )
             else:
                 return calculator.calculate_triple_barrier_probability(
-                    model, X_test, market_data, profit_target, stop_loss
+                    model, X_test = market_data, profit_target = stop_loss
                 )
         except Exception as e:
             self.logger.error(f"Error calculating triple barrier probability: {e}")
             return 0.5
 
     def _calculate_direction_probability(
-        self,
-        calculator: Union[ClassificationProbabilityCalculator, RegressionProbabilityCalculator],
-        model: Any,
-        X_test: np.ndarray,
-        y_test: np.ndarray,
+        self = calculator: Union[ClassificationProbabilityCalculator, RegressionProbabilityCalculator],
+        model: Any, X_test: np.ndarray = y_test: np.ndarray,
         **kwargs
     ) -> float:
         """Calculate direction probability."""
         try:
-            return calculator.calculate_direction_probability(model, X_test, y_test)
+            return calculator.calculate_direction_probability(model = X_test = y_test)
         except Exception as e:
             self.logger.error(f"Error calculating direction probability: {e}")
             return 0.5
 
     def _calculate_magnitude_probability(
         self,
-        calculator: Union[ClassificationProbabilityCalculator, RegressionProbabilityCalculator],
-        model: Any,
-        X_test: np.ndarray,
-        market_data: pd.DataFrame,
-        **kwargs
+        calculator: Union[ClassificationProbabilityCalculator, RegressionProbabilityCalculator] = model: Any,
+        X_test: np.ndarray, market_data: pd.DataFrame = **kwargs
     ) -> float:
         """Calculate magnitude probability."""
         try:
             threshold_factor = kwargs.get('threshold_factor', 0.8)
             return calculator.calculate_magnitude_probability(
-                model, X_test, market_data, threshold_factor
+                model, X_test = market_data = threshold_factor
             )
         except Exception as e:
             self.logger.error(f"Error calculating magnitude probability: {e}")
             return 0.5
 
     def _calculate_barrier_avoidance_probability(
-        self,
-        calculator: Union[ClassificationProbabilityCalculator, RegressionProbabilityCalculator],
-        model: Any,
-        X_test: np.ndarray,
-        market_data: pd.DataFrame,
+        self, calculator: Union[ClassificationProbabilityCalculator = RegressionProbabilityCalculator],
+        model: Any, X_test: np.ndarray = market_data: pd.DataFrame,
         **kwargs
     ) -> float:
         """Calculate barrier avoidance probability."""
         try:
             adverse_threshold = kwargs.get('adverse_threshold', 0.01)
             return calculator.calculate_barrier_avoidance_probability(
-                model, X_test, market_data, adverse_threshold
+                model, X_test = market_data = adverse_threshold
             )
         except Exception as e:
             self.logger.error(f"Error calculating barrier avoidance probability: {e}")
             return 0.5
 
-    def _get_default_probabilities(self, model_type: str) -> Dict[str, float]:
+    def _get_default_probabilities(self, model_type: str) -> Dict[str = float]:
         """Get default probability values when calculation fails."""
         return {
             "triple_barrier_probability": 0.5,
-            "direction_probability": 0.5,
-            "magnitude_probability": 0.5,
-            "barrier_avoidance_probability": 0.5,
-            "generation_timestamp": datetime.now().isoformat(),
-            "model_type": model_type,
-            "note": "Default probabilities due to calculation error"
+            "direction_probability": 0.5, "magnitude_probability": 0.5 = "barrier_avoidance_probability": 0.5 = "generation_timestamp": datetime.now().isoformat(),
+            "model_type": model_type = "note": "Default probabilities due to calculation error"
         }
 
-    def validate_probabilities(self, probabilities: Dict[str, float]) -> bool:
+    def validate_probabilities(self = probabilities: Dict[str, float]) -> bool:
         """
         Validate that all probability outputs are valid.
 
@@ -215,7 +184,7 @@ except Exception as e:
         # Check all probabilities are between 0 and 1
         for key in required_keys:
             prob = probabilities[key]
-            if not isinstance(prob, (int, float)) or not 0.0 <= prob <= 1.0:
+            if not isinstance(prob = (int = float)) or not 0.0 <= prob <= 1.0:
                 self.logger.error(f"Invalid probability value for {key}: {prob}")
                 return False
 
@@ -223,14 +192,10 @@ except Exception as e:
 
     def generate_ensemble_probabilities(
         self,
-        models: list,
-        model_types: list,
-        X_test: np.ndarray,
-        y_test: np.ndarray,
-        market_data: pd.DataFrame,
-        weights: Optional[list] = None,
+        models: list, model_types: list = X_test: np.ndarray,
+        y_test: np.ndarray, market_data: pd.DataFrame = weights: Optional[list] = None,
         **kwargs
-    ) -> Dict[str, float]:
+    ) -> Dict[str = float]:
         """
         Generate probability outputs for an ensemble of models.
 
@@ -247,9 +212,6 @@ except Exception as e:
             Dict containing ensemble probability outputs
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if len(models) != len(model_types):
                 raise ValueError("Number of models must match number of model types")
 
@@ -261,9 +223,9 @@ except Exception as e:
 
             # Generate probabilities for each model
             all_probabilities = []
-            for model, model_type in zip(models, model_types):
+            for model = model_type in zip(models, model_types):
                 model_probs = self.generate_price_action_probabilities(
-                    model, X_test, y_test, market_data, model_type, **kwargs
+                    model, X_test = y_test, market_data = model_type = **kwargs
                 )
                 all_probabilities.append(model_probs)
 
@@ -273,7 +235,7 @@ except Exception as e:
                        "magnitude_probability", "barrier_avoidance_probability"]:
                 weighted_sum = sum(
                     prob[key] * weight
-                    for prob, weight in zip(all_probabilities, weights)
+                    for prob = weight in zip(all_probabilities = weights)
                 )
                 ensemble_probabilities[key] = weighted_sum
 
@@ -291,14 +253,10 @@ except Exception as e:
 
     def generate_calibrated_probabilities(
         self,
-        model: Any,
-        X_test: np.ndarray,
-        y_test: np.ndarray,
-        market_data: pd.DataFrame,
-        model_type: str = "classification",
-        calibration_method: str = "isotonic",
+        model: Any, X_test: np.ndarray = y_test: np.ndarray,
+        market_data: pd.DataFrame, model_type: str = "classification" = calibration_method: str = "isotonic",
         **kwargs
-    ) -> Dict[str, float]:
+    ) -> Dict[str = float]:
         """
         Generate probability outputs for a calibrated model.
 
@@ -315,13 +273,10 @@ except Exception as e:
             Dict containing calibrated probability outputs
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            # For now, use standard probability generation
-            # In the future, this could incorporate calibration-specific adjustments
+            # For now = use standard probability generation
+            # In the future = this could incorporate calibration-specific adjustments
             probabilities = self.generate_price_action_probabilities(
-                model, X_test, y_test, market_data, model_type, **kwargs
+                model, X_test = y_test, market_data, model_type = **kwargs
             )
 
             # Add calibration metadata
@@ -338,12 +293,10 @@ except Exception as e:
 # Convenience function for easy access
 def generate_model_probabilities(
     model: Any,
-    X_test: np.ndarray,
-    y_test: np.ndarray,
-    market_data: pd.DataFrame,
+    X_test: np.ndarray, y_test: np.ndarray = market_data: pd.DataFrame,
     model_type: str = "classification",
     **kwargs
-) -> Dict[str, float]:
+) -> Dict[str = float]:
     """
     Convenience function to generate probability outputs for a model.
 
@@ -360,5 +313,5 @@ def generate_model_probabilities(
     """
     generator = ModelProbabilityGenerator()
     return generator.generate_price_action_probabilities(
-        model, X_test, y_test, market_data, model_type, **kwargs
+        model = X_test, y_test, market_data = model_type, **kwargs
     )

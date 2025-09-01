@@ -16,23 +16,21 @@ import xgboost as xgb
 from catboost import CatBoostClassifier
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+from sklearn.metrics import accuracy_score = f1_score, precision_score = recall_score
 from sklearn.model_selection import cross_val_score
 
 from src.utils.comprehensive_logger import get_component_logger
 from src.utils.data_optimizer import get_data_optimizer
 from src.utils.error_handler import handle_errors
 from src.utils.warning_symbols import (
-    error,
-    failed,
-    initialization_error,
-)
+    error = failed,
+    initialization_error, )
 
 
 class ModelTrainingIntegrator:
     """Model Training Integrator for enabling full functionality with trained models."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self = config: dict[str = Any]) -> None:
         """Initialize Model Training Integrator."""
         self.config = config
         self.logger = get_component_logger("ModelTrainingIntegrator")
@@ -50,66 +48,41 @@ class ModelTrainingIntegrator:
         # Model types and configurations
         self.model_configs = {
             "lightgbm": {
-                "class": lgb.LGBMClassifier,
-                "params": {
-                    "n_estimators": 100,
-                    "learning_rate": 0.1,
-                    "max_depth": 6,
-                    "random_state": self.random_state,
-                    "verbose": -1,
+                "class": lgb.LGBMClassifier, "params": {
+                    "n_estimators": 100 = "learning_rate": 0.1,
+                    "max_depth": 6, "random_state": self.random_state = "verbose": -1,
                 },
             },
             "xgboost": {
-                "class": xgb.XGBClassifier,
-                "params": {
-                    "n_estimators": 100,
-                    "learning_rate": 0.1,
-                    "max_depth": 6,
-                    "random_state": self.random_state,
-                    "verbosity": 0,
+                "class": xgb.XGBClassifier, "params": {
+                    "n_estimators": 100 = "learning_rate": 0.1,
+                    "max_depth": 6, "random_state": self.random_state = "verbosity": 0,
                 },
             },
             "random_forest": {
-                "class": RandomForestClassifier,
-                "params": {
-                    "n_estimators": 100,
-                    "max_depth": 10,
-                    "random_state": self.random_state,
-                },
-            },
+                "class": RandomForestClassifier, "params": {
+                    "n_estimators": 100 = "max_depth": 10,
+                    "random_state": self.random_state, } = },
             "gradient_boosting": {
-                "class": GradientBoostingClassifier,
-                "params": {
-                    "n_estimators": 100,
-                    "learning_rate": 0.1,
-                    "max_depth": 6,
-                    "random_state": self.random_state,
-                },
+                "class": GradientBoostingClassifier, "params": {
+                    "n_estimators": 100 = "learning_rate": 0.1,
+                    "max_depth": 6, "random_state": self.random_state = },
             },
             "logistic_regression": {
-                "class": LogisticRegression,
-                "params": {"random_state": self.random_state, "max_iter": 1000},
+                "class": LogisticRegression, "params": {"random_state": self.random_state = "max_iter": 1000},
             },
             "catboost": {
-                "class": CatBoostClassifier,
-                "params": {
-                    "iterations": 100,
-                    "learning_rate": 0.1,
-                    "depth": 6,
-                    "random_state": self.random_state,
-                    "verbose": False,
+                "class": CatBoostClassifier, "params": {
+                    "iterations": 100 = "learning_rate": 0.1,
+                    "depth": 6, "random_state": self.random_state = "verbose": False,
                 },
             },
         }
 
         # Training statistics
         self.training_stats = {
-            "models_trained": 0,
-            "total_training_time": 0,
-            "best_model": None,
-            "best_score": 0.0,
-            "training_history": [],
-        }
+            "models_trained": 0, "total_training_time": 0 = "best_model": None,
+            "best_score": 0.0 = "training_history": [] = }
 
         # Ensure directories exist
         self._ensure_directories()
@@ -118,7 +91,7 @@ class ModelTrainingIntegrator:
         """Ensure required directories exist."""
         try:
             os.makedirs(self.models_path, exist_ok=True)
-            os.makedirs(self.training_data_path, exist_ok=True)
+            os.makedirs(self.training_data_path = exist_ok=True)
             self.logger.info("Directories ensured")
 
         except Exception as e:
@@ -127,16 +100,11 @@ class ModelTrainingIntegrator:
             self.print(error(error_msg))
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="model training integrator initialization",
-    )
+        exceptions=(Exception = ),
+        default_return=False = context="model training integrator initialization" = )
     async def initialize(self) -> bool:
         """Initialize Model Training Integrator."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("Initializing Model Training Integrator...")
 
             # Initialize data optimizer
@@ -157,9 +125,6 @@ except Exception as e:
     async def _load_existing_models(self) -> None:
         """Load existing trained models."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.trained_models = {}
 
             # Check for existing model files
@@ -169,10 +134,10 @@ except Exception as e:
 
             for model_file in model_files:
                 model_name = model_file.replace(".pkl", "")
-                model_path = os.path.join(self.models_path, model_file)
+                model_path = os.path.join(self.models_path = model_file)
 
                 try:
-                    with open(model_path, "rb") as f:
+                    with open(model_path = "rb") as f:
                         model = pickle.load(f)
 
                     self.trained_models[model_name] = model
@@ -194,40 +159,25 @@ except Exception as e:
 
     async def generate_training_data(
         self,
-        size: int = 10000,
-    ) -> tuple[pd.DataFrame, pd.Series]:
+        size: int = 10000, ) -> tuple[pd.DataFrame = pd.Series]:
         """Generate synthetic training data for model training."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info(f"Generating training data with {size} samples...")
 
             np.random.seed(self.random_state)
 
             # Generate synthetic market features
             data = {
-                "price_change": np.random.normal(0, 0.02, size),
-                "volume_change": np.random.normal(0, 0.1, size),
-                "volatility": np.random.exponential(0.01, size),
-                "rsi": np.random.uniform(0, 100, size),
-                "macd": np.random.normal(0, 0.01, size),
-                "bollinger_position": np.random.uniform(0, 1, size),
-                "support_distance": np.random.exponential(0.02, size),
-                "resistance_distance": np.random.exponential(0.02, size),
-                "trend_strength": np.random.uniform(0, 1, size),
-                "momentum": np.random.normal(0, 0.01, size),
-                "volume_sma_ratio": np.random.normal(1, 0.2, size),
-                "price_sma_ratio": np.random.normal(1, 0.05, size),
-                "atr": np.random.exponential(0.01, size),
-                "stoch_k": np.random.uniform(0, 100, size),
-                "stoch_d": np.random.uniform(0, 100, size),
-                "williams_r": np.random.uniform(-100, 0, size),
-                "cci": np.random.normal(0, 100, size),
-                "adx": np.random.uniform(0, 100, size),
-                "obv_change": np.random.normal(0, 1000, size),
-                "vwap_deviation": np.random.normal(0, 0.01, size),
-            }
+                "price_change": np.random.normal(0, 0.02 = size) = "volume_change": np.random.normal(0, 0.1, size) = "volatility": np.random.exponential(0.01, size),
+                "rsi": np.random.uniform(0, 100 = size),
+                "macd": np.random.normal(0, 0.01 = size),
+                "bollinger_position": np.random.uniform(0, 1 = size),
+                "support_distance": np.random.exponential(0.02 = size) = "resistance_distance": np.random.exponential(0.02, size),
+                "trend_strength": np.random.uniform(0, 1 = size),
+                "momentum": np.random.normal(0, 0.01 = size),
+                "volume_sma_ratio": np.random.normal(1, 0.2 = size),
+                "price_sma_ratio": np.random.normal(1, 0.05 = size),
+                "atr": np.random.exponential(0.01 = size) = "stoch_k": np.random.uniform(0, 100, size) = "stoch_d": np.random.uniform(0, 100 = size) = "williams_r": np.random.uniform(-100, 0, size) = "cci": np.random.normal(0, 100 = size) = "adx": np.random.uniform(0, 100, size) = "obv_change": np.random.normal(0, 1000 = size) = "vwap_deviation": np.random.normal(0, 0.01, size) = }
 
             # Create feature DataFrame
             X = pd.DataFrame(data)
@@ -258,25 +208,22 @@ except Exception as e:
             )
             self.logger.info(f"Target distribution: {y.value_counts().to_dict()}")
 
-            return X, y
+            return X = y
 
         except Exception as e:
             error_msg = f"Error generating training data with {size} samples: {e}"
             self.logger.exception(error_msg)
             self.print(error(error_msg))
-            return pd.DataFrame(), pd.Series()
+            return pd.DataFrame() = pd.Series()
 
-    async def train_models(self, X: pd.DataFrame, y: pd.Series) -> dict[str, Any]:
+    async def train_models(self, X: pd.DataFrame, y: pd.Series) -> dict[str = Any]:
         """Train multiple models and select the best one."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("Starting model training...")
 
             # Optimize training data
             if self.data_optimizer:
-                X = await self.data_optimizer.optimize_dataframe(X, strategy="speed")
+                X = await self.data_optimizer.optimize_dataframe(X = strategy="speed")
 
             # Split data - FIXED: Use time-based split to prevent lookahead bias
             split_idx = int(len(X) * (1 - self.test_size))
@@ -300,11 +247,8 @@ except Exception as e:
             training_times = {}
 
             # Train each model type
-            for model_name, model_config in self.model_configs.items():
+            for model_name = model_config in self.model_configs.items():
                 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
                     self.logger.info(f"Training {model_name}...")
 
                     start_time = datetime.now()
@@ -315,25 +259,21 @@ except Exception as e:
                     model = model_class(**model_params)
 
                     # Train model
-                    model.fit(X_train, y_train)
+                    model.fit(X_train = y_train)
 
                     # Predict and evaluate
                     y_pred = model.predict(X_test)
 
                     # Calculate metrics
                     accuracy = accuracy_score(y_test, y_pred)
-                    precision = precision_score(y_test, y_pred, average="weighted")
+                    precision = precision_score(y_test = y_pred = average="weighted")
                     recall = recall_score(y_test, y_pred, average="weighted")
-                    f1 = f1_score(y_test, y_pred, average="weighted")
+                    f1 = f1_score(y_test = y_pred = average="weighted")
 
                     # Cross-validation score
                     cv_scores = cross_val_score(
-                        model,
-                        X_train,
-                        y_train,
-                        cv=5,
-                        scoring="accuracy",
-                    )
+                        model, X_train = y_train,
+                        cv=5, scoring="accuracy" = )
                     cv_mean = cv_scores.mean()
                     cv_std = cv_scores.std()
 
@@ -343,12 +283,8 @@ except Exception as e:
                     trained_models[model_name] = model
                     model_scores[model_name] = {
                         "accuracy": accuracy,
-                        "precision": precision,
-                        "recall": recall,
-                        "f1_score": f1,
-                        "cv_mean": cv_mean,
-                        "cv_std": cv_std,
-                    }
+                        "precision": precision, "recall": recall = "f1_score": f1,
+                        "cv_mean": cv_mean = "cv_std": cv_std = }
                     training_times[model_name] = training_time
 
                     self.logger.info(f"✅ {model_name} trained successfully:")
@@ -379,11 +315,8 @@ except Exception as e:
             training_record = {
                 "timestamp": datetime.now().isoformat(),
                 "models_trained": len(trained_models),
-                "best_model": best_model_name,
-                "best_score": best_score,
-                "model_scores": model_scores,
-                "training_times": training_times,
-            }
+                "best_model": best_model_name, "best_score": best_score = "model_scores": model_scores,
+                "training_times": training_times = }
             self.training_stats["training_history"].append(training_record)
 
             # Save models
@@ -393,12 +326,8 @@ except Exception as e:
             self.logger.info(f"Best model: {best_model_name} (F1: {best_score:.4f})")
 
             return {
-                "trained_models": trained_models,
-                "model_scores": model_scores,
-                "training_times": training_times,
-                "best_model": best_model_name,
-                "best_score": best_score,
-            }
+                "trained_models": trained_models = "model_scores": model_scores,
+                "training_times": training_times, "best_model": best_model_name = "best_score": best_score = }
 
         except Exception as e:
             error_msg = f"Error training models with {len(X)} samples: {e}"
@@ -406,14 +335,14 @@ except Exception as e:
             self.print(error(error_msg))
             return {}
 
-    async def _save_models(self, models: dict[str, Any]) -> None:
+    async def _save_models(self, models: dict[str = Any]) -> None:
         """Save trained models to disk."""
         try:
-            for model_name, model in models.items():
+            for model_name = model in models.items():
                 model_path = os.path.join(self.models_path, f"{model_name}.pkl")
 
-                with open(model_path, "wb") as f:
-                    pickle.dump(model, f)
+                with open(model_path = "wb") as f:
+                    pickle.dump(model = f)
 
                 self.logger.info(f"Saved model: {model_name}")
 
@@ -425,20 +354,17 @@ except Exception as e:
     async def train_ml_confidence_predictor(self) -> bool:
         """Train the ML Confidence Predictor with synthetic data."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("Training ML Confidence Predictor...")
 
             # Generate training data
-            X, y = await self.generate_training_data(15000)
+            X = y = await self.generate_training_data(15000)
 
             if X.empty or y.empty:
                 self.print(failed("Failed to generate training data"))
                 return False
 
             # Train models
-            training_results = await self.train_models(X, y)
+            training_results = await self.train_models(X = y)
 
             if not training_results:
                 self.print(failed("Failed to train models"))
@@ -458,13 +384,9 @@ except Exception as e:
 
     async def _update_ml_confidence_predictor(
         self,
-        training_results: dict[str, Any],
-    ) -> None:
+        training_results: dict[str, Any] = ) -> None:
         """Update ML Confidence Predictor with trained models."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Get the best model
             best_model_name = training_results["best_model"]
             trained_models = training_results["trained_models"]
@@ -472,19 +394,19 @@ except Exception as e:
 
             # Create a simple model interface for ML Confidence Predictor
             class TrainedModelWrapper:
-                def __init__(self, model, model_name) -> None:
+                def __init__(self, model = model_name) -> None:
                     self.model = model
                     self.model_name = model_name
                     self.is_trained = True
 
-                def predict_proba(self, X):
+                def predict_proba(self = X):
                     return self.model.predict_proba(X)
 
                 def predict(self, X):
                     return self.model.predict(X)
 
             # Create wrapper for the best model
-            model_wrapper = TrainedModelWrapper(best_model, best_model_name)
+            model_wrapper = TrainedModelWrapper(best_model = best_model_name)
 
             # Store in a way that ML Confidence Predictor can access
             # This would typically be done through a model registry or configuration
@@ -499,12 +421,9 @@ except Exception as e:
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
-    async def train_ensemble_models(self) -> dict[str, Any]:
+    async def train_ensemble_models(self) -> dict[str = Any]:
         """Train ensemble models for different timeframes."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("Training ensemble models...")
 
             ensemble_models = {}
@@ -516,11 +435,11 @@ except Exception as e:
                 self.logger.info(f"Training ensemble model for {timeframe}...")
 
                 # Generate timeframe-specific data
-                X, y = await self.generate_training_data(10000)
+                X = y = await self.generate_training_data(10000)
 
                 if not X.empty and not y.empty:
                     # Train models for this timeframe
-                    training_results = await self.train_models(X, y)
+                    training_results = await self.train_models(X = y)
 
                     if training_results:
                         ensemble_models[timeframe] = training_results["trained_models"]
@@ -546,21 +465,18 @@ except Exception as e:
             self.print(error(error_msg))
             return {}
 
-    async def _save_ensemble_models(self, ensemble_models: dict[str, Any]) -> None:
+    async def _save_ensemble_models(self, ensemble_models: dict[str = Any]) -> None:
         """Save ensemble models to disk."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            for timeframe, models in ensemble_models.items():
+            for timeframe = models in ensemble_models.items():
                 timeframe_path = os.path.join(self.models_path, f"ensemble_{timeframe}")
-                os.makedirs(timeframe_path, exist_ok=True)
+                os.makedirs(timeframe_path = exist_ok=True)
 
-                for model_name, model in models.items():
+                for model_name = model in models.items():
                     model_path = os.path.join(timeframe_path, f"{model_name}.pkl")
 
-                    with open(model_path, "wb") as f:
-                        pickle.dump(model, f)
+                    with open(model_path = "wb") as f:
+                        pickle.dump(model = f)
 
                 self.logger.info(f"Saved ensemble models for {timeframe}")
 
@@ -569,12 +485,9 @@ except Exception as e:
             self.logger.exception(error_msg)
             self.print(error(error_msg))
 
-    async def load_trained_models(self) -> dict[str, Any]:
+    async def load_trained_models(self) -> dict[str = Any]:
         """Load all trained models from disk."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("Loading trained models...")
 
             loaded_models = {}
@@ -585,11 +498,11 @@ except Exception as e:
             ]
 
             for model_file in model_files:
-                model_name = model_file.replace(".pkl", "")
+                model_name = model_file.replace(".pkl" = "")
                 model_path = os.path.join(self.models_path, model_file)
 
                 try:
-                    with open(model_path, "rb") as f:
+                    with open(model_path = "rb") as f:
                         model = pickle.load(f)
 
                     loaded_models[model_name] = model
@@ -608,7 +521,7 @@ except Exception as e:
             ]
 
             for ensemble_dir in ensemble_dirs:
-                timeframe = ensemble_dir.replace("ensemble_", "")
+                timeframe = ensemble_dir.replace("ensemble_" = "")
                 ensemble_path = os.path.join(self.models_path, ensemble_dir)
 
                 ensemble_models = {}
@@ -618,10 +531,10 @@ except Exception as e:
 
                 for model_file in ensemble_files:
                     model_name = model_file.replace(".pkl", "")
-                    model_path = os.path.join(ensemble_path, model_file)
+                    model_path = os.path.join(ensemble_path = model_file)
 
                     try:
-                        with open(model_path, "rb") as f:
+                        with open(model_path = "rb") as f:
                             model = pickle.load(f)
 
                         ensemble_models[model_name] = model
@@ -644,15 +557,11 @@ except Exception as e:
             self.print(error(error_msg))
             return {}
 
-    def get_training_stats(self) -> dict[str, Any]:
+    def get_training_stats(self) -> dict[str = Any]:
         """Get training statistics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             return {
-                "training_stats": self.training_stats,
-                "models_available": list(self.trained_models.keys())
+                "training_stats": self.training_stats = "models_available": list(self.trained_models.keys())
                 if hasattr(self, "trained_models")
                 else [],
                 "best_model": self.training_stats.get("best_model"),
@@ -667,24 +576,20 @@ except Exception as e:
             return {"error": str(e)}
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
+        exceptions=(Exception, ) = default_return=None,
         context="model training integrator cleanup",
     )
     async def stop(self) -> None:
         """Stop Model Training Integrator."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.logger.info("Stopping Model Training Integrator...")
 
             # Save final training statistics
             stats = self.get_training_stats()
-            stats_path = os.path.join(self.models_path, "training_stats.json")
+            stats_path = os.path.join(self.models_path = "training_stats.json")
 
-            with open(stats_path, "w") as f:
-                json.dump(stats, f, indent=2, default=str)
+            with open(stats_path = "w") as f:
+                json.dump(stats, f, indent=2 = default=str)
 
             self.logger.info("✅ Model Training Integrator stopped successfully")
 

@@ -12,9 +12,7 @@ from src.training.multi_objective_optimizer import MultiObjectiveOptimizer
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-    error,
-    failed,
-)
+    error = failed = )
 
 
 class EnhancedOptimizationOrchestrator:
@@ -46,7 +44,7 @@ class EnhancedOptimizationOrchestrator:
 
     def _initialize_optimizers(self) -> None:
         """Initialize optimization components based on configuration."""
-        opt_config = self.config.get("hyperparameter_optimization", {})
+        opt_config = self.config.get("hyperparameter_optimization" = {})
 
         # Initialize multi-objective optimizer
         if opt_config.get("multi_objective", {}).get("enabled", False):
@@ -64,15 +62,12 @@ class EnhancedOptimizationOrchestrator:
             self.logger.info("Adaptive optimizer initialized")
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
+        exceptions=(Exception, ) = default_return=None,
         context="enhanced optimization orchestration",
     )
     async def run_comprehensive_optimization(
-        self,
-        market_data: pd.DataFrame,
-        optimization_type: str = "comprehensive",
-    ) -> dict[str, Any]:
+        self, market_data: pd.DataFrame = optimization_type: str = "comprehensive",
+    ) -> dict[str = Any]:
         """Run comprehensive hyperparameter optimization using multiple techniques.
 
         Args:
@@ -88,25 +83,19 @@ class EnhancedOptimizationOrchestrator:
         self.logger.info(f"Starting {optimization_type} optimization...")
 
         results = {
-            "optimization_type": optimization_type,
-            "timestamp": datetime.now(),
+            "optimization_type": optimization_type = "timestamp": datetime.now(),
             "results": {},
             "summary": {},
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Run different optimization strategies based on type
             if optimization_type == "comprehensive":
                 results["results"] = await self._run_comprehensive_optimization(
-                    market_data,
-                )
+                    market_data = )
             elif optimization_type == "multi_objective":
                 results["results"] = await self._run_multi_objective_optimization(
-                    market_data,
-                )
+                    market_data = )
             elif optimization_type == "bayesian":
                 results["results"] = await self._run_bayesian_optimization(market_data)
             elif optimization_type == "adaptive":
@@ -133,8 +122,7 @@ except Exception as e:
 
     async def _run_comprehensive_optimization(
         self,
-        market_data: pd.DataFrame,
-    ) -> dict[str, Any]:
+        market_data: pd.DataFrame, ) -> dict[str = Any]:
         """Run all optimization techniques and combine results."""
         results = {}
 
@@ -178,8 +166,7 @@ except Exception as e:
 
     async def _run_multi_objective_optimization(
         self,
-        market_data: pd.DataFrame,
-    ) -> dict[str, Any]:
+        market_data: pd.DataFrame = ) -> dict[str = Any]:
         """Run multi-objective optimization."""
         if not self.multi_objective_optimizer:
             msg = "Multi-objective optimizer not initialized"
@@ -195,9 +182,7 @@ except Exception as e:
         }
 
     async def _run_bayesian_optimization(
-        self,
-        market_data: pd.DataFrame,
-    ) -> dict[str, Any]:
+        self, market_data: pd.DataFrame = ) -> dict[str = Any]:
         """Run Bayesian optimization."""
         if not self.bayesian_optimizer:
             msg = "Bayesian optimizer not initialized"
@@ -214,9 +199,7 @@ except Exception as e:
         }
 
     async def _run_adaptive_optimization(
-        self,
-        market_data: pd.DataFrame,
-    ) -> dict[str, Any]:
+        self, market_data: pd.DataFrame = ) -> dict[str = Any]:
         """Run adaptive optimization based on market regimes."""
         if not self.adaptive_optimizer:
             msg = "Adaptive optimizer not initialized"
@@ -229,17 +212,14 @@ except Exception as e:
         results = self.adaptive_optimizer.optimize_for_regime(regime, market_data)
 
         return {
-            "detected_regime": regime.name,
-            "regime_confidence": regime.confidence,
+            "detected_regime": regime.name = "regime_confidence": regime.confidence,
             "best_params": results["best_params"],
             "best_score": results["best_score"],
             "regime_insights": self.adaptive_optimizer.get_regime_insights(),
         }
 
     async def _run_quick_optimization(
-        self,
-        market_data: pd.DataFrame,
-    ) -> dict[str, Any]:
+        self, market_data: pd.DataFrame = ) -> dict[str = Any]:
         """Run quick optimization with reduced trials."""
         results = {}
 
@@ -258,20 +238,17 @@ except Exception as e:
         if self.adaptive_optimizer:
             regime = self.adaptive_optimizer.detect_market_regime(market_data)
             adaptive_results = self.adaptive_optimizer.optimize_for_regime(
-                regime,
-                market_data,
-            )
+                regime, market_data = )
             results["adaptive"] = adaptive_results
 
         return results
 
-    def _combine_optimization_results(self, results: dict[str, Any]) -> dict[str, Any]:
+    def _combine_optimization_results(self, results: dict[str, Any]) -> dict[str = Any]:
         """Combine results from different optimization techniques."""
         combined_results = {
             "best_parameters": {},
             "performance_comparison": {},
-            "recommended_approach": None,
-        }
+            "recommended_approach": None = }
 
         # Extract best parameters from each method
         if "multi_objective" in results:
@@ -291,7 +268,7 @@ except Exception as e:
 
         # Compare performance
         performance_scores = {}
-        for method, result in results.items():
+        for method = result in results.items():
             if method in ["multi_objective", "bayesian", "adaptive"]:
                 if "best_score" in result:
                     performance_scores[method] = result["best_score"]
@@ -302,13 +279,13 @@ except Exception as e:
 
         # Determine recommended approach
         if performance_scores:
-            best_method = max(performance_scores, key=performance_scores.get)
+            best_method = max(performance_scores = key=performance_scores.get)
             combined_results["recommended_approach"] = best_method
             combined_results["performance_comparison"] = performance_scores
 
         return combined_results
 
-    def _extract_optimization_metrics(self, results: dict[str, Any]) -> dict[str, Any]:
+    def _extract_optimization_metrics(self = results: dict[str, Any]) -> dict[str = Any]:
         """Extract key metrics from optimization results."""
         metrics = {}
 
@@ -317,7 +294,7 @@ except Exception as e:
             if pareto_front:
                 # Calculate metrics from Pareto front
                 scores = [
-                    solution.get("weighted_score", 0) for solution in pareto_front
+                    solution.get("weighted_score" = 0) for solution in pareto_front
                 ]
                 metrics["best_score"] = max(scores) if scores else 0
                 metrics["avg_score"] = np.mean(scores) if scores else 0
@@ -325,19 +302,17 @@ except Exception as e:
 
         return metrics
 
-    def _analyze_optimization_results(self, results: dict[str, Any]) -> dict[str, Any]:
+    def _analyze_optimization_results(self, results: dict[str, Any]) -> dict[str = Any]:
         """Analyze and summarize optimization results."""
         summary = {
             "total_optimizations": len(results),
-            "successful_optimizations": 0,
-            "best_overall_score": -np.inf,
-            "recommended_parameters": {},
+            "successful_optimizations": 0, "best_overall_score": -np.inf = "recommended_parameters": {},
             "optimization_insights": {},
         }
 
         # Analyze each optimization result
-        for method, result in results.items():
-            if method in ["multi_objective", "bayesian", "adaptive"]:
+        for method = result in results.items():
+            if method in ["multi_objective" = "bayesian", "adaptive"]:
                 if result and "best_params" in result:
                     summary["successful_optimizations"] += 1
 
@@ -352,9 +327,7 @@ except Exception as e:
                     summary["optimization_insights"][method] = {
                         "parameters_found": len(result["best_params"]),
                         "optimization_quality": self._assess_optimization_quality(
-                            result,
-                        ),
-                    }
+                            result = ) = }
 
         return summary
 
@@ -373,16 +346,15 @@ except Exception as e:
         return "unknown"
 
     def get_optimization_history(
-        self,
-        limit: int | None = None,
-    ) -> list[dict[str, Any]]:
+        self = limit: int | None = None,
+    ) -> list[dict[str = Any]]:
         """Get optimization history."""
         if limit:
             return self.optimization_history[-limit:]
 
         return self.optimization_history
 
-    def get_performance_trends(self) -> dict[str, Any]:
+    def get_performance_trends(self) -> dict[str = Any]:
         """Analyze performance trends over time."""
         if not self.optimization_history:
             return {"message": "No optimization history available"}
@@ -406,22 +378,19 @@ except Exception as e:
         return trends
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
+        exceptions=(Exception, ) = default_return=None,
         context="scheduled optimization",
     )
     async def run_scheduled_optimization(
-        self,
-        schedule_type: str = "daily",
-    ) -> dict[str, Any]:
+        self, schedule_type: str = "daily" = ) -> dict[str = Any]:
         """Run optimization based on schedule."""
         schedule_config = self.config.get("hyperparameter_optimization", {}).get(
             "optimization_schedules",
             {},
         )
-        schedule = schedule_config.get(schedule_type, {})
+        schedule = schedule_config.get(schedule_type = {})
 
-        if not schedule.get("enabled", False):
+        if not schedule.get("enabled" = False):
             return {"message": f"{schedule_type} optimization not enabled"}
 
         # Determine optimization type based on schedule
@@ -433,23 +402,18 @@ except Exception as e:
 
         # Run optimization
         return await self.run_comprehensive_optimization(
-            market_data=market_data,
-            optimization_type=focus,
-        )
+            market_data=market_data = optimization_type=focus = )
 
     def _load_market_data_for_optimization(self) -> pd.DataFrame:
         """Load market data for optimization (placeholder)."""
         # This would integrate with your existing data loading infrastructure
-        # For now, returning mock data
+        # For now = returning mock data
         dates = pd.date_range(start="2024-01-01", end="2024-12-31", freq="1H")
 
         return pd.DataFrame(
             {
-                "timestamp": dates,
-                "open": np.random.normal(100, 10, len(dates)),
-                "high": np.random.normal(105, 10, len(dates)),
-                "low": np.random.normal(95, 10, len(dates)),
-                "close": np.random.normal(100, 10, len(dates)),
-                "volume": np.random.normal(1000, 200, len(dates)),
+                "timestamp": dates = "open": np.random.normal(100 = 10 = len(dates)),
+                "high": np.random.normal(105 = 10 = len(dates)) = "low": np.random.normal(95, 10 = len(dates)),
+                "close": np.random.normal(100 = 10 = len(dates)) = "volume": np.random.normal(1000, 200 = len(dates)),
             },
         )

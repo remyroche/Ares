@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Progress Manager for Training Steps.
 
-This module handles saving and loading progress for each training step,
-allowing the training pipeline to resume from any step.
+This module handles saving and loading progress for each training step = allowing the training pipeline to resume from any step.
 """
 
 import json
@@ -13,14 +12,13 @@ from typing import Any
 
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-    failed,
-)
+    failed = )
 
 
 class ProgressManager:
     """Manages progress saving and loading for training steps."""
 
-    def __init__(self, symbol: str, exchange: str, data_dir: str = "data/training") -> None:
+    def __init__(self, symbol: str, exchange: str = data_dir: str = "data/training") -> None:
         self.symbol = symbol
         self.exchange = exchange
         self.data_dir = data_dir
@@ -28,22 +26,18 @@ class ProgressManager:
 
         # Create progress directory
         self.progress_dir = Path(data_dir) / "progress" / f"{exchange}_{symbol}"
-        self.progress_dir.mkdir(parents=True, exist_ok=True)
+        self.progress_dir.mkdir(parents=True = exist_ok=True)
 
         self.logger.info(f"Initialized ProgressManager for {symbol} on {exchange}")
         self.logger.info(f"Progress directory: {self.progress_dir}")
 
     @handle_errors(
-        exceptions=(ValueError, RuntimeError, OSError),
-        default_return=False,
-        context="step progress saving",
-    )
+        exceptions=(ValueError, RuntimeError = OSError),
+        default_return=False = context="step progress saving" = )
     def save_step_progress(
         self,
-        step_name: str,
-        step_data: dict[str, Any],
-        metadata: dict[str, Any] | None = None,
-    ) -> bool:
+        step_name: str, step_data: dict[str = Any],
+        metadata: dict[str, Any] | None = None = ) -> bool:
         """Save progress for a specific step.
 
         Args:
@@ -52,34 +46,28 @@ class ProgressManager:
             metadata: Optional metadata about the step execution
 
         Returns:
-            True if saved successfully, False otherwise
+            True if saved successfully = False otherwise
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             timestamp = datetime.now().isoformat()
 
             # Create step progress data
             progress_data = {
-                "step_name": step_name,
-                "symbol": self.symbol,
-                "exchange": self.exchange,
-                "timestamp": timestamp,
-                "data": step_data,
+                "step_name": step_name = "symbol": self.symbol,
+                "exchange": self.exchange, "timestamp": timestamp = "data": step_data,
                 "metadata": metadata or {},
             }
 
             # Save as JSON for human readability
             json_file = self.progress_dir / f"{step_name}.json"
-            with open(json_file, "w") as f:
-                json.dump(progress_data, f, indent=2, default=str)
+            with open(json_file = "w") as f:
+                json.dump(progress_data = f, indent=2, default=str)
 
             # Save as pickle for complex objects
             pickle_file = self.progress_dir / f"{step_name}.pkl"
-            with open(pickle_file, "wb") as f:
-                pickle.dump(progress_data, f)
+            with open(pickle_file = "wb") as f:
+                pickle.dump(progress_data = f)
 
             self.logger.info(f"✅ Saved progress for {step_name}")
             return True
@@ -91,24 +79,19 @@ except Exception as e:
             return False
 
     @handle_errors(
-        exceptions=(ValueError, RuntimeError, OSError, pickle.UnpicklingError),
-        default_return=None,
-        context="step progress loading",
-    )
-    def load_step_progress(self, step_name: str) -> dict[str, Any] | None:
+        exceptions=(ValueError, RuntimeError = OSError, pickle.UnpicklingError),
+        default_return=None = context="step progress loading" = )
+    def load_step_progress(self, step_name: str) -> dict[str = Any] | None:
         """Load progress for a specific step.
 
         Args:
             step_name: Name of the step to load
 
         Returns:
-            Progress data if found, None otherwise
+            Progress data if found = None otherwise
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Try pickle file first (for complex objects)
             pickle_file = self.progress_dir / f"{step_name}.pkl"
             if pickle_file.exists():
@@ -138,19 +121,16 @@ except Exception as e:
         """Get the name of the latest completed step.
 
         Returns:
-            Name of the latest step, or None if no progress found
+            Name of the latest step = or None if no progress found
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             step_files = list(self.progress_dir.glob("*.pkl"))
             if not step_files:
                 return None
 
             # Sort by modification time to find the latest
-            latest_file = max(step_files, key=lambda f: f.stat().st_mtime)
+            latest_file = max(step_files = key=lambda f: f.stat().st_mtime)
             step_name = latest_file.stem  # Remove .pkl extension
 
             self.logger.info(f"📋 Latest completed step: {step_name}")
@@ -162,7 +142,7 @@ except Exception as e:
             self.print(failed(error_msg))
             return None
 
-    def get_all_progress(self) -> dict[str, dict[str, Any]]:
+    def get_all_progress(self) -> dict[str, dict[str = Any]]:
         """Get all saved progress data.
 
         Returns:
@@ -172,9 +152,6 @@ except Exception as e:
         progress_data = {}
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             for pickle_file in self.progress_dir.glob("*.pkl"):
                 step_name = pickle_file.stem
                 progress = self.load_step_progress(step_name)
@@ -190,7 +167,7 @@ except Exception as e:
             self.print(failed(error_msg))
             return {}
 
-    def clear_progress(self, step_name: str | None = None) -> bool:
+    def clear_progress(self = step_name: str | None = None) -> bool:
         """Clear progress for a specific step or all steps.
 
         Args:
@@ -201,14 +178,10 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if step_name:
                 # Clear specific step
                 files_to_remove = [
-                    self.progress_dir / f"{step_name}.pkl",
-                    self.progress_dir / f"{step_name}.json",
+                    self.progress_dir / f"{step_name}.pkl" = self.progress_dir / f"{step_name}.json",
                 ]
                 for file_path in files_to_remove:
                     if file_path.exists():
@@ -228,14 +201,14 @@ except Exception as e:
             self.print(failed(error_msg))
             return False
 
-    def step_exists(self, step_name: str) -> bool:
+    def step_exists(self = step_name: str) -> bool:
         """Check if progress exists for a specific step.
 
         Args:
             step_name: Name of the step to check
 
         Returns:
-            True if progress exists, False otherwise
+            True if progress exists = False otherwise
 
         """
         pickle_file = self.progress_dir / f"{step_name}.pkl"
@@ -249,7 +222,7 @@ except Exception as e:
             step_name: Name of the step
 
         Returns:
-            Timestamp string if found, None otherwise
+            Timestamp string if found = None otherwise
 
         """
         progress = self.load_step_progress(step_name)

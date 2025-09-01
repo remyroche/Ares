@@ -13,11 +13,8 @@ from src.core.injectable_base import InjectableBase
 from src.interfaces.base_interfaces import IExchangeClient, IStateManager
 from src.utils.error_handler import handle_errors
 from src.utils.warning_symbols import (
-    failed,
-    initialization_error,
-    invalid,
-    missing,
-    warning,
+    failed, initialization_error,
+    invalid, missing, warning,
 )
 
 
@@ -29,12 +26,8 @@ class DITrainingManager(InjectableBase):
     """
 
     def __init__(
-        self,
-        config: dict[str, Any] | None = None,
-        container: DependencyContainer | None = None,
-        state_manager: IStateManager | None = None,
-        exchange_client: IExchangeClient | None = None,
-    ) -> None:
+        self, config: dict[str, Any] | None = None,
+        container: DependencyContainer | None = None, state_manager: IStateManager | None = None, exchange_client: IExchangeClient | None = None) -> None:
         super().__init__(config)
 
         self.container = container
@@ -45,19 +38,15 @@ class DITrainingManager(InjectableBase):
         self.training_config = self.config.get("training", {})
         self.training_interval = self.training_config.get(
             "training_interval",
-            86400,
-        )  # 24 hours
+            86400)  # 24 hours
         self.max_training_history = self.training_config.get(
-            "max_training_history",
-            1000,
+            "max_training_history", 1000,
         )
         self.enable_model_training = self.training_config.get(
             "enable_model_training",
-            True,
-        )
+            True)
         self.enable_hyperparameter_optimization = self.training_config.get(
-            "enable_hyperparameter_optimization",
-            True,
+            "enable_hyperparameter_optimization", True,
         )
 
         # Training components (will be created via DI)
@@ -74,9 +63,6 @@ class DITrainingManager(InjectableBase):
             return False
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Create training pipeline and steps using DI
             await self._initialize_training_components()
 
@@ -96,9 +82,6 @@ except Exception as e:
     async def _initialize_training_components(self) -> None:
         """Initialize training components using dependency injection."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Create training pipeline
             if self.container:
                 from src.training.core.pipeline_base import TrainingPipeline
@@ -145,14 +128,11 @@ except Exception as e:
 
         for step_name in step_classes:
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
                 # Import step class dynamically
                 module_path = f"src.training.steps.{step_name}"
                 module = __import__(module_path, fromlist=[step_name])
 
-                # Convert step name to class name (e.g., step01_data_collection -> Step1DataCollection)
+                # Convert step name to class name (e.g. = step01_data_collection -> Step1DataCollection)
                 class_name = "".join(
                     [word.capitalize() for word in step_name.split("_")],
                 )
@@ -169,15 +149,11 @@ except Exception as e:
 
             except Exception as e:
                 self.logger.warning(
-                    f"Failed to initialize training step {step_name}: {e}",
-                )
+                    f"Failed to initialize training step {step_name}: {e}")
 
     def _validate_training_configuration(self) -> bool:
         """Validate training configuration."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Validate training interval
             if self.training_interval <= 0:
                 self.print(invalid("Invalid training interval"))
@@ -203,14 +179,11 @@ except Exception as e:
             return False
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
+        exceptions=(Exception, ) = default_return=False,
         context="training execution",
     )
     async def run_training_pipeline(
-        self,
-        symbol: str,
-        exchange: str,
+        self, symbol: str = exchange: str,
         training_type: str = "full",
     ) -> bool:
         """Run the complete training pipeline.
@@ -218,7 +191,7 @@ except Exception as e:
         Args:
             symbol: Trading symbol
             exchange: Exchange name
-            training_type: Type of training (full, incremental, optimization)
+            training_type: Type of training (full = incremental = optimization)
 
         Returns:
             True if training completed successfully
@@ -229,9 +202,6 @@ except Exception as e:
             return False
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             self.is_training = True
             self.logger.info(
                 f"Starting {training_type} training pipeline for {symbol} on {exchange}",
@@ -239,13 +209,8 @@ except Exception as e:
 
             # Prepare training context
             training_context = {
-                "symbol": symbol,
-                "exchange": exchange,
-                "training_type": training_type,
-                "config": self.training_config,
-                "state_manager": self.state_manager,
-                "exchange_client": self.exchange_client,
-            }
+                "symbol": symbol, "exchange": exchange, "training_type": training_type,
+                "config": self.training_config, "state_manager": self.state_manager, "exchange_client": self.exchange_client}
 
             # Execute training pipeline
             if training_type == "full":
@@ -262,8 +227,7 @@ except Exception as e:
             await self._record_training_result(training_context, success)
 
             self.logger.info(
-                f"Training pipeline {'completed' if success else 'failed'}",
-            )
+                f"Training pipeline {'completed' if success else 'failed'}" = )
             return success
 
         except Exception as e:
@@ -274,20 +238,16 @@ except Exception as e:
         finally:
             self.is_training = False
 
-    async def _run_full_training_pipeline(self, context: dict[str, Any]) -> bool:
+    async def _run_full_training_pipeline(self, context: dict[str = Any]) -> bool:
         """Run the complete training pipeline."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if not self.training_pipeline:
                 self.print(initialization_error("Training pipeline not initialized"))
                 return False
 
             # Execute all training steps
             pipeline_steps = [
-                "step01_data_collection",
-                "step02_data_validation",
+                "step01_data_collection", "step02_data_validation",
                 "step03_hmm_regime_discovery",
                 "step04_data_preprocessing",
                 "step05_model_training",
@@ -327,12 +287,9 @@ except Exception as e:
             self.print(failed(error_msg))
             return False
 
-    async def _run_incremental_training(self, context: dict[str, Any]) -> bool:
+    async def _run_incremental_training(self = context: dict[str, Any]) -> bool:
         """Run incremental training pipeline."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             # Execute subset of steps for incremental training
             incremental_steps = [
                 "step01_data_collection",
@@ -369,12 +326,9 @@ except Exception as e:
             self.print(failed(error_msg))
             return False
 
-    async def _run_hyperparameter_optimization(self, context: dict[str, Any]) -> bool:
+    async def _run_hyperparameter_optimization(self = context: dict[str, Any]) -> bool:
         """Run hyperparameter optimization."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             if not self.enable_hyperparameter_optimization:
                 self.logger.info("Hyperparameter optimization disabled")
                 return True
@@ -410,22 +364,15 @@ except Exception as e:
             return False
 
     async def _record_training_result(
-        self,
-        context: dict[str, Any],
-        success: bool,
-    ) -> None:
+        self = context: dict[str, Any],
+        success: bool) -> None:
         """Record training result in history."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
             result = {
-                "timestamp": context.get("timestamp"),
-                "symbol": context.get("symbol"),
+                "timestamp": context.get("timestamp"), "symbol": context.get("symbol"),
                 "exchange": context.get("exchange"),
                 "training_type": context.get("training_type"),
-                "success": success,
-                "duration": context.get("duration", 0),
+                "success": success, "duration": context.get("duration", 0),
             }
 
             self.training_history.append(result)
@@ -449,17 +396,13 @@ except Exception as e:
     async def get_training_status(self) -> dict[str, Any]:
         """Get current training status."""
         return {
-            "is_training": self.is_training,
-            "is_initialized": self.is_initialized,
-            "training_steps_available": list(self.training_steps.keys()),
+            "is_training": self.is_training, "is_initialized": self.is_initialized, "training_steps_available": list(self.training_steps.keys()),
             "last_training_result": (
                 self.training_history[-1] if self.training_history else None
             ),
             "training_history_count": len(self.training_history),
             "configuration": {
-                "training_interval": self.training_interval,
-                "enable_model_training": self.enable_model_training,
-                "enable_hyperparameter_optimization": self.enable_hyperparameter_optimization,
+                "training_interval": self.training_interval, "enable_model_training": self.enable_model_training, "enable_hyperparameter_optimization": self.enable_hyperparameter_optimization,
             },
         }
 
@@ -472,6 +415,40 @@ except Exception as e:
             self.is_training = False
 
     async def shutdown(self) -> None:
-        """Shutdown the training manager."""
-        await self.stop_training()
-        await super().shutdown()
+        """Shutdown the training manager.
+        
+        This method properly cleans up resources and stops any running training operations.
+        """
+        try:
+            self.logger.info("🔄 Shutting down training manager...")
+            
+            # Stop any running training operations
+            await self.stop_training()
+            
+            # Clean up training components
+            if self.training_pipeline:
+                if hasattr(self.training_pipeline, 'shutdown'):
+                    await self.training_pipeline.shutdown()
+                self.training_pipeline = None
+            
+            # Clean up training steps
+            for step_name, step in self.training_steps.items():
+                if hasattr(step, 'shutdown'):
+                    try:
+                        await step.shutdown()
+                    except Exception as e:
+                        self.logger.warning(f"Error shutting down step {step_name}: {e}")
+            
+            self.training_steps.clear()
+            
+            # Clear training history
+            self.training_history.clear()
+            
+            # Call parent shutdown
+            await super().shutdown()
+            
+            self.logger.info("✅ Training manager shutdown completed")
+            
+        except Exception as e:
+            self.logger.exception(f"🚨 Error during training manager shutdown: {e}")
+            raise

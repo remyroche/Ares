@@ -2,6 +2,7 @@
 """Download Futures Data Only for Binance ETHUSDT.
 
 Based on user requirements:
+    pass  # TODO: Add implementation
 1. Futures: 2023 (12 months)
 2. Futures: 2025-01 to 2025-04 (4 months)
 """
@@ -52,6 +53,9 @@ async def download_futures_month(year: int, month: int):
     month_str = f"{year:04d}-{month:02d}"
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Calculate start and end dates for the FULL month
         start_date = datetime(year, month, 1)
         if month == 12:
@@ -127,6 +131,9 @@ async def main() -> bool:
     all_results = {}
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Download 2023 futures data
 
         if not shutdown_requested:

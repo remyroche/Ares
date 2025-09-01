@@ -273,6 +273,9 @@ class BaseExchange(IExchangeClient, ABC):
     async def fetch_price(self, symbol: str) -> float | None:
         """Fetch current price using ticker, falling back to order book mid."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Prefer a direct ticker if subclass implements get_ticker
             if hasattr(self, "get_ticker"):
                 ticker = await self.get_ticker(symbol)  # type: ignore[attr-defined]
@@ -304,6 +307,9 @@ class BaseExchange(IExchangeClient, ABC):
     async def get_liquidation_price(self, symbol: str) -> float | None:
         """Best-effort liquidation price for current position on symbol."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             risk = await self.get_position_risk(symbol)
             # Try common ccxt fields
             if isinstance(risk, list) and risk:

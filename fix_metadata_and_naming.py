@@ -21,6 +21,9 @@ STEPS_TO_FIX = [
 def add_metadata_to_training_input(file_path: Path) -> bool:
     """Add missing metadata fields to training_input in artifact logging methods."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
@@ -52,7 +55,7 @@ def add_metadata_to_training_input(file_path: Path) -> bool:
         # Add missing metadata fields
         new_training_input = training_input_text.replace(
             '}',
-            f',\n                "asset": symbol,  # Use symbol as asset\n                "lookback_period": self.config.get("lookback_days", 1095),  # Default to 3 years\n                "project_version": self.config.get("project_version", "1.0.0"),  # Default version\n            }}'
+            f',\n                "asset": symbol,  # Use symbol as asset\n                "lookback_period": self.config.get("lookback_days", 1095),  # Default to 3 years\n                "project_version": self.config.get("project_version", "1_2_3"),  # Default version\n            }}'
         )
 
         new_content = content.replace(training_input_text, new_training_input)
@@ -70,6 +73,9 @@ def add_metadata_to_training_input(file_path: Path) -> bool:
 def add_metadata_to_additional_metadata(file_path: Path) -> bool:
     """Add missing metadata fields to additional_metadata in logging calls."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
@@ -89,7 +95,7 @@ def add_metadata_to_additional_metadata(file_path: Path) -> bool:
             # Add missing metadata fields
             new_metadata = metadata_text.replace(
                 '}',
-                f',\n                    "asset": symbol,\n                    "lookback_period": self.config.get("lookback_days", 1095),\n                    "project_version": self.config.get("project_version", "1.0.0"),\n                }}'
+                f',\n                    "asset": symbol,\n                    "lookback_period": self.config.get("lookback_days", 1095),\n                    "project_version": self.config.get("project_version", "1_2_3"),\n                }}'
             )
 
             content = content.replace(metadata_text, new_metadata)
@@ -112,6 +118,9 @@ def add_metadata_to_additional_metadata(file_path: Path) -> bool:
 def add_standardized_naming_patterns(file_path: Path) -> bool:
     """Add standardized naming patterns to artifact logging methods."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 

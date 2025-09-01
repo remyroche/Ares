@@ -4,6 +4,7 @@
 Optimized Ares Data Downloader
 
 This script provides enhanced data downloading capabilities with:
+    pass  # TODO: Add implementation
 1. Parallel processing for multiple data types (klines = aggtrades, futures)
 2. Concurrent downloads for different time periods
 3. Optimized rate limiting and connection pooling
@@ -57,6 +58,9 @@ if not logger.handlers:
     logger.addHandler(handler)
 
 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
     # Try importing with relative path first
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -148,6 +152,9 @@ class OptimizedDataDownloader:
 
         def find_last_timestamp(csv_path: Path) -> int | None:
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 
                 if not csv_path.exists() or csv_path.stat().st_size == 0:
                     return None
@@ -165,6 +172,9 @@ class OptimizedDataDownloader:
 
         def find_first_timestamp(csv_path: Path) -> int | None:
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 if not csv_path.exists() or csv_path.stat().st_size == 0:
                     return None
                 df = pd.read_csv(
@@ -227,6 +237,9 @@ class OptimizedDataDownloader:
         url = f"{base_url}/{path}"
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 
             # Use certifi CA bundle to avoid SSL verification issues on some systems
 
@@ -304,6 +317,9 @@ class OptimizedDataDownloader:
         logger.info("🔧 STEP 1: Initializing optimized downloader...")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 
             print(f"   📊 Exchange: {self.config.exchange}")
             print(f"   📊 Symbol: {self.config.symbol}")
@@ -320,6 +336,9 @@ class OptimizedDataDownloader:
             logger.info("🔌 Creating exchange client...")
 
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 
                 self.exchange_client = ExchangeFactory.get_exchange(
                     self.config.exchange.lower(),
@@ -377,6 +396,9 @@ class OptimizedDataDownloader:
     def _find_latest_aggtrades_timestamp(self) -> datetime | None:
         """Find the latest timestamp using partitioned dataset manifest or dataset scan; fallback to CSV tail."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             from src.data.parquet_dataset_manager import ParquetDatasetManager
 
             pdm = ParquetDatasetManager(logger=logger)
@@ -393,6 +415,9 @@ class OptimizedDataDownloader:
         # Fallback: previous CSV tail logic
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             pattern = f"aggtrades_{self.config.exchange}_{self.config.symbol}_*.csv"
             files = glob.glob(os.path.join(self.cache_dir, pattern))
             if not files:
@@ -401,6 +426,9 @@ class OptimizedDataDownloader:
             latest_timestamp = None
             for file_path in files:
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 
                     result = subprocess.run(
                         ["tail", "-100", file_path],
@@ -458,6 +486,9 @@ class OptimizedDataDownloader:
         if data_type == "aggtrades":
             if self.config.start_date_str and self.config.end_date_str:
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 
                     start_date = datetime.strptime(
                         self.config.start_date_str, "%Y-%m-%d",
@@ -498,6 +529,9 @@ class OptimizedDataDownloader:
         # For other data types, use explicit date range if provided, otherwise standard lookback
         elif self.config.start_date_str and self.config.end_date_str:
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 
                 start_date = datetime.strptime(
                     self.config.start_date_str, "%Y-%m-%d",
@@ -592,6 +626,9 @@ class OptimizedDataDownloader:
 
             def _csv_ts_bounds(path: str) -> tuple[int | None , int | None]:
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 
                     if not os.path.exists(path) or os.path.getsize(path) == 0:
                         return None
@@ -815,6 +852,9 @@ class OptimizedDataDownloader:
         async with self.download_semaphore:
             print(f"🔍 DEBUG: Acquired semaphore for {start_dt.strftime('%Y-%m')}")
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 
                 # Generate filename for this month
                 filename = f"klines_{self.config.exchange}_{self.config.symbol}_{self.config.interval}_{start_dt.strftime('%Y-%m')}.csv"
@@ -883,6 +923,9 @@ class OptimizedDataDownloader:
                     )
 
                     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 
                         print("🔍 DEBUG: Making actual API call...")
                         batch_klines = await self.exchange_client.get_historical_klines(
@@ -1192,6 +1235,9 @@ class OptimizedDataDownloader:
         """Download aggregated trades for a specific time period."""
         async with self.download_semaphore:
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 
                 # Generate filename for this day
                 filename = f"aggtrades_{self.config.exchange}_{self.config.symbol}_{start_dt.strftime('%Y-%m-%d')}.csv"
@@ -1389,6 +1435,9 @@ class OptimizedDataDownloader:
                     # For BINANCE and older dates, try archive first
                     if prefer_archive:
                         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 
                             vision_trades = (
                                 await self._fetch_aggtrades_from_binance_vision(
@@ -1405,6 +1454,9 @@ class OptimizedDataDownloader:
                                 )
                                 merged_df.to_csv(filepath, index=False)
                                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                                     parquet_path = (
                                         os.path.splitext(filepath)[0] + ".parquet"
                                     )
@@ -1619,6 +1671,9 @@ class OptimizedDataDownloader:
                         f"⚠️ Empty aggtrades for {start_dt.strftime('%Y-%m-%d')}, trying CCXT fallback...",
                     )
                     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 
                         # First try CCXT aggregate trades
                         ccxt_trades: list[dict] = []
@@ -1762,6 +1817,9 @@ class OptimizedDataDownloader:
         """Download futures data for a specific time period."""
         async with self.download_semaphore:
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 
                 # Generate filename for this month
                 filename = f"futures_{self.config.exchange}_{self.config.symbol}_{start_dt.strftime('%Y-%m')}.csv"
@@ -2132,6 +2190,9 @@ class OptimizedDataDownloader:
         )
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 
             # Initialize
             print("🔍 DEBUG: Starting initialization...")

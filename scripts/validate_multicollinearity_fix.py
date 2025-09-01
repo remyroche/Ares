@@ -66,6 +66,9 @@ async def validate_multicollinearity_fix() -> bool:
 	}
 
 	try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 		feature_eng = VectorizedAdvancedFeatureEngineering(config)
 		await feature_eng.initialize()
 

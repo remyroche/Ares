@@ -214,6 +214,9 @@ def main():
     print("=" * 80)
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Test 1: Configuration Structure
         test_config_structure()
 

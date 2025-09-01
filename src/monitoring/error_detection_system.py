@@ -7,9 +7,7 @@ Provides scaffolding for error and anomaly detection.
 
 
 from enum import Enum
-from typing import Any, Dict
 
-from src.utils.logger import system_logger
 
 
 class AlertSeverity(Enum):

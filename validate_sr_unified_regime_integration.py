@@ -48,6 +48,9 @@ class SRUnifiedRegimeIntegrationValidator:
             }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Check syntax
             if not self.check_file_syntax(sr_file):
                 return {
@@ -158,6 +161,9 @@ class SRUnifiedRegimeIntegrationValidator:
             }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Check syntax
             if not self.check_file_syntax(sr_file):
                 return {

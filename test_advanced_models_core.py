@@ -18,6 +18,9 @@ def test_model_configuration_framework():
     print("🧪 Testing Model Configuration Framework...")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Test the configuration structure
         config = {
             "timeframe": "5m",
@@ -204,6 +207,9 @@ def test_training_steps_integration():
     print("🧪 Testing Training Steps Integration...")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Test Step 6 configuration
         step6_config = {
             "timeframe": "5m",
@@ -294,6 +300,9 @@ def test_model_type_coverage():
     print("🧪 Testing Model Type Coverage...")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Define all required model types
         required_model_types = [
             "lightgbm",      # Tree-based gradient boosting

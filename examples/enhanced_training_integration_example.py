@@ -346,6 +346,9 @@ async def main():
     print("=" * 80)
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Example 1: Default training (enhanced operations enabled by default)
         await example_default_training()
 

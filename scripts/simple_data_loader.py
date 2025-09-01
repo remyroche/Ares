@@ -26,6 +26,9 @@ async def load_data(symbol: str, exchange: str, interval: str = "1m"):
     logger.info(f"Loading data for {symbol} on {exchange} with interval {interval}")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Step 1: Download raw data
         logger.info("🔄 Step 1: Downloading raw data...")
         success = await download_all_data_with_consolidation(symbol, exchange, interval)

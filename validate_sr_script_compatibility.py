@@ -75,6 +75,9 @@ class SRCompatibilityValidator:
         }
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Initialize SRBreakoutPredictor
             sr_predictor = SRBreakoutPredictor(config)
             init_success = await sr_predictor.initialize()
@@ -211,6 +214,9 @@ class SRCompatibilityValidator:
             path = Path(script_path)
             if path.exists():
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     with open(path, 'r', encoding='utf-8') as f:
                         content = f.read()
 

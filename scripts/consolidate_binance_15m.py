@@ -62,6 +62,9 @@ def consolidate_binance_15m_data() -> bool:
 		)
 
 		try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 			# Read the CSV file
 			df = pd.read_csv(file)
 			logger.info(f"   📊 Loaded {len(df)} records")

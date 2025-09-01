@@ -6,20 +6,15 @@ Real-time monitoring and visualization of system performance metrics.
 """
 
 
-import asyncio
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from src.utils.error_handler import handle_errors
-from src.utils.centralized_decorators import (
     performance_monitor,
     PerformanceLevel,
     resource_monitor,
     memory_efficient,
 )
-from src.utils.logger import system_logger
 
 
 @dataclass

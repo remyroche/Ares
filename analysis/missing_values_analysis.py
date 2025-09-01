@@ -157,6 +157,9 @@ class MissingValuesAnalyzer:
         print(f"Using time column: {time_col}")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Convert to datetime if needed
             if self.data[time_col].dtype == 'object':
                 self.data[time_col] = pd.to_datetime(self.data[time_col])
@@ -339,6 +342,9 @@ class MissingValuesAnalyzer:
         print("\n📈 GENERATING VISUALIZATIONS...")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Create figure with subplots
             fig, axes = plt.subplots(2, 2, figsize=(15, 12))
             fig.suptitle('Missing Values Analysis Report', fontsize=16, fontweight='bold')

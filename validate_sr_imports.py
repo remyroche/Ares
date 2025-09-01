@@ -20,6 +20,9 @@ def validate_imports():
     print("=" * 50)
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Test 1: Import SRBreakoutPredictor
         print("\n📦 Test 1: Importing SRBreakoutPredictor")
         from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
@@ -109,6 +112,9 @@ async def validate_integration():
     print("=" * 50)
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Configuration
         config = {
             "sr_levels_manager": {

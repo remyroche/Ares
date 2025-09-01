@@ -130,6 +130,9 @@ class CombinedFractionalSystemTester:
 
         # Test fractional labeling only
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             from src.training.steps.step4_analyst_labeling_feature_engineering_components.fractional_triple_barrier_labeling import (
                 FractionalTripleBarrierLabeling
             )
@@ -151,6 +154,9 @@ class CombinedFractionalSystemTester:
 
         # Test fractional differentiation only
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             from src.training.steps.fractional_differentiation import FractionalFeatureGenerator
 
             generator = FractionalFeatureGenerator(config=self.test_config['differentiation'])
@@ -195,6 +201,9 @@ class CombinedFractionalSystemTester:
         print(f"🧪 Testing combined fractional system (regime: {hmm_regime})...")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             from src.training.steps.combined_fractional_system import CombinedFractionalSystem, get_combined_fractional_config
 
             # Initialize combined system

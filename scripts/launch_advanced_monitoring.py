@@ -266,6 +266,9 @@ async def main():
     launcher = AdvancedMonitoringLauncher()
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Setup monitoring
         success = await launcher.setup_monitoring()
         if not success:

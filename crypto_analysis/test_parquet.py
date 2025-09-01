@@ -44,6 +44,9 @@ def test_parquet_functionality():
         parquet_path = tmp_file.name
     
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Write to Parquet
         print(f"\n📝 Writing to Parquet: {parquet_path}")
         df.to_parquet(parquet_path, compression='snappy', engine='pyarrow', index=True)

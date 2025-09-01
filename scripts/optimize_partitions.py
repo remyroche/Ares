@@ -93,6 +93,9 @@ class PartitionOptimizer:
         unified_path = self.data_cache_path / "unified"
         if unified_path.exists():
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 for exchange_dir in unified_path.iterdir():
                     if exchange_dir.is_dir():
                         for symbol_dir in exchange_dir.iterdir():

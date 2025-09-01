@@ -21,6 +21,9 @@ def test_all_model_types():
     print("🧪 Testing All Advanced Model Types Integration...")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         from training.multi_output_probability_trainer import MultiOutputProbabilityTrainer
         from training.model_saving_utils import save_multi_output_model_with_probabilities, load_model_with_probabilities
 
@@ -41,6 +44,9 @@ def test_all_model_types():
             print(f"\n🔧 Testing {model_type.upper()} for {timeframe} timeframe...")
 
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 # Create test data
                 n_samples = 200
                 n_features = 15
@@ -260,6 +266,9 @@ def test_model_configuration():
     print("🧪 Testing Model Configuration by Timeframe...")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         from training.multi_output_probability_trainer import MultiOutputProbabilityTrainer
 
         # Test different timeframes
@@ -305,6 +314,9 @@ def test_neural_network_specific_features():
     print("🧪 Testing Neural Network Specific Features...")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         from training.multi_output_probability_trainer import MultiOutputProbabilityTrainer
         from training.advanced_neural_models import NEURAL_MODEL_CONFIGS
 

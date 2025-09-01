@@ -19,6 +19,9 @@ STEPS_TO_FIX = [
 def find_execute_method(file_path: Path) -> Tuple[bool, str, int]:
     """Find the execute method in a step file."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
@@ -48,6 +51,9 @@ def find_execute_method(file_path: Path) -> Tuple[bool, str, int]:
 def check_decorator_applied(file_path: Path) -> bool:
     """Check if decorator is applied to execute method."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
@@ -74,6 +80,9 @@ def check_decorator_applied(file_path: Path) -> bool:
 def apply_decorator_to_execute(file_path: Path) -> bool:
     """Apply decorator to execute method if not already applied."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 

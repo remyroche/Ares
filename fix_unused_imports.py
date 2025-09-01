@@ -11,6 +11,9 @@ from pathlib import Path
 def find_unused_imports(filepath):
     """Find unused imports in a file."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(filepath, 'r', encoding='utf-8') as f:
             content = f.read()
 

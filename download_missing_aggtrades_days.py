@@ -3,6 +3,7 @@
 Download Missing Aggtrades Days for Binance ETHUSDT
 
 Based on the analysis, these are the 12 missing days:
+    pass  # TODO: Add implementation
 - 2024-03-05, 2024-04-05, 2024-04-16, 2024-04-29
 - 2024-07-08, 2024-07-15, 2024-08-05, 2024-08-06
 - 2024-11-07, 2025-01-20, 2025-02-04, 2025-03-06
@@ -71,6 +72,9 @@ async def download_single_day_aggtrades(date_str: str) -> bool:
     print("-" * 60)
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         config = DownloadConfig(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -193,6 +197,9 @@ async def download_missing_aggtrades_by_month():
             end_date = f"{month}-31"
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             config = DownloadConfig(
                 symbol="ETHUSDT",
                 exchange="BINANCE",
@@ -280,6 +287,9 @@ async def main():
         print("❌ Invalid choice. Please enter 1 or 2.")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         if choice == "1":
             success = await download_missing_aggtrades_batch()
         else:

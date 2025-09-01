@@ -283,6 +283,9 @@ def main():
     print("=" * 60)
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Run examples
         example_basic_usage()
         example_advanced_validation()

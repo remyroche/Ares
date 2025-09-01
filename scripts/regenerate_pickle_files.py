@@ -2,6 +2,7 @@
 """
 Script to regenerate pickle files from consolidated CSV files.
 This script will:
+    pass  # TODO: Add implementation
 1. Load the consolidated CSV files
 2. Create proper pickle files with the expected data structure
 3. Ensure prices are valid and timestamps are indexed

@@ -89,6 +89,9 @@ class ExampleStep:
     ) -> None:
         """Log step artifacts to MLflow with enhanced metadata and standardized naming."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             timeframe = training_input.get("timeframe", "1m")
@@ -238,6 +241,9 @@ class ExampleStepWithManager:
         run_id = self.mlflow_manager.start_run(step_name="example_step_with_manager")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Step execution logic here
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
@@ -362,6 +368,9 @@ async def _log_function_artifacts_to_mlflow(
 ) -> None:
     """Log function step artifacts to MLflow."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create config for MLflow logging
         config = {
             "trading_symbol": symbol,

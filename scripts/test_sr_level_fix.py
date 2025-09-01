@@ -27,6 +27,9 @@ def test_sr_level_fix() -> bool:
     logger = system_logger.getChild("TestSRLeverFix")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Create sample price data with wider range to test S/R levels
         rng = np.random.default_rng(42)
         n_samples = 1000

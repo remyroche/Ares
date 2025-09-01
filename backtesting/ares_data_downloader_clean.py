@@ -32,6 +32,9 @@ logger = logging.getLogger("OptimizedDataDownloader")
 
 # Import dependencies
 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
     from src.config import CONFIG
     from src.utils.logger import get_logger
@@ -149,6 +152,9 @@ class CleanDataDownloader:
         logger.info("🔧 STEP 1: Initializing clean downloader with CCXT...")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Create CCXT exchange instance
             exchange_class = getattr(ccxt, self.config.exchange.lower())
             self.exchange = exchange_class(
@@ -184,6 +190,9 @@ class CleanDataDownloader:
     def _find_latest_aggtrades_timestamp(self) -> datetime | None:
         """Find the latest timestamp in existing aggtrades files by reading actual trade timestamps."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Find all aggtrades files for this symbol and exchange
             pattern = f"aggtrades_{self.config.exchange}_{self.config.symbol}_*.csv"
             files = glob.glob(os.path.join(self.cache_dir, pattern))
@@ -197,6 +206,9 @@ class CleanDataDownloader:
 
             for file_path in files:
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     # Read only the last few lines to find the latest trade timestamp efficiently
                     result = subprocess.run(
                         ["tail", "-100", file_path],
@@ -600,6 +612,9 @@ class CleanDataDownloader:
         """Download klines data for a specific time period using CCXT."""
         async with self.download_semaphore:
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 # Generate filename for this day
                 filename = f"klines_{self.config.exchange}_{self.config.symbol}_{start_dt.strftime('%Y-%m-%d')}.csv"
                 filepath = os.path.join(self.cache_dir, filename)
@@ -675,6 +690,9 @@ class CleanDataDownloader:
         """Download aggregated trades for a specific time period using CCXT."""
         async with self.download_semaphore:
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 # Generate filename for this day
                 filename = f"aggtrades_{self.config.exchange}_{self.config.symbol}_{start_dt.strftime('%Y-%m-%d')}.csv"
                 filepath = os.path.join(self.cache_dir, filename)
@@ -757,6 +775,9 @@ class CleanDataDownloader:
         """Download futures-specific data (funding rates) for a specific time period."""
         async with self.download_semaphore:
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 # Generate filename for this month
                 filename = f"futures_{self.config.exchange}_{self.config.symbol}_{start_dt.strftime('%Y-%m')}.csv"
                 filepath = os.path.join(self.cache_dir, filename)
@@ -785,11 +806,17 @@ class CleanDataDownloader:
 
                 # Try different methods to get funding rates
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     print("📊 Downloading funding rates...")
 
                     # Method 1: Try fetch_funding_rate_history if available
                     if hasattr(self.exchange, "fetch_funding_rate_history"):
                         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                             funding_rates = (
                                 await self.exchange.fetch_funding_rate_history(
                                     self.config.symbol, since=start_ms, limit=1000
@@ -825,6 +852,9 @@ class CleanDataDownloader:
                         self.exchange, "fetch_funding_rate"
                     ):
                         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                             funding_rate = await self.exchange.fetch_funding_rate(
                                 self.config.symbol
                             )
@@ -862,6 +892,9 @@ class CleanDataDownloader:
                         self.exchange, "fapiPublicGetFundingRate"
                     ):
                         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                             # Direct API call to Binance futures funding rate endpoint
                             params = {
                                 "symbol": self.config.symbol.upper(),
@@ -934,6 +967,9 @@ class CleanDataDownloader:
         data = []
         for kline in klines:
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 data.append(
                     {
                         "timestamp": datetime.fromtimestamp(kline[0] / 1000),
@@ -958,6 +994,9 @@ class CleanDataDownloader:
         data = []
         for trade in trades:
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 data.append(
                     {
                         "timestamp": datetime.fromtimestamp(trade["timestamp"] / 1000),
@@ -982,6 +1021,9 @@ class CleanDataDownloader:
         data = []
         for item in futures_data:
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 # The funding rate data is already properly structured
                 data.append(
                     {
@@ -1003,6 +1045,9 @@ class CleanDataDownloader:
         start_time = time.time()
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             print("=" * 80)
             print("🚀 CLEAN DATA DOWNLOAD PROCESS STARTED")
             print("=" * 80)

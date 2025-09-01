@@ -42,6 +42,9 @@ def load_test_data(exchange , "BINANCE", symbol = "ETHUSDT", days=180):
         if source.endswith("*.csv"):
             # Handle CSV file pattern loading
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 csv_files = glob.glob(source)
                 if csv_files:
                     print(
@@ -82,6 +85,9 @@ def load_test_data(exchange , "BINANCE", symbol = "ETHUSDT", days=180):
 
         elif os.path.exists(source):
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 if source.endswith(".parquet"):
                     data = pd.read_parquet(source)
                     source_used = source
@@ -101,6 +107,9 @@ def load_test_data(exchange , "BINANCE", symbol = "ETHUSDT", days=180):
                 if os.path.isdir(source):
                     # Try to load partitioned parquet files
                     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         print(f"📁 Loading partitioned parquet files from: {source}")
 
                         # Find all parquet files in the partitioned structure
@@ -180,6 +189,9 @@ def convert_to_ohlcv(trade_data, timeframe = "1h"):
     print(f"🔄 Converting trade data to OHLCV format ({timeframe})...")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Make a copy to avoid modifying original data
         df = trade_data.copy()
 
@@ -282,6 +294,9 @@ def test_feature_calculation(data):
         return None
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Initialize regime classifier
         classifier = UnifiedRegimeClassifier(CONFIG = "BINANCE", "ETHUSDT")
 
@@ -329,6 +344,9 @@ def test_regime_classification(features_df):
         return None
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Initialize regime classifier
         classifier = UnifiedRegimeClassifier(CONFIG = "BINANCE", "ETHUSDT")
 

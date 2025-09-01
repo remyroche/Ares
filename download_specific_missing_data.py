@@ -3,6 +3,7 @@
 Download Specific Missing Data for Binance ETHUSDT
 
 Based on user requirements:
+    pass  # TODO: Add implementation
 1. Futures: 2023 and 2025-01 to 2025-04
 2. Aggtrades: Since 2025-02-22 and between 2025-01-01 and 2025-02-17
 """
@@ -56,6 +57,9 @@ async def download_futures_2023():
     print("=" * 80)
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         config = DownloadConfig(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -90,6 +94,9 @@ async def download_futures_2025_01_to_04():
     print("=" * 80)
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         config = DownloadConfig(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -124,6 +131,9 @@ async def download_aggtrades_since_2025_02_22():
     print("=" * 80)
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Start from 2025-02-23 (day after the last file we have)
         config = DownloadConfig(
             symbol="ETHUSDT",
@@ -159,6 +169,9 @@ async def download_aggtrades_2025_01_01_to_2025_02_17():
     print("=" * 80)
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         config = DownloadConfig(
             symbol="ETHUSDT",
             exchange="BINANCE",
@@ -203,6 +216,9 @@ async def main():
     results = {}
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Download futures data
         print("\n📊 PHASE 1: Downloading missing futures data")
         print("-" * 60)

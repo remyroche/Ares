@@ -34,6 +34,9 @@ class CleanGapFiller:
     ) -> list[dict]:
         """Detect gaps in a single aggtrades file."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             df = pd.read_parquet(file_path)
 
             if df.empty or "timestamp" not in df.columns:
@@ -78,6 +81,9 @@ class CleanGapFiller:
         url = f"{base_url}/{path}"
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             ssl_context = ssl.create_default_context(cafile=certifi.where())
 
             async with self.session.get(url, ssl=ssl_context) as resp:
@@ -159,6 +165,9 @@ class CleanGapFiller:
     ) -> dict:
         """Fill a gap with multiple API calls until it's fully filled."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             gap_start = gap_info["gap_start"]
             gap_end = gap_info["gap_end"]
             file_name = gap_info["file"]
@@ -300,6 +309,9 @@ class CleanGapFiller:
 async def main() -> None:
     gap_filler = CleanGapFiller()
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         await gap_filler.process_all_gaps()
     finally:
         await gap_filler.close_session()

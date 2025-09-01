@@ -73,6 +73,9 @@ def test_clustering():
 
         # Test clustering
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             agg = AgglomerativeClustering(
                 n_clusters, n_clusters = metric="precomputed",
                 linkage="average",

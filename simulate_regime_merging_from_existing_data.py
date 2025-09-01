@@ -99,6 +99,9 @@ def simulate_merging_with_parameters(
             # Calculate similarity between centroids
             if len(row["centroid"]) > 0 and len(other_row["centroid"]) > 0:
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     similarity = cosine_similarity(
                         [row["centroid"]],
                         [other_row["centroid"]],
@@ -168,6 +171,9 @@ def run_parameter_sweep():
                     )
 
                 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                     result = simulate_merging_with_parameters(
                         counts = centroids,
                         min_freq = sim_thresh,

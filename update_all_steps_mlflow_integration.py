@@ -3,6 +3,7 @@
 Script to systematically update all remaining pipeline steps with enhanced MLflow integration.
 
 This script will:
+    pass  # TODO: Add implementation
 1. Add enhanced MLflow imports to all step files
 2. Add @with_enhanced_mlflow_logging decorator to execute methods
 3. Add detailed reporting and artifact logging methods
@@ -54,6 +55,9 @@ ARTIFACT_LOGGING_METHOD_TEMPLATE = '''
     ) -> None:
         """Log step {step_num} artifacts and create detailed report."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             timeframe = training_input.get("timeframe", "1m")
@@ -158,6 +162,9 @@ def extract_step_number(filename: str) -> str:
 def add_mlflow_imports(file_path: Path) -> bool:
     """Add MLflow imports to a step file."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
@@ -205,6 +212,9 @@ def add_mlflow_imports(file_path: Path) -> bool:
 def add_mlflow_decorator(file_path: Path) -> bool:
     """Add MLflow decorator to execute method."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 
@@ -259,6 +269,9 @@ def add_mlflow_decorator(file_path: Path) -> bool:
 def add_artifact_logging_method(file_path: Path) -> bool:
     """Add artifact logging method to step file."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(file_path, 'r', encoding='utf-8') as f:
             content = f.read()
 

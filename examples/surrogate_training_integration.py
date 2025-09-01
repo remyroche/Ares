@@ -205,6 +205,9 @@ class SurrogateTrainingIntegration:
                 Training performance score
             """
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 self.logger.info(f"🔬 Testing hyperparameters: {params}")
 
                 # Update training configuration with hyperparameters

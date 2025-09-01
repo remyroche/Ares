@@ -7,6 +7,7 @@ The Tactician uses this multiplier to determine position sizing.
 
 The Kelly criterion formula is: f = (bp - q) / b
 where:
+    pass  # TODO: Add implementation
 - b = odds received (1 for 1:1 odds)
 - p = probability of win
 - q = probability of loss
@@ -37,6 +38,9 @@ def calculate_kelly_multiplier(
         float: Kelly multiplier (0-1) for position sizing
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Get average confidence for target levels (0.5% to 2.0%)
         target_levels = [0.5, 1.0, 1.5, 2.0]
         confidences = []
@@ -114,6 +118,9 @@ def calculate_kelly_fraction(
         float: Raw Kelly fraction (-1 to 1)
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Get average confidence for target levels (0.5% to 2.0%)
         target_levels = [0.5, 1.0, 1.5, 2.0]
         confidences = []

@@ -94,6 +94,9 @@ def rename_data_files() -> bool:
 				continue
 
 			try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 				# Rename the file
 				shutil.move(str(old_path), str(new_path))
 				print(f"✅ Renamed: {old_path.name} -> {new_name}")

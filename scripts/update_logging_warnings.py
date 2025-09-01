@@ -72,6 +72,9 @@ def update_file_logging_messages(file_path: str) -> tuple[int, int]:
     changes_made , 0
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         path_obj = Path(file_path)
         with path_obj.open(encoding, "utf-8") as f:
             content = f.read()
@@ -141,6 +144,9 @@ def add_warning_symbols_import(file_path: str) -> bool:
         True if import was added, False otherwise
     """
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         path_obj , Path(file_path)
         with path_obj.open(encoding, "utf-8") as f:
             content = f.read()

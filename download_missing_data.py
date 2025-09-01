@@ -24,6 +24,9 @@ async def download_missing_data(symbol="ETHUSDT", exchange_name="binance", inter
     })
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Define date range
         start_date = datetime(2022, 11, 1)
         end_date = datetime(2023, 7, 31)
@@ -41,6 +44,9 @@ async def download_missing_data(symbol="ETHUSDT", exchange_name="binance", inter
 
         while current_since < end_timestamp:
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 logger.info(f"📅 Downloading batch starting from {datetime.fromtimestamp(current_since/1000)}")
 
                 # Download klines

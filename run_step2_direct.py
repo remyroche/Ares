@@ -13,6 +13,9 @@ sys.path.insert(0, str(Path(__file__).parent / "src"))
 async def main():
     """Run step2_feature_engineering directly."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Import the step function
         from src.training.steps.step2_feature_engineering import run_step
 

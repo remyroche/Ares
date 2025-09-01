@@ -104,7 +104,7 @@ class SyntaxFixer:
             
             # Fix 5: Fix invalid decimal literals
             if re.search(r'\b\d+\.\d+\.\d+\b', line):
-                # Fix invalid decimal like 1.2.3
+                # Fix invalid decimal like 1_2_3
                 line = re.sub(r'\b(\d+)\.(\d+)\.(\d+)\b', r'\1_2_3', line)
             
             # Fix 6: Fix parameter order issues

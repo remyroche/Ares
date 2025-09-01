@@ -121,6 +121,9 @@ class FractionalDifferentiationIntegrationTester:
         print("🧪 Testing baseline feature engineering...")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Disable fractional differentiation for baseline test
             test_config = self.test_config.copy()
             test_config["vectorized_advanced_features"]["enable_fractional_differentiation"] = False
@@ -168,6 +171,9 @@ class FractionalDifferentiationIntegrationTester:
         print("🧪 Testing fractional differentiation integration...")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Enable fractional differentiation
             test_config = self.test_config.copy()
             test_config["vectorized_advanced_features"]["enable_fractional_differentiation"] = True
@@ -223,6 +229,9 @@ class FractionalDifferentiationIntegrationTester:
         print("🧪 Testing fractional differentiation standalone...")
 
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             from src.training.steps.fractional_differentiation import FractionalFeatureGenerator
 
             # Initialize fractional feature generator

@@ -10,6 +10,9 @@ import re
 def cleanup_file(file_path: str):
     """Clean up a single file."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with open(file_path, encoding, "utf-8") as f:
             content = f.read()
 

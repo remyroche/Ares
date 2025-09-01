@@ -121,6 +121,9 @@ class PriceActionAnalyzer:
 
         for file_path in aggtrades_files:
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 processed_files += 1
                 terminal_log(f"📄 Loading {os.path.basename(file_path)}...", "INFO")
 
@@ -454,6 +457,9 @@ class PriceActionAnalyzer:
             )
 
             try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                 result = self.analyze_price_movement(df, target_pct, stop_pct)
 
                 # Calculate additional metrics
@@ -748,6 +754,9 @@ def main():
     terminal_log("=" * 60, "INFO")
 
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         # Initialize analyzer
         analyzer = PriceActionAnalyzer(args.symbol, args.timeframe)
         terminal_log(

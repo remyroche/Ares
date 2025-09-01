@@ -26,6 +26,9 @@ from src.utils.state_manager import StateManager  # noqa: E402
 from src.utils.warning_symbols import error, missing  # noqa: E402
 
 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 	import mlflow  # type: ignore
 except Exception as e:  # noqa: BLE001
 	mlflow = None  # type: ignore
@@ -38,6 +41,9 @@ def setup_challenger_model(run_id: str) -> bool:
 	logger = system_logger.getChild("SetupChallengerModel")
 
 	try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 		# Initialize state manager (with default config)
 		state_manager = StateManager({})
 
@@ -48,6 +54,9 @@ def setup_challenger_model(run_id: str) -> bool:
 
 		client = mlflow.tracking.MlflowClient()
 		try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 			run = client.get_run(run_id)
 		except Exception as e:  # noqa: BLE001
 			print(error(f"Could not find MLflow run {run_id}: {e}"))
@@ -73,6 +82,9 @@ def list_available_models() -> bool:
 	logger = system_logger.getChild("ListModels")
 
 	try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 		if mlflow is None:
 			print(error("MLflow is not installed or not available"))
 			return False
@@ -124,6 +136,9 @@ def clear_challenger_model() -> bool:
 	logger = system_logger.getChild("ClearChallengerModel")
 
 	try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 		# Initialize state manager
 		state_manager = StateManager({})
 

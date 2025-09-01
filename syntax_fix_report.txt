@@ -1,6 +1,6 @@
 
 Syntax Fix Report
 ================
-Files processed: 500
-Files fixed: 3
-Total fixes applied: 6
+Files processed: 18
+Files fixed: 17
+Total fixes applied: 153

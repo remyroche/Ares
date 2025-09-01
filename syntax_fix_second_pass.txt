@@ -2,5 +2,5 @@
 Syntax Fix Report
 ================
 Files processed: 18
-Files fixed: 17
-Total fixes applied: 153
+Files fixed: 0
+Total fixes applied: 0

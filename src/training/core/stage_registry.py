@@ -5,6 +5,9 @@ from src.utils.logger import system_logger
 
 
 class StageRegistry:
+    pass  # TODO: Add implementation
+class StageRegistry:
+class StageRegistry:
     """Stage registry with comprehensive error handling and type safety."""
 
 def __init__(self, config: dict[str, Any]) -> None:

@@ -12,6 +12,9 @@ import pandas as pd
 from src.utils.warning_symbols import failed, missing, validation_error
 
 class BaseValidator(ABC):
+    pass  # TODO: Add implementation
+class BaseValidator(ABC):
+class BaseValidator(ABC):
     """Base class for all step validators."""
 
 def __init__(self, step_name: str, config: dict[str, Any]) -> None:

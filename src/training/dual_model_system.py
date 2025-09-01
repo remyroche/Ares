@@ -36,6 +36,9 @@ initialization_error,
 
 
 class DualModelSystem:
+    pass  # TODO: Add implementation
+class DualModelSystem:
+class DualModelSystem:
     """Dual Model System for trading decisions.
 
 Analyst Model: Decides IF we enter/exit a trade (multi-timeframe: 30m/15m/5m)

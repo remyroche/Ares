@@ -31,12 +31,18 @@ from .base_ensemble import BaseEnsemble
 
 
 class VolatileRegimeEnsemble(BaseEnsemble):
+    pass  # TODO: Add implementation
+class VolatileRegimeEnsemble(BaseEnsemble):
+class VolatileRegimeEnsemble(BaseEnsemble):
     """
 This ensemble specializes in detecting and predicting during volatile market conditions.
 It combines signals from multiple models optimized for high volatility periods.
 """
 
 def __init__(self, config: dict, ensemble_name: str = "VolatileRegimeEnsemble"):
+    def __init__(self, config: dict, ensemble_name: str = "VolatileRegimeEnsemble"):
+    def __init__(self, config: dict, ensemble_name: str = "VolatileRegimeEnsemble"):
+    def __init__(self, config: dict, ensemble_name: str = "VolatileRegimeEnsemble"):
         super().__init__(config, ensemble_name)
 self.dl_config = {
 "sequence_length": 20,
@@ -57,6 +63,9 @@ self.models = {
 }
 
 def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
+    def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
+    def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
+    def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
         """Trains multiple diverse base models for volatile regime detection."""
 self.logger.info("Training VolatileRegime base models...")
 
@@ -122,6 +131,9 @@ except Exception as e:
 self.logger.info("✅ VolatileRegime base models training completed")
 
 def _prepare_sequence_data(self, df: pd.DataFrame, target_series: pd.Series = None):
+    def _prepare_sequence_data(self, df: pd.DataFrame, target_series: pd.Series = None):
+    def _prepare_sequence_data(self, df: pd.DataFrame, target_series: pd.Series = None):
+    def _prepare_sequence_data(self, df: pd.DataFrame, target_series: pd.Series = None):
         """Prepare sequence data for deep learning models."""
 try:
     pass  # TODO: Add proper exception handling
@@ -151,6 +163,9 @@ except Exception as e:
 return np.array([]), np.array([])
 
 def _train_dl_model(self, X_seq, y_seq_encoded, num_classes, is_transformer=False):
+    def _train_dl_model(self, X_seq, y_seq_encoded, num_classes, is_transformer=False):
+    def _train_dl_model(self, X_seq, y_seq_encoded, num_classes, is_transformer=False):
+    def _train_dl_model(self, X_seq, y_seq_encoded, num_classes, is_transformer=False):
         """Train deep learning model (LSTM or Transformer)."""
 try:
     pass  # TODO: Add proper exception handling
@@ -174,6 +189,9 @@ except Exception as e:
 return None
 
 def _build_lstm_model(self, input_shape, num_classes, X_seq, y_seq_encoded):
+    def _build_lstm_model(self, input_shape, num_classes, X_seq, y_seq_encoded):
+    def _build_lstm_model(self, input_shape, num_classes, X_seq, y_seq_encoded):
+    def _build_lstm_model(self, input_shape, num_classes, X_seq, y_seq_encoded):
         """Build LSTM model."""
 try:
     pass  # TODO: Add proper exception handling
@@ -219,6 +237,9 @@ except Exception as e:
 return None
 
 def _build_transformer_model(self, input_shape, num_classes, X_seq, y_seq_encoded):
+    def _build_transformer_model(self, input_shape, num_classes, X_seq, y_seq_encoded):
+    def _build_transformer_model(self, input_shape, num_classes, X_seq, y_seq_encoded):
+    def _build_transformer_model(self, input_shape, num_classes, X_seq, y_seq_encoded):
         """Build Transformer model."""
 try:
     pass  # TODO: Add proper exception handling
@@ -273,6 +294,9 @@ except Exception as e:
 return None
 
 def _train_tabnet_model(self, X_flat, y_flat_encoded):
+    def _train_tabnet_model(self, X_flat, y_flat_encoded):
+    def _train_tabnet_model(self, X_flat, y_flat_encoded):
+    def _train_tabnet_model(self, X_flat, y_flat_encoded):
         """Train TabNet model."""
 try:
     pass  # TODO: Add proper exception handling
@@ -292,6 +316,9 @@ except Exception as e:
 return None
 
 def _train_garch_model(self, aligned_data, y_encoded):
+    def _train_garch_model(self, aligned_data, y_encoded):
+    def _train_garch_model(self, aligned_data, y_encoded):
+    def _train_garch_model(self, aligned_data, y_encoded):
         """Train GARCH model for volatility modeling."""
 try:
     pass  # TODO: Add proper exception handling

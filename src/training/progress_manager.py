@@ -18,6 +18,9 @@ failed,
 
 
 class ProgressManager:
+    pass  # TODO: Add implementation
+class ProgressManager:
+class ProgressManager:
     """Manages progress saving and loading for training steps."""
 
 def __init__(self, symbol: str, exchange: str, data_dir: str = "data/training") -> None:

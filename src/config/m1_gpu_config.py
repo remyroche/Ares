@@ -11,6 +11,9 @@ from dataclasses import dataclass
 
 @dataclass
 class M1GPUConfig:
+    pass  # TODO: Add implementation
+class M1GPUConfig:
+class M1GPUConfig:
     """Configuration for Mac M1 GPU acceleration."""
 
 # GPU settings (DEFAULT: ALL ENABLED)
@@ -50,6 +53,9 @@ enable_compute_optimization: bool = True
 
 @dataclass
 class M1MatrixOperationsConfig:
+    pass  # TODO: Add implementation
+class M1MatrixOperationsConfig:
+class M1MatrixOperationsConfig:
     """Configuration for M1-optimized matrix operations."""
 
 # Matrix factorization settings (DEFAULT: ALL ENABLED)
@@ -75,6 +81,9 @@ max_iterations: int = 1000
 
 
 @dataclass
+class M1SecurityConfig:
+    pass  # TODO: Add implementation
+class M1SecurityConfig:
 class M1SecurityConfig:
     """Configuration for M1 GPU security."""
 

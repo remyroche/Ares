@@ -20,6 +20,9 @@ import pywt
 
 @dataclass
 class WaveletSignal:
+    pass  # TODO: Add implementation
+class WaveletSignal:
+class WaveletSignal:
     """Lightweight wavelet signal container."""
 
 timestamp: float
@@ -29,6 +32,9 @@ energy_level: float
 entropy_level: float
 computation_time: float
 
+class LiveWaveletAnalyzer:
+    pass  # TODO: Add implementation
+class LiveWaveletAnalyzer:
 class LiveWaveletAnalyzer:
     """
 Computationally-aware wavelet analyzer for live trading.

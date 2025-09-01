@@ -27,6 +27,9 @@ if str(project_root) not in sys.path:
 from src.utils.logger import system_logger
 
 class ValidationSeverity(Enum):
+    pass  # TODO: Add implementation
+class ValidationSeverity(Enum):
+class ValidationSeverity(Enum):
     """Validation severity levels."""
 INFO = "info"
 WARNING = "warning"
@@ -34,6 +37,9 @@ ERROR = "error"
 CRITICAL = "critical"
 
 @dataclass
+class ValidationIssue:
+    pass  # TODO: Add implementation
+class ValidationIssue:
 class ValidationIssue:
     """Represents a validation issue."""
 issue_type: str
@@ -45,6 +51,9 @@ affected_rows: Optional[List[int]] = None
 
 @dataclass
 class FileValidationResult:
+    pass  # TODO: Add implementation
+class FileValidationResult:
+class FileValidationResult:
     """Result of file validation."""
 is_valid: bool
 file_path: str
@@ -53,6 +62,9 @@ issues: List[ValidationIssue]
 summary: Dict[str, Any]
 validation_timestamp: datetime
 
+class ComprehensiveFileValidator:
+    pass  # TODO: Add implementation
+class ComprehensiveFileValidator:
 class ComprehensiveFileValidator:
     """
 Comprehensive file format validator for training pipeline steps.
@@ -64,6 +76,9 @@ Validates:
 """
 
 def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the validator with configuration."""
 self.logger = system_logger.getChild("ComprehensiveFileValidator")
 self.config = config or self._get_default_config()
@@ -685,8 +700,17 @@ return validator.validate_file_format(file_path, expected_schema="features", ste
 
 # Decorator for automatic validation
 def validate_file_format(step_name: str, expected_schema: Optional[str] = None):
+    def validate_file_format(step_name: str, expected_schema: Optional[str] = None):
+    def validate_file_format(step_name: str, expected_schema: Optional[str] = None):
+    def validate_file_format(step_name: str, expected_schema: Optional[str] = None):
     """Decorator to automatically validate file format in pipeline steps."""
 def decorator(func):
+    def decorator(func):
+    def decorator(func):
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+        def wrapper(*args, **kwargs):
+        def wrapper(*args, **kwargs):
         def wrapper(*args, **kwargs):
             # Execute the function
 result = func(*args, **kwargs)

@@ -23,6 +23,9 @@ missing,
 
 @dataclass
 class RollbackPoint:
+    pass  # TODO: Add implementation
+class RollbackPoint:
+class RollbackPoint:
     """Rollback point for parameter configuration."""
 
 timestamp: datetime
@@ -36,6 +39,9 @@ notes: str | None = None
 
 @dataclass
 class RollbackOperation:
+    pass  # TODO: Add implementation
+class RollbackOperation:
+class RollbackOperation:
     """Rollback operation details."""
 
 timestamp: datetime
@@ -46,6 +52,9 @@ success: bool
 error_message: str | None = None
 
 
+class RollbackManager:
+    pass  # TODO: Add implementation
+class RollbackManager:
 class RollbackManager:
     """Manages rollback points and allows manual reversion to previous parameter configurations."""
 

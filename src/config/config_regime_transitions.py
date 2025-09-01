@@ -11,6 +11,9 @@ from dataclasses import dataclass
 
 @dataclass
 class RegimeTransitionConfig:
+    pass  # TODO: Add implementation
+class RegimeTransitionConfig:
+class RegimeTransitionConfig:
     """Optimizable regime transition parameters."""
 
 # Transition detection thresholds

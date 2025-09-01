@@ -67,6 +67,9 @@ missing,
 
 @dataclass
 class ModelConfig:
+    pass  # TODO: Add implementation
+class ModelConfig:
+class ModelConfig:
     """Configuration for model training."""
 
 model_type: str
@@ -81,6 +84,9 @@ max_depth: int = 10
 
 @dataclass
 class TrainingData:
+    pass  # TODO: Add implementation
+class TrainingData:
+class TrainingData:
     """Container for training data."""
 
 features: pd.DataFrame
@@ -90,6 +96,9 @@ model_type: str
 data_info: dict[str, Any]
 
 
+class RayModelTrainer:
+    pass  # TODO: Add implementation
+class RayModelTrainer:
 class RayModelTrainer:
     """Ray-based model trainer for distributed model training and data processing.
 Handles both analyst and tactician models with parallel processing capabilities.

@@ -19,6 +19,9 @@ from src.config import CONFIG
 from src.utils.base_validator import BaseValidator
 
 class Step12FinalParametersOptimizationValidator(BaseValidator):
+    pass  # TODO: Add implementation
+class Step12FinalParametersOptimizationValidator(BaseValidator):
+class Step12FinalParametersOptimizationValidator(BaseValidator):
     """Validator for Step 12: Final Parameters Optimization."""
 
 def __init__(self, config: dict[str, Any]) -> None:

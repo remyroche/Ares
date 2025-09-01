@@ -23,6 +23,9 @@ validate_step_output,
 
 
 class GPUAccelerationM1:
+    pass  # TODO: Add implementation
+class GPUAccelerationM1:
+class GPUAccelerationM1:
     """GPU acceleration for M1 Mac using MPS (Metal Performance Shaders)."""
 
 def __init__(self, config: dict[str, Any]) -> None:

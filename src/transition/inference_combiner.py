@@ -9,6 +9,9 @@ from dataclasses import dataclass
 
 @dataclass
 class EnsembleConfig:
+    pass  # TODO: Add implementation
+class EnsembleConfig:
+class EnsembleConfig:
     weights: dict[str, float]
 macro_thresholds: dict[
 str, dict[str, dict[str, float]],
@@ -17,6 +20,9 @@ timeframe_thresholds: dict[str, dict[str, float]]  # timeframe -> {class: thr}
 reliability_path: str | None
 
 
+class TransitionInferenceCombiner:
+    pass  # TODO: Add implementation
+class TransitionInferenceCombiner:
 class TransitionInferenceCombiner:
     """
 Combine per-timeframe path_class probabilities into a single, reliability-adjusted score,

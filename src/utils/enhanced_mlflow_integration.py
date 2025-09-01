@@ -33,6 +33,9 @@ validate_run_metadata,
 from src.utils.error_handler import handle_errors
 
 def with_enhanced_mlflow_logging(step_name: str):
+    def with_enhanced_mlflow_logging(step_name: str):
+    def with_enhanced_mlflow_logging(step_name: str):
+    def with_enhanced_mlflow_logging(step_name: str):
     """Decorator to automatically add enhanced MLflow logging to pipeline steps.
 
 This decorator ensures that all step executions are properly logged to MLflow
@@ -44,11 +47,20 @@ Args:
 Usage:
         @with_enhanced_mlflow_logging("step03_hmm_regime_discovery")
 async def execute(self, training_input, pipeline_state):
+    pass  # TODO: Add implementation
+async def execute(self, training_input, pipeline_state):
+async def execute(self, training_input, pipeline_state):
         # Step execution logic
 return results
 """
 def decorator(func):
+    def decorator(func):
+    def decorator(func):
+    def decorator(func):
         @wraps(func)
+async def wrapper(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any], *args, **kwargs):
+    pass  # TODO: Add implementation
+async def wrapper(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any], *args, **kwargs):
 async def wrapper(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any], *args, **kwargs):
         # Extract metadata from config
 config, getattr(self, 'config', {})
@@ -666,9 +678,15 @@ except Exception as e:
         system_logger.error(f"Failed to log metrics for step {step_name}: {e}")
 
 class EnhancedMLflowManager:
+    pass  # TODO: Add implementation
+class EnhancedMLflowManager:
+class EnhancedMLflowManager:
     """Manager for enhanced MLflow operations in the enhanced training manager pipeline."""
 
 def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any]):
         """Initialize the enhanced MLflow manager.
 
 Args:

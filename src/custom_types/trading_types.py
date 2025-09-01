@@ -35,6 +35,9 @@ RiskLevel = Literal["very_low", "low", "medium", "high", "very_high"]
 
 
 class OrderRequest(TypedDict):
+    pass  # TODO: Add implementation
+class OrderRequest(TypedDict):
+class OrderRequest(TypedDict):
     """Type-safe order request."""
 
 symbol: Symbol
@@ -48,6 +51,9 @@ reduce_only: bool | None
 leverage: LeverageMultiplier | None
 
 
+class TradeDecision(TypedDict):
+    pass  # TODO: Add implementation
+class TradeDecision(TypedDict):
 class TradeDecision(TypedDict):
     """Type-safe trade decision."""
 
@@ -65,6 +71,9 @@ reasoning: str
 
 
 class PositionRisk(TypedDict):
+    pass  # TODO: Add implementation
+class PositionRisk(TypedDict):
+class PositionRisk(TypedDict):
     """Type-safe position risk assessment."""
 
 position_id: PositionId
@@ -79,6 +88,9 @@ risk_level: RiskLevel
 
 
 class RiskParameters(TypedDict):
+    pass  # TODO: Add implementation
+class RiskParameters(TypedDict):
+class RiskParameters(TypedDict):
     """Type-safe risk management parameters."""
 
 max_position_size: Volume
@@ -92,6 +104,9 @@ var_limit: float  # Value at Risk
 
 
 class TradingSignal(TypedDict):
+    pass  # TODO: Add implementation
+class TradingSignal(TypedDict):
+class TradingSignal(TypedDict):
     """Type-safe trading signal."""
 
 timestamp: Timestamp
@@ -104,6 +119,9 @@ time_horizon: Literal["scalp", "short_term", "medium_term", "long_term"]
 source: str  # e.g., "analyst", "ml_model", "technical_indicator"
 
 
+class PerformanceMetrics(TypedDict):
+    pass  # TODO: Add implementation
+class PerformanceMetrics(TypedDict):
 class PerformanceMetrics(TypedDict):
     """Type-safe performance metrics."""
 
@@ -121,6 +139,9 @@ losing_trades: int
 
 
 class PortfolioState(TypedDict):
+    pass  # TODO: Add implementation
+class PortfolioState(TypedDict):
+class PortfolioState(TypedDict):
     """Type-safe portfolio state."""
 
 timestamp: Timestamp
@@ -134,6 +155,9 @@ daily_pnl: float
 performance: PerformanceMetrics
 
 
+class BacktestResult(TypedDict):
+    pass  # TODO: Add implementation
+class BacktestResult(TypedDict):
 class BacktestResult(TypedDict):
     """Type-safe backtest result."""
 

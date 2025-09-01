@@ -22,6 +22,9 @@ from src.utils.base_validator import BaseValidator
 from src.utils.logger import system_logger
 
 class Step1_5DataConverterValidator(BaseValidator):
+    pass  # TODO: Add implementation
+class Step1_5DataConverterValidator(BaseValidator):
+class Step1_5DataConverterValidator(BaseValidator):
     """Validator for Step 1.5: Data Converter."""
 
 def __init__(self, config: dict[str, Any]) -> None:

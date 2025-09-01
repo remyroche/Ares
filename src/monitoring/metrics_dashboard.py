@@ -14,6 +14,9 @@ from typing import Any, Dict, List, Optional
 
 
 class MetricType(Enum):
+    pass  # TODO: Add implementation
+class MetricType(Enum):
+class MetricType(Enum):
     """Metric types for categorization."""
 
 PERFORMANCE = "performance"

@@ -36,6 +36,9 @@ warnings.filterwarnings("ignore", category=UserWarning, module="arch")
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 class BaseEnsemble:
+    pass  # TODO: Add implementation
+class BaseEnsemble:
+class BaseEnsemble:
     """
 Base class for all child ensembles to train highly optimized and robust models.
 Includes common utilities for training, prediction, and now, model persistence.
@@ -47,6 +50,9 @@ exceptions=(ValueError, AttributeError, KeyError, TypeError),
 default_return=None, context="ensemble initialization",
 )
 def __init__(self, config: dict, ensemble_name: str):
+    def __init__(self, config: dict, ensemble_name: str):
+    def __init__(self, config: dict, ensemble_name: str):
+    def __init__(self, config: dict, ensemble_name: str):
         self.config = config.get("analyst", {}).get(ensemble_name, {})
 self.ensemble_name = ensemble_name
 self.logger = logging.getLogger(self.__class__.__name__)
@@ -1004,6 +1010,9 @@ self.trained = False
 return False
 
 def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
+    def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
+    def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
+    def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
         raise NotImplementedError
 
 # SR context features were moved to step4 unified S/R system.

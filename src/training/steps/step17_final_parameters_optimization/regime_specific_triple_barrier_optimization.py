@@ -44,6 +44,9 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 @dataclass
 class RegimeTripleBarrierParams:
+    pass  # TODO: Add implementation
+class RegimeTripleBarrierParams:
+class RegimeTripleBarrierParams:
     """Triple barrier parameters for a specific regime."""
 
 # Triple barrier thresholds
@@ -69,6 +72,9 @@ min_sl_multiplier: float, 0.5
 max_sl_multiplier: float, 3.0
 
 @dataclass
+class RegimeOptimizationResult:
+    pass  # TODO: Add implementation
+class RegimeOptimizationResult:
 class RegimeOptimizationResult:
     """Result of regime - specific optimization."""
 
@@ -107,6 +113,9 @@ p_value: float
 confidence_interval: Tuple[float, float]
 
 @dataclass
+class RegimeSpecificOptimizationConfig:
+    pass  # TODO: Add implementation
+class RegimeSpecificOptimizationConfig:
 class RegimeSpecificOptimizationConfig:
     """Configuration for regime - specific optimization."""
 
@@ -170,6 +179,9 @@ enable_statistical_testing: bool, True
 confidence_level: float, 0.95
 min_sample_size: int, 50
 
+class RegimeSpecificTripleBarrierOptimizer:
+    pass  # TODO: Add implementation
+class RegimeSpecificTripleBarrierOptimizer:
 class RegimeSpecificTripleBarrierOptimizer:
     """
 Optimizer for regime - specific triple barrier thresholds and TPSL parameters.

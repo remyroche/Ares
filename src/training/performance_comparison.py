@@ -29,6 +29,9 @@ initialization_error,
 
 @dataclass
 class PerformanceMetrics:
+    pass  # TODO: Add implementation
+class PerformanceMetrics:
+class PerformanceMetrics:
     """Structured performance metrics for comparison."""
 
 accuracy: float
@@ -49,6 +52,9 @@ training_time: float
 inference_time: float
 
 
+class PerformanceComparison:
+    pass  # TODO: Add implementation
+class PerformanceComparison:
 class PerformanceComparison:
     """Comprehensive performance comparison system."""
 

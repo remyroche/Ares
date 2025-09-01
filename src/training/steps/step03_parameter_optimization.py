@@ -40,6 +40,9 @@ from src.utils.logger import system_logger
 logger, system_logger.getChild("Step3ParameterOptimization")
 
 class ParameterOptimizationStep:
+    pass  # TODO: Add implementation
+class ParameterOptimizationStep:
+class ParameterOptimizationStep:
     """Step 3: Parameter Optimization for HMM Regime Discovery."""
 
 def __init__(self, config: dict[str, Any]) -> None:

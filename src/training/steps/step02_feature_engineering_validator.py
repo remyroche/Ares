@@ -20,6 +20,9 @@ from src.config import CONFIG
 from src.utils.base_validator import BaseValidator
 
 class Step2FeatureEngineeringValidator(BaseValidator):
+    pass  # TODO: Add implementation
+class Step2FeatureEngineeringValidator(BaseValidator):
+class Step2FeatureEngineeringValidator(BaseValidator):
     """Validator for feature engineering (Step 2)."""
 
 def __init__(self, config: dict[str, Any]) -> None:

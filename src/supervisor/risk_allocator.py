@@ -9,6 +9,9 @@ import numpy as np
 from src.utils.error_handler import handle_errors, handle_specific_errors
 
 class RiskAllocator:
+    pass  # TODO: Add implementation
+class RiskAllocator:
+class RiskAllocator:
     """
 Portfolio-Level Risk Allocator component responsible for:
     - Portfolio-level risk management (excluding position sizing)

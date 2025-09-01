@@ -19,6 +19,9 @@ warning,
 
 @dataclass
 class TrialAllocationConfig:
+    pass  # TODO: Add implementation
+class TrialAllocationConfig:
+class TrialAllocationConfig:
     """Configuration for adaptive trial allocation."""
 
 total_trials: int = 500
@@ -30,6 +33,9 @@ dynamic_allocation: bool = True
 reallocation_threshold: float = 0.1
 
 
+class AdaptiveTrialAllocator:
+    pass  # TODO: Add implementation
+class AdaptiveTrialAllocator:
 class AdaptiveTrialAllocator:
     """Allocates trials based on parameter importance and performance."""
 

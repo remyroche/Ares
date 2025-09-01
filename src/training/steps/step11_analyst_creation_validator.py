@@ -17,6 +17,9 @@ validate_step2_operation,
 logger, system_logger.getChild("Step11AnalystCreationValidator")
 
 class Step11AnalystCreationValidator:
+    pass  # TODO: Add implementation
+class Step11AnalystCreationValidator:
+class Step11AnalystCreationValidator:
     """Validator for Step 11: Analyst Creation."""
 
 def __init__(self, config: dict[str, Any]) -> None:

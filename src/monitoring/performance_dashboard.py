@@ -19,6 +19,9 @@ memory_efficient,
 
 @dataclass
 class DashboardMetrics:
+    pass  # TODO: Add implementation
+class DashboardMetrics:
+class DashboardMetrics:
     """Dashboard metrics data structure."""
 
 timestamp: datetime

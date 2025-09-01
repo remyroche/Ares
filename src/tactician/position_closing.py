@@ -16,6 +16,9 @@ invalid,
 )
 
 class PositionCloser:
+    pass  # TODO: Add implementation
+class PositionCloser:
+class PositionCloser:
     """
 Position Closer that handles position closure based on dual model confidence scores
 and ATR-based exit rules.

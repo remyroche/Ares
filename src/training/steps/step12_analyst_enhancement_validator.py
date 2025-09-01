@@ -25,6 +25,9 @@ from src.config import CONFIG
 from src.utils.base_validator import BaseValidator
 
 class Step6HMMBasedEnhancementValidator(BaseValidator):
+    pass  # TODO: Add implementation
+class Step6HMMBasedEnhancementValidator(BaseValidator):
+class Step6HMMBasedEnhancementValidator(BaseValidator):
     """Validator for Step 6: HMM - Based Enhancement."""
 
 def __init__(self, config: dict[str, Any]) -> None:

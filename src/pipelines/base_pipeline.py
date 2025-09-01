@@ -22,6 +22,9 @@ pipeline_checkpoint,
 
 @dataclass
 class PipelineMetrics:
+    pass  # TODO: Add implementation
+class PipelineMetrics:
+class PipelineMetrics:
     start_time: Optional[datetime] = None
 end_time: Optional[datetime] = None
 duration_seconds: Optional[float] = None

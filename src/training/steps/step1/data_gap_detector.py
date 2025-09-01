@@ -26,6 +26,9 @@ with_tracing_span,
 logger, system_logger.getChild("DataGapDetector")
 
 class DataGapDetector:
+    pass  # TODO: Add implementation
+class DataGapDetector:
+class DataGapDetector:
     """Detects missing data gaps in trading data files."""
 
 def __init__(self, data_cache_path: str = "data_cache") -> None:

@@ -22,6 +22,9 @@ IStateManager,
 
 
 class InjectableBase:
+    pass  # TODO: Add implementation
+class InjectableBase:
+class InjectableBase:
     """
 Base class for all injectable trading components.
 
@@ -29,6 +32,9 @@ Provides common dependency injection functionality and configuration support.
 """
 
 def __init__(self, config: dict[str, Any] | None = None):
+    def __init__(self, config: dict[str, Any] | None = None):
+    def __init__(self, config: dict[str, Any] | None = None):
+    def __init__(self, config: dict[str, Any] | None = None):
         self.config: dict[str, Any] = config or {}
 self.logger = system_logger.getChild(self.__class__.__name__)
 self._initialized: bool = False
@@ -80,6 +86,9 @@ def is_initialized(self) -> bool:
 return self._initialized
 
 
+class TradingComponentBase(InjectableBase):
+    pass  # TODO: Add implementation
+class TradingComponentBase(InjectableBase):
 class TradingComponentBase(InjectableBase):
     """
 Base class for core trading components (Analyst, Strategist,

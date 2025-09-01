@@ -5,6 +5,9 @@ import pandas as pd
 
 @dataclass
 class PurgedKFoldTime:
+    pass  # TODO: Add implementation
+class PurgedKFoldTime:
+class PurgedKFoldTime:
     """Purged and Embargoed K - Fold for DatetimeIndex time series.
 
 - Splits data into sequential folds by time order.

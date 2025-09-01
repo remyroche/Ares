@@ -52,6 +52,9 @@ data = {
 return pd.DataFrame(data)
 
 async def demonstrate_directional_analysis():
+    pass  # TODO: Add implementation
+async def demonstrate_directional_analysis():
+async def demonstrate_directional_analysis():
     """
 Demonstrate the directional prediction with adversarial analysis.
 """
@@ -153,6 +156,9 @@ except Exception as e:
 await predictor.stop()
 
 def print_usage_example():
+    def print_usage_example():
+    def print_usage_example():
+    def print_usage_example():
     """
 Print usage example for the new functionality.
 """

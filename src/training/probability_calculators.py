@@ -14,9 +14,15 @@ logger = logging.getLogger(__name__)
 
 
 class BaseProbabilityCalculator:
+    pass  # TODO: Add implementation
+class BaseProbabilityCalculator:
+class BaseProbabilityCalculator:
     """Base class for probability calculations across different model types."""
 
 def __init__(self):
+    def __init__(self):
+    def __init__(self):
+    def __init__(self):
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
 
 def validate_probability(self, prob: float, name: str) -> float:
@@ -36,6 +42,9 @@ else:
 return np.mean(np.max(y_pred_proba, axis=1))
 
 
+class ClassificationProbabilityCalculator(BaseProbabilityCalculator):
+    pass  # TODO: Add implementation
+class ClassificationProbabilityCalculator(BaseProbabilityCalculator):
 class ClassificationProbabilityCalculator(BaseProbabilityCalculator):
     """Probability calculator for classification models."""
 
@@ -225,6 +234,9 @@ except Exception as e:
 return 0.5  # Default fallback
 
 
+class RegressionProbabilityCalculator(BaseProbabilityCalculator):
+    pass  # TODO: Add implementation
+class RegressionProbabilityCalculator(BaseProbabilityCalculator):
 class RegressionProbabilityCalculator(BaseProbabilityCalculator):
     """Probability calculator for regression models."""
 

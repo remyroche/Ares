@@ -17,6 +17,9 @@ smart_validation_cache
 logger, system_logger.getChild("Step6FeatureEngineeringValidator")
 
 class Step6FeatureEngineeringValidator(BaseValidator):
+    pass  # TODO: Add implementation
+class Step6FeatureEngineeringValidator(BaseValidator):
+class Step6FeatureEngineeringValidator(BaseValidator):
     """Validator for Step 6: Feature Engineering."""
 
 def __init__(self, config: dict[str, Any]) -> None:

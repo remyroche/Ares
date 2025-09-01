@@ -14,6 +14,9 @@ import numpy as np
 import pandas as pd
 
 def create_sample_data():
+    def create_sample_data():
+    def create_sample_data():
+    def create_sample_data():
     """Create sample data with properly lagged features."""
 np.random.seed(42)
 dates, pd.date_range("2024 - 01 - 01", periods = 1000, freq="1min")
@@ -71,6 +74,9 @@ data["close"].pct_change(5).shift(-5).fillna(0)
 return data
 
 def create_sample_feature_engineering_code():
+    def create_sample_feature_engineering_code():
+    def create_sample_feature_engineering_code():
+    def create_sample_feature_engineering_code():
     """Create sample feature engineering code for analysis."""
 return """
 # Sample feature engineering code with proper lagging
@@ -96,6 +102,9 @@ features["rsi_momentum"] = rsi.diff(3).fillna(0)  # 3 - period lag
 """
 
 def demonstrate_enhanced_detector():
+    def demonstrate_enhanced_detector():
+    def demonstrate_enhanced_detector():
+    def demonstrate_enhanced_detector():
     """Demonstrate the enhanced LookaheadBiasDetector."""
 print("🔍 Enhanced Lookahead Bias Detector Demonstration")
 print("=" * 60)
@@ -189,6 +198,9 @@ print(f"   • Legitimate Features: {len(results.get('legitimate_features', []))
 return results
 
 def compare_with_old_detector():
+    def compare_with_old_detector():
+    def compare_with_old_detector():
+    def compare_with_old_detector():
     """Compare enhanced detector with old behavior."""
 print("\n🔄 Comparison with Old Detector Behavior")
 print("=" * 60)

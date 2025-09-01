@@ -7,6 +7,9 @@ from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
 from src.utils.logger import system_logger
 
 class HMMFeatureEnhancer:
+    pass  # TODO: Add implementation
+class HMMFeatureEnhancer:
+class HMMFeatureEnhancer:
     """Enhances HMM features with additional derived features for Step 5 compatibility."""
 
 def __init__(self, config: dict | None, None) -> None:

@@ -13,6 +13,9 @@ validation_error,
 )
 
 class WalkForwardValidationStep:
+    pass  # TODO: Add implementation
+class WalkForwardValidationStep:
+class WalkForwardValidationStep:
     """Step 13: Walk - Forward Validation using existing step06_walk_forward_validation."""
 
 def _validate_environment(self) -> None:

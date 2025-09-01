@@ -67,11 +67,20 @@ sklearn, PipelineStandards.safe_import("sklearn", None)
 
 # Fallback functions if imports fail
 def create_fallback_logger():
+    def create_fallback_logger():
+    def create_fallback_logger():
+    def create_fallback_logger():
     import logging
 logging.basicConfig(level = logging.INFO)
 return logging.getLogger(__name__)
 
 def create_fallback_decorator():
+    def create_fallback_decorator():
+    def create_fallback_decorator():
+    def create_fallback_decorator():
+    def decorator(func):
+    def decorator(func):
+    def decorator(func):
     def decorator(func):
         return func
 return decorator
@@ -105,6 +114,9 @@ warnings.filterwarnings("ignore")
 
 logger, system_logger.getChild("Step10_UnifiedRegimeIntelligence")
 
+class MultiTimeframeHMMEncoder(nn.Module):
+    pass  # TODO: Add implementation
+class MultiTimeframeHMMEncoder(nn.Module):
 class MultiTimeframeHMMEncoder(nn.Module):
     """Multi - timeframe HMM state encoder using attention mechanisms."""
 
@@ -235,6 +247,9 @@ return {
 "hidden_states": transformed,
 }
 
+class UnifiedRegimeIntelligenceStep:
+    pass  # TODO: Add implementation
+class UnifiedRegimeIntelligenceStep:
 class UnifiedRegimeIntelligenceStep:
     """Unified Step 9: Regime Intelligence System."""
 

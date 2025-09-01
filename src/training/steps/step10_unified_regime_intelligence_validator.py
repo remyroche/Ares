@@ -25,6 +25,9 @@ warnings.filterwarnings("ignore")
 logger, system_logger.getChild("Step5_5_UnifiedRegimeIntelligenceValidator")
 
 class UnifiedRegimeIntelligenceValidator:
+    pass  # TODO: Add implementation
+class UnifiedRegimeIntelligenceValidator:
+class UnifiedRegimeIntelligenceValidator:
 	"""Validator for the Unified Regime Intelligence step."""
 
 def __init__(self, config: Dict[str, Any]) -> None:

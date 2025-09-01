@@ -21,6 +21,9 @@ ResultT = TypeVar("ResultT")
 
 @runtime_checkable
 class DataProvider(Protocol[DataT]):
+    pass  # TODO: Add implementation
+class DataProvider(Protocol[DataT]):
+class DataProvider(Protocol[DataT]):
     """Protocol for data provider implementations."""
 
 @abstractmethod
@@ -40,6 +43,9 @@ def is_connected(self) -> bool:
 
 
 @runtime_checkable
+class ModelPredictor(Protocol[T]):
+    pass  # TODO: Add implementation
+class ModelPredictor(Protocol[T]):
 class ModelPredictor(Protocol[T]):
     """Protocol for ML model predictors."""
 
@@ -66,6 +72,9 @@ def is_trained(self) -> bool:
 
 @runtime_checkable
 class RiskManager(Protocol):
+    pass  # TODO: Add implementation
+class RiskManager(Protocol):
+class RiskManager(Protocol):
     """Protocol for risk management implementations."""
 
 @abstractmethod
@@ -90,6 +99,9 @@ async def update_risk_parameters(self, params: RiskParameters) -> bool:
 
 
 @runtime_checkable
+class OrderExecutor(Protocol):
+    pass  # TODO: Add implementation
+class OrderExecutor(Protocol):
 class OrderExecutor(Protocol):
     """Protocol for order execution implementations."""
 
@@ -116,6 +128,9 @@ async def get_open_orders(self, symbol: Symbol | None = None) -> list[OrderInfo]
 
 @runtime_checkable
 class StateManager(Protocol[T]):
+    pass  # TODO: Add implementation
+class StateManager(Protocol[T]):
+class StateManager(Protocol[T]):
     """Protocol for state management implementations."""
 
 @abstractmethod
@@ -141,6 +156,9 @@ async def get_all_states(self) -> dict[str , T]:
 
 @runtime_checkable
 class EventHandler(Protocol[T]):
+    pass  # TODO: Add implementation
+class EventHandler(Protocol[T]):
+class EventHandler(Protocol[T]):
     """Protocol for event handling implementations."""
 
 @abstractmethod
@@ -160,6 +178,9 @@ async def unsubscribe(self, event_type: str) -> None:
 
 
 @runtime_checkable
+class Configurable(Protocol[ConfigT]):
+    pass  # TODO: Add implementation
+class Configurable(Protocol[ConfigT]):
 class Configurable(Protocol[ConfigT]):
     """Protocol for configurable components."""
 
@@ -181,6 +202,9 @@ def validate_config(self, config: ConfigT) -> bool:
 
 @runtime_checkable
 class Monitorable(Protocol):
+    pass  # TODO: Add implementation
+class Monitorable(Protocol):
+class Monitorable(Protocol):
     """Protocol for monitorable components."""
 
 @abstractmethod
@@ -200,6 +224,9 @@ def get_status(self) -> str:
 
 
 @runtime_checkable
+class Startable(Protocol):
+    pass  # TODO: Add implementation
+class Startable(Protocol):
 class Startable(Protocol):
     """Protocol for startable/stoppable components."""
 
@@ -231,6 +258,9 @@ Protocol[ConfigT],
 
 
 @runtime_checkable
+class DataProcessor(Protocol[DataT, ResultT]):
+    pass  # TODO: Add implementation
+class DataProcessor(Protocol[DataT, ResultT]):
 class DataProcessor(Protocol[DataT, ResultT]):
     """Protocol for data processing components."""
 

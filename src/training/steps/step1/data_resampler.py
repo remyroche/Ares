@@ -35,6 +35,9 @@ with_tracing_span,
 logger, system_logger.getChild("DataPreparation")
 
 class DataPreparation:
+    pass  # TODO: Add implementation
+class DataPreparation:
+class DataPreparation:
     """Prepares data for step01_5_data_converter.py processing."""
 
 # Expected data formats for step01_5 processing

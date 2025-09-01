@@ -47,6 +47,9 @@ return {
 }
 
 def with_enhanced_metadata(func):
+    def with_enhanced_metadata(func):
+    def with_enhanced_metadata(func):
+    def with_enhanced_metadata(func):
     """Decorator to automatically add enhanced metadata to MLflow operations.
 
 This decorator ensures that all MLflow operations include the required metadata:
@@ -55,11 +58,17 @@ This decorator ensures that all MLflow operations include the required metadata:
 Usage:
         @with_enhanced_metadata
 def my_mlflow_function(config, *args, **kwargs):
+    def my_mlflow_function(config, *args, **kwargs):
+    def my_mlflow_function(config, *args, **kwargs):
+    def my_mlflow_function(config, *args, **kwargs):
         # Function will automatically have enhanced metadata
 pass
 """
 @wraps(func)
 def wrapper(config: dict[str, Any], *args, **kwargs):
+    def wrapper(config: dict[str, Any], *args, **kwargs):
+    def wrapper(config: dict[str, Any], *args, **kwargs):
+    def wrapper(config: dict[str, Any], *args, **kwargs):
         # Extract metadata from config
 metadata, extract_training_metadata(config)
 

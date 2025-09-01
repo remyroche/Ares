@@ -23,6 +23,9 @@ TradingSignal,
 
 @runtime_checkable
 class TradingDataProvider(Protocol):
+    pass  # TODO: Add implementation
+class TradingDataProvider(Protocol):
+class TradingDataProvider(Protocol):
     """Protocol for trading data providers."""
 
 @abstractmethod
@@ -48,6 +51,9 @@ def is_connected(self) -> bool:
 
 @runtime_checkable
 class TradingMLPredictor(Protocol):
+    pass  # TODO: Add implementation
+class TradingMLPredictor(Protocol):
+class TradingMLPredictor(Protocol):
     """Protocol for ML trading predictors."""
 
 @abstractmethod
@@ -72,6 +78,9 @@ def is_model_ready(self) -> bool:
 
 
 @runtime_checkable
+class TradingRiskManager(Protocol):
+    pass  # TODO: Add implementation
+class TradingRiskManager(Protocol):
 class TradingRiskManager(Protocol):
     """Protocol for trading risk management."""
 

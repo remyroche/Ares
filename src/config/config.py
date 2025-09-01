@@ -11,6 +11,9 @@ from dataclasses import dataclass
 
 @dataclass
 class DatabaseConfig:
+    pass  # TODO: Add implementation
+class DatabaseConfig:
+class DatabaseConfig:
     """Database configuration settings."""
 host: str = "localhost"
 port: int = 5432
@@ -23,6 +26,9 @@ connection_timeout: int = 30
 
 @dataclass
 class ExchangeConfig:
+    pass  # TODO: Add implementation
+class ExchangeConfig:
+class ExchangeConfig:
     """Exchange configuration settings."""
 name: str = "binance"
 api_key: str = ""
@@ -33,6 +39,9 @@ timeout: int = 30
 
 
 @dataclass
+class SystemConfig:
+    pass  # TODO: Add implementation
+class SystemConfig:
 class SystemConfig:
     """System-level configuration settings."""
 # Checkpointing
@@ -59,6 +68,9 @@ max_cache_size_gb: float = 10.0
 
 @dataclass
 class EnvironmentConfig:
+    pass  # TODO: Add implementation
+class EnvironmentConfig:
+class EnvironmentConfig:
     """Environment-specific configuration."""
 trading_environment: str = "paper"  # paper, live, backtest
 exchange_name: str = "binance"
@@ -80,6 +92,9 @@ okx_password: str = ""
 
 
 @dataclass
+class TradingConfig:
+    pass  # TODO: Add implementation
+class TradingConfig:
 class TradingConfig:
     """Trading-specific configuration (non-optimizable)."""
 # Basic trading parameters
@@ -112,6 +127,9 @@ max_take_profit: float = 0.15
 
 
 @dataclass
+class TrainingConfig:
+    pass  # TODO: Add implementation
+class TrainingConfig:
 class TrainingConfig:
     """Training-specific configuration (non-optimizable)."""
 # Data configuration

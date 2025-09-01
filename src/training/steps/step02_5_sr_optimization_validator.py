@@ -32,6 +32,9 @@ from src.utils.logger import system_logger
 logger, system_logger.getChild("Step2_5SROptimizationValidator")
 
 class SROptimizationValidator:
+    pass  # TODO: Add implementation
+class SROptimizationValidator:
+class SROptimizationValidator:
     """Validator for S / R detection optimization step."""
 
 def __init__(self, config: dict[str, Any]) -> None:

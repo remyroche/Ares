@@ -11,6 +11,9 @@ import pandas as pd
 from src.utils.error_handler import handle_file_operations, handle_data_processing_errors
 
 class ParquetUtils:
+    pass  # TODO: Add implementation
+class ParquetUtils:
+class ParquetUtils:
     """Utility class for safe parquet file operations with comprehensive error handling."""
 
 def __init__(self) -> None:

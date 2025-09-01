@@ -13,6 +13,9 @@ if TYPE_CHECKING:
     pass  # TODO: Add proper implementation
 @dataclass
 class EventConfig:
+    pass  # TODO: Add implementation
+class EventConfig:
+class EventConfig:
     pre_window: int
 post_window: int
 label_cooldown_bars: int
@@ -21,6 +24,9 @@ use_reliability_weighting: bool
 use_rising_edge_only: bool
 preserve_secondary_labels: bool
 
+class EventTriggerIndexer:
+    pass  # TODO: Add implementation
+class EventTriggerIndexer:
 class EventTriggerIndexer:
     """
 Build event triggers (t, 0) from meta-label intensities with safeguards:

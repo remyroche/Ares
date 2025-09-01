@@ -22,6 +22,9 @@ warning,
 
 
 class DITrainingManager(InjectableBase):
+    pass  # TODO: Add implementation
+class DITrainingManager(InjectableBase):
+class DITrainingManager(InjectableBase):
     """Dependency injection-aware training manager.
 
 This training manager uses proper dependency injection patterns

@@ -11,6 +11,9 @@ from dataclasses import dataclass
 
 @dataclass
 class PositionSizingConfig:
+    pass  # TODO: Add implementation
+class PositionSizingConfig:
+class PositionSizingConfig:
     """Optimizable position sizing parameters."""
 
 # Base position sizing
@@ -58,6 +61,9 @@ drawdown_thresholds: dict[str, float] = None
 position_size_reductions: dict[str, float] = None
 
 def __post_init__(self):
+    def __post_init__(self):
+    def __post_init__(self):
+    def __post_init__(self):
         if self.confidence_thresholds is None:
             self.confidence_thresholds , {
 "low_confidence": 0.6,

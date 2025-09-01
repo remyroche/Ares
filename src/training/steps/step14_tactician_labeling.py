@@ -32,6 +32,9 @@ from src.utils.logger import system_logger
 ENSEMBLE_PREFERENCE_ORDER = ("stacking_cv", "dynamic_weighting", "voting")
 
 class RegimeAwareTacticianLabeler:
+    pass  # TODO: Add implementation
+class RegimeAwareTacticianLabeler:
+class RegimeAwareTacticianLabeler:
     """Regime-aware tactician labeling with regime-specific barriers and precision thresholds."""
 
 def __init__(self, config: dict[str, Any]) -> None:
@@ -671,6 +674,9 @@ if self.regime_config["regime_specific_logging"]:
 for metric_name, metric_value in metrics.items():
                 self.logger.info(f"   {metric_name}: {metric_value}")
 
+class TacticianLabelingStep:
+    pass  # TODO: Add implementation
+class TacticianLabelingStep:
 class TacticianLabelingStep:
     """Step 8: Tactician Model Labeling using Analyst's model."""
 

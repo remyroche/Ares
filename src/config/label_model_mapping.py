@@ -310,6 +310,12 @@ if key == "hmm_gaussian":
 except Exception as e:
     pass  # TODO: Add proper exception handling
 class HMMWrapper:
+    pass  # TODO: Add implementation
+class HMMWrapper:
+class HMMWrapper:
+                    def __init__(self, n_states: int = 4):
+                    def __init__(self, n_states: int = 4):
+                    def __init__(self, n_states: int = 4):
                     def __init__(self, n_states: int = 4):
                         self.hmm = GaussianHMM(
 n_components=n_states,
@@ -365,5 +371,8 @@ n_jobs=-1,
 
 
 def select_model_for_label_timeframe(label: str, timeframe: str):
+    def select_model_for_label_timeframe(label: str, timeframe: str):
+    def select_model_for_label_timeframe(label: str, timeframe: str):
+    def select_model_for_label_timeframe(label: str, timeframe: str):
     key, params = get_model_choice_for_label(label, timeframe)
 return build_model(key, params)

@@ -5,10 +5,16 @@ from typing import Dict, Any, Optional
 from enum import Enum
 
 class ValidationMode(Enum):
+    pass  # TODO: Add implementation
+class ValidationMode(Enum):
+class ValidationMode(Enum):
     STRICT , "strict"
 WARNING = "warning"
 PERMISSIVE = "permissive"
 
+class PerformanceMode(Enum):
+    pass  # TODO: Add implementation
+class PerformanceMode(Enum):
 class PerformanceMode(Enum):
     DISABLED = "disabled"
 BASIC = "basic"
@@ -16,6 +22,9 @@ DETAILED = "detailed"
 PROFILING = "profiling"
 
 @dataclass
+class DecoratorConfig:
+    pass  # TODO: Add implementation
+class DecoratorConfig:
 class DecoratorConfig:
     """Global configuration for decorators."""
 

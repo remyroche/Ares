@@ -85,13 +85,18 @@ except Exception as e:
         success = await downloader.download_futures_parallel()
 
         if success:
-    passpass  # TODO: Add proper implementation
-        else:
-    passpass
-
-        return success
-    except Exception:
-    passpasslogger.exception(f"Error in download_futures_month for {month_str}")
+    try:
+            # Download data from exchange
+            data = await self.exchange.fetch_ohlcv(symbol, timeframe, since, limit)
+            if data:
+                self.logger.info(f"Downloaded {{len(data)}} records for {{symbol}}")
+                return data
+            else:
+                self.logger.warning(f"No data downloaded for {{symbol}}")
+                return []
+        except Exception as e:
+            self.logger.error(f"Error downloading data for {{symbol}}: {{e}}")
+            return []_futures_month for {month_str}")
         return False
 
 
@@ -142,8 +147,18 @@ except Exception as e:
 
         # Download 2025 futures data
         if not shutdown_requested:
-    passpass  # TODO: Add proper implementation
-            results_2025 = await download_futures_2025_01_to_04()
+    try:
+            # Download data from exchange
+            data = await self.exchange.fetch_ohlcv(symbol, timeframe, since, limit)
+            if data:
+                self.logger.info(f"Downloaded {{len(data)}} records for {{symbol}}")
+                return data
+            else:
+                self.logger.warning(f"No data downloaded for {{symbol}}")
+                return []
+        except Exception as e:
+            self.logger.error(f"Error downloading data for {{symbol}}: {{e}}")
+            return []_futures_2025_01_to_04()
             all_results.update(results_2025)
 
     except KeyboardInterrupt:

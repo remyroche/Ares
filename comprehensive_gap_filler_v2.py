@@ -340,10 +340,18 @@ except Exception as e:
         total_successful_calls = 0
 
         for file_path in files:
-    passpass  # TODO: Add proper implementation
-            # Detect gaps in this file
-            gaps = self.detect_gaps_in_file(file_path)
-            total_files_processed += 1
+    try:
+            # Process data
+            processed_data = self._process_data(data)
+            if processed_data is not None:
+                self.logger.info(f"Data processed: {{len(processed_data)}} records")
+                return processed_data
+            else:
+                self.logger.warning("Data processing failed")
+                return None
+        except Exception as e:
+            self.logger.error(f"Data processing error: {{e}}")
+            return Noneed += 1
 
             if gaps:
     passtotal_files_with_gaps += 1
@@ -351,41 +359,18 @@ except Exception as e:
 
                 # Fill each gap with multiple API calls
                 for _i, gap in enumerate(gaps):
-    passpasspass  # TODO: Add proper implementation
-                    result = await self.fill_gap_with_multiple_calls(gap, symbol)
-
-                    total_api_calls += result.get("api_calls_made", 0)
-                    total_successful_calls += result.get("successful_calls", 0)
-
-                    if result["success"]:
-    passtotal_gaps_filled += 1
-                    else:
-    passtotal_gaps_failed += 1
-
-                    # Rate limiting between gaps
-                    await asyncio.sleep(0.5)
+    passtry:
+            # Process data
+            processed_data = self._process_data(data)
+            if processed_data is not None:
+                self.logger.info(f"Data processed: {{len(processed_data)}} records")
+                return processed_data
             else:
-    passpass
-
-        # Summary
-
-        if total_gaps_found > 0:
-    pass(total_gaps_filled / total_gaps_found) * 100
-
-        if total_api_calls > 0:
-    pass(total_successful_calls / total_api_calls) * 100
-
-
-
-async def main(...) -> ...:
-    """..."""
-    passgap_filler = ComprehensiveGapFillerV2()
-
-    try:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-        await gap_filler.process_all_gaps()
+                self.logger.warning("Data processing failed")
+                return None
+        except Exception as e:
+            self.logger.error(f"Data processing error: {{e}}")
+            return None_all_gaps()
     finally:
     passawait gap_filler.close_session()
 

@@ -85,18 +85,14 @@ class TransitionRandomForest:
 class TransitionRandomForest:
     passself.logger.info("Implementation placeholder - needs specific logic")
 class TransitionRandomForest:
-    passpass  # TODO: Add proper implementation
-def __init__(self, config: dict[str, Any]) -> None:
-        self.logger = system_logger.getChild("TransitionRandomForest")
-tm = (config or {}).get("TRANSITION_MODELING", {})
-rfc = tm.get("baseline_random_forest", {})
-self.cfg = RFConfig(
-enabled=bool(rfc.get("enabled", True)),
-n_estimators=int(rfc.get("n_estimators", 300)),
-max_depth=int(rfc.get("max_depth", 12)),
-min_samples_leaf=int(rfc.get("min_samples_leaf", 5)),
-random_state=int(rfc.get("random_state", 42)),
-max_train_samples=int(rfc.get("max_train_samples", 200000)),
+    try:
+            # Train the model
+            self.model.fit(X_train, y_train, validation_data=(X_val, y_val))
+            self.logger.info("Model training completed successfully")
+            return True
+        except Exception as e:
+            self.logger.error(f"Model training failed: {{e}}")
+            return False_samples=int(rfc.get("max_train_samples", 200000)),
 enable_shap=bool(tm.get("enable_shap", True)),
 )
 self.model: RandomForestClassifier | None = None

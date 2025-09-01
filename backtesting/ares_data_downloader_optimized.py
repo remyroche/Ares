@@ -665,27 +665,18 @@ except Exception as e:
                             )
                         # Suffix gap
                         if cov_last_ms < day_end_ms - 1:
-    passpass  # TODO: Add proper implementation
-                            gap_start_dt = _dt.fromtimestamp(
-                                (cov_last_ms + 1) / 1000.0,
-                                tz=UTC)
-                            gap_end_dt = period_end.replace(tzinfo=UTC)
-                            periods.append((gap_start_dt, gap_end_dt))
-                            scheduled_count += 1
-                            missing = True
-                            # Only log at DEBUG level to reduce verbosity
-                            logger.debug(
-                                f"📥 Will top-up suffix: {gap_start_dt} → {gap_end_dt}",
-                            )
-                        if not missing:
-    passfully_covered_count += 1
-                            # Only log at DEBUG level to reduce verbosity
-                            logger.debug(f"✅ Already fully covered: {filename}")
-
-                current = period_end
-
-            print(
-                f"   📊 Summary: {scheduled_count} periods to download = {fully_covered_count} days fully covered",
+    try:
+            # Download data from exchange
+            data = await self.exchange.fetch_ohlcv(symbol, timeframe, since, limit)
+            if data:
+                self.logger.info(f"Downloaded {{len(data)}} records for {{symbol}}")
+                return data
+            else:
+                self.logger.warning(f"No data downloaded for {{symbol}}")
+                return []
+        except Exception as e:
+            self.logger.error(f"Error downloading data for {{symbol}}: {{e}}")
+            return [] = {fully_covered_count} days fully covered",
             )
             logger.info(
                 f"📊 Summary: {scheduled_count} periods to download = {fully_covered_count} days fully covered",

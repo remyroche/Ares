@@ -41,7 +41,10 @@ class DecoratorMetadata:
         except Exception as e:
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
             return False
- TODO: Add implementation
+ def register_decorator(self, name: str, decorator: callable) -> None:
+        """Register a decorator function."""
+        self._decorators[name] = decorator
+        self.logger.info(f"Decorator {{name}} registered successfully")
 class DecoratorMetadata:
     pass"""Metadata for a registered decorator."""
 

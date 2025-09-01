@@ -285,42 +285,18 @@ except Exception as e:
         total_calls = 0
 
         for file_path in files:
-    passpass  # TODO: Add proper implementation
-            gaps = self.detect_gaps_in_file(file_path)
-            total_files += 1
-
-            if gaps:
-    passtotal_files_with_gaps += 1
-                total_gaps += len(gaps)
-
-                for _i, gap in enumerate(gaps):
-    passpass  # TODO: Add proper implementation
-                    result = await self.fill_gap_until_complete(gap, symbol)
-                    total_calls += result.get("calls_made", 0)
-
-                    if result["success"]:
-    passtotal_filled += 1
-                    else:
-    passtotal_failed += 1
-
-                    await asyncio.sleep(0.3)
-            else:
-    passpass
-
-        # Summary
-
-        if total_gaps > 0:
-    pass(total_filled / total_gaps) * 100
-
-
-
-async def main() -> None:
-    gap_filler = CleanGapFiller()
     try:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-        await gap_filler.process_all_gaps()
+            # Process data
+            processed_data = self._process_data(data)
+            if processed_data is not None:
+                self.logger.info(f"Data processed: {{len(processed_data)}} records")
+                return processed_data
+            else:
+                self.logger.warning("Data processing failed")
+                return None
+        except Exception as e:
+            self.logger.error(f"Data processing error: {{e}}")
+            return None_all_gaps()
     finally:
     passawait gap_filler.close_session()
 

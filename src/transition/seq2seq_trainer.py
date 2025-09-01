@@ -21,188 +21,14 @@ except Exception:  # pragma: no cover
 pl = None  # type: ignore
 
 if TYPE_CHECKING:
-    passpass  # TODO: Add proper implementation
-# Hint to speed CPU matmul on Apple Accelerate
-with contextlib.suppress(Exception):
-    passtorch.set_float32_matmul_precision("high")
-
-def _to_tensor(x: np.ndarray, dtype: torch.dtype = torch.float32) -> torch.Tensor:
-    return torch.as_tensor(x, dtype=dtype)
-
-def _dtw_distance(a: np.ndarray, b: np.ndarray) -> float:
     try:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-n, m = len(a), len(b)
-dtw = np.full((n + 1, m + 1), np.inf, dtype=float)
-dtw[0, 0] = 0.0
-for i in range(1, n + 1):
-    passfor j in range(1, m + 1):
-    passcost = abs(a[i - 1] - b[j - 1])
-dtw[i, j] = cost + min(dtw[i - 1, j], dtw[i, j - 1], dtw[i - 1, j - 1])
-return float(dtw[n, m] / (n + m))
-except Exception:
-    passpassreturn float("nan")
-
-class TransitionSeqDataset(Dataset):
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="transitionseqdataset initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize TransitionSeqDataset."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
+            # Train the model
+            self.model.fit(X_train, y_train, validation_data=(X_val, y_val))
+            self.logger.info("Model training completed successfully")
             return True
         except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-    self.logger.info("Implementation placeholder - needs specific logic")
-class TransitionSeqDataset(Dataset):
-    self.logger.info("Implementation placeholder - needs specific logic")
-class TransitionSeqDataset(Dataset):
-    pass  # TODO: Add proper implementation
-def __init__(...):
-    passself.samples = samples
-self.numeric_dim = numeric_dim
-self.label_index = label_index
-
-def __len__(self) -> int:
-        return len(self.samples)
-
-def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
-        s = self.samples[idx]
-# Inputs
-X_states_df: pd.DataFrame = s["X_pre_states"]
-hmm_ids = X_states_df["hmm_state_id"].to_numpy(dtype=np.int64)
-# numeric
-X_num = s.get("X_pre_numeric", np.zeros((len(hmm_ids), 0), dtype=float))
-# Targets
-y_ret = s["Y_post_returns"].astype(np.float32)
-y_states_df: pd.DataFrame = s["Y_post_states"]
-y_hmm = y_states_df["hmm_state_id"].to_numpy(dtype=np.int64)
-# Class at t0 (path_class) 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="smalltransformer initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize SmallTran
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="smalltransformer initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize SmallTransformer."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-sformer."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-if present
-path_map = {
-"continuation": 0,
-"reversal": 1,
-"end_of_trend": 2,
-"beginning_of_trend": 3,
-}
-y_path = path_map.get(str(s.get("path_class", "end_of_trend")), 2)
-# time to pt
-y_ttpt = int(s.get("Y_time_to_pt", -1))
-return {
-"hmm_ids": _to_tensor(hmm_ids, torch.long),
-"x_num": _to_tensor(X_num, torch.float32),
-"y_ret": _to_tensor(y_ret, torch.float32),
-"y_hmm": _to_tensor(y_hmm, torch.long),
-"y_path": _to_tensor(np.array(y_path), torch.long),
-"y_ttpt": _to_tensor(np.array(y_ttpt), torch.float32),
-}
-
-class SmallTransformer(pl.LightningModule if pl else nn.Module):
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class SmallTransformer(pl.LightningModule if pl else nn.Module):
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class SmallTransformer(pl.LightningModule if pl else nn.Module):
-    passpass  # TODO: Add proper implementation
-def __init__(...):
-    passif pl:
-    passsuper().__init__()
-else:
-    passsuper().__init__()
-self.save_hyperparameters()
-self.hmm_emb = nn.Embedding(hmm_vocab, d_model)
-self.num_proj = nn.Linear(num_features, d_model)
-self.enc_ln = nn.LayerNorm(d_model)
-enc_layer = nn.TransformerEncoderLayer(
-d_model, nhead=nhead,
-dim_feedforward=d_model, dropout=dropout, batch_first=True,
-)
-self.encoder = nn.TransformerEncoder(enc_layer, num_layers=num_layers)
-# Decoder heads
-self.dec_ret = nn.Sequential(
-nn.Linear(d_model, d_model),
-nn.GELU(),
-nn.Linear(d_model, 1),
-)
-self.dec_hmm = nn.Sequential(
-nn.Linear(d_model, d_model),
-nn.GELU(),
-nn.Linear(d_model, hmm_vocab),
-)
-self.cls_path = nn.Sequential(
-nn.Linear(d_model, d_model),
-nn.GELU(),
-nn.Linear(d_model, 4),
-)
-self.post_len = num_features
-self.lr = lr
-self.mse = nn.SmoothL1Loss()
-# class weights
-if path_class_weights:
-    passw_map = {
-"continuation": 0,
-"reversal": 1,
-"end_of_trend": 2,
-"beginning_of_trend": 3,
-}
-w = torch.ones(4, dtype=torch.float32)
-for k, v in path_class_weights.items():
-    passif k in w_map:
-    passw[w_map[k]] = float(v)
-self.ce = nn.CrossEntropyLoss(weight=w)
-else:
-    passself.ce = nn.CrossEntropyLoss()
-self.focal_gamma = float(focal_gamma)
-
-def forward(self, hmm_ids: torch.Tensor, x_num: torch.Tensor) -> torch.Tensor:
-        # hmm_ids: [B = L_pre] ; x_num: [B, L_pre = F]
-x = self.hmm_emb(hmm_ids) + self.num_proj(x_num)
-x = self.enc_ln(x)
-h = self.encoder(x)  # [B = L_pre, d]
-# CLS token: mean pool last K
-cls = h.mean(dim=1)
-return h, cls
-
-def training_step(
+            self.logger.error(f"Model training failed: {{e}}")
+            return Falseing_step(
 self,
 batch: dict[str, torch.Tensor],
 batch_idx: int,
@@ -327,70 +153,14 @@ class SmallTCN(SmallTransformer):
 class SmallTCN(SmallTransformer):
     self.logger.info("Implementation placeholder - needs specific logic")
 class SmallTCN(SmallTransformer):
-    pass  # TODO: Add proper implementation
-def __init__(...):
-    passsuper().__init__(
-hmm_vocab, num_features, d_model=d_model,
-nhead=1,
-num_layers=1,
-dropout=dropout, lr=lr,
-path_class_weights=path_class_weights,
-focal_gamma=focal_gamma,
-)
-# Replace encoder with TCN
-blocks: list[nn.Module] = []
-for i in range(layers):
-    passdilation = 2**i
-blocks.append(
-nn.Sequential(
-nn.Conv1d(
-d_model=d_model,
-kernel_size=3,
-padding=dilation,
-dilation=dilation,
-),
-nn.GELU(),
-nn.Dropout(dropout),
-nn.Conv1d(d_model=d_model, kernel_size=1),
-),
-)
-self.tcn = nn.ModuleList(blocks)
-
-def forward(self, hmm_ids: torch.Tensor, x_num: torch.Tensor) -> torch.Tensor:
-        x = self.hmm_emb(hmm_ids) + self.num_proj(x_num)  # [B = L,D]
-y = x.transpose(1, 2)  # [B = D,L]
-for block in self.tcn:
-    passy = y + block(y)
-h = y.transpose(1, 2)  # [B = L,D]
-cls = h.mean(dim=1)
-return h, cls
-
-def build_dataloaders(
-samples: list[dict[str, Any]],
-numeric_dim: int,
-label_index: list[str],
-post_len: int = 128,
-batch_size: int = 128,
-seed: int = 42,
-) -> tuple[DataLoader, DataLoader]:
-    # Split by time order: 80/20
-n = len(samples)
-cut = int(n * 0.8)
-train_ds = TransitionSeqDataset(samples[:cut], numeric_dim, label_index)
-val_ds = TransitionSeqDataset(samples[cut:], numeric_dim, label_index)
-train_loader = DataLoader(
-train_ds, batch_size=batch_size,
-shuffle=False, num_workers=0,
-pin_memory=True,
-)
-val_loader = DataLoader(
-val_ds, batch_size=batch_size,
-shuffle=False, num_workers=0,
-pin_memory=True,
-)
-return train_loader, val_loader
-
-def evaluate_samples(
+    try:
+            # Evaluate model performance
+            evaluation_results = self._evaluate_model(self.model, X_test, y_test)
+            self.logger.info(f"Model evaluation: {{evaluation_results}}")
+            return evaluation_results
+        except Exception as e:
+            self.logger.error(f"Model evaluation failed: {{e}}")
+            return {}_samples(
 model: SmallTransformer,
 dataloader: DataLoader,
 pt_mult: float = 0.002,

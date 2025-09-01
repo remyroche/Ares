@@ -30,6 +30,9 @@ def run_syntax_fixer():
     fixed_count = 0
     for file_path in python_files:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             result = subprocess.run([
                 'python3', 'code_quality/tools/syntax_fixer.py', 
                 file_path, '--no-dry-run'
@@ -68,6 +71,9 @@ def run_import_cleaner():
     cleaned_count = 0
     for file_path in python_files:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             result = subprocess.run([
                 'python3', 'code_quality/tools/batch_import_cleaner.py', 
                 file_path
@@ -106,6 +112,9 @@ def run_dead_code_remover():
     cleaned_count = 0
     for file_path in python_files:
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             result = subprocess.run([
                 'python3', 'code_quality/tools/dead_code_remover.py', 
                 file_path, '--no-dry-run'

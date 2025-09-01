@@ -362,6 +362,9 @@ class ComprehensiveEnhancedScenarioPredictor:
     def _validate_configuration(self) -> bool:
         """Validate comprehensive enhanced scenario predictor configuration."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Validate scenarios
             for scenario_id, scenario in self.scenarios.items():
                 if scenario["zone_type"] != "neutral":

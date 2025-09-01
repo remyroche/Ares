@@ -60,6 +60,7 @@ class ParameterInteraction(NamedTuple):
 
 @dataclass
 class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 # TODO: Add implementation
 class CrossValidationResult:
     """Results from cross - validation sensitivity analysis."""
@@ -72,6 +73,7 @@ class CrossValidationResult:
 
 @dataclass
 class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 # TODO: Add implementation
 class EnsembleOptimizationResult:
     """Results from ensemble parameter optimization."""

@@ -36,6 +36,9 @@ class DynamicBarrierCalculator:
     def _load_analyst_config(self) -> Dict[str, Any]:
         """Load Analyst triple barrier configuration."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Try to load from Analyst triple barrier labeling component
             analyst_config_path = Path("src/training/steps/step04_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py")
 
@@ -58,6 +61,9 @@ class DynamicBarrierCalculator:
             for config_path in config_paths:
                 if Path(config_path).exists():
                     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
                         with open(config_path, 'r') as f:
                             config_data = yaml.safe_load(f)
 
@@ -134,6 +140,9 @@ class DynamicBarrierCalculator:
             - barrier_25_25: (25% upper, 25% lower)
         """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Validate timeframe
             if timeframe not in self.timeframes:
                 self.logger.warning(f"⚠️ Invalid timeframe {timeframe}, using primary timeframe {self.primary_timeframe}")
@@ -182,6 +191,9 @@ class DynamicBarrierCalculator:
     def calculate_multi_timeframe_barriers(self) -> Dict[str, Dict[str, Tuple[float, float]]]:
         """Calculate 2 barrier combinations for both 1m and 5m timeframes."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             barriers = {}
 
             # Calculate 1m barriers (2 combinations)
@@ -221,6 +233,9 @@ class DynamicBarrierCalculator:
     def validate_barrier_calculation(self, timeframe: str) -> Dict[str, Any]:
         """Validate barrier calculation for a timeframe."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Calculate 2 barrier combinations
             barriers = self.calculate_dynamic_barriers(timeframe)
 

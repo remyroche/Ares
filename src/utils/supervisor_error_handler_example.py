@@ -292,6 +292,9 @@ def monitored_operation(data: dict):
 def operation_with_enhanced_logging(operation: str, data: dict):
     """Example of enhanced logging integration."""
     try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
         with supervisor_error_context("enhanced_logger", operation) as context:
             # Add custom context information
             context.data_context.update({

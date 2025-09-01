@@ -375,6 +375,9 @@ self.logger.info("Analyst component started")
 async def _stop_component(self) -> None:
         """Stop analyst-specific operations."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Stop all analysis components
             if self.dual_model_system:
                 await self.dual_model_system.stop()

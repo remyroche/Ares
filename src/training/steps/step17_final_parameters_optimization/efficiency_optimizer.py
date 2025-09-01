@@ -22,6 +22,7 @@ from src.utils.logger import system_logger
 
 @dataclass
 class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 # TODO: Add implementation
 class EfficiencyConfig:
     """Configuration for efficiency optimizations."""

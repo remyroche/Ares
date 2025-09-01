@@ -6,6 +6,9 @@ import optuna
 import pandas as pd
 
 try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 # TODO: Add implementation
 except ImportError as e:
     # pandas_ta is required for this optimizer per project policy

@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# Updated Ares 21-Step Training Pipeline
-# Using new step-based commands with validation
+# Ares 20-Step Training Pipeline
+# Consolidated script using new step commands with training modes
 
-echo "🚀 Ares 21-Step Training Pipeline (New Commands)"
-echo "================================================="
+echo "🚀 Ares 20-Step Training Pipeline"
+echo "================================="
 
 # Step 1: Data Collection
 echo "📥 Step 1: Data Collection"
@@ -41,8 +41,6 @@ python ares_launcher.py step5 --symbol ETHUSDT --exchange BINANCE --training-mod
 # Step 6: Feature Engineering
 echo "⚙️ Step 6: Feature Engineering"
 python ares_launcher.py step6 --symbol ETHUSDT --exchange BINANCE --training-mode blank
-
-# Step 6.5 removed - Unified Regime Intelligence is now Step 10
 
 # Step 7: Enhanced Matrix Operations
 echo "🔢 Step 7: Enhanced Matrix Operations"
@@ -108,7 +106,8 @@ python ares_launcher.py step20 --symbol ETHUSDT --exchange BINANCE --training-mo
 echo "💾 Step 21: Saving Results"
 python ares_launcher.py step21 --symbol ETHUSDT --exchange BINANCE --training-mode full
 
-echo "✅ All 21 steps completed!"
+echo ""
+echo "✅ All 20 steps completed!"
 echo ""
 echo "🎉 Pipeline Summary:"
 echo "   • Data Collection & Processing: Steps 1-2.5"
@@ -125,4 +124,4 @@ echo "   • Steps 1-15 use 'blank' training mode (180 days, faster)"
 echo "   • Steps 16-21 use 'full' training mode (730 days, comprehensive)"
 echo "   • Each step includes automatic validation of previous steps"
 echo "   • Use --force flag to restart from a specific step"
-echo "   • Step 6.5 removed - Unified Regime Intelligence is now Step 10"
+echo "   • Step 10 contains the Unified Regime Intelligence system"

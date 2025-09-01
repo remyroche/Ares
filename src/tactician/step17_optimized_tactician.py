@@ -16,36 +16,31 @@ from .comprehensive_enhanced_scenario_predictor import ComprehensiveEnhancedScen
 logger = logging.getLogger(__name__)
 
 # Simple error handling decorator
-def handle_errors(func):
-    """Simple error handling decorator."""
-    def wrapper(*args, **kwargs):
-        try:
-            return func(*args, **kwargs)
+def handle_errors(...):
+    pass"""Simple error handling decorator."""
+    def wrapper(...):
+    passtry:
+    passreturn func(*args, **kwargs)
         except Exception as e:
-            logger.error(f"Error in {func.__name__}: {e}")
+    passpasspasspasspasspasspasslogger.error(f"Error in {func.__name__}: {e}")
             return None
     return wrapper
 
 
 class Step17OptimizedTactician:
-    """
+    pass"""
     Step17 Optimized Tactician with ALL trading parameters configurable.
 
     This replaces the old multi-output system entirely with:
-    - Fractal scenario analysis (17 scenarios: 8 profit, 8 risk, 1 neutral)
+    pass- Fractal scenario analysis (17 scenarios: 8 profit, 8 risk, 1 neutral)
     - ALL technical indicators (50+ indicators, 350+ features)
     - 15-minute look-ahead period
     - COMPLETE step17 optimization for ALL trading parameters
     """
 
-    def __init__(self, config: Dict[str, Any]) -> None:
-        """
-        Initialize step17 optimized Tactician.
-
-        Args:
-            config: Configuration dictionary with step17 optimization parameters
-        """
-        self.config = config
+    def __init__(...) -> ...:
+    pass"""..."""
+    passself.config = config
         self.logger = logger
 
         # Load step17 optimization parameters
@@ -143,14 +138,12 @@ class Step17OptimizedTactician:
         }
 
     @handle_errors
-    async def initialize(self) -> bool:
-        """
-        Initialize the step17 optimized Tactician.
-
-        Returns:
-            bool: True if initialization successful
-        """
-        try:
+    async def initialize(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             self.logger.info("Initializing Step17 Optimized Tactician...")
 
             # Initialize scenario predictor
@@ -159,59 +152,51 @@ class Step17OptimizedTactician:
 
             # Validate configuration
             if not self._validate_configuration():
-                return False
+    passreturn False
 
             self.logger.info("✅ Step17 Optimized Tactician initialized successfully")
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Step17 Optimized Tactician initialization failed: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Step17 Optimized Tactician initialization failed: {e}")
             return False
 
-    def _validate_configuration(self) -> bool:
-        """
-        Validate step17 configuration.
-
-        Returns:
-            bool: True if configuration is valid
-        """
-        try:
+    def _validate_configuration(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Validate all decision thresholds
             for threshold_name, threshold_value in self.decision_thresholds.items():
-                if not isinstance(threshold_value, (int, float)):
-                    self.logger.error(f"Invalid threshold type for {threshold_name}")
+    passif not isinstance(threshold_value, (int, float)):
+    passself.logger.error(f"Invalid threshold type for {threshold_name}")
                     return False
 
                 # Validate ranges for specific thresholds
                 if "threshold" in threshold_name.lower():
-                    if not 0 <= threshold_value <= 1:
-                        self.logger.error(f"Threshold {threshold_name} must be between 0 and 1")
+    passpassif not 0 <= threshold_value <= 1:
+    passself.logger.error(f"Threshold {threshold_name} must be between 0 and 1")
                         return False
 
                 if "multiplier" in threshold_name.lower():
-                    if threshold_value <= 0:
-                        self.logger.error(f"Multiplier {threshold_name} must be positive")
+    passif threshold_value <= 0:
+    passself.logger.error(f"Multiplier {threshold_name} must be positive")
                         return False
 
             return True
 
         except Exception as e:
-            self.logger.error(f"Configuration validation error: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Configuration validation error: {e}")
             return False
 
     @handle_errors
-    async def make_trading_decision(self, market_data: pd.DataFrame, analyst_confidence: float) -> Dict[str, Any]:
-        """
-        Make trading decision using step17 optimized parameters.
-
-        Args:
-            market_data: Market data
-            analyst_confidence: Analyst confidence score
-
-        Returns:
-            Dict: Trading decision
-        """
-        try:
+    async def make_trading_decision(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Get scenario predictions
             scenario_predictions = await self.scenario_predictor.predict_scenarios(market_data)
 
@@ -246,7 +231,7 @@ class Step17OptimizedTactician:
             return decision
 
         except Exception as e:
-            self.logger.error(f"Error making trading decision: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error making trading decision: {e}")
             return {
                 "action": "HOLD",
                 "direction": "NEUTRAL",
@@ -256,18 +241,12 @@ class Step17OptimizedTactician:
                 "error": str(e)
             }
 
-    def _calculate_tactician_confidence(self, scenario_predictions: Dict[str, Any], analyst_confidence: float) -> float:
-        """
-        Calculate tactician confidence using step17 parameters.
-
-        Args:
-            scenario_predictions: Scenario predictions
-            analyst_confidence: Analyst confidence
-
-        Returns:
-            float: Tactician confidence
-        """
-        try:
+    def _calculate_tactician_confidence(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Extract scenario probabilities
             profit_prob = scenario_predictions.get("profit_probability", 0.0)
             risk_prob = scenario_predictions.get("risk_probability", 0.0)
@@ -288,22 +267,15 @@ class Step17OptimizedTactician:
             return max(0.0, min(1.0, total_confidence))
 
         except Exception as e:
-            self.logger.error(f"Error calculating tactician confidence: {e}")
+    passpasspasspasspasspasspasspassself.logger.error(f"Error calculating tactician confidence: {e}")
             return 0.5
 
-    def _make_entry_decision(self, scenario_predictions: Dict[str, Any], tactician_confidence: float, analyst_confidence: float) -> Dict[str, Any]:
-        """
-        Make entry decision using step17 thresholds.
-
-        Args:
-            scenario_predictions: Scenario predictions
-            tactician_confidence: Tactician confidence
-            analyst_confidence: Analyst confidence
-
-        Returns:
-            Dict: Entry decision
-        """
-        try:
+    def _make_entry_decision(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             profit_prob = scenario_predictions.get("profit_probability", 0.0)
             risk_prob = scenario_predictions.get("risk_probability", 0.0)
             neutral_prob = scenario_predictions.get("neutral_probability", 0.0)
@@ -325,32 +297,26 @@ class Step17OptimizedTactician:
             # Make decision
             if (profit_condition and risk_condition and confidence_condition and 
                 analyst_condition and ratio_condition and dominance_condition):
-                return {
+    passreturn {
                     "action": "ENTER",
                     "reason": f"All entry conditions met: profit={profit_prob:.3f}, risk={risk_prob:.3f}, confidence={tactician_confidence:.3f}"
                 }
             else:
-                return {
+    passreturn {
                     "action": "HOLD",
                     "reason": f"Entry conditions not met: profit={profit_prob:.3f}, risk={risk_prob:.3f}, confidence={tactician_confidence:.3f}"
                 }
 
         except Exception as e:
-            self.logger.error(f"Error making entry decision: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error making entry decision: {e}")
             return {"action": "HOLD", "reason": f"Error: {e}"}
 
-    def _make_direction_decision(self, scenario_predictions: Dict[str, Any], tactician_confidence: float) -> Dict[str, Any]:
-        """
-        Make direction decision using step17 thresholds.
-
-        Args:
-            scenario_predictions: Scenario predictions
-            tactician_confidence: Tactician confidence
-
-        Returns:
-            Dict: Direction decision
-        """
-        try:
+    def _make_direction_decision(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             profit_prob = scenario_predictions.get("profit_probability", 0.0)
             risk_prob = scenario_predictions.get("risk_probability", 0.0)
             neutral_prob = scenario_predictions.get("neutral_probability", 0.0)
@@ -363,38 +329,31 @@ class Step17OptimizedTactician:
 
             # Determine direction
             if profit_prob > risk_prob + self.decision_thresholds["direction_profit_bias"]:
-                return {
+    passreturn {
                     "direction": "BULLISH",
                     "reason": f"Profit probability ({profit_prob:.3f}) exceeds risk probability ({risk_prob:.3f})"
                 }
             elif risk_prob > profit_prob + self.decision_thresholds["direction_risk_bias"]:
-                return {
+    passpassreturn {
                     "direction": "BEARISH",
                     "reason": f"Risk probability ({risk_prob:.3f}) exceeds profit probability ({profit_prob:.3f})"
                 }
             else:
-                return {
+    passreturn {
                     "direction": "NEUTRAL",
                     "reason": f"Balanced probabilities: profit={profit_prob:.3f}, risk={risk_prob:.3f}"
                 }
 
         except Exception as e:
-            self.logger.error(f"Error making direction decision: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error making direction decision: {e}")
             return {"direction": "NEUTRAL", "reason": f"Error: {e}"}
 
-    def _calculate_position_size(self, tactician_confidence: float, analyst_confidence: float, scenario_predictions: Dict[str, Any]) -> float:
-        """
-        Calculate position size using step17 parameters.
-
-        Args:
-            tactician_confidence: Tactician confidence
-            analyst_confidence: Analyst confidence
-            scenario_predictions: Scenario predictions
-
-        Returns:
-            float: Position size
-        """
-        try:
+    def _calculate_position_size(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Base position size
             base_size = self.decision_thresholds["position_size_base"]
 
@@ -417,22 +376,15 @@ class Step17OptimizedTactician:
             return position_size
 
         except Exception as e:
-            self.logger.error(f"Error calculating position size: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error calculating position size: {e}")
             return self.decision_thresholds["position_size_min"]
 
-    def _calculate_leverage(self, tactician_confidence: float, analyst_confidence: float, scenario_predictions: Dict[str, Any]) -> float:
-        """
-        Calculate leverage using step17 parameters.
-
-        Args:
-            tactician_confidence: Tactician confidence
-            analyst_confidence: Analyst confidence
-            scenario_predictions: Scenario predictions
-
-        Returns:
-            float: Leverage
-        """
-        try:
+    def _calculate_leverage(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Base leverage
             base_leverage = self.decision_thresholds["leverage_base"]
 
@@ -455,46 +407,34 @@ class Step17OptimizedTactician:
             return leverage
 
         except Exception as e:
-            self.logger.error(f"Error calculating leverage: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error calculating leverage: {e}")
             return self.decision_thresholds["leverage_min"]
 
-    def update_step17_parameters(self, new_parameters: Dict[str, Any]) -> None:
-        """
-        Update step17 parameters manually.
-
-        Args:
-            new_parameters: New step17 parameters
-        """
-        try:
+    def update_step17_parameters(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Update only trading-related parameters
             for param_name, param_value in new_parameters.items():
-                if param_name in self.decision_thresholds:
-                    self.decision_thresholds[param_name] = param_value
+    passif param_name in self.decision_thresholds:
+    passself.decision_thresholds[param_name] = param_value
                     self.logger.info(f"Updated step17 parameter: {param_name} = {param_value}")
 
             self.last_optimization = datetime.now()
             self.logger.info("✅ Step17 parameters updated manually")
 
         except Exception as e:
-            self.logger.error(f"Error updating step17 parameters: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error updating step17 parameters: {e}")
 
-    def get_current_parameters(self) -> Dict[str, Any]:
-        """
-        Get current step17 parameters.
+    def get_current_parameters(...) -> ...:
+    """..."""
+    passreturn self.decision_thresholds.copy()
 
-        Returns:
-            Dict: Current parameters
-        """
-        return self.decision_thresholds.copy()
-
-    def get_optimization_status(self) -> Dict[str, Any]:
-        """
-        Get optimization status.
-
-        Returns:
-            Dict: Optimization status
-        """
-        return {
+    def get_optimization_status(...) -> ...:
+    """..."""
+    passreturn {
             "optimization_frequency": self.optimization_frequency,
             "optimization_enabled": self.optimization_enabled,
             "last_optimization": self.last_optimization.isoformat() if self.last_optimization else None,
@@ -502,26 +442,26 @@ class Step17OptimizedTactician:
             "current_performance": self.current_performance
         }
 
-    async def cleanup(self) -> None:
-        """Cleanup resources."""
-        try:
-            if self.scenario_predictor:
-                await self.scenario_predictor.cleanup()
+    async def cleanup(...) -> ...:
+    """..."""
+    passtry:
+    passif self.scenario_predictor:
+    passawait self.scenario_predictor.cleanup()
 
             self.logger.info("✅ Step17 Optimized Tactician cleanup completed")
 
         except Exception as e:
-            self.logger.error(f"❌ Step17 Optimized Tactician cleanup failed: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Step17 Optimized Tactician cleanup failed: {e}")
 
 
 # Setup function for easy integration
-async def setup_step17_optimized_tactician(config: Dict[str, Any]) -> Optional[Step17OptimizedTactician]:
-    """Setup step17 optimized tactician."""
-    try:
-        tactician = Step17OptimizedTactician(config)
+async def setup_step17_optimized_tactician(...) -> ...:
+    pass"""..."""
+    passtry:
+    passtactician = Step17OptimizedTactician(config)
         if await tactician.initialize():
-            return tactician
+    passreturn tactician
         return None
     except Exception as e:
-        logger.error(f"Failed to setup step17 optimized tactician: {e}")
+    passpasspasspasspasspasspasslogger.error(f"Failed to setup step17 optimized tactician: {e}")
         return None

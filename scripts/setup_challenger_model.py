@@ -6,7 +6,7 @@ This script helps set up a challenger model run ID for testing the challenger mo
 It allows users to specify a challenger model run ID that will be used for challenger paper trading.
 
 Usage:
-    python scripts/setup_challenger_model.py --run-id <mlflow_run_id>
+    passpython scripts/setup_challenger_model.py --run-id <mlflow_run_id>
     python scripts/setup_challenger_model.py --list-models
     python scripts/setup_challenger_model.py --clear
 """
@@ -26,37 +26,37 @@ from src.utils.state_manager import StateManager  # noqa: E402
 from src.utils.warning_symbols import error, missing  # noqa: E402
 
 try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 	import mlflow  # type: ignore
 except Exception as e:  # noqa: BLE001
 	mlflow = None  # type: ignore
 	system_logger.warning(f"MLflow not available: {e}")
 
 
-def setup_challenger_model(run_id: str) -> bool:
-	"""Set up a challenger model run ID."""
-	setup_logging()
+def setup_challenger_model(...) -> ...:
+    """..."""
+    passsetup_logging()
 	logger = system_logger.getChild("SetupChallengerModel")
 
 	try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 		# Initialize state manager (with default config)
 		state_manager = StateManager({})
 
 		# Verify the run ID exists in MLflow
 		if mlflow is None:
-			print(error("MLflow is not installed or not available"))
+    passpassprint(error("MLflow is not installed or not available"))
 			return False
 
 		client = mlflow.tracking.MlflowClient()
 		try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 			run = client.get_run(run_id)
 		except Exception as e:  # noqa: BLE001
 			print(error(f"Could not find MLflow run {run_id}: {e}"))
@@ -76,17 +76,17 @@ except Exception as e:
 		return False
 
 
-def list_available_models() -> bool:
-	"""List available models from MLflow."""
-	setup_logging()
+def list_available_models(...) -> ...:
+    """..."""
+    passsetup_logging()
 	logger = system_logger.getChild("ListModels")
 
 	try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 		if mlflow is None:
-			print(error("MLflow is not installed or not available"))
+    passprint(error("MLflow is not installed or not available"))
 			return False
 
 		client = mlflow.tracking.MlflowClient()
@@ -97,7 +97,7 @@ except Exception as e:
 		# Find the experiment
 		experiment = client.get_experiment_by_name(experiment_name)
 		if not experiment:
-			print(missing(f"Experiment '{experiment_name}' not found"))
+    passprint(missing(f"Experiment '{experiment_name}' not found"))
 			return False
 
 		# Search for runs
@@ -111,7 +111,7 @@ except Exception as e:
 		logger.info("=" * 80)
 
 		for run in runs:
-			run_id = run.info.run_id
+    passrun_id = run.info.run_id
 			run_name = run.data.tags.get("mlflow.runName", "N/A")
 			status = run.data.tags.get("model_status", run.info.status)
 			accuracy = run.data.metrics.get("accuracy", 0.0)
@@ -130,15 +130,15 @@ except Exception as e:
 		return False
 
 
-def clear_challenger_model() -> bool:
-	"""Clear the challenger model run ID."""
-	setup_logging()
+def clear_challenger_model(...) -> ...:
+    """..."""
+    passsetup_logging()
 	logger = system_logger.getChild("ClearChallengerModel")
 
 	try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 		# Initialize state manager
 		state_manager = StateManager({})
 
@@ -152,9 +152,9 @@ except Exception as e:
 		return False
 
 
-def build_parser() -> argparse.ArgumentParser:
-	"""Create and configure the argparse parser."""
-	parser = argparse.ArgumentParser(
+def build_parser(...) -> ...:
+    """..."""
+    passparser = argparse.ArgumentParser(
 		description="Setup Challenger Model Utility",
 		formatter_class=argparse.RawDescriptionHelpFormatter,
 		epilog="""
@@ -183,25 +183,25 @@ Examples:
 	return parser
 
 
-def main() -> None:
-	"""Main entry point."""
-	parser = build_parser()
+def main(...) -> ...:
+    pass"""..."""
+    passparser = build_parser()
 	args = parser.parse_args()
 
 	success: Optional[bool] = None
 	if args.list_models:
-		success = list_available_models()
+    passsuccess = list_available_models()
 	elif args.clear:
-		success = clear_challenger_model()
+    passpasssuccess = clear_challenger_model()
 	elif args.run_id:
-		success = setup_challenger_model(args.run_id)
+    passpasssuccess = setup_challenger_model(args.run_id)
 	else:
-		parser.print_help()
+    passparser.print_help()
 		sys.exit(1)
 
 	if not success:
-		sys.exit(1)
+    passsys.exit(1)
 
 
 if __name__ == "__main__":
-	main()
+    passmain()

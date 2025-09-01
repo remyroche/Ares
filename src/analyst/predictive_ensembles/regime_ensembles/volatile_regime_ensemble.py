@@ -30,17 +30,29 @@ from pytorch_tabnet.tab_model import TabNetClassifier
 from .base_ensemble import BaseEnsemble
 
 
-class VolatileRegimeEnsemble(BaseEnsemble):
-    """
-This ensemble specializes in detecting and predicting during volatile market conditions.
-It combines signals from multiple models optimized for high volatility periods.
-"""
+class VolatileRegimeEnsemble(...):
 
-def __init__(self, config: dict, ensemble_name: str = "VolatileRegimeEnsemble"):
-    def __init__(self, config: dict, ensemble_name: str = "VolatileRegimeEnsemble"):
-    def __init__(self, config: dict, ensemble_name: str = "VolatileRegimeEnsemble"):
-    def __init__(self, config: dict, ensemble_name: str = "VolatileRegimeEnsemble"):
-        super().__init__(config, ensemble_name)
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="volatileregimeensemble initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize VolatileRegimeEnsemble."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    """..."""
+    passdef __init__(...):
+    passdef __init__(...):
+    passdef __init__(...):
+    passdef __init__(...):
+    passsuper().__init__(config, ensemble_name)
 self.dl_config = {
 "sequence_length": 20,
 "lstm_units": 50,
@@ -59,11 +71,11 @@ self.models = {
 "logistic_regression": None,
 }
 
-def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
-    def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
-    def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
-    def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
-        """Trains multiple diverse base models for volatile regime detection."""
+def _train_base_models(...):
+    passdef _train_base_models(...):
+    passdef _train_base_models(...):
+    passdef _train_base_models(...):
+    pass"""Trains multiple diverse base models for volatile regime detection."""
 self.logger.info("Training VolatileRegime base models...")
 
 # 1. Train Deep Learning Models
@@ -73,7 +85,7 @@ pd.Series(y_encoded, index=aligned_data.index),
 )
 num_classes = len(np.unique(y_encoded))
 if X_seq.size > 0:
-            self.models["lstm"] = self._train_dl_model(
+    passpassself.models["lstm"] = self._train_dl_model(
 X_seq,
 y_seq_aligned_encoded,
 num_classes,
@@ -117,25 +129,25 @@ y_encoded,
 
 # GARCH Model for volatility modeling
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 self.logger.info("Training GARCH model for volatility modeling...")
 self.models["garch"] = self._train_garch_model(aligned_data, y_encoded)
 except Exception as e:
-            self.print(failed("GARCH training failed: {e}"))
+    passpasspasspasspasspasspasspassself.print(failed("GARCH training failed: {e}"))
 
 self.logger.info("✅ VolatileRegime base models training completed")
 
-def _prepare_sequence_data(self, df: pd.DataFrame, target_series: pd.Series = None):
-    def _prepare_sequence_data(self, df: pd.DataFrame, target_series: pd.Series = None):
-    def _prepare_sequence_data(self, df: pd.DataFrame, target_series: pd.Series = None):
-    def _prepare_sequence_data(self, df: pd.DataFrame, target_series: pd.Series = None):
-        """Prepare sequence data for deep learning models."""
+def _prepare_sequence_data(...):
+    passdef _prepare_sequence_data(...):
+    passdef _prepare_sequence_data(...):
+    passdef _prepare_sequence_data(...):
+    pass"""Prepare sequence data for deep learning models."""
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 sequence_length = self.dl_config["sequence_length"]
 
 # Prepare features for sequence
@@ -147,34 +159,34 @@ X_seq = []
 y_seq = []
 
 for i in range(sequence_length, len(X)):
-                X_seq.append(X[i - sequence_length : i])
+    passX_seq.append(X[i - sequence_length : i])
 if target_series is not None:
-                    y_seq.append(target_series.iloc[i])
+    passy_seq.append(target_series.iloc[i])
 
 if len(X_seq) > 0:
-                return np.array(X_seq), np.array(y_seq)
+    passreturn np.array(X_seq), np.array(y_seq)
 return np.array([]), np.array([])
 
 except Exception as e:
-            self.print(error("Error preparing sequence data: {e}"))
+    passpasspasspasspasspasspassself.print(error("Error preparing sequence data: {e}"))
 return np.array([]), np.array([])
 
-def _train_dl_model(self, X_seq, y_seq_encoded, num_classes, is_transformer=False):
-    def _train_dl_model(self, X_seq, y_seq_encoded, num_classes, is_transformer=False):
-    def _train_dl_model(self, X_seq, y_seq_encoded, num_classes, is_transformer=False):
-    def _train_dl_model(self, X_seq, y_seq_encoded, num_classes, is_transformer=False):
-        """Train deep learning model (LSTM or Transformer)."""
+def _train_dl_model(...):
+    passdef _train_dl_model(...):
+    passdef _train_dl_model(...):
+    passdef _train_dl_model(...):
+    pass"""Train deep learning model (LSTM or Transformer)."""
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 if len(X_seq) == 0:
-                return None
+    passreturn None
 
 input_shape = (X_seq.shape[1], X_seq.shape[2])
 
 if is_transformer:
-                return self._build_transformer_model(
+    passreturn self._build_transformer_model(
 input_shape, num_classes, X_seq, y_seq_encoded
 )
 return self._build_lstm_model(
@@ -182,18 +194,18 @@ input_shape, num_classes, X_seq, y_seq_encoded
 )
 
 except Exception as e:
-            self.print(error("Error training DL model: {e}"))
+    passpasspasspasspasspasspassself.print(error("Error training DL model: {e}"))
 return None
 
-def _build_lstm_model(self, input_shape, num_classes, X_seq, y_seq_encoded):
-    def _build_lstm_model(self, input_shape, num_classes, X_seq, y_seq_encoded):
-    def _build_lstm_model(self, input_shape, num_classes, X_seq, y_seq_encoded):
-    def _build_lstm_model(self, input_shape, num_classes, X_seq, y_seq_encoded):
-        """Build LSTM model."""
+def _build_lstm_model(...):
+    passdef _build_lstm_model(...):
+    passdef _build_lstm_model(...):
+    passdef _build_lstm_model(...):
+    pass"""Build LSTM model."""
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 inputs = Input(shape=input_shape)
 
 # LSTM layers
@@ -230,18 +242,18 @@ verbose=0,
 return model
 
 except Exception as e:
-            self.print(error("Error building LSTM model: {e}"))
+    passpasspasspasspasspasspassself.print(error("Error building LSTM model: {e}"))
 return None
 
-def _build_transformer_model(self, input_shape, num_classes, X_seq, y_seq_encoded):
-    def _build_transformer_model(self, input_shape, num_classes, X_seq, y_seq_encoded):
-    def _build_transformer_model(self, input_shape, num_classes, X_seq, y_seq_encoded):
-    def _build_transformer_model(self, input_shape, num_classes, X_seq, y_seq_encoded):
-        """Build Transformer model."""
+def _build_transformer_model(...):
+    passdef _build_transformer_model(...):
+    passdef _build_transformer_model(...):
+    passdef _build_transformer_model(...):
+    pass"""Build Transformer model."""
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 inputs = Input(shape=input_shape)
 
 # Multi-head attention
@@ -287,18 +299,18 @@ verbose=0,
 return model
 
 except Exception as e:
-            self.print(error("Error building Transformer model: {e}"))
+    passpasspasspasspasspasspassself.print(error("Error building Transformer model: {e}"))
 return None
 
-def _train_tabnet_model(self, X_flat, y_flat_encoded):
-    def _train_tabnet_model(self, X_flat, y_flat_encoded):
-    def _train_tabnet_model(self, X_flat, y_flat_encoded):
-    def _train_tabnet_model(self, X_flat, y_flat_encoded):
-        """Train TabNet model."""
+def _train_tabnet_model(...):
+    passdef _train_tabnet_model(...):
+    passdef _train_tabnet_model(...):
+    passdef _train_tabnet_model(...):
+    pass"""Train TabNet model."""
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 tabnet = TabNetClassifier()
 tabnet.fit(
 X_flat.values,
@@ -309,18 +321,18 @@ batch_size=1024,
 )
 return tabnet
 except Exception as e:
-            self.print(failed("TabNet training failed: {e}"))
+    passpasspasspasspasspasspassself.print(failed("TabNet training failed: {e}"))
 return None
 
-def _train_garch_model(self, aligned_data, y_encoded):
-    def _train_garch_model(self, aligned_data, y_encoded):
-    def _train_garch_model(self, aligned_data, y_encoded):
-    def _train_garch_model(self, aligned_data, y_encoded):
-        """Train GARCH model for volatility modeling."""
+def _train_garch_model(...):
+    passdef _train_garch_model(...):
+    passdef _train_garch_model(...):
+    passdef _train_garch_model(...):
+    pass"""Train GARCH model for volatility modeling."""
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 # Use returns for GARCH modeling
 returns = aligned_data["close"].pct_change().dropna()
 
@@ -329,16 +341,16 @@ garch_model = arch_model(returns, vol="GARCH", p=1, q=1)
 return garch_model.fit(disp="off")
 
 except Exception as e:
-            self.print(failed("GARCH model training failed: {e}"))
+    passpasspasspasspasspasspasspassself.print(failed("GARCH model training failed: {e}"))
 return None
 
-def _generate_meta_features(self, aligned_data: pd.DataFrame) -> pd.DataFrame:
-        """Generate meta-features specific to volatile regime detection."""
-meta_features = pd.DataFrame(index=aligned_data.index)
+def _generate_meta_features(...) -> ...:
+    """..."""
+    passmeta_features = pd.DataFrame(index=aligned_data.index)
 
 # Volatility-specific features
 if "volatility_20" in aligned_data.columns:
-            meta_features["volatility_percentile"] = (
+    passmeta_features["volatility_percentile"] = (
 aligned_data["volatility_20"].rolling(100).rank(pct=True)
 )
 meta_features["volatility_acceleration"] = aligned_data[
@@ -350,7 +362,7 @@ meta_features["volatility_momentum"] = aligned_data[
 
 # Volume volatility features
 if "volume" in aligned_data.columns:
-            meta_features["volume_volatility"] = (
+    passmeta_features["volume_volatility"] = (
 aligned_data["volume"].rolling(20).std()
 )
 meta_features["volume_volatility_ratio"] = (
@@ -360,7 +372,7 @@ meta_features["volume_volatility"]
 
 # Price volatility features
 if "close" in aligned_data.columns:
-            meta_features["price_volatility"] = (
+    passmeta_features["price_volatility"] = (
 aligned_data["close"].pct_change().rolling(20).std()
 )
 meta_features["price_volatility_percentile"] = (
@@ -369,23 +381,23 @@ meta_features["price_volatility"].rolling(100).rank(pct=True)
 
 # Regime-specific features
 if "volatility_regime" in aligned_data.columns:
-            meta_features["volatility_regime_numeric"] = aligned_data[
+    passmeta_features["volatility_regime_numeric"] = aligned_data[
 "volatility_regime"
 ]
 
 # Fill NaN values
 return meta_features.fillna(0)
 
-def predict(self, current_features: pd.DataFrame) -> tuple[float, float]:
-        """Make prediction for volatile regime."""
-if not self.trained:
-            self.logger.warning("VolatileRegime ensemble not trained")
+def predict(...) -> ...:
+    """..."""
+    passif not self.trained:
+    passself.logger.warning("VolatileRegime ensemble not trained")
 return 0.5, 0.5
 
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 # Get base model predictions
 base_predictions = self._get_base_model_predictions(
 current_features,
@@ -393,7 +405,7 @@ is_live=True,
 )
 
 if not base_predictions:
-                return 0.5, 0.5
+    passreturn 0.5, 0.5
 
 # Calculate ensemble prediction
 predictions = list(base_predictions.values())
@@ -406,5 +418,5 @@ ensemble_confidence = np.mean(confidences)
 return weighted_pred, ensemble_confidence
 
 except Exception as e:
-            self.logger.error(f"Error in VolatileRegime prediction: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error in VolatileRegime prediction: {e}")
 return 0.5, 0.5

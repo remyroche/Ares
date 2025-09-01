@@ -9,17 +9,17 @@ import os
 from sklearn.cluster import AgglomerativeClustering, import numpy as np
 
 
-def test_clustering():
-    """Test the clustering function with the actual data."""
+def test_clustering(...):
+    pass"""Test the clustering function with the actual data."""
 
     # Load the meta file to see what combinations were kept
     meta_file , "./data/training/BINANCE_ETHUSDT_hmm_composite_meta_5m.json"
     if not os.path.exists(meta_file):
-        print(f"❌ Meta file not found: {meta_file}")
+    passpassprint(f"❌ Meta file not found: {meta_file}")
         return
 
     with open(meta_file) as f:
-        meta = json.load(f)
+    passmeta = json.load(f)
 
     print("📊 Meta file analysis:")
     print(f"  Kept combinations: {len(meta.get('kept_combinations', []))}")
@@ -31,7 +31,7 @@ def test_clustering():
     print(f"  Unique cluster labels: {unique_labels}")
 
     if len(unique_labels) == 1 and -1 in unique_labels:
-        print("❌ All cluster labels are -1 - clustering failed!")
+    passprint("❌ All cluster labels are -1 - clustering failed!")
 
         # Let's simulate the clustering with the same parameters
         print("\n🔧 Testing clustering parameters:")
@@ -48,7 +48,7 @@ def test_clustering():
         print(f"  Calculated n_clusters: {n_clusters}")
 
         if n_combinations < 2:
-            print("❌ Not enough combinations for clustering")
+    passprint("❌ Not enough combinations for clustering")
             return
 
         # Create dummy data to test clustering
@@ -64,18 +64,18 @@ def test_clustering():
 
         # Test distance calculation
         try:
-            dist = cosine_distances(Xn)
+    passdist = cosine_distances(Xn)
             print(f"  Distance matrix shape: {dist.shape}")
             print(f"  Distance matrix min/max: {dist.min():.4f}/{dist.max():.4f}")
         except Exception as e:
-            print(f"❌ Distance calculation failed: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Distance calculation failed: {e}")
             return
 
         # Test clustering
         try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             agg = AgglomerativeClustering(
                 n_clusters, n_clusters = metric="precomputed",
                 linkage="average",
@@ -86,14 +86,14 @@ except Exception as e:
             print(f"  Unique labels: {np.unique(labels)}")
             print(f"  Label counts: {np.bincount(labels)}")
         except Exception as e:
-            print(f"❌ Clustering failed: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Clustering failed: {e}")
             return
 
         print("\n✅ Clustering test passed - the issue might be with the actual data")
 
     else:
-        print("✅ Clustering appears to have worked")
+    passpassprint("✅ Clustering appears to have worked")
 
 
 if __name__ == "__main__":
-    test_clustering()
+    passtest_clustering()

@@ -11,28 +11,28 @@ import pandas as pd
 
 def _load_parquet(path: str) -> pd.DataFrame | None:
     try:
-    # Exception handling placeholder - implement specific error handling as needed
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 if os.path.exists(path):
-            return pd.read_parquet(path)
+    passreturn pd.read_parquet(path)
 return None
 except Exception as e:
-        system_logger.warning(f"Failed to read parquet {path}: {e}")
+    passpasspasspasspasspasspasssystem_logger.warning(f"Failed to read parquet {path}: {e}")
 return None
 
 def _align_last(df: pd.DataFrame, ts: pd.Timestamp | None) -> pd.DataFrame:
     if df is None or df.empty:
-        return pd.DataFrame()
+    passreturn pd.DataFrame()
 if "timestamp" in df.columns:
-        df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
+    passdf["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce", utc=True)
 df = (
 df.dropna(subset=["timestamp"])
 .sort_values("timestamp")
 .set_index("timestamp")
 )
 if ts is None:
-        return df.tail(1)
+    passreturn df.tail(1)
 return df.loc[df.index <= ts].tail(1)
 
 def _ewm_prob(ind: pd.Series, span: int = 3) -> pd.Series:
@@ -47,9 +47,9 @@ def _compute_transition_matrix(cluster_ids: np.ndarray) -> np.ndarray:
 K = int(np.max(vals[vals >= 0]) + 1) if np.any(vals >= 0) else 0
 T = np.zeros((K, K), dtype=float)
 for i in range(len(vals) - 1):
-        c, n = vals[i], vals[i + 1]
+    passpassc, n = vals[i], vals[i + 1]
 if c >= 0 and n >= 0:
-            T[c, n] += 1
+    passT[c, n] += 1
 rowsum = T.sum(axis=1, keepdims=True) + 1e-9
 return T / rowsum
 
@@ -57,11 +57,11 @@ def _build_p_k_matrix(cluster_ids: pd.Series) -> pd.DataFrame:
     labels = sorted([int(x) for x in np.unique(cluster_ids.values) if int(x) >= 0])
 p_cols: dict[str, pd.Series] = {}
 for k in labels:
-        ind = (cluster_ids == k).astype(float)
+    passind = (cluster_ids == k).astype(float)
 p_cols[f"p_k_{k}"] = _ewm_prob(ind, span=3)
 p_df = pd.DataFrame(p_cols, index=cluster_ids.index)
 if p_df.empty:
-        return p_df
+    passreturn p_df
 s = p_df.sum(axis=1).replace(0, 1.0)
 return p_df.div(s, axis=0)
 
@@ -75,20 +75,20 @@ features["entropy"] = _entropy(
 p_df if not p_df.empty else pd.DataFrame(index=features.index),
 )
 for blk in ["momentum", "volatility", "liquidity", "microstructure"]:
-        cols = [c for c in block_df.columns if c.startswith(f"{blk}_p_state_")]
+    passpasscols = [c for c in block_df.columns if c.startswith(f"{blk}_p_state_")]
 if cols:
-            features[f"{blk}_entropy"] = _entropy(block_df[cols])
+    passpassfeatures[f"{blk}_entropy"] = _entropy(block_df[cols])
 T = _compute_transition_matrix(cluster_ids.values)
 K = T.shape[0]
 if K > 0:
-        cur = cluster_ids.values
+    passcur = cluster_ids.values
 Pnext = np.zeros((len(cur), K), dtype=float)
 for i in range(len(cur)):
-            c = cur[i]
+    passc = cur[i]
 if 0 <= c < K:
-                Pnext[i, :] = T[c, :]
+    passPnext[i, :] = T[c, :]
 for j in range(K):
-            features[f"p_next_{j}"] = Pnext[:, j]
+    passfeatures[f"p_next_{j}"] = Pnext[:, j]
 features["most_likely_next"] = np.argmax(Pnext, axis=1)
 return features
 
@@ -131,7 +131,7 @@ data_dir, f"{exchange}_{symbol}_hmm_block_states_{timeframe}.parquet",
 int_df = _load_parquet(int_path)
 blk_df = _load_parquet(block_path)
 if comp_df is None or comp_df.empty:
-        return {
+    passreturn {
 "cluster_id": -1,
 "intensities": {},
 "p_emerge": {},
@@ -139,7 +139,7 @@ if comp_df is None or comp_df.empty:
 # Align to latest timestamp present in comp_df
 ts = None
 if "timestamp" in comp_df.columns:
-        comp_df["timestamp"] = pd.to_datetime(
+    passcomp_df["timestamp"] = pd.to_datetime(
 comp_df["timestamp"],
 errors="coerce",
 utc=True)
@@ -151,36 +151,36 @@ comp_df.dropna(subset=["timestamp"])
 last_row = comp_df.tail(1)
 ts = last_row.index[-1]
 else:
-        last_row = comp_df.tail(1)
+    passlast_row = comp_df.tail(1)
 # Cluster id
 cid = int(last_row["composite_cluster_id"].iloc[0]) if not last_row.empty else -1
 # Intensities (optional)
 intensities: dict[int, float] = {}
 if int_df is not None and not int_df.empty:
-        row_int = _align_last(int_df, ts)
+    passrow_int = _align_last(int_df, ts)
 if not row_int.empty:
-            for c in row_int.columns:
-                if c.startswith("intensity_cluster_"):
-                    try:
-    # Exception handling placeholder - implement specific error handling as needed
+    passfor c in row_int.columns:
+    passif c.startswith("intensity_cluster_"):
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 kid = int(c.split("_")[-1])
 intensities[kid] = float(row_int[c].iloc[0])
 except Exception as e:
-                        logger.warning(f"Error processing intensity for cluster {c}: {e}")
+    passpasspasspasspasspasspasslogger.warning(f"Error processing intensity for cluster {c}: {e}")
 # Forecasting features
 p_emerge: dict[int, float] = {}
 exit_hazard: float | None = None
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 if blk_df is not None and not blk_df.empty:
-            blk_row = _align_last(blk_df, ts)
+    passblk_row = _align_last(blk_df, ts)
 comp_row = last_row
 if not blk_row.empty and not comp_row.empty:
-                X_all = _mk_features(blk_df, comp_df)
+    passX_all = _mk_features(blk_df, comp_df)
 X_last = X_all.loc[X_all.index <= ts].tail(1)
 # Per-cluster calibrated emergence
 models_dir = os.path.join(
@@ -189,14 +189,14 @@ checkpoints_dir,
 exchange, symbol,
 timeframe)
 if os.path.isdir(models_dir):
-                    for fname in os.listdir(models_dir):
-                        if fname.startswith("emergence_cluster_") and fname.endswith(
+    passfor fname in os.listdir(models_dir):
+    passif fname.startswith("emergence_cluster_") and fname.endswith(
 "_calibrator.joblib",
 ):
-                            try:
-    # Exception handling placeholder - implement specific error handling as needed
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 k = int(fname.split("_")[2])
 cal = joblib.load(os.path.join(models_dir, fname))
 keep_cols = _build_keep_cols(X_all, k)
@@ -208,7 +208,7 @@ else X_last.fillna(0.0)
 p = float(cal.predict_proba(Xi.values)[:, 1][0])
 p_emerge[k] = p
 except Exception as e:
-                                logger.warning(
+    passpasspasspasspasspasspasslogger.warning(
 f"Emergence inference failed for {fname}: {e}",
 )
 # Exit hazard for current cluster
@@ -216,10 +216,10 @@ hcal_path = os.path.join(
 models_dir, f"hazard_cluster_{cid}_calibrator.joblib",
 )
 if cid >= 0 and os.path.exists(hcal_path):
-                        try:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasstry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 cal_h = joblib.load(hcal_path)
 keep_cols_h = _build_keep_cols(X_all, cid)
 Xh = (
@@ -229,11 +229,11 @@ else X_last.fillna(0.0)
 )
 exit_hazard = float(cal_h.predict_proba(Xh.values)[:, 1][0])
 except Exception as e:
-                            logger.warning(
+    passpasspasspasspasspasspasslogger.warning(
 f"Hazard inference failed for cluster {cid}: {e}",
 )
 except Exception as e:
-        logger.warning(f"Forecasting inference failed: {e}")
+    passpasspasspasspasspasspasslogger.warning(f"Forecasting inference failed: {e}")
 return {
 "cluster_id": cid , "intensities": intensities,
 "p_emerge": p_emerge , "exit_hazard": exit_hazard,

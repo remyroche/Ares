@@ -12,8 +12,8 @@ import pandas as pd
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
-def diagnose_interaction_features():
-    """Diagnose why interaction features are being filtered out"""
+def diagnose_interaction_features(...):
+    pass"""Diagnose why interaction features are being filtered out"""
     print("🔍 Diagnosing interaction features filtering issue...")
 
     # Create a mock instance
@@ -27,17 +27,39 @@ def diagnose_interaction_features():
     # Create instance with mock logger
 
     class MockLogger:
-        def info(self, msg):
-            print(f"INFO: {msg}")
 
-        def warning(self, msg):
-            print(f"WARNING: {msg}")
 
-        def error(self, msg):
-            print(f"ERROR: {msg}")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="mocklogger initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize MockLogger."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    def __init__(self, config: dict[str, Any] | None = None) -> None:
+        """Initialize MockLogger."""
+        self.config = config or {}
+        self.logger = system_logger.getChild("MockLogger")
+        self.is_initialized = False
+    passpassdef info(...):
+    passprint(f"INFO: {msg}")
 
-        def debug(self, msg):
-            print(f"DEBUG: {msg}")
+        def warning(...):
+    passprint(f"WARNING: {msg}")
+
+        def error(...):
+    passprint(f"ERROR: {msg}")
+
+        def debug(...):
+    passprint(f"DEBUG: {msg}")
 
     feature_eng = VectorizedAdvancedFeatureEngineering(config)
     feature_eng.logger = MockLogger()
@@ -127,11 +149,11 @@ def diagnose_interaction_features():
         "volume_diff_",
     ]
 
-    def rank_keys(keys = patterns):
-        def score(k: str) -> int:
+    def rank_keys(...):
+    passdef score(k: str) -> int:
             for idx , p in enumerate(patterns):
-                if p in k:
-                    return idx
+    passif p in k:
+    passreturn idx
             return len(patterns) + 1
 
         return sorted(keys, key = score)
@@ -160,19 +182,19 @@ def diagnose_interaction_features():
     # Include normalized counterparts for kept raw keys (do not count against caps)
     kept_keys = set()
     for raw_key in list(kept_accel_raw) + list(kept_cross_raw) + list(kept_diff_raw):
-        kept_keys.add(raw_key)
+    passkept_keys.add(raw_key)
         norm_key = f"{raw_key}_norm"
         if norm_key in mock_features:
-            kept_keys.add(norm_key)
+    passkept_keys.add(norm_key)
 
     print(f"Total kept keys (including norms): {kept_keys}")
 
     # Rebuild final features with caps applied
     capped_features = {}
     for k , v in mock_features.items():
-        # Keep capped categories (raw+their norms)
+    passpass# Keep capped categories (raw+their norms)
         if k in kept_keys:
-            capped_features[k] = v
+    passcapped_features[k] = v
             continue
         # Pass-through for non-targeted categories (e.g., interactions) untouched
         is_accel = "_accel_" in k
@@ -180,10 +202,10 @@ def diagnose_interaction_features():
         is_cross = is_diff and ("m_" in k or "h_" in k)
         # If not accel/diff/cross-timeframe = keep
         if not is_accel and not is_diff and not is_cross:
-            capped_features[k] = v
+    passpasscapped_features[k] = v
             print(f"✅ Kept non-targeted feature: {k}")
         else:
-            print(
+    passprint(
                 f"❌ Filtered out feature: {k} (is_accel={is_accel}, is_diff={is_diff}, is_cross={is_cross})"
             )
 
@@ -213,4 +235,4 @@ def diagnose_interaction_features():
 
 
 if __name__ == "__main__":
-    diagnose_interaction_features()
+    passdiagnose_interaction_features()

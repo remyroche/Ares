@@ -18,7 +18,7 @@ from kelly_criterion_formula import calculate_kelly_multiplier
 
 
 class PositionSizer:
-    """
+    passpass"""
 Position Sizer component responsible for:
     - Position sizing decisions based on ML confidence scores and Kelly criterion
 - Integration with Strategist for strategy input
@@ -32,9 +32,9 @@ def __init__(self, config: dict[str, Any]) -> None:
 self.logger = system_logger.getChild("PositionSizer")
 # Backward-compatibility shim for legacy self.print calls
 if not hasattr(self, "print"):
-            def _shim_print(message: str) -> None:
+    passpassdef _shim_print(message: str) -> None:
                 with contextlib.suppress(Exception):
-                    self.logger.error(str(message))
+    passself.logger.error(str(message))
 
 self.print = _shim_print  # type: ignore[attr-defined]
 
@@ -78,13 +78,13 @@ exceptions=(Exception,),
 default_return=False,
 context="position sizer initialization",
 )
-async def initialize(self) -> bool:
-        """Initialize the position sizer."""
-self.logger.info("Initializing position sizer...")
+async def initialize(...) -> ...:
+    """..."""
+    passself.logger.info("Initializing position sizer...")
 
 # Validate configuration
 if not self._validate_configuration():
-            return False
+    passreturn False
 
 self.is_initialized = True
 self.logger.info("✅ Position sizer initialized successfully")
@@ -96,46 +96,46 @@ default_return=None,
 context="configuration validation",
 )
 
-def _validate_configuration(self) -> bool:
-        """Validate position sizer configuration."""
-        try:
+def _validate_configuration(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             required_keys = [
                 "kelly_multiplier",
                 "max_position_size",
                 "min_position_size",
             ]
             for key in required_keys:
-                if key not in self.sizing_config:
-                    self.print(missing(f"Missing required configuration key: {key}"))
+    passif key not in self.sizing_config:
+    passself.print(missing(f"Missing required configuration key: {key}"))
                     return False
 
             if self.max_position_size <= self.min_position_size:
-                self.logger.error(
+    passself.logger.error(
                     "max_position_size must be greater than min_position_size",
                 )
                 return False
 
             if self.kelly_multiplier <= 0 or self.kelly_multiplier > 1:
-                self.print(error("kelly_multiplier must be between 0 and 1"))
+    passself.print(error("kelly_multiplier must be between 0 and 1"))
                 return False
 
             return True
 
         except Exception as e:
-            self.print(error(f"Error validating configuration: {e}"))
+    passpasspasspasspasspasspassself.print(error(f"Error validating configuration: {e}"))
             return False
 
-def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
-        """
-        Refresh configuration from step17 optimization results.
-        This method is called automatically when step17 completes.
-
-        Args:
-            step17_results: Step17 optimization results
-        """
-        try:
+def refresh_step17_configuration(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             if "position_sizing" in step17_results:
-                position_sizing_optimization = step17_results["position_sizing"]
+    passposition_sizing_optimization = step17_results["position_sizing"]
 
                 # Update position sizing parameters
                 self.kelly_multiplier = position_sizing_optimization.get("kelly_multiplier", self.kelly_multiplier)
@@ -152,7 +152,7 @@ def refresh_step17_configuration(self, step17_results: dict[str, Any]) -> None:
                 self.logger.info("✅ Position sizer configuration refreshed from step17 results")
 
         except Exception as e:
-            self.logger.error(f"Error refreshing step17 configuration: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error refreshing step17 configuration: {e}")
             raise
 
 @validate_data_quality(
@@ -171,36 +171,18 @@ AttributeError: (None, "Sizer not properly initialized"),
 default_return=None,
 context="position sizing calculation",
 )
-async def calculate_position_size(
-self,
-ml_predictions: dict[str, Any],
-current_price: float = 0.0,
-account_balance: float = 1000.0,
-analyst_confidence: float = 0.5,
-tactician_confidence: float = 0.5,
-market_health_analysis: dict[str, Any] | None = None,
-strategist_risk_parameters: dict[str, Any] | None = None,
-) -> dict[str, Any] | None:
-        """
-Calculate position size using ML confidence scores and Kelly criterion.
-
-Args:
-            ml_predictions: ML confidence predictions from ml_confidence_predictor
-current_price: Current market price
-account_balance: Account balance for position sizing
-market_health_analysis: Aggregated indicators from Analyst's MarketHealthAnalyzer
-strategist_risk_parameters: Risk parameters produced by Strategist (fed via Analyst)
-
-Returns:
-            dict[str, Any]: Position sizing analysis
-"""
-if not self.is_initialized:
-            self.print(initialization_error("Position sizer not initialized"))
+async def calculate_position_size(...) -> ...:
+    """..."""
+    passif not self.is_initialized:
+    passself.print(initialization_error("Position sizer not initialized"))
 return None
 
 self.logger.info("Calculating position size using ML intelligence...")
 
         try:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # NEW: Extract combined confidence from Tactician multi-output predictions
             combined_confidence = ml_predictions.get("combined_confidence", 0.5)
 
@@ -214,7 +196,7 @@ self.logger.info("Calculating position size using ML intelligence...")
 
             # NEW: Use combined confidence for position sizing if available
             if combined_confidence >= self.positionsize_combined_threshold:
-                # Calculate base Kelly criterion position size
+    passpass# Calculate base Kelly criterion position size
                 kelly_position_size = self._calculate_kelly_position_size(
                     price_target_confidences, adversarial_confidences,
                 )
@@ -238,7 +220,7 @@ self.logger.info("Calculating position size using ML intelligence...")
                     tactician_confidence=tactician_confidence,
                 )
             else:
-                # If combined confidence is below threshold, use minimum position size
+    pass# If combined confidence is below threshold, use minimum position size
                 final_position_size = self.min_position_size
                 kelly_position_size = self.min_position_size
                 ml_position_size = self.min_position_size
@@ -277,16 +259,15 @@ self.logger.info("Calculating position size using ML intelligence...")
             return sizing_analysis
 
         except Exception as e:
-            self.print(error(f"Error calculating position size: {e}"))
+    passpasspasspasspasspasspassself.print(error(f"Error calculating position size: {e}"))
             return None
 
-def _calculate_kelly_position_size(
-        self,
-        price_target_confidences: dict[str, float],
-        adversarial_confidences: dict[str, float],
-    ) -> float:
-        """Calculate position size using Kelly criterion based on ML confidence scores."""
-        try:
+def _calculate_kelly_position_size(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Use the new Kelly criterion formula module
             kelly_multiplier = calculate_kelly_multiplier(
                 price_target_confidences=price_target_confidences,
@@ -308,25 +289,24 @@ def _calculate_kelly_position_size(
             )
 
         except (ValueError, TypeError, KeyError) as e:
-            self.logger.exception(f"Error calculating Kelly position size: {e}")
+    passpasspasspasspasspasspassself.logger.exception(f"Error calculating Kelly position size: {e}")
             return self.min_position_size
         except ZeroDivisionError as e:
-            self.logger.exception(f"Division by zero in Kelly calculation: {e}")
+    passpasspasspasspasspasspassself.logger.exception(f"Division by zero in Kelly calculation: {e}")
             return self.min_position_size
 
-def _calculate_ml_position_size(
-        self,
-        price_target_confidences: dict[str, float],
-        adversarial_confidences: dict[str, float],
-    ) -> float:
-        """Calculate position size based on ML confidence scores."""
-        try:
+def _calculate_ml_position_size(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Get average confidence for target levels (0.5% to 2.0%)
             target_levels = [0.5, 1.0, 1.5, 2.0]
             confidences = []
 
             for level in target_levels:
-                closest_level = min(
+    passclosest_level = min(
                     price_target_confidences.keys(),
                     key=lambda x: abs(float(x.replace("%", "")) - level),
                 )
@@ -339,7 +319,7 @@ def _calculate_ml_position_size(
             # Get average adverse risk
             adverse_risks = []
             for level in target_levels:
-                closest_level = min(
+    passclosest_level = min(
                     adversarial_confidences.keys(),
                     key=lambda x: abs(float(x.replace("%", "")) - level),
                 )
@@ -367,19 +347,18 @@ def _calculate_ml_position_size(
             )
 
         except (ValueError, TypeError, KeyError) as e:
-            self.logger.exception(f"Error calculating ML position size: {e}")
+    passpasspasspasspasspasspassself.logger.exception(f"Error calculating ML position size: {e}")
             return self.min_position_size
         except ZeroDivisionError as e:
-            self.logger.exception(f"Division by zero in ML position calculation: {e}")
+    passpasspasspasspasspasspassself.logger.exception(f"Division by zero in ML position calculation: {e}")
             return self.min_position_size
 
-def _calculate_weighted_position_size(
-        self,
-        kelly_position_size: float,
-        ml_position_size: float,
-    ) -> float:
-        """Calculate weighted position size using Kelly criterion and ML confidence."""
-        try:
+def _calculate_weighted_position_size(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
                         # Calculate weighted position size
             # Combine Kelly and ML sizes multiplicatively as requested
             weighted_size = (kelly_position_size * ml_position_size)
@@ -397,25 +376,20 @@ def _calculate_weighted_position_size(
             )
 
         except Exception as e:
-            self.print(error(f"Error calculating weighted position size: {e}"))
+    passpasspasspasspasspasspassself.print(error(f"Error calculating weighted position size: {e}"))
             return max(self.min_position_size, min(self.max_position_size, kelly_position_size))
 
-def _apply_position_size_modifiers(
-        self,
-        base_size: float,
-        *,
-        market_health_analysis: dict[str, Any] | None,
-        strategist_risk_parameters: dict[str, Any] | None,
-        analyst_confidence: float,
-        tactician_confidence: float,
-    ) -> float:
-        """Adjust position size based on market health (vol/liquidity/stress), strategist risk, and dynamic confidence."""
-        try:
+def _apply_position_size_modifiers(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             adjusted = base_size
 
             # Market health: downscale size under high volatility or stress; upscale when healthy
             if market_health_analysis:
-                vol = market_health_analysis.get("volatility_analysis", {})
+    passvol = market_health_analysis.get("volatility_analysis", {})
                 stress = market_health_analysis.get("stress_analysis", {})
                 liq = market_health_analysis.get("liquidity_analysis", {})
 
@@ -426,27 +400,27 @@ def _apply_position_size_modifiers(
 
                 # Volatility adjustment
                 if vol_regime in ("high", "extreme") or current_vol > 0.03:
-                    adjusted *= 0.6
+    passadjusted *= 0.6
                 elif vol_regime == "low" and current_vol < 0.015:
-                    adjusted *= 1.1
+    passpassadjusted *= 1.1
 
                 # Stress adjustment
                 if stress_level >= 0.8:
-                    adjusted *= 0.4
+    passadjusted *= 0.4
                 elif stress_level >= 0.6:
-                    adjusted *= 0.6
+    passpassadjusted *= 0.6
                 elif stress_level >= 0.4:
-                    adjusted *= 0.8
+    passpassadjusted *= 0.8
 
                 # Liquidity adjustment
                 if liquidity_score < 0.3:
-                    adjusted *= 0.6
+    passadjusted *= 0.6
                 elif liquidity_score > 0.7:
-                    adjusted *= 1.05
+    passpassadjusted *= 1.05
 
             # Strategist risk parameters: respect max risk caps without using fixed TP/SL distances
             if strategist_risk_parameters:
-                # Example: cap size based on max daily loss or risk per trade signals
+    pass# Example: cap size based on max daily loss or risk per trade signals
                 max_position_risk = float(
                     strategist_risk_parameters.get("max_position_risk", 0.01),
                 )
@@ -455,7 +429,7 @@ def _apply_position_size_modifiers(
                 adjusted = min(adjusted, configured_max)
                 # If max_position_risk is very small, reduce size further
                 if max_position_risk <= 0.005:
-                    adjusted *= 0.8
+    passadjusted *= 0.8
 
             # Dynamic confidence-based modulation (analyst and tactician)
             # Use dual confidence similar to monitor normalization
@@ -468,27 +442,22 @@ def _apply_position_size_modifiers(
 
             return max(self.min_position_size, min(self.max_position_size, adjusted))
         except Exception as e:
-            self.print(error(f"Error applying size modifiers: {e}"))
+    passpasspasspasspasspasspassself.print(error(f"Error applying size modifiers: {e}"))
             return max(self.min_position_size, min(self.max_position_size, base_size))
 
-def _generate_sizing_reason(
-        self,
-        final_position_size: float,
-        kelly_position_size: float,
-        ml_position_size: float,
-        price_target_confidences: dict[str, float],
-        adversarial_confidences: dict[str, float],
-        combined_confidence: float = 0.5,
-    ) -> str:
-        """Generate reason for position sizing decision."""
-        try:
+def _generate_sizing_reason(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Get average confidence and risk
             key_levels = [0.5, 1.0, 1.5, 2.0]
             confidences = []
             risks = []
 
             for level in key_levels:
-                closest_confidence = min(
+    passclosest_confidence = min(
                     price_target_confidences.keys(),
                     key=lambda x: abs(float(x.replace("%", "")) - level),
                 )
@@ -506,33 +475,23 @@ def _generate_sizing_reason(
 
             # NEW: Include combined confidence in sizing reason
             if final_position_size >= self.max_position_size * 0.8:
-                return f"Maximum position size due to high combined confidence ({combined_confidence:.2f}) and low risk ({avg_risk:.2f})"
+    passreturn f"Maximum position size due to high combined confidence ({combined_confidence:.2f}) and low risk ({avg_risk:.2f})"
             if final_position_size >= self.max_position_size * 0.5:
-                return f"Large position size based on combined confidence ({combined_confidence:.2f}) and Kelly criterion ({kelly_position_size:.3f})"
+    passreturn f"Large position size based on combined confidence ({combined_confidence:.2f}) and Kelly criterion ({kelly_position_size:.3f})"
             if final_position_size >= self.min_position_size * 2:
-                return f"Moderate position size with combined confidence ({combined_confidence:.2f}) and balanced risk-reward profile"
+    passreturn f"Moderate position size with combined confidence ({combined_confidence:.2f}) and balanced risk-reward profile"
             if combined_confidence < self.positionsize_combined_threshold:
-                return f"Minimum position size due to low combined confidence ({combined_confidence:.2f}) below threshold ({self.positionsize_combined_threshold:.2f})"
+    passreturn f"Minimum position size due to low combined confidence ({combined_confidence:.2f}) below threshold ({self.positionsize_combined_threshold:.2f})"
             return f"Conservative position size due to low confidence ({avg_confidence:.2f}) or high risk ({avg_risk:.2f})"
 
         except Exception as e:
-            self.print(error(f"Error generating sizing reason: {e}"))
+    passpasspasspasspasspasspassself.print(error(f"Error generating sizing reason: {e}"))
             return "Position size calculated using ML intelligence and Kelly criterion"
 
-def _generate_dual_confidence_sizing_reason(
-        self,
-        final_position_size: float,
-        final_confidence: float,
-        normalized_confidence: float,
-        analyst_confidence: float,
-        tactician_confidence: float,
-        p_avg: float,
-        b_avg: float,
-        fractional_kelly_pct: float,
-    ) -> str:
-        """Generate sizing reason for dual confidence system."""
-        try:
-            return (
+def _generate_dual_confidence_sizing_reason(...) -> ...:
+    """..."""
+    passtry:
+    passreturn (
                 f"Position size: {final_position_size:.4f} "
                 f"(Final confidence: {final_confidence:.3f}, Normalized: {normalized_confidence:.3f}) "
                 f"Analyst: {analyst_confidence:.2f}, Tactician: {tactician_confidence:.2f} "
@@ -540,23 +499,26 @@ def _generate_dual_confidence_sizing_reason(
             )
 
         except Exception as e:
-            self.logger.exception(
+    passpasspasspasspasspasspassself.logger.exception(
                 f"Error generating dual confidence sizing reason: {e}",
             )
             return f"Position size: {final_position_size:.4f} (Error generating reason)"
 
-def _get_historical_performance(self) -> tuple[float, float]:
-        """Get historical performance data for Kelly criterion calculation."""
-        try:
+def _get_historical_performance(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Use local sizing history as a proxy when available
             # Expect entries with keys: {"pnl": float}
             history = self.position_sizing_history[-500:]  # recent window
             if not history:
-                return 0.5, 1.5
+    passreturn 0.5, 1.5
 
             pnls = [float(h.get("pnl", 0.0)) for h in history if "pnl" in h]
             if not pnls:
-                return 0.5, 1.5
+    passpassreturn 0.5, 1.5
 
             wins = [p for p in pnls if p > 0]
             losses = [-p for p in pnls if p < 0]
@@ -578,16 +540,13 @@ b_avg = max(0.8, min(2.5, b_avg))
 
 return p_avg, b_avg
 except Exception as e:
-            self.print(error(f"Error getting historical performance: {e}"))
+    passpasspasspasspasspasspasspasspassself.print(error(f"Error getting historical performance: {e}"))
 return 0.5, 1.5  # Default fallback values
 
-def get_position_sizing_history(
-self,
-limit: int | None = None,
-) -> list[dict[str, Any]]:
-        """Get position sizing history."""
-if limit:
-            return self.position_sizing_history[-limit:]
+def get_position_sizing_history(...) -> ...:
+    """..."""
+    passif limit:
+    passreturn self.position_sizing_history[-limit:]
 return self.position_sizing_history.copy()
 
 @handle_errors(
@@ -595,14 +554,14 @@ exceptions=(Exception,),
 default_return=None,
 context="position sizer cleanup",
 )
-async def stop(self) -> None:
-        """Stop the position sizer."""
-        try:
-            self.logger.info("Stopping position sizer...")
+async def stop(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.info("Stopping position sizer...")
             self.is_initialized = False
             self.logger.info("✅ Position sizer stopped successfully")
         except Exception as e:
-            self.print(error(f"Error stopping position sizer: {e}"))
+    passpasspasspasspasspasspassself.print(error(f"Error stopping position sizer: {e}"))
             raise
 
 @handle_errors(
@@ -610,15 +569,15 @@ exceptions=(Exception,),
 default_return=None,
 context="position sizer cleanup",
 )
-async def cleanup(self) -> None:
-        """Cleanup position sizer resources."""
-        try:
-            self.logger.info("Cleaning up position sizer...")
+async def cleanup(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.info("Cleaning up position sizer...")
             await self.stop()
             self.position_sizing_history.clear()
             self.logger.info("✅ Position sizer cleanup completed")
         except Exception as e:
-            self.logger.error(f"Error cleaning up position sizer: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error cleaning up position sizer: {e}")
             raise
 
 
@@ -627,28 +586,21 @@ exceptions=(Exception,),
 default_return=None,
 context="position sizer setup",
 )
-async def setup_position_sizer(
-    config: dict[str, Any] | None = None,
-) -> PositionSizer | None:
-    """
-    Setup position sizer.
-
-    Args:
-        config: Configuration dictionary
-
-    Returns:
-        Optional[PositionSizer]: Initialized position sizer or None
-    """
-    try:
+async def setup_position_sizer(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         if config is None:
-            config = {}
+    passconfig = {}
 
         position_sizer = PositionSizer(config)
 
         if await position_sizer.initialize():
-            return position_sizer
+    passreturn position_sizer
         return None
 
     except Exception as e:
-        system_logger.exception(error(f"Error setting up position sizer: {e}"))
+    passpasspasspasspasspasspasssystem_logger.exception(error(f"Error setting up position sizer: {e}"))
         return None

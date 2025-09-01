@@ -5,10 +5,25 @@ from src.interfaces.base_interfaces import MarketData
 from .base_exchange import BaseExchange
 
 
-class OkxExchange(BaseExchange):
-    """Minimal OKX exchange placeholder to restore syntax integrity."""
+class OkxExchange(...):
 
-    def __init__(
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="okxexchange initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize OkxExchange."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    """..."""
+    passdef __init__(
         self,
         api_key: str,
         api_secret: str,

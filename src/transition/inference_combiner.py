@@ -9,13 +9,61 @@ from dataclasses import dataclass
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="placeholderdataclass initialization",
+    )
+    async def initialize(self) -> bool:
+    
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="ensembleconfig initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize EnsembleConfig."""
+        try:
+            self.logger.info(f"🚀 Initializing
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="transitioninferencecombiner initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize TransitionInferenceCombiner."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+ {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    """Initialize PlaceholderDataClass."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class EnsembleConfig:
-    pass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class EnsembleConfig:
-    pass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class EnsembleConfig:
-    weights: dict[str, float]
+    passweights: dict[str, float]
 macro_thresholds: dict[
 str, dict[str, dict[str, float]],
 ]  # regime -> timeframe -> {class: thr}
@@ -24,11 +72,11 @@ reliability_path: str | None
 
 
 class TransitionInferenceCombiner:
-    pass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class TransitionInferenceCombiner:
-    pass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class TransitionInferenceCombiner:
-    """
+    pass"""
 Combine per-timeframe path_class probabilities into a single, reliability-adjusted score,
 apply macro-regime thresholds for gating, and compute an exit bias with conservative rules.
 """
@@ -57,21 +105,21 @@ self.cfg.reliability_path,
 
 def _load_reliability(self, path: str | None) -> dict[str, dict[str, float]]:
         try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if path and os.path.exists(path):
-                with open(path) as f:
-                    data = json.load(f)
+    passwith open(path) as f:
+    passdata = json.load(f)
 # Expecting {timeframe: {path_class: scale}}
 if isinstance(data, dict):
-                    return {
+    passreturn {
 str(tf): {str(k): float(v) for k, v in d.items()}
 for tf, d in data.items()
 if isinstance(d, dict)
 }
 except Exception as e:
-            self.logger.warning(f"Failed to load transition reliability: {e}")
+    passpasspasspasspasspasspasspasspassself.logger.warning(f"Failed to load transition reliability: {e}")
 return {}
 
 def _apply_reliability(self, timeframe: str, cls: str, p: float) -> float:
@@ -91,60 +139,43 @@ classes = ["continuation", "reversal", "beginning_of_trend", "end_of_trend"]
 combined: dict[str, float] = {c: 0.0 for c in classes}
 weight_sum = 0.0
 for tf, probs in path_probs_by_timeframe.items():
-            w = float(self.cfg.weights.get(tf, 0.0))
+    passw = float(self.cfg.weights.get(tf, 0.0))
 if w <= 0.0:
-                continue
+    passcontinue
 weight_sum += w
 for c in classes:
-                p = float(probs.get(c, 0.0))
+    passp = float(probs.get(c, 0.0))
 p_adj = self._apply_reliability(tf, c, p)
 combined[c] += w * p_adj
 if weight_sum > 0:
-            for c in combined:
-                combined[c] /= weight_sum
+    passfor c in combined:
+    passcombined[c] /= weight_sum
 return combined
 
-def gate_decision(
-self,
-combined_probs: dict[str, float],
-timeframe: str = None,
-macro_regime: str | None = None,
-) -> dict[str, Any]:
-        """
-Decide if trade is allowed given thresholds. Neutral to long/short: we only check if favorable classes exceed thresholds.
-Returns a dict with gating flag and which class triggered it.
-"""
-cont = float(combined_probs.get("continuation", 0.0))
+def gate_decision(...) -> ...:
+    """..."""
+    passcont = float(combined_probs.get("continuation", 0.0))
 bot = float(combined_probs.get("beginning_of_trend", 0.0))
 thr_map = self.cfg.timeframe_thresholds.get(timeframe, {})
 if macro_regime and macro_regime in self.cfg.macro_thresholds:
-            thr_map = self.cfg.macro_thresholds[macro_regime].get(timeframe, thr_map)
+    passthr_map = self.cfg.macro_thresholds[macro_regime].get(timeframe, thr_map)
 thr_cont = float(thr_map.get("continuation", 0.75))
 thr_bot = float(thr_map.get("beginning_of_trend", 0.75))
 allow = False
 trigger = None
 if cont >= thr_cont:
-            allow, trigger = True, "continuation"
+    passallow, trigger = True, "continuation"
 if bot >= thr_bot and bot >= cont:
-            allow, trigger = True, "beginning_of_trend"
+    passallow, trigger = True, "beginning_of_trend"
 return {
 "allow_trade": allow,
 "trigger": trigger,
 "thresholds": {"continuation": thr_cont, "beginning_of_trend": thr_bot},
 }
 
-def exit_bias(
-self,
-path_probs_1m: dict[str, float],
-_position_side: str = "long",
-) -> dict[str, Any]:
-        """
-Conservative exit logic:
-          - Compute exit_bias = P(reversal) - max(P(continuation), P(beginning_of_trend)) using 1m probabilities (reliability-adjusted)
-- If P(reversal) > 0.40, recommend exit immediately
-- exit_flag True if reversal>0.40 or exit_bias>0
-"""
-# Reliability-adjusted 1m
+def exit_bias(...) -> ...:
+    """..."""
+    pass# Reliability-adjusted 1m
 r_cont = self._apply_reliability(
 "1m",
 "continuation",

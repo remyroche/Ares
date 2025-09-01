@@ -7,7 +7,7 @@ The Tactician uses this multiplier to determine position sizing.
 
 The Kelly criterion formula is: f = (bp - q) / b
 where:
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 - b = odds received (1 for 1:1 odds)
 - p = probability of win
 - q = probability of loss
@@ -18,35 +18,18 @@ For 1:1 odds, this simplifies to: f = p - q
 from typing import Dict
 
 
-def calculate_kelly_multiplier(
-    price_target_confidences: Dict[str, float],
-    adversarial_confidences: Dict[str, float],
-    kelly_multiplier: float = 0.25,
-) -> float:
-    """
-    Calculate Kelly criterion multiplier based on win/loss probabilities.
-
-    This function implements the pure Kelly criterion formula and returns
-    a multiplier that the Tactician can use to determine position sizing.
-
-    Args:
-        price_target_confidences: Dict of confidence scores for price targets
-        adversarial_confidences: Dict of confidence scores for adverse scenarios
-        kelly_multiplier: Conservative multiplier for Kelly fraction (0-1)
-
-    Returns:
-        float: Kelly multiplier (0-1) for position sizing
-    """
-    try:
-    pass  # TODO: Add proper exception handling
+def calculate_kelly_multiplier(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Get average confidence for target levels (0.5% to 2.0%)
         target_levels = [0.5, 1.0, 1.5, 2.0]
         confidences = []
 
         for level in target_levels:
-            closest_level = min(
+    passclosest_level = min(
                 price_target_confidences.keys(),
                 key=lambda x: abs(float(x.replace("%", "")) - level),
             )
@@ -59,7 +42,7 @@ except Exception as e:
         # Get average adverse risk (probability of loss)
         adverse_risks = []
         for level in target_levels:
-            closest_level = min(
+    passclosest_level = min(
                 adversarial_confidences.keys(),
                 key=lambda x: abs(float(x.replace("%", "")) - level),
             )
@@ -79,7 +62,7 @@ except Exception as e:
 
         # If p + q > 1, normalize them
         if p + q > 1.0:
-            total = p + q
+    passtotal = p + q
             p = p / total
             q = q / total
 
@@ -93,40 +76,25 @@ except Exception as e:
         return max(0.0, min(1.0, kelly_multiplier_result))
 
     except (ValueError, TypeError, KeyError) as e:
-        print(f"Error calculating Kelly multiplier: {e}")
+    passpasspasspasspasspasspasspassprint(f"Error calculating Kelly multiplier: {e}")
         return 0.0
     except ZeroDivisionError as e:
-        print(f"Division by zero in Kelly calculation: {e}")
+    passpasspasspasspasspasspassprint(f"Division by zero in Kelly calculation: {e}")
         return 0.0
 
 
-def calculate_kelly_fraction(
-    price_target_confidences: Dict[str, float],
-    adversarial_confidences: Dict[str, float],
-) -> float:
-    """
-    Calculate the raw Kelly fraction without any multiplier.
-
-    This is the pure Kelly criterion result that can be used for analysis
-    or when the caller wants to apply their own multiplier.
-
-    Args:
-        price_target_confidences: Dict of confidence scores for price targets
-        adversarial_confidences: Dict of confidence scores for adverse scenarios
-
-    Returns:
-        float: Raw Kelly fraction (-1 to 1)
-    """
-    try:
-    pass  # TODO: Add proper exception handling
+def calculate_kelly_fraction(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Get average confidence for target levels (0.5% to 2.0%)
         target_levels = [0.5, 1.0, 1.5, 2.0]
         confidences = []
 
         for level in target_levels:
-            closest_level = min(
+    passclosest_level = min(
                 price_target_confidences.keys(),
                 key=lambda x: abs(float(x.replace("%", "")) - level),
             )
@@ -139,7 +107,7 @@ except Exception as e:
         # Get average adverse risk (probability of loss)
         adverse_risks = []
         for level in target_levels:
-            closest_level = min(
+    passclosest_level = min(
                 adversarial_confidences.keys(),
                 key=lambda x: abs(float(x.replace("%", "")) - level),
             )
@@ -158,7 +126,7 @@ except Exception as e:
 
         # If p + q > 1, normalize them
         if p + q > 1.0:
-            total = p + q
+    passtotal = p + q
             p = p / total
             q = q / total
 
@@ -166,16 +134,16 @@ except Exception as e:
         return p - q
 
     except (ValueError, TypeError, KeyError) as e:
-        print(f"Error calculating Kelly fraction: {e}")
+    passpasspasspasspasspasspassprint(f"Error calculating Kelly fraction: {e}")
         return 0.0
     except ZeroDivisionError as e:
-        print(f"Division by zero in Kelly calculation: {e}")
+    passpasspasspasspasspasspassprint(f"Division by zero in Kelly calculation: {e}")
         return 0.0
 
 
 # Example usage and testing
 if __name__ == "__main__":
-    # Test data
+    pass# Test data
     price_target_confidences = {
         "0.5%": 0.7,
         "1.0%": 0.65,

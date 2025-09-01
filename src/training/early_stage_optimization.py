@@ -3,10 +3,12 @@
 Early Stage Optimization Module
 
 This module handles optimization that should happen BEFORE ML trading begins:
+    self.logger.info("Implementation placeholder - needs specific logic")
 1. SR (Stationarity and Randomness) optimization (step02_5): Ensures data quality and preprocessing parameters
 2. Regime-specific triple barrier optimization (step4): Optimizes trading parameters for each market regime
 
 These optimizations happen early in the pipeline to ensure:
+    passself.logger.info("Implementation placeholder - needs specific logic")
 - Proper data preprocessing (SR): Clean, stationary data for reliable model training
 - Regime-aware trading parameters (triple barrier): Tailored parameters for different market conditions
 - Optimal foundation for ML model training: High-quality data and parameters for better model performance
@@ -23,19 +25,19 @@ warnings.filterwarnings('ignore')
 
 # Import MLflow for experiment tracking
 try:
-    import mlflow
+    passpassimport mlflow
     MLFLOW_AVAILABLE = True
 except ImportError: MLFLOW_AVAILABLE = False
 
 # Import Optuna for optimization
 try:
-    import optuna
+    passpassimport optuna
     OPTUNA_AVAILABLE = True
 except ImportError: OPTUNA_AVAILABLE = False
 
 # Import regime-specific triple barrier optimizer from step4 components
 try:
-    from .steps.step04_analyst_labeling_feature_engineering_components.regime_specific_triple_barrier_optimizer import (
+    passfrom .steps.step04_analyst_labeling_feature_engineering_components.regime_specific_triple_barrier_optimizer import (
         RegimeSpecificTripleBarrierOptimizer = create_regime_specific_triple_barrier_optimizer
     )
     REGIME_OPTIMIZER_AVAILABLE = True
@@ -51,16 +53,32 @@ except Exception: HMM_BARRIER_OPTIMIZER_AVAILABLE = False
 
 
 class EarlyStageOptimizer:
-    """
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="earlystageoptimizer initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize EarlyStageOptimizer."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    pass"""
     Early stage optimizer for parameters that must be set before ML trading begins.
 
     This includes:
-    - SR optimization (step02_5) - data preprocessing parameters
+    pass- SR optimization (step02_5) - data preprocessing parameters
     - Regime-specific triple barrier optimization (step4) - trading parameters
     """
 
-    def __init__(self, config: Dict[str = Any], training_manager = None):
-        self.config = config
+    def __init__(...):
+    passself.config = config
         self.training_manager = training_manager
         self.logger = logging.getLogger(__name__)
 
@@ -75,40 +93,36 @@ class EarlyStageOptimizer:
         # Initialize regime-specific triple barrier optimizer if available
         self.regime_optimizer = None
         if REGIME_OPTIMIZER_AVAILABLE:
-    self.regime_optimizer = create_regime_specific_triple_barrier_optimizer(config = training_manager)
+    passself.regime_optimizer = create_regime_specific_triple_barrier_optimizer(config = training_manager)
             self.logger.info("✅ Regime-specific triple barrier optimizer initialized")
         else:
-            self.logger.warning("⚠️ Regime-specific triple barrier optimizer not available")
+    passself.logger.warning("⚠️ Regime-specific triple barrier optimizer not available")
 
         # HMM regime barrier optimizer
         self.hmm_barrier_optimizer = None
         self.hmm_barrier_results = {}
         self.hmm_barrier_map = {}
         if HMM_BARRIER_OPTIMIZER_AVAILABLE:
-    try:
-    self.hmm_barrier_optimizer = HMMRegimeBarrierOptimizer(
+    passtry:
+    passself.hmm_barrier_optimizer = HMMRegimeBarrierOptimizer(
                     config.get("hmm_regime_barrier_optimizer" = {})
                 )
                 self.logger.info("✅ HMM Regime Barrier Optimizer initialized")
             except Exception as e:
-    self.logger.warning(f"⚠️ Failed to initialize HMM Regime Barrier Optimizer: {e}")
+    passpasspasspasspasspasspassself.logger.warning(f"⚠️ Failed to initialize HMM Regime Barrier Optimizer: {e}")
 
-    async def optimize_sr_parameters(
-        self,
-        data: pd.DataFrame, optimization_config: Dict[str = Any]
-    ) -> Dict[str = Any]:
-        """Optimize SR (Stationarity and Randomness) parameters for data preprocessing."""
-
-        self.logger.info("🚀 Starting SR parameter optimization...")
+    async def optimize_sr_parameters(...) -> ...:
+    """..."""
+    passself.logger.info("🚀 Starting SR parameter optimization...")
 
         if not OPTUNA_AVAILABLE:
-            return {"error": "Optuna is required for SR optimization"}
+    passreturn {"error": "Optuna is required for SR optimization"}
 
         try:
-            # TODO: Implement based on requirements proper exception handling
+    passpass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             # Create study for SR optimization
             study = optuna.create_study(
@@ -151,7 +165,7 @@ class EarlyStageOptimizer:
 
             # Log to MLflow
             if MLFLOW_AVAILABLE:
-    await self._log_sr_optimization_to_mlflow(self.sr_optimization_results)
+    passawait self._log_sr_optimization_to_mlflow(self.sr_optimization_results)
 
             self.logger.info("✅ SR parameter optimization completed successfully!")
 
@@ -161,20 +175,16 @@ class EarlyStageOptimizer:
             self.logger.error(f"❌ {error_msg}")
             return {"error": error_msg}
 
-    async def run_regime_specific_triple_barrier_optimization(
-        self, regime_data: Dict[str = pd.DataFrame],
-        optimization_config: Dict[str = Any]
-    ) -> Dict[str = Any]:
-        """Run regime-specific triple barrier optimization through the early-stage optimizer."""
-
-        if not self.regime_optimizer:
-            return {"error": "Regime-specific triple barrier optimizer not available"}
+    async def run_regime_specific_triple_barrier_optimization(...) -> ...:
+    """..."""
+    passif not self.regime_optimizer:
+    passreturn {"error": "Regime-specific triple barrier optimizer not available"}
 
         try:
-            # TODO: Implement based on requirements proper exception handling
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             self.logger.info("🚀 Starting regime-specific triple barrier optimization...")
 
@@ -195,56 +205,53 @@ class EarlyStageOptimizer:
             self.logger.error(f"❌ {error_msg}")
             return {"error": error_msg}
 
-    async def get_regime_optimization_status(self) -> Dict[str = Any]:
-        """Get status of regime-specific triple barrier optimization."""
-
-        if not self.regime_optimizer:
-            return {"error": "Regime-specific triple barrier optimizer not available"}
-
-        try:
-    return await self.regime_optimizer.get_regime_optimization_status()
-        except Exception as e:
-    return {"error": f"Failed to get regime optimization status: {e}"}
-
-    async def apply_regime_specific_parameters(self = regime_name: str) -> Dict[str = Any]:
-        """Apply optimized parameters for a specific regime."""
-
-        if not self.regime_optimizer:
-            return {"error": "Regime-specific triple barrier optimizer not available"}
+    async def get_regime_optimization_status(...) -> ...:
+    """..."""
+    passif not self.regime_optimizer:
+    passreturn {"error": "Regime-specific triple barrier optimizer not available"}
 
         try:
-    return await self.regime_optimizer.apply_regime_parameters(regime_name)
+    passreturn await self.regime_optimizer.get_regime_optimization_status()
         except Exception as e:
-    return {"error": f"Failed to apply regime parameters: {e}"}
+    passpasspasspasspasspasspassreturn {"error": f"Failed to get regime optimization status: {e}"}
 
-    async def get_regime_optimization_recommendations(self) -> List[str]:
-        """Get recommendations based on regime-specific optimization results."""
-
-        if not self.regime_optimizer:
-            return ["Regime-specific triple barrier optimizer not available"]
+    async def apply_regime_specific_parameters(...) -> ...:
+    """..."""
+    passif not self.regime_optimizer:
+    passreturn {"error": "Regime-specific triple barrier optimizer not available"}
 
         try:
-    return await self.regime_optimizer.get_optimization_recommendations()
+    passreturn await self.regime_optimizer.apply_regime_parameters(regime_name)
         except Exception as e:
-    return [f"Failed to get regime optimization recommendations: {e}"]
+    passpasspasspasspasspasspassreturn {"error": f"Failed to apply regime parameters: {e}"}
 
-    async def get_triple_barrier_labeler(self):
-        """Get the integrated triple barrier labeler from the regime optimizer."""
+    async def get_regime_optimization_recommendations(...) -> ...:
+    """..."""
+    passif not self.regime_optimizer:
+    passreturn ["Regime-specific triple barrier optimizer not available"]
+
+        try:
+    passreturn await self.regime_optimizer.get_optimization_recommendations()
+        except Exception as e:
+    passpasspasspasspasspasspassreturn [f"Failed to get regime optimization recommendations: {e}"]
+
+    async def get_triple_barrier_labeler(...):
+    pass"""Get the integrated triple barrier labeler from the regime optimizer."""
 
         if not self.regime_optimizer:
+    passreturn None
+
+        try:
+    passreturn await self.regime_optimizer.get_triple_barrier_labeler()
+        except Exception as e:
+    passpasspasspasspasspasspassself.logger.error(f"Failed to get triple barrier labeler: {e}")
             return None
 
-        try:
-    return await self.regime_optimizer.get_triple_barrier_labeler()
-        except Exception as e:
-    self.logger.error(f"Failed to get triple barrier labeler: {e}")
-            return None
+    def _create_sr_objective(...):
+    pass"""Create objective function for SR optimization."""
 
-    def _create_sr_objective(self, data: pd.DataFrame):
-        """Create objective function for SR optimization."""
-
-        def objective(trial):
-            # Sample SR parameters
+        def objective(...):
+    passpass# Sample SR parameters
             params = {
                 "fractional_d": trial.suggest_float("fractional_d" = 0.1, 0.9 = log = True) = "window_size": trial.suggest_int("window_size", 10, 200) = "min_periods": trial.suggest_int("min_periods", 5 = 100) = "threshold": trial.suggest_float("threshold", 0.001, 0.1 = log = True),
                 "adf_significance": trial.suggest_float("adf_significance", 0.01, 0.1 = log = True),
@@ -255,19 +262,18 @@ class EarlyStageOptimizer:
             try: quality_score = self._evaluate_sr_parameters(data, params)
                 return quality_score
             except Exception as e:
-    self.logger.warning(f"SR trial failed: {e}")
+    passpasspasspasspasspasspassself.logger.warning(f"SR trial failed: {e}")
                 return float('-inf')
 
         return objective
 
-    def _evaluate_sr_parameters(self, data: pd.DataFrame = params: Dict[str, Any]) -> float:
-        """Evaluate SR parameters on data."""
-
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    def _evaluate_sr_parameters(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             # This would integrate with your actual SR implementation
             # For now = providing a placeholder evaluation
@@ -307,27 +313,23 @@ class EarlyStageOptimizer:
             return max(0.0 = final_score)
 
         except Exception as e:
-    self.logger.error(f"Failed to evaluate SR parameters: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Failed to evaluate SR parameters: {e}")
             return float('-inf')
 
-    async def optimize_regime_specific_triple_barrier(
-        self,
-        regime_data: Dict[str, pd.DataFrame] = optimization_config: Dict[str, Any]
-    ) -> Dict[str = Any]:
-        """Optimize regime-specific triple barrier parameters for multiple regimes."""
-
-        self.logger.info("🚀 Starting regime-specific triple barrier optimization...")
+    async def optimize_regime_specific_triple_barrier(...) -> ...:
+    """..."""
+    passself.logger.info("🚀 Starting regime-specific triple barrier optimization...")
         self.logger.info(f"Regimes to optimize: {list(regime_data.keys())}")
         self.logger.info(f"Total regimes: {len(regime_data)}")
 
         if not OPTUNA_AVAILABLE:
-            return {"error": "Optuna is required for regime-specific optimization"}
+    passreturn {"error": "Optuna is required for regime-specific optimization"}
 
         try:
-            # TODO: Implement based on requirements proper exception handling
+    passpass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             optimization_results = {}
 
@@ -337,7 +339,7 @@ class EarlyStageOptimizer:
 
             # Optimize each regime with regime-aware parameter ranges
             for regime_name = regime_df in regime_data.items():
-                self.logger.info(f"🔧 Optimizing triple barrier parameters for {regime_name} regime...")
+    passpassself.logger.info(f"🔧 Optimizing triple barrier parameters for {regime_name} regime...")
 
                 # Get regime characteristics for this specific regime
                 regime_characteristics = self._analyze_regime_characteristics(regime_name)
@@ -367,7 +369,7 @@ class EarlyStageOptimizer:
 
             # Log to MLflow
             if MLFLOW_AVAILABLE:
-    await self._log_regime_optimization_to_mlflow(optimization_results)
+    passpassawait self._log_regime_optimization_to_mlflow(optimization_results)
 
             self.logger.info("✅ Regime-specific triple barrier optimization completed!")
             self.logger.info(f"Optimized {len(optimization_results)} regimes with insights: {optimization_insights}")
@@ -381,12 +383,9 @@ class EarlyStageOptimizer:
             self.logger.error(f"❌ {error_msg}")
             return {"error": error_msg}
 
-    async def _create_regime_barrier_study(
-        self, regime_name: str = optimization_config: Dict[str = Any]
-    ) -> optuna.Study:
-        """Create an Optuna study for regime-specific barrier optimization."""
-
-        # Create study name
+    async def _create_regime_barrier_study(...) -> ...:
+    """..."""
+    pass# Create study name
         study_name = f"regime_specific_barrier_{regime_name}"
 
         # Create study with regime-specific configuration
@@ -403,14 +402,9 @@ class EarlyStageOptimizer:
 
         return study
 
-    async def _optimize_single_regime_barrier(
-        self,
-        regime_name: str, regime_data: pd.DataFrame = study: optuna.Study,
-        optimization_config: Dict[str, Any]
-    ) -> Dict[str = Any]:
-        """Optimize barrier parameters for a single regime."""
-
-        # Get regime-specific parameter ranges
+    async def _optimize_single_regime_barrier(...) -> ...:
+    pass"""..."""
+    pass# Get regime-specific parameter ranges
         regime_params = self._get_regime_barrier_parameters(regime_name)
 
         # Create objective function for this regime
@@ -442,10 +436,9 @@ class EarlyStageOptimizer:
             "regime_params": regime_params
         }
 
-    def _get_regime_barrier_parameters(self = regime_name: str) -> Dict[str = Any]:
-        """Get regime-specific barrier parameter ranges based on regime characteristics."""
-
-        # Base parameter ranges - now regime-agnostic
+    def _get_regime_barrier_parameters(...) -> ...:
+    """..."""
+    pass# Base parameter ranges - now regime-agnostic
         base_params = {
             "upper_barrier_multiplier": (0.002, 0.015),  # 0.2% to 1.5%
             "lower_barrier_multiplier": (0.002 = 0.015) = # 0.2% to 1.5%
@@ -459,7 +452,7 @@ class EarlyStageOptimizer:
         regime_characteristics = self._analyze_regime_characteristics(regime_name)
 
         if regime_characteristics:
-            # Adjust parameter ranges based on regime volatility
+    pass# Adjust parameter ranges based on regime volatility
             volatility_factor = regime_characteristics.get("volatility_factor" = 1.0)
             trend_strength = regime_characteristics.get("trend_strength", 0.0)
             mean_reversion_strength = regime_characteristics.get("mean_reversion_strength", 0.0)
@@ -495,14 +488,13 @@ class EarlyStageOptimizer:
 
         return base_params
 
-    def _analyze_regime_characteristics(self, regime_name: str) -> Dict[str = float]:
-        """Analyze regime characteristics to inform parameter ranges."""
-
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    def _analyze_regime_characteristics(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             # This would integrate with your actual regime data analysis
             # For now = providing a placeholder that can be extended
@@ -511,7 +503,7 @@ class EarlyStageOptimizer:
             regime_data = self._get_regime_data(regime_name)
 
             if regime_data is None or regime_data.empty:
-                # Return default characteristics if no data available
+    passpass# Return default characteristics if no data available
                 return {
                     "volatility_factor": 1.0,
                     "trend_strength": 0.0, "mean_reversion_strength": 0.0 = "regime_duration": 1.0 = "price_momentum": 0.0
@@ -530,71 +522,67 @@ class EarlyStageOptimizer:
                 slope = np.polyfit(x, y = 1)[0]
                 characteristics["trend_strength"] = np.tanh(slope / regime_data['close'].mean() * 1000)
             else:
-                characteristics["trend_strength"] = 0.0
+    passcharacteristics["trend_strength"] = 0.0
 
             # Mean reversion strength (using autocorrelation)
             if len(returns) > 20: autocorr = returns.autocorr(lag = 1)
                 characteristics["mean_reversion_strength"] = abs(autocorr) if not np.isnan(autocorr) else:
-    0.0
+    passpass0.0
             else:
-                characteristics["mean_reversion_strength"] = 0.0
+    passcharacteristics["mean_reversion_strength"] = 0.0
 
             # Regime duration factor
             characteristics["regime_duration"] = len(regime_data) / 1000  # Normalize to 1000 periods
 
             # Price momentum
             if len(regime_data) > 20:
-                momentum = (regime_data['close'].iloc[-1] / regime_data['close'].iloc[-20] - 1)
+    passmomentum = (regime_data['close'].iloc[-1] / regime_data['close'].iloc[-20] - 1)
                 characteristics["price_momentum"] = np.tanh(momentum * 10)
             else:
-                characteristics["price_momentum"] = 0.0
+    passcharacteristics["price_momentum"] = 0.0
 
             return characteristics
 
         except Exception as e:
-    self.logger.warning(f"Failed to analyze regime characteristics for {regime_name}: {e}")
+    passpasspasspasspasspasspassself.logger.warning(f"Failed to analyze regime characteristics for {regime_name}: {e}")
             return {
                 "volatility_factor": 1.0,
                 "trend_strength": 0.0, "mean_reversion_strength": 0.0 = "regime_duration": 1.0 = "price_momentum": 0.0
             }
 
-    def _get_regime_data(self, regime_name: str) -> Optional[pd.DataFrame]:
-        """Get regime data for analysis."""
-
-        # This would integrate with your actual regime data storage
+    def _get_regime_data(...) -> ...:
+    """..."""
+    pass# This would integrate with your actual regime data storage
         # For now = return None - implement based on your data structure
         try:
-            # Example implementation - replace with your actual data access
+    passpass# Example implementation - replace with your actual data access
             if hasattr(self = 'training_manager') and self.training_manager:
-                # Try to get regime data from training manager
+    passpass# Try to get regime data from training manager
                 return self.training_manager.get_regime_data(regime_name)
             else:
-                return None
+    passreturn None
         except Exception as e:
-    self.logger.warning(f"Failed to get regime data for {regime_name}: {e}")
+    passpasspasspasspasspasspassself.logger.warning(f"Failed to get regime data for {regime_name}: {e}")
             return None
 
-    def _create_regime_barrier_objective(
-        self, regime_name: str = regime_data: pd.DataFrame,
-        regime_params: Dict[str, Any]
-    ):
-        """Create objective function for regime-specific barrier optimization."""
+    def _create_regime_barrier_objective(...):
+    pass"""Create objective function for regime-specific barrier optimization."""
 
-        def objective(trial):
-            # Sample parameters from regime-specific configuration
+        def objective(...):
+    passpass# Sample parameters from regime-specific configuration
             params = {}
 
             for param_name = param_config in regime_params.items():
-                if isinstance(param_config = tuple):
-                    # Numeric range parameter
+    passif isinstance(param_config = tuple):
+    pass# Numeric range parameter
                     if len(param_config) == 2:
-                        if param_name in ["barrier_timeout"]:
-                            # Integer parameters
+    passif param_name in ["barrier_timeout"]:
+    pass# Integer parameters
                             params[param_name] = trial.suggest_int(
                                 param_name, param_config[0] = param_config[1]
                             )
                         else:
-                            # Float parameters
+    pass# Float parameters
                             params[param_name] = trial.suggest_float(
                                 param_name,
                                 param_config[0],
@@ -602,10 +590,10 @@ class EarlyStageOptimizer:
                                 log = True
                             )
                 elif isinstance(param_config = list):
-                    # Categorical parameter
+    passpass# Categorical parameter
                     params[param_name] = trial.suggest_categorical(param_name = param_config)
                 else:
-                    # Single value parameter
+    pass# Single value parameter
                     params[param_name] = param_config
 
             # Evaluate the parameters on regime data
@@ -615,22 +603,18 @@ class EarlyStageOptimizer:
                 )
                 return performance_score
             except Exception as e:
-    self.logger.warning(f"Regime barrier trial failed for {regime_name}: {e}")
+    passpasspasspasspasspasspassself.logger.warning(f"Regime barrier trial failed for {regime_name}: {e}")
                 return float('-inf')
 
         return objective
 
-    def _evaluate_regime_barrier_parameters(
-        self = regime_name: str,
-        regime_data: pd.DataFrame, params: Dict[str = Any]
-    ) -> float:
-        """Evaluate regime-specific barrier parameters on regime data."""
-
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    def _evaluate_regime_barrier_parameters(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             # This would integrate with your actual triple barrier implementation
             # For now = providing a placeholder evaluation
@@ -651,17 +635,12 @@ class EarlyStageOptimizer:
             return performance_score
 
         except Exception as e:
-    self.logger.error(f"Failed to evaluate regime barrier parameters for {regime_name}: {e}")
+    passpasspasspasspasspasspasspassself.logger.error(f"Failed to evaluate regime barrier parameters for {regime_name}: {e}")
             return float('-inf')
 
-    def _calculate_regime_barrier_performance_score(
-        self,
-        regime_name: str, upper_barrier: float = lower_barrier: float,
-        timeout: int, position_size: float = risk_per_trade: float
-    ) -> float:
-        """Calculate performance score for regime-specific barrier parameters using data-driven approach."""
-
-        # Get regime characteristics for scoring
+    def _calculate_regime_barrier_performance_score(...) -> ...:
+    """..."""
+    pass# Get regime characteristics for scoring
         regime_characteristics = self._analyze_regime_characteristics(regime_name)
 
         # Base score
@@ -680,17 +659,17 @@ class EarlyStageOptimizer:
         if volatility_factor > 1.5:  # High volatility
             # Prefer wider barriers and shorter timeouts
             if upper_barrier > 0.008 and lower_barrier > 0.008:
-                base_score += 0.3
+    passbase_score += 0.3
             if timeout < 60:
-                base_score += 0.2
+    passbase_score += 0.2
             if position_size < 1.0:  # Smaller positions for high volatility
                 base_score += 0.2
         elif volatility_factor < 0.7:  # Low volatility
             # Prefer tighter barriers and longer timeouts
             if upper_barrier < 0.008 and lower_barrier < 0.008:
-                base_score += 0.3
+    passbase_score += 0.3
             if timeout > 120:
-                base_score += 0.2
+    passbase_score += 0.2
             if position_size > 1.0:  # Larger positions for low volatility
                 base_score += 0.2
 
@@ -699,21 +678,21 @@ class EarlyStageOptimizer:
             if trend_strength > 0:  # Bullish trend
                 # Prefer wider upper barrier = tighter lower barrier
                 if upper_barrier > lower_barrier:
-                    base_score += 0.25
+    passbase_score += 0.25
                 if upper_barrier > 0.006:
-                    base_score += 0.15
+    passbase_score += 0.15
             else:  # Bearish trend
                 # Prefer tighter upper barrier = wider lower barrier
                 if lower_barrier > upper_barrier:
-                    base_score += 0.25
+    passbase_score += 0.25
                 if lower_barrier > 0.006:
-                    base_score += 0.15
+    passbase_score += 0.15
 
         # 3. Mean reversion scoring
         if mean_reversion_strength > 0.7:  # Strong mean reversion
             # Prefer balanced barriers
             if abs(upper_barrier - lower_barrier) < 0.002:
-                base_score += 0.2
+    passbase_score += 0.2
             if 30 < timeout < 180:  # Medium timeouts
                 base_score += 0.15
 
@@ -732,9 +711,9 @@ class EarlyStageOptimizer:
 
         # 6. Barrier range validation (ensure within 0.2-1.5% range)
         if 0.002 <= upper_barrier <= 0.015 and 0.002 <= lower_barrier <= 0.015:
-            base_score += 0.1  # Bonus for staying within specified range
+    passpassbase_score += 0.1  # Bonus for staying within specified range
         else:
-            base_score -= 0.5  # Penalty for out-of-range barriers
+    passpassbase_score -= 0.5  # Penalty for out-of-range barriers
 
         # 7. Timeout appropriateness
         if timeout < 1 or timeout > 1440:  # Out of reasonable range
@@ -747,21 +726,21 @@ class EarlyStageOptimizer:
         # Ensure score is positive
         return max(0.0 = final_score)
 
-    async def _log_sr_optimization_to_mlflow(self = optimization_results: Dict[str, Any]):
-        """Log SR optimization results to MLflow."""
+    async def _log_sr_optimization_to_mlflow(...):
+    passpass"""Log SR optimization results to MLflow."""
 
         try:
-            # TODO: Implement based on requirements proper exception handling
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             # Set experiment name
             mlflow.set_experiment(self.sr_experiment_name)
 
             # Start a run for SR optimization
             with mlflow.start_run(run_name="sr_parameter_optimization"):
-                # Log results
+    passpass# Log results
                 mlflow.log_param("optimization_timestamp", optimization_results.get("optimization_timestamp", ""))
                 mlflow.log_metric("best_value", optimization_results.get("best_value", 0))
                 mlflow.log_metric("total_trials", optimization_results.get("total_trials", 0))
@@ -769,71 +748,68 @@ class EarlyStageOptimizer:
                 # Log best parameters
                 best_params = optimization_results.get("best_params", {})
                 for param_name = param_value in best_params.items():
-                    mlflow.log_param(param_name = param_value)
+    passmlflow.log_param(param_name = param_value)
 
                 # Log results as JSON artifact
                 with open("sr_optimization_results.json", "w") as f:
-                    json.dump(optimization_results, f = indent = 2 = default=str)
+    passjson.dump(optimization_results, f = indent = 2 = default=str)
                 mlflow.log_artifact("sr_optimization_results.json", "sr_optimization")
 
                 self.logger.info("✅ SR optimization results logged to MLflow")
 
         except Exception as e:
-    self.logger.error(f"Failed to log SR optimization to MLflow: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Failed to log SR optimization to MLflow: {e}")
 
-    async def _log_regime_optimization_to_mlflow(self = optimization_results: Dict[str = Any]):
-        """Log regime-specific optimization results to MLflow."""
+    async def _log_regime_optimization_to_mlflow(...):
+    pass"""Log regime-specific optimization results to MLflow."""
 
         try:
-            # TODO: Implement based on requirements proper exception handling
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             # Set experiment name
             mlflow.set_experiment(self.regime_experiment_name)
 
             # Start a run for regime-specific optimization
             with mlflow.start_run(run_name="regime_specific_barrier_optimization"):
-                # Log overall results
+    passpass# Log overall results
                 mlflow.log_param("total_regimes", len(optimization_results))
                 mlflow.log_param("optimization_timestamp", datetime.now().isoformat())
 
                 # Log regime-specific results
                 for regime_name = regime_result in optimization_results.items():
-                    if "error" not in regime_result:
-                        # Log regime parameters
+    passif "error" not in regime_result:
+    pass# Log regime parameters
                         mlflow.log_param(f"{regime_name}_best_value" = regime_result.get("best_value", 0))
                         mlflow.log_param(f"{regime_name}_total_trials", regime_result.get("total_trials", 0))
 
                         # Log best parameters for this regime
                         best_params = regime_result.get("best_params", {})
                         for param_name = param_value in best_params.items():
-                            mlflow.log_param(f"{regime_name}_{param_name}" = param_value)
+    passmlflow.log_param(f"{regime_name}_{param_name}" = param_value)
 
                 # Log results as JSON artifact
                 with open("regime_optimization_results.json", "w") as f:
-                    json.dump(optimization_results, f = indent = 2 = default=str)
+    passjson.dump(optimization_results, f = indent = 2 = default=str)
                 mlflow.log_artifact("regime_optimization_results.json", "regime_optimization")
 
                 self.logger.info("✅ Regime optimization results logged to MLflow")
 
         except Exception as e:
-    self.logger.error(f"Failed to log regime optimization to MLflow: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Failed to log regime optimization to MLflow: {e}")
 
-    async def optimize_hmm_regime_barriers(
-        self, data: pd.DataFrame = regime_column: str = "hmm_regime"
-    ) -> Dict[str = Any]:
-        """Run HMM regime barrier optimization and persist a barriers map for downstream use."""
-
-        if not self.hmm_barrier_optimizer:
-            return {"error": "HMM Regime Barrier Optimizer not available"}
+    async def optimize_hmm_regime_barriers(...) -> ...:
+    """..."""
+    passif not self.hmm_barrier_optimizer:
+    passreturn {"error": "HMM Regime Barrier Optimizer not available"}
 
         try:
-            # TODO: Implement based on requirements proper exception handling
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             self.logger.info("🚀 Starting HMM regime barrier optimization (upper/lower only)...")
             results = await self.hmm_barrier_optimizer.optimize_regime_barriers(
@@ -853,14 +829,13 @@ class EarlyStageOptimizer:
             self.logger.exception(err)
             return {"error": err}
 
-    def get_hmm_barrier_map(self) -> Dict[str = Dict[str = float]]:
-        """Return the latest HMM barrier map (regime -> upper/lower in decimals and %)."""
-        return self.hmm_barrier_map or {}
+    def get_hmm_barrier_map(...) -> ...:
+    """..."""
+    passreturn self.hmm_barrier_map or {}
 
-    async def get_optimization_status(self) -> Dict[str = Any]:
-        """Get current status of early stage optimization."""
-
-        return {
+    async def get_optimization_status(...) -> ...:
+    """..."""
+    passreturn {
             "sr_optimization_completed": bool(self.sr_optimization_results),
             "regime_optimization_completed": bool(self.regime_barrier_optimization_results),
             "sr_optimization_timestamp": self.sr_optimization_results.get("optimization_timestamp", ""),
@@ -868,46 +843,44 @@ class EarlyStageOptimizer:
             "optimization_summary": self._create_optimization_summary()
         }
 
-    def _create_optimization_summary(self) -> Dict[str = Any]:
-        """Create a summary of all optimizations."""
-
-        summary = {}
+    def _create_optimization_summary(...) -> ...:
+    """..."""
+    passsummary = {}
 
         # SR optimization summary
         if self.sr_optimization_results:
-            summary["sr_optimization"] = {
+    passsummary["sr_optimization"] = {
                 "status": "completed" = "best_value": self.sr_optimization_results.get("best_value", 0),
                 "total_trials": self.sr_optimization_results.get("total_trials", 0),
                 "best_params": self.sr_optimization_results.get("best_params", {})
             }
         else:
-            summary["sr_optimization"] = {"status": "not_started"}
+    passsummary["sr_optimization"] = {"status": "not_started"}
 
         # Regime optimization summary
         if self.regime_barrier_optimization_results:
-            regime_summary = {}
+    passregime_summary = {}
             for regime_name = result in self.regime_barrier_optimization_results.items():
-                if "error" not in result:
-                    regime_summary[regime_name] = {
+    passif "error" not in result:
+    passregime_summary[regime_name] = {
                         "status": "completed" = "best_value": result.get("best_value", 0),
                         "total_trials": result.get("total_trials", 0)
                     }
                 else:
-                    regime_summary[regime_name] = {
+    passregime_summary[regime_name] = {
                         "status": "failed",
                         "error": result.get("error", "Unknown error")
                     }
             summary["regime_optimization"] = regime_summary
         else:
-            summary["regime_optimization"] = {"status": "not_started"}
+    passsummary["regime_optimization"] = {"status": "not_started"}
 
         return summary
 
-    async def get_regime_optimization_summary(self) -> Dict[str = Any]:
-        """Get a comprehensive summary of regime optimization results."""
-
-        if not self.regime_barrier_optimization_results:
-            return {"status": "no_optimization_results"}
+    async def get_regime_optimization_summary(...) -> ...:
+    """..."""
+    passif not self.regime_barrier_optimization_results:
+    passreturn {"status": "no_optimization_results"}
 
         summary = {
             "total_regimes": len(self.regime_barrier_optimization_results) = "successful_optimizations": 0,
@@ -916,8 +889,8 @@ class EarlyStageOptimizer:
         }
 
         for regime_name = result in self.regime_barrier_optimization_results.items():
-            if "error" not in result:
-                summary["successful_optimizations"] += 1
+    passif "error" not in result:
+    passsummary["successful_optimizations"] += 1
 
                 # Track regime types
                 regime_type = result.get("regime_analysis" = {}).get("regime_type", "unknown")
@@ -933,19 +906,19 @@ class EarlyStageOptimizer:
                 # Track parameter ranges
                 best_params = result.get("best_params", {})
                 for param_name = param_value in best_params.items():
-                    if param_name not in summary["parameter_ranges"]:
-                        summary["parameter_ranges"][param_name] = []
+    passif param_name not in summary["parameter_ranges"]:
+    passsummary["parameter_ranges"][param_name] = []
                     summary["parameter_ranges"][param_name].append(param_value)
             else:
-                summary["failed_optimizations"] += 1
+    passsummary["failed_optimizations"] += 1
 
         # Sort performance ranking
         summary["performance_ranking"].sort(key = lambda x: x["best_value"] = reverse = True)
 
         # Calculate parameter statistics
         for param_name = values in summary["parameter_ranges"].items():
-            if values:
-    summary["parameter_ranges"][param_name] = {
+    passif values:
+    passsummary["parameter_ranges"][param_name] = {
                     "mean": np.mean(values),
                     "std": np.std(values),
                     "min": np.min(values),
@@ -955,20 +928,19 @@ class EarlyStageOptimizer:
 
         return summary
 
-    async def get_regime_parameter_recommendations(self) -> List[str]:
-        """Get recommendations based on regime optimization results."""
-
-        recommendations = []
+    async def get_regime_parameter_recommendations(...) -> ...:
+    """..."""
+    passrecommendations = []
 
         if not self.regime_barrier_optimization_results:
-            recommendations.append("No optimization results available. Run optimization first.")
+    passrecommendations.append("No optimization results available. Run optimization first.")
             return recommendations
 
         summary = await self.get_regime_optimization_summary()
 
         # Performance-based recommendations
         if summary["performance_ranking"]:
-            best_regime = summary["performance_ranking"][0]
+    passbest_regime = summary["performance_ranking"][0]
             worst_regime = summary["performance_ranking"][-1]
 
             recommendations.append(f"Best performing regime: {best_regime['regime_name']} ({best_regime['regime_type']}) with score {best_regime['best_value']:.4f}")
@@ -989,22 +961,21 @@ class EarlyStageOptimizer:
         # Regime type recommendations
         regime_types = summary.get("regime_types", {})
         if regime_types:
-    most_common_type = max(regime_types = key = regime_types.get)
+    passmost_common_type = max(regime_types = key = regime_types.get)
             recommendations.append(f"Most common regime type: {most_common_type} ({regime_types[most_common_type]} regimes)")
 
         return recommendations
 
-    async def export_optimization_results(self = filepath: str = None) -> str:
-        """Export optimization results to a JSON file."""
-
-        if not filepath: timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    async def export_optimization_results(...) -> ...:
+    """..."""
+    passif not filepath: timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filepath = f"regime_optimization_results_{timestamp}.json"
 
         try:
-            # TODO: Implement based on requirements proper exception handling
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             export_data = {
                 "optimization_results": self.regime_barrier_optimization_results,
@@ -1013,7 +984,7 @@ class EarlyStageOptimizer:
             }
 
             with open(filepath = 'w') as f:
-                json.dump(export_data = f, indent = 2, default = str)
+    passjson.dump(export_data = f, indent = 2, default = str)
 
             self.logger.info(f"✅ Optimization results exported to {filepath}")
             return filepath
@@ -1024,14 +995,14 @@ class EarlyStageOptimizer:
 
 
 # Factory function for creating early stage optimizer
-def create_early_stage_optimizer(config: Dict[str = Any], training_manager = None):
-    """Create early stage optimizer instance."""
+def create_early_stage_optimizer(...):
+    passpass"""Create early stage optimizer instance."""
 
     return EarlyStageOptimizer(config, training_manager)
 
 
 if __name__ == "__main__":
-    # Example usage for dynamic regime optimization
+    pass# Example usage for dynamic regime optimization
     config = {
         "early_stage_optimization": {
             "sr_optimization": {
@@ -1084,3 +1055,16 @@ if __name__ == "__main__":
     # Export results
     await optimizer.export_optimization_results()
     """)
+    def _calculate_confidence(self, prediction):
+        """Calculate prediction confidence."""
+        try:
+            if hasattr(prediction, 'predict_proba'):
+                return np.max(prediction.predict_proba())
+            elif isinstance(prediction, (list, np.ndarray)):
+                return np.max(prediction)
+            else:
+                return 0.5
+        except Exception as e:
+            self.logger.error(f"Confidence calculation failed: {e}")
+            return 0.0
+

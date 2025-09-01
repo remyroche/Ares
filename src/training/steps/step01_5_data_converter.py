@@ -54,10 +54,12 @@ def create_fallback_decorator():
     return decorator
 
 # Initialize fallbacks
-if system_logger is None: system_logger = create_fallback_logger()
+if system_logger is None:
+    system_logger = create_fallback_logger()
 
 # Initialize decorators
-if centralized_decorators is None: handle_errors = create_fallback_decorator()
+if centralized_decorators is None:
+    handle_errors = create_fallback_decorator()
     handle_file_operations = create_fallback_decorator()
     secure_klines_download_operation = create_fallback_decorator()
     validate_klines_data_quality = create_fallback_decorator()
@@ -77,45 +79,48 @@ if centralized_decorators is None: handle_errors = create_fallback_decorator()
     format_futures_data = create_fallback_decorator()
     log_step_metrics = create_fallback_decorator()
 else:
-    handle_errors, centralized_decorators.handle_errors
+    handle_errors = centralized_decorators.handle_errors
     handle_file_operations = centralized_decorators.handle_file_operations
-    secure_klines_download_operation, centralized_decorators.secure_klines_download_operation
-    validate_klines_data_quality, centralized_decorators.validate_data_quality
+    secure_klines_download_operation = centralized_decorators.secure_klines_download_operation
+    validate_klines_data_quality = centralized_decorators.validate_data_quality
     secure_data_processing = centralized_decorators.secure_data_processing
-    prevent_data_leakage, centralized_decorators.prevent_data_leakage
-    resource_monitor, centralized_decorators.resource_monitor
+    prevent_data_leakage = centralized_decorators.prevent_data_leakage
+    resource_monitor = centralized_decorators.resource_monitor
     memory_efficient = centralized_decorators.memory_efficient
-    quality_gate, centralized_decorators.quality_gate
+    quality_gate = centralized_decorators.quality_gate
     circuit_breaker_protection, centralized_decorators.circuit_breaker_protection
     guard_dataframe_nulls = centralized_decorators.guard_dataframe_nulls
-    with_tracing_span, centralized_decorators.with_tracing_span
-    validate_klines_data, centralized_decorators.validate_klines_data
+    with_tracing_span = centralized_decorators.with_tracing_span
+    validate_klines_data = centralized_decorators.validate_klines_data
     format_klines_data = centralized_decorators.format_klines_data
-    validate_aggtrades_data, centralized_decorators.validate_aggtrades_data
-    format_aggtrades_data, centralized_decorators.format_aggtrades_data
+    validate_aggtrades_data = centralized_decorators.validate_aggtrades_data
+    format_aggtrades_data = centralized_decorators.format_aggtrades_data
     validate_futures_data = centralized_decorators.validate_futures_data
-    format_futures_data, centralized_decorators.format_futures_data
+    format_futures_data = centralized_decorators.format_futures_data
     log_step_metrics = centralized_decorators.log_step_metrics
 
-if enhanced_decorators is None: validate_datetime_index = create_fallback_decorator()
+if enhanced_decorators is None:
+    validate_datetime_index = create_fallback_decorator()
     validate_data_structure = create_fallback_decorator()
     validate_data_completeness = create_fallback_decorator()
     comprehensive_data_validation = create_fallback_decorator()
     validate_memory_optimized_data_quality = create_fallback_decorator()
-else: validate_datetime_index = enhanced_decorators.validate_datetime_index
-    validate_data_structure, enhanced_decorators.validate_data_structure
-    validate_data_completeness, enhanced_decorators.validate_data_completeness
+else:
+    validate_datetime_index = enhanced_decorators.validate_datetime_index
+    validate_data_structure = enhanced_decorators.validate_data_structure
+    validate_data_completeness = enhanced_decorators.validate_data_completeness
     comprehensive_data_validation = enhanced_decorators.comprehensive_data_validation
-    validate_memory_optimized_data_quality, enhanced_decorators.validate_memory_optimized_data_quality
+    validate_memory_optimized_data_quality = enhanced_decorators.validate_memory_optimized_data_quality
 
 # PyArrow availability
 if pyarrow is None:
-    pa, None
+    pa = None
     ds = None
-    pq, None
-    PYARROW_AVAILABLE, False
-else: pa = pyarrow
-    ds, pyarrow.dataset
+    pq = None
+    PYARROW_AVAILABLE = False
+else:
+    pa = pyarrow
+    ds = pyarrow.dataset
     pq = pyarrow.parquet
     PYARROW_AVAILABLE = True
 
@@ -130,7 +135,7 @@ if download_all_data_with_consolidation is None:
 class ColumnVerifier:
     """Utility class for verifying and calculating missing columns."""
 
-    def __init__(self = logger = None):
+    def __init__(self, logger=None):
         self.logger = logger or system_logger.getChild("ColumnVerifier")
 
         # Define required columns for different data types
@@ -146,7 +151,7 @@ class ColumnVerifier:
             "technical_indicators": ["sma_20", "ema_12", "rsi", "macd"]
         }
 
-    def verify_missing_columns(self, df: pd.DataFrame = data_type: str = "unified") -> dict[str, Any]:
+    def verify_missing_columns(self, df: pd.DataFrame, data_type: str = "unified") -> dict[str, Any]:
         """
         Verify which columns are missing from the dataframe.
 
@@ -158,65 +163,64 @@ class ColumnVerifier:
             Dictionary with missing columns information
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        self.logger.info(f"🔍 Verifying missing columns for {data_type} data...")
+            self.logger.info(f"🔍 Verifying missing columns for {data_type} data...")
 
             missing_info = {
-                "data_type": data_type = "total_columns": len(df.columns) = "existing_columns": list(df.columns),
+                "data_type": data_type,
+                "total_columns": len(df.columns),
+                "existing_columns": list(df.columns),
                 "missing_required": [],
                 "missing_optional": {},
                 "can_calculate": {},
                 "verification_passed": True
             }
 
-        # Check required columns based on data type
-        if data_type == "klines":
-                required_columns, self.required_klines_columns
+            # Check required columns based on data type
+            if data_type == "klines":
+                required_columns = self.required_klines_columns
             elif data_type == "aggtrades":
                 required_columns = self.required_aggtrades_columns
             elif data_type == "futures":
-                required_columns, self.required_futures_columns
+                required_columns = self.required_futures_columns
             else:  # unified
                 required_columns = self.required_klines_columns  # Base requirement
 
-        # Check for missing required columns
+            # Check for missing required columns
             missing_required = [col for col in required_columns if col not in df.columns]
             missing_info["missing_required"] = missing_required
 
-        if missing_required:
-    missing_info["verification_passed"] = False
-        self.logger.warning(f"⚠️ Missing required columns: {missing_required}")
+            if missing_required:
+                missing_info["verification_passed"] = False
+                self.logger.warning(f"⚠️ Missing required columns: {missing_required}")
 
-        # Check for missing optional calculated columns
-        for category = columns in self.optional_calculated_columns.items():
+            # Check for missing optional calculated columns
+            for category, columns in self.optional_calculated_columns.items():
                 missing_optional = [col for col in columns if col not in df.columns]
                 missing_info["missing_optional"][category] = missing_optional
 
-        # Check if we can calculate these columns
+                # Check if we can calculate these columns
                 can_calculate = self._check_calculation_feasibility(df, category, missing_optional)
                 missing_info["can_calculate"][category] = can_calculate
 
-        if missing_optional:
-    self.logger.info(f"📊 Missing {category} columns: {missing_optional}")
-        if can_calculate:
-    self.logger.info(f"   ✅ Can calculate: {can_calculate}")
+                if missing_optional:
+                    self.logger.info(f"📊 Missing {category} columns: {missing_optional}")
+                    if can_calculate:
+                        self.logger.info(f"   ✅ Can calculate: {can_calculate}")
                     else:
-        self.logger.warning(f"   ❌ Cannot calculate: {[col for col in missing_optional if col not in can_calculate]}")
+                        self.logger.warning(f"   ❌ Cannot calculate: {[col for col in missing_optional if col not in can_calculate]}")
 
-        self.logger.info(f"✅ Column verification completed. Verification passed: {missing_info['verification_passed']}")
-        return missing_info
+            self.logger.info(f"✅ Column verification completed. Verification passed: {missing_info['verification_passed']}")
+            return missing_info
 
         except Exception as e:
-    self.logger.exception(f"❌ Error during column verification: {e}")
-        return {
-                "data_type": data_type = "verification_passed": False = "error": str(e)
+            self.logger.exception(f"❌ Error during column verification: {e}")
+            return {
+                "data_type": data_type,
+                "verification_passed": False,
+                "error": str(e)
             }
 
-    def _check_calculation_feasibility(self, df: pd.DataFrame = category: str, missing_columns: list[str]) -> list[str]:
+    def _check_calculation_feasibility(self, df: pd.DataFrame, category: str, missing_columns: list[str]) -> list[str]:
         """
         Check which missing columns can be calculated based on available data.
 
@@ -231,34 +235,34 @@ class ColumnVerifier:
         can_calculate = []
 
         if category == "price_returns":
-        # Check if we have price columns for returns calculation
+            # Check if we have price columns for returns calculation
             price_columns = ["close", "open", "high", "low"]
             available_prices = [col for col in price_columns if col in df.columns]
 
-        for col in missing_columns:
-        if col.endswith("_return"):
+            for col in missing_columns:
+                if col.endswith("_return"):
                     base_col = col.replace("_return", "")
-        if base_col in available_prices:
+                    if base_col in available_prices:
                         can_calculate.append(col)
 
         elif category == "vwap":
-        # Check if we have required columns for VWAP calculation
-        if "close" in df.columns and "volume" in df.columns:
+            # Check if we have required columns for VWAP calculation
+            if "close" in df.columns and "volume" in df.columns:
                 can_calculate.extend([col for col in missing_columns if col in ["vwap", "vwap_return", "price_vwap_ratio", "price_vwap_deviation"]])
 
         elif category == "volume_features":
-        # Check if we have volume column
-        if "volume" in df.columns:
+            # Check if we have volume column
+            if "volume" in df.columns:
                 can_calculate.extend([col for col in missing_columns if col in ["volume_return", "volume_ma", "volume_ratio"]])
 
         elif category == "technical_indicators":
-        # Check if we have price column for technical indicators
-        if "close" in df.columns:
+            # Check if we have price column for technical indicators
+            if "close" in df.columns:
                 can_calculate.extend([col for col in missing_columns if col in ["sma_20", "ema_12", "rsi", "macd"]])
 
         return can_calculate
 
-    def calculate_missing_columns(self, df: pd.DataFrame = missing_info: dict[str, Any]) -> pd.DataFrame:
+    def calculate_missing_columns(self, df: pd.DataFrame, missing_info: dict[str, Any]) -> pd.DataFrame:
         """
         Calculate missing columns that can be computed.
 
@@ -278,31 +282,31 @@ class ColumnVerifier:
         self.logger.info("🔄 Calculating missing columns...")
 
         # Create a copy to avoid modifying original
-            enhanced_df = df.copy()
-            calculated_columns = []
+        enhanced_df = df.copy()
+        calculated_columns = []
 
         # Calculate price returns
         if "price_returns" in missing_info["can_calculate"]:
-                calculated_returns = self._calculate_price_returns(enhanced_df, missing_info["can_calculate"]["price_returns"])
-                enhanced_df = pd.concat([enhanced_df = calculated_returns], axis = 1)
-                calculated_columns.extend(calculated_returns.columns)
+            calculated_returns = self._calculate_price_returns(enhanced_df, missing_info["can_calculate"]["price_returns"])
+            enhanced_df = pd.concat([enhanced_df, calculated_returns], axis=1)
+            calculated_columns.extend(calculated_returns.columns)
 
         # Calculate VWAP features
         if "vwap" in missing_info["can_calculate"]:
-                calculated_vwap = self._calculate_vwap_features(enhanced_df = missing_info["can_calculate"]["vwap"])
-                enhanced_df = pd.concat([enhanced_df = calculated_vwap], axis = 1)
-                calculated_columns.extend(calculated_vwap.columns)
+            calculated_vwap = self._calculate_vwap_features(enhanced_df, missing_info["can_calculate"]["vwap"])
+            enhanced_df = pd.concat([enhanced_df, calculated_vwap], axis=1)
+            calculated_columns.extend(calculated_vwap.columns)
 
         # Calculate volume features
         if "volume_features" in missing_info["can_calculate"]:
-                calculated_volume = self._calculate_volume_features(enhanced_df = missing_info["can_calculate"]["volume_features"])
-                enhanced_df = pd.concat([enhanced_df = calculated_volume], axis = 1)
-                calculated_columns.extend(calculated_volume.columns)
+            calculated_volume = self._calculate_volume_features(enhanced_df, missing_info["can_calculate"]["volume_features"])
+            enhanced_df = pd.concat([enhanced_df, calculated_volume], axis=1)
+            calculated_columns.extend(calculated_volume.columns)
 
         # Calculate technical indicators
         if "technical_indicators" in missing_info["can_calculate"]:
-                calculated_technical = self._calculate_technical_indicators(enhanced_df = missing_info["can_calculate"]["technical_indicators"])
-                enhanced_df = pd.concat([enhanced_df = calculated_technical], axis = 1)
+            calculated_technical = self._calculate_technical_indicators(enhanced_df, missing_info["can_calculate"]["technical_indicators"])
+            enhanced_df = pd.concat([enhanced_df, calculated_technical], axis=1)
                 calculated_columns.extend(calculated_technical.columns)
 
         if calculated_columns:

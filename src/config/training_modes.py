@@ -33,38 +33,38 @@ class TrainingModeConfig:
 # Training Mode Configurations
 LIGHT_MODE = TrainingModeConfig(
     name="light",
-    description="Light training mode for quick testing and development (30 days) - 2% of full intensity",
-    lookback_days=30,
-    max_trials=4,  # 2% of 200 = 4, minimum 3
-    n_trials=3,   # 2% of 100 = 2, but minimum 3
-    exclude_recent_days=1,
-    enable_advanced_model_training=False,
-    enable_ensemble_training=False,
-    enable_multi_timeframe_training=False,
-    enable_adaptive_training=False,
+    description="Light training mode for quick testing - same data, reduced computational load",
+    lookback_days=730,  # Same data as full mode
+    max_trials=10,  # Reduced from 200 to 10 (5% of full)
+    n_trials=5,   # Reduced from 100 to 5 (5% of full)
+    exclude_recent_days=2,  # Same as full mode
+    enable_advanced_model_training=True,  # Keep same features
+    enable_ensemble_training=True,  # Keep same features
+    enable_multi_timeframe_training=False,  # Disable only heavy multi-timeframe
+    enable_adaptive_training=False,  # Disable only heavy adaptive training
     enhanced_training_interval=1800,  # 30 minutes
-    max_enhanced_training_history=10,
-    min_data_points=50,
+    max_enhanced_training_history=10,  # Reduced history for speed
+    min_data_points=500,  # Same as full mode
     computational_intensity="low",
-    estimated_duration_minutes=5
+    estimated_duration_minutes=10  # Faster due to fewer trials
 )
 
 BLANK_MODE = TrainingModeConfig(
     name="blank",
-    description="Blank training mode for moderate testing and validation (180 days) - 10% of full intensity",
-    lookback_days=180,
-    max_trials=20,  # 10% of 200 = 20
-    n_trials=10,   # 10% of 100 = 10 (already above minimum 3)
-    exclude_recent_days=2,
-    enable_advanced_model_training=True,
-    enable_ensemble_training=True,
-    enable_multi_timeframe_training=False,
-    enable_adaptive_training=False,
+    description="Blank training mode for moderate testing - same data, moderate computational load",
+    lookback_days=730,  # Same data as full mode
+    max_trials=50,  # Reduced from 200 to 50 (25% of full)
+    n_trials=25,   # Reduced from 100 to 25 (25% of full)
+    exclude_recent_days=2,  # Same as full mode
+    enable_advanced_model_training=True,  # Keep same features
+    enable_ensemble_training=True,  # Keep same features
+    enable_multi_timeframe_training=False,  # Disable only heavy multi-timeframe
+    enable_adaptive_training=False,  # Disable only heavy adaptive training
     enhanced_training_interval=3600,  # 1 hour
-    max_enhanced_training_history=50,
-    min_data_points=100,
+    max_enhanced_training_history=50,  # Moderate history
+    min_data_points=500,  # Same as full mode
     computational_intensity="medium",
-    estimated_duration_minutes=15
+    estimated_duration_minutes=30  # Faster due to fewer trials
 )
 
 FULL_MODE = TrainingModeConfig(
@@ -86,10 +86,10 @@ FULL_MODE = TrainingModeConfig(
 )
 
 
-# Intensity percentages for each mode
+# Computational intensity percentages for each mode (trials, jobs, iterations)
 INTENSITY_PERCENTAGES = {
-    "light": 0.02,  # 2% of full intensity
-    "blank": 0.10,  # 10% of full intensity
+    "light": 0.05,  # 5% of full computational intensity (same data)
+    "blank": 0.25,  # 25% of full computational intensity (same data)
     "full": 1.00,   # 100% intensity
 }
 
@@ -351,9 +351,9 @@ def get_step_specific_parameters(mode: str, step_name: str) -> Dict[str, Any]:
         "intensity_percentage": percentage,
     }
     
-    # Step-specific parameter overrides
+    # Step-specific computational parameter overrides (only trials, jobs, iterations)
     step_overrides = {
-        # Step 12: Final Parameters Optimization - has multiple optimization sections
+        # Step 17: Final Parameters Optimization - reduce only computational parameters
         "step17_final_parameters_optimization": {
             "confidence_threshold_trials": max(3, int(40 * percentage)),
             "volatility_trials": max(3, int(50 * percentage)),
@@ -362,9 +362,11 @@ def get_step_specific_parameters(mode: str, step_name: str) -> Dict[str, Any]:
             "ensemble_trials": max(3, int(40 * percentage)),
             "regime_specific_trials": max(3, int(30 * percentage)),
             "timing_trials": max(3, int(30 * percentage)),
+            "n_jobs": max(1, int(4 * percentage)),  # Reduce parallel jobs
+            "max_iterations": max(100, int(1000 * percentage)),  # Reduce iterations
         },
-        # Step 6: Analyst Enhancement - has multiple model training sections
-        "step06_analyst_enhancement": {
+        # Step 6: Analyst Enhancement - reduce only computational parameters
+        "step12_analyst_enhancement": {
             "lightgbm_trials": max(3, int(50 * percentage)),
             "xgboost_trials": max(3, int(50 * percentage)),
             "svm_trials": max(3, int(30 * percentage)),
@@ -372,11 +374,15 @@ def get_step_specific_parameters(mode: str, step_name: str) -> Dict[str, Any]:
             "neural_network_trials": max(3, int(25 * percentage)),
             "catboost_trials": max(3, int(25 * percentage)),
             "logistic_trials": max(3, int(25 * percentage)),
+            "n_jobs": max(1, int(4 * percentage)),  # Reduce parallel jobs
+            "max_iterations": max(100, int(1000 * percentage)),  # Reduce iterations
         },
-        # Step 5.5: Unified Regime Intelligence
-        "step05_5_unified_regime_intelligence": {
+        # Step 10: Unified Regime Intelligence - reduce only computational parameters
+        "step10_unified_regime_intelligence": {
             "hpo_trials": max(3, int(20 * percentage)),
             "hpo_timeout": max(300, int(900 * percentage)),  # Minimum 5 minutes
+            "n_jobs": max(1, int(4 * percentage)),  # Reduce parallel jobs
+            "max_iterations": max(100, int(1000 * percentage)),  # Reduce iterations
         },
         # SR Outcome Model Trainer
         "sr_outcome_model_trainer": {

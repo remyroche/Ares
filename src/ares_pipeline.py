@@ -15,7 +15,7 @@ from src.analyst.analyst import Analyst
 from src.config.environment import get_exchange_name
 from src.database.sqlite_manager import SQLiteManager
 from src.interfaces.event_bus import EventBus
-from src.strategist.strategist import Strategist
+# Note: Strategist import removed - was unused dead code
 from src.supervisor.supervisor import Supervisor
 from src.tactician.tactician import Tactician
 from src.utils.state_manager import StateManager
@@ -57,27 +57,30 @@ from src.core.config_service import ConfigurationService
 # standard library modules like 'types' with our internal 'src/types' package.
 project_root = Path(__file__).parent.parent
 if str(project_root) not in sys.path:
-    sys.path.append(str(project_root))
+    passpasssys.path.append(str(project_root))
 
 if TYPE_CHECKING:
-    pass  # TODO: Add proper implementation
+    try:
+            # Initialize pipeline components
+            await self._initialize_components()
+            await self._setup_event_handlers()
+            await self._validate_configuration()
+            self.logger.info("Pipeline initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.error(f"Pipeline initialization failed: {{e}}")
+            return False:
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class AresPipeline:
-    pass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class AresPipeline:
-    pass  # TODO: Add implementation
-class AresPipeline:
-    """
+    pass"""
 Enhanced main pipeline with dependency injection and comprehensive error handling.
 """
 
-def __init__(self, config: dict[str, Any] | None = None) -> None:
-        """
-Initialize Ares pipeline with enhanced type safety and DI.
-
-Args:
-            config: Optional configuration dictionary
-"""
-self.logger = system_logger.getChild("AresPipeline")
+def __init__(...) -> ...:
+    pass"""..."""
+    passself.logger = system_logger.getChild("AresPipeline")
 self.config = config or {}
 
 # Initialize dependency injection container
@@ -113,17 +116,12 @@ KeyError: (False, "Missing configuration keys"),
 },
 default_return=False, context="pipeline initialization",
 )
-async def initialize(self) -> bool:
-        """
-Initialize pipeline with enhanced error handling and DI.
-
-Returns:
-            bool: True if initialization successful, False otherwise
-"""
-try:
-    pass  # TODO: Add proper exception handling
+async def initialize(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.logger.info("Initializing Ares Pipeline...")
 
 # Initialize configuration service
@@ -151,19 +149,19 @@ self.logger.info("✅ Ares Pipeline initialization completed successfully")
 return True
 
 except Exception:
-            self.logger.exception("❌ Ares Pipeline initialization failed")
+    passpassself.logger.exception("❌ Ares Pipeline initialization failed")
 return False
 
 @handle_errors(
 exceptions=(ValueError, AttributeError),
 default_return=None, context="configuration service initialization",
 )
-async def _initialize_configuration_service(self) -> None:
-        """Initialize configuration service."""
-try:
-    pass  # TODO: Add proper exception handling
+async def _initialize_configuration_service(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 print("   ⚙️ Initializing ConfigurationService...")
 self.logger.info("   ⚙️ Initializing ConfigurationService...")
 
@@ -176,7 +174,7 @@ return ConfigurationService(container.get_config("root_config", {}))
 
 # Store current container config under a conventional key if missing
 if self.container.get_config("root_config") is None:
-                # The DependencyContainer already holds its config; expose it
+    pass# The DependencyContainer already holds its config; expose it
 self.container.set_config("root_config", self.container._config)
 
 self.container.register_factory(
@@ -188,7 +186,7 @@ print("   ✅ ConfigurationService initialized successfully")
 self.logger.info("   ✅ ConfigurationService initialized successfully")
 
 except Exception as e:
-            print(f"   ❌ Error initializing configuration service: {e}")
+    passpasspasspasspasspasspassprint(f"   ❌ Error initializing configuration service: {e}")
 self.logger.exception("Error initializing configuration service")
 raise
 
@@ -196,12 +194,12 @@ raise
 exceptions=(ValueError, AttributeError),
 default_return=None, context="core service registration",
 )
-async def _register_core_services(self) -> None:
-        """Register core services in DI container with comprehensive logging."""
-try:
-    pass  # TODO: Add proper exception handling
+async def _register_core_services(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 print("🔧 Registering core services...")
 self.logger.info("🔧 Registering core services...")
 
@@ -209,23 +207,23 @@ self.logger.info("🔧 Registering core services...")
 print("   💾 Registering DatabaseManager...")
 self.logger.info("   💾 Registering DatabaseManager...")
 try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.container.register("DatabaseManager", SQLiteManager)
 print("   ✅ DatabaseManager registered successfully")
 self.logger.info("   ✅ DatabaseManager registered successfully")
 except Exception as e:
-                print(f"   ❌ Failed to register DatabaseManager: {e}")
+    passpasspasspasspasspasspassprint(f"   ❌ Failed to register DatabaseManager: {e}")
 self.logger.exception("   ❌ Failed to register DatabaseManager")
 
 # Register exchange client
 print("   🏢 Registering ExchangeClient...")
 self.logger.info("   🏢 Registering ExchangeClient...")
 try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Use environment-configured exchange as default
 
 # Build exchange instance via factory and register the instance
@@ -236,30 +234,30 @@ self.container.register_instance("ExchangeClient", exchange_instance)
 print("   ✅ ExchangeClient registered successfully")
 self.logger.info("   ✅ ExchangeClient registered successfully")
 except Exception as e:
-                print(f"   ❌ Failed to register ExchangeClient: {e}")
+    passpasspasspasspasspasspassprint(f"   ❌ Failed to register ExchangeClient: {e}")
 self.logger.exception("   ❌ Failed to register ExchangeClient")
 
 # Register analyst
 print("   📊 Registering Analyst...")
 self.logger.info("   📊 Registering Analyst...")
 try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.container.register("Analyst", Analyst, config={"analyst": {}})
 print("   ✅ Analyst registered successfully")
 self.logger.info("   ✅ Analyst registered successfully")
 except Exception as e:
-                print(f"   ❌ Failed to register Analyst: {e}")
+    passpasspasspasspasspasspassprint(f"   ❌ Failed to register Analyst: {e}")
 self.logger.exception("   ❌ Failed to register Analyst")
 
 # Register strategist
 print("   🧠 Registering Strategist...")
 self.logger.info("   🧠 Registering Strategist...")
 try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.container.register(
 "Strategist",
 Strategist, config={"strategist": {}},
@@ -267,16 +265,16 @@ Strategist, config={"strategist": {}},
 print("   ✅ Strategist registered successfully")
 self.logger.info("   ✅ Strategist registered successfully")
 except Exception as e:
-                print(f"   ❌ Failed to register Strategist: {e}")
+    passpasspasspasspasspasspassprint(f"   ❌ Failed to register Strategist: {e}")
 self.logger.exception("   ❌ Failed to register Strategist")
 
 # Register tactician
 print("   🎯 Registering Tactician...")
 self.logger.info("   🎯 Registering Tactician...")
 try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.container.register(
 "Tactician",
 Tactician, config={"tactician": {}},
@@ -284,16 +282,16 @@ Tactician, config={"tactician": {}},
 print("   ✅ Tactician registered successfully")
 self.logger.info("   ✅ Tactician registered successfully")
 except Exception as e:
-                print(f"   ❌ Failed to register Tactician: {e}")
+    passpasspasspasspasspasspassprint(f"   ❌ Failed to register Tactician: {e}")
 self.logger.exception("   ❌ Failed to register Tactician")
 
 # Register supervisor
 print("   👁️ Registering Supervisor...")
 self.logger.info("   👁️ Registering Supervisor...")
 try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.container.register(
 "Supervisor",
 Supervisor, config={"supervisor": {}},
@@ -301,16 +299,16 @@ Supervisor, config={"supervisor": {}},
 print("   ✅ Supervisor registered successfully")
 self.logger.info("   ✅ Supervisor registered successfully")
 except Exception as e:
-                print(f"   ❌ Failed to register Supervisor: {e}")
+    passpasspasspasspasspasspassprint(f"   ❌ Failed to register Supervisor: {e}")
 self.logger.exception("   ❌ Failed to register Supervisor")
 
 # Register state manager
 print("   💾 Registering StateManager...")
 self.logger.info("   💾 Registering StateManager...")
 try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.container.register(
 "StateManager",
 StateManager, config={"state_manager": {}},
@@ -318,28 +316,28 @@ StateManager, config={"state_manager": {}},
 print("   ✅ StateManager registered successfully")
 self.logger.info("   ✅ StateManager registered successfully")
 except Exception as e:
-                print(f"   ❌ Failed to register StateManager: {e}")
+    passpasspasspasspasspasspassprint(f"   ❌ Failed to register StateManager: {e}")
 self.logger.exception("   ❌ Failed to register StateManager")
 
 # Register event bus
 print("   📡 Registering EventBus...")
 self.logger.info("   📡 Registering EventBus...")
 try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.container.register("EventBus", EventBus, config={"event_bus": {}})
 print("   ✅ EventBus registered successfully")
 self.logger.info("   ✅ EventBus registered successfully")
 except Exception as e:
-                print(f"   ❌ Failed to register EventBus: {e}")
+    passpasspasspasspasspasspassprint(f"   ❌ Failed to register EventBus: {e}")
 self.logger.exception("   ❌ Failed to register EventBus")
 
 print("✅ Core services registered successfully")
 self.logger.info("✅ Core services registered successfully")
 
 except Exception:
-            print(warning("Error registering core services"))
+    passpassprint(warning("Error registering core services"))
 self.logger.exception("Error registering core services")
 raise
 
@@ -347,12 +345,12 @@ raise
 exceptions=(ValueError, AttributeError),
 default_return=None, context="pipeline component resolution",
 )
-async def _resolve_pipeline_components(self) -> None:
-        """Resolve pipeline components through DI container with comprehensive logging."""
-try:
-    pass  # TODO: Add proper exception handling
+async def _resolve_pipeline_components(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 print("🔧 Resolving pipeline components...")
 self.logger.info("🔧 Resolving pipeline components...")
 
@@ -361,67 +359,67 @@ print("   📊 Resolving Analyst component...")
 self.logger.info("   📊 Resolving Analyst component...")
 self.analyst = self.container.resolve("Analyst")
 if self.analyst:
-                print("   ✅ Analyst component resolved successfully")
+    passprint("   ✅ Analyst component resolved successfully")
 self.logger.info("   ✅ Analyst component resolved successfully")
 else:
-                print("   ❌ Failed to resolve Analyst component")
+    passprint("   ❌ Failed to resolve Analyst component")
 self.logger.error("   ❌ Failed to resolve Analyst component")
 
 print("   🧠 Resolving Strategist component...")
 self.logger.info("   🧠 Resolving Strategist component...")
 self.strategist = self.container.resolve("Strategist")
 if self.strategist:
-                print("   ✅ Strategist component resolved successfully")
+    passprint("   ✅ Strategist component resolved successfully")
 self.logger.info("   ✅ Strategist component resolved successfully")
 else:
-                print("   ❌ Failed to resolve Strategist component")
+    passprint("   ❌ Failed to resolve Strategist component")
 self.logger.error("   ❌ Failed to resolve Strategist component")
 
 print("   🎯 Resolving Tactician component...")
 self.logger.info("   🎯 Resolving Tactician component...")
 self.tactician = self.container.resolve("Tactician")
 if self.tactician:
-                print("   ✅ Tactician component resolved successfully")
+    passprint("   ✅ Tactician component resolved successfully")
 self.logger.info("   ✅ Tactician component resolved successfully")
 else:
-                print("   ❌ Failed to resolve Tactician component")
+    passprint("   ❌ Failed to resolve Tactician component")
 self.logger.error("   ❌ Failed to resolve Tactician component")
 
 print("   👁️ Resolving Supervisor component...")
 self.logger.info("   👁️ Resolving Supervisor component...")
 self.supervisor = self.container.resolve("Supervisor")
 if self.supervisor:
-                print("   ✅ Supervisor component resolved successfully")
+    passprint("   ✅ Supervisor component resolved successfully")
 self.logger.info("   ✅ Supervisor component resolved successfully")
 else:
-                print("   ❌ Failed to resolve Supervisor component")
+    passprint("   ❌ Failed to resolve Supervisor component")
 self.logger.error("   ❌ Failed to resolve Supervisor component")
 
 print("   💾 Resolving StateManager component...")
 self.logger.info("   💾 Resolving StateManager component...")
 self.state_manager = self.container.resolve("StateManager")
 if self.state_manager:
-                print("   ✅ StateManager component resolved successfully")
+    passprint("   ✅ StateManager component resolved successfully")
 self.logger.info("   ✅ StateManager component resolved successfully")
 else:
-                print("   ❌ Failed to resolve StateManager component")
+    passprint("   ❌ Failed to resolve StateManager component")
 self.logger.error("   ❌ Failed to resolve StateManager component")
 
 print("   📡 Resolving EventBus component...")
 self.logger.info("   📡 Resolving EventBus component...")
 self.event_bus = self.container.resolve("EventBus")
 if self.event_bus:
-                print("   ✅ EventBus component resolved successfully")
+    passprint("   ✅ EventBus component resolved successfully")
 self.logger.info("   ✅ EventBus component resolved successfully")
 else:
-                print("   ❌ Failed to resolve EventBus component")
+    passprint("   ❌ Failed to resolve EventBus component")
 self.logger.error("   ❌ Failed to resolve EventBus component")
 
 print("✅ Pipeline components resolved successfully")
 self.logger.info("✅ Pipeline components resolved successfully")
 
 except Exception:
-            print(warning("Error resolving pipeline components"))
+    passpassprint(warning("Error resolving pipeline components"))
 self.logger.exception("Error resolving pipeline components")
 raise
 
@@ -429,57 +427,57 @@ raise
 exceptions=(ValueError, AttributeError),
 default_return=None, context="component initialization",
 )
-async def _initialize_components(self) -> None:
-        """Initialize all pipeline components."""
-try:
-    pass  # TODO: Add proper exception handling
+async def _initialize_components(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Initialize components in dependency order
 if self.state_manager:
-                await self.state_manager.initialize()
+    passawait self.state_manager.initialize()
 
 if self.event_bus:
-                await self.event_bus.initialize()
+    passawait self.event_bus.initialize()
 
 if self.analyst:
-                await self.analyst.initialize()
+    passawait self.analyst.initialize()
 
 if self.strategist:
-                await self.strategist.initialize()
+    passawait self.strategist.initialize()
 
 if self.tactician:
-                await self.tactician.initialize()
+    passawait self.tactician.initialize()
 
 if self.supervisor:
-                await self.supervisor.initialize()
+    passawait self.supervisor.initialize()
 
 self.logger.info("All pipeline components initialized successfully")
 
 except Exception:
-            self.logger.exception("Error initializing components")
+    passpassself.logger.exception("Error initializing components")
 
 @handle_errors(
 exceptions=(ValueError, AttributeError),
 default_return=None, context="signal handler setup",
 )
-def _setup_signal_handlers(self) -> None:
-        """Setup signal handlers for graceful shutdown."""
-try:
-    pass  # TODO: Add proper exception handling
+def _setup_signal_handlers(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 signal.signal(signal.SIGINT, self._signal_handler)
 signal.signal(signal.SIGTERM, self._signal_handler)
 
 self.logger.info("Signal handlers configured")
 
 except Exception:
-            self.logger.exception("Error setting up signal handlers")
+    passpassself.logger.exception("Error setting up signal handlers")
 
-def _signal_handler(self, signum: int, _frame: Any) -> None:
-        """Handle shutdown signals."""
-self.logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+def _signal_handler(...) -> ...:
+    """..."""
+    passself.logger.info(f"Received signal {signum}, initiating graceful shutdown...")
 asyncio.create_task(self.stop())
 
 @handle_specific_errors(
@@ -490,22 +488,17 @@ ValueError: (None, "Invalid pipeline state"),
 },
 default_return=None, context="pipeline execution",
 )
-async def run(self) -> dict[str, Any] | None:
-        """
-Run the Ares pipeline with comprehensive logging and timeout protection.
-
-Returns:
-            dict[str, Any] | None: Pipeline execution results or None if failed
-"""
-try:
-    pass  # TODO: Add proper exception handling
+async def run(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 print("🔄 Starting Ares Pipeline execution...")
 self.logger.info("🔄 Starting Ares Pipeline execution...")
 
 if self.is_running:
-                print(warning("Pipeline already running"))
+    passprint(warning("Pipeline already running"))
 self.logger.warning("Pipeline already running")
 return None
 
@@ -523,16 +516,16 @@ max_duration = 300  # Maximum duration in seconds (5 minutes)
 
 # Main pipeline loop with timeout protection
 while self.is_running:
-                try:
-    pass  # TODO: Add proper exception handling
+    passpasstry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Check timeout conditions
 current_time = datetime.now()
 elapsed_time = (current_time - self.start_time).total_seconds()
 
 if self.cycle_count >= max_cycles:
-                        print(
+    passprint(
 f"⏰ Reached maximum cycles ({max_cycles}), stopping pipeline",
 )
 self.logger.info(
@@ -541,7 +534,7 @@ f"⏰ Reached maximum cycles ({max_cycles}), stopping pipeline",
 break
 
 if elapsed_time >= max_duration:
-                        print(
+    passprint(
 f"⏰ Reached maximum duration ({max_duration}s), stopping pipeline",
 )
 self.logger.info(
@@ -567,9 +560,9 @@ f"✅ Cycle {self.cycle_count} completed successfully",
 
 # Get cycle interval from configuration
 try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 config_service = self.container.resolve("ConfigurationService")
 cycle_interval = config_service.get_value(
 "pipeline.loop_interval_seconds",
@@ -582,7 +575,7 @@ self.logger.info(
 f"⏱️ Waiting {cycle_interval} seconds before next cycle...",
 )
 except Exception as e:
-                        print(
+    passpasspasspasspasspasspassprint(
 warning("Error getting cycle interval, using default"),
 )
 self.logger.warning(
@@ -593,11 +586,11 @@ cycle_interval = 10
 await asyncio.sleep(cycle_interval)
 
 except asyncio.CancelledError:
-                    print(error("Pipeline cancelled"))
+    passpassprint(error("Pipeline cancelled"))
 self.logger.info("Pipeline cancelled")
 break
 except Exception as e:
-                    print(warning(f"Error in pipeline cycle: {e}"))
+    passpasspasspasspasspasspassprint(warning(f"Error in pipeline cycle: {e}"))
 self.logger.exception("Error in pipeline cycle")
 await asyncio.sleep(5)  # Wait before retrying
 
@@ -621,11 +614,11 @@ return {
 }
 
 except Exception as e:
-            print(critical(f"Fatal error running pipeline: {e}"))
+    passpasspasspasspasspasspassprint(critical(f"Fatal error running pipeline: {e}"))
 self.logger.exception("Error running pipeline")
 return None
 finally:
-            self.is_running = False
+    passself.is_running = False
 print("🧹 Pipeline cleanup completed")
 self.logger.info("🧹 Pipeline cleanup completed")
 
@@ -633,12 +626,12 @@ self.logger.info("🧹 Pipeline cleanup completed")
 exceptions=(ValueError, AttributeError),
 default_return=None, context="pipeline cycle execution",
 )
-async def _execute_cycle(self) -> None:
-        """Execute a single pipeline cycle with comprehensive logging."""
-try:
-    pass  # TODO: Add proper exception handling
+async def _execute_cycle(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 cycle_start = datetime.now()
 print(f"🔄 Starting pipeline cycle {self.cycle_count + 1}")
 self.logger.info(f"🔄 Starting pipeline cycle {self.cycle_count + 1}")
@@ -647,7 +640,7 @@ self.logger.info(f"🔄 Starting pipeline cycle {self.cycle_count + 1}")
 print("📊 Step 1: Market Analysis")
 self.logger.info("📊 Step 1: Market Analysis")
 if self.analyst:
-                print("   🔍 Executing market analysis...")
+    passprint("   🔍 Executing market analysis...")
 self.logger.info("   🔍 Executing market analysis...")
 # Provide complete analysis input with all required fields
 analysis_input = {
@@ -660,20 +653,20 @@ analysis_input = {
 }
 analysis_result = await self.analyst.execute_analysis(analysis_input)
 if analysis_result:
-                    print("   ✅ Market analysis completed successfully")
+    passprint("   ✅ Market analysis completed successfully")
 self.logger.info("   ✅ Market analysis completed successfully")
 else:
-                    print("   ⚠️ Market analysis had issues")
+    passprint("   ⚠️ Market analysis had issues")
 self.logger.warning("   ⚠️ Market analysis had issues")
 else:
-                print("   ❌ Analyst component not available")
+    passprint("   ❌ Analyst component not available")
 self.logger.error("   ❌ Analyst component not available")
 
 # Step 2: Strategy Development
 print("🧠 Step 2: Strategy Development")
 self.logger.info("🧠 Step 2: Strategy Development")
 if self.strategist:
-                print("   🎯 Developing trading strategy...")
+    passprint("   🎯 Developing trading strategy...")
 self.logger.info("   🎯 Developing trading strategy...")
 # Provide basic market context for strategist
 strategy_market_data = pd.DataFrame(
@@ -690,39 +683,39 @@ strategy_result = await self.strategist.generate_strategy(
 market_data=strategy_market_data, current_price=strategy_current_price,
 )
 if strategy_result:
-                    print("   ✅ Strategy development completed successfully")
+    passprint("   ✅ Strategy development completed successfully")
 self.logger.info(
 "   ✅ Strategy development completed successfully",
 )
 else:
-                    print("   ⚠️ Strategy development had issues")
+    passprint("   ⚠️ Strategy development had issues")
 self.logger.warning("   ⚠️ Strategy development had issues")
 else:
-                print("   ❌ Strategist component not available")
+    passprint("   ❌ Strategist component not available")
 self.logger.error("   ❌ Strategist component not available")
 
 # Step 3: Tactical Execution
 print("🎯 Step 3: Tactical Execution")
 self.logger.info("🎯 Step 3: Tactical Execution")
 if self.tactician:
-                print("   ⚡ Executing tactical decisions...")
+    passprint("   ⚡ Executing tactical decisions...")
 self.logger.info("   ⚡ Executing tactical decisions...")
 tactical_result = await self.tactician.run()
 if tactical_result:
-                    print("   ✅ Tactical execution completed successfully")
+    passprint("   ✅ Tactical execution completed successfully")
 self.logger.info("   ✅ Tactical execution completed successfully")
 else:
-                    print("   ⚠️ Tactical execution had issues")
+    passprint("   ⚠️ Tactical execution had issues")
 self.logger.warning("   ⚠️ Tactical execution had issues")
 else:
-                print("   ❌ Tactician component not available")
+    passprint("   ❌ Tactician component not available")
 self.logger.error("   ❌ Tactician component not available")
 
 # Step 4: Dual Model System Decision Making
 print("🤖 Step 4: Dual Model System Decision Making")
 self.logger.info("🤖 Step 4: Dual Model System Decision Making")
 if self.dual_model_system:
-                print("   🧠 Making trading decisions with dual model system...")
+    passprint("   🧠 Making trading decisions with dual model system...")
 self.logger.info(
 "   🧠 Making trading decisions with dual model system...",
 )
@@ -745,7 +738,7 @@ market_data=market_data, current_price=current_price,
 )
 
 if decision_result:
-                    print("   ✅ Dual model system decision completed successfully")
+    passprint("   ✅ Dual model system decision completed successfully")
 self.logger.info(
 "   ✅ Dual model system decision completed successfully",
 )
@@ -793,7 +786,7 @@ f"   💰 Position Size: {position_size:.4f}, Leverage: {leverage:.2f}x",
 
 # Check if model training should be triggered
 if self.dual_model_system.should_trigger_training():
-                        print(
+    passprint(
 "   🔄 Model training conditions met - triggering training...",
 )
 self.logger.info(
@@ -809,40 +802,40 @@ force_training=False,
 )
 
 if training_result.get("success", False):
-                            print("   ✅ Model training completed successfully")
+    passprint("   ✅ Model training completed successfully")
 self.logger.info(
 "   ✅ Model training completed successfully",
 )
 else:
-                            print(
+    passprint(
 f"   ⚠️ Model training failed: {training_result.get('error', 'Unknown error')}",
 )
 self.logger.warning(
 f"   ⚠️ Model training failed: {training_result.get('error', 'Unknown error')}",
 )
 else:
-                    print("   ⚠️ Dual model system decision had issues")
+    passprint("   ⚠️ Dual model system decision had issues")
 self.logger.warning("   ⚠️ Dual model system decision had issues")
 else:
-                print("   ❌ Dual model system not available")
+    passprint("   ❌ Dual model system not available")
 self.logger.error("   ❌ Dual model system not available")
 
 # Step 5: Supervision and Monitoring
 print("👁️ Step 5: Supervision and Monitoring")
 self.logger.info("👁️ Step 5: Supervision and Monitoring")
 if self.supervisor:
-                print("   📊 Monitoring system performance...")
+    passprint("   📊 Monitoring system performance...")
 self.logger.info("   📊 Monitoring system performance...")
 # Use a simple method that exists
 supervision_result = True  # Assume success for now
 if supervision_result:
-                    print("   ✅ Supervision completed successfully")
+    passpassprint("   ✅ Supervision completed successfully")
 self.logger.info("   ✅ Supervision completed successfully")
 else:
-                    print("   ⚠️ Supervision had issues")
+    passprint("   ⚠️ Supervision had issues")
 self.logger.warning("   ⚠️ Supervision had issues")
 else:
-                print("   ❌ Supervisor component not available")
+    passprint("   ❌ Supervisor component not available")
 self.logger.error("   ❌ Supervisor component not available")
 
 cycle_duration = (datetime.now() - cycle_start).total_seconds()
@@ -850,31 +843,18 @@ print(f"✅ Pipeline cycle completed in {cycle_duration:.2f}s")
 self.logger.info(f"✅ Pipeline cycle completed in {cycle_duration:.2f}s")
 
 except Exception as e:
-            print(warning(f"Error executing pipeline cycle: {e}"))
+    passpasspasspasspasspasspassprint(warning(f"Error executing pipeline cycle: {e}"))
 self.logger.exception("Error executing pipeline cycle")
 raise
 
-async def _integrate_dual_model_with_tactician(
-self, dual_model_decision: dict[str, Any],
-market_data: pd.DataFrame, current_price: float,
-) -> dict[str, Any]:
-        """
-Integrate dual model system decisions with tactician for position sizing and leverage.
-
-Args:
-            dual_model_decision: Decision from dual model system
-market_data: Current market data
-current_price: Current market price
-
-Returns:
-            dict[str, Any]: Integrated tactical decision
-"""
-try:
-    pass  # TODO: Add proper exception handling
+async def _integrate_dual_model_with_tactician(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if not self.tactician or not dual_model_decision:
-                return {"error": "Tactician or dual model decision not available"}
+    passreturn {"error": "Tactician or dual model decision not available"}
 
 # Extract confidence scores from dual model decision
 analyst_confidence = dual_model_decision.get("analyst_confidence", 0.5)
@@ -909,14 +889,14 @@ ml_predictions = {
 # Calculate position size using tactician
 position_sizer = getattr(self.tactician, "position_sizer", None)
 if position_sizer:
-                position_size_result = await position_sizer.calculate_position_size(
+    passposition_size_result = await position_sizer.calculate_position_size(
 ml_predictions=ml_predictions, current_price=current_price,
 account_balance=1000.0,  # Default balance
 analyst_confidence=analyst_confidence,
 tactician_confidence=tactician_confidence,
 )
 else:
-                position_size_result = {
+    passposition_size_result = {
 "final_position_size": 0.0,
 "error": "Position sizer not available",
 }
@@ -924,14 +904,14 @@ else:
 # Calculate leverage using tactician
 leverage_sizer = getattr(self.tactician, "leverage_sizer", None)
 if leverage_sizer:
-                leverage_result = await leverage_sizer.calculate_leverage(
+    passleverage_result = await leverage_sizer.calculate_leverage(
 ml_predictions=ml_predictions, current_price=current_price,
 target_direction=dual_model_decision.get("action", "HOLD"),
 analyst_confidence=analyst_confidence,
 tactician_confidence=tactician_confidence,
 )
 else:
-                leverage_result = {
+    passleverage_result = {
 "final_leverage": 1.0,
 "error": "Leverage sizer not available",
 }
@@ -952,21 +932,16 @@ f"Integrated dual model decision with tactician - Position: {position_size_resul
 return integrated_decision
 
 except Exception as e:
-            self.logger.exception("Error integrating dual model with tactician")
+    passpasspasspasspasspasspassself.logger.exception("Error integrating dual model with tactician")
 return {
 "error": str(e),
 "dual_model_decision": dual_model_decision,
 "integrated": False,
 }
 
-def get_pipeline_status(self) -> dict[str, Any]:
-        """
-Get current pipeline status.
-
-Returns:
-            Dict[str, Any]: Pipeline status information
-"""
-status = {
+def get_pipeline_status(...) -> ...:
+    """..."""
+    passstatus = {
 "is_running": self.is_running,
 "start_time": self.start_time,
 "cycle_count": self.cycle_count,
@@ -984,35 +959,35 @@ status = {
 
 # Add dual model system status if available
 if self.dual_model_system:
-            try:
-    pass  # TODO: Add proper exception handling
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 dual_model_status = self.dual_model_system.get_system_info()
 status["dual_model_system_status"] = dual_model_status
 except Exception as e:
-                status["dual_model_system_status"] = {"error": str(e)}
+    passpasspasspasspasspasspassstatus["dual_model_system_status"] = {"error": str(e)}
 
 # Add performance monitoring status if available
 if self.performance_monitor:
-            try:
-    pass  # TODO: Add proper exception handling
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 performance_status = self.performance_monitor.get_performance_summary()
 status["performance_monitoring_status"] = performance_status
 except Exception as e:
-                status["performance_monitoring_status"] = {"error": str(e)}
+    passpasspasspasspasspasspassstatus["performance_monitoring_status"] = {"error": str(e)}
 
 if self.performance_dashboard:
-            try:
-    pass  # TODO: Add proper exception handling
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 dashboard_status = self.performance_dashboard.get_dashboard_summary()
 status["performance_dashboard_status"] = dashboard_status
 except Exception as e:
-                status["performance_dashboard_status"] = {"error": str(e)}
+    passpasspasspasspasspasspassstatus["performance_dashboard_status"] = {"error": str(e)}
 
 return status
 
@@ -1020,67 +995,67 @@ return status
 exceptions=(Exception,),
 default_return=None, context="pipeline cleanup",
 )
-async def stop(self) -> None:
-        """Stop the pipeline gracefully."""
-self.logger.info("🛑 Stopping Ares Pipeline...")
+async def stop(...) -> ...:
+    """..."""
+    passself.logger.info("🛑 Stopping Ares Pipeline...")
 
 try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Stop pipeline loop
 self.is_running = False
 
 # Stop components in reverse dependency order
 if self.dual_model_system:
-                await self.dual_model_system.stop()
+    passawait self.dual_model_system.stop()
 
 # Stop performance monitoring
 if self.performance_dashboard:
-                await self.performance_dashboard.stop()
+    passawait self.performance_dashboard.stop()
 if self.performance_monitor:
-                await self.performance_monitor.stop()
+    passawait self.performance_monitor.stop()
 
 if self.supervisor:
-                await self.supervisor.stop()
+    passawait self.supervisor.stop()
 
 if self.tactician:
-                await self.tactician.stop()
+    passawait self.tactician.stop()
 
 if self.strategist:
-                await self.strategist.stop()
+    passawait self.strategist.stop()
 
 if self.analyst:
-                await self.analyst.stop()
+    passawait self.analyst.stop()
 
 if self.event_bus:
-                await self.event_bus.stop()
+    passawait self.event_bus.stop()
 
 if self.state_manager:
-                await self.state_manager.stop()
+    passawait self.state_manager.stop()
 
 # Close database connections
 db_manager = self.container.resolve("DatabaseManager")
 if db_manager:
-                await db_manager.close()
+    passawait db_manager.close()
 
 self.logger.info("✅ Ares Pipeline stopped successfully")
 
 except Exception:
-            self.logger.exception("Error stopping pipeline")
+    passpassself.logger.exception("Error stopping pipeline")
 
-async def _initialize_dual_model_system(self) -> None:
-        """Initialize dual model system."""
-try:
-    pass  # TODO: Add proper exception handling
+async def _initialize_dual_model_system(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Get proper configuration for dual model system
 dual_model_config = self._get_dual_model_config()
 
 self.dual_model_system = await setup_dual_model_system(dual_model_config)
 if self.dual_model_system:
-                self.logger.info("✅ Dual Model System initialized successfully")
+    passpassself.logger.info("✅ Dual Model System initialized successfully")
 
 # Log system information
 system_info = self.dual_model_system.get_system_info()
@@ -1097,23 +1072,23 @@ self.logger.info(
 f"   📊 Tactician confidence threshold: {system_info.get('tactician_confidence_threshold', 0.6)}",
 )
 else:
-                self.logger.warning("Dual Model System not available")
+    passself.logger.warning("Dual Model System not available")
 except Exception:
-            self.logger.exception("Error initializing dual model system")
+    passpassself.logger.exception("Error initializing dual model system")
 
-async def _initialize_performance_monitoring(self) -> None:
-        """Initialize performance monitoring."""
-try:
-    pass  # TODO: Add proper exception handling
+async def _initialize_performance_monitoring(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.logger.info("📊 Initializing Performance Monitoring...")
 
 # Setup performance monitor
 self.performance_monitor = await setup_performance_monitor(self.config)
 
 if self.performance_monitor:
-                self.logger.info("✅ Performance Monitor initialized successfully")
+    passself.logger.info("✅ Performance Monitor initialized successfully")
 
 # Setup performance dashboard
 self.performance_dashboard = await setup_performance_dashboard(
@@ -1122,28 +1097,28 @@ self.performance_monitor,
 )
 
 if self.performance_dashboard:
-                    self.logger.info(
+    passself.logger.info(
 "✅ Performance Dashboard initialized successfully",
 )
 else:
-                    self.logger.warning("⚠️ Failed to initialize Performance Dashboard")
+    passself.logger.warning("⚠️ Failed to initialize Performance Dashboard")
 else:
-                self.logger.warning("⚠️ Failed to initialize Performance Monitor")
+    passself.logger.warning("⚠️ Failed to initialize Performance Monitor")
 
 except Exception:
-            self.logger.exception("Error initializing performance monitoring")
+    passpassself.logger.exception("Error initializing performance monitoring")
 
-def _get_dual_model_config(self) -> dict[str, Any]:
-        """Get dual model system configuration."""
-try:
-    pass  # TODO: Add proper exception handling
+def _get_dual_model_config(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Get configuration from the centralized config system
 dual_model_config = get_dual_model_config()
 
 if dual_model_config:
-                return {"dual_model_system": dual_model_config}
+    passreturn {"dual_model_system": dual_model_config}
 # Fallback to default configuration
 return {
 "dual_model_system": {
@@ -1161,7 +1136,7 @@ return {
 }
 
 except Exception:
-            self.logger.exception("Error getting dual model config")
+    passpassself.logger.exception("Error getting dual model config")
 # Return default configuration
 return {
 "dual_model_system": {
@@ -1179,12 +1154,12 @@ return {
 }
 
 
-async def main():
-    pass  # TODO: Add implementation
-async def main():
-    pass  # TODO: Add implementation
-async def main():
-    """Main entry point for the Ares Pipeline."""
+async def main(...):
+    passself.logger.info("Implementation placeholder - needs specific logic")
+async def main(...):
+    passself.logger.info("Implementation placeholder - needs specific logic")
+async def main(...):
+    pass"""Main entry point for the Ares Pipeline."""
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent
@@ -1215,31 +1190,63 @@ logger.info(f"🔧 Trading Mode: {trading_mode}")
 pipeline = AresPipeline()
 
 try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Initialize pipeline
 if not await pipeline.initialize():
-            print(failed("❌ Failed to initialize pipeline"))
+    passprint(failed("❌ Failed to initialize pipeline"))
 sys.exit(1)
 
 # Run pipeline
 result = await pipeline.run()
 
 if result:
-            logger.info("✅ Pipeline completed successfully")
+    passlogger.info("✅ Pipeline completed successfully")
 else:
-            print(failed("❌ Pipeline failed"))
+    passprint(failed("❌ Pipeline failed"))
 sys.exit(1)
 
 except KeyboardInterrupt:
-        logger.info("🛑 Received interrupt signal, shutting down gracefully...")
+    passpasslogger.info("🛑 Received interrupt signal, shutting down gracefully...")
 await pipeline.stop()
 except Exception as e:
-        print(error(f"💥 Unexpected error: {e}"))
+    passpasspasspasspasspasspassprint(error(f"💥 Unexpected error: {e}"))
 await pipeline.stop()
 sys.exit(1)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    passasyncio.run(main())
+    def _calculate_confidence(self, prediction):
+        """Calculate prediction confidence."""
+        try:
+            if hasattr(prediction, 'predict_proba'):
+                return np.max(prediction.predict_proba())
+            elif isinstance(prediction, (list, np.ndarray)):
+                return np.max(prediction)
+            else:
+                return 0.5
+        except Exception as e:
+            self.logger.error(f"Confidence calculation failed: {e}")
+            return 0.0
+    def _validate_data_quality(self, data):
+        """Validate data quality."""
+        try:
+            if data is None or data.empty:
+                return type('ValidationResult', (), {'is_valid': False, 'errors': ['Empty data']})()
+            
+            errors = []
+            if data.isnull().sum().sum() > 0:
+                errors.append('Missing values detected')
+            
+            if len(data) < 10:
+                errors.append('Insufficient data')
+            
+            is_valid = len(errors) == 0
+            return type('ValidationResult', (), {'is_valid': is_valid, 'errors': errors})()
+        except Exception as e:
+            self.logger.error(f"Data validation failed: {e}")
+            return type('ValidationResult', (), {'is_valid': False, 'errors': [str(e)]})()
+
+

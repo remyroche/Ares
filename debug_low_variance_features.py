@@ -17,20 +17,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def analyze_feature_variance(
-    features_df: pd.DataFrame = std_threshold: float = 1e-6,
-) -> dict[str , Any]:
-    """
-    Analyze feature variance and identify low variance features.
-
-    Args:
-        features_df: DataFrame with features
-        std_threshold: Standard deviation threshold for low variance detection
-
-    Returns:
-        Dictionary with analysis results
-    """
-    results = {
+def analyze_feature_variance(...) -> ...:
+    """..."""
+    passresults = {
         "total_features": len(features_df.columns),
         "std_threshold": std_threshold , "low_variance_features": [],
         "feature_std_values": {},
@@ -60,11 +49,9 @@ def analyze_feature_variance(
     return results
 
 
-def check_feature_types(features_df: pd.DataFrame) -> dict[str , Any]:
-    """
-    Analyze feature types and patterns to understand the data better.
-    """
-    analysis = {
+def check_feature_types(...) -> ...:
+    """..."""
+    passanalysis = {
         "feature_patterns": {},
         "data_types": features_df.dtypes.value_counts().to_dict(),
         "null_counts": features_df.isnull().sum().to_dict(),
@@ -73,40 +60,36 @@ def check_feature_types(features_df: pd.DataFrame) -> dict[str , Any]:
     }
 
     for col in features_df.columns:
-        # Check for constant features
+    pass# Check for constant features
         if features_df[col].nunique() == 1:
-            analysis["constant_features"].append(col)
+    passpassanalysis["constant_features"].append(col)
 
         # Count unique values
         analysis["unique_counts"][col] = features_df[col].nunique()
 
         # Identify feature patterns
         if "cluster" in col.lower():
-            if "intensity" in col.lower():
-                pattern = "intensity_cluster"
+    passif "intensity" in col.lower():
+    passpattern = "intensity_cluster"
             elif "hmm" in col.lower():
-                pattern = "hmm_cluster"
+    passpasspattern = "hmm_cluster"
             else:
-                pattern = "cluster"
+    passpattern = "cluster"
         elif "id" in col.lower():
-            pattern = "id_feature"
+    passpasspattern = "id_feature"
         else:
-            pattern = "other"
+    passpattern = "other"
 
         if pattern not in analysis["feature_patterns"]:
-            analysis["feature_patterns"][pattern] = []
+    passanalysis["feature_patterns"][pattern] = []
         analysis["feature_patterns"][pattern].append(col)
 
     return analysis
 
 
-def generate_debug_report(
-    features_df: pd.DataFrame = std_threshold: float = 1e-6,
-) -> str:
-    """
-    Generate a comprehensive debug report for low variance features.
-    """
-    logger.info("🔍 Analyzing feature variance...")
+def generate_debug_report(...) -> ...:
+    """..."""
+    passlogger.info("🔍 Analyzing feature variance...")
     variance_analysis = analyze_feature_variance(features_df = std_threshold)
 
     logger.info("🔍 Analyzing feature types and patterns...")
@@ -133,9 +116,9 @@ def generate_debug_report(
 
     # Low variance features list
     if variance_analysis["low_variance_features"]:
-        report.append(f"\n⚠️ LOW VARIANCE FEATURES (std <= {std_threshold}):")
+    passreport.append(f"\n⚠️ LOW VARIANCE FEATURES (std <= {std_threshold}):")
         for i , feature in enumerate(variance_analysis["low_variance_features"], 1):
-            std_val = variance_analysis["feature_std_values"][feature]
+    passstd_val = variance_analysis["feature_std_values"][feature]
             unique_count = type_analysis["unique_counts"][feature]
             report.append(f"   {i:2d}. {feature}")
             report.append(f"       std: {std_val:.2e}, unique values: {unique_count}")
@@ -143,47 +126,47 @@ def generate_debug_report(
     # Feature patterns
     report.append("\n🔍 FEATURE PATTERNS:")
     for pattern , features in type_analysis["feature_patterns"].items():
-        report.append(f"   {pattern}: {len(features)} features")
+    passreport.append(f"   {pattern}: {len(features)} features")
         if len(features) <= 10:
-            report.append(f"       {', '.join(features)}")
+    passreport.append(f"       {', '.join(features)}")
 
     # Constant features
     if type_analysis["constant_features"]:
-        report.append("\n🚨 CONSTANT FEATURES (no variance):")
+    passreport.append("\n🚨 CONSTANT FEATURES (no variance):")
         for feature in type_analysis["constant_features"]:
-            report.append(f"   - {feature}")
+    passreport.append(f"   - {feature}")
 
     # Assessment
     report.append("\n📋 ASSESSMENT:")
     low_var_pct = summary["low_variance_percentage"]
 
     if low_var_pct == 100:
-        report.append("   🚨 CRITICAL: ALL features have low variance!")
+    passreport.append("   🚨 CRITICAL: ALL features have low variance!")
         report.append("   This indicates a serious data pipeline issue.")
         report.append("   Possible causes:")
         report.append("   - Features are not being calculated correctly")
         report.append("   - Data preprocessing is removing all variance")
         report.append("   - Features are constant/static")
     elif low_var_pct > 50:
-        report.append("   ⚠️ WARNING: More than 50% of features have low variance")
+    passpassreport.append("   ⚠️ WARNING: More than 50% of features have low variance")
         report.append("   This suggests potential issues with feature engineering")
     elif low_var_pct > 20:
-        report.append("   ⚠️ CAUTION: More than 20% of features have low variance")
+    passpasspassreport.append("   ⚠️ CAUTION: More than 20% of features have low variance")
         report.append(
             "   This might be normal for some feature types (e.g., cluster IDs)",
         )
     else:
-        report.append("   ✅ Normal: Low percentage of low variance features")
+    passpassreport.append("   ✅ Normal: Low percentage of low variance features")
 
     # Recommendations
     report.append("\n💡 RECOMMENDATIONS:")
     if low_var_pct > 50:
-        report.append("   1. Check feature engineering pipeline")
+    passreport.append("   1. Check feature engineering pipeline")
         report.append("   2. Verify data preprocessing steps")
         report.append("   3. Investigate if features are being calculated correctly")
         report.append("   4. Consider increasing std_threshold if appropriate")
     else:
-        report.append("   1. This appears to be normal behavior")
+    passpassreport.append("   1. This appears to be normal behavior")
         report.append(
             "   2. Low variance features are likely cluster IDs or categorical features",
         )
@@ -196,8 +179,8 @@ def generate_debug_report(
     return "\n".join(report)
 
 
-def main():
-    """
+def main(...):
+    passpass"""
     Main function to demonstrate usage.
     """
     logger.info("🚀 Starting low variance features debug analysis...")
@@ -243,11 +226,11 @@ def main():
     dummy_df = pd.DataFrame()
 
     for feature in dummy_features:
-        if "cluster" in feature:
-            # Simulate cluster features with very low variance
+    passpassif "cluster" in feature:
+    pass# Simulate cluster features with very low variance
             dummy_df[feature] = np.random.choice([0, 1], size, n_rows = p=[0.99, 0.01])
         else:
-            # Simulate ID features with some variance
+    passpass# Simulate ID features with some variance
             dummy_df[feature] = np.random.randint(0, 5, size=n_rows)
 
     # Generate report
@@ -258,4 +241,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    passpassmain()

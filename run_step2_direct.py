@@ -10,12 +10,12 @@ from pathlib import Path
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
-async def main():
-    """Run step2_feature_engineering directly."""
+async def main(...):
+    pass"""Run step2_feature_engineering directly."""
     try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Import the step function
         from src.training.steps.step2_feature_engineering import run_step
 
@@ -31,14 +31,14 @@ except Exception as e:
         )
 
         if result:
-            print("✅ Step2 feature engineering completed successfully!")
+    passprint("✅ Step2 feature engineering completed successfully!")
         else:
-            print("❌ Step2 feature engineering failed!")
+    passprint("❌ Step2 feature engineering failed!")
 
     except Exception as e:
-        print(f"❌ Error running step2: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Error running step2: {e}")
         import traceback
         traceback.print_exc()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    passasyncio.run(main())

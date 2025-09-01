@@ -6,14 +6,9 @@ from src.config.constants import DEFAULT_LOOKBACK_DAYS
 from src.config.environment import get_environment_settings
 
 
-def get_training_config() -> dict[str, Any]:
-    """Get the complete training configuration.
-
-Returns:
-        dict: Complete training configuration
-
-"""
-get_environment_settings()
+def get_training_config(...) -> ...:
+    """..."""
+    passget_environment_settings()
 
 return {
 # --- Model Training Configuration ---
@@ -194,78 +189,43 @@ return {
 }
 
 
-def get_training_pipeline_config() -> dict[str, Any]:
-    """Get training pipeline configuration.
-
-Returns:
-        dict: Training pipeline configuration
-
-"""
-training_config = get_training_config()
+def get_training_pipeline_config(...) -> ...:
+    """..."""
+    passtraining_config = get_training_config()
 return training_config.get("training_pipeline", {})
 
 
-def get_model_training_config() -> dict[str, Any]:
-    """Get model training configuration.
-
-Returns:
-        dict: Model training configuration
-
-"""
-training_config = get_training_config()
+def get_model_training_config(...) -> ...:
+    """..."""
+    passtraining_config = get_training_config()
 return training_config.get("MODEL_TRAINING", {})
 
 
-def get_data_config() -> dict[str, Any]:
-    """Get data configuration.
-
-Returns:
-        dict: Data configuration
-
-"""
-training_config = get_training_config()
+def get_data_config(...) -> ...:
+    """..."""
+    passtraining_config = get_training_config()
 return training_config.get("DATA_CONFIG", {})
 
 
-def get_enhanced_training_config() -> dict[str, Any]:
-    """Get enhanced training configuration.
-
-Returns:
-        dict: Enhanced training configuration
-
-"""
-training_config = get_training_config()
+def get_enhanced_training_config(...) -> ...:
+    """..."""
+    passtraining_config = get_training_config()
 return training_config.get("ENHANCED_TRAINING", {})
 
 
-def get_hmm_lm_config() -> dict[str, Any]:
-    """Get HMM-LM model configuration.
-
-Returns:
-        dict: HMM-LM model configuration
-
-"""
-training_config = get_training_config()
+def get_hmm_lm_config(...) -> ...:
+    """..."""
+    passtraining_config = get_training_config()
 return training_config.get("HMM_LM", {})
 
 
-def get_feature_engineering_config() -> dict[str, Any]:
-    """Get feature engineering configuration.
-
-Returns:
-        dict: Feature engineering configuration
-
-"""
-training_config = get_training_config()
+def get_feature_engineering_config(...) -> ...:
+    """..."""
+    passtraining_config = get_training_config()
 return training_config.get("FEATURE_ENGINEERING", {})
 
 
-def get_validation_config() -> dict[str, Any]:
-    """Get validation configuration.
-
-Returns:
-        dict: Validation configuration
-
-"""
-training_config = get_training_config()
+def get_validation_config(...) -> ...:
+    """..."""
+    passtraining_config = get_training_config()
 return training_config.get("VALIDATION", {})

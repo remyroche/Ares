@@ -24,13 +24,13 @@ logger = system_logger.getChild("UnifiedRegimeIntelligenceRuntime")
 
 
 class UnifiedRegimeIntelligenceRuntime:
-    """Runtime for unified regime intelligence with S/R level monitoring."""
+    passpasspass"""Runtime for unified regime intelligence with S/R level monitoring."""
 
-def __init__(self, config: dict[str, Any]):
-    def __init__(self, config: dict[str, Any]):
-    def __init__(self, config: dict[str, Any]):
-    def __init__(self, config: dict[str, Any]):
-        self.config = config
+def __init__(...):
+    passpasspassdef __init__(...):
+    passdef __init__(...):
+    passdef __init__(...):
+    passself.config = config
 self.logger = logger
 
 # Initialize SRBreakoutPredictor for S/R monitoring with optimized parameters
@@ -84,40 +84,40 @@ exceptions=(Exception,),
 default_return=False,
 context="unified regime intelligence initialization",
 )
-async def initialize(self) -> bool:
-        """Initialize the unified regime intelligence runtime."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+async def initialize(...) -> ...:
+    passpass"""..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 self.logger.info("Initializing Unified Regime Intelligence Runtime...")
 
 # Initialize SR predictor
 sr_init_success = await self.sr_predictor.initialize()
 if not sr_init_success:
-                self.logger.warning("Failed to initialize SRBreakoutPredictor")
+    passself.logger.warning("Failed to initialize SRBreakoutPredictor")
 
 # Load S/R outcome model if available
 await self._load_sr_outcome_model()
 
 # Initialize unified step (includes SRBreakoutPredictor)
 if not await self.unified_step.initialize():
-                self.logger.error("Failed to initialize unified step")
+    passself.logger.error("Failed to initialize unified step")
 return False
 
 # Load model
 if not await self._load_model():
-                self.logger.error("Failed to load unified regime intelligence model")
+    passself.logger.error("Failed to load unified regime intelligence model")
 return False
 
 # Load label encoders
 if not await self._load_label_encoders():
-                self.logger.error("Failed to load label encoders")
+    passself.logger.error("Failed to load label encoders")
 return False
 
 # Load configuration
 if not await self._load_configuration():
-                self.logger.error("Failed to load configuration")
+    passself.logger.error("Failed to load configuration")
 return False
 
 self.is_initialized = True
@@ -127,29 +127,29 @@ self.logger.info(
 return True
 
 except Exception as e:
-            self.logger.error(
+    passpasspasspasspasspasspassself.logger.error(
 f"Failed to initialize Unified Regime Intelligence Runtime: {e}"
 )
 return False
 
-async def _load_model(self) -> bool:
-        """Load the trained unified regime intelligence model."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+async def _load_model(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 model_path = os.path.join(self.artifacts_dir, "final_model.pth")
 if not os.path.exists(model_path):
-                self.logger.error(f"Model file not found: {model_path}")
+    passself.logger.error(f"Model file not found: {model_path}")
 return False
 
 # Load model configuration
 config_path = os.path.join(self.artifacts_dir, "config.json")
 if os.path.exists(config_path):
-                with open(config_path, "r") as f:
-                    model_config = json.load(f)
+    passwith open(config_path, "r") as f:
+    passmodel_config = json.load(f)
 else:
-                model_config = self.config
+    passmodel_config = self.config
 
 # Initialize model
 self.model = MultiTimeframeHMMEncoder(model_config)
@@ -164,42 +164,42 @@ self.logger.info("Unified regime intelligence model loaded successfully")
 return True
 
 except Exception as e:
-            self.logger.error(f"Error loading model: {e}")
+    passpasspasspasspasspasspasspassself.logger.error(f"Error loading model: {e}")
 return False
 
-async def _load_label_encoders(self) -> bool:
-        """Load label encoders for regime, transition, and TPSL predictions."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+async def _load_label_encoders(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 encoder_names = ["regime", "intensity", "transition", "tpsl"]
 
 for name in encoder_names:
-                encoder_path = os.path.join(self.artifacts_dir, f"{name}_encoder.pkl")
+    passencoder_path = os.path.join(self.artifacts_dir, f"{name}_encoder.pkl")
 if os.path.exists(encoder_path):
-                    with open(encoder_path, "rb") as f:
-                        self.label_encoders[name] = pickle.load(f)
+    passwith open(encoder_path, "rb") as f:
+    passself.label_encoders[name] = pickle.load(f)
 self.logger.info(f"Loaded {name} label encoder")
 else:
-                    self.logger.warning(f"Label encoder not found: {encoder_path}")
+    passself.logger.warning(f"Label encoder not found: {encoder_path}")
 
 return True
 
 except Exception as e:
-            self.logger.error(f"Error loading label encoders: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error loading label encoders: {e}")
 return False
 
-async def _load_configuration(self) -> bool:
-        """Load runtime configuration."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+async def _load_configuration(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 config_path = os.path.join(self.artifacts_dir, "config.json")
 if os.path.exists(config_path):
-                with open(config_path, "r") as f:
-                    saved_config = json.load(f)
+    passwith open(config_path, "r") as f:
+    passsaved_config = json.load(f)
 
 # Update configuration with saved values
 self.timeframes = saved_config.get("timeframes", self.timeframes)
@@ -212,15 +212,15 @@ self.logger.info("Runtime configuration loaded successfully")
 return True
 
 except Exception as e:
-            self.logger.error(f"Error loading configuration: {e}")
+    passpasspasspasspasspasspasspassself.logger.error(f"Error loading configuration: {e}")
 return False
 
-async def _load_sr_outcome_model(self) -> None:
-        """Load the trained S/R outcome model."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+async def _load_sr_outcome_model(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 model_path = self.config.get(
 "sr_outcome_model_path", "models/sr_outcome/ensemble_model.pkl"
 )
@@ -229,8 +229,8 @@ import os
 import pickle
 
 if os.path.exists(model_path):
-                with open(model_path, "rb") as f:
-                    self.sr_outcome_model = pickle.load(f)
+    passwith open(model_path, "rb") as f:
+    passself.sr_outcome_model = pickle.load(f)
 
 # Load supporting artifacts
 scaler_path = model_path.replace(
@@ -241,46 +241,31 @@ encoder_path = model_path.replace(
 )
 
 if os.path.exists(scaler_path):
-                    with open(scaler_path, "rb") as f:
-                        self.sr_scaler = pickle.load(f)
+    passwith open(scaler_path, "rb") as f:
+    passself.sr_scaler = pickle.load(f)
 
 if os.path.exists(encoder_path):
-                    with open(encoder_path, "rb") as f:
-                        self.sr_encoder = pickle.load(f)
+    passwith open(encoder_path, "rb") as f:
+    passself.sr_encoder = pickle.load(f)
 
 self.logger.info("✅ S/R outcome model loaded successfully")
 else:
-                self.logger.warning(f"S/R outcome model not found at {model_path}")
+    passself.logger.warning(f"S/R outcome model not found at {model_path}")
 
 except Exception as e:
-            self.logger.error(f"Error loading S/R outcome model: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error loading S/R outcome model: {e}")
 
 @handle_errors(
 exceptions=(Exception,),
 default_return={},
 context="market analysis with S/R monitoring",
 )
-async def analyze_market_with_sr_monitoring(
-self,
-market_data: pd.DataFrame,
-current_price: float,
-regime_analysis: dict[str, Any],
-) -> dict[str, Any]:
-        """
-Perform market analysis with S/R level monitoring.
-
-Args:
-            market_data: Recent market data
-current_price: Current market price
-regime_analysis: Existing regime analysis results
-
-Returns:
-            dict: Enhanced analysis with S/R monitoring results
-"""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+async def analyze_market_with_sr_monitoring(...) -> ...:
+    pass"""..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 # Perform base regime analysis
 analysis_result = {
 **regime_analysis,
@@ -289,7 +274,7 @@ analysis_result = {
 }
 
 if not self.enable_sr_monitoring:
-                return analysis_result
+    passreturn analysis_result
 
 # Check S/R proximity using centralized logic
 sr_context = await self.sr_predictor.get_sr_context(
@@ -300,7 +285,7 @@ current_price=current_price, sr_context=sr_context
 )
 
 if is_near_sr:
-                # Get detailed S/R proximity information
+    pass# Get detailed S/R proximity information
 sr_proximity_details = self.sr_predictor.get_sr_proximity_details(
 current_price=current_price, sr_context=sr_context
 )
@@ -328,12 +313,12 @@ sr_outcome, sr_proximity_details
 analysis_result["sr_opportunity_detected"] = opportunity_detected
 
 if opportunity_detected:
-                    self.logger.info(
+    passself.logger.info(
 f"🚨 S/R Opportunity Detected: {sr_outcome.get('outcome', 'unknown')} "
 f"(confidence: {sr_outcome.get('confidence', 0):.2f})"
 )
 else:
-                analysis_result["sr_monitoring"] = {
+    passanalysis_result["sr_monitoring"] = {
 "is_near_sr_level": False,
 "sr_proximity_details": {},
 "sr_outcome": None,
@@ -344,7 +329,7 @@ else:
 return analysis_result
 
 except Exception as e:
-            self.logger.error(f"Error in market analysis with S/R monitoring: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error in market analysis with S/R monitoring: {e}")
 return {
 **regime_analysis,
 "sr_monitoring": {
@@ -355,14 +340,12 @@ return {
 "sr_opportunity_detected": False,
 }
 
-def _generate_sr_recommendation(
-self, sr_outcome: dict[str, Any], sr_proximity_details: dict[str, Any]
-) -> str:
-        """Generate S/R recommendation for the Tactician."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+def _generate_sr_recommendation(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 outcome = sr_outcome.get("outcome", "consolidation")
 confidence = sr_outcome.get("confidence", 0)
 
@@ -378,56 +361,45 @@ abs(current_price - nearest_resistance) / current_price
 distance_to_support = abs(current_price - nearest_support) / current_price
 
 if outcome == "breakout" and confidence >= 0.8:
-                if distance_to_resistance < distance_to_support:
-                    return "STRONG_BREAKOUT_SIGNAL - Breaking out from RESISTANCE -> SHORT position with tight stops"
+    passif distance_to_resistance < distance_to_support:
+    passreturn "STRONG_BREAKOUT_SIGNAL - Breaking out from RESISTANCE -> SHORT position with tight stops"
 else:
-                    return "STRONG_BREAKOUT_SIGNAL - Breaking out from SUPPORT -> LONG position with tight stops"
+    passpassreturn "STRONG_BREAKOUT_SIGNAL - Breaking out from SUPPORT -> LONG position with tight stops"
 elif outcome == "breakout" and confidence >= 0.6:
-                if distance_to_resistance < distance_to_support:
-                    return "BREAKOUT_LIKELY - Breaking out from RESISTANCE -> Monitor for SHORT entry confirmation"
+    passpasspassif distance_to_resistance < distance_to_support:
+    passreturn "BREAKOUT_LIKELY - Breaking out from RESISTANCE -> Monitor for SHORT entry confirmation"
 else:
-                    return "BREAKOUT_LIKELY - Breaking out from SUPPORT -> Monitor for LONG entry confirmation"
+    passpassreturn "BREAKOUT_LIKELY - Breaking out from SUPPORT -> Monitor for LONG entry confirmation"
 elif outcome == "rebounce" and confidence >= 0.8:
-                if distance_to_resistance < distance_to_support:
-                    return "STRONG_REBOUNCE_SIGNAL - Rebouncing from RESISTANCE -> LONG position with tight stops"
+    passpasspassif distance_to_resistance < distance_to_support:
+    passreturn "STRONG_REBOUNCE_SIGNAL - Rebouncing from RESISTANCE -> LONG position with tight stops"
 else:
-                    return "STRONG_REBOUNCE_SIGNAL - Rebouncing from SUPPORT -> SHORT position with tight stops"
+    passpassreturn "STRONG_REBOUNCE_SIGNAL - Rebouncing from SUPPORT -> SHORT position with tight stops"
 elif outcome == "rebounce" and confidence >= 0.6:
-                if distance_to_resistance < distance_to_support:
-                    return "REBOUNCE_LIKELY - Rebouncing from RESISTANCE -> Monitor for LONG entry confirmation"
+    passpasspassif distance_to_resistance < distance_to_support:
+    passreturn "REBOUNCE_LIKELY - Rebouncing from RESISTANCE -> Monitor for LONG entry confirmation"
 else:
-                    return "REBOUNCE_LIKELY - Rebouncing from SUPPORT -> Monitor for SHORT entry confirmation"
+    passpassreturn "REBOUNCE_LIKELY - Rebouncing from SUPPORT -> Monitor for SHORT entry confirmation"
 elif outcome == "consolidation" and confidence >= 0.7:
-                return "CONSOLIDATION_EXPECTED - Avoid directional trades, consider range strategies"
+    passpasspassreturn "CONSOLIDATION_EXPECTED - Avoid directional trades, consider range strategies"
 else:
-                return "UNCERTAIN_OUTCOME - Low confidence, wait for clearer signals"
+    passreturn "UNCERTAIN_OUTCOME - Low confidence, wait for clearer signals"
 
 except Exception as e:
-            self.logger.error(f"Error generating S/R recommendation: {e}")
+    passpasspasspasspasspasspasspassself.logger.error(f"Error generating S/R recommendation: {e}")
 return "ERROR_GENERATING_RECOMMENDATION"
 
 @handle_errors(
 exceptions=(Exception,), default_return={}, context="S/R opportunity alert"
 )
-async def get_sr_opportunity_alert(
-self, market_data: pd.DataFrame, current_price: float
-) -> dict[str, Any]:
-        """
-Get S/R opportunity alert for the Tactician.
-
-Args:
-            market_data: Recent market data
-current_price: Current market price
-
-Returns:
-            dict: S/R opportunity alert with actionable information
-"""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+async def get_sr_opportunity_alert(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 if not self.enable_sr_monitoring:
-                return {"opportunity_detected": False}
+    passreturn {"opportunity_detected": False}
 
 # Get S/R context and outcome
 sr_context = await self.sr_predictor.get_sr_context(
@@ -438,7 +410,7 @@ current_price=current_price, sr_context=sr_context
 )
 
 if not is_near_sr:
-                return {"opportunity_detected": False}
+    passreturn {"opportunity_detected": False}
 
 # Predict S/R outcome using centralized logic
 sr_outcome = await self.sr_predictor.predict_sr_outcome(
@@ -451,7 +423,7 @@ sr_outcome.get("confidence", 0) >= self.sr_alert_threshold
 )
 
 if not opportunity_detected:
-                return {"opportunity_detected": False}
+    passreturn {"opportunity_detected": False}
 
 # Generate detailed alert for Tactician
 alert = {
@@ -470,17 +442,15 @@ sr_outcome, sr_context
 return alert
 
 except Exception as e:
-            self.logger.error(f"Error getting S/R opportunity alert: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error getting S/R opportunity alert: {e}")
 return {"opportunity_detected": False, "error": str(e)}
 
-def _generate_tactician_recommendations(
-self, sr_outcome: dict[str, Any], sr_context: dict[str, Any]
-) -> dict[str, Any]:
-        """Generate specific recommendations for the Tactician."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+def _generate_tactician_recommendations(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 outcome = sr_outcome.get("outcome", "consolidation")
 confidence = sr_outcome.get("confidence", 0)
 current_price = sr_context.get("current_price", 0)
@@ -505,12 +475,12 @@ recommendations = {
 }
 
 if outcome == "breakout" and confidence >= 0.8:
-                # Determine position direction based on which level we're breaking out from
+    pass# Determine position direction based on which level we're breaking out from
 if distance_to_resistance < distance_to_support:
-                    # Breaking out from resistance = SHORT position
+    pass# Breaking out from resistance = SHORT position
 position_direction = "SHORT"
 else:
-                    # Breaking out from support = LONG position
+    pass# Breaking out from support = LONG position
 position_direction = "LONG"
 
 recommendations.update(
@@ -527,11 +497,11 @@ confidence * 0.8, 0.6
 }
 )
 elif outcome == "breakout" and confidence >= 0.6:
-                # Determine position direction based on which level we're breaking out from
+    passpass# Determine position direction based on which level we're breaking out from
 if distance_to_resistance < distance_to_support:
-                    position_direction = "SHORT"
+    passposition_direction = "SHORT"
 else:
-                    position_direction = "LONG"
+    passposition_direction = "LONG"
 
 recommendations.update(
 {
@@ -543,12 +513,12 @@ recommendations.update(
 }
 )
 elif outcome == "rebounce" and confidence >= 0.8:
-                # Determine position direction based on which level we're rebouncing from
+    passpass# Determine position direction based on which level we're rebouncing from
 if distance_to_resistance < distance_to_support:
-                    # Rebouncing from resistance = LONG position (price bounces down from resistance)
+    pass# Rebouncing from resistance = LONG position (price bounces down from resistance)
 position_direction = "LONG"
 else:
-                    # Rebouncing from support = SHORT position (price bounces up from support)
+    pass# Rebouncing from support = SHORT position (price bounces up from support)
 position_direction = "SHORT"
 
 recommendations.update(
@@ -563,11 +533,11 @@ recommendations.update(
 }
 )
 elif outcome == "rebounce" and confidence >= 0.6:
-                # Determine position direction based on which level we're rebouncing from
+    passpass# Determine position direction based on which level we're rebouncing from
 if distance_to_resistance < distance_to_support:
-                    position_direction = "LONG"
+    passposition_direction = "LONG"
 else:
-                    position_direction = "SHORT"
+    passposition_direction = "SHORT"
 
 recommendations.update(
 {
@@ -579,7 +549,7 @@ recommendations.update(
 }
 )
 elif outcome == "consolidation" and confidence >= 0.7:
-                recommendations.update(
+    passpassrecommendations.update(
 {
 "action": "MONITOR",
 "position_direction": "NONE",
@@ -591,7 +561,7 @@ elif outcome == "consolidation" and confidence >= 0.7:
 return recommendations
 
 except Exception as e:
-            self.logger.error(f"Error generating Tactician recommendations: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error generating Tactician recommendations: {e}")
 return {"action": "MONITOR", "position_direction": "NONE"}
 
 @handle_errors(
@@ -599,33 +569,14 @@ exceptions=(Exception,),
 default_return=None,
 context="unified regime intelligence prediction",
 )
-async def predict(
-self,
-hmm_states: Dict[str, np.ndarray],
-market_features: np.ndarray,
-market_data: pd.DataFrame,
-current_price: float,
-timestamp: datetime = None,
-) -> Optional[Dict[str, Any]]:
-        """
-Make unified regime intelligence predictions with integrated S/R analysis.
-
-Args:
-            hmm_states: HMM states for each timeframe
-market_features: Market features
-market_data: Raw market data for S/R analysis
-current_price: Current market price
-timestamp: Current timestamp (optional)
-
-Returns:
-            dict: Unified predictions with regime, transition, TPSL, and S/R information
-"""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+async def predict(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 if not self.is_initialized:
-                self.logger.error("Runtime not initialized")
+    passself.logger.error("Runtime not initialized")
 return None
 
 # Use unified step for integrated predictions (includes S/R analysis)
@@ -634,7 +585,7 @@ hmm_states, market_features, market_data, current_price
 )
 
 if not integrated_prediction:
-                self.logger.error("Failed to get integrated prediction")
+    passpassself.logger.error("Failed to get integrated prediction")
 return None
 
 # Enhance predictions with intensity analysis
@@ -648,20 +599,18 @@ await self._update_runtime_state(enhanced_prediction)
 return enhanced_prediction
 
 except Exception as e:
-            self.logger.error(f"Error making prediction: {e}")
+    passpasspasspasspasspasspasspassself.logger.error(f"Error making prediction: {e}")
 return None
 
-async def _prepare_inputs(
-self, hmm_states: Dict[str, np.ndarray], market_features: np.ndarray
-) -> Optional[Dict[str, Any]]:
-        """Prepare inputs for the unified model."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+async def _prepare_inputs(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 # Ensure we have the required sequence length
 if market_features.shape[0] < self.sequence_length:
-                self.logger.warning(
+    passself.logger.warning(
 f"Insufficient features: {market_features.shape[0]} < {self.sequence_length}"
 )
 return None
@@ -672,47 +621,45 @@ recent_features = market_features[-self.sequence_length :]
 # Prepare HMM states for each timeframe
 prepared_hmm_states = {}
 for tf in self.timeframes:
-                if tf in hmm_states:
-                    tf_states = hmm_states[tf]
+    passif tf in hmm_states:
+    passtf_states = hmm_states[tf]
 if len(tf_states) >= self.sequence_length:
-                        prepared_hmm_states[tf] = tf_states[-self.sequence_length :]
+    passprepared_hmm_states[tf] = tf_states[-self.sequence_length :]
 else:
-                        self.logger.warning(f"Insufficient HMM states for {tf}")
+    passself.logger.warning(f"Insufficient HMM states for {tf}")
 return None
 
 return {"hmm_states": prepared_hmm_states, "features": recent_features}
 
 except Exception as e:
-            self.logger.error(f"Error preparing inputs: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error preparing inputs: {e}")
 return None
 
-async def _enhance_predictions(
-self, prediction: Dict[str, Any], current_price: float, timestamp: datetime
-) -> Dict[str, Any]:
-        """Enhance raw predictions with additional context and analysis."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+async def _enhance_predictions(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 enhanced = prediction.copy()
 
 # Decode regime prediction
 if "regime" in prediction and "regime" in self.label_encoders:
-                regime_pred = prediction["regime"]["prediction"]
+    passregime_pred = prediction["regime"]["prediction"]
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 regime_name = self.label_encoders["regime"].inverse_transform(
 [regime_pred]
 )[0]
 enhanced["regime"]["name"] = regime_name
 except:
-                    enhanced["regime"]["name"] = f"REGIME_{regime_pred}"
+    passenhanced["regime"]["name"] = f"REGIME_{regime_pred}"
 
 # Decode intensity scores
 if "intensity" in prediction:
-                enhanced["intensity"] = {
+    passenhanced["intensity"] = {
 "scores": prediction["intensity"].get("scores", []),
 "top_regimes": prediction["intensity"].get("top_regimes", []),
 "transition_analysis": prediction["intensity"].get(
@@ -722,17 +669,17 @@ if "intensity" in prediction:
 
 # Decode TPSL prediction
 if "tpsl" in prediction and "tpsl" in self.label_encoders:
-                tpsl_pred = prediction["tpsl"]["prediction"]
+    passtpsl_pred = prediction["tpsl"]["prediction"]
 try:
-    # Exception handling placeholder - implement specific error handling as needed
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 tpsl_name = self.label_encoders["tpsl"].inverse_transform(
 [tpsl_pred]
 )[0]
 enhanced["tpsl"]["name"] = tpsl_name
 except:
-                    enhanced["tpsl"]["name"] = prediction["tpsl"].get(
+    passenhanced["tpsl"]["name"] = prediction["tpsl"].get(
 "direction", "hold"
 )
 
@@ -747,17 +694,15 @@ enhanced["timestamp"] = timestamp.isoformat()
 return enhanced
 
 except Exception as e:
-            self.logger.error(f"Error enhancing predictions: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error enhancing predictions: {e}")
 return prediction
 
-async def _determine_expert_activation(
-self, prediction: Dict[str, Any]
-) -> Dict[str, Any]:
-        """Determine which expert models should be activated based on intensity-based regime analysis."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+async def _determine_expert_activation(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 activation = {
 "primary_expert": None,
 "secondary_experts": [],
@@ -776,7 +721,7 @@ intensity_scores = intensity_data.get("scores", [])
 top_regimes = intensity_data.get("top_regimes", [])
 
 if len(top_regimes) >= 2:
-                # We're "in the middle" of several regimes
+    passpass# We're "in the middle" of several regimes
 activation["intensity_analysis"] = {
 "scenario": "multiple_regimes",
 "top_regimes": top_regimes,
@@ -797,7 +742,7 @@ f" + {expert_name} (intensity={intensity:.2f})"
 
 # Set primary expert to highest intensity regime
 if top_regimes:
-                    primary_regime = top_regimes[0]
+    passprimary_regime = top_regimes[0]
 activation["primary_expert"] = (
 f"REGIME_{primary_regime['regime_id']}_EXPERT"
 )
@@ -807,31 +752,31 @@ f"Primary: {activation['primary_expert']} (intensity={activation['confidence']:.
 )
 
 else:
-                # Single dominant regime
+    pass# Single dominant regime
 if regime_conf >= self.regime_confidence_threshold:
-                    # Map regime to expert based on step01_7 archetype descriptions
+    pass# Map regime to expert based on step01_7 archetype descriptions
 if "BULL" in regime_name or "TREND" in regime_name:
-                        activation["primary_expert"] = "BULL_TREND_EXPERT"
+    passactivation["primary_expert"] = "BULL_TREND_EXPERT"
 activation["activation_reason"] = (
 f"Bullish regime detected: {regime_name}"
 )
 elif "BEAR" in regime_name:
-                        activation["primary_expert"] = "BEAR_TREND_EXPERT"
+    passpassactivation["primary_expert"] = "BEAR_TREND_EXPERT"
 activation["activation_reason"] = (
 f"Bearish regime detected: {regime_name}"
 )
 elif "SIDEWAYS" in regime_name or "RANGE" in regime_name:
-                        activation["primary_expert"] = "SIDEWAYS_EXPERT"
+    passpassactivation["primary_expert"] = "SIDEWAYS_EXPERT"
 activation["activation_reason"] = (
 f"Sideways regime detected: {regime_name}"
 )
 elif "VOLATILITY" in regime_name:
-                        activation["primary_expert"] = "VOLATILITY_EXPERT"
+    passpassactivation["primary_expert"] = "VOLATILITY_EXPERT"
 activation["activation_reason"] = (
 f"Volatile regime detected: {regime_name}"
 )
 else:
-                        activation["primary_expert"] = "GENERAL_EXPERT"
+    passactivation["primary_expert"] = "GENERAL_EXPERT"
 activation["activation_reason"] = (
 f"General regime: {regime_name}"
 )
@@ -841,7 +786,7 @@ activation["confidence"] = regime_conf
 # Add transition experts when intensity changes are detected
 transition_prob = prediction.get("transition", {}).get("probability", 0.0)
 if transition_prob >= self.transition_threshold:
-                activation["secondary_experts"].append("TRANSITION_EXPERT")
+    passactivation["secondary_experts"].append("TRANSITION_EXPERT")
 activation["activation_reason"] += (
 f" + Transition expert (P={transition_prob:.2f})"
 )
@@ -854,14 +799,14 @@ activation["activation_reason"] += (
 
 # Add TPSL-based direction information
 if tpsl_direction != "hold":
-                activation["activation_reason"] += (
+    passactivation["activation_reason"] += (
 f" + TPSL direction: {tpsl_direction}"
 )
 
 return activation
 
 except Exception as e:
-            self.logger.error(f"Error determining expert activation: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error determining expert activation: {e}")
 return {
 "primary_expert": None,
 "secondary_experts": [],
@@ -869,16 +814,16 @@ return {
 "confidence": 0.0,
 }
 
-async def _update_runtime_state(self, prediction: Dict[str, Any]) -> None:
-        """Update runtime state with current prediction."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+async def _update_runtime_state(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 # Update current regime
 regime_name = prediction.get("regime", {}).get("name", "UNKNOWN")
 if regime_name != self.current_regime:
-                self.logger.info(
+    passself.logger.info(
 f"Regime change detected: {self.current_regime} -> {regime_name}"
 )
 self.current_regime = regime_name
@@ -896,7 +841,7 @@ self.regime_history.append(
 
 # Keep only recent history
 if len(self.regime_history) > 100:
-                self.regime_history = self.regime_history[-100:]
+    passself.regime_history = self.regime_history[-100:]
 
 # Update transition probability
 self.transition_probability = prediction.get("transition", {}).get(
@@ -907,11 +852,11 @@ self.transition_probability = prediction.get("transition", {}).get(
 self.tpsl_direction = prediction.get("tpsl", {}).get("direction", "hold")
 
 except Exception as e:
-            self.logger.error(f"Error updating runtime state: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error updating runtime state: {e}")
 
-def get_current_state(self) -> Dict[str, Any]:
-        """Get current runtime state."""
-return {
+def get_current_state(...) -> ...:
+    """..."""
+    passreturn {
 "current_regime": self.current_regime,
 "transition_probability": self.transition_probability,
 "tpsl_direction": self.tpsl_direction,
@@ -919,14 +864,14 @@ return {
 "is_initialized": self.is_initialized,
 }
 
-def get_performance_metrics(self) -> Dict[str, Any]:
-        """Get performance metrics for the unified model."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
+def get_performance_metrics(...) -> ...:
+    """..."""
+    passtry:
+    pass# Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
+    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
 if not self.regime_history:
-                return {"error": "No regime history available"}
+    passreturn {"error": "No regime history available"}
 
 # Calculate regime stability
 recent_regimes = [entry["regime"] for entry in self.regime_history[-20:]]
@@ -950,19 +895,19 @@ return {
 }
 
 except Exception as e:
-            self.logger.error(f"Error calculating performance metrics: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"Error calculating performance metrics: {e}")
 return {"error": str(e)}
 
-def _calculate_regime_duration(self) -> int:
-        """Calculate how long the current regime has been active."""
-if not self.regime_history or not self.current_regime:
-            return 0
+def _calculate_regime_duration(...) -> ...:
+    """..."""
+    passif not self.regime_history or not self.current_regime:
+    passreturn 0
 
 duration = 0
 for entry in reversed(self.regime_history):
-            if entry["regime"] == self.current_regime:
-                duration += 1
+    passif entry["regime"] == self.current_regime:
+    passduration += 1
 else:
-                break
+    passbreak
 
 return duration

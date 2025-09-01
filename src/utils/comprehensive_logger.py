@@ -17,19 +17,35 @@ from typing import Any
 from .structured_logging import CorrelationIdFilter, get_json_formatter
 
 class ComprehensiveLogger:
-    pass  # TODO: Add implementation
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="comprehensivelogger initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize ComprehensiveLogger."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    passpasspassself.logger.info("Implementation placeholder - needs specific logic")
 class ComprehensiveLogger:
-    pass  # TODO: Add implementation
+    passself.logger.info("Implementation placeholder - needs specific logic")
 class ComprehensiveLogger:
-    """
+    pass"""
 Comprehensive logger that ensures all logs are stored in the log / directory.
 """
 
-def __init__(self, config: dict[str, Any]):
-    def __init__(self, config: dict[str, Any]):
-    def __init__(self, config: dict[str, Any]):
-    def __init__(self, config: dict[str, Any]):
-        """
+def __init__(...):
+    passdef __init__(...):
+    passdef __init__(...):
+    passdef __init__(...):
+    pass"""
 Initialize comprehensive logger.
 
 Args:
@@ -54,11 +70,11 @@ self._setup_loggers()
 # across all loggers (including legacy ones) to a single file.
 self._setup_full_run_log()
 
-def _setup_loggers(self):
-    def _setup_loggers(self):
-    def _setup_loggers(self):
-    def _setup_loggers(self):
-        """Setup all loggers with file handlers."""
+def _setup_loggers(...):
+    passpasspassdef _setup_loggers(...):
+    passdef _setup_loggers(...):
+    passdef _setup_loggers(...):
+    pass"""Setup all loggers with file handlers."""
 # Prevent logging from raising exceptions on broken pipes
 logging.raiseExceptions, False
 # Create timestamp for log files
@@ -66,13 +82,13 @@ timestamp, datetime.now().strftime("%Y%m%d_%H%M%S")
 
 # Setup global logger (captures ALL logs)
 if self.log_config.get("enable_global_logging", True):
-        self.global_logger, self._create_logger(
+    passpasspassself.global_logger, self._create_logger(
 "AresGlobal",
 self.log_dir / f"ares_global_{timestamp}.log",
 self.log_config.get("level", "INFO"),
 )
 else:
-        self.global_logger, None
+    passself.global_logger, None
 
 # Setup system logger
 self.system_logger, self._create_logger(
@@ -83,7 +99,7 @@ self.log_config.get("level", "INFO"),
 
 # Setup error logger
 if self.log_config.get("enable_error_logging", True):
-        self.error_logger, self._create_logger(
+    passself.error_logger, self._create_logger(
 "AresErrors",
 self.log_dir / f"ares_errors_{timestamp}.log",
 "ERROR",
@@ -91,7 +107,7 @@ self.log_dir / f"ares_errors_{timestamp}.log",
 
 # Setup trade logger
 if self.log_config.get("enable_trade_logging", True):
-            trade_path, self.log_dir / f"ares_trades_{timestamp}.log"
+    passtrade_path, self.log_dir / f"ares_trades_{timestamp}.log"
 self.trade_logger, self._create_logger(
 "AresTrades",
 trade_path,
@@ -102,7 +118,7 @@ self._trades_log_path, trade_path
 
 # Setup performance logger
 if self.log_config.get("enable_performance_logging", True):
-        self.performance_logger, self._create_logger(
+    passpassself.performance_logger, self._create_logger(
 "AresPerformance",
 self.log_dir / f"ares_performance_{timestamp}.log",
 "INFO",
@@ -110,7 +126,7 @@ self.log_dir / f"ares_performance_{timestamp}.log",
 
 # Setup backtest logger (dedicated per - run backtesting log)
 if self.log_config.get("enable_backtest_logging", True):
-            backtest_path, self.log_dir / f"ares_backtest_{timestamp}.log"
+    passbacktest_path, self.log_dir / f"ares_backtest_{timestamp}.log"
 self.backtest_logger, self._create_logger(
 "AresBacktest",
 backtest_path,
@@ -122,19 +138,9 @@ self._backtest_log_path, backtest_path
 # Persist timestamp for unified log path computation
 self._timestamp, timestamp
 
-def _create_logger(self, name: str, log_file: Path, level: str) -> logging.Logger:
-        """
-Create a logger with file and console handlers.
-
-Args:
-            name: Logger name
-log_file: Log file path
-level: Log level
-
-Returns:
-            logging.Logger: Configured logger
-"""
-logger, logging.getLogger(name)
+def _create_logger(...) -> ...:
+    pass"""..."""
+    passlogger, logging.getLogger(name)
 logger.setLevel(getattr(logging, level))
 
 # Clear existing handlers
@@ -145,13 +151,13 @@ formatter, get_json_formatter()
 
 # Add console handler if enabled
 if self.log_config.get("console_output", True):
-            console_handler, _SafeStreamHandler(sys.stdout)
+    passconsole_handler, _SafeStreamHandler(sys.stdout)
 console_handler.setFormatter(formatter)
 logger.addHandler(console_handler)
 
 # Add file handler
 if self.log_config.get("file_output", True):
-        # Create rotating file handler
+    pass# Create rotating file handler
 file_handler, logging.handlers.RotatingFileHandler(
 log_file,
 maxBytes = self.log_config.get("max_file_size", 10 * 1024 * 1024),
@@ -164,20 +170,16 @@ logger.addHandler(file_handler)
 correlation_filter, CorrelationIdFilter()
 logger.addFilter(correlation_filter)
 for handler in logger.handlers:
-            handler.addFilter(correlation_filter)
+    passhandler.addFilter(correlation_filter)
 
 return logger
 
-def _setup_full_run_log(self) -> None:
-        """Attach a unified file handler that captures all log records.
-
-- Creates `ares_full_<timestamp>.log` under the configured log dir - Attaches the handler to the root logger to capture most records - Also attaches to the legacy `AresTradingSystem` logger to ensure
-records with `propagate = False` are captured as well
-"""
-try:
-    pass  # TODO: Add proper exception handling
+def _setup_full_run_log(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 # Route Python warnings through logging system so they get captured too
 logging.captureWarnings(True)
 
@@ -206,10 +208,10 @@ isinstance(h, logging.handlers.RotatingFileHandler)
 and getattr(h, "baseFilename", None) == str(full_log_path)
 for h in root_logger.handlers
 ):
-                root_logger.addHandler(full_handler)
+    passpasspassroot_logger.addHandler(full_handler)
 # Ensure root level is permissive so we don't miss records
 if root_logger.level > logging.DEBUG:
-                    root_logger.setLevel(logging.DEBUG)
+    passroot_logger.setLevel(logging.DEBUG)
 
 # Also attach directly to the legacy enhanced logger if present,
 # because it sets propagate = False by design.
@@ -219,189 +221,181 @@ isinstance(h, logging.handlers.RotatingFileHandler)
 and getattr(h, "baseFilename", None) == str(full_log_path)
 for h in legacy_logger.handlers
 ):
-                legacy_logger.addHandler(full_handler)
+    passpasslegacy_logger.addHandler(full_handler)
 
 # Stash path for external access (e.g., launcher banner)
 self._full_log_path, full_log_path
 except Exception:
-        # Never fail logging setup due to aggregation handler issues
+    passpasspass# Never fail logging setup due to aggregation handler issues
 self._full_log_path, None
 
-def get_global_logger(self) -> logging.Logger:
-        """Get the global logger that captures all logs."""
-return self.global_logger
+def get_global_logger(...) -> ...:
+    """..."""
+    passreturn self.global_logger
 
-def get_system_logger(self) -> logging.Logger:
-        """Get the system logger."""
-return self.system_logger
+def get_system_logger(...) -> ...:
+    """..."""
+    passreturn self.system_logger
 
-def get_error_logger(self) -> logging.Logger | None:
-        """Get the error logger."""
-return self.error_logger
+def get_error_logger(...) -> ...:
+    """..."""
+    passreturn self.error_logger
 
-def get_trade_logger(self) -> logging.Logger | None:
-        """Get the trade logger."""
-return self.trade_logger
+def get_trade_logger(...) -> ...:
+    """..."""
+    passreturn self.trade_logger
 
-def get_backtest_logger(self) -> logging.Logger | None:
-        """Get the backtest logger."""
-return self.backtest_logger
+def get_backtest_logger(...) -> ...:
+    """..."""
+    passreturn self.backtest_logger
 
-def get_performance_logger(self) -> logging.Logger | None:
-        """Get the performance logger."""
-return self.performance_logger
+def get_performance_logger(...) -> ...:
+    """..."""
+    passreturn self.performance_logger
 
-def get_component_logger(self, component_name: str) -> logging.Logger:
-        """
-Get a component - specific logger.
-
-Args:
-            component_name: Name of the component
-
-Returns:
-            logging.Logger: Component logger
-"""
-if self.global_logger:
-        return self.global_logger.getChild(component_name)
+def get_component_logger(...) -> ...:
+    """..."""
+    passif self.global_logger:
+    passreturn self.global_logger.getChild(component_name)
 return logging.getLogger(component_name)
 
-def get_full_log_path(self) -> str | None:
-        """Return the absolute path to the unified full - run log file, if set."""
-try:
-    pass  # TODO: Add proper exception handling
+def get_full_log_path(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 return (
 str(self._full_log_path)
 if getattr(self, "_full_log_path", None)
 else None
 )
 except Exception:
-        return None
+    passpasspassreturn None
 
-def get_trades_log_path(self) -> str | None:
-        """Return the absolute path to the trades log file, if set."""
-try:
-    pass  # TODO: Add proper exception handling
+def get_trades_log_path(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 return (
 str(self._trades_log_path)
 if getattr(self, "_trades_log_path", None)
 else None
 )
 except Exception:
-        return None
+    passpasspassreturn None
 
-def get_backtest_log_path(self) -> str | None:
-        """Return the absolute path to the backtest log file, if set."""
-try:
-    pass  # TODO: Add proper exception handling
+def get_backtest_log_path(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 return (
 str(self._backtest_log_path)
 if getattr(self, "_backtest_log_path", None)
 else None
 )
 except Exception:
-        return None
+    passpasspassreturn None
 
-def log_global(self, message: str, level: str = "INFO"):
-    def log_global(self, message: str, level: str = "INFO"):
-    def log_global(self, message: str, level: str = "INFO"):
-    def log_global(self, message: str, level: str = "INFO"):
-        """
+def log_global(...):
+    passdef log_global(...):
+    passdef log_global(...):
+    passdef log_global(...):
+    pass"""
 Log to the global logger with specified level.
 
 Args:
-            message: Log message
+    passmessage: Log message
 level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 """
 if self.global_logger:
-            log_method, getattr(
+    passlog_method, getattr(
 self.global_logger,
 level.lower(),
 self.global_logger.info,
 )
 log_method(message)
 
-def log_system_info(self, message: str):
-    def log_system_info(self, message: str):
-    def log_system_info(self, message: str):
-    def log_system_info(self, message: str):
-        """Log system information."""
+def log_system_info(...):
+    passdef log_system_info(...):
+    passdef log_system_info(...):
+    passdef log_system_info(...):
+    pass"""Log system information."""
 try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 if self.system_logger:
-        self.system_logger.info(message)
+    passself.system_logger.info(message)
 if self.global_logger:
-        self.global_logger.info(f"[SYSTEM] {message}")
+    passself.global_logger.info(f"[SYSTEM] {message}")
 except (BrokenPipeError, OSError) as e:
-        # Safely ignore broken pipe during shutdown / piped output
+    passpasspasspasspasspasspass# Safely ignore broken pipe during shutdown / piped output
 if not (
 isinstance(e, OSError) and getattr(e, "errno", None) == errno.EPIPE
 ):
-                raise
+    passraise
 
-def log_error(self, message: str, exc_info: bool, False):
-    def log_error(self, message: str, exc_info: bool, False):
-    def log_error(self, message: str, exc_info: bool, False):
-    def log_error(self, message: str, exc_info: bool, False):
-        """Log error messages."""
+def log_error(...):
+    passdef log_error(...):
+    passdef log_error(...):
+    passdef log_error(...):
+    pass"""Log error messages."""
 if self.error_logger:
-        self.error_logger.error(message, exc_info = exc_info)
+    passself.error_logger.error(message, exc_info = exc_info)
 if self.system_logger:
-        self.system_logger.error(message, exc_info = exc_info)
+    passself.system_logger.error(message, exc_info = exc_info)
 if self.global_logger:
-        self.global_logger.error(message, exc_info = exc_info)
+    passself.global_logger.error(message, exc_info = exc_info)
 
-def log_trade(self, message: str):
-    def log_trade(self, message: str):
-    def log_trade(self, message: str):
-    def log_trade(self, message: str):
-        """Log trade information."""
+def log_trade(...):
+    passdef log_trade(...):
+    passdef log_trade(...):
+    passdef log_trade(...):
+    pass"""Log trade information."""
 if self.trade_logger:
-        self.trade_logger.info(message)
+    passself.trade_logger.info(message)
 if self.system_logger:
-        self.system_logger.info(f"[TRADE] {message}")
+    passself.system_logger.info(f"[TRADE] {message}")
 if self.global_logger:
-        self.global_logger.info(f"[TRADE] {message}")
+    passself.global_logger.info(f"[TRADE] {message}")
 
-def log_backtest(self, message: str):
-    def log_backtest(self, message: str):
-    def log_backtest(self, message: str):
-    def log_backtest(self, message: str):
-        """Log backtesting information to a dedicated backtest log as well as system / global logs."""
+def log_backtest(...):
+    passdef log_backtest(...):
+    passdef log_backtest(...):
+    passdef log_backtest(...):
+    pass"""Log backtesting information to a dedicated backtest log as well as system / global logs."""
 if self.backtest_logger:
-        self.backtest_logger.info(message)
+    passself.backtest_logger.info(message)
 if self.system_logger:
-        self.system_logger.info(f"[BACKTEST] {message}")
+    passself.system_logger.info(f"[BACKTEST] {message}")
 if self.global_logger:
-        self.global_logger.info(f"[BACKTEST] {message}")
+    passself.global_logger.info(f"[BACKTEST] {message}")
 
-def log_performance(self, message: str):
-    def log_performance(self, message: str):
-    def log_performance(self, message: str):
-    def log_performance(self, message: str):
-        """Log performance information."""
+def log_performance(...):
+    passdef log_performance(...):
+    passdef log_performance(...):
+    passdef log_performance(...):
+    pass"""Log performance information."""
 if self.performance_logger:
-        self.performance_logger.info(message)
+    passself.performance_logger.info(message)
 if self.system_logger:
-        self.system_logger.info(f"[PERFORMANCE] {message}")
+    passself.system_logger.info(f"[PERFORMANCE] {message}")
 if self.global_logger:
-        self.global_logger.info(f"[PERFORMANCE] {message}")
+    passself.global_logger.info(f"[PERFORMANCE] {message}")
 
-def log_session_summary(self) -> None:
-        """Log a session summary to the global logger."""
-if not self.global_logger:
-            return
+def log_session_summary(...) -> ...:
+    """..."""
+    passif not self.global_logger:
+    passreturn
 try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.global_logger.info("=" * 80)
 self.global_logger.info("📊 SESSION SUMMARY")
 self.global_logger.info(
@@ -410,16 +404,16 @@ f"Session started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
 self.global_logger.info("This file contains ALL logs for this session")
 self.global_logger.info("=" * 80)
 except Exception:
-            pass
+    passpasspasspass
 
-def log_launcher_start(self, mode: str, symbol: str, None, exchange: str, None):
-    def log_launcher_start(self, mode: str, symbol: str, None, exchange: str, None):
-    def log_launcher_start(self, mode: str, symbol: str, None, exchange: str, None):
-    def log_launcher_start(self, mode: str, symbol: str, None, exchange: str, None):
-        """Log launcher startup information."""
+def log_launcher_start(...):
+    passdef log_launcher_start(...):
+    passdef log_launcher_start(...):
+    passdef log_launcher_start(...):
+    pass"""Log launcher startup information."""
 start_info, f"🚀 ARES LAUNCHER STARTED - Mode: {mode}"
 if symbol and exchange:
-            start_info += f" - Symbol: {symbol} - Exchange: {exchange}"
+    passstart_info += f" - Symbol: {symbol} - Exchange: {exchange}"
 
 self.log_system_info("=" * 80)
 self.log_system_info(start_info)
@@ -429,15 +423,47 @@ f"Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
 self.log_system_info(f"Log directory: {self.log_dir}")
 self.log_system_info("=" * 80)
 
-def log_launcher_end(self, exit_code: int, 0):
-    def log_launcher_end(self, exit_code: int, 0):
-    def log_launcher_end(self, exit_code: int, 0):
-    def log_launcher_end(self, exit_code: int, 0):
-        """Log launcher shutdown information."""
+def log_launcher_end(...):
+    passdef log_launcher_end(...):
+    passdef log_launcher_end(...):
+    passdef log_launcher_end(...):
+    pass"""Log launcher shutdown information."""
 try:
-    pass  # TODO: Add proper exception handling
+    passpa
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="_safestreamhandler initialization",
+    )
+    async d
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="_safestreamhandler initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize _SafeStreamHandler."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+ef initialize(self) -> bool:
+        """Initialize _SafeStreamHandler."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+ss  # TODO: Implement specific error handling based on context
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 self.log_system_info("=" * 80)
 self.log_system_info(f"🛑 ARES LAUNCHER ENDED - Exit code: {exit_code}")
 self.log_system_info(
@@ -445,64 +471,55 @@ f"End time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
 )
 self.log_system_info("=" * 80)
 except (BrokenPipeError, OSError) as e:
-        if not (
+    passpasspasspasspasspasspassif not (
 isinstance(e, OSError) and getattr(e, "errno", None) == errno.EPIPE
 ):
-                raise
+    passraise
 
 class _SafeStreamHandler(logging.StreamHandler):
-    pass  # TODO: Add implementation
+    self.logger.info("Implementation placeholder - needs specific logic")
 class _SafeStreamHandler(logging.StreamHandler):
-    pass  # TODO: Add implementation
-class _SafeStreamHandler(logging.StreamHandler):
-    """StreamHandler that suppresses BrokenPipeError during emit / flush."""
-
-def emit(self, record):
-    def emit(self, record):
-    def emit(self, record):
-    def emit(self, record):
-        try:
-    pass  # TODO: Add proper exception handling
+    self.logger.info("Implementation placeholder - needs specific logic")
+class _SafeStreamHandler(...):
+    """..."""
+    passdef emit(...):
+    passdef emit(...):
+    passdef emit(...):
+    passdef emit(...):
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 super().emit(record)
 except (BrokenPipeError, OSError) as e:
-        if not (
+    passpasspasspasspasspasspassif not (
 isinstance(e, OSError) and getattr(e, "errno", None) == errno.EPIPE
 ):
-                raise
+    passraise
 
-def flush(self):
-    def flush(self):
-    def flush(self):
-    def flush(self):
-        try:
-    pass  # TODO: Add proper exception handling
+def flush(...):
+    passdef flush(...):
+    passdef flush(...):
+    passdef flush(...):
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 super().flush()
 except (BrokenPipeError, OSError) as e:
-        if not (
+    passpasspasspasspasspasspassif not (
 isinstance(e, OSError) and getattr(e, "errno", None) == errno.EPIPE
 ):
-                raise
+    passraise
 
 # moved to ComprehensiveLogger
 
 # Global comprehensive logger instance
 comprehensive_logger: ComprehensiveLogger | None, None
 
-def setup_comprehensive_logging(config: dict[str, Any]) -> ComprehensiveLogger:
-    """
-Setup comprehensive logging system.
-
-Args:
-        config: Configuration dictionary
-
-Returns:
-        ComprehensiveLogger: Configured logger instance
-"""
-global comprehensive_logger
+def setup_comprehensive_logging(...) -> ...:
+    """..."""
+    passglobal comprehensive_logger
 comprehensive_logger, ComprehensiveLogger(config)
 
 # Log session summary to global logger
@@ -510,31 +527,18 @@ comprehensive_logger.log_session_summary()
 
 return comprehensive_logger
 
-def get_comprehensive_logger() -> ComprehensiveLogger | None:
-    """Get the global comprehensive logger instance."""
-return comprehensive_logger
+def get_comprehensive_logger(...) -> ...:
+    """..."""
+    passreturn comprehensive_logger
 
-def get_component_logger(component_name: str) -> logging.Logger:
-    """
-Get a component - specific logger.
-
-Args:
-        component_name: Name of the component
-
-Returns:
-        logging.Logger: Component logger
-"""
-if comprehensive_logger:
-        return comprehensive_logger.get_component_logger(component_name)
+def get_component_logger(...) -> ...:
+    """..."""
+    passif comprehensive_logger:
+    passreturn comprehensive_logger.get_component_logger(component_name)
 return logging.getLogger(component_name)
 
-def get_global_logger() -> logging.Logger | None:
-    """
-Get the global logger that captures all logs.
-
-Returns:
-        Optional[logging.Logger]: Global logger instance
-"""
-if comprehensive_logger:
-        return comprehensive_logger.get_global_logger()
+def get_global_logger(...) -> ...:
+    """..."""
+    passif comprehensive_logger:
+    passreturn comprehensive_logger.get_global_logger()
 return None

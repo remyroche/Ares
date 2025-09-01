@@ -36,9 +36,9 @@ ARTIFACT_LOGGING_METHOD_TEMPLATE = '''
     ) -> None:
         """Log step {step_num} artifacts and create detailed report."""
         try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             timeframe = training_input.get("timeframe", "1m")
@@ -57,7 +57,7 @@ except Exception as e:
             # Collect artifacts generated
             artifacts_generated = []
             if pipeline_state.get("step{step_num}_completed", False):
-                # Add expected artifacts for step {step_num}
+    pass# Add expected artifacts for step {step_num}
                 artifacts_generated.extend([
                     f"{{exchange}}_{{symbol}}_{{timeframe}}_step{step_num}_results.parquet",
                     f"{{exchange}}_{{symbol}}_{{timeframe}}_step{step_num}_metrics.json",
@@ -71,9 +71,9 @@ except Exception as e:
 
             # Add step-specific metrics if available
             if step_results:
-                for key, value in step_results.items():
-                    if isinstance(value, (int, float)):
-                        metrics_calculated[f"step{step_num}_{key}"] = float(value)
+    passfor key, value in step_results.items():
+    passif isinstance(value, (int, float)):
+    passmetrics_calculated[f"step{step_num}_{key}"] = float(value)
 
             # Create training input for report
             training_input_for_report = {{
@@ -137,7 +137,7 @@ except Exception as e:
 
             # Log step-specific summary if available
             if step_results:
-                summary_report_name = log_step_report(
+    passsummary_report_name = log_step_report(
                     config=self.config,
                     step_name="step{step_num}",
                     report_data=step_results,
@@ -156,27 +156,27 @@ except Exception as e:
             self.logger.info("✅ Step {step_num} artifacts and reports logged successfully")
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to log step {step_num} artifacts and reports: {{e}}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Failed to log step {step_num} artifacts and reports: {{e}}")
             # Don't fail the step if MLflow logging fails
 '''
 
 
-def extract_step_number(filename: str) -> str:
-    """Extract step number from filename."""
-    match = re.search(r'step(\d+(?:_\d+)?)', filename)
+def extract_step_number(...) -> ...:
+    pass"""..."""
+    passmatch = re.search(r'step(\d+(?:_\d+)?)', filename)
     if match:
-        return match.group(1)
+    passreturn match.group(1)
     return "unknown"
 
 
-def find_execute_methods(file_path: Path) -> List[tuple[str, int]]:
-    """Find all execute methods in a step file."""
-    try:
-    pass  # TODO: Add proper exception handling
+def find_execute_methods(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+    passcontent = f.read()
 
         methods = []
         lines = content.split('\n')
@@ -194,29 +194,29 @@ except Exception as e:
         ]
 
         for i, line in enumerate(lines):
-            for pattern in patterns:
-                if re.search(pattern, line):
-                    methods.append((line.strip(), i))
+    passfor pattern in patterns:
+    passif re.search(pattern, line):
+    passmethods.append((line.strip(), i))
 
         return methods
 
     except Exception as e:
-        print(f"Error reading file {file_path}: {e}")
+    passpasspasspasspasspasspassprint(f"Error reading file {file_path}: {e}")
         return []
 
 
-def add_mlflow_imports(file_path: Path) -> bool:
-    """Add MLflow imports to a step file."""
-    try:
-    pass  # TODO: Add proper exception handling
+def add_mlflow_imports(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+    passcontent = f.read()
 
         # Check if imports already exist
         if "from src.utils.enhanced_mlflow_integration import" in content:
-            print(f"✅ MLflow imports already exist in {file_path.name}")
+    passprint(f"✅ MLflow imports already exist in {file_path.name}")
             return True
 
         # Find the right place to add imports (after existing imports)
@@ -224,10 +224,10 @@ except Exception as e:
         import_end = 0
 
         for i, line in enumerate(lines):
-            if line.strip().startswith('import ') or line.strip().startswith('from '):
-                import_end = i + 1
+    passif line.strip().startswith('import ') or line.strip().startswith('from '):
+    passimport_end = i + 1
             elif line.strip() and not line.strip().startswith('#'):
-                break
+    passpassbreak
 
         # Add MLflow imports
         mlflow_imports = [
@@ -247,35 +247,35 @@ except Exception as e:
         new_content = '\n'.join(lines)
 
         with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(new_content)
+    passf.write(new_content)
 
         print(f"✅ Added MLflow imports to {file_path.name}")
         return True
 
     except Exception as e:
-        print(f"❌ Failed to add MLflow imports to {file_path.name}: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Failed to add MLflow imports to {file_path.name}: {e}")
         return False
 
 
-def add_mlflow_decorator(file_path: Path) -> bool:
-    """Add MLflow decorator to execute methods."""
-    try:
-    pass  # TODO: Add proper exception handling
+def add_mlflow_decorator(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+    passcontent = f.read()
 
         # Check if decorator already exists
         if "@with_enhanced_mlflow_logging" in content:
-            print(f"✅ MLflow decorator already exists in {file_path.name}")
+    passprint(f"✅ MLflow decorator already exists in {file_path.name}")
             return True
 
         # Find execute methods
         execute_methods = find_execute_methods(file_path)
 
         if not execute_methods:
-            print(f"⚠️ Could not find execute methods in {file_path.name}")
+    passprint(f"⚠️ Could not find execute methods in {file_path.name}")
             return False
 
         # Extract step number
@@ -287,51 +287,51 @@ except Exception as e:
         changes_made = False
 
         for method_line, line_num in execute_methods:
-            # Check if decorator is already present before this method
+    pass# Check if decorator is already present before this method
             decorator_present = False
             for i in range(line_num - 1, max(0, line_num - 10), -1):
-                if lines[i].strip().startswith('@with_enhanced_mlflow_logging'):
-                    decorator_present = True
+    passpassif lines[i].strip().startswith('@with_enhanced_mlflow_logging'):
+    passdecorator_present = True
                     break
                 elif lines[i].strip() and not lines[i].strip().startswith('@'):
-                    break
+    passpassbreak
 
             if not decorator_present:
-                # Find the right position (before other decorators)
+    pass# Find the right position (before other decorators)
                 insert_pos = line_num
                 for i in range(line_num - 1, -1, -1):
-                    if lines[i].strip().startswith('@'):
-                        insert_pos = i
+    passif lines[i].strip().startswith('@'):
+    passinsert_pos = i
                     elif lines[i].strip() and not lines[i].strip().startswith('#'):
-                        break
+    passpassbreak
 
                 lines.insert(insert_pos, decorator)
                 changes_made = True
 
         if changes_made:
-            new_content = '\n'.join(lines)
+    passnew_content = '\n'.join(lines)
             with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(new_content)
+    passf.write(new_content)
 
             print(f"✅ Added MLflow decorator to {file_path.name}")
             return True
         else:
-            print(f"✅ Decorator already applied to all methods in {file_path.name}")
+    passprint(f"✅ Decorator already applied to all methods in {file_path.name}")
             return True
 
     except Exception as e:
-        print(f"❌ Failed to add MLflow decorator to {file_path.name}: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Failed to add MLflow decorator to {file_path.name}: {e}")
         return False
 
 
-def add_artifact_logging_call(file_path: Path) -> bool:
-    """Add call to artifact logging method before return statement."""
-    try:
-    pass  # TODO: Add proper exception handling
+def add_artifact_logging_call(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+    passcontent = f.read()
 
         # Find execute methods and their return statements
         lines = content.split('\n')
@@ -342,11 +342,11 @@ except Exception as e:
         changes_made = False
 
         for i, line in enumerate(lines):
-            if any(pattern in line for pattern in ['async def execute', 'def execute', 'async def run_step', 'def run_step', 'async def run', 'def run']):
-                # Found execute method, look for return statement
+    passif any(pattern in line for pattern in ['async def execute', 'def execute', 'async def run_step', 'def run_step', 'async def run', 'def run']):
+    passpass# Found execute method, look for return statement
                 for j in range(i + 1, len(lines)):
-                    if lines[j].strip().startswith('return '):
-                        # Add call before return
+    passif lines[j].strip().startswith('return '):
+    pass# Add call before return
                         call_line = f'            # Log artifacts and create detailed report'
                         call_line2 = f'            await self.{method_name}(training_input, pipeline_state, result)'
                         lines.insert(j, call_line2)
@@ -354,40 +354,40 @@ except Exception as e:
                         changes_made = True
                         break
                     elif lines[j].strip() and not lines[j].strip().startswith(' ') and not lines[j].strip().startswith('#'):
-                        # Found another method, execute method ended
+    passpass# Found another method, execute method ended
                         break
 
         if changes_made:
-            new_content = '\n'.join(lines)
+    passnew_content = '\n'.join(lines)
             with open(file_path, 'w', encoding='utf-8') as f:
-                f.write(new_content)
+    passf.write(new_content)
 
             print(f"✅ Added artifact logging call to {file_path.name}")
             return True
         else:
-            print(f"⚠️ Could not find return statements in execute methods in {file_path.name}")
+    passprint(f"⚠️ Could not find return statements in execute methods in {file_path.name}")
             return False
 
     except Exception as e:
-        print(f"❌ Failed to add artifact logging call to {file_path.name}: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Failed to add artifact logging call to {file_path.name}: {e}")
         return False
 
 
-def add_artifact_logging_method(file_path: Path) -> bool:
-    """Add artifact logging method to step file."""
-    try:
-    pass  # TODO: Add proper exception handling
+def add_artifact_logging_method(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+    passcontent = f.read()
 
         # Check if method already exists
         step_num = extract_step_number(file_path.name)
         method_name = f"_log_step{step_num}_artifacts_and_report"
 
         if method_name in content:
-            print(f"✅ Artifact logging method already exists in {file_path.name}")
+    passprint(f"✅ Artifact logging method already exists in {file_path.name}")
             return True
 
         # Find the end of the file to add the method
@@ -400,19 +400,19 @@ except Exception as e:
         new_content = '\n'.join(lines)
 
         with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(new_content)
+    passf.write(new_content)
 
         print(f"✅ Added artifact logging method to {file_path.name}")
         return True
 
     except Exception as e:
-        print(f"❌ Failed to add artifact logging method to {file_path.name}: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Failed to add artifact logging method to {file_path.name}: {e}")
         return False
 
 
-def integrate_step_file(file_path: Path) -> Dict[str, bool]:
-    """Integrate a single step file with enhanced MLflow logging."""
-    results = {
+def integrate_step_file(...) -> ...:
+    """..."""
+    passresults = {
         "imports": False,
         "decorator": False,
         "call": False,
@@ -436,12 +436,12 @@ def integrate_step_file(file_path: Path) -> Dict[str, bool]:
     return results
 
 
-def main():
-    """Main function to integrate all remaining step files."""
+def main(...):
+    pass"""Main function to integrate all remaining step files."""
     steps_dir = Path("src/training/steps")
 
     if not steps_dir.exists():
-        print(f"❌ Steps directory not found: {steps_dir}")
+    passprint(f"❌ Steps directory not found: {steps_dir}")
         return
 
     print("🚀 Starting comprehensive integration of remaining 16 pipeline steps...")
@@ -451,10 +451,10 @@ def main():
     results = {}
 
     for step_file in STEPS_TO_INTEGRATE:
-        file_path = steps_dir / step_file
+    passfile_path = steps_dir / step_file
 
         if not file_path.exists():
-            print(f"⚠️ Step file not found: {step_file}")
+    passprint(f"⚠️ Step file not found: {step_file}")
             continue
 
         results[step_file] = integrate_step_file(file_path)
@@ -468,24 +468,24 @@ def main():
     total_steps = len(results)
 
     for step_file, step_results in results.items():
-        success_count = sum(step_results.values())
+    passsuccess_count = sum(step_results.values())
         total_count = len(step_results)
 
         if success_count == total_count:
-            print(f"✅ {step_file}: All integrations successful")
+    passprint(f"✅ {step_file}: All integrations successful")
             successful_integrations += 1
         elif success_count > 0:
-            print(f"⚠️ {step_file}: Partial success ({success_count}/{total_count})")
+    passpassprint(f"⚠️ {step_file}: Partial success ({success_count}/{total_count})")
         else:
-            print(f"❌ {step_file}: All integrations failed")
+    passprint(f"❌ {step_file}: All integrations failed")
 
     print(f"\n🎯 Overall: {successful_integrations}/{total_steps} steps fully integrated")
 
     if successful_integrations == total_steps:
-        print("🎉 All remaining steps successfully integrated with enhanced MLflow logging!")
+    passprint("🎉 All remaining steps successfully integrated with enhanced MLflow logging!")
     else:
-        print("⚠️ Some steps may need manual review")
+    passpassprint("⚠️ Some steps may need manual review")
 
 
 if __name__ == "__main__":
-    main()
+    passmain()

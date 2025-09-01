@@ -9,8 +9,8 @@ import os
 import pandas as pd
 
 
-def create_regime_splits_file():
-    """Create the missing regime splits file from existing HMM data."""
+def create_regime_splits_file(...):
+    pass"""Create the missing regime splits file from existing HMM data."""
 
     # Configuration
     exchange = "BINANCE"
@@ -28,7 +28,7 @@ def create_regime_splits_file():
     regime_details = {}
 
     for timeframe in timeframes:
-        print(f"📊 Processing timeframe: {timeframe}")
+    passprint(f"📊 Processing timeframe: {timeframe}")
 
         # Check if HMM composite files exist
         composite_file = os.path.join(
@@ -39,23 +39,23 @@ def create_regime_splits_file():
         )
 
         if not os.path.exists(composite_file):
-            print(f"⚠️ HMM composite file not found: {composite_file}")
+    passprint(f"⚠️ HMM composite file not found: {composite_file}")
             continue
 
         if not os.path.exists(meta_file):
-            print(f"⚠️ HMM meta file not found: {meta_file}")
+    passprint(f"⚠️ HMM meta file not found: {meta_file}")
             continue
 
         try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Load HMM composite data
             composite_df = pd.read_parquet(composite_file)
 
             # Load meta data
             with open(meta_file) as f:
-                meta_data = json.load(f)
+    passmeta_data = json.load(f)
 
             # Get cluster information
             meta_data.get("cluster_centroids", {})
@@ -65,7 +65,7 @@ except Exception as e:
             unique_clusters = composite_df["composite_cluster_id"].unique()
 
             for cluster_id in unique_clusters:
-                cluster_key = f"{timeframe}_cluster_{cluster_id}"
+    passcluster_key = f"{timeframe}_cluster_{cluster_id}"
 
                 # Filter data for this cluster
                 cluster_data = composite_df[
@@ -105,7 +105,7 @@ except Exception as e:
                 # Get cluster description from meta data
                 cluster_description = f"Cluster {cluster_id} from {timeframe} timeframe"
                 if str(cluster_id) in state_names:
-                    cluster_description = state_names[str(cluster_id)]
+    passcluster_description = state_names[str(cluster_id)]
 
                 # Create regime details
                 regime_details[cluster_key] = {
@@ -123,7 +123,7 @@ except Exception as e:
                 )
 
         except Exception as e:
-            print(f"❌ Error processing {timeframe}: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Error processing {timeframe}: {e}")
             continue
 
     # Create the regime splits summary
@@ -135,7 +135,7 @@ except Exception as e:
 
     # Save the regime splits file
     with open(output_file, "w") as f:
-        json.dump(regime_summary, f, indent=2)
+    passjson.dump(regime_summary, f, indent=2)
 
     print(f"✅ Created regime splits file: {output_file}")
     print(f"📊 Total regimes created: {len(regime_details)}")
@@ -144,4 +144,4 @@ except Exception as e:
 
 
 if __name__ == "__main__":
-    create_regime_splits_file()
+    passcreate_regime_splits_file()

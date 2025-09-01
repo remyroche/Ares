@@ -20,21 +20,21 @@ sys.path.insert(0, str(project_root))
     TRAINING_MODES
 )
 
-def main():
-    print("🔍 Verifying Training Modes Configuration")
+def main(...):
+    passprint("🔍 Verifying Training Modes Configuration")
     print("=" * 50)
 
     # Test all three modes
     modes = ["light", "blank", "full"]
 
     for mode in modes:
-        print(f"\n📊 {mode.upper()} MODE")
+    passprint(f"\n📊 {mode.upper()} MODE")
         print("-" * 30)
 
         try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Get mode configuration
             config = get_training_mode_config(mode)
             print(f"Lookback Days: {config.lookback_days}")
@@ -60,7 +60,7 @@ except Exception as e:
             print(f"Step17 N Trials: {step17_params.get('n_trials')}")
 
         except Exception as e:
-            print(f"❌ Error testing {mode} mode: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Error testing {mode} mode: {e}")
 
     print("\n🎯 INTENSITY COMPARISON")
     print("=" * 50)
@@ -70,7 +70,7 @@ except Exception as e:
     print("-" * 60)
 
     for mode, data in comparison.items():
-        intensity_pct = f"{data['intensity_percentage']*100:.0f}%"
+    passintensity_pct = f"{data['intensity_percentage']*100:.0f}%"
         print(f"{mode:<8} {intensity_pct:<12} {data['max_trials']:<12} {data['n_trials']:<10} {data['estimated_duration_minutes']:<10}min")
 
     print("\n✅ Training modes verification completed!")
@@ -82,4 +82,4 @@ except Exception as e:
     print("   • Step-specific parameters are correctly configured")
 
 if __name__ == "__main__":
-    main()
+    passmain()

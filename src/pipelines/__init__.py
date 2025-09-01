@@ -8,28 +8,28 @@ pipeline implementations (live trading, backtesting, training).
 from .base_pipeline import BasePipeline, PipelineConfig
 # Optional imports if modules exist; keep namespace clean
 try:
-    pass  # TODO: Add proper exception handling
+    passpasspassself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 from .live_trading_pipeline import LiveTradingPipeline
 except Exception:  # Module may be optional in minimal envs
 LiveTradingPipeline = None  # type: ignore
 
 try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 from .backtesting_pipeline import BacktestingPipeline
 except Exception:
-    BacktestingPipeline = None  # type: ignore
+    passpassBacktestingPipeline = None  # type: ignore
 
 try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
 from .training_pipeline import TrainingPipeline
 except Exception:
-    TrainingPipeline = None  # type: ignore
+    passpassTrainingPipeline = None  # type: ignore
 
 __all__ = [
 "BasePipeline",

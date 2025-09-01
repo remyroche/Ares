@@ -19,23 +19,9 @@ sys.path.insert(0, str(project_root))
 
 logger = system_logger.getChild("DetectAndFillGapsImmediate")
 
-async def detect_and_fill_gaps_immediate(symbol: str = "ETHUSDT",
-                                       exchange: str = "BINANCE",
-                                       min_gap_seconds: int = 10,
-                                       auto_fill: bool = True) -> dict:
-    """
-    Detect and fill gaps immediately when found
-
-    Args:
-        symbol: Trading symbol
-        exchange: Exchange name
-        min_gap_seconds: Minimum gap size to report
-        auto_fill: Whether to automatically fill gaps
-
-    Returns:
-        Dictionary with results
-    """
-    logger.info("🚀 STARTING IMMEDIATE GAP DETECTION AND FILLING")
+async def detect_and_fill_gaps_immediate(...) -> ...:
+    """..."""
+    passlogger.info("🚀 STARTING IMMEDIATE GAP DETECTION AND FILLING")
     logger.info("=" * 60)
     logger.info(f"📊 Symbol: {symbol}")
     logger.info(f"📊 Exchange: {exchange}")
@@ -60,17 +46,17 @@ async def detect_and_fill_gaps_immediate(symbol: str = "ETHUSDT",
     logger.info(f"📊 Total gaps found: {results['total_gaps']}")
 
     if auto_fill:
-        logger.info(f"📊 Gaps filled: {results['gaps_filled']}")
+    passlogger.info(f"📊 Gaps filled: {results['gaps_filled']}")
         logger.info(f"📊 Gaps failed: {results['gaps_failed']}")
 
         if results['total_gaps'] > 0:
-            success_rate = (results['gaps_filled'] / results['total_gaps']) * 100
+    passsuccess_rate = (results['gaps_filled'] / results['total_gaps']) * 100
             logger.info(f"📊 Success rate: {success_rate:.1f}%")
 
     return results
 
-async def main():
-    """Main function"""
+async def main(...):
+    pass"""Main function"""
 
     parser = argparse.ArgumentParser(description="Detect and fill gaps immediately")
     parser.add_argument("--symbol", default="ETHUSDT", help="Trading symbol")
@@ -81,9 +67,9 @@ async def main():
     args = parser.parse_args()
 
     try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         results = await detect_and_fill_gaps_immediate(
             symbol=args.symbol, exchange = args.exchange,
             min_gap_seconds=args.min_gap_seconds, auto_fill = not args.detect_only
@@ -91,19 +77,19 @@ except Exception as e:
 
         # Return success/failure based on results
         if results['total_gaps'] == 0:
-            logger.info("✅ No gaps found - data quality is excellent!")
+    passlogger.info("✅ No gaps found - data quality is excellent!")
             return True
         elif results.get('gaps_filled', 0) > 0:
-            logger.info("✅ Gap detection and filling completed successfully!")
+    passpasslogger.info("✅ Gap detection and filling completed successfully!")
             return True
         else:
-            logger.warning("⚠️ Gaps found but could not be filled")
+    passlogger.warning("⚠️ Gaps found but could not be filled")
             return False
 
     except Exception as e:
-        logger.error(f"❌ Error during gap detection and filling: {e}")
+    passpasspasspasspasspasspasslogger.error(f"❌ Error during gap detection and filling: {e}")
         return False
 
 if __name__ == "__main__":
-    success = asyncio.run(main())
+    passsuccess = asyncio.run(main())
     sys.exit(0 if success else 1)

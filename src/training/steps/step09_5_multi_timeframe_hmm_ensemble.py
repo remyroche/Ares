@@ -3,13 +3,13 @@
 """Step 9.5: Multi-Timeframe HMM Ensemble Training with Regime-Specific Logic.
 
 This step trains a multi - timeframe HMM cluster ensemble system that combines
-predictions from Enhanced HMM regime forecasting across multiple timeframes (5m, 15m = 30m, 1h)
+predictions from Enhanced HMM regime forecasting across multiple timeframes (5m, 15m, 30m, 1h)
 to improve regime forecasting accuracy and reduce MAPE.
 
 
 The ensemble works with Enhanced HMM regime forecasting data from Step9 and Step3, providing multi-timeframe regime transition predictions.
 
-The ensemble predicts REGIME TRANSITIONS only = not price direction.
+The ensemble predicts REGIME TRANSITIONS only, not price direction.
 Price direction predictions are made in other components.
 """
 
@@ -19,40 +19,55 @@ import os
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict = List = Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 
 from src.training.steps.multi_timeframe_hmm_ensemble import (
     MultiTimeframeHMMEnsemble,
-    EnsembleConfig, TimeframeConfig = )
+    EnsembleConfig, TimeframeConfig, )
 from src.config.multi_timeframe_hmm_ensemble_config import (
-    get_multi_timeframe_hmm_ensemble_config = )
+    get_multi_timeframe_hmm_ensemble_config, )
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
 from src.utils.training_pipeline_decorators import (
-    validate_step_prerequisites, secure_data_processing = prevent_data_leakage,
-    resource_monitor, memory_efficient = quality_gate,
-    circuit_breaker_protection, debug_training_step = monitor_feature_engineering,
+    validate_step_prerequisites, secure_data_processing, prevent_data_leakage,
+    resource_monitor, memory_efficient, quality_gate,
+    circuit_breaker_protection, debug_training_step, monitor_feature_engineering,
 )
 
 from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging, log_step_report = create_detailed_step_report,
-    log_step_metrics = log_step_dataframe_with_standardized_name = log_step_artifact_with_standardized_name
+    with_enhanced_mlflow_logging, log_step_report, create_detailed_step_report,
+    log_step_metrics, log_step_dataframe_with_standardized_name, log_step_artifact_with_standardized_name
 )
 
 class RegimeSpecificMultiTimeframeEnsemble:
-    """Regime-specific multi-timeframe HMM ensemble with regime-aware optimization."""
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="regimespecificmultitimeframeensemble initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize RegimeSpecificMultiTimeframeEnsemble."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    passpass"""Regime-specific multi-timeframe HMM ensemble with regime-aware optimization."""
     
-    def __init__(self, config: dict[str, Any]):
-        self.config = config
+    def __init__(...):
+    passpassself.config = config
         self.logger = system_logger.getChild("RegimeSpecificMultiTimeframeEnsemble")
-        
         # Regime-specific configuration
-        self.regime_config = config.get("regime_specific_ensemble" = {
+        self.regime_config = config.get("regime_specific_ensemble", {
             "min_regime_samples": 100,
-            "regime_specific_timeframes": True, "regime_specific_weights": True = "regime_specific_validation": True,
+            "regime_specific_timeframes": True, "regime_specific_weights": True, "regime_specific_validation": True,
             "regime_specific_logging": True, "regime_specific_optimization": True
         })
         
@@ -62,63 +77,59 @@ class RegimeSpecificMultiTimeframeEnsemble:
         self.regime_optimization_results = {}
         
         # Timeframes for regime-specific optimization
-        self.timeframes = ["1m" = "5m", "15m", "30m"]
+        self.timeframes, ["1m", "5m", "15m", "30m"]
         
         self.logger.info("🎯 Regime-Specific Multi-Timeframe Ensemble initialized")
 
-    async def run_regime_specific_ensemble_step(
-        self, symbol: str = exchange: str, data_dir: str = timeframe: str = lookback_days: int
-    ) -> bool:
-        """Run regime-specific multi-timeframe ensemble creation."""
-        
-        self.logger.info(f"🚀 Starting regime-specific multi-timeframe ensemble for {symbol}")
-        
+    async def run_regime_specific_ensemble_step(...) -> ...:
+    pass"""..."""
+    passself.logger.info(f"🚀 Starting regime-specific multi-timeframe ensemble for {symbol}")
         try:
-            # TODO: Implement based on requirements proper exception handling
+    passpass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             # Load regime-specific data for each timeframe
-            regime_data = await self._load_regime_specific_data(symbol, exchange, data_dir = lookback_days)
+            regime_data, await self._load_regime_specific_data(symbol, exchange, data_dir, lookback_days)
             
             if regime_data.empty:
-                self.logger.error("❌ No regime data available")
+    passpassself.logger.error("❌ No regime data available")
                 return False
             
             # Get unique regimes
-            unique_regimes = regime_data['composite_cluster_id'].unique()
+            unique_regimes, regime_data['composite_cluster_id'].unique()
             self.logger.info(f"📊 Found {len(unique_regimes)} regimes: {unique_regimes}")
             
             # Create regime-specific ensembles
             for regime in unique_regimes:
-                self.logger.info(f"🔄 Creating ensemble for regime: {regime}")
+    passself.logger.info(f"🔄 Creating ensemble for regime: {regime}")
                 
-                regime_ensembles = {}
+                regime_ensembles, {}
                 
                 for tf in self.timeframes:
-                    # Load regime-specific data for this timeframe
+    pass# Load regime-specific data for this timeframe
                     regime_tf_data = await self._load_regime_timeframe_data(
                         symbol, exchange, tf = regime = lookback_days
                     )
                     
                     if not regime_tf_data.empty:
-                        # Create regime-specific ensemble for this timeframe
+    passpass# Create regime-specific ensemble for this timeframe
                         ensemble = await self._create_regime_timeframe_ensemble(
                             regime_tf_data, regime = tf
                         )
                         
                         if ensemble:
-    regime_ensembles[tf] = ensemble
+    passpassregime_ensembles[tf] = ensemble
                 
                 if regime_ensembles:
-                    # Create regime-specific multi-timeframe ensemble
+    pass# Create regime-specific multi-timeframe ensemble
                     multi_tf_ensemble = await self._create_regime_multi_timeframe_ensemble(
-                        regime_ensembles = regime
+                        regime_ensembles, regime
                     )
                     
                     if multi_tf_ensemble:
-    self.regime_ensembles[regime] = multi_tf_ensemble
+    passself.regime_ensembles[regime] = multi_tf_ensemble
                         
                         # Validate regime-specific ensemble
                         validation_success = await self._validate_regime_ensemble(
@@ -126,155 +137,139 @@ class RegimeSpecificMultiTimeframeEnsemble:
                         )
                         
                         if not validation_success:
-                            self.logger.error(f"❌ Regime {regime} ensemble validation failed")
+    passself.logger.error(f"❌ Regime {regime} ensemble validation failed")
                             return False
                 
                 else:
-                    self.logger.warning(f"⚠️ No ensembles created for regime {regime}")
+    passself.logger.warning(f"⚠️ No ensembles created for regime {regime}")
             
             # Save regime-specific ensembles
-            await self._save_regime_specific_ensembles(symbol = data_dir)
+            await self._save_regime_specific_ensembles(symbol, data_dir)
             
             self.logger.info("✅ Regime-specific multi-timeframe ensemble completed successfully")
             return True
             
         except Exception as e:
-    self.logger.error(f"❌ Error in regime-specific ensemble creation: {e}")
+    passpasspasspasspasspasspasspassself.logger.error(f"❌ Error in regime-specific ensemble creation: {e}")
             return False
 
-    async def _load_regime_specific_data(
-        self, symbol: str, exchange: str = data_dir: str = lookback_days: int
-    ) -> pd.DataFrame:
-        """Load regime-specific data for all timeframes."""
-        
-        self.logger.info(f"📊 Loading regime-specific data for {symbol}")
-        
+    async def _load_regime_specific_data(...) -> ...:
+    """..."""
+    passself.logger.info(f"📊 Loading regime-specific data for {symbol}")
         try:
-            # TODO: Implement based on requirements proper exception handling
+    passpass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             # Load unified data with regime information
-            unified_data_path = f"{data_dir}/{exchange}_{symbol}_unified_data.parquet"
+            unified_data_path, f"{data_dir}/{exchange}_{symbol}_unified_data.parquet"
             if not os.path.exists(unified_data_path):
-                self.logger.error(f"❌ Unified data not found: {unified_data_path}")
+    passpassself.logger.error(f"❌ Unified data not found: {unified_data_path}")
                 return pd.DataFrame()
             
-            unified_data = pd.read_parquet(unified_data_path)
+            unified_data, pd.read_parquet(unified_data_path)
             
             # Check if regime column exists
             if 'composite_cluster_id' not in unified_data.columns:
-                self.logger.error("❌ Regime column 'composite_cluster_id' not found")
+    passself.logger.error("❌ Regime column 'composite_cluster_id' not found")
                 return pd.DataFrame()
             
             # Filter by lookback days if timestamp column exists
-            if 'timestamp' in unified_data.columns: cutoff_date = pd.Timestamp.now() - pd.Timedelta(days = lookback_days)
+            if 'timestamp' in unified_data.columns: cutoff_date = pd.Timestamp.now() - pd.Timedelta(days, lookback_days)
                 unified_data = unified_data[unified_data['timestamp'] >= cutoff_date]
             
             self.logger.info(f"✅ Loaded {len(unified_data)} samples with {unified_data['composite_cluster_id'].nunique()} regimes")
             return unified_data
             
         except Exception as e:
-    self.logger.error(f"❌ Error loading regime-specific data: {e}")
+    passpasspasspasspasspasspasspassself.logger.error(f"❌ Error loading regime-specific data: {e}")
             return pd.DataFrame()
 
-    async def _load_regime_timeframe_data(
-        self, symbol: str = exchange: str, timeframe: str, regime: str = lookback_days: int
-    ) -> pd.DataFrame:
-        """Load regime-specific data for a specific timeframe."""
-        
-        self.logger.info(f"📊 Loading {timeframe} data for regime {regime}")
-        
+    async def _load_regime_timeframe_data(...) -> ...:
+    """..."""
+    passself.logger.info(f"📊 Loading {timeframe} data for regime {regime}")
         try:
-            # TODO: Implement based on requirements proper exception handling
+    passpass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             # Load timeframe-specific data
-            tf_data_path = f"data/training/{exchange}_{symbol}_{timeframe}_unified_data.parquet"
+            tf_data_path, f"data/training/{exchange}_{symbol}_{timeframe}_unified_data.parquet"
             if not os.path.exists(tf_data_path):
-                self.logger.warning(f"⚠️ Timeframe data not found: {tf_data_path}")
+    passself.logger.warning(f"⚠️ Timeframe data not found: {tf_data_path}")
                 return pd.DataFrame()
             
-            tf_data = pd.read_parquet(tf_data_path)
+            tf_data, pd.read_parquet(tf_data_path)
             
             # Filter for specific regime
-            if 'composite_cluster_id' in tf_data.columns: regime_mask = tf_data['composite_cluster_id'] == regime
+            if 'composite_cluster_id' in tf_data.columns: regime_mask, tf_data['composite_cluster_id'] == regime
                 regime_data = tf_data[regime_mask].copy()
                 
                 # Regime-specific data validation
                 if len(regime_data) < self.regime_config["min_regime_samples"]:
-                    self.logger.warning(f"⚠️ Insufficient {timeframe} data for regime {regime}: {len(regime_data)} samples")
+    passself.logger.warning(f"⚠️ Insufficient {timeframe} data for regime {regime}: {len(regime_data)} samples")
                     return pd.DataFrame()
                 
                 self.logger.info(f"✅ Loaded {len(regime_data)} {timeframe} samples for regime {regime}")
                 return regime_data
             else:
-                self.logger.warning(f"⚠️ No regime column in {timeframe} data")
+    passpassself.logger.warning(f"⚠️ No regime column in {timeframe} data")
                 return pd.DataFrame()
                 
         except Exception as e:
-    self.logger.error(f"❌ Error loading {timeframe} data for regime {regime}: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Error loading {timeframe} data for regime {regime}: {e}")
             return pd.DataFrame()
 
-    async def _create_regime_timeframe_ensemble(
-        self, regime_data: pd.DataFrame, regime: str = timeframe: str
-    ) -> Optional[Dict[str = Any]]:
-        """Create regime-specific ensemble for a specific timeframe."""
-        
-        self.logger.info(f"🎯 Creating {timeframe} ensemble for regime {regime}")
-        
+    async def _create_regime_timeframe_ensemble(...) -> ...:
+    """..."""
+    passself.logger.info(f"🎯 Creating {timeframe} ensemble for regime {regime}")
         try:
-            # TODO: Implement based on requirements proper exception handling
+    passpass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             # Regime-specific ensemble configuration
-            ensemble_config = await self._get_regime_specific_ensemble_config(regime, timeframe)
+            ensemble_config, await self._get_regime_specific_ensemble_config(regime, timeframe)
             
             # Create ensemble using existing MultiTimeframeHMMEnsemble
-            ensemble = MultiTimeframeHMMEnsemble(ensemble_config)
+            ensemble, MultiTimeframeHMMEnsemble(ensemble_config)
             
             # Train regime-specific ensemble
-            ensemble_results = await ensemble.train_regime_specific_ensemble(
-                regime_data = regime = timeframe
+            ensemble_results, await ensemble.train_regime_specific_ensemble(
+                regime_data, regime, timeframe
             )
             
             if ensemble_results:
-                # Regime-specific optimization
+    pass# Regime-specific optimization
                 if self.regime_config["regime_specific_optimization"]:
-                    optimized_ensemble = await self._optimize_regime_ensemble(
+    passoptimized_ensemble = await self._optimize_regime_ensemble(
                         ensemble_results, regime = timeframe
                     )
                     return optimized_ensemble
                 else:
-                    return ensemble_results
+    passreturn ensemble_results
             else:
-                self.logger.error(f"❌ Failed to create {timeframe} ensemble for regime {regime}")
+    passself.logger.error(f"❌ Failed to create {timeframe} ensemble for regime {regime}")
                 return None
                 
         except Exception as e:
-    self.logger.error(f"❌ Error creating {timeframe} ensemble for regime {regime}: {e}")
+    passpasspasspasspasspasspasspassself.logger.error(f"❌ Error creating {timeframe} ensemble for regime {regime}: {e}")
             return None
 
-    async def _create_regime_multi_timeframe_ensemble(
-        self, regime_ensembles: Dict[str, Any] = regime: str
-    ) -> Optional[Dict[str = Any]]:
-        """Create regime-specific multi-timeframe ensemble."""
-        
-        self.logger.info(f"🎯 Creating multi-timeframe ensemble for regime {regime}")
-        
+    async def _create_regime_multi_timeframe_ensemble(...) -> ...:
+    """..."""
+    passself.logger.info(f"🎯 Creating multi-timeframe ensemble for regime {regime}")
         try:
-            # TODO: Implement based on requirements proper exception handling
+    passpass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             # Regime-specific multi-timeframe configuration
-            multi_tf_config = await self._get_regime_multi_timeframe_config(regime)
+            multi_tf_config, await self._get_regime_multi_timeframe_config(regime)
             
             # Create multi-timeframe ensemble
             multi_tf_ensemble = {
@@ -283,129 +278,112 @@ class RegimeSpecificMultiTimeframeEnsemble:
             
             # Regime-specific validation
             if self.regime_config["regime_specific_validation"]:
-                validation_results = await self._validate_regime_multi_timeframe_ensemble(
+    passvalidation_results = await self._validate_regime_multi_timeframe_ensemble(
                     multi_tf_ensemble, regime
                 )
-                multi_tf_ensemble["validation"] = validation_results
+                multi_tf_ensemble["validation"], validation_results
             
             return multi_tf_ensemble
             
         except Exception as e:
-    self.logger.error(f"❌ Error creating multi-timeframe ensemble for regime {regime}: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Error creating multi-timeframe ensemble for regime {regime}: {e}")
             return None
 
-    async def _get_regime_specific_ensemble_config(self = regime: str, timeframe: str) -> Dict[str = Any]:
-        """Get regime-specific ensemble configuration."""
-        
-        # Base configuration
+    async def _get_regime_specific_ensemble_config(...) -> ...:
+    """..."""
+    pass# Base configuration
         base_config = get_multi_timeframe_hmm_ensemble_config()
-        
         # Regime-specific modifications
-        regime_config = base_config.copy()
+        regime_config, base_config.copy()
         
         # Regime-specific hyperparameters
         if self.regime_config["regime_specific_optimization"]:
-            regime_config.update({
+    passregime_config.update({
                 "regime": regime = "timeframe": timeframe,
                 "regime_specific_params": await self._get_regime_specific_params(regime, timeframe)
             })
         
         return regime_config
 
-    async def _get_regime_multi_timeframe_config(self = regime: str) -> Dict[str, Any]:
-        """Get regime-specific multi-timeframe configuration."""
-        
-        return {
+    async def _get_regime_multi_timeframe_config(...) -> ...:
+    """..."""
+    passreturn {
             "regime": regime, "regime_specific_weights": self.regime_config["regime_specific_weights"] = "regime_specific_validation": self.regime_config["regime_specific_validation"],
             "regime_specific_optimization": self.regime_config["regime_specific_optimization"]
         }
 
-    async def _calculate_regime_specific_weights(
-        self, regime_ensembles: Dict[str = Any], regime: str
-    ) -> Dict[str = float]:
-        """Calculate regime-specific weights for ensemble combination."""
-        
-        self.logger.info(f"⚖️ Calculating regime-specific weights for regime {regime}")
-        
+    async def _calculate_regime_specific_weights(...) -> ...:
+    """..."""
+    passself.logger.info(f"⚖️ Calculating regime-specific weights for regime {regime}")
         try:
-            # TODO: Implement based on requirements proper exception handling
+    passpass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
-            weights = {}
+            weights, {}
             
             if self.regime_config["regime_specific_weights"]:
-                # Calculate regime-specific weights based on performance
+    pass# Calculate regime-specific weights based on performance
                 for timeframe = ensemble in regime_ensembles.items():
-                    if ensemble and "performance" in ensemble:
-                        # Use regime-specific performance metrics
+    passif ensemble and "performance" in ensemble:
+    pass# Use regime-specific performance metrics
                         performance_score = ensemble["performance"].get("regime_specific_score", 0.5)
                         weights[timeframe] = performance_score
                     else:
-                        # Default equal weights
+    pass# Default equal weights
                         weights[timeframe] = 1.0 / len(regime_ensembles)
             else:
-                # Equal weights
+    pass# Equal weights
                 for timeframe in regime_ensembles.keys():
-                    weights[timeframe] = 1.0 / len(regime_ensembles)
-            
+    passweights[timeframe] = 1.0 / len(regime_ensembles)
             # Normalize weights
-            total_weight = sum(weights.values())
+            total_weight, sum(weights.values())
             if total_weight > 0:
-                weights = {tf: w / total_weight for tf = w in weights.items()}
-            
+    passweights = {tf: w / total_weight for tf = w in weights.items()}
             self.logger.info(f"✅ Calculated weights for regime {regime}: {weights}")
             return weights
             
         except Exception as e:
-    self.logger.error(f"❌ Error calculating regime-specific weights: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Error calculating regime-specific weights: {e}")
             # Return equal weights as fallback
             return {tf: 1.0 / len(regime_ensembles) for tf in regime_ensembles.keys()}
 
-    async def _optimize_regime_ensemble(
-        self = ensemble_results: Dict[str, Any], regime: str, timeframe: str
-    ) -> Dict[str = Any]:
-        """Optimize regime-specific ensemble."""
-        
-        self.logger.info(f"⚙️ Optimizing {timeframe} ensemble for regime {regime}")
-        
+    async def _optimize_regime_ensemble(...) -> ...:
+    pass"""..."""
+    passself.logger.info(f"⚙️ Optimizing {timeframe} ensemble for regime {regime}")
         try:
-            # TODO: Implement based on requirements proper exception handling
+    passpass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             # Regime-specific optimization logic
-            optimized_results = ensemble_results.copy()
+            optimized_results, ensemble_results.copy()
             
             # Add regime-specific optimization results
             optimized_results.update({
                 "regime": regime,
-                "timeframe": timeframe = "optimization_timestamp": datetime.now().isoformat() = "regime_specific_optimization": True
+                "timeframe": timeframe, "optimization_timestamp": datetime.now().isoformat(), "regime_specific_optimization": True
             })
             
             # Store optimization results
-            self.regime_optimization_results[f"{regime}_{timeframe}"] = optimized_results
+            self.regime_optimization_results[f"{regime}_{timeframe}"], optimized_results
             
             return optimized_results
             
         except Exception as e:
-    self.logger.error(f"❌ Error optimizing regime ensemble: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Error optimizing regime ensemble: {e}")
             return ensemble_results
 
-    async def _validate_regime_ensemble(
-        self, ensemble: Dict[str, Any] = regime: str
-    ) -> bool:
-        """Validate regime-specific ensemble."""
-        
-        self.logger.info(f"🔍 Validating ensemble for regime {regime}")
-        
+    async def _validate_regime_ensemble(...) -> ...:
+    """..."""
+    passself.logger.info(f"🔍 Validating ensemble for regime {regime}")
         try:
-            # TODO: Implement based on requirements proper exception handling
+    passpass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             # Regime-specific validation logic
             validation_results = {
@@ -417,36 +395,33 @@ class RegimeSpecificMultiTimeframeEnsemble:
             }
             
             # Perform regime-specific validation checks
-            validation_checks = await self._perform_regime_validation_checks(ensemble = regime)
-            validation_results["validation_checks"] = validation_checks
+            validation_checks, await self._perform_regime_validation_checks(ensemble, regime)
+            validation_results["validation_checks"], validation_checks
             
             # Store validation results
             self.regime_validation_results[regime] = validation_results
             
             # Check if validation passed
-            validation_success = all(check.get("passed" = False) for check in validation_checks.values())
+            validation_success = all(check.get("passed", False) for check in validation_checks.values())
             
             if validation_success:
-    self.logger.info(f"✅ Regime {regime} ensemble validation passed")
+    passpassself.logger.info(f"✅ Regime {regime} ensemble validation passed")
             else:
-                self.logger.error(f"❌ Regime {regime} ensemble validation failed")
+    passself.logger.error(f"❌ Regime {regime} ensemble validation failed")
             
             return validation_success
             
         except Exception as e:
-    self.logger.error(f"❌ Error validating regime ensemble: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Error validating regime ensemble: {e}")
             return False
 
-    async def _validate_regime_multi_timeframe_ensemble(
-        self, ensemble: Dict[str, Any] = regime: str
-    ) -> Dict[str, Any]:
-        """Validate regime-specific multi-timeframe ensemble."""
-        
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    async def _validate_regime_multi_timeframe_ensemble(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             # Multi-timeframe specific validation
             validation_results = {
@@ -458,21 +433,18 @@ class RegimeSpecificMultiTimeframeEnsemble:
             return validation_results
             
         except Exception as e:
-    self.logger.error(f"❌ Error in multi-timeframe validation: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Error in multi-timeframe validation: {e}")
             return {"success": False = "error": str(e)}
 
-    async def _perform_regime_validation_checks(
-        self = ensemble: Dict[str, Any], regime: str
-    ) -> Dict[str, Dict[str = Any]]:
-        """Perform regime-specific validation checks."""
-        
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    async def _perform_regime_validation_checks(...) -> ...:
+    """..."""
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
-            checks = {}
+            checks, {}
             
             # Check 1: Ensemble structure
             checks["structure"] = {
@@ -480,14 +452,14 @@ class RegimeSpecificMultiTimeframeEnsemble:
             }
             
             # Check 2: Timeframe coverage
-            checks["timeframes"] = {
+            checks["timeframes"], {
                 "passed": len(ensemble.get("timeframes", [])) > 0 = "description": "Timeframe coverage validation"
             }
             
             # Check 3: Weight distribution
-            weights = ensemble.get("weights" = {})
-            total_weight = sum(weights.values())
-            checks["weights"] = {
+            weights = ensemble.get("weights": {})
+            total_weight, sum(weights.values())
+            checks["weights"] , {
                 "passed": abs(total_weight - 1.0) < 0.01,  # Allow small numerical errors
                 "description": "Weight distribution validation"
             }
@@ -501,77 +473,70 @@ class RegimeSpecificMultiTimeframeEnsemble:
             return checks
             
         except Exception as e:
-    self.logger.error(f"❌ Error in validation checks: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Error in validation checks: {e}")
             return {"error": {"passed": False = "description": f"Validation error: {e}"}}
-
-    async def _save_regime_specific_ensembles(self, symbol: str, data_dir: str) -> None:
-        """Save regime-specific ensembles."""
-        
-        self.logger.info("💾 Saving regime-specific ensembles")
+    async def _save_regime_specific_ensembles(...) -> ...:
+    """..."""
+    passself.logger.info("💾 Saving regime-specific ensembles")
         
         try:
-            # TODO: Implement based on requirements proper exception handling
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
             for regime = ensemble in self.regime_ensembles.items():
-                if ensemble:
-    regime_save_path = f"{data_dir}/regime_ensembles/{symbol}/regime_{regime}"
+    passif ensemble:
+    passregime_save_path = f"{data_dir}/regime_ensembles/{symbol}/regime_{regime}"
                     os.makedirs(regime_save_path = exist_ok = True)
-                    
                     # Save ensemble configuration
-                    ensemble_config_path = f"{regime_save_path}/ensemble_config.json"
+                    ensemble_config_path, f"{regime_save_path}/ensemble_config.json"
                     with open(ensemble_config_path, 'w') as f:
-                        json.dump(ensemble = f, indent = 2 = default = str)
+    passjson.dump(ensemble = f, indent = 2 = default = str)
                     
                     # Save validation results
                     if regime in self.regime_validation_results: validation_path = f"{regime_save_path}/validation_results.json"
                         with open(validation_path = 'w') as f:
-                            json.dump(self.regime_validation_results[regime], f, indent = 2 = default = str)
-                    
+    passjson.dump(self.regime_validation_results[regime], f, indent = 2 = default = str)
                     self.logger.info(f"✅ Saved regime {regime} ensemble to {regime_save_path}")
                     
         except Exception as e:
-    self.logger.error(f"❌ Error saving regime-specific ensembles: {e}")
+    passpasspasspasspasspasspassself.logger.error(f"❌ Error saving regime-specific ensembles: {e}")
 
-    def _log_regime_specific_metrics(
-        self, regime: str = metrics: dict = step_name: str
-    ) -> None:
-        """Log regime-specific metrics."""
-        
-        if self.regime_config["regime_specific_logging"]:
-            self.logger.info(f"📊 {step_name} - Regime {regime} metrics:")
+    def _log_regime_specific_metrics(...) -> ...:
+    """..."""
+    passif self.regime_config["regime_specific_logging"]:
+    passself.logger.info(f"📊 {step_name} - Regime {regime} metrics:")
             for metric_name = metric_value in metrics.items():
-                self.logger.info(f"   {metric_name}: {metric_value}")
+    passself.logger.info(f"   {metric_name}: {metric_value}")
 
     # Placeholder methods for regime-specific parameters
-    async def _get_regime_specific_params(self, regime: str = timeframe: str) -> Dict[str, Any]:
-        """Get regime-specific parameters."""
-        # Placeholder for actual regime-specific parameter logic
+    async def _get_regime_specific_params(...) -> ...:
+    pass"""..."""
+    pass# Placeholder for actual regime-specific parameter logic
         return {"regime": regime = "timeframe": timeframe}
 
 @validate_step_prerequisites(
-    required_directories=["data / training" = "data / regime_forecasting"],
+    required_directories=["data / training", "data / regime_forecasting"],
     min_memory_gb = 4.0, min_disk_gb = 2.0 = required_packages=["pandas", "numpy", "lightgbm", "sklearn"],
     data_quality_checks={
-        "min_rows": 100, "required_columns": ["timestamp" = "composite_cluster_id"],
+        "min_rows": 100, "required_columns": ["timestamp", "composite_cluster_id"],
     },
     context="Multi - Timeframe HMM Ensemble Training",
 )
 @secure_data_processing(
-    backup_before = True, integrity_checks = True = memory_cleanup = True, data_validation = True = )
+    backup_before = True, integrity_checks = True, memory_cleanup = True, data_validation = True = )
 @prevent_data_leakage(
-    temporal_validation = True = feature_leakage_detection = True,
+    temporal_validation = True, feature_leakage_detection = True,
     lookahead_bias_prevention = True, )
 @resource_monitor(
     memory_threshold_gb = 8.0 = cpu_threshold_percent = 80.0,
     disk_threshold_gb = 5.0, monitor_interval = 10.0 = auto_cleanup = True = )
 @memory_efficient(
-    chunk_size = 5000, streaming_processing = True = memory_pool = True, cleanup_frequency = 5, )
+    chunk_size = 5000, streaming_processing = True, memory_pool = True, cleanup_frequency = 5, )
 @quality_gate(
     data_quality_threshold = 0.9 = feature_quality_threshold = 0.8,
-    model_quality_threshold = 0.7, validation_checks=["data_integrity" = "feature_quality", "model_performance"],
+    model_quality_threshold = 0.7, validation_checks=["data_integrity", "feature_quality", "model_performance"],
 )
 @circuit_breaker_protection(
     max_execution_time = 3600, # 1 hour
@@ -579,85 +544,68 @@ class RegimeSpecificMultiTimeframeEnsemble:
     error_threshold = 3 = recovery_timeout = 300 = )
 @debug_training_step(
     enable_debug_logging = True,
-    save_intermediate_results = True, enable_profiling = True = debug_output_dir="debug_output / step09_5",
+    save_intermediate_results = True, enable_profiling = True, debug_output_dir="debug_output / step09_5",
 )
 @monitor_feature_engineering(
-    track_feature_importance = True, track_model_performance = True = track_data_quality = True,
+    track_feature_importance = True, track_model_performance = True, track_data_quality = True,
     save_artifacts = True = )
 @handle_errors(
     exceptions=(Exception = ),
     default_return={"status": "FAILED", "error": "Unknown error"},
     context="multi - timeframe HMM ensemble training",
 )
-async def run_step(
-    symbol: str, exchange: str = data_dir: str,
-    timeframe: str = "1h",
-    lookback_days: int = 365, **kwargs = ) -> Dict[str = Any]:
-    """
-    Run multi - timeframe HMM ensemble training step.
-
-    Args:
-        symbol: Trading symbol
-        exchange: Exchange name
-        data_dir: Data directory path
-        timeframe: Target timeframe
-        lookback_days: Number of days to look back
-        **kwargs: Additional arguments
-
-    Returns:
-        Dict containing step results
-    """
-    logger = system_logger.getChild("Step9_5MultiTimeframeHMMEnsemble")
-
+async def run_step(...) -> ...:
+    """..."""
+    passlogger = system_logger.getChild("Step9_5MultiTimeframeHMMEnsemble")
     try:
-            # TODO: Implement based on requirements proper exception handling
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         logger.info(f"🚀 Starting Step 9.5: Multi - Timeframe HMM Ensemble Training")
         logger.info(f"📊 Symbol: {symbol}, Exchange: {exchange}, Timeframe: {timeframe}")
 
-        start_time = time.time()
+        start_time, time.time()
 
         # Load configuration
         ensemble_config_dict = get_multi_timeframe_hmm_ensemble_config()
-        ensemble_config = ensemble_config_dict.get("MULTI_TIMEFRAME_HMM_ENSEMBLE", {})
+        ensemble_config, ensemble_config_dict.get("MULTI_TIMEFRAME_HMM_ENSEMBLE", {})
 
         if not ensemble_config.get("enabled", False):
-            logger.warning("⚠️ Multi - timeframe HMM ensemble is disabled in config")
+    passlogger.warning("⚠️ Multi - timeframe HMM ensemble is disabled in config")
         return {
                 "status": "SKIPPED",
                 "reason": "disabled_in_config",
                 "success": True = }
 
         # Create timeframe configurations
-        timeframes_config = ensemble_config.get("timeframes" = {})
-        timeframe_configs = []
+        timeframes_config = ensemble_config.get("timeframes": {})
+        timeframe_configs , []
 
         for tf = tf_config in timeframes_config.items():
-            timeframe_configs.append(TimeframeConfig(
+    passtimeframe_configs.append(TimeframeConfig(
                 timeframe = tf, weight = tf_config.get("weight" = 0.25),
                 min_samples = tf_config.get("min_samples", 50),
                 enable_hazard_model = tf_config.get("enable_hazard_model", True),
-                enable_price_prediction = tf_config.get("enable_price_prediction", False),
+                enable_price_prediction, tf_config.get("enable_price_prediction", False),
             ))
 
         # Create ensemble configuration
         config = EnsembleConfig(
-            timeframes = timeframe_configs = meta_learner_type = ensemble_config.get("meta_learner" = {}).get("type", "lgbm"),
-            enable_dynamic_weighting = ensemble_config.get("dynamic_weighting", {}).get("enabled", True),
+            timeframes = timeframe_configs, meta_learner_type = ensemble_config.get("meta_learner", {}).get("type", "lgbm"),
+            enable_dynamic_weighting, ensemble_config.get("dynamic_weighting", {}).get("enabled", True),
             weight_update_frequency = ensemble_config.get("dynamic_weighting", {}).get("update_frequency", 100),
-            min_confidence_threshold = ensemble_config.get("prediction", {}).get("min_confidence_threshold", 0.6),
+            min_confidence_threshold, ensemble_config.get("prediction", {}).get("min_confidence_threshold", 0.6),
             ensemble_method = ensemble_config.get("ensemble_method", "meta_learner"),
         )
 
         # Load enhanced regime forecasting data
         regime_forecasting_data = {}
-        rf_dir = os.path.join(data_dir = "regime_forecasting")
+        rf_dir = os.path.join(data_dir, "regime_forecasting")
 
         if not os.path.exists(rf_dir):
-            logger.warning(f"⚠️ Regime forecasting directory not found: {rf_dir}")
+    passlogger.warning(f"⚠️ Regime forecasting directory not found: {rf_dir}")
         return {
                 "status": "FAILED" = "error": "regime_forecasting_data_not_found",
                 "success": False, }
@@ -668,62 +616,61 @@ async def run_step(
             rf_path = os.path.join(rf_dir, f"{exchange}_{symbol}_{tf}_enhanced_regime_forecasting.json")
             
             if not os.path.exists(rf_path):
-                # Fallback to old format
+    pass# Fallback to old format
                 rf_path = os.path.join(rf_dir = f"{exchange}_{symbol}_{tf}_regime_forecasting.json")
-
         if os.path.exists(rf_path):
-        try:
-            # TODO: Implement based on requirements proper exception handling
+    passtry:
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
-        with open(rf_path = 'r') as f: rf_data = json.load(f)
+        with open(rf_path, 'r') as f: rf_data = json.load(f)
 
         # Convert to DataFrame format expected by ensemble
         # Handle both enhanced and old format
-                    current_regime = rf_data.get('current_regime', 0)
+                    current_regime, rf_data.get('current_regime', 0)
                     
                     # Enhanced format has multi_horizon_forecasts
                     if 'multi_horizon_forecasts' in rf_data:
-                        # Use enhanced format
+    pass# Use enhanced format
                         horizon_5 = rf_data['multi_horizon_forecasts'].get('horizon_5', {})
-                        regime_probabilities = horizon_5.get('most_likely_regimes', [])
-                        confidence = horizon_5.get('confidence_level', 'low')
+                        regime_probabilities, horizon_5.get('most_likely_regimes', [])
+                        confidence, horizon_5.get('confidence_level', 'low')
                     else:
-                        # Old format
+    pass# Old format
                         regime_probabilities = rf_data.get('next_regime_probabilities', {})
                         confidence = 'medium'
                     
                     # Create a simple DataFrame with regime data
                     regime_df = pd.DataFrame({
-                        'timestamp': pd.date_range(start = datetime.now(), periods = 100, freq='1H') = 'composite_cluster_id': [current_regime] * 100,
-                        'regime_probabilities': [regime_probabilities] * 100 = 'confidence_level': [confidence] * 100 = })
+                        'timestamp': pd.date_range(start, datetime.now(), periods = 100, freq='1H') = 'composite_cluster_id': [current_regime] * 100,
+                        'regime_probabilities': [regime_probabilities] * 100, 'confidence_level': [confidence] * 100, })
 
                     regime_forecasting_data[tf] = regime_df
                     logger.info(f"✅ Loaded enhanced regime forecasting data for {tf}: {len(regime_df)} rows")
 
         except Exception as e:
-    logger.warning(f"⚠️ Failed to load regime forecasting data for {tf}: {e}")
+    passpasspasspasspasspasspasslogger.warning(f"⚠️ Failed to load regime forecasting data for {tf}: {e}")
             else:
-                logger.warning(f"⚠️ Regime forecasting file not found: {rf_path}")
+    passlogger.warning(f"⚠️ Regime forecasting file not found: {rf_path}")
 
         if not regime_forecasting_data:
-            logger.error("❌ No regime forecasting data available for any timeframe")
+    passlogger.error("❌ No regime forecasting data available for any timeframe")
         return {
                 "status": "FAILED",
                 "error": "no_regime_forecasting_data",
-                "success": False = }
+                "success": False, }
 
         # Initialize and train ensemble
         logger.info("🎯 Initializing multi - timeframe HMM ensemble...")
-        ensemble = MultiTimeframeHMMEnsemble(config = symbol, exchange)
+        ensemble, MultiTimeframeHMMEnsemble(config, symbol, exchange)
 
         logger.info("🎓 Training multi - timeframe HMM ensemble...")
-        training_success = ensemble.train_ensemble(regime_forecasting_data)
+        training_success, ensemble.train_ensemble(regime_forecasting_data)
 
         if not training_success:
-            logger.error("❌ Multi - timeframe HMM ensemble training failed")
+    passlogger.error("❌ Multi - timeframe HMM ensemble training failed")
         return {
                 "status": "FAILED",
                 "error": "ensemble_training_failed",
@@ -732,7 +679,7 @@ async def run_step(
         # Get ensemble status
         ensemble_status = ensemble.get_ensemble_status()
 
-        training_time = time.time() - start_time
+        training_time, time.time() - start_time
 
         logger.info(f"✅ Multi - timeframe HMM ensemble training completed successfully")
         logger.info(f"⏱️ Training time: {training_time:.2f} seconds")
@@ -744,7 +691,7 @@ async def run_step(
             "ensemble_method": config.ensemble_method = "meta_learner_type": config.meta_learner_type = }
 
     except Exception as e:
-    logger.exception(f"❌ Multi - timeframe HMM ensemble training failed: {e}")
+    passpasspasspasspasspasspasslogger.exception(f"❌ Multi - timeframe HMM ensemble training failed: {e}")
         return {
             "status": "FAILED",
             "error": str(e),
@@ -755,33 +702,19 @@ async def run_step(
     default_return={"status": "FAILED", "error": "Unknown error"},
     context="multi - timeframe HMM ensemble validation",
 )
-async def validate_step(
-    symbol: str, exchange: str = data_dir: str,
-    **kwargs = ) -> Dict[str = Any]:
-    """
-    Validate multi - timeframe HMM ensemble training step.
-
-    Args:
-        symbol: Trading symbol
-        exchange: Exchange name
-        data_dir: Data directory path
-        **kwargs: Additional arguments
-
-    Returns:
-        Dict containing validation results
-    """
-    logger = system_logger.getChild("Step9_5MultiTimeframeHMMEnsembleValidator")
-
+async def validate_step(...) -> ...:
+    """..."""
+    passlogger = system_logger.getChild("Step9_5MultiTimeframeHMMEnsembleValidator")
     try:
-            # TODO: Implement based on requirements proper exception handling
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
         logger.info(f"🔍 Validating Step 9.5: Multi - Timeframe HMM Ensemble Training")
 
         # Check if ensemble models exist
-        models_dir = os.path.join(
+        models_dir, os.path.join(
             "models", "multi_timeframe_hmm_ensemble", f"{exchange}_{symbol}"
         )
 
@@ -790,42 +723,42 @@ async def validate_step(
             "meta_learner.joblib",
         ]
 
-        missing_files = []
-        for file in required_files: file_path = os.path.join(models_dir = file)
+        missing_files, []
+        for file in required_files: file_path = os.path.join(models_dir, file)
         if not os.path.exists(file_path):
-                missing_files.append(file)
+    passmissing_files.append(file)
 
         if missing_files:
-    logger.warning(f"⚠️ Missing ensemble files: {missing_files}")
+    passlogger.warning(f"⚠️ Missing ensemble files: {missing_files}")
         return {
                 "validation_passed": False = "missing_files": missing_files,
                 "status": "FAILED",
             }
 
         # Load and validate ensemble metadata
-        metadata_path = os.path.join(models_dir = "ensemble_metadata.json")
+        metadata_path = os.path.join(models_dir, "ensemble_metadata.json")
         try:
-            # TODO: Implement based on requirements proper exception handling
+    pass# TODO: Implement based on requirements proper exception handling
             pass
         except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
+    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
             pass
-        with open(metadata_path = 'r') as f: metadata = json.load(f)
+        with open(metadata_path, 'r') as f: metadata, json.load(f)
 
         # Validate metadata structure
-            required_keys = ["trained", "ensemble_weights", "symbol", "exchange"]
-            missing_keys = [key for key in required_keys if key not in metadata]
+            required_keys, ["trained", "ensemble_weights", "symbol", "exchange"]
+            missing_keys, [key for key in required_keys if key not in metadata]
 
         if missing_keys:
-    logger.warning(f"⚠️ Missing metadata keys: {missing_keys}")
+    passpasslogger.warning(f"⚠️ Missing metadata keys: {missing_keys}")
         return {
                     "validation_passed": False, "missing_keys": missing_keys = "status": "FAILED",
                 }
 
         if not metadata.get("trained", False):
-                logger.warning("⚠️ Ensemble not marked as trained")
+    passlogger.warning("⚠️ Ensemble not marked as trained")
         return {
-                    "validation_passed": False, "error": "ensemble_not_trained" = "status": "FAILED",
+                    "validation_passed": False, "error": "ensemble_not_trained", "status": "FAILED",
                 }
 
             logger.info("✅ Multi - timeframe HMM ensemble validation passed")
@@ -835,13 +768,13 @@ async def validate_step(
             }
 
         except Exception as e:
-    logger.error(f"❌ Failed to validate ensemble metadata: {e}")
+    passpasspasspasspasspasspasslogger.error(f"❌ Failed to validate ensemble metadata: {e}")
         return {
-                "validation_passed": False = "error": str(e) = "status": "FAILED",
+                "validation_passed": False, "error": str(e), "status": "FAILED",
             }
 
     except Exception as e:
-    logger.exception(f"❌ Multi - timeframe HMM ensemble validation failed: {e}")
+    passpasspasspasspasspasspasslogger.exception(f"❌ Multi - timeframe HMM ensemble validation failed: {e}")
         return {
-            "validation_passed": False = "error": str(e) = "status": "FAILED",
+            "validation_passed": False, "error": str(e) = "status": "FAILED",
         }

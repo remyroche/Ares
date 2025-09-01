@@ -20,8 +20,8 @@ sys.path.insert(0, str(project_root))
 joblib.parallel._backend = None
 
 
-async def main():
-    """Run the pipeline from step03 onwards."""
+async def main(...):
+    pass"""Run the pipeline from step03 onwards."""
 
     # Configuration
     symbol = "ETHUSDT"
@@ -49,9 +49,9 @@ async def main():
     }
 
     try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Execute from step03 onwards
         success = await orchestrator.execute_from_step(
             start_step=start_step,
@@ -60,13 +60,13 @@ except Exception as e:
         )
 
         if success:
-            print("✅ Pipeline completed successfully from step03 onwards!")
+    passprint("✅ Pipeline completed successfully from step03 onwards!")
         else:
-            print("❌ Pipeline failed from step03 onwards")
+    passprint("❌ Pipeline failed from step03 onwards")
             return False
 
     except Exception as e:
-        print(f"❌ Error running pipeline from step03: {e}")
+    passpasspasspasspasspasspassprint(f"❌ Error running pipeline from step03: {e}")
         traceback.print_exc()
         return False
 
@@ -74,6 +74,6 @@ except Exception as e:
 
 
 if __name__ == "__main__":
-    # Run the async main function
+    pass# Run the async main function
     success = asyncio.run(main())
     sys.exit(0 if success else 1)

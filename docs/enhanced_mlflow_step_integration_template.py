@@ -25,30 +25,32 @@ from pathlib import Path
 
 
 class ExampleStep:
-    """Example step showing enhanced MLflow integration pattern."""
 
-    def __init__(self, config: Dict[str, Any]):
-        self.config = config
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="examplestep initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize ExampleStep."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    passpasspass"""Example step showing enhanced MLflow integration pattern."""
+
+    def __init__(...):
+    passself.config = config
         self.logger = system_logger
 
     @with_enhanced_mlflow_logging("example_step")
-    async def execute(
-        self,
-        training_input: Dict[str, Any],
-        pipeline_state: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Execute the step with automatic enhanced MLflow logging.
-
-        The @with_enhanced_mlflow_logging decorator automatically:
-        - Creates an MLflow run for this step
-        - Logs enhanced training metadata (asset, exchange, lookback_period, project_version, date)
-        - Logs step parameters
-        - Logs step execution metrics
-        - Logs step completion metadata
-        """
-
-        # Step execution logic here
+    async def execute(...) -> ...:
+    """..."""
+    pass# Step execution logic here
         symbol = training_input.get("symbol", "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
         timeframe = training_input.get("timeframe", "1m")
@@ -79,26 +81,19 @@ class ExampleStep:
             "artifacts": artifacts,
         }
 
-    async def _log_step_artifacts_to_mlflow(
-        self,
-        processed_data: Any,
-        trained_model: Any,
-        metrics: Dict[str, float],
-        artifacts: Dict[str, str],
-        training_input: Dict[str, Any]
-    ) -> None:
-        """Log step artifacts to MLflow with enhanced metadata and standardized naming."""
-        try:
-    pass  # TODO: Add proper exception handling
+    async def _log_step_artifacts_to_mlflow(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             timeframe = training_input.get("timeframe", "1m")
 
             # Log processed data as DataFrame with standardized naming
             if hasattr(processed_data, 'to_parquet'):
-                artifact_name = log_step_dataframe_with_standardized_name(
+    passpassartifact_name = log_step_dataframe_with_standardized_name(
                     config=self.config,
                     step_name="example_step",
                     df=processed_data,
@@ -114,7 +109,7 @@ except Exception as e:
 
             # Log trained model
             if trained_model:
-                log_step_model(
+    passlog_step_model(
                     config=self.config,
                     step_name="example_step",
                     model=trained_model,
@@ -156,7 +151,7 @@ except Exception as e:
 
             # Log metrics
             if metrics:
-                log_step_metrics(
+    passlog_step_metrics(
                     config=self.config,
                     step_name="example_step",
                     metrics=metrics,
@@ -169,8 +164,8 @@ except Exception as e:
 
             # Log artifact files with standardized naming
             for artifact_name, artifact_path in artifacts.items():
-                if Path(artifact_path).exists():
-                    artifact_file_name = log_step_artifact_with_standardized_name(
+    passpassif Path(artifact_path).exists():
+    passartifact_file_name = log_step_artifact_with_standardized_name(
                         config=self.config,
                         step_name="example_step",
                         artifact_path=artifact_path,
@@ -186,34 +181,43 @@ except Exception as e:
             self.logger.info("✅ Example step artifacts logged to MLflow with standardized naming successfully")
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to log example step artifacts to MLflow: {e}")
+    passpasspasspasspasspasspasspassself.logger.error(f"❌ Failed to log example step artifacts to MLflow: {e}")
             # Don't fail the step if MLflow logging fails
 
-    async def _process_data(self, training_input: Dict[str, Any]) -> Any:
-        """Example data processing method."""
-        # Data processing logic here
+    async def _process_data(...) -> ...:
+    pass"""..."""
+    pass# Data processing logic here
         return pd.DataFrame()  # Example return
 
-    async def _train_model(self, data: Any) -> Any:
-        """Example model training method."""
-        # Model training logic here
+    async def _train_model(...) -> ...:
+    """..."""
+    pass# Model training logic here
         return None  # Example return
 
-    async def _calculate_metrics(self, model: Any, data: Any) -> Dict[str, float]:
-        """Example metrics calculation method."""
-        # Metrics calculation logic here
+    async def _calculate_metrics(...) -> ...:
+    """..."""
+    pass# Metrics 
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="examplestepwithmanager initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize ExampleStepWithManager."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+calculation logic here
         return {"accuracy": 0.85, "precision": 0.82}  # Example return
 
-    async def _save_artifacts(
-        self,
-        data: Any,
-        model: Any,
-        symbol: str,
-        exchange: str,
-        timeframe: str
-    ) -> Dict[str, str]:
-        """Example artifact saving method."""
-        # Artifact saving logic here
+    async def _save_artifacts(...) -> ...:
+    """..."""
+    pass# Artifact saving logic here
         return {
             "processed_data": f"data/processed/{exchange}_{symbol}_{timeframe}_data.parquet",
             "trained_model": f"models/{exchange}_{symbol}_{timeframe}_model.pkl",
@@ -223,27 +227,22 @@ except Exception as e:
 
 # Alternative: Using the EnhancedMLflowManager directly
 class ExampleStepWithManager:
-    """Example step using EnhancedMLflowManager directly."""
+    pass"""Example step using EnhancedMLflowManager directly."""
 
-    def __init__(self, config: Dict[str, Any]):
-        self.config = config
+    def __init__(...):
+    passself.config = config
         self.mlflow_manager = EnhancedMLflowManager(config)
         self.logger = system_logger
 
-    async def execute(
-        self,
-        training_input: Dict[str, Any],
-        pipeline_state: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """Execute the step using EnhancedMLflowManager directly."""
-
-        # Start MLflow run
+    async def execute(...) -> ...:
+    """..."""
+    pass# Start MLflow run
         run_id = self.mlflow_manager.start_run(step_name="example_step_with_manager")
 
         try:
-    pass  # TODO: Add proper exception handling
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Step execution logic here
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
@@ -287,9 +286,9 @@ except Exception as e:
             # Validate the run has all required metadata
             is_valid = self.mlflow_manager.validate_current_run()
             if is_valid:
-                self.logger.info("✅ MLflow run validation passed")
+    passself.logger.info("✅ MLflow run validation passed")
             else:
-                self.logger.warning("⚠️ MLflow run validation failed")
+    passself.logger.warning("⚠️ MLflow run validation failed")
 
             return {
                 "status": "SUCCESS",
@@ -300,44 +299,30 @@ except Exception as e:
             }
 
         finally:
-            # End the MLflow run
+    pass# End the MLflow run
             self.mlflow_manager.end_run()
 
-    async def _process_data(self, training_input: Dict[str, Any]) -> Any:
-        """Example data processing method."""
-        # Data processing logic here
+    async def _process_data(...) -> ...:
+    """..."""
+    pass# Data processing logic here
         return pd.DataFrame()  # Example return
 
-    async def _train_model(self, data: Any) -> Any:
-        """Example model training method."""
-        # Model training logic here
+    async def _train_model(...) -> ...:
+    """..."""
+    pass# Model training logic here
         return None  # Example return
 
-    async def _calculate_metrics(self, model: Any, data: Any) -> Dict[str, float]:
-        """Example metrics calculation method."""
-        # Metrics calculation logic here
+    async def _calculate_metrics(...) -> ...:
+    """..."""
+    pass# Metrics calculation logic here
         return {"accuracy": 0.85, "precision": 0.82}  # Example return
 
 
 # Function-based step example
 @with_enhanced_mlflow_logging("example_function_step")
-async def example_function_step(
-    symbol: str,
-    exchange: str,
-    timeframe: str = "1m",
-    data_dir: str = "data_cache",
-    **kwargs: Any
-) -> bool:
-    """
-    Example function-based step with enhanced MLflow logging.
-
-    The @with_enhanced_mlflow_logging decorator automatically handles:
-    - MLflow run creation and management
-    - Enhanced metadata logging
-    - Step execution tracking
-    """
-
-    # Step execution logic here
+async def example_function_step(...) -> ...:
+    """..."""
+    pass# Step execution logic here
     processed_data = await _process_data_function(symbol, exchange, timeframe, data_dir)
 
     # Train model
@@ -357,20 +342,12 @@ async def example_function_step(
     return True
 
 
-async def _log_function_artifacts_to_mlflow(
-    processed_data: Any,
-    trained_model: Any,
-    metrics: Dict[str, float],
-    artifacts: Dict[str, str],
-    symbol: str,
-    exchange: str,
-    timeframe: str
-) -> None:
-    """Log function step artifacts to MLflow."""
-    try:
-    pass  # TODO: Add proper exception handling
+async def _log_function_artifacts_to_mlflow(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
         # Create config for MLflow logging
         config = {
             "trading_symbol": symbol,
@@ -380,7 +357,7 @@ except Exception as e:
 
         # Log processed data
         if hasattr(processed_data, 'to_parquet'):
-            log_step_dataframe(
+    passlog_step_dataframe(
                 config=config,
                 step_name="example_function_step",
                 df=processed_data,
@@ -393,7 +370,7 @@ except Exception as e:
 
         # Log model
         if trained_model:
-            log_step_model(
+    passlog_step_model(
                 config=config,
                 step_name="example_function_step",
                 model=trained_model,
@@ -406,7 +383,7 @@ except Exception as e:
 
         # Log metrics
         if metrics:
-            log_step_metrics(
+    passlog_step_metrics(
                 config=config,
                 step_name="example_function_step",
                 metrics=metrics,
@@ -418,36 +395,30 @@ except Exception as e:
         system_logger.info("✅ Function step artifacts logged to MLflow successfully")
 
     except Exception as e:
-        system_logger.error(f"❌ Failed to log function step artifacts to MLflow: {e}")
+    passpasspasspasspasspasspasssystem_logger.error(f"❌ Failed to log function step artifacts to MLflow: {e}")
 
 
-async def _process_data_function(symbol: str, exchange: str, timeframe: str, data_dir: str) -> Any:
-    """Example data processing function."""
-    # Data processing logic here
+async def _process_data_function(...) -> ...:
+    """..."""
+    pass# Data processing logic here
     return pd.DataFrame()  # Example return
 
 
-async def _train_model_function(data: Any) -> Any:
-    """Example model training function."""
-    # Model training logic here
+async def _train_model_function(...) -> ...:
+    """..."""
+    pass# Model training logic here
     return None  # Example return
 
 
-async def _calculate_metrics_function(model: Any, data: Any) -> Dict[str, float]:
-    """Example metrics calculation function."""
-    # Metrics calculation logic here
+async def _calculate_metrics_function(...) -> ...:
+    """..."""
+    pass# Metrics calculation logic here
     return {"accuracy": 0.85, "precision": 0.82}  # Example return
 
 
-async def _save_artifacts_function(
-    data: Any,
-    model: Any,
-    symbol: str,
-    exchange: str,
-    timeframe: str
-) -> Dict[str, str]:
-    """Example artifact saving function."""
-    # Artifact saving logic here
+async def _save_artifacts_function(...) -> ...:
+    """..."""
+    pass# Artifact saving logic here
     return {
         "processed_data": f"data/processed/{exchange}_{symbol}_{timeframe}_data.parquet",
         "trained_model": f"models/{exchange}_{symbol}_{timeframe}_model.pkl",
@@ -458,8 +429,8 @@ async def _save_artifacts_function(
 # Usage examples:
 
 # 1. Class-based step with decorator
-async def example_class_step_usage():
-    config = {
+async def example_class_step_usage(...):
+    passpassconfig = {
         "trading_symbol": "ETHUSDT",
         "exchange_name": "BINANCE",
         "lookback_years": 2,
@@ -478,8 +449,8 @@ async def example_class_step_usage():
 
 
 # 2. Class-based step with manager
-async def example_manager_step_usage():
-    config = {
+async def example_manager_step_usage(...):
+    passpassconfig = {
         "trading_symbol": "ETHUSDT",
         "exchange_name": "BINANCE",
         "lookback_years": 2,
@@ -498,8 +469,8 @@ async def example_manager_step_usage():
 
 
 # 3. Function-based step
-async def example_function_step_usage():
-    result = await example_function_step(
+async def example_function_step_usage(...):
+    passresult = await example_function_step(
         symbol="ETHUSDT",
         exchange="BINANCE",
         timeframe="1m",
@@ -509,7 +480,7 @@ async def example_function_step_usage():
 
 
 if __name__ == "__main__":
-    # Run examples
+    pass# Run examples
     asyncio.run(example_class_step_usage())
     asyncio.run(example_manager_step_usage())
     asyncio.run(example_function_step_usage())

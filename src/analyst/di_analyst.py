@@ -33,10 +33,6 @@ initialization_error,
 
 
 class DIAnalyst(AnalystBase, IAnalyst):
-    # Implementation placeholder - add specific implementation as needed
-class DIAnalyst(AnalystBase, IAnalyst):
-    pass  # TODO: Add implementation
-class DIAnalyst(AnalystBase, IAnalyst):
     """
 Dependency injection-aware Analyst implementation.
 
@@ -378,5 +374,29 @@ self.logger.info("Analyst component started")
 
 async def _stop_component(self) -> None:
         """Stop analyst-specific operations."""
-self.is_analyzing = False
-self.logger.info("Analyst component stopped")
+        try:
+            # Stop all analysis components
+            if self.dual_model_system:
+                await self.dual_model_system.stop()
+            
+            if self.market_health_analyzer:
+                await self.market_health_analyzer.stop()
+            
+            if self.liquidation_risk_model:
+                await self.liquidation_risk_model.stop()
+            
+            if self.feature_engineering_orchestrator:
+                await self.feature_engineering_orchestrator.stop()
+            
+            # Stop analysis loop
+            self.is_analyzing = False
+            
+            # Clear event subscriptions if event bus is available
+            if self.event_bus:
+                await self._clear_event_subscriptions()
+            
+            self.logger.info("Analyst component stopped successfully")
+            
+        except Exception as e:
+            self.logger.error(f"Error stopping analyst component: {e}")
+            self.is_analyzing = False

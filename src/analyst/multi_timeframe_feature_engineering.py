@@ -32,9 +32,6 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 class MultiTimeframeFeatureEngineering:
-    # Implementation placeholder - add specific implementation as needed
-class MultiTimeframeFeatureEngineering:
-    pass  # TODO: Add implementation
 class MultiTimeframeFeatureEngineering:
     """Multi-timeframe feature engineering system that adapts indicators to specific timeframes.
 

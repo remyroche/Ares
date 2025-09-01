@@ -24,10 +24,6 @@ logger = system_logger.getChild("UnifiedRegimeIntelligenceRuntime")
 
 
 class UnifiedRegimeIntelligenceRuntime:
-    # Implementation placeholder - add specific implementation as needed
-class UnifiedRegimeIntelligenceRuntime:
-    pass  # TODO: Add implementation
-class UnifiedRegimeIntelligenceRuntime:
     """Runtime for unified regime intelligence with S/R level monitoring."""
 
 def __init__(self, config: dict[str, Any]):

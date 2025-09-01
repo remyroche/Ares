@@ -655,10 +655,6 @@ return {}
 
 # Legacy FeatureEngineeringEngine class for backward compatibility
 class FeatureEngineeringEngine:
-    # Implementation placeholder - add specific implementation as needed
-class FeatureEngineeringEngine:
-    pass  # TODO: Add implementation
-class FeatureEngineeringEngine:
     """
 Legacy feature engineering engine for backward compatibility.
 Now delegates to the orchestrator.

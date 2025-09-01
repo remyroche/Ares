@@ -12,7 +12,6 @@ from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import error, warning, critical
 
-
 class StepDependencyValidator:
     """
     Validates step dependencies to ensure pipeline integrity.
@@ -20,7 +19,7 @@ class StepDependencyValidator:
     """
 
     def __init__(self):
-        self.logger = system_logger.getChild("StepDependencyValidator")
+        self.logger, system_logger.getChild("StepDependencyValidator")
 
         # Define step dependencies (step -> list of required steps)
         self.step_dependencies = {
@@ -55,102 +54,102 @@ class StepDependencyValidator:
         # Define critical data requirements for each step
         self.critical_data_requirements = {
             "step01_data_collection": {
-                "required_files": ["data_cache/klines_*_*_1m_consolidated.parquet"],
+                "required_files": ["data_cache / klines_ * _*_1m_consolidated.parquet"],
                 "required_columns": ["open", "high", "low", "close", "volume"],
                 "min_rows": 500
             },
             "step01_5_data_converter": {
-                "required_files": ["data_cache/unified/*/*/*/*.parquet"],
+                "required_files": ["data_cache / unified/*/*/*/*.parquet"],
                 "required_columns": ["open", "high", "low", "close", "volume"],
                 "min_rows": 500
             },
             "step02_data_reading": {
-                "required_files": ["data_cache/unified/*/*/*/*.parquet"],
+                "required_files": ["data_cache / unified/*/*/*/*.parquet"],
                 "required_columns": ["open", "high", "low", "close", "volume"],
                 "min_rows": 500
             },
             "step02_5_sr_optimization": {
-                "required_files": ["data_cache/unified/*/*/*/*.parquet"],
+                "required_files": ["data_cache / unified/*/*/*/*.parquet"],
                 "required_columns": ["open", "high", "low", "close", "volume"],
                 "min_rows": 500
             },
             "step03_hmm_regime_discovery": {
-                "required_files": ["data/hmm_regimes/*_composite_clusters.parquet"],
+                "required_files": ["data / hmm_regimes/*_composite_clusters.parquet"],
                 "required_columns": ["composite_cluster_id"],
                 "min_rows": 100
             },
             "step04_triple_barrier_method": {
-                "required_files": ["data/training/*_triple_barrier_*.parquet"],
+                "required_files": ["data / training/*_triple_barrier_*.parquet"],
                 "required_columns": ["triple_barrier_label"],
                 "min_rows": 50
             },
             "step05_labeling": {
-                "required_files": ["data/training/*_labeled_*.parquet"],
+                "required_files": ["data / training/*_labeled_*.parquet"],
                 "required_columns": ["label"],
                 "min_rows": 50
             },
             "step06_feature_engineering": {
-                "required_files": ["data/training/*_features_train.parquet", "data/training/*_features_val.parquet"],
+                "required_files": ["data / training/*_features_train.parquet", "data / training/*_features_val.parquet"],
                 "required_columns": ["timestamp", "returns", "volatility"],
                 "min_rows": 1000
             },
             "step07_enhanced_matrix_operations": {
-                "required_files": ["data/matrix_operations/*_matrix_operations_*.json"],
+                "required_files": ["data / matrix_operations/*_matrix_operations_*.json"],
                 "required_columns": [],
                 "min_rows": 0
             },
             "step08_hmm_based_training": {
-                "required_files": ["data/training/*_hmm_models.pkl"],
+                "required_files": ["data / training/*_hmm_models.pkl"],
                 "required_columns": [],
                 "min_rows": 0
             },
             "step08_5_unified_regime_intelligence": {
-                "required_files": ["data/training/*_unified_intelligence.parquet"],
+                "required_files": ["data / training/*_unified_intelligence.parquet"],
                 "required_columns": ["intelligence_score"],
                 "min_rows": 100
             },
             "step09_analyst_enhancement": {
-                "required_files": ["data/training/*_analyst_models.pkl"],
+                "required_files": ["data / training/*_analyst_models.pkl"],
                 "required_columns": [],
                 "min_rows": 0
             },
             "step10_tactician_labeling": {
-                "required_files": ["data/training/*_tactician_labels.parquet"],
+                "required_files": ["data / training/*_tactician_labels.parquet"],
                 "required_columns": ["tactician_label"],
                 "min_rows": 100
             },
             "step11_tactician_specialist_training": {
-                "required_files": ["data/training/*_specialist_models.pkl"],
+                "required_files": ["data / training/*_specialist_models.pkl"],
                 "required_columns": [],
                 "min_rows": 0
             },
             "step12_confidence_calibration": {
-                "required_files": ["data/training/*_calibration_results.pkl"],
+                "required_files": ["data / training/*_calibration_results.pkl"],
                 "required_columns": [],
                 "min_rows": 0
             },
             "step13_final_parameters_optimization": {
-                "required_files": ["data/training/*_optimization_results.json"],
+                "required_files": ["data / training/*_optimization_results.json"],
                 "required_columns": [],
                 "min_rows": 0
             },
             "step14_walk_forward_validation": {
-                "required_files": ["data/training/*_walk_forward_results.json"],
+                "required_files": ["data / training/*_walk_forward_results.json"],
                 "required_columns": [],
                 "min_rows": 0
             },
             "step15_monte_carlo_validation": {
-                "required_files": ["data/training/*_monte_carlo_results.json"],
+                "required_files": ["data / training/*_monte_carlo_results.json"],
                 "required_columns": [],
                 "min_rows": 0
             },
             "step14_ab_testing": {
-                "required_files": ["data/training/*_ab_test_results.json"],
+                "required_files": ["data / training/*_ab_test_results.json"],
                 "required_columns": [],
                 "min_rows": 0
             },
             "step15_saving": {
-                "required_files": ["data/training/*_final_models.pkl"],
+                "required_files": ["data / training/*_final_models.pkl"],
                 "required_columns": [],
                 "min_rows": 0
             }
@@ -161,7 +160,7 @@ class StepDependencyValidator:
         step_name: str,
         pipeline_state: Dict[str, Any],
         checkpoint_dir: str = "checkpoints",
-        force_rerun: bool = False
+        force_rerun: bool, False
     ) -> Dict[str, Any]:
         """
         Validate that all prerequisites for a step are met.
@@ -176,56 +175,56 @@ class StepDependencyValidator:
             Dictionary with validation results
         """
         try:
-            self.logger.info(f"🔍 Validating prerequisites for {step_name}")
+        self.logger.info(f"🔍 Validating prerequisites for {step_name}")
 
-            # Check if step has dependencies
-            if step_name not in self.step_dependencies:
-                self.logger.info(f"✅ {step_name} has no dependencies")
-                return {"valid": True, "reason": "No dependencies"}
+        # Check if step has dependencies
+        if step_name not in self.step_dependencies:
+        self.logger.info(f"✅ {step_name} has no dependencies")
+        return {"valid": True, "reason": "No dependencies"}
 
-            required_steps = self.step_dependencies[step_name]
-            self.logger.info(f"📋 {step_name} requires: {required_steps}")
+            required_steps, self.step_dependencies[step_name]
+        self.logger.info(f"📋 {step_name} requires: {required_steps}")
 
-            # If force_rerun is True, we're starting from this step, so skip dependency validation
-            if force_rerun:
-                self.logger.info(f"✅ Force rerun enabled for {step_name}, skipping dependency validation")
-                return {"valid": True, "reason": "Force rerun enabled"}
+        # If force_rerun is True, we're starting from this step, so skip dependency validation
+        if force_rerun:
+        self.logger.info(f"✅ Force rerun enabled for {step_name}, skipping dependency validation")
+        return {"valid": True, "reason": "Force rerun enabled"}
 
-            # If no dependencies, validation passes
-            if not required_steps:
-                self.logger.info(f"✅ {step_name} has no dependencies")
-                return {"valid": True, "reason": "No dependencies"}
+        # If no dependencies, validation passes
+        if not required_steps:
+        self.logger.info(f"✅ {step_name} has no dependencies")
+        return {"valid": True, "reason": "No dependencies"}
 
-            # Check each required step
+        # Check each required step
             failed_prerequisites = []
-            for required_step in required_steps:
-                if not await self._check_step_completion(required_step, checkpoint_dir):
+        for required_step in required_steps:
+        if not await self._check_step_completion(required_step, checkpoint_dir):
                     failed_prerequisites.append(required_step)
 
-            if failed_prerequisites:
-                error_msg = f"❌ Prerequisites failed for {step_name}: {failed_prerequisites}"
-                self.logger.error(error_msg)
-                return {
+        if failed_prerequisites:
+                error_msg, f"❌ Prerequisites failed for {step_name}: {failed_prerequisites}"
+        self.logger.error(error_msg)
+        return {
                     "valid": False,
                     "reason": f"Failed prerequisites: {failed_prerequisites}",
                     "failed_steps": failed_prerequisites
                 }
 
-            # Check critical data requirements
-            if step_name in self.critical_data_requirements:
-                data_validation = await self._validate_critical_data(
+        # Check critical data requirements
+        if step_name in self.critical_data_requirements:
+                data_validation, await self._validate_critical_data(
                     step_name,
-                    self.critical_data_requirements[step_name]
+        self.critical_data_requirements[step_name]
                 )
-                if not data_validation["valid"]:
-                    return data_validation
+        if not data_validation["valid"]:
+        return data_validation
 
-            self.logger.info(f"✅ All prerequisites met for {step_name}")
-            return {"valid": True, "reason": "All prerequisites met"}
+        self.logger.info(f"✅ All prerequisites met for {step_name}")
+        return {"valid": True, "reason": "All prerequisites met"}
 
         except Exception as e:
-            self.logger.error(f"🚨 Error validating prerequisites for {step_name}: {e}")
-            return {
+        self.logger.error(f"🚨 Error validating prerequisites for {step_name}: {e}")
+        return {
                 "valid": False,
                 "reason": f"Validation error: {str(e)}"
             }
@@ -242,50 +241,50 @@ class StepDependencyValidator:
             True if step completed successfully, False otherwise
         """
         try:
-            # First, try the individual step checkpoint file
-            checkpoint_file = Path(checkpoint_dir) / f"{step_name}.json"
+        # First, try the individual step checkpoint file
+            checkpoint_file, Path(checkpoint_dir) / f"{step_name}.json"
 
-            if checkpoint_file.exists():
-                # Read checkpoint
-                with open(checkpoint_file, 'r') as f:
-                    checkpoint_data = json.load(f)
+        if checkpoint_file.exists():
+        # Read checkpoint
+        with open(checkpoint_file, 'r') as f:
+                    checkpoint_data, json.load(f)
 
-                # Check if step completed successfully
-                status = checkpoint_data.get("status", "unknown")
-                if status != "completed":
-                    self.logger.warning(f"⚠️ {step_name} status: {status} (not completed)")
-                    return False
+        # Check if step completed successfully
+                status, checkpoint_data.get("status", "unknown")
+        if status != "completed":
+        self.logger.warning(f"⚠️ {step_name} status: {status} (not completed)")
+        return False
 
-                # Check for any errors in the checkpoint
-                errors = checkpoint_data.get("errors", [])
-                if errors:
-                    self.logger.warning(f"⚠️ {step_name} has errors: {errors}")
-                    return False
+        # Check for any errors in the checkpoint
+                errors, checkpoint_data.get("errors", [])
+        if errors:
+        self.logger.warning(f"⚠️ {step_name} has errors: {errors}")
+        return False
 
-                self.logger.debug(f"✅ {step_name} completed successfully")
-                return True
+        self.logger.debug(f"✅ {step_name} completed successfully")
+        return True
 
-            # If individual checkpoint not found, try the centralized training progress file
-            # Extract exchange, symbol, and timeframe from checkpoint_dir path
-            path_parts = Path(checkpoint_dir).parts
-            if len(path_parts) >= 4 and path_parts[0] == "checkpoints":
-                # Path structure: checkpoints/exchange/symbol/timeframe
-                exchange = path_parts[1]  # e.g., "BINANCE"
-                symbol = path_parts[2]    # e.g., "ETHUSDT"
-                timeframe = path_parts[3] # e.g., "1m"
+        # If individual checkpoint not found, try the centralized training progress file
+        # Extract exchange, symbol, and timeframe from checkpoint_dir path
+            path_parts, Path(checkpoint_dir).parts
+        if len(path_parts) >= 4 and path_parts[0] == "checkpoints":
+        # Path structure: checkpoints / exchange / symbol / timeframe
+                exchange, path_parts[1]  # e.g., "BINANCE"
+                symbol, path_parts[2]    # e.g., "ETHUSDT"
+                timeframe, path_parts[3] # e.g., "1m"
 
-                # Try the centralized training progress file - match the path structure used by enhanced training manager
-                centralized_checkpoint = Path("checkpoints") / exchange / symbol / timeframe / "training_progress.json"
+        # Try the centralized training progress file - match the path structure used by enhanced training manager
+                centralized_checkpoint, Path("checkpoints") / exchange / symbol / timeframe / "training_progress.json"
 
-                if centralized_checkpoint.exists():
-                    try:
-                        with open(centralized_checkpoint, 'r') as f:
-                            progress_data = json.load(f)
+        if centralized_checkpoint.exists():
+        try:
+        with open(centralized_checkpoint, 'r') as f:
+                            progress_data, json.load(f)
 
-                        # Check if the step is marked as completed in the centralized file
-                        pipeline_state = progress_data.get("pipeline_state", {})
+        # Check if the step is marked as completed in the centralized file
+                        pipeline_state, progress_data.get("pipeline_state", {})
 
-                                                    # Map step names to their status keys in the centralized file
+        # Map step names to their status keys in the centralized file
                             step_status_mapping = {
                                 "step01_data_collection": "data_collection",
                                 "step02_feature_engineering": "feature_engineering",
@@ -306,26 +305,26 @@ class StepDependencyValidator:
                                 "step15_saving": "saving",
                             }
 
-                        if step_name in step_status_mapping:
-                            status_key = step_status_mapping[step_name]
-                            step_status = pipeline_state.get(status_key, {})
+        if step_name in step_status_mapping:
+                            status_key, step_status_mapping[step_name]
+                            step_status, pipeline_state.get(status_key, {})
 
-                            if step_status.get("status") == "SUCCESS" or step_status.get("completed", False):
-                                self.logger.debug(f"✅ {step_name} completed successfully (from centralized progress)")
-                                return True
+        if step_status.get("status") == "SUCCESS" or step_status.get("completed", False):
+        self.logger.debug(f"✅ {step_name} completed successfully (from centralized progress)")
+        return True
                             elif step_status.get("status") == "SKIPPED":
-                                self.logger.debug(f"✅ {step_name} was skipped (from centralized progress)")
-                                return True
+        self.logger.debug(f"✅ {step_name} was skipped (from centralized progress)")
+        return True
                             else:
-                                self.logger.debug(f"⚠️ {step_name} status: {step_status.get('status', 'unknown')} (from centralized progress)")
+        self.logger.debug(f"⚠️ {step_name} status: {step_status.get('status', 'unknown')} (from centralized progress)")
                         else:
-                            self.logger.debug(f"⚠️ No status mapping found for {step_name} in centralized progress")
+        self.logger.debug(f"⚠️ No status mapping found for {step_name} in centralized progress")
 
-                        # If we found the centralized file but step wasn't found, try alternative paths
-                    except Exception as e:
-                        self.logger.warning(f"⚠️ Error reading centralized checkpoint {centralized_checkpoint}: {e}")
+        # If we found the centralized file but step wasn't found, try alternative paths
+        except Exception as e:
+        self.logger.warning(f"⚠️ Error reading centralized checkpoint {centralized_checkpoint}: {e}")
 
-                # Also try alternative paths for different timeframes
+        # Also try alternative paths for different timeframes
                 alternative_paths = [
                     Path("checkpoints") / exchange / symbol / timeframe / "training_progress.json",
                     Path("checkpoints") / exchange / symbol / "training_progress.json",
@@ -333,16 +332,16 @@ class StepDependencyValidator:
                     Path("checkpoints") / exchange / symbol / "progress.json",
                 ]
 
-                for alt_checkpoint in alternative_paths:
-                    if alt_checkpoint.exists():
-                        try:
-                            with open(alt_checkpoint, 'r') as f:
-                                progress_data = json.load(f)
+        for alt_checkpoint in alternative_paths:
+        if alt_checkpoint.exists():
+        try:
+        with open(alt_checkpoint, 'r') as f:
+                                progress_data, json.load(f)
 
-                            # Check if the step is marked as completed in the centralized file
-                            pipeline_state = progress_data.get("pipeline_state", {})
+        # Check if the step is marked as completed in the centralized file
+                            pipeline_state, progress_data.get("pipeline_state", {})
 
-                            # Map step names to their status keys in the centralized file
+        # Map step names to their status keys in the centralized file
                             step_status_mapping = {
                                 "step01_data_collection": "data_collection",
                                 "step02_feature_engineering": "feature_engineering",
@@ -363,31 +362,31 @@ class StepDependencyValidator:
                                 "step15_saving": "saving",
                             }
 
-                            if step_name in step_status_mapping:
-                                status_key = step_status_mapping[step_name]
-                                step_status = pipeline_state.get(status_key, {})
+        if step_name in step_status_mapping:
+                                status_key, step_status_mapping[step_name]
+                                step_status, pipeline_state.get(status_key, {})
 
-                                if step_status.get("status") == "SUCCESS" or step_status.get("completed", False):
-                                    self.logger.debug(f"✅ {step_name} completed successfully (from centralized progress)")
-                                    return True
+        if step_status.get("status") == "SUCCESS" or step_status.get("completed", False):
+        self.logger.debug(f"✅ {step_name} completed successfully (from centralized progress)")
+        return True
                                 elif step_status.get("status") == "SKIPPED":
-                                    self.logger.debug(f"✅ {step_name} was skipped (from centralized progress)")
-                                    return True
+        self.logger.debug(f"✅ {step_name} was skipped (from centralized progress)")
+        return True
                                 else:
-                                    self.logger.debug(f"⚠️ {step_name} status: {step_status.get('status', 'unknown')} (from centralized progress)")
+        self.logger.debug(f"⚠️ {step_name} status: {step_status.get('status', 'unknown')} (from centralized progress)")
                             else:
-                                self.logger.debug(f"⚠️ No status mapping found for {step_name} in centralized progress")
+        self.logger.debug(f"⚠️ No status mapping found for {step_name} in centralized progress")
 
-                            # If we found the centralized file but step wasn't found, try next path
-                        except Exception as e:
-                            self.logger.warning(f"⚠️ Error reading centralized checkpoint {alt_checkpoint}: {e}")
+        # If we found the centralized file but step wasn't found, try next path
+        except Exception as e:
+        self.logger.warning(f"⚠️ Error reading centralized checkpoint {alt_checkpoint}: {e}")
 
-            self.logger.warning(f"⚠️ No checkpoint found for {step_name}")
-            return False
+        self.logger.warning(f"⚠️ No checkpoint found for {step_name}")
+        return False
 
         except Exception as e:
-            self.logger.error(f"🚨 Error checking completion for {step_name}: {e}")
-            return False
+        self.logger.error(f"🚨 Error checking completion for {step_name}: {e}")
+        return False
 
     async def _validate_critical_data(
         self,
@@ -405,34 +404,34 @@ class StepDependencyValidator:
             Validation result dictionary
         """
         try:
-            self.logger.info(f"🔍 Validating critical data for {step_name}")
+        self.logger.info(f"🔍 Validating critical data for {step_name}")
 
-            # Check required files
-            if "required_files" in requirements:
-                for file_pattern in requirements["required_files"]:
-                    if not await self._check_file_pattern(file_pattern):
-                        return {
+        # Check required files
+        if "required_files" in requirements:
+        for file_pattern in requirements["required_files"]:
+        if not await self._check_file_pattern(file_pattern):
+        return {
                             "valid": False,
                             "reason": f"Missing required files: {file_pattern}"
                         }
 
-            # Check required columns (if we have data to check)
-            if "required_columns" in requirements:
-                # This would need to be implemented based on actual data loading
-                # For now, we'll assume it's valid if files exist
+        # Check required columns (if we have data to check)
+        if "required_columns" in requirements:
+        # This would need to be implemented based on actual data loading
+        # For now, we'll assume it's valid if files exist
                 pass
 
-            # Check minimum rows (if we have data to check)
-            if "min_rows" in requirements:
-                # This would need to be implemented based on actual data loading
-                # For now, we'll assume it's valid if files exist
+        # Check minimum rows (if we have data to check)
+        if "min_rows" in requirements:
+        # This would need to be implemented based on actual data loading
+        # For now, we'll assume it's valid if files exist
                 pass
 
-            return {"valid": True, "reason": "Critical data requirements met"}
+        return {"valid": True, "reason": "Critical data requirements met"}
 
         except Exception as e:
-            self.logger.error(f"🚨 Error validating critical data for {step_name}: {e}")
-            return {
+        self.logger.error(f"🚨 Error validating critical data for {step_name}: {e}")
+        return {
                 "valid": False,
                 "reason": f"Data validation error: {str(e)}"
             }
@@ -451,18 +450,18 @@ class StepDependencyValidator:
             from pathlib import Path
             import glob
 
-            # Convert pattern to glob pattern
-            if "*" not in file_pattern:
-                # Single file
-                return Path(file_pattern).exists()
+        # Convert pattern to glob pattern
+        if "*" not in file_pattern:
+        # Single file
+        return Path(file_pattern).exists()
             else:
-                # Glob pattern
-                files = glob.glob(file_pattern)
-                return len(files) > 0
+        # Glob pattern
+                files, glob.glob(file_pattern)
+        return len(files) > 0
 
         except Exception as e:
-            self.logger.error(f"🚨 Error checking file pattern {file_pattern}: {e}")
-            return False
+        self.logger.error(f"🚨 Error checking file pattern {file_pattern}: {e}")
+        return False
 
     def get_step_dependencies(self, step_name: str) -> List[str]:
         """
@@ -498,13 +497,13 @@ class StepDependencyValidator:
             Dictionary with validation results
         """
         try:
-            self.logger.info(f"🔍 Validating data requirements for {step_name}")
+        self.logger.info(f"🔍 Validating data requirements for {step_name}")
 
-            if step_name not in self.critical_data_requirements:
-                self.logger.info(f"✅ {step_name} has no specific data requirements")
-                return {"valid": True, "reason": "No data requirements defined"}
+        if step_name not in self.critical_data_requirements:
+        self.logger.info(f"✅ {step_name} has no specific data requirements")
+        return {"valid": True, "reason": "No data requirements defined"}
 
-            requirements = self.critical_data_requirements[step_name]
+            requirements, self.critical_data_requirements[step_name]
             validation_results = {
                 "valid": True,
                 "missing_files": [],
@@ -512,40 +511,40 @@ class StepDependencyValidator:
                 "data_quality_issues": [],
             }
 
-            # Check required files
-            for file_pattern in requirements.get("required_files", []):
-                # Replace placeholders in file pattern
-                pattern = file_pattern.replace("{symbol}", symbol).replace("{exchange}", exchange).replace("{timeframe}", timeframe)
+        # Check required files
+        for file_pattern in requirements.get("required_files", []):
+        # Replace placeholders in file pattern
+                pattern, file_pattern.replace("{symbol}", symbol).replace("{exchange}", exchange).replace("{timeframe}", timeframe)
 
-                # Use glob to find matching files
+        # Use glob to find matching files
                 import glob
-                matching_files = glob.glob(os.path.join(data_dir, pattern))
+                matching_files, glob.glob(os.path.join(data_dir, pattern))
 
-                if not matching_files:
+        if not matching_files:
                     validation_results["missing_files"].append(pattern)
                     validation_results["valid"] = False
                 else:
-                    # Validate each matching file
-                    for file_path in matching_files:
-                        file_validation = await self._validate_data_file(
+        # Validate each matching file
+        for file_path in matching_files:
+                        file_validation, await self._validate_data_file(
                             file_path, requirements.get("required_columns", []), requirements.get("min_rows", 0)
                         )
                         validation_results["file_validation_results"][file_path] = file_validation
 
-                        if not file_validation["valid"]:
+        if not file_validation["valid"]:
                             validation_results["data_quality_issues"].append(f"Data quality issues in {file_path}")
                             validation_results["valid"] = False
 
-            if validation_results["valid"]:
-                self.logger.info(f"✅ Data requirements met for {step_name}")
+        if validation_results["valid"]:
+        self.logger.info(f"✅ Data requirements met for {step_name}")
             else:
-                self.logger.warning(f"⚠️ Data requirements not met for {step_name}: {validation_results['missing_files']}")
+        self.logger.warning(f"⚠️ Data requirements not met for {step_name}: {validation_results['missing_files']}")
 
-            return validation_results
+        return validation_results
 
         except Exception as e:
-            self.logger.exception(f"❌ Error validating data requirements for {step_name}: {e}")
-            return {"valid": False, "error": str(e)}
+        self.logger.exception(f"❌ Error validating data requirements for {step_name}: {e}")
+        return {"valid": False, "error": str(e)}
 
     async def _validate_data_file(
         self,
@@ -578,53 +577,53 @@ class StepDependencyValidator:
                 "data_quality_issues": [],
             }
 
-            if not validation_result["exists"]:
+        if not validation_result["exists"]:
                 validation_result["valid"] = False
                 validation_result["data_quality_issues"].append("File does not exist")
-                return validation_result
+        return validation_result
 
-            # Try to read the file
-            try:
-                if file_path.endswith('.parquet'):
-                    df = pd.read_parquet(file_path)
+        # Try to read the file
+        try:
+        if file_path.endswith('.parquet'):
+                    df, pd.read_parquet(file_path)
                 elif file_path.endswith('.csv'):
-                    df = pd.read_csv(file_path)
+                    df, pd.read_csv(file_path)
                 else:
                     validation_result["valid"] = False
                     validation_result["data_quality_issues"].append("Unsupported file format")
-                    return validation_result
+        return validation_result
 
                 validation_result["row_count"] = len(df)
                 validation_result["has_minimum_rows"] = len(df) >= min_rows
 
-                if not validation_result["has_minimum_rows"]:
+        if not validation_result["has_minimum_rows"]:
                     validation_result["valid"] = False
                     validation_result["data_quality_issues"].append(f"Insufficient rows: {len(df)} < {min_rows}")
 
-                # Check required columns
-                if required_columns:
+        # Check required columns
+        if required_columns:
                     missing_cols = [col for col in required_columns if col not in df.columns]
                     validation_result["missing_columns"] = missing_cols
 
-                    if missing_cols:
+        if missing_cols:
                         validation_result["valid"] = False
                         validation_result["data_quality_issues"].append(f"Missing required columns: {missing_cols}")
 
-                # Check for null values in critical columns
-                for col in ['open', 'high', 'low', 'close', 'volume']:
-                    if col in df.columns:
-                        null_count = df[col].isnull().sum()
-                        if null_count > 0:
+        # Check for null values in critical columns
+        for col in ['open', 'high', 'low', 'close', 'volume']:
+        if col in df.columns:
+                        null_count, df[col].isnull().sum()
+        if null_count > 0:
                             validation_result["data_quality_issues"].append(f"Null values in {col}: {null_count}")
 
-            except Exception as e:
+        except Exception as e:
                 validation_result["valid"] = False
                 validation_result["data_quality_issues"].append(f"Error reading file: {str(e)}")
 
-            return validation_result
+        return validation_result
 
         except Exception as e:
-            return {
+        return {
                 "valid": False,
                 "error": str(e),
                 "file_path": file_path,
@@ -636,7 +635,7 @@ class StepDependencyValidator:
         symbol: str,
         exchange: str,
         timeframe: str,
-        artifact_dir: str = "data/training",
+        artifact_dir: str = "data / training",
     ) -> Dict[str, Any]:
         """
         Validate that step artifacts exist and are valid.
@@ -652,26 +651,26 @@ class StepDependencyValidator:
             Validation result dictionary
         """
         try:
-            self.logger.info(f"🔍 Validating artifacts for {step_name}")
+        self.logger.info(f"🔍 Validating artifacts for {step_name}")
 
-            # Define expected artifacts for each step
+        # Define expected artifacts for each step
             expected_artifacts = {
                 "step01_data_collection": [
-                    f"data_cache/klines_{exchange}_{symbol}_1m_consolidated.parquet",
+                    f"data_cache / klines_{exchange}_{symbol}_1m_consolidated.parquet",
                 ],
                 "step01_5_data_converter": [
-                    f"data_cache/unified/{exchange}/{symbol}/{timeframe}/**/*.parquet",
+                    f"data_cache / unified/{exchange}/{symbol}/{timeframe}/**/*.parquet",
                 ],
                 "step02_feature_engineering": [
                     f"{artifact_dir}/{exchange}_{symbol}_features_train.parquet",
                     f"{artifact_dir}/{exchange}_{symbol}_features_metadata.json",
                 ],
                 "step02_5_sr_optimization": [
-                    f"data/optimization/sr_optimization_results.json",
+                    f"data / optimization / sr_optimization_results.json",
                     f"optimization_results.json",
                 ],
                 "step03_hmm_regime_discovery": [
-                    f"data/hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.parquet",
+                    f"data / hmm_regimes/{exchange}_{symbol}_{timeframe}_composite_clusters.parquet",
                 ],
                 "step04_processing_labeling": [
                     f"{artifact_dir}/{exchange}_{symbol}_{timeframe}_labeled_validation.parquet",
@@ -715,9 +714,9 @@ class StepDependencyValidator:
                 ],
             }
 
-            if step_name not in expected_artifacts:
-                self.logger.info(f"✅ {step_name} has no specific artifacts")
-                return {"valid": True, "reason": "No artifacts defined"}
+        if step_name not in expected_artifacts:
+        self.logger.info(f"✅ {step_name} has no specific artifacts")
+        return {"valid": True, "reason": "No artifacts defined"}
 
             validation_results = {
                 "valid": True,
@@ -725,33 +724,33 @@ class StepDependencyValidator:
                 "artifact_validation_results": {},
             }
 
-            # Check each expected artifact
-            for artifact_pattern in expected_artifacts[step_name]:
+        # Check each expected artifact
+        for artifact_pattern in expected_artifacts[step_name]:
                 import glob
-                matching_artifacts = glob.glob(artifact_pattern)
+                matching_artifacts, glob.glob(artifact_pattern)
 
-                if not matching_artifacts:
+        if not matching_artifacts:
                     validation_results["missing_artifacts"].append(artifact_pattern)
                     validation_results["valid"] = False
                 else:
-                    # Validate each matching artifact
-                    for artifact_path in matching_artifacts:
-                        artifact_validation = await self._validate_artifact_file(artifact_path)
+        # Validate each matching artifact
+        for artifact_path in matching_artifacts:
+                        artifact_validation, await self._validate_artifact_file(artifact_path)
                         validation_results["artifact_validation_results"][artifact_path] =artifact_validation
 
-                        if not artifact_validation["valid"]:
+        if not artifact_validation["valid"]:
                             validation_results["valid"] = False
 
-            if validation_results["valid"]:
-                self.logger.info(f"✅ Artifacts validated for {step_name}")
+        if validation_results["valid"]:
+        self.logger.info(f"✅ Artifacts validated for {step_name}")
             else:
-                self.logger.warning(f"⚠️ Artifact validation failed for {step_name}: {validation_results['missing_artifacts']}")
+        self.logger.warning(f"⚠️ Artifact validation failed for {step_name}: {validation_results['missing_artifacts']}")
 
-            return validation_results
+        return validation_results
 
         except Exception as e:
-            self.logger.exception(f"❌ Error validating artifacts for {step_name}: {e}")
-            return {"valid": False, "error": str(e)}
+        self.logger.exception(f"❌ Error validating artifacts for {step_name}: {e}")
+        return {"valid": False, "error": str(e)}
 
     async def _validate_artifact_file(self, artifact_path: str) -> Dict[str, Any]:
         """
@@ -772,51 +771,51 @@ class StepDependencyValidator:
                 "validation_issues": [],
             }
 
-            if not validation_result["exists"]:
+        if not validation_result["exists"]:
                 validation_result["valid"] = False
                 validation_result["validation_issues"].append("Artifact does not exist")
-                return validation_result
+        return validation_result
 
-            # Check file size
-            if validation_result["file_size"] == 0:
+        # Check file size
+        if validation_result["file_size"] == 0:
                 validation_result["valid"] = False
                 validation_result["validation_issues"].append("Artifact file is empty")
 
-            # Validate based on file type
-            if artifact_path.endswith('.pkl'):
-                try:
+        # Validate based on file type
+        if artifact_path.endswith('.pkl'):
+        try:
                     import pickle
-                    with open(artifact_path, 'rb') as f:
-                        obj = pickle.load(f)
+        with open(artifact_path, 'rb') as f:
+                        obj, pickle.load(f)
                     validation_result["object_type"] = type(obj).__name__
-                except Exception as e:
+        except Exception as e:
                     validation_result["valid"] = False
                     validation_result["validation_issues"].append(f"Failed to load pickle: {str(e)}")
 
             elif artifact_path.endswith('.json'):
-                try:
+        try:
                     import json
-                    with open(artifact_path, 'r') as f:
-                        obj = json.load(f)
+        with open(artifact_path, 'r') as f:
+                        obj, json.load(f)
                     validation_result["object_type"] = type(obj).__name__
-                except Exception as e:
+        except Exception as e:
                     validation_result["valid"] = False
                     validation_result["validation_issues"].append(f"Failed to load JSON: {str(e)}")
 
             elif artifact_path.endswith('.parquet'):
-                try:
+        try:
                     import pandas as pd
-                    df = pd.read_parquet(artifact_path)
+                    df, pd.read_parquet(artifact_path)
                     validation_result["object_type"] = "DataFrame"
                     validation_result["shape"] = df.shape
-                except Exception as e:
+        except Exception as e:
                     validation_result["valid"] = False
                     validation_result["validation_issues"].append(f"Failed to load parquet: {str(e)}")
 
-            return validation_result
+        return validation_result
 
         except Exception as e:
-            return {
+        return {
                 "valid": False,
                 "error": str(e),
                 "artifact_path": artifact_path,
@@ -835,10 +834,9 @@ class StepDependencyValidator:
         """
         dependent_steps = []
         for step, dependencies in self.step_dependencies.items():
-            if step_name in dependencies:
+        if step_name in dependencies:
                 dependent_steps.append(step)
         return dependent_steps
 
-
 # Global instance
-step_dependency_validator = StepDependencyValidator()
+step_dependency_validator, StepDependencyValidator()

@@ -1,17 +1,16 @@
-# src/training/steps/multi_timeframe_hmm_ensemble.py
+# src / training / steps / multi_timeframe_hmm_ensemble.py
 
-"""Multi-Timeframe HMM Cluster Ensemble System.
+"""Multi - Timeframe HMM Cluster Ensemble System.
 
-This module implements a meta-ensemble that combines predictions from HMM clusters
+This module implements a meta - ensemble that combines predictions from HMM clusters
 across multiple timeframes (5m, 15m, 30m, 1h) to improve regime forecasting accuracy
 and reduce MAPE.
 
-IMPORTANT: This system predicts REGIME TRANSITIONS only = not price direction.
-Price direction predictions (BUY/SELL/HOLD) are made in:
-    pass
-- src/interfaces/base_interfaces.py (AnalysisResult.signal)
-- src/analyst/predictive_ensembles/ensemble_orchestrator.py (global meta-learner)
-- src/training/steps/step04_analyst_labeling_feature_engineering_components/ (triple barrier labeling)
+IMPORTANT: This system predicts REGIME TRANSITIONS only, not price direction.
+Price direction predictions (BUY / SELL / HOLD) are made in:
+    pass - src / interfaces / base_interfaces.py (AnalysisResult.signal)
+- src / analyst / predictive_ensembles / ensemble_orchestrator.py (global meta - learner)
+- src / training / steps / step04_analyst_labeling_feature_engineering_components/ (triple barrier labeling)
 
 The hazard models in this system predict whether a regime will transition to a different
 regime in the next period, not the direction of price movement.
@@ -42,8 +41,7 @@ if TYPE_CHECKING:
     from sklearn.preprocessing import LabelEncoder, StandardScaler
 
 # Enhanced logging setup
-logger = system_logger.getChild("MultiTimeframeHMMEnsemble")
-
+logger, system_logger.getChild("MultiTimeframeHMMEnsemble")
 
 @dataclass
 class TimeframeConfig:
@@ -57,10 +55,9 @@ class TimeframeConfig:
         False  # Hazard models are for regime transitions only
     )
 
-
 @dataclass
 class EnsembleConfig:
-    """Configuration for the multi-timeframe ensemble."""
+    """Configuration for the multi - timeframe ensemble."""
 
     timeframes: list[TimeframeConfig]
     meta_learner_type: str = "lgbm"  # "lgbm", "random_forest", "logistic"
@@ -71,9 +68,8 @@ class EnsembleConfig:
         "weighted_average"  # "weighted_average", "meta_learner", "stacking"
     )
 
-
 class MultiTimeframeHMMEnsemble:
-    """Multi-timeframe HMM cluster ensemble that combines predictions from HMM clusters
+    """Multi - timeframe HMM cluster ensemble that combines predictions from HMM clusters
     across multiple timeframes to improve regime forecasting accuracy.
     """
 
@@ -83,12 +79,12 @@ class MultiTimeframeHMMEnsemble:
         self.exchange = exchange
         self.logger = logger.getChild(f"{symbol}_{exchange}")
 
-        # Timeframe-specific models and predictions
+        # Timeframe - specific models and predictions
         self.timeframe_models: dict[str, dict[str, Any]] = {}
         self.timeframe_predictions: dict[str, dict[str, Any]] = {}
         self.timeframe_performance: dict[str, list[float]] = {}
 
-        # Meta-ensemble components
+        # Meta - ensemble components
         self.meta_learner: Any | None = None
         self.meta_scaler: StandardScaler | None = None
         self.meta_label_encoder: LabelEncoder | None = None
@@ -104,7 +100,7 @@ class MultiTimeframeHMMEnsemble:
             "multi_timeframe_hmm_ensemble",
             f"{exchange}_{symbol}",
         )
-        os.makedirs(self.models_dir, exist_ok=True)
+        os.makedirs(self.models_dir, exist_ok = True)
 
         # Initialize weights
         self._initialize_weights()
@@ -125,11 +121,11 @@ class MultiTimeframeHMMEnsemble:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False,
-        context="multi-timeframe training",
+        default_return = False,
+        context="multi - timeframe training",
     )
     def train_ensemble(self, timeframe_data: dict[str, pd.DataFrame]) -> bool:
-        """Train the multi-timeframe HMM ensemble.
+        """Train the multi - timeframe HMM ensemble.
 
         Args:
             timeframe_data: Dict mapping timeframe -> DataFrame with HMM cluster data
@@ -174,7 +170,7 @@ class MultiTimeframeHMMEnsemble:
                     }
                     self.logger.error(f"❌ {tf} training failed")
 
-        # 2. Train meta-learner if using meta-learning approach
+            # 2. Train meta-learner if using meta-learning approach
             if self.config.ensemble_method in ["meta_learner", "stacking"]:
                 self.logger.info("🧠 Training meta-learner...")
                 meta_start_time = time.time()
@@ -190,7 +186,7 @@ class MultiTimeframeHMMEnsemble:
                     self.logger.error("❌ Meta-learner training failed")
                     return False
 
-        # 3. Save ensemble
+            # 3. Save ensemble
             self._save_ensemble()
 
             self.trained = True
@@ -215,7 +211,7 @@ class MultiTimeframeHMMEnsemble:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False,
+        default_return = False,
         context="timeframe model training",
     )
     def _train_timeframe_models(
@@ -270,7 +266,7 @@ class MultiTimeframeHMMEnsemble:
             return False
 
     @handle_errors(
-        exceptions=(Exception,), default_return=False, context="meta-learner training"
+        exceptions=(Exception,), default_return = False, context="meta - learner training"
     )
     def _train_meta_learner(self, timeframe_data: dict[str, pd.DataFrame]) -> bool:
         """Train the meta-learner to combine predictions from all timeframes."""
@@ -288,9 +284,9 @@ class MultiTimeframeHMMEnsemble:
                 tf_predictions = self._get_timeframe_predictions(tf, timeframe_data[tf])
                 if tf_predictions is not None:
                     meta_features.append(tf_predictions)
-                # Use the actual regime transitions as targets
-                # (Placeholder: align targets with tf_predictions length)
-                meta_targets.extend([0] * len(tf_predictions))
+                    # Use the actual regime transitions as targets
+                    # (Placeholder: align targets with tf_predictions length)
+                    meta_targets.extend([0] * len(tf_predictions))
 
             # Placeholder meta-learner training
             if not meta_features:
@@ -386,7 +382,7 @@ class MultiTimeframeHMMEnsemble:
             return pd.Series(0, index=data.index)
 
     @handle_errors(
-        exceptions=(Exception,), default_return=None, context="ensemble prediction"
+        exceptions=(Exception,), default_return = None, context="ensemble prediction"
     )
     def predict(self, current_data: dict[str, pd.DataFrame]) -> dict[str, Any]:
         """Get ensemble prediction combining all timeframe models.
@@ -600,7 +596,7 @@ class MultiTimeframeHMMEnsemble:
             if len(timeframes) >= 2:
                 # Create interaction features between timeframes
                 for i, tf1 in enumerate(timeframes):
-                    for tf2 in timeframes[i + 1 :]:
+                    for tf2 in timeframes[i + 1:]:
                         if tf1 in timeframe_predictions and tf2 in timeframe_predictions:
                             pred1 = (
                                 timeframe_predictions[tf1].iloc[-1].mean()
@@ -778,7 +774,7 @@ class MultiTimeframeHMMEnsemble:
             "prediction_count": self.prediction_count,
             "timeframe_models_count": {
                 tf: len(models.get("hazard_models", {}))
-                for tf, models in self.timeframe_models.items()
+        for tf, models in self.timeframe_models.items()
             },
             "performance_history": {
                 tf: len(perf) for tf, perf in self.timeframe_performance.items()

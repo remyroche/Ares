@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 import pickle
 
-logger = logging.getLogger(__name__)
+logger, logging.getLogger(__name__)
 
 class IntelligentFeatureCache:
     """
@@ -28,10 +28,10 @@ class IntelligentFeatureCache:
 
     def __init__(
         self,
-        cache_dir: str = "data_cache/feature_cache",
-        max_memory_mb: int = 2048,
-        max_cache_size_mb: int = 1024,
-        enable_compression: bool = True,
+        cache_dir: str = "data_cache / feature_cache",
+        max_memory_mb: int, 2048,
+        max_cache_size_mb: int, 1024,
+        enable_compression: bool, True,
     ) -> None:
         """
         Initialize the intelligent feature cache.
@@ -42,21 +42,21 @@ class IntelligentFeatureCache:
             max_cache_size_mb: Maximum cache size on disk in MB
             enable_compression: Whether to enable compression for cache files
         """
-        self.cache_dir = Path(cache_dir)
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.cache_dir, Path(cache_dir)
+        self.cache_dir.mkdir(parents = True, exist_ok = True)
 
-        self.max_memory_mb = max_memory_mb
-        self.max_cache_size_mb = max_cache_size_mb
-        self.enable_compression = enable_compression
+        self.max_memory_mb, max_memory_mb
+        self.max_cache_size_mb, max_cache_size_mb
+        self.enable_compression, enable_compression
 
-        # In-memory cache
+        # In - memory cache
         self.memory_cache: dict[str, Any] = {}
         self.cache_metadata: dict[str, dict[str, Any]] = {}
 
         # Performance tracking
-        self.hit_count = 0
-        self.miss_count = 0
-        self.eviction_count = 0
+        self.hit_count, 0
+        self.miss_count, 0
+        self.eviction_count, 0
 
         logger.info("🔧 Initialized IntelligentFeatureCache:")
         logger.info(f"   Cache directory: {self.cache_dir}")
@@ -87,37 +87,37 @@ class IntelligentFeatureCache:
                 "args": self._make_pickle_safe(args),
                 "kwargs": self._make_pickle_safe(kwargs),
             }
-            key_bytes = pickle.dumps(key_data)
-            return hashlib.md5(key_bytes).hexdigest()
+            key_bytes, pickle.dumps(key_data)
+        return hashlib.md5(key_bytes).hexdigest()
         except (pickle.PicklingError, TypeError) as e:
-            # Fallback to simple hash if pickling fails
+        # Fallback to simple hash if pickling fails
             logger.warning(f"⚠️ Pickling failed for cache key generation: {e}")
-            key_str = f"{function_name}_{hash(str(args))}_{hash(str(kwargs))}"
-            return hashlib.md5(key_str.encode()).hexdigest()
+            key_str, f"{function_name}_{hash(str(args))}_{hash(str(kwargs))}"
+        return hashlib.md5(key_str.encode()).hexdigest()
 
     def _make_pickle_safe(self, obj: Any) -> Any:
         """
-        Make an object pickle-safe by removing coroutines and async objects.
+        Make an object pickle - safe by removing coroutines and async objects.
 
         Args:
-            obj: Object to make pickle-safe
+            obj: Object to make pickle - safe
 
         Returns:
-            Pickle-safe version of the object
+            Pickle - safe version of the object
         """
         if isinstance(obj, dict):
-            return {k: self._make_pickle_safe(v) for k, v in obj.items()}
+        return {k: self._make_pickle_safe(v) for k, v in obj.items()}
         if isinstance(obj, (list, tuple)):
-            return type(obj)(self._make_pickle_safe(item) for item in obj)
+        return type(obj)(self._make_pickle_safe(item) for item in obj)
         if hasattr(obj, "__await__") or asyncio.iscoroutine(obj):
-            # Replace coroutines with a placeholder
-            return f"<coroutine_{type(obj).__name__}>"
+        # Replace coroutines with a placeholder
+        return f"<coroutine_{type(obj).__name__}>"
         if hasattr(obj, "__aiter__") or hasattr(obj, "__anext__"):
-            # Replace async iterators with a placeholder
-            return f"<async_iterator_{type(obj).__name__}>"
+        # Replace async iterators with a placeholder
+        return f"<async_iterator_{type(obj).__name__}>"
         if callable(obj) and asyncio.iscoroutinefunction(obj):
-            # Replace async functions with a placeholder
-            return f"<async_function_{getattr(obj, '__name__', 'unknown')}>"
+        # Replace async functions with a placeholder
+        return f"<async_function_{getattr(obj, '__name__', 'unknown')}>"
         return obj
 
     def _get_cache_file_path(self, cache_key: str) -> Path:
@@ -140,10 +140,10 @@ class IntelligentFeatureCache:
         Returns:
             Memory usage in MB
         """
-        total_memory = 0
+        total_memory, 0
         for value in self.memory_cache.values():
-            if isinstance(value, pd.DataFrame):
-                total_memory += int(value.memory_usage(deep=True).sum())
+        if isinstance(value, pd.DataFrame):
+                total_memory += int(value.memory_usage(deep = True).sum())
             elif isinstance(value, np.ndarray):
                 total_memory += int(value.nbytes)
             else:
@@ -157,22 +157,22 @@ class IntelligentFeatureCache:
         Args:
             target_memory_mb: Target memory usage in MB
         """
-        current_memory = self._get_memory_usage_mb()
+        current_memory, self._get_memory_usage_mb()
         if current_memory <= target_memory_mb:
             return
 
         # Sort by last access time (oldest first)
-        sorted_items = sorted(
-            self.cache_metadata.items(),
-            key=lambda x: x[1].get("last_access", 0),
+        sorted_items, sorted(
+        self.cache_metadata.items(),
+            key = lambda x: x[1].get("last_access", 0),
         )
 
         for key, _metadata in sorted_items:
-            if key in self.memory_cache:
+        if key in self.memory_cache:
                 del self.memory_cache[key]
-                self.eviction_count += 1
-            current_memory = self._get_memory_usage_mb()
-            if current_memory <= target_memory_mb:
+        self.eviction_count += 1
+            current_memory, self._get_memory_usage_mb()
+        if current_memory <= target_memory_mb:
                 break
 
         # Force garbage collection
@@ -187,15 +187,15 @@ class IntelligentFeatureCache:
             data: Data to cache
             metadata: Metadata about the cached data
         """
-        cache_file = self._get_cache_file_path(cache_key)
+        cache_file, self._get_cache_file_path(cache_key)
         cache_data = {"data": data, "metadata": metadata, "timestamp": time.time()}
         try:
-            if self.enable_compression:
-                with gzip.open(cache_file, "wb") as f:
-                    pickle.dump(cache_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+        if self.enable_compression:
+        with gzip.open(cache_file, "wb") as f:
+                    pickle.dump(cache_data, f, protocol = pickle.HIGHEST_PROTOCOL)
             else:
-                with open(cache_file, "wb") as f:
-                    pickle.dump(cache_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+        with open(cache_file, "wb") as f:
+                    pickle.dump(cache_data, f, protocol = pickle.HIGHEST_PROTOCOL)
             logger.debug(f"💾 Saved to disk cache: {cache_key}")
         except Exception as e:
             logger.warning(f"Failed to save to disk cache {cache_key}: {e}")
@@ -210,24 +210,24 @@ class IntelligentFeatureCache:
         Returns:
             Tuple of (data, metadata) or None if not found
         """
-        cache_file = self._get_cache_file_path(cache_key)
+        cache_file, self._get_cache_file_path(cache_key)
         if not cache_file.exists():
-            return None
+        return None
 
         try:
-            if self.enable_compression:
-                with gzip.open(cache_file, "rb") as f:
-                    cache_data = pickle.load(f)
+        if self.enable_compression:
+        with gzip.open(cache_file, "rb") as f:
+                    cache_data, pickle.load(f)
             else:
-                with open(cache_file, "rb") as f:
-                    cache_data = pickle.load(f)
-            data = cache_data["data"]
-            metadata = cache_data["metadata"]
+        with open(cache_file, "rb") as f:
+                    cache_data, pickle.load(f)
+            data, cache_data["data"]
+            metadata, cache_data["metadata"]
             logger.debug(f"📂 Loaded from disk cache: {cache_key}")
-            return data, metadata
+        return data, metadata
         except Exception as e:
             logger.warning(f"Failed to load from disk cache {cache_key}: {e}")
-            return None
+        return None
 
     def get(self, cache_key: str) -> Any | None:
         """
@@ -241,31 +241,31 @@ class IntelligentFeatureCache:
         """
         # Check memory cache first
         if cache_key in self.memory_cache:
-            self.hit_count += 1
-            self.cache_metadata[cache_key]["last_access"] = time.time()
-            self.cache_metadata[cache_key]["access_count"] += 1
-            return self.memory_cache[cache_key]
+        self.hit_count += 1
+        self.cache_metadata[cache_key]["last_access"] = time.time()
+        self.cache_metadata[cache_key]["access_count"] += 1
+        return self.memory_cache[cache_key]
 
         # Check disk cache
-        disk_result = self._load_from_disk(cache_key)
+        disk_result, self._load_from_disk(cache_key)
         if disk_result is not None:
-            data, metadata = disk_result
-            self.hit_count += 1
+            data, metadata, disk_result
+        self.hit_count += 1
 
-            # Load into memory cache if there's space
-            data_size_mb = self._estimate_data_size_mb(data)
-            if data_size_mb < self.max_memory_mb * 0.1:  # Only load if < 10% of max memory
-                self.memory_cache[cache_key] = data
-                self.cache_metadata[cache_key] = metadata
-                self.cache_metadata[cache_key]["last_access"] = time.time()
-                self.cache_metadata[cache_key]["access_count"] += 1
+        # Load into memory cache if there's space
+            data_size_mb, self._estimate_data_size_mb(data)
+        if data_size_mb < self.max_memory_mb * 0.1:  # Only load if < 10% of max memory
+        self.memory_cache[cache_key] = data
+        self.cache_metadata[cache_key] = metadata
+        self.cache_metadata[cache_key]["last_access"] = time.time()
+        self.cache_metadata[cache_key]["access_count"] += 1
 
-            return data
+        return data
 
         self.miss_count += 1
         return None
 
-    def set(self, cache_key: str, data: Any, metadata: dict | None = None) -> None:
+    def set(self, cache_key: str, data: Any, metadata: dict | None, None) -> None:
         """
         Store data in cache.
 
@@ -289,16 +289,16 @@ class IntelligentFeatureCache:
         )
 
         # Check memory usage and evict if necessary
-        data_size_mb = float(metadata["size_mb"])
-        current_memory = self._get_memory_usage_mb()
+        data_size_mb, float(metadata["size_mb"])
+        current_memory, self._get_memory_usage_mb()
         if current_memory + data_size_mb > self.max_memory_mb:
-            # Evict to 80% of max
-            self._evict_least_used(self.max_memory_mb * 0.8)
+        # Evict to 80% of max
+        self._evict_least_used(self.max_memory_mb * 0.8)
 
         # Store in memory if there's space
         if self._get_memory_usage_mb() + data_size_mb <= self.max_memory_mb:
-            self.memory_cache[cache_key] = data
-            self.cache_metadata[cache_key] = metadata
+        self.memory_cache[cache_key] = data
+        self.cache_metadata[cache_key] = metadata
 
         # Always save to disk
         self._save_to_disk(cache_key, data, metadata)
@@ -314,9 +314,9 @@ class IntelligentFeatureCache:
             Estimated size in MB
         """
         if isinstance(data, pd.DataFrame):
-            return float(data.memory_usage(deep=True).sum()) / (1024 * 1024)
+        return float(data.memory_usage(deep = True).sum()) / (1024 * 1024)
         if isinstance(data, np.ndarray):
-            return float(data.nbytes) / (1024 * 1024)
+        return float(data.nbytes) / (1024 * 1024)
         return float(len(pickle.dumps(data))) / (1024 * 1024)
 
     def clear(self) -> None:
@@ -326,9 +326,9 @@ class IntelligentFeatureCache:
 
         # Clear disk cache
         for cache_file in self.cache_dir.glob("*.pkl*"):
-            try:
+        try:
                 cache_file.unlink()
-            except Exception as e:
+        except Exception as e:
                 logger.warning(f"Failed to delete cache file {cache_file}: {e}")
 
         logger.info("🧹 Cleared all caches")
@@ -340,13 +340,13 @@ class IntelligentFeatureCache:
         Returns:
             Dictionary with cache statistics
         """
-        memory_usage = self._get_memory_usage_mb()
-        disk_usage = sum(
+        memory_usage, self._get_memory_usage_mb()
+        disk_usage, sum(
             f.stat().st_size for f in self.cache_dir.glob("*.pkl*")
         ) / (1024 * 1024)
 
-        total_requests = self.hit_count + self.miss_count
-        hit_rate = self.hit_count / total_requests if total_requests > 0 else 0.0
+        total_requests, self.hit_count + self.miss_count
+        hit_rate, self.hit_count / total_requests if total_requests > 0 else 0.0
 
         return {
             "memory_usage_mb": memory_usage,
@@ -361,7 +361,7 @@ class IntelligentFeatureCache:
 
     def log_stats(self) -> None:
         """Log current cache statistics."""
-        stats = self.get_stats()
+        stats, self.get_stats()
         logger.info("📊 Cache Statistics:")
         logger.info(f"   Memory usage: {stats['memory_usage_mb']:.2f} MB")
         logger.info(f"   Disk usage: {stats['disk_usage_mb']:.2f} MB")
@@ -371,8 +371,7 @@ class IntelligentFeatureCache:
         logger.info(f"   Evictions: {stats['eviction_count']}")
 
 # Global cache instance
-_feature_cache: IntelligentFeatureCache | None = None
-
+_feature_cache: IntelligentFeatureCache | None, None
 
 def get_feature_cache() -> IntelligentFeatureCache:
     """
@@ -384,11 +383,10 @@ def get_feature_cache() -> IntelligentFeatureCache:
     global _feature_cache
     if _feature_cache is None:
         # Fallback implementation for _feature_cache
-        _feature_cache = IntelligentFeatureCache()
+        _feature_cache, IntelligentFeatureCache()
     return _feature_cache
 
-
-def cache_feature_engineering(max_memory_mb: int = 2048):
+def cache_feature_engineering(max_memory_mb: int, 2048):
     """
     Decorator for caching feature engineering functions.
     Supports both sync and async functions.
@@ -402,28 +400,28 @@ def cache_feature_engineering(max_memory_mb: int = 2048):
 
     def decorator(func: Any):
         # Check if function is async
-        is_async = asyncio.iscoroutinefunction(func)
+        is_async, asyncio.iscoroutinefunction(func)
 
         if is_async:
             @wraps(func)
-            async def async_wrapper(*args: Any, **kwargs: Any):
-                cache = get_feature_cache()
-                cache.max_memory_mb = max_memory_mb
+        async def async_wrapper(*args: Any, **kwargs: Any):
+                cache, get_feature_cache()
+                cache.max_memory_mb, max_memory_mb
 
-                # Generate cache key
-                cache_key = cache._generate_cache_key(func.__name__, args, kwargs)
+        # Generate cache key
+                cache_key, cache._generate_cache_key(func.__name__, args, kwargs)
 
-                # Try to get from cache
-                cached_result = cache.get(cache_key)
-                if cached_result is not None:
+        # Try to get from cache
+                cached_result, cache.get(cache_key)
+        if cached_result is not None:
                     logger.info(f"⚡ Cache HIT for {func.__name__}")
-                    return cached_result
+        return cached_result
 
-                # Compute result
+        # Compute result
                 logger.info(f"🔄 Computing {func.__name__} (cache miss)")
-                result = await func(*args, **kwargs)
+                result, await func(*args, **kwargs)
 
-                # Cache the result
+        # Cache the result
                 metadata = {
                     "function": func.__name__,
                     "args_count": len(args),
@@ -431,29 +429,29 @@ def cache_feature_engineering(max_memory_mb: int = 2048):
                 }
                 cache.set(cache_key, result, metadata)
 
-                return result
+        return result
 
-            return async_wrapper
+        return async_wrapper
 
         @wraps(func)
         def sync_wrapper(*args: Any, **kwargs: Any):
-            cache = get_feature_cache()
-            cache.max_memory_mb = max_memory_mb
+            cache, get_feature_cache()
+            cache.max_memory_mb, max_memory_mb
 
-            # Generate cache key
-            cache_key = cache._generate_cache_key(func.__name__, args, kwargs)
+        # Generate cache key
+            cache_key, cache._generate_cache_key(func.__name__, args, kwargs)
 
-            # Try to get from cache
-            cached_result = cache.get(cache_key)
-            if cached_result is not None:
+        # Try to get from cache
+            cached_result, cache.get(cache_key)
+        if cached_result is not None:
                 logger.info(f"⚡ Cache HIT for {func.__name__}")
-                return cached_result
+        return cached_result
 
-            # Compute result
+        # Compute result
             logger.info(f"🔄 Computing {func.__name__} (cache miss)")
-            result = func(*args, **kwargs)
+            result, func(*args, **kwargs)
 
-            # Cache the result
+        # Cache the result
             metadata = {
                 "function": func.__name__,
                 "args_count": len(args),
@@ -461,20 +459,18 @@ def cache_feature_engineering(max_memory_mb: int = 2048):
             }
             cache.set(cache_key, result, metadata)
 
-            return result
+        return result
 
         return sync_wrapper
 
     return decorator
 
-
 def clear_feature_cache() -> None:
     """Clear the global feature cache."""
-    cache = get_feature_cache()
+    cache, get_feature_cache()
     cache.clear()
-
 
 def log_feature_cache_stats() -> None:
     """Log statistics for the global feature cache."""
-    cache = get_feature_cache()
+    cache, get_feature_cache()
     cache.log_stats()

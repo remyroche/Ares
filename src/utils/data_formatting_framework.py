@@ -2,12 +2,7 @@
 Data Formatting and Standardization Framework
 
 This module provides standardized data formatting including:
-- Data type standardization
-- Column naming conventions
-- Data structure normalization
-- Format validation and enforcement
-- Cross-step format consistency
-- Format transformation utilities
+    pass - Data type standardization - Column naming conventions - Data structure normalization - Format validation and enforcement - Cross - step format consistency - Format transformation utilities
 """
 
 import pandas as pd
@@ -20,7 +15,6 @@ from .pipeline_standards import PipelineStandards, pipeline_standards
 from .logger import system_logger
 from .error_handler import handle_errors
 
-
 class DataFormat(Enum):
     """Standard data formats."""
     KLINES = "klines"
@@ -30,7 +24,6 @@ class DataFormat(Enum):
     METADATA = "metadata"
     CONFIG = "config"
 
-
 class ColumnNamingConvention(Enum):
     """Column naming conventions."""
     SNAKE_CASE = "snake_case"
@@ -38,14 +31,13 @@ class ColumnNamingConvention(Enum):
     UPPER_CASE = "upper_case"
     LOWER_CASE = "lower_case"
 
-
 class DataFormattingFramework:
     """Comprehensive data formatting and standardization framework."""
 
     def __init__(self):
         """Initialize data formatting framework."""
-        self.standards = pipeline_standards
-        self.logger = system_logger.getChild("DataFormatting")
+        self.standards, pipeline_standards
+        self.logger, system_logger.getChild("DataFormatting")
         self.format_history: List[Dict[str, Any]] = []
 
         # Formatting policies
@@ -107,11 +99,11 @@ class DataFormattingFramework:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
+        default_return = None,
         context="data formatting"
     )
     def standardize_format(self, data: pd.DataFrame, target_format: DataFormat,
-                          preserve_original: bool = None) -> pd.DataFrame:
+                          preserve_original: bool, None) -> pd.DataFrame:
         """Standardize data to a specific format.
 
         Args:
@@ -123,35 +115,35 @@ class DataFormattingFramework:
             Standardized data
         """
         if preserve_original is None:
-            preserve_original = self.formatting_policies["preserve_original"]
+            preserve_original, self.formatting_policies["preserve_original"]
 
         if preserve_original:
-            standardized_data = data.copy()
+            standardized_data, data.copy()
         else:
-            standardized_data = data
+            standardized_data, data
 
         # Get format specification
         if target_format not in self.standard_formats:
             raise ValueError(f"Unknown target format: {target_format}")
 
-        format_spec = self.standard_formats[target_format]
+        format_spec, self.standard_formats[target_format]
 
         # Standardize column names
         if self.formatting_policies["auto_rename_columns"]:
-            standardized_data = self._standardize_column_names(standardized_data)
+            standardized_data, self._standardize_column_names(standardized_data)
 
         # Standardize data types
-        standardized_data = self._standardize_data_types(standardized_data, format_spec["data_types"])
+        standardized_data, self._standardize_data_types(standardized_data, format_spec["data_types"])
 
         # Ensure required columns exist
-        standardized_data = self._ensure_required_columns(standardized_data, format_spec["required_columns"])
+        standardized_data, self._ensure_required_columns(standardized_data, format_spec["required_columns"])
 
         # Reorder columns
-        standardized_data = self._reorder_columns(standardized_data, format_spec["column_order"])
+        standardized_data, self._reorder_columns(standardized_data, format_spec["column_order"])
 
         # Validate format
         if self.formatting_policies["strict_formatting"]:
-            self._validate_format(standardized_data, target_format)
+        self._validate_format(standardized_data, target_format)
 
         # Log formatting operation
         self._log_formatting_operation(data, standardized_data, target_format)
@@ -160,25 +152,25 @@ class DataFormattingFramework:
 
     def _standardize_column_names(self, data: pd.DataFrame) -> pd.DataFrame:
         """Standardize column names according to naming convention."""
-        convention = self.formatting_policies["column_naming_convention"]
+        convention, self.formatting_policies["column_naming_convention"]
 
         new_columns = {}
         for col in data.columns:
-            if convention == ColumnNamingConvention.SNAKE_CASE:
-                new_name = self._to_snake_case(col)
+        if convention == ColumnNamingConvention.SNAKE_CASE:
+                new_name, self._to_snake_case(col)
             elif convention == ColumnNamingConvention.CAMEL_CASE:
-                new_name = self._to_camel_case(col)
+                new_name, self._to_camel_case(col)
             elif convention == ColumnNamingConvention.UPPER_CASE:
-                new_name = col.upper()
+                new_name, col.upper()
             elif convention == ColumnNamingConvention.LOWER_CASE:
-                new_name = col.lower()
+                new_name, col.lower()
             else:
-                new_name = col
+                new_name, col
 
             new_columns[col] = new_name
 
         # Rename columns
-        data = data.rename(columns=new_columns)
+        data, data.rename(columns = new_columns)
 
         return data
 
@@ -186,34 +178,34 @@ class DataFormattingFramework:
         """Convert text to snake_case."""
         import re
         # Convert camelCase to snake_case
-        text = re.sub(r'([a-z0-9])([A-Z])', r'\1_\2', text)
+        text, re.sub(r'([a - z0 - 9])([A - Z])', r'\1_\2', text)
         # Convert spaces and special characters to underscores
-        text = re.sub(r'[^a-zA-Z0-9]', '_', text)
+        text, re.sub(r'[^a - zA - Z0 - 9]', '_', text)
         # Convert to lowercase
-        text = text.lower()
+        text, text.lower()
         # Remove multiple underscores
-        text = re.sub(r'_+', '_', text)
-        # Remove leading/trailing underscores
-        text = text.strip('_')
+        text, re.sub(r'_+', '_', text)
+        # Remove leading / trailing underscores
+        text, text.strip('_')
         return text
 
     def _to_camel_case(self, text: str) -> str:
         """Convert text to camelCase."""
         import re
         # Convert to snake_case first
-        text = self._to_snake_case(text)
+        text, self._to_snake_case(text)
         # Convert to camelCase
-        words = text.split('_')
+        words, text.split('_')
         if len(words) > 1:
-            return words[0] + ''.join(word.capitalize() for word in words[1:])
+        return words[0] + ''.join(word.capitalize() for word in words[1:])
         return text
 
     def _standardize_data_types(self, data: pd.DataFrame, data_types: Dict[str, str]) -> pd.DataFrame:
         """Standardize data types according to specification."""
         for column, target_type in data_types.items():
-            if column in data.columns:
-                try:
-                    if target_type == "int64":
+        if column in data.columns:
+        try:
+        if target_type == "int64":
                         data[column] = pd.to_numeric(data[column], errors='coerce').astype('int64')
                     elif target_type == "float64":
                         data[column] = pd.to_numeric(data[column], errors='coerce').astype('float64')
@@ -222,24 +214,24 @@ class DataFormattingFramework:
                     elif target_type == "datetime":
                         data[column] = pd.to_datetime(data[column], errors='coerce')
 
-                    self.logger.debug(f"Standardized column '{column}' to type '{target_type}'")
-                except Exception as e:
-                    self.logger.warning(f"Failed to standardize column '{column}' to type '{target_type}': {e}")
+        self.logger.debug(f"Standardized column '{column}' to type '{target_type}'")
+        except Exception as e:
+        self.logger.warning(f"Failed to standardize column '{column}' to type '{target_type}': {e}")
 
         return data
 
     def _ensure_required_columns(self, data: pd.DataFrame, required_columns: List[str]) -> pd.DataFrame:
         """Ensure all required columns exist."""
-        missing_columns = set(required_columns) - set(data.columns)
+        missing_columns, set(required_columns) - set(data.columns)
 
         for column in missing_columns:
-            if column == "timestamp":
-                # Create timestamp column if missing
-                data[column] = pd.date_range(start=datetime.now(), periods=len(data), freq='1min').astype(np.int64) // 10**9
+        if column == "timestamp":
+        # Create timestamp column if missing
+                data[column] = pd.date_range(start = datetime.now(), periods = len(data), freq='1min').astype(np.int64) // 10**9
             else:
-                # Create column with default value
+        # Create column with default value
                 data[column] = 0.0
-                self.logger.warning(f"Created missing required column '{column}' with default value")
+        self.logger.warning(f"Created missing required column '{column}' with default value")
 
         return data
 
@@ -252,25 +244,25 @@ class DataFormattingFramework:
         remaining_columns = [col for col in data.columns if col not in existing_ordered_columns]
 
         # Reorder columns
-        final_column_order = existing_ordered_columns + remaining_columns
+        final_column_order, existing_ordered_columns + remaining_columns
 
         return data[final_column_order]
 
     def _validate_format(self, data: pd.DataFrame, target_format: DataFormat) -> None:
         """Validate that data conforms to the target format."""
-        format_spec = self.standard_formats[target_format]
+        format_spec, self.standard_formats[target_format]
 
         # Check required columns
-        missing_columns = set(format_spec["required_columns"]) - set(data.columns)
+        missing_columns, set(format_spec["required_columns"]) - set(data.columns)
         if missing_columns:
             raise ValueError(f"Missing required columns for format {target_format}: {missing_columns}")
 
         # Check data types
         for column, expected_type in format_spec["data_types"].items():
-            if column in data.columns:
-                actual_type = str(data[column].dtype)
-                if actual_type != expected_type:
-                    self.logger.warning(f"Column '{column}' has type {actual_type}, expected {expected_type}")
+        if column in data.columns:
+                actual_type, str(data[column].dtype)
+        if actual_type != expected_type:
+        self.logger.warning(f"Column '{column}' has type {actual_type}, expected {expected_type}")
 
     def _log_formatting_operation(self, original_data: pd.DataFrame, formatted_data: pd.DataFrame,
                                 target_format: DataFormat) -> None:
@@ -300,16 +292,16 @@ class DataFormattingFramework:
             Data with normalized timestamps
         """
         if timestamp_column not in data.columns:
-            self.logger.warning(f"Timestamp column '{timestamp_column}' not found")
-            return data
+        self.logger.warning(f"Timestamp column '{timestamp_column}' not found")
+        return data
 
-        normalized_data = data.copy()
+        normalized_data, data.copy()
 
         try:
-            # Convert to datetime first
-            timestamps = pd.to_datetime(normalized_data[timestamp_column], unit='s', errors='coerce')
+        # Convert to datetime first
+            timestamps, pd.to_datetime(normalized_data[timestamp_column], unit='s', errors='coerce')
 
-            if target_format == "unix_seconds":
+        if target_format == "unix_seconds":
                 normalized_data[timestamp_column] = timestamps.astype(np.int64) // 10**9
             elif target_format == "unix_milliseconds":
                 normalized_data[timestamp_column] = timestamps.astype(np.int64) // 10**6
@@ -318,17 +310,17 @@ class DataFormattingFramework:
             elif target_format == "datetime":
                 normalized_data[timestamp_column] = timestamps
             else:
-                self.logger.warning(f"Unknown timestamp format: {target_format}")
-                return data
+        self.logger.warning(f"Unknown timestamp format: {target_format}")
+        return data
 
-            self.logger.info(f"Normalized timestamps to format: {target_format}")
+        self.logger.info(f"Normalized timestamps to format: {target_format}")
 
         except Exception as e:
-            self.logger.error(f"Failed to normalize timestamps: {e}")
+        self.logger.error(f"Failed to normalize timestamps: {e}")
 
         return normalized_data
 
-    def round_numeric_columns(self, data: pd.DataFrame, precision: int = None) -> pd.DataFrame:
+    def round_numeric_columns(self, data: pd.DataFrame, precision: int, None) -> pd.DataFrame:
         """Round numeric columns to specified precision.
 
         Args:
@@ -339,12 +331,12 @@ class DataFormattingFramework:
             Data with rounded numeric columns
         """
         if precision is None:
-            precision = self.formatting_policies["numeric_precision"]
+            precision, self.formatting_policies["numeric_precision"]
 
-        rounded_data = data.copy()
+        rounded_data, data.copy()
 
         # Round numeric columns
-        numeric_columns = rounded_data.select_dtypes(include=[np.number]).columns
+        numeric_columns, rounded_data.select_dtypes(include=[np.number]).columns
         for column in numeric_columns:
             rounded_data[column] = rounded_data[column].round(precision)
 
@@ -353,14 +345,14 @@ class DataFormattingFramework:
         return rounded_data
 
     def handle_missing_values(self, data: pd.DataFrame, strategy: str = "intelligent",
-                            limit: int = None, symbol: str = None, exchange: str = None,
+                            limit: int, None, symbol: str, None, exchange: str, None,
                             timeframe: str = "1m") -> pd.DataFrame:
         """Handle missing values according to specified strategy.
 
         Args:
             data: Data with missing values
             strategy: Strategy for handling missing values
-            limit: Limit for forward/backward fill
+            limit: Limit for forward / backward fill
             symbol: Trading symbol for data download (for intelligent strategy)
             exchange: Exchange name for data download (for intelligent strategy)
             timeframe: Timeframe for data download (for intelligent strategy)
@@ -369,37 +361,37 @@ class DataFormattingFramework:
             Data with handled missing values
         """
         if strategy == "intelligent":
-            # Use enhanced missing value handler for intelligent gap filling
+        # Use enhanced missing value handler for intelligent gap filling
             from .enhanced_missing_value_handler import enhanced_missing_value_handler
 
-            return enhanced_missing_value_handler.handle_missing_values_intelligently(
+        return enhanced_missing_value_handler.handle_missing_values_intelligently(
                 data, "timestamp", symbol, exchange, timeframe
             )
 
         # Fallback to traditional strategies
-        handled_data = data.copy()
+        handled_data, data.copy()
 
         if strategy == "forward_fill":
-            handled_data = handled_data.fillna(method='ffill', limit=limit)
+            handled_data, handled_data.fillna(method='ffill', limit = limit)
         elif strategy == "backward_fill":
-            handled_data = handled_data.fillna(method='bfill', limit=limit)
+            handled_data, handled_data.fillna(method='bfill', limit = limit)
         elif strategy == "interpolate":
-            handled_data = handled_data.interpolate(method='linear', limit=limit)
+            handled_data, handled_data.interpolate(method='linear', limit = limit)
         elif strategy == "drop":
-            handled_data = handled_data.dropna()
+            handled_data, handled_data.dropna()
         elif strategy == "zero":
-            handled_data = handled_data.fillna(0)
+            handled_data, handled_data.fillna(0)
         elif strategy == "median":
-            for column in handled_data.columns:
-                if handled_data[column].dtype in ['float64', 'int64']:
-                    median_value = handled_data[column].median()
-                    handled_data[column].fillna(median_value, inplace=True)
+        for column in handled_data.columns:
+        if handled_data[column].dtype in ['float64', 'int64']:
+                    median_value, handled_data[column].median()
+                    handled_data[column].fillna(median_value, inplace = True)
         else:
-            self.logger.warning(f"Unknown missing value strategy: {strategy}")
-            return data
+        self.logger.warning(f"Unknown missing value strategy: {strategy}")
+        return data
 
-        missing_before = data.isnull().sum().sum()
-        missing_after = handled_data.isnull().sum().sum()
+        missing_before, data.isnull().sum().sum()
+        missing_after, handled_data.isnull().sum().sum()
 
         self.logger.info(f"Handled missing values using '{strategy}': {missing_before} -> {missing_after}")
 
@@ -416,9 +408,9 @@ class DataFormattingFramework:
             Validation results
         """
         if expected_format not in self.standard_formats:
-            return {"valid": False, "error": f"Unknown format: {expected_format}"}
+        return {"valid": False, "error": f"Unknown format: {expected_format}"}
 
-        format_spec = self.standard_formats[expected_format]
+        format_spec, self.standard_formats[expected_format]
         validation_results = {
             "valid": True,
             "format": expected_format.value,
@@ -427,22 +419,22 @@ class DataFormattingFramework:
         }
 
         # Check required columns
-        missing_columns = set(format_spec["required_columns"]) - set(data.columns)
+        missing_columns, set(format_spec["required_columns"]) - set(data.columns)
         if missing_columns:
             validation_results["valid"] = False
             validation_results["issues"].append(f"Missing required columns: {missing_columns}")
 
         # Check data types
         for column, expected_type in format_spec["data_types"].items():
-            if column in data.columns:
-                actual_type = str(data[column].dtype)
-                if actual_type != expected_type:
+        if column in data.columns:
+                actual_type, str(data[column].dtype)
+        if actual_type != expected_type:
                     validation_results["warnings"].append(f"Column '{column}' has type {actual_type}, expected {expected_type}")
 
         # Check for missing values in required columns
         for column in format_spec["required_columns"]:
-            if column in data.columns and data[column].isnull().any():
-                missing_count = data[column].isnull().sum()
+        if column in data.columns and data[column].isnull().any():
+                missing_count, data[column].isnull().sum()
                 validation_results["warnings"].append(f"Column '{column}' has {missing_count} missing values")
 
         return validation_results
@@ -478,7 +470,7 @@ class DataFormattingFramework:
         """
         # Validate format specification
         required_keys = ["required_columns", "data_types", "column_order"]
-        missing_keys = set(required_keys) - set(format_spec.keys())
+        missing_keys, set(required_keys) - set(format_spec.keys())
 
         if missing_keys:
             raise ValueError(f"Missing required keys in format specification: {missing_keys}")
@@ -507,7 +499,7 @@ class DataFormattingFramework:
 
         # Add format comparison
         if target_format in self.standard_formats:
-            format_spec = self.standard_formats[target_format]
+            format_spec, self.standard_formats[target_format]
             report["format_comparison"] = {
                 "required_columns": format_spec["required_columns"],
                 "current_columns": list(data.columns),
@@ -517,6 +509,5 @@ class DataFormattingFramework:
 
         return report
 
-
 # Global data formatting framework instance
-data_formatting_framework = DataFormattingFramework()
+data_formatting_framework, DataFormattingFramework()

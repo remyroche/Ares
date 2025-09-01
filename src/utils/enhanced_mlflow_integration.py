@@ -1,15 +1,11 @@
-# src/utils/enhanced_mlflow_integration.py
+# src / utils / enhanced_mlflow_integration.py
 
 """
 Enhanced MLflow Integration for Enhanced Training Manager
 
 This module provides comprehensive MLflow integration that ensures all models
 in the enhanced_training_manager pipeline are properly associated with:
-- asset: The trading asset/symbol
-- exchange: The trading exchange
-- lookback_period: The data lookback period used for training
-- project_version: The current project version
-- date: The training date
+    pass - asset: The trading asset / symbol - exchange: The trading exchange - lookback_period: The data lookback period used for training - project_version: The current project version - date: The training date
 
 This ensures complete traceability and reproducibility of all training runs.
 """
@@ -36,7 +32,6 @@ from src.utils.mlflow_utils import (
 )
 from src.utils.error_handler import handle_errors
 
-
 def with_enhanced_mlflow_logging(step_name: str):
     """Decorator to automatically add enhanced MLflow logging to pipeline steps.
 
@@ -49,43 +44,43 @@ def with_enhanced_mlflow_logging(step_name: str):
     Usage:
         @with_enhanced_mlflow_logging("step03_hmm_regime_discovery")
         async def execute(self, training_input, pipeline_state):
-            # Step execution logic
-            return results
+        # Step execution logic
+        return results
     """
     def decorator(func):
         @wraps(func)
         async def wrapper(self, training_input: Dict[str, Any], pipeline_state: Dict[str, Any], *args, **kwargs):
-            # Extract metadata from config
-            config = getattr(self, 'config', {})
-            metadata = extract_training_metadata(config)
+        # Extract metadata from config
+            config, getattr(self, 'config', {})
+            metadata, extract_training_metadata(config)
 
-            # Extract step-specific information
-            symbol = training_input.get("symbol", metadata["asset"])
-            exchange = training_input.get("exchange", metadata["exchange"])
+        # Extract step - specific information
+            symbol, training_input.get("symbol", metadata["asset"])
+            exchange, training_input.get("exchange", metadata["exchange"])
 
-            # Start MLflow run for this step
-            run_id = None
-            try:
-                # Set up MLflow
-                tracking_uri = config.get("mlflow", {}).get("tracking_uri") or "file:./mlruns"
-                experiment_name = config.get("mlflow", {}).get("experiment_name") or "ares_training"
+        # Start MLflow run for this step
+            run_id, None
+        try:
+        # Set up MLflow
+                tracking_uri, config.get("mlflow", {}).get("tracking_uri") or "file:./mlruns"
+                experiment_name, config.get("mlflow", {}).get("experiment_name") or "ares_training"
 
                 mlflow.set_tracking_uri(tracking_uri)
                 mlflow.set_experiment(experiment_name)
 
-                # Create run name
-                run_name = f"{exchange}_{symbol}_{step_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        # Create run name
+                run_name, f"{exchange}_{symbol}_{step_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-                with mlflow.start_run(run_name=run_name) as run:
-                    run_id = run.info.run_id
+        with mlflow.start_run(run_name = run_name) as run:
+                    run_id, run.info.run_id
 
-                    # Log enhanced training metadata for the step
+        # Log enhanced training metadata for the step
                     log_enhanced_training_metadata(
-                        asset=metadata["asset"],
-                        exchange=metadata["exchange"],
-                        lookback_period=metadata["lookback_period"],
-                        project_version=metadata["project_version"],
-                        run_id=run_id,
+                        asset = metadata["asset"],
+                        exchange = metadata["exchange"],
+                        lookback_period = metadata["lookback_period"],
+                        project_version = metadata["project_version"],
+                        run_id = run_id,
                         additional_metadata={
                             "pipeline_step": step_name,
                             "step_execution_start": datetime.now().isoformat(),
@@ -94,7 +89,7 @@ def with_enhanced_mlflow_logging(step_name: str):
                         }
                     )
 
-                    # Log step parameters
+        # Log step parameters
                     step_params = {
                         "step_name": step_name,
                         "symbol": symbol,
@@ -104,24 +99,24 @@ def with_enhanced_mlflow_logging(step_name: str):
                     }
 
                     log_params_with_metadata(
-                        params=step_params,
-                        asset=metadata["asset"],
-                        exchange=metadata["exchange"],
-                        lookback_period=metadata["lookback_period"],
-                        project_version=metadata["project_version"],
-                        run_id=run_id,
+                        params = step_params,
+                        asset = metadata["asset"],
+                        exchange = metadata["exchange"],
+                        lookback_period = metadata["lookback_period"],
+                        project_version = metadata["project_version"],
+                        run_id = run_id,
                         additional_metadata={
                             "parameter_type": "step_configuration",
                         }
                     )
 
-                    # Execute the step
-                    start_time = datetime.now()
-                    result = await func(self, training_input, pipeline_state, *args, **kwargs)
-                    end_time = datetime.now()
+        # Execute the step
+                    start_time, datetime.now()
+                    result, await func(self, training_input, pipeline_state, *args, **kwargs)
+                    end_time, datetime.now()
                     execution_duration = (end_time - start_time).total_seconds()
 
-                    # Log step completion metadata
+        # Log step completion metadata
                     completion_metadata = {
                         "step_execution_end": end_time.isoformat(),
                         "execution_duration_seconds": execution_duration,
@@ -130,29 +125,29 @@ def with_enhanced_mlflow_logging(step_name: str):
                     }
 
                     log_enhanced_training_metadata(
-                        asset=metadata["asset"],
-                        exchange=metadata["exchange"],
-                        lookback_period=metadata["lookback_period"],
-                        project_version=metadata["project_version"],
-                        run_id=run_id,
-                        additional_metadata=completion_metadata
+                        asset = metadata["asset"],
+                        exchange = metadata["exchange"],
+                        lookback_period = metadata["lookback_period"],
+                        project_version = metadata["project_version"],
+                        run_id = run_id,
+                        additional_metadata = completion_metadata
                     )
 
-                    # Log step metrics
-                    if isinstance(result, dict):
+        # Log step metrics
+        if isinstance(result, dict):
                         metrics = {}
-                        for key, value in result.items():
-                            if isinstance(value, (int, float)) and key not in ["status", "duration"]:
+        for key, value in result.items():
+        if isinstance(value, (int, float)) and key not in ["status", "duration"]:
                                 metrics[f"step_{key}"] = float(value)
 
-                        if metrics:
+        if metrics:
                             log_metrics_with_metadata(
-                                metrics=metrics,
-                                asset=metadata["asset"],
-                                exchange=metadata["exchange"],
-                                lookback_period=metadata["lookback_period"],
-                                project_version=metadata["project_version"],
-                                run_id=run_id,
+                                metrics = metrics,
+                                asset = metadata["asset"],
+                                exchange = metadata["exchange"],
+                                lookback_period = metadata["lookback_period"],
+                                project_version = metadata["project_version"],
+                                run_id = run_id,
                                 additional_metadata={
                                     "metrics_type": "step_execution",
                                     "step_name": step_name,
@@ -160,16 +155,15 @@ def with_enhanced_mlflow_logging(step_name: str):
                             )
 
                     system_logger.info(f"✅ Step {step_name} executed and logged to MLflow (Run ID: {run_id})")
-                    return result
+        return result
 
-            except Exception as e:
+        except Exception as e:
                 system_logger.error(f"❌ MLflow logging failed for step {step_name}: {e}")
-                # Still execute the step even if MLflow logging fails
-                return await func(self, training_input, pipeline_state, *args, **kwargs)
+        # Still execute the step even if MLflow logging fails
+        return await func(self, training_input, pipeline_state, *args, **kwargs)
 
         return wrapper
     return decorator
-
 
 def log_step_artifact(
     config: Dict[str, Any],
@@ -194,7 +188,7 @@ def log_step_artifact(
             system_logger.warning(f"Artifact file not found: {artifact_path}")
             return
 
-        metadata = extract_training_metadata(config)
+        metadata, extract_training_metadata(config)
 
         # Prepare additional metadata
         extra_metadata = {
@@ -208,21 +202,20 @@ def log_step_artifact(
 
         # Log artifact with metadata
         log_artifacts_with_metadata(
-            local_path=artifact_path,
-            artifact_path=f"artifacts/{step_name}/{os.path.basename(artifact_path)}",
-            asset=metadata["asset"],
-            exchange=metadata["exchange"],
-            lookback_period=metadata["lookback_period"],
-            project_version=metadata["project_version"],
-            run_id=run_id,
-            additional_metadata=extra_metadata,
+            local_path = artifact_path,
+            artifact_path = f"artifacts/{step_name}/{os.path.basename(artifact_path)}",
+            asset = metadata["asset"],
+            exchange = metadata["exchange"],
+            lookback_period = metadata["lookback_period"],
+            project_version = metadata["project_version"],
+            run_id = run_id,
+            additional_metadata = extra_metadata,
         )
 
         system_logger.info(f"✅ Logged artifact '{artifact_path}' for step {step_name}")
 
     except Exception as e:
         system_logger.error(f"Failed to log artifact '{artifact_path}' for step {step_name}: {e}")
-
 
 def generate_standardized_artifact_name(
     exchange: str,
@@ -236,7 +229,7 @@ def generate_standardized_artifact_name(
 
     Args:
         exchange: Exchange name (e.g., "BINANCE")
-        token: Token/symbol name (e.g., "ETHUSDT")
+        token: Token / symbol name (e.g., "ETHUSDT")
         step_number: Step number (e.g., "step3", "step6")
         artifact_type: Type of artifact (e.g., "composite_clusters", "features_train", "hmm_model")
         extension: File extension (e.g., ".parquet", ".pkl", ".json")
@@ -247,19 +240,19 @@ def generate_standardized_artifact_name(
     """
     if timestamp is None:
         # Fallback implementation for timestamp
-        timestamp = datetime.now()
+        timestamp, datetime.now()
 
-    date_str = timestamp.strftime("%Y%m%d")
-    time_str = timestamp.strftime("%H%M")
+    date_str, timestamp.strftime("%Y%m%d")
+    time_str, timestamp.strftime("%H%M")
 
     # Clean up step number to just the number
-    step_num = step_number.replace("step", "").replace("_", "")
+    step_num, step_number.replace("step", "").replace("_", "")
 
     # Clean up artifact type (replace spaces and special chars with underscores)
-    clean_artifact_type = artifact_type.replace(" ", "_").replace("-", "_").lower()
+    clean_artifact_type, artifact_type.replace(" ", "_").replace("-", "_").lower()
 
     # Build the standardized name
-    artifact_name = f"{exchange}_{token}_{date_str}_{time_str}_{step_num}_{clean_artifact_type}"
+    artifact_name, f"{exchange}_{token}_{date_str}_{time_str}_{step_num}_{clean_artifact_type}"
 
     if extension:
         if not extension.startswith("."):
@@ -267,7 +260,6 @@ def generate_standardized_artifact_name(
         artifact_name += extension
 
     return artifact_name
-
 
 def log_step_dataframe(
     config: Dict[str, Any],
@@ -288,12 +280,12 @@ def log_step_dataframe(
         additional_metadata: Additional metadata to log
     """
     try:
-        metadata = extract_training_metadata(config)
+        metadata, extract_training_metadata(config)
 
         # Create temporary file
-        with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp_file:
-            df.to_parquet(tmp_file.name, index=False)
-            tmp_path = tmp_file.name
+        with tempfile.NamedTemporaryFile(suffix=".parquet", delete = False) as tmp_file:
+            df.to_parquet(tmp_file.name, index = False)
+            tmp_path, tmp_file.name
 
         # Prepare additional metadata
         extra_metadata = {
@@ -307,14 +299,14 @@ def log_step_dataframe(
 
         # Log artifact
         log_artifacts_with_metadata(
-            local_path=tmp_path,
-            artifact_path=f"artifacts/{step_name}/{artifact_name}.parquet",
-            asset=metadata["asset"],
-            exchange=metadata["exchange"],
-            lookback_period=metadata["lookback_period"],
-            project_version=metadata["project_version"],
-            run_id=run_id,
-            additional_metadata=extra_metadata,
+            local_path = tmp_path,
+            artifact_path = f"artifacts/{step_name}/{artifact_name}.parquet",
+            asset = metadata["asset"],
+            exchange = metadata["exchange"],
+            lookback_period = metadata["lookback_period"],
+            project_version = metadata["project_version"],
+            run_id = run_id,
+            additional_metadata = extra_metadata,
         )
 
         # Clean up temporary file
@@ -324,7 +316,6 @@ def log_step_dataframe(
 
     except Exception as e:
         system_logger.error(f"Failed to log DataFrame '{artifact_name}' for step {step_name}: {e}")
-
 
 def create_standardized_artifact_folders(base_dir: str = "artifacts") -> Dict[str, str]:
     """Create standardized folder structure for all pipeline artifacts.
@@ -349,10 +340,9 @@ def create_standardized_artifact_folders(base_dir: str = "artifacts") -> Dict[st
 
     # Create all folders
     for folder_path in folders.values():
-        os.makedirs(folder_path, exist_ok=True)
+        os.makedirs(folder_path, exist_ok = True)
 
     return folders
-
 
 def get_standardized_artifact_path(
     artifact_type: str,
@@ -371,7 +361,7 @@ def get_standardized_artifact_path(
     Returns:
         Standardized artifact path
     """
-    folders = create_standardized_artifact_folders(base_dir)
+    folders, create_standardized_artifact_folders(base_dir)
 
     # Map artifact types to folders
     type_to_folder = {
@@ -385,9 +375,8 @@ def get_standardized_artifact_path(
         "log": "logs",
     }
 
-    folder = type_to_folder.get(artifact_type, "base")
+    folder, type_to_folder.get(artifact_type, "base")
     return f"{folders[folder]}/{step_name}/{artifact_name}"
-
 
 def log_step_dataframe_with_standardized_name(
     config: Dict[str, Any],
@@ -410,34 +399,33 @@ def log_step_dataframe_with_standardized_name(
     Returns:
         Generated artifact name
     """
-    metadata = extract_training_metadata(config)
-    exchange = metadata["exchange"]
-    token = metadata["asset"]
+    metadata, extract_training_metadata(config)
+    exchange, metadata["exchange"]
+    token, metadata["asset"]
 
     # Generate standardized artifact name
-    artifact_name = generate_standardized_artifact_name(
-        exchange=exchange,
-        token=token,
-        step_number=step_name,
-        artifact_type=artifact_type,
+    artifact_name, generate_standardized_artifact_name(
+        exchange = exchange,
+        token = token,
+        step_number = step_name,
+        artifact_type = artifact_type,
         extension="parquet"
     )
 
     # Get standardized path
-    artifact_path = get_standardized_artifact_path("dataframe", step_name, artifact_name)
+    artifact_path, get_standardized_artifact_path("dataframe", step_name, artifact_name)
 
     # Log the DataFrame
     log_step_dataframe(
-        config=config,
-        step_name=step_name,
-        df=df,
-        artifact_name=artifact_name,
-        run_id=run_id,
-        additional_metadata=additional_metadata,
+        config = config,
+        step_name = step_name,
+        df = df,
+        artifact_name = artifact_name,
+        run_id = run_id,
+        additional_metadata = additional_metadata,
     )
 
     return artifact_name
-
 
 def log_step_artifact_with_standardized_name(
     config: Dict[str, Any],
@@ -460,37 +448,36 @@ def log_step_artifact_with_standardized_name(
     Returns:
         Generated artifact name
     """
-    metadata = extract_training_metadata(config)
-    exchange = metadata["exchange"]
-    token = metadata["asset"]
+    metadata, extract_training_metadata(config)
+    exchange, metadata["exchange"]
+    token, metadata["asset"]
 
     # Get file extension
-    file_extension = os.path.splitext(artifact_path)[1]
+    file_extension, os.path.splitext(artifact_path)[1]
 
     # Generate standardized artifact name
-    artifact_name = generate_standardized_artifact_name(
-        exchange=exchange,
-        token=token,
-        step_number=step_name,
-        artifact_type=artifact_type,
-        extension=file_extension
+    artifact_name, generate_standardized_artifact_name(
+        exchange = exchange,
+        token = token,
+        step_number = step_name,
+        artifact_type = artifact_type,
+        extension = file_extension
     )
 
     # Get standardized path
-    standardized_path = get_standardized_artifact_path(artifact_type, step_name, artifact_name)
+    standardized_path, get_standardized_artifact_path(artifact_type, step_name, artifact_name)
 
     # Log the artifact
     log_step_artifact(
-        config=config,
-        step_name=step_name,
-        artifact_path=artifact_path,
-        artifact_type=artifact_type,
-        run_id=run_id,
-        additional_metadata=additional_metadata,
+        config = config,
+        step_name = step_name,
+        artifact_path = artifact_path,
+        artifact_type = artifact_type,
+        run_id = run_id,
+        additional_metadata = additional_metadata,
     )
 
     return artifact_name
-
 
 def log_step_report(
     config: Dict[str, Any],
@@ -514,27 +501,27 @@ def log_step_report(
         Generated report name
     """
     try:
-        metadata = extract_training_metadata(config)
-        exchange = metadata["exchange"]
-        token = metadata["asset"]
+        metadata, extract_training_metadata(config)
+        exchange, metadata["exchange"]
+        token, metadata["asset"]
 
         # Generate standardized report name
-        report_name = generate_standardized_artifact_name(
-            exchange=exchange,
-            token=token,
-            step_number=step_name,
-            artifact_type=report_type,
+        report_name, generate_standardized_artifact_name(
+            exchange = exchange,
+            token = token,
+            step_number = step_name,
+            artifact_type = report_type,
             extension="json"
         )
 
         # Get standardized path
-        report_path = get_standardized_artifact_path("report", step_name, report_name)
+        report_path, get_standardized_artifact_path("report", step_name, report_name)
 
         # Create temporary file
         import json
-        with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as tmp_file:
-            json.dump(report_data, tmp_file, indent=2, default=str)
-            tmp_path = tmp_file.name
+        with tempfile.NamedTemporaryFile(suffix=".json", delete = False, mode="w") as tmp_file:
+            json.dump(report_data, tmp_file, indent = 2, default = str)
+            tmp_path, tmp_file.name
 
         # Prepare additional metadata
         extra_metadata = {
@@ -548,14 +535,14 @@ def log_step_report(
 
         # Log artifact
         log_artifacts_with_metadata(
-            local_path=tmp_path,
-            artifact_path=f"artifacts/{step_name}/{report_name}",
-            asset=metadata["asset"],
-            exchange=metadata["exchange"],
-            lookback_period=metadata["lookback_period"],
-            project_version=metadata["project_version"],
-            run_id=run_id,
-            additional_metadata=extra_metadata,
+            local_path = tmp_path,
+            artifact_path = f"artifacts/{step_name}/{report_name}",
+            asset = metadata["asset"],
+            exchange = metadata["exchange"],
+            lookback_period = metadata["lookback_period"],
+            project_version = metadata["project_version"],
+            run_id = run_id,
+            additional_metadata = extra_metadata,
         )
 
         # Clean up temporary file
@@ -567,7 +554,6 @@ def log_step_report(
     except Exception as e:
         system_logger.error(f"Failed to log report for step {step_name}: {e}")
         return ""
-
 
 def log_step_model(
     config: Dict[str, Any],
@@ -590,7 +576,7 @@ def log_step_model(
         additional_metadata: Additional metadata to log
     """
     try:
-        metadata = extract_training_metadata(config)
+        metadata, extract_training_metadata(config)
 
         # Prepare additional metadata
         extra_metadata = {
@@ -603,21 +589,20 @@ def log_step_model(
 
         # Log model with metadata
         log_model_with_metadata(
-            model=model,
-            model_name=f"{step_name}_{model_name}",
-            asset=metadata["asset"],
-            exchange=metadata["exchange"],
-            lookback_period=metadata["lookback_period"],
-            project_version=metadata["project_version"],
-            run_id=run_id,
-            additional_metadata=extra_metadata,
+            model = model,
+            model_name = f"{step_name}_{model_name}",
+            asset = metadata["asset"],
+            exchange = metadata["exchange"],
+            lookback_period = metadata["lookback_period"],
+            project_version = metadata["project_version"],
+            run_id = run_id,
+            additional_metadata = extra_metadata,
         )
 
         system_logger.info(f"✅ Logged model '{model_name}' for step {step_name}")
 
     except Exception as e:
         system_logger.error(f"Failed to log model '{model_name}' for step {step_name}: {e}")
-
 
 def log_step_metrics(
     config: Dict[str, Any],
@@ -636,7 +621,7 @@ def log_step_metrics(
         additional_metadata: Additional metadata to log
     """
     try:
-        metadata = extract_training_metadata(config)
+        metadata, extract_training_metadata(config)
 
         # Prepare additional metadata
         extra_metadata = {
@@ -648,20 +633,19 @@ def log_step_metrics(
 
         # Log metrics with metadata
         log_metrics_with_metadata(
-            metrics=metrics,
-            asset=metadata["asset"],
-            exchange=metadata["exchange"],
-            lookback_period=metadata["lookback_period"],
-            project_version=metadata["project_version"],
-            run_id=run_id,
-            additional_metadata=extra_metadata,
+            metrics = metrics,
+            asset = metadata["asset"],
+            exchange = metadata["exchange"],
+            lookback_period = metadata["lookback_period"],
+            project_version = metadata["project_version"],
+            run_id = run_id,
+            additional_metadata = extra_metadata,
         )
 
         system_logger.info(f"✅ Logged {len(metrics)} metrics for step {step_name}")
 
     except Exception as e:
         system_logger.error(f"Failed to log metrics for step {step_name}: {e}")
-
 
 class EnhancedMLflowManager:
     """Manager for enhanced MLflow operations in the enhanced training manager pipeline."""
@@ -672,10 +656,10 @@ class EnhancedMLflowManager:
         Args:
             config: Configuration dictionary from enhanced training manager
         """
-        self.config = config
-        self.metadata = extract_training_metadata(config)
+        self.config, config
+        self.metadata, extract_training_metadata(config)
         self.current_run_id: Optional[str] = None
-        self.logger = system_logger
+        self.logger, system_logger
 
         # Set up MLflow
         self._setup_mlflow()
@@ -683,16 +667,16 @@ class EnhancedMLflowManager:
     def _setup_mlflow(self) -> None:
         """Set up MLflow tracking and experiment."""
         try:
-            tracking_uri = self.config.get("mlflow", {}).get("tracking_uri") or "file:./mlruns"
-            experiment_name = self.config.get("mlflow", {}).get("experiment_name") or "ares_training"
+            tracking_uri, self.config.get("mlflow", {}).get("tracking_uri") or "file:./mlruns"
+            experiment_name, self.config.get("mlflow", {}).get("experiment_name") or "ares_training"
 
             mlflow.set_tracking_uri(tracking_uri)
             mlflow.set_experiment(experiment_name)
 
-            self.logger.info(f"✅ MLflow setup complete: {tracking_uri}, experiment: {experiment_name}")
+        self.logger.info(f"✅ MLflow setup complete: {tracking_uri}, experiment: {experiment_name}")
 
         except Exception as e:
-            self.logger.error(f"Failed to setup MLflow: {e}")
+        self.logger.error(f"Failed to setup MLflow: {e}")
             raise
 
     def start_run(self, run_name: Optional[str] = None, step_name: Optional[str] = None) -> str:
@@ -706,19 +690,19 @@ class EnhancedMLflowManager:
             MLflow run ID
         """
         try:
-            if not run_name:
-                run_name = f"{self.metadata['exchange']}_{self.metadata['asset']}_{step_name or 'training'}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        if not run_name:
+                run_name, f"{self.metadata['exchange']}_{self.metadata['asset']}_{step_name or 'training'}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-            with mlflow.start_run(run_name=run_name) as run:
-                self.current_run_id = run.info.run_id
+        with mlflow.start_run(run_name = run_name) as run:
+        self.current_run_id, run.info.run_id
 
-                # Log enhanced training metadata
+        # Log enhanced training metadata
                 log_enhanced_training_metadata(
-                    asset=self.metadata["asset"],
-                    exchange=self.metadata["exchange"],
-                    lookback_period=self.metadata["lookback_period"],
-                    project_version=self.metadata["project_version"],
-                    run_id=self.current_run_id,
+                    asset = self.metadata["asset"],
+                    exchange = self.metadata["exchange"],
+                    lookback_period = self.metadata["lookback_period"],
+                    project_version = self.metadata["project_version"],
+                    run_id = self.current_run_id,
                     additional_metadata={
                         "step_name": step_name,
                         "run_name": run_name,
@@ -726,11 +710,11 @@ class EnhancedMLflowManager:
                     }
                 )
 
-                self.logger.info(f"✅ Started enhanced MLflow run: {self.current_run_id}")
-                return self.current_run_id
+        self.logger.info(f"✅ Started enhanced MLflow run: {self.current_run_id}")
+        return self.current_run_id
 
         except Exception as e:
-            self.logger.error(f"Failed to start MLflow run: {e}")
+        self.logger.error(f"Failed to start MLflow run: {e}")
             raise
 
     def log_model(
@@ -752,30 +736,30 @@ class EnhancedMLflowManager:
             raise ValueError("No active MLflow run. Call start_run() first.")
 
         try:
-            # Prepare additional metadata
+        # Prepare additional metadata
             extra_metadata = {
                 "model_type": model_type,
                 "pipeline_step": "model_logging",
             }
-            if additional_metadata:
+        if additional_metadata:
                 extra_metadata.update(additional_metadata)
 
-            # Log model with metadata
+        # Log model with metadata
             log_model_with_metadata(
-                model=model,
-                model_name=model_name,
-                asset=self.metadata["asset"],
-                exchange=self.metadata["exchange"],
-                lookback_period=self.metadata["lookback_period"],
-                project_version=self.metadata["project_version"],
-                run_id=self.current_run_id,
-                additional_metadata=extra_metadata,
+                model = model,
+                model_name = model_name,
+                asset = self.metadata["asset"],
+                exchange = self.metadata["exchange"],
+                lookback_period = self.metadata["lookback_period"],
+                project_version = self.metadata["project_version"],
+                run_id = self.current_run_id,
+                additional_metadata = extra_metadata,
             )
 
-            self.logger.info(f"✅ Logged model '{model_name}' with enhanced metadata")
+        self.logger.info(f"✅ Logged model '{model_name}' with enhanced metadata")
 
         except Exception as e:
-            self.logger.error(f"Failed to log model '{model_name}': {e}")
+        self.logger.error(f"Failed to log model '{model_name}': {e}")
             raise
 
     def log_metrics(
@@ -795,36 +779,36 @@ class EnhancedMLflowManager:
             raise ValueError("No active MLflow run. Call start_run() first.")
 
         try:
-            # Convert metrics to float
+        # Convert metrics to float
             float_metrics = {k: float(v) for k, v in metrics.items() if isinstance(v, (int, float))}
 
-            if not float_metrics:
-                self.logger.warning("No valid metrics to log")
+        if not float_metrics:
+        self.logger.warning("No valid metrics to log")
                 return
 
-            # Prepare additional metadata
+        # Prepare additional metadata
             extra_metadata = {
                 "pipeline_step": "metrics_logging",
             }
-            if additional_metadata:
+        if additional_metadata:
                 extra_metadata.update(additional_metadata)
 
-            # Log metrics with metadata
+        # Log metrics with metadata
             log_metrics_with_metadata(
-                metrics=float_metrics,
-                asset=self.metadata["asset"],
-                exchange=self.metadata["exchange"],
-                lookback_period=self.metadata["lookback_period"],
-                project_version=self.metadata["project_version"],
-                run_id=self.current_run_id,
-                step=step,
-                additional_metadata=extra_metadata,
+                metrics = float_metrics,
+                asset = self.metadata["asset"],
+                exchange = self.metadata["exchange"],
+                lookback_period = self.metadata["lookback_period"],
+                project_version = self.metadata["project_version"],
+                run_id = self.current_run_id,
+                step = step,
+                additional_metadata = extra_metadata,
             )
 
-            self.logger.info(f"✅ Logged {len(float_metrics)} metrics with enhanced metadata")
+        self.logger.info(f"✅ Logged {len(float_metrics)} metrics with enhanced metadata")
 
         except Exception as e:
-            self.logger.error(f"Failed to log metrics: {e}")
+        self.logger.error(f"Failed to log metrics: {e}")
             raise
 
     def log_parameters(
@@ -842,28 +826,28 @@ class EnhancedMLflowManager:
             raise ValueError("No active MLflow run. Call start_run() first.")
 
         try:
-            # Prepare additional metadata
+        # Prepare additional metadata
             extra_metadata = {
                 "pipeline_step": "parameters_logging",
             }
-            if additional_metadata:
+        if additional_metadata:
                 extra_metadata.update(additional_metadata)
 
-            # Log parameters with metadata
+        # Log parameters with metadata
             log_params_with_metadata(
-                params=parameters,
-                asset=self.metadata["asset"],
-                exchange=self.metadata["exchange"],
-                lookback_period=self.metadata["lookback_period"],
-                project_version=self.metadata["project_version"],
-                run_id=self.current_run_id,
-                additional_metadata=extra_metadata,
+                params = parameters,
+                asset = self.metadata["asset"],
+                exchange = self.metadata["exchange"],
+                lookback_period = self.metadata["lookback_period"],
+                project_version = self.metadata["project_version"],
+                run_id = self.current_run_id,
+                additional_metadata = extra_metadata,
             )
 
-            self.logger.info(f"✅ Logged {len(parameters)} parameters with enhanced metadata")
+        self.logger.info(f"✅ Logged {len(parameters)} parameters with enhanced metadata")
 
         except Exception as e:
-            self.logger.error(f"Failed to log parameters: {e}")
+        self.logger.error(f"Failed to log parameters: {e}")
             raise
 
     def log_artifact(
@@ -885,30 +869,30 @@ class EnhancedMLflowManager:
             raise ValueError("No active MLflow run. Call start_run() first.")
 
         try:
-            # Prepare additional metadata
+        # Prepare additional metadata
             extra_metadata = {
                 "artifact_type": artifact_type,
                 "pipeline_step": "artifact_logging",
             }
-            if additional_metadata:
+        if additional_metadata:
                 extra_metadata.update(additional_metadata)
 
-            # Log artifact with metadata
+        # Log artifact with metadata
             log_artifacts_with_metadata(
-                local_path=local_path,
-                artifact_path=artifact_path,
-                asset=self.metadata["asset"],
-                exchange=self.metadata["exchange"],
-                lookback_period=self.metadata["lookback_period"],
-                project_version=self.metadata["project_version"],
-                run_id=self.current_run_id,
-                additional_metadata=extra_metadata,
+                local_path = local_path,
+                artifact_path = artifact_path,
+                asset = self.metadata["asset"],
+                exchange = self.metadata["exchange"],
+                lookback_period = self.metadata["lookback_period"],
+                project_version = self.metadata["project_version"],
+                run_id = self.current_run_id,
+                additional_metadata = extra_metadata,
             )
 
-            self.logger.info(f"✅ Logged artifact '{artifact_path}' with enhanced metadata")
+        self.logger.info(f"✅ Logged artifact '{artifact_path}' with enhanced metadata")
 
         except Exception as e:
-            self.logger.error(f"Failed to log artifact '{artifact_path}': {e}")
+        self.logger.error(f"Failed to log artifact '{artifact_path}': {e}")
             raise
 
     def log_dataframe(
@@ -925,34 +909,34 @@ class EnhancedMLflowManager:
             additional_metadata: Additional metadata to log
         """
         try:
-            # Create temporary file
-            with tempfile.NamedTemporaryFile(suffix=".parquet", delete=False) as tmp_file:
-                df.to_parquet(tmp_file.name, index=False)
-                tmp_path = tmp_file.name
+        # Create temporary file
+        with tempfile.NamedTemporaryFile(suffix=".parquet", delete = False) as tmp_file:
+                df.to_parquet(tmp_file.name, index = False)
+                tmp_path, tmp_file.name
 
-            # Prepare additional metadata
+        # Prepare additional metadata
             extra_metadata = {
                 "artifact_type": "dataframe",
                 "dataframe_shape": list(df.shape),
                 "dataframe_columns": list(df.columns),
                 "dataframe_dtypes": df.dtypes.to_dict(),
             }
-            if additional_metadata:
+        if additional_metadata:
                 extra_metadata.update(additional_metadata)
 
-            # Log artifact
-            self.log_artifact(
-                local_path=tmp_path,
-                artifact_path=artifact_path,
+        # Log artifact
+        self.log_artifact(
+                local_path = tmp_path,
+                artifact_path = artifact_path,
                 artifact_type="dataframe",
-                additional_metadata=extra_metadata,
+                additional_metadata = extra_metadata,
             )
 
-            # Clean up temporary file
+        # Clean up temporary file
             os.unlink(tmp_path)
 
         except Exception as e:
-            self.logger.error(f"Failed to log DataFrame: {e}")
+        self.logger.error(f"Failed to log DataFrame: {e}")
             raise
 
     def log_training_summary(
@@ -967,34 +951,34 @@ class EnhancedMLflowManager:
             additional_metadata: Additional metadata to log
         """
         try:
-            # Create temporary file
+        # Create temporary file
             import json
-            with tempfile.NamedTemporaryFile(suffix=".json", delete=False, mode="w") as tmp_file:
-                json.dump(summary, tmp_file, indent=2, default=str)
-                tmp_path = tmp_file.name
+        with tempfile.NamedTemporaryFile(suffix=".json", delete = False, mode="w") as tmp_file:
+                json.dump(summary, tmp_file, indent = 2, default = str)
+                tmp_path, tmp_file.name
 
-            # Prepare additional metadata
+        # Prepare additional metadata
             extra_metadata = {
                 "artifact_type": "training_summary",
                 "summary_keys": list(summary.keys()),
                 "summary_size": len(summary),
             }
-            if additional_metadata:
+        if additional_metadata:
                 extra_metadata.update(additional_metadata)
 
-            # Log artifact
-            self.log_artifact(
-                local_path=tmp_path,
-                artifact_path="artifacts/training_summary.json",
+        # Log artifact
+        self.log_artifact(
+                local_path = tmp_path,
+                artifact_path="artifacts / training_summary.json",
                 artifact_type="training_summary",
-                additional_metadata=extra_metadata,
+                additional_metadata = extra_metadata,
             )
 
-            # Clean up temporary file
+        # Clean up temporary file
             os.unlink(tmp_path)
 
         except Exception as e:
-            self.logger.error(f"Failed to log training summary: {e}")
+        self.logger.error(f"Failed to log training summary: {e}")
             raise
 
     def validate_current_run(self) -> bool:
@@ -1004,8 +988,8 @@ class EnhancedMLflowManager:
             True if validation passes, False otherwise
         """
         if not self.current_run_id:
-            self.logger.warning("No active run to validate")
-            return False
+        self.logger.warning("No active run to validate")
+        return False
 
         return validate_run_metadata(self.current_run_id)
 
@@ -1025,11 +1009,10 @@ class EnhancedMLflowManager:
         """End the current MLflow run."""
         if self.current_run_id:
             mlflow.end_run()
-            self.logger.info(f"✅ Ended MLflow run: {self.current_run_id}")
-            self.current_run_id = None
+        self.logger.info(f"✅ Ended MLflow run: {self.current_run_id}")
+        self.current_run_id, None
 
-
-@handle_errors(default_return=None, context="enhanced_mlflow_integration.log_step_metadata")
+@handle_errors(default_return = None, context="enhanced_mlflow_integration.log_step_metadata")
 def log_step_metadata(
     config: Dict[str, Any],
     step_name: str,
@@ -1045,15 +1028,15 @@ def log_step_metadata(
         run_id: Optional MLflow run ID
     """
     try:
-        metadata = extract_training_metadata(config)
+        metadata, extract_training_metadata(config)
 
         # Log enhanced training metadata for the step
         log_enhanced_training_metadata(
-            asset=metadata["asset"],
-            exchange=metadata["exchange"],
-            lookback_period=metadata["lookback_period"],
-            project_version=metadata["project_version"],
-            run_id=run_id,
+            asset = metadata["asset"],
+            exchange = metadata["exchange"],
+            lookback_period = metadata["lookback_period"],
+            project_version = metadata["project_version"],
+            run_id = run_id,
             additional_metadata={
                 "pipeline_step": step_name,
                 "step_status": step_data.get("status", "unknown"),
@@ -1067,8 +1050,7 @@ def log_step_metadata(
     except Exception as e:
         system_logger.error(f"Failed to log step metadata for {step_name}: {e}")
 
-
-@handle_errors(default_return=None, context="enhanced_mlflow_integration.log_model_performance")
+@handle_errors(default_return = None, context="enhanced_mlflow_integration.log_model_performance")
 def log_model_performance(
     config: Dict[str, Any],
     model_name: str,
@@ -1086,16 +1068,16 @@ def log_model_performance(
         run_id: Optional MLflow run ID
     """
     try:
-        metadata = extract_training_metadata(config)
+        metadata, extract_training_metadata(config)
 
         # Log metrics with metadata
         log_metrics_with_metadata(
-            metrics=performance_metrics,
-            asset=metadata["asset"],
-            exchange=metadata["exchange"],
-            lookback_period=metadata["lookback_period"],
-            project_version=metadata["project_version"],
-            run_id=run_id,
+            metrics = performance_metrics,
+            asset = metadata["asset"],
+            exchange = metadata["exchange"],
+            lookback_period = metadata["lookback_period"],
+            project_version = metadata["project_version"],
+            run_id = run_id,
             additional_metadata={
                 "model_name": model_name,
                 "model_type": model_type,
@@ -1108,8 +1090,7 @@ def log_model_performance(
     except Exception as e:
         system_logger.error(f"Failed to log model performance for {model_name}: {e}")
 
-
-@handle_errors(default_return=None, context="enhanced_mlflow_integration.log_pipeline_completion")
+@handle_errors(default_return = None, context="enhanced_mlflow_integration.log_pipeline_completion")
 def log_pipeline_completion(
     config: Dict[str, Any],
     pipeline_results: Dict[str, Any],
@@ -1123,15 +1104,15 @@ def log_pipeline_completion(
         run_id: Optional MLflow run ID
     """
     try:
-        metadata = extract_training_metadata(config)
+        metadata, extract_training_metadata(config)
 
         # Log enhanced training metadata for pipeline completion
         log_enhanced_training_metadata(
-            asset=metadata["asset"],
-            exchange=metadata["exchange"],
-            lookback_period=metadata["lookback_period"],
-            project_version=metadata["project_version"],
-            run_id=run_id,
+            asset = metadata["asset"],
+            exchange = metadata["exchange"],
+            lookback_period = metadata["lookback_period"],
+            project_version = metadata["project_version"],
+            run_id = run_id,
             additional_metadata={
                 "pipeline_step": "pipeline_completion",
                 "pipeline_status": pipeline_results.get("status", "unknown"),
@@ -1145,7 +1126,6 @@ def log_pipeline_completion(
 
     except Exception as e:
         system_logger.error(f"Failed to log pipeline completion: {e}")
-
 
 def create_detailed_step_report(
     step_name: str,
@@ -1190,7 +1170,7 @@ def create_detailed_step_report(
             "timeframe": training_input.get("timeframe"),
             "lookback_years": training_input.get("lookback_years"),
             "additional_params": {k: v for k, v in training_input.items()
-                                if k not in ["symbol", "exchange", "timeframe", "lookback_years"]},
+        if k not in ["symbol", "exchange", "timeframe", "lookback_years"]},
         },
         "artifacts_generated": {
             "count": len(artifacts_generated),
@@ -1205,8 +1185,8 @@ def create_detailed_step_report(
         "step_data_summary": {
             "data_keys": list(step_data.keys()) if isinstance(step_data, dict) else [],
             "data_types": {k: type(v).__name__ for k, v in step_data.items()} if isinstance(step_data, dict) else {},
-            "data_sizes": {k: len(v) if hasattr(v, '__len__') else 'N/A'
-                          for k, v in step_data.items()} if isinstance(step_data, dict) else {},
+            "data_sizes": {k: len(v) if hasattr(v, '__len__') else 'N / A'
+        for k, v in step_data.items()} if isinstance(step_data, dict) else {},
         },
         "quality_metrics": {
             "data_quality_score": execution_metadata.get("data_quality_score", 0.0),

@@ -1,12 +1,11 @@
 """Warning symbols and color utilities for enhanced logging output.
 
-This module provides warning symbols = color codes = and formatting utilities
+This module provides warning symbols, color codes, and formatting utilities
 for making log messages more visually distinctive and informative.
 """
 
 import os
 import sys
-
 
 class ColorCodes:
     """ANSI color codes for terminal output."""
@@ -35,7 +34,6 @@ class ColorCodes:
     BRIGHT_MAGENTA = "\033[95m"
     BRIGHT_CYAN = "\033[96m"
     BRIGHT_WHITE = "\033[97m"
-
 
 class WarningSymbols:
     """Unicode warning symbols for enhanced visual feedback."""
@@ -85,7 +83,6 @@ class WarningSymbols:
     SERVER = "🖥️"
     CONNECTION = "🔗"
 
-
 def should_use_colors() -> bool:
     """Determine if colors should be used based on environment.
 
@@ -102,11 +99,10 @@ def should_use_colors() -> bool:
         return False
 
     # Check for TERM environment variable
-    term = os.environ.get("TERM", "").lower()
+    term, os.environ.get("TERM", "").lower()
     return term not in ("dumb", "unknown")
 
-
-def colorize(text: str, color: str, bold: bool = False) -> str:
+def colorize(text: str, color: str, bold: bool, False) -> str:
     """Add color to text if colors are enabled.
 
     Args:
@@ -121,18 +117,17 @@ def colorize(text: str, color: str, bold: bool = False) -> str:
     if not should_use_colors():
         return text
 
-    result = text
+    result, text
     if bold:
-        result = f"{ColorCodes.BOLD}{result}"
+        result, f"{ColorCodes.BOLD}{result}"
 
     return f"{color}{result}{ColorCodes.RESET}"
 
-
 def format_warning_message(
     message: str,
-    symbol: str = WarningSymbols.WARNING_TRIANGLE,
-    color: str = ColorCodes.BRIGHT_YELLOW,
-    bold: bool = True,
+    symbol: str, WarningSymbols.WARNING_TRIANGLE,
+    color: str, ColorCodes.BRIGHT_YELLOW,
+    bold: bool, True,
 ) -> str:
     """Format a warning message with symbol and color.
 
@@ -146,16 +141,15 @@ def format_warning_message(
         Formatted warning message
 
     """
-    formatted_symbol = colorize(symbol, color, bold)
-    formatted_message = colorize(message, color, bold)
+    formatted_symbol, colorize(symbol, color, bold)
+    formatted_message, colorize(message, color, bold)
     return f"{formatted_symbol} {formatted_message}"
-
 
 def format_error_message(
     message: str,
-    symbol: str = WarningSymbols.RED_CROSS,
-    color: str = ColorCodes.BRIGHT_RED,
-    bold: bool = True,
+    symbol: str, WarningSymbols.RED_CROSS,
+    color: str, ColorCodes.BRIGHT_RED,
+    bold: bool, True,
 ) -> str:
     """Format an error message with symbol and color.
 
@@ -169,16 +163,15 @@ def format_error_message(
         Formatted error message
 
     """
-    formatted_symbol = colorize(symbol, color, bold)
-    formatted_message = colorize(message, color, bold)
+    formatted_symbol, colorize(symbol, color, bold)
+    formatted_message, colorize(message, color, bold)
     return f"{formatted_symbol} {formatted_message}"
-
 
 def format_critical_message(
     message: str,
-    symbol: str = WarningSymbols.FAILURE_SYMBOL,
-    color: str = ColorCodes.BRIGHT_RED,
-    bold: bool = True,
+    symbol: str, WarningSymbols.FAILURE_SYMBOL,
+    color: str, ColorCodes.BRIGHT_RED,
+    bold: bool, True,
 ) -> str:
     """Format a critical error message with symbol and color.
 
@@ -192,16 +185,15 @@ def format_critical_message(
         Formatted critical error message
 
     """
-    formatted_symbol = colorize(symbol, color, bold)
-    formatted_message = colorize(message, color, bold)
+    formatted_symbol, colorize(symbol, color, bold)
+    formatted_message, colorize(message, color, bold)
     return f"{formatted_symbol} {formatted_message}"
-
 
 def format_problem_message(
     message: str,
-    symbol: str = WarningSymbols.PROBLEM_SYMBOL,
-    color: str = ColorCodes.BRIGHT_RED,
-    bold: bool = True,
+    symbol: str, WarningSymbols.PROBLEM_SYMBOL,
+    color: str, ColorCodes.BRIGHT_RED,
+    bold: bool, True,
 ) -> str:
     """Format a problem message with symbol and color.
 
@@ -215,16 +207,15 @@ def format_problem_message(
         Formatted problem message
 
     """
-    formatted_symbol = colorize(symbol, color, bold)
-    formatted_message = colorize(message, color, bold)
+    formatted_symbol, colorize(symbol, color, bold)
+    formatted_message, colorize(message, color, bold)
     return f"{formatted_symbol} {formatted_message}"
-
 
 def format_success_message(
     message: str,
-    symbol: str = WarningSymbols.CHECKMARK,
-    color: str = ColorCodes.BRIGHT_GREEN,
-    bold: bool = True,
+    symbol: str, WarningSymbols.CHECKMARK,
+    color: str, ColorCodes.BRIGHT_GREEN,
+    bold: bool, True,
 ) -> str:
     """Format a success message with symbol and color.
 
@@ -238,16 +229,15 @@ def format_success_message(
         Formatted success message
 
     """
-    formatted_symbol = colorize(symbol, color, bold)
-    formatted_message = colorize(message, color, bold)
+    formatted_symbol, colorize(symbol, color, bold)
+    formatted_message, colorize(message, color, bold)
     return f"{formatted_symbol} {formatted_message}"
-
 
 def format_info_message(
     message: str,
-    symbol: str = WarningSymbols.INFO_CIRCLE,
-    color: str = ColorCodes.BRIGHT_BLUE,
-    bold: bool = False,
+    symbol: str, WarningSymbols.INFO_CIRCLE,
+    color: str, ColorCodes.BRIGHT_BLUE,
+    bold: bool, False,
 ) -> str:
     """Format an info message with symbol and color.
 
@@ -261,76 +251,62 @@ def format_info_message(
         Formatted info message
 
     """
-    formatted_symbol = colorize(symbol, color, bold)
-    formatted_message = colorize(message, color, bold)
+    formatted_symbol, colorize(symbol, color, bold)
+    formatted_message, colorize(message, color, bold)
     return f"{formatted_symbol} {formatted_message}"
-
 
 # Convenience functions for common warning types
 def warning(message: str) -> str:
     """Format a warning message."""
     return format_warning_message(message)
 
-
 def error(message: str) -> str:
     """Format an error message."""
     return format_error_message(message)
-
 
 def critical(message: str) -> str:
     """Format a critical error message."""
     return format_critical_message(message)
 
-
 def failed(message: str) -> str:
     """Format a failure message."""
     return format_problem_message(message)
-
 
 def success(message: str) -> str:
     """Format a success message."""
     return format_success_message(message)
 
-
 def info(message: str) -> str:
     """Format an info message."""
     return format_info_message(message)
-
 
 def initialization_error(message: str) -> str:
     """Format an initialization error message."""
     return format_error_message(message)
 
-
 def invalid(message: str) -> str:
     """Format an invalid input message."""
     return format_problem_message(message)
-
 
 def missing(message: str) -> str:
     """Format a missing data message."""
     return format_warning_message(message)
 
-
 def problem(message: str) -> str:
     """Format a problem message."""
     return format_problem_message(message)
-
 
 def timeout(message: str) -> str:
     """Format a timeout message."""
     return format_error_message(message)
 
-
 def connection_error(message: str) -> str:
     """Format a connection error message."""
     return format_error_message(message)
 
-
 def validation_error(message: str) -> str:
     """Format a validation error message."""
     return format_error_message(message)
-
 
 def execution_error(message: str) -> str:
     """Format an execution error message."""

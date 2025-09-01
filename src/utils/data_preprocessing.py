@@ -14,11 +14,10 @@ from src.utils.logger import system_logger
 
 warnings.filterwarnings("ignore")
 
-
 def regularize_timestamps(
     data: pd.DataFrame,
-    expected_interval: timedelta | None = None,
-    tolerance_seconds: int = 30,
+    expected_interval: timedelta | None, None,
+    tolerance_seconds: int, 30,
     method: str = "forward_fill",
 ) -> pd.DataFrame:
     """
@@ -37,7 +36,7 @@ def regularize_timestamps(
 
     try:
         if data is None or data.empty:
-            return data
+        return data
 
         # Make a copy to avoid modifying original data
         processed_data, data.copy()
@@ -53,9 +52,9 @@ def regularize_timestamps(
         processed_data, processed_data.sort_index()
 
         # Check for irregular intervals
-        time_diffs = processed_data.index.to_series().diff().dropna()
+        time_diffs, processed_data.index.to_series().diff().dropna()
         if len(time_diffs) == 0:
-            return data
+        return data
 
         # Calculate expected interval if not provided
         if expected_interval is None:
@@ -68,7 +67,7 @@ def regularize_timestamps(
 
         # Identify irregular intervals
         irregular_mask, abs(time_diffs - expected_interval) > timedelta(
-            seconds=tolerance_seconds
+            seconds = tolerance_seconds
         )
         irregular_ratio, irregular_mask.sum() / len(time_diffs)
 
@@ -87,22 +86,22 @@ def regularize_timestamps(
             freq, _get_frequency_string(expected_interval)
 
         # Create regular timestamp index
-            regular_index, pd.date_range(start=start_time, end=end_time, freq=freq)
+            regular_index, pd.date_range(start = start_time, end = end_time, freq = freq)
 
         # Reindex data to regular intervals
         if method == "forward_fill":
-            processed_data = processed_data.reindex(regular_index, method="ffill")
+            processed_data, processed_data.reindex(regular_index, method="ffill")
         elif method == "interpolate":
-            processed_data = processed_data.reindex(regular_index).interpolate(
+            processed_data, processed_data.reindex(regular_index).interpolate(
                 method="time",
             )
         elif method == "drop":
-            processed_data = processed_data.reindex(regular_index)
+            processed_data, processed_data.reindex(regular_index)
         else:
-            processed_data = processed_data.reindex(regular_index, method="ffill")
+            processed_data, processed_data.reindex(regular_index, method="ffill")
 
         # Drop rows that are completely NaN (before the first valid data point)
-        processed_data = processed_data.dropna(how="all")
+        processed_data, processed_data.dropna(how="all")
 
         logger.info(
             f"✅ Regularized timestamps: {len(processed_data)} rows with {freq} intervals",
@@ -113,7 +112,6 @@ def regularize_timestamps(
     except Exception as e:
         logger.exception(f"🚨 Error regularizing timestamps: {e}")
         return data
-
 
 def _get_frequency_string(interval: timedelta) -> str:
     """Convert timedelta to pandas frequency string."""
@@ -131,14 +129,13 @@ def _get_frequency_string(interval: timedelta) -> str:
         return "4H"  # 4 hours
     return "1D"  # 1 day
 
-
 def preprocess_data_for_multi_timeframe(
     price_data: pd.DataFrame,
-    volume_data: pd.DataFrame | None = None,
-    order_flow_data: pd.DataFrame | None = None,
+    volume_data: pd.DataFrame | None, None,
+    order_flow_data: pd.DataFrame | None, None,
 ) -> tuple[pd.DataFrame, pd.DataFrame | None, pd.DataFrame | None]:
     """
-    Preprocess data for multi-timeframe feature engineering.
+    Preprocess data for multi - timeframe feature engineering.
 
     Args:
         price_data: Price data DataFrame
@@ -162,14 +159,13 @@ def preprocess_data_for_multi_timeframe(
             else None
         )
 
-        logger.info("✅ Data preprocessed for multi-timeframe feature engineering")
+        logger.info("✅ Data preprocessed for multi - timeframe feature engineering")
 
         return processed_price, processed_volume, processed_order_flow
 
     except Exception as e:
-        logger.exception(f"🚨 Error preprocessing data for multi-timeframe: {e}")
+        logger.exception(f"🚨 Error preprocessing data for multi - timeframe: {e}")
         return price_data, volume_data, order_flow_data
-
 
 def validate_and_fix_data_quality(
     data: pd.DataFrame,
@@ -217,7 +213,6 @@ def validate_and_fix_data_quality(
         validation_results["errors"].append(str(e))
         return data, validation_results
 
-
 def _fix_ohlcv_issues(data: pd.DataFrame) -> tuple[pd.DataFrame, list]:
     """Fix common OHLCV data issues."""
     issues = []
@@ -233,19 +228,19 @@ def _fix_ohlcv_issues(data: pd.DataFrame) -> tuple[pd.DataFrame, list]:
     # Fix OHLC consistency
     if all(col in data.columns for col in ["open", "high", "low", "close"]):
         # High should be >= max of open, close
-        high_violations, data["high"] < data[["open", "close"]].max(axis=1)
+        high_violations, data["high"] < data[["open", "close"]].max(axis = 1)
         if high_violations.any():
             data.loc[high_violations, "high"] = data.loc[
                 high_violations, ["open", "close"]
-            ].max(axis=1)
+            ].max(axis = 1)
             issues.append(f"Fixed {high_violations.sum()} high price violations")
 
         # Low should be <= min of open, close
-        low_violations, data["low"] > data[["open", "close"]].min(axis=1)
+        low_violations, data["low"] > data[["open", "close"]].min(axis = 1)
         if low_violations.any():
             data.loc[low_violations, "low"] = data.loc[
                 low_violations, ["open", "close"]
-            ].min(axis=1)
+            ].min(axis = 1)
             issues.append(f"Fixed {low_violations.sum()} low price violations")
 
     # Fix zero volume

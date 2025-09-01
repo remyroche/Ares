@@ -2,12 +2,7 @@
 Comprehensive Security Framework
 
 This module provides centralized security controls including:
-- Credential management and encryption
-- API key security
-- Data encryption/decryption
-- Access control and authentication
-- Audit logging and monitoring
-- Security validation and compliance
+    pass - Credential management and encryption - API key security - Data encryption / decryption - Access control and authentication - Audit logging and monitoring - Security validation and compliance
 """
 
 import json
@@ -27,7 +22,6 @@ from .pipeline_standards import PipelineStandards, pipeline_standards
 from .logger import system_logger
 from .error_handler import handle_errors
 
-
 class SecurityLevel(Enum):
     """Security levels for different operations."""
     LOW = "low"
@@ -35,11 +29,9 @@ class SecurityLevel(Enum):
     HIGH = "high"
     CRITICAL = "critical"
 
-
 class SecurityViolation(Exception):
     """Custom exception for security violations."""
     pass
-
 
 class CredentialManager:
     """Manages API credentials and sensitive data securely."""
@@ -50,17 +42,17 @@ class CredentialManager:
         Args:
             master_key: Master encryption key. If None, will be generated.
         """
-        self.logger = system_logger.getChild("CredentialManager")
-        self.credentials_file = Path("data_cache/credentials.enc")
-        self.credentials_file.parent.mkdir(parents=True, exist_ok=True)
+        self.logger, system_logger.getChild("CredentialManager")
+        self.credentials_file, Path("data_cache / credentials.enc")
+        self.credentials_file.parent.mkdir(parents = True, exist_ok = True)
 
         # Initialize encryption
         if master_key is None:
-            master_key = self._generate_master_key()
+            master_key, self._generate_master_key()
 
-        self.master_key = master_key
-        self.fernet = self._create_fernet(master_key)
-        self.credentials = self._load_credentials()
+        self.master_key, master_key
+        self.fernet, self._create_fernet(master_key)
+        self.credentials, self._load_credentials()
 
     def _generate_master_key(self) -> str:
         """Generate a secure master key."""
@@ -68,32 +60,32 @@ class CredentialManager:
 
     def _create_fernet(self, master_key: str) -> Fernet:
         """Create Fernet cipher from master key."""
-        key = base64.urlsafe_b64decode(master_key.encode())
+        key, base64.urlsafe_b64decode(master_key.encode())
         return Fernet(key)
 
     def _load_credentials(self) -> Dict[str, Any]:
         """Load encrypted credentials from file."""
         try:
-            if self.credentials_file.exists():
-                with open(self.credentials_file, 'rb') as f:
-                    encrypted_data = f.read()
-                decrypted_data = self.fernet.decrypt(encrypted_data)
-                return json.loads(decrypted_data.decode())
-            return {}
+        if self.credentials_file.exists():
+        with open(self.credentials_file, 'rb') as f:
+                    encrypted_data, f.read()
+                decrypted_data, self.fernet.decrypt(encrypted_data)
+        return json.loads(decrypted_data.decode())
+        return {}
         except Exception as e:
-            self.logger.warning(f"Could not load credentials: {e}")
-            return {}
+        self.logger.warning(f"Could not load credentials: {e}")
+        return {}
 
     def _save_credentials(self) -> None:
         """Save encrypted credentials to file."""
         try:
-            encrypted_data = self.fernet.encrypt(json.dumps(self.credentials).encode())
-            with open(self.credentials_file, 'wb') as f:
+            encrypted_data, self.fernet.encrypt(json.dumps(self.credentials).encode())
+        with open(self.credentials_file, 'wb') as f:
                 f.write(encrypted_data)
         except Exception as e:
-            self.logger.error(f"Could not save credentials: {e}")
+        self.logger.error(f"Could not save credentials: {e}")
 
-    def store_credential(self, service: str, key: str, value: str, security_level: SecurityLevel = SecurityLevel.HIGH) -> None:
+    def store_credential(self, service: str, key: str, value: str, security_level: SecurityLevel, SecurityLevel.HIGH) -> None:
         """Store a credential securely.
 
         Args:
@@ -103,10 +95,10 @@ class CredentialManager:
             security_level: Security level for this credential
         """
         if service not in self.credentials:
-            self.credentials[service] = {}
+        self.credentials[service] = {}
 
         # Hash the value for additional security
-        hashed_value = hashlib.sha256(value.encode()).hexdigest()
+        hashed_value, hashlib.sha256(value.encode()).hexdigest()
 
         self.credentials[service][key] = {
             "value": value,
@@ -130,18 +122,18 @@ class CredentialManager:
             Credential value or None if not found
         """
         try:
-            if service in self.credentials and key in self.credentials[service]:
-                credential = self.credentials[service][key]
+        if service in self.credentials and key in self.credentials[service]:
+                credential, self.credentials[service][key]
                 credential["last_accessed"] = datetime.now().isoformat()
-                self._save_credentials()
+        self._save_credentials()
 
-                # Log access for audit
-                self.logger.info(f"Accessed credential for {service}:{key}")
-                return credential["value"]
-            return None
+        # Log access for audit
+        self.logger.info(f"Accessed credential for {service}:{key}")
+        return credential["value"]
+        return None
         except Exception as e:
-            self.logger.error(f"Error accessing credential {service}:{key}: {e}")
-            return None
+        self.logger.error(f"Error accessing credential {service}:{key}: {e}")
+        return None
 
     def validate_credential(self, service: str, key: str, value: str) -> bool:
         """Validate a credential.
@@ -154,9 +146,9 @@ class CredentialManager:
         Returns:
             True if credential is valid
         """
-        stored_credential = self.get_credential(service, key)
+        stored_credential, self.get_credential(service, key)
         if stored_credential is None:
-            return False
+        return False
 
         return hmac.compare_digest(stored_credential, value)
 
@@ -172,25 +164,24 @@ class CredentialManager:
             True if rotation successful
         """
         try:
-            if service in self.credentials and key in self.credentials[service]:
-                old_credential = self.credentials[service][key]
+        if service in self.credentials and key in self.credentials[service]:
+                old_credential, self.credentials[service][key]
 
-                # Store old credential in history
-                if "history" not in self.credentials[service]:
-                    self.credentials[service]["history"] = {}
+        # Store old credential in history
+        if "history" not in self.credentials[service]:
+        self.credentials[service]["history"] = {}
 
-                self.credentials[service]["history"][f"{key}_rotated_{int(time.time())}"] = old_credential
+        self.credentials[service]["history"][f"{key}_rotated_{int(time.time())}"] = old_credential
 
-                # Update with new credential
-                self.store_credential(service, key, new_value, SecurityLevel(old_credential["security_level"]))
+        # Update with new credential
+        self.store_credential(service, key, new_value, SecurityLevel(old_credential["security_level"]))
 
-                self.logger.info(f"Rotated credential for {service}:{key}")
-                return True
-            return False
+        self.logger.info(f"Rotated credential for {service}:{key}")
+        return True
+        return False
         except Exception as e:
-            self.logger.error(f"Error rotating credential {service}:{key}: {e}")
-            return False
-
+        self.logger.error(f"Error rotating credential {service}:{key}: {e}")
+        return False
 
 class DataEncryption:
     """Handles data encryption and decryption."""
@@ -201,13 +192,13 @@ class DataEncryption:
         Args:
             encryption_key: Encryption key. If None, will be generated.
         """
-        self.logger = system_logger.getChild("DataEncryption")
+        self.logger, system_logger.getChild("DataEncryption")
 
         if encryption_key is None:
-            encryption_key = self._generate_encryption_key()
+            encryption_key, self._generate_encryption_key()
 
-        self.encryption_key = encryption_key
-        self.fernet = self._create_fernet(encryption_key)
+        self.encryption_key, encryption_key
+        self.fernet, self._create_fernet(encryption_key)
 
     def _generate_encryption_key(self) -> str:
         """Generate a secure encryption key."""
@@ -215,7 +206,7 @@ class DataEncryption:
 
     def _create_fernet(self, encryption_key: str) -> Fernet:
         """Create Fernet cipher from encryption key."""
-        key = base64.urlsafe_b64decode(encryption_key.encode())
+        key, base64.urlsafe_b64decode(encryption_key.encode())
         return Fernet(key)
 
     def encrypt_data(self, data: Union[str, bytes, Dict[str, Any]]) -> bytes:
@@ -228,16 +219,16 @@ class DataEncryption:
             Encrypted data
         """
         try:
-            if isinstance(data, dict):
-                data = json.dumps(data)
-            if isinstance(data, str):
-                data = data.encode()
+        if isinstance(data, dict):
+                data, json.dumps(data)
+        if isinstance(data, str):
+                data, data.encode()
 
-            encrypted_data = self.fernet.encrypt(data)
-            self.logger.debug("Data encrypted successfully")
-            return encrypted_data
+            encrypted_data, self.fernet.encrypt(data)
+        self.logger.debug("Data encrypted successfully")
+        return encrypted_data
         except Exception as e:
-            self.logger.error(f"Error encrypting data: {e}")
+        self.logger.error(f"Error encrypting data: {e}")
             raise SecurityViolation(f"Encryption failed: {e}")
 
     def decrypt_data(self, encrypted_data: bytes) -> Union[str, Dict[str, Any]]:
@@ -250,15 +241,15 @@ class DataEncryption:
             Decrypted data
         """
         try:
-            decrypted_data = self.fernet.decrypt(encrypted_data)
+            decrypted_data, self.fernet.decrypt(encrypted_data)
 
-            # Try to parse as JSON first
-            try:
-                return json.loads(decrypted_data.decode())
-            except json.JSONDecodeError:
-                return decrypted_data.decode()
+        # Try to parse as JSON first
+        try:
+        return json.loads(decrypted_data.decode())
+        except json.JSONDecodeError:
+        return decrypted_data.decode()
         except Exception as e:
-            self.logger.error(f"Error decrypting data: {e}")
+        self.logger.error(f"Error decrypting data: {e}")
             raise SecurityViolation(f"Decryption failed: {e}")
 
     def encrypt_file(self, file_path: str, output_path: Optional[str] = None) -> str:
@@ -272,21 +263,21 @@ class DataEncryption:
             Path to encrypted file
         """
         try:
-            if output_path is None:
-                output_path = f"{file_path}.enc"
+        if output_path is None:
+                output_path, f"{file_path}.enc"
 
-            with open(file_path, 'rb') as f:
-                data = f.read()
+        with open(file_path, 'rb') as f:
+                data, f.read()
 
-            encrypted_data = self.encrypt_data(data)
+            encrypted_data, self.encrypt_data(data)
 
-            with open(output_path, 'wb') as f:
+        with open(output_path, 'wb') as f:
                 f.write(encrypted_data)
 
-            self.logger.info(f"File encrypted: {file_path} -> {output_path}")
-            return output_path
+        self.logger.info(f"File encrypted: {file_path} -> {output_path}")
+        return output_path
         except Exception as e:
-            self.logger.error(f"Error encrypting file {file_path}: {e}")
+        self.logger.error(f"Error encrypting file {file_path}: {e}")
             raise SecurityViolation(f"File encryption failed: {e}")
 
     def decrypt_file(self, file_path: str, output_path: Optional[str] = None) -> str:
@@ -300,37 +291,36 @@ class DataEncryption:
             Path to decrypted file
         """
         try:
-            if output_path is None:
-                output_path = file_path.replace('.enc', '')
+        if output_path is None:
+                output_path, file_path.replace('.enc', '')
 
-            with open(file_path, 'rb') as f:
-                encrypted_data = f.read()
+        with open(file_path, 'rb') as f:
+                encrypted_data, f.read()
 
-            decrypted_data = self.decrypt_data(encrypted_data)
+            decrypted_data, self.decrypt_data(encrypted_data)
 
-            if isinstance(decrypted_data, str):
+        if isinstance(decrypted_data, str):
                 mode = 'w'
-                data = decrypted_data
+                data, decrypted_data
             else:
                 mode = 'wb'
-                data = decrypted_data.encode()
+                data, decrypted_data.encode()
 
-            with open(output_path, mode) as f:
+        with open(output_path, mode) as f:
                 f.write(data)
 
-            self.logger.info(f"File decrypted: {file_path} -> {output_path}")
-            return output_path
+        self.logger.info(f"File decrypted: {file_path} -> {output_path}")
+        return output_path
         except Exception as e:
-            self.logger.error(f"Error decrypting file {file_path}: {e}")
+        self.logger.error(f"Error decrypting file {file_path}: {e}")
             raise SecurityViolation(f"File decryption failed: {e}")
-
 
 class AccessControl:
     """Manages access control and authentication."""
 
     def __init__(self):
         """Initialize access control."""
-        self.logger = system_logger.getChild("AccessControl")
+        self.logger, system_logger.getChild("AccessControl")
         self.access_tokens = {}
         self.permissions = {
             "admin": ["read", "write", "delete", "execute", "configure"],
@@ -339,7 +329,7 @@ class AccessControl:
             "api": ["read", "write"]
         }
 
-    def generate_access_token(self, user_id: str, permissions: List[str], expires_in: int = 3600) -> str:
+    def generate_access_token(self, user_id: str, permissions: List[str], expires_in: int, 3600) -> str:
         """Generate an access token.
 
         Args:
@@ -350,8 +340,8 @@ class AccessControl:
         Returns:
             Access token
         """
-        token = secrets.token_urlsafe(32)
-        expires_at = datetime.now() + timedelta(seconds=expires_in)
+        token, secrets.token_urlsafe(32)
+        expires_at, datetime.now() + timedelta(seconds = expires_in)
 
         self.access_tokens[token] = {
             "user_id": user_id,
@@ -373,14 +363,14 @@ class AccessControl:
             Token information if valid, None otherwise
         """
         if token not in self.access_tokens:
-            return None
+        return None
 
-        token_info = self.access_tokens[token]
-        expires_at = datetime.fromisoformat(token_info["expires_at"])
+        token_info, self.access_tokens[token]
+        expires_at, datetime.fromisoformat(token_info["expires_at"])
 
         if datetime.now() > expires_at:
             del self.access_tokens[token]
-            return None
+        return None
 
         return token_info
 
@@ -394,9 +384,9 @@ class AccessControl:
         Returns:
             True if permission granted
         """
-        token_info = self.validate_access_token(token)
+        token_info, self.validate_access_token(token)
         if token_info is None:
-            return False
+        return False
 
         return required_permission in token_info["permissions"]
 
@@ -411,38 +401,37 @@ class AccessControl:
         """
         if token in self.access_tokens:
             del self.access_tokens[token]
-            self.logger.info(f"Revoked access token")
-            return True
+        self.logger.info(f"Revoked access token")
+        return True
         return False
-
 
 class AuditLogger:
     """Handles security audit logging."""
 
-    def __init__(self, log_file: str = "data_cache/security_audit.log"):
+    def __init__(self, log_file: str = "data_cache / security_audit.log"):
         """Initialize audit logger.
 
         Args:
             log_file: Path to audit log file
         """
-        self.logger = system_logger.getChild("AuditLogger")
-        self.log_file = Path(log_file)
-        self.log_file.parent.mkdir(parents=True, exist_ok=True)
+        self.logger, system_logger.getChild("AuditLogger")
+        self.log_file, Path(log_file)
+        self.log_file.parent.mkdir(parents = True, exist_ok = True)
 
         # Set up file handler for audit logs
-        self.audit_handler = logging.FileHandler(self.log_file)
+        self.audit_handler, logging.FileHandler(self.log_file)
         self.audit_handler.setLevel(logging.INFO)
-        self.audit_formatter = logging.Formatter(
+        self.audit_formatter, logging.Formatter(
             '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         )
         self.audit_handler.setFormatter(self.audit_formatter)
 
         # Add handler to audit logger
-        self.audit_logger = logging.getLogger("SecurityAudit")
+        self.audit_logger, logging.getLogger("SecurityAudit")
         self.audit_logger.addHandler(self.audit_handler)
         self.audit_logger.setLevel(logging.INFO)
 
-    def log_security_event(self, event_type: str, user_id: str, action: str, details: Dict[str, Any], severity: SecurityLevel = SecurityLevel.MEDIUM) -> None:
+    def log_security_event(self, event_type: str, user_id: str, action: str, details: Dict[str, Any], severity: SecurityLevel, SecurityLevel.MEDIUM) -> None:
         """Log a security event.
 
         Args:
@@ -463,20 +452,20 @@ class AuditLogger:
             "user_agent": self._get_user_agent()
         }
 
-        log_message = f"SECURITY_EVENT: {event_type} - User: {user_id} - Action: {action} - Severity: {severity.value}"
+        log_message, f"SECURITY_EVENT: {event_type} - User: {user_id} - Action: {action} - Severity: {severity.value}"
 
         if severity == SecurityLevel.CRITICAL:
-            self.audit_logger.critical(log_message)
-            self.logger.critical(log_message)
+        self.audit_logger.critical(log_message)
+        self.logger.critical(log_message)
         elif severity == SecurityLevel.HIGH:
-            self.audit_logger.error(log_message)
-            self.logger.error(log_message)
+        self.audit_logger.error(log_message)
+        self.logger.error(log_message)
         elif severity == SecurityLevel.MEDIUM:
-            self.audit_logger.warning(log_message)
-            self.logger.warning(log_message)
+        self.audit_logger.warning(log_message)
+        self.logger.warning(log_message)
         else:
-            self.audit_logger.info(log_message)
-            self.logger.info(log_message)
+        self.audit_logger.info(log_message)
+        self.logger.info(log_message)
 
     def _get_client_ip(self) -> str:
         """Get client IP address (placeholder for web applications)."""
@@ -485,7 +474,6 @@ class AuditLogger:
     def _get_user_agent(self) -> str:
         """Get user agent (placeholder for web applications)."""
         return "unknown"
-
 
 class SecurityFramework:
     """Comprehensive security framework."""
@@ -496,14 +484,14 @@ class SecurityFramework:
         Args:
             master_key: Master encryption key
         """
-        self.standards = pipeline_standards
-        self.logger = system_logger.getChild("SecurityFramework")
+        self.standards, pipeline_standards
+        self.logger, system_logger.getChild("SecurityFramework")
 
         # Initialize security components
-        self.credential_manager = CredentialManager(master_key)
-        self.data_encryption = DataEncryption()
-        self.access_control = AccessControl()
-        self.audit_logger = AuditLogger()
+        self.credential_manager, CredentialManager(master_key)
+        self.data_encryption, DataEncryption()
+        self.access_control, AccessControl()
+        self.audit_logger, AuditLogger()
 
         # Security policies
         self.security_policies = {
@@ -517,7 +505,7 @@ class SecurityFramework:
 
     @handle_errors(
         exceptions=(SecurityViolation,),
-        default_return=False,
+        default_return = False,
         context="security validation"
     )
     def validate_security_configuration(self) -> bool:
@@ -527,34 +515,34 @@ class SecurityFramework:
             True if configuration is secure
         """
         try:
-            # Check for required security settings
+        # Check for required security settings
             required_settings = [
                 "encryption_required",
                 "audit_logging",
                 "password_min_length"
             ]
 
-            for setting in required_settings:
-                if setting not in self.security_policies:
-                    self.logger.error(f"Missing required security setting: {setting}")
-                    return False
+        for setting in required_settings:
+        if setting not in self.security_policies:
+        self.logger.error(f"Missing required security setting: {setting}")
+        return False
 
-            # Validate credential storage
-            if not self.credential_manager.credentials_file.exists():
-                self.logger.warning("No encrypted credentials file found")
+        # Validate credential storage
+        if not self.credential_manager.credentials_file.exists():
+        self.logger.warning("No encrypted credentials file found")
 
-            # Validate audit logging
-            if not self.audit_logger.log_file.exists():
-                self.logger.warning("No audit log file found")
+        # Validate audit logging
+        if not self.audit_logger.log_file.exists():
+        self.logger.warning("No audit log file found")
 
-            self.logger.info("Security configuration validation passed")
-            return True
+        self.logger.info("Security configuration validation passed")
+        return True
 
         except Exception as e:
-            self.logger.error(f"Security configuration validation failed: {e}")
-            return False
+        self.logger.error(f"Security configuration validation failed: {e}")
+        return False
 
-    def secure_api_call(self, service: str, endpoint: str, data: Dict[str, Any], security_level: SecurityLevel = SecurityLevel.HIGH) -> Dict[str, Any]:
+    def secure_api_call(self, service: str, endpoint: str, data: Dict[str, Any], security_level: SecurityLevel, SecurityLevel.HIGH) -> Dict[str, Any]:
         """Make a secure API call.
 
         Args:
@@ -567,15 +555,15 @@ class SecurityFramework:
             API response
         """
         try:
-            # Get API credentials
-            api_key = self.credential_manager.get_credential(service, "api_key")
-            api_secret = self.credential_manager.get_credential(service, "api_secret")
+        # Get API credentials
+            api_key, self.credential_manager.get_credential(service, "api_key")
+            api_secret, self.credential_manager.get_credential(service, "api_secret")
 
-            if not api_key or not api_secret:
+        if not api_key or not api_secret:
                 raise SecurityViolation(f"Missing credentials for service: {service}")
 
-            # Log API call
-            self.audit_logger.log_security_event(
+        # Log API call
+        self.audit_logger.log_security_event(
                 "api_call",
                 "system",
                 f"API call to {service}:{endpoint}",
@@ -583,12 +571,12 @@ class SecurityFramework:
                 security_level
             )
 
-            # Here you would implement the actual API call with proper security
-            # For now, return a mock response
-            return {"status": "success", "message": "Secure API call completed"}
+        # Here you would implement the actual API call with proper security
+        # For now, return a mock response
+        return {"status": "success", "message": "Secure API call completed"}
 
         except Exception as e:
-            self.logger.error(f"Secure API call failed: {e}")
+        self.logger.error(f"Secure API call failed: {e}")
             raise SecurityViolation(f"API call failed: {e}")
 
     def encrypt_sensitive_data(self, data: Dict[str, Any], fields_to_encrypt: List[str]) -> Dict[str, Any]:
@@ -601,10 +589,10 @@ class SecurityFramework:
         Returns:
             Data with encrypted fields
         """
-        encrypted_data = data.copy()
+        encrypted_data, data.copy()
 
         for field in fields_to_encrypt:
-            if field in encrypted_data:
+        if field in encrypted_data:
                 encrypted_data[field] = self.data_encryption.encrypt_data(str(encrypted_data[field]))
 
         return encrypted_data
@@ -619,10 +607,10 @@ class SecurityFramework:
         Returns:
             Data with decrypted fields
         """
-        decrypted_data = data.copy()
+        decrypted_data, data.copy()
 
         for field in fields_to_decrypt:
-            if field in decrypted_data:
+        if field in decrypted_data:
                 decrypted_data[field] = self.data_encryption.decrypt_data(decrypted_data[field])
 
         return decrypted_data
@@ -644,6 +632,5 @@ class SecurityFramework:
 
         return report
 
-
 # Global security framework instance
-security_framework = SecurityFramework()
+security_framework, SecurityFramework()

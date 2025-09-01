@@ -1,4 +1,4 @@
-# src/training/steps/step03_hmm_regime_discovery_validator.py
+# src / training / steps / step03_hmm_regime_discovery_validator.py
 
 """Validator for Step 3: HMM Regime Discovery.
 
@@ -16,10 +16,9 @@ import pandas as pd
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
-logger = system_logger.getChild("Step3.HMMRegimeDiscovery.Validator")
+logger, system_logger.getChild("Step3.HMMRegimeDiscovery.Validator")
 
-
-@handle_errors(exceptions=(ValueError, TypeError, KeyError, OSError), default_return=False)
+@handle_errors(exceptions=(ValueError, TypeError, KeyError, OSError), default_return = False)
 async def run_validator(
 	training_input: Dict[str, Any],
 	pipeline_state: Dict[str, Any],
@@ -34,14 +33,14 @@ async def run_validator(
 		Validation result dictionary
 
 	"""
-	start_time = time.time()
+	start_time, time.time()
 
 	try:
 		# Extract parameters
-		symbol = training_input.get("symbol", "")
-		exchange = training_input.get("exchange", "")
-		timeframe = training_input.get("timeframe", "")
-		data_dir = training_input.get("data_dir", "data/training")
+		symbol, training_input.get("symbol", "")
+		exchange, training_input.get("exchange", "")
+		timeframe, training_input.get("timeframe", "")
+		data_dir, training_input.get("data_dir", "data / training")
 
 		if not all([symbol, exchange, timeframe]):
 			return {
@@ -53,7 +52,7 @@ async def run_validator(
 		logger.info(f"🔍 Validating Step 3: HMM Regime Discovery for {symbol} on {exchange} ({timeframe})")
 
 		# Check pipeline state
-		hmm_state = pipeline_state.get("hmm_regime_discovery", {})
+		hmm_state, pipeline_state.get("hmm_regime_discovery", {})
 		if not hmm_state.get("completed", False):
 			return {
 				"validation_passed": False,
@@ -74,10 +73,10 @@ async def run_validator(
 		artifact_info: Dict[str, Any] = {}
 
 		for artifact in required_artifacts:
-			artifact_path = Path(data_dir) / artifact
+			artifact_path, Path(data_dir) / artifact
 			if artifact_path.exists():
 				# Get file info
-				stat = artifact_path.stat()
+				stat, artifact_path.stat()
 				artifact_info[artifact] = {
 					"exists": True,
 					"size_bytes": stat.st_size,
@@ -87,7 +86,7 @@ async def run_validator(
 				# Validate file content for parquet files
 				if artifact.endswith(".parquet"):
 					try:
-						df = pd.read_parquet(artifact_path)
+						df, pd.read_parquet(artifact_path)
 						artifact_info[artifact]["rows"] = len(df)
 						artifact_info[artifact]["columns"] = list(df.columns)
 
@@ -113,7 +112,7 @@ async def run_validator(
 				elif artifact.endswith(".json"):
 					try:
 						with open(artifact_path) as f:
-							meta = json.load(f)
+							meta, json.load(f)
 						artifact_info[artifact]["metadata"] = meta
 
 						# Check required metadata fields
@@ -129,13 +128,13 @@ async def run_validator(
 				artifact_info[artifact] = {"exists": False}
 
 		# Check for HMM regimes directory artifacts (required for Step 4)
-		hmm_regimes_dir = Path(data_dir) / "hmm_regimes"
+		hmm_regimes_dir, Path(data_dir) / "hmm_regimes"
 		hmm_regimes_artifacts = [
 			f"{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet",
 		]
 
 		for artifact in hmm_regimes_artifacts:
-			artifact_path = hmm_regimes_dir / artifact
+			artifact_path, hmm_regimes_dir / artifact
 			if artifact_path.exists():
 				artifact_info[f"hmm_regimes/{artifact}"] = {
 					"exists": True,
@@ -146,12 +145,12 @@ async def run_validator(
 				artifact_info[f"hmm_regimes/{artifact}"] = {"exists": False}
 
 		# Determine validation result
-		validation_passed = len(missing_artifacts) == 0
+		validation_passed, len(missing_artifacts) == 0
 
 		# Calculate validation metrics
-		total_artifacts = len(required_artifacts) + len(hmm_regimes_artifacts)
-		artifacts_found = total_artifacts - len(missing_artifacts)
-		artifact_coverage = artifacts_found / total_artifacts if total_artifacts > 0 else 0.0
+		total_artifacts, len(required_artifacts) + len(hmm_regimes_artifacts)
+		artifacts_found, total_artifacts - len(missing_artifacts)
+		artifact_coverage, artifacts_found / total_artifacts if total_artifacts > 0 else 0.0
 
 		validation_results = {
 			"validation_passed": validation_passed,
@@ -179,7 +178,6 @@ async def run_validator(
 			"validation_results": {},
 			"validation_time": time.time() - start_time,
 		}
-
 
 # Legacy function for backward compatibility
 async def run_step_validator(

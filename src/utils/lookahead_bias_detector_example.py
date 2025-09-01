@@ -13,16 +13,15 @@ from src.utils.lookahead_bias_detector import LookaheadBiasDetector
 import numpy as np
 import pandas as pd
 
-
 def create_sample_data():
     """Create sample data with properly lagged features."""
     np.random.seed(42)
-    dates = pd.date_range("2024-01-01", periods=1000, freq="1min")
+    dates, pd.date_range("2024 - 01 - 01", periods = 1000, freq="1min")
 
     # Base price data
-    base_price = 100 + np.cumsum(np.random.randn(1000) * 0.1)
+    base_price, 100 + np.cumsum(np.random.randn(1000) * 0.1)
 
-    data = pd.DataFrame(
+    data, pd.DataFrame(
         {
             "timestamp": dates,
             "open": base_price + np.random.randn(1000) * 0.5,
@@ -34,18 +33,18 @@ def create_sample_data():
     )
 
     # Calculate properly lagged features (these should NOT trigger warnings)
-    close = data["close"]
+    close, data["close"]
 
     # Moving averages with proper lagging
-    data["ema20"] = close.ewm(span=20).mean()
-    data["ema20_slope"] = data["ema20"].diff(3).fillna(0)  # 3-period lag
+    data["ema20"] = close.ewm(span = 20).mean()
+    data["ema20_slope"] = data["ema20"].diff(3).fillna(0)  # 3 - period lag
 
     data["sma50"] = close.rolling(50).mean()
-    data["sma50_slope"] = data["sma50"].diff(3).fillna(0)  # 3-period lag
+    data["sma50_slope"] = data["sma50"].diff(3).fillna(0)  # 3 - period lag
 
     # Market depth features with proper lagging
     data["market_depth"] = data["volume"].rolling(10).mean()
-    data["market_depth_change"] = data["market_depth"].diff(3).fillna(0)  # 3-period lag
+    data["market_depth_change"] = data["market_depth"].diff(3).fillna(0)  # 3 - period lag
     data["market_depth_returns"] = data["market_depth"].pct_change().fillna(0)
     data["market_depth_imbalance"] = (
         (data["volume"].rolling(10).mean() - data["volume"].rolling(50).mean())
@@ -57,20 +56,19 @@ def create_sample_data():
     data["volatility_20_change"] = data["volatility_20"].pct_change().fillna(0)
 
     # RSI with proper lagging
-    delta = close.diff()
+    delta, close.diff()
     gain = (delta.where(delta > 0, 0)).rolling(14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-    rs = gain / loss
+    rs, gain / loss
     data["rsi"] = 100 - (100 / (1 + rs))
-    data["rsi_momentum"] = data["rsi"].diff(3).fillna(0)  # 3-period lag
+    data["rsi_momentum"] = data["rsi"].diff(3).fillna(0)  # 3 - period lag
 
     # Target variable (future returns)
     data["target"] = (
         data["close"].pct_change(5).shift(-5).fillna(0)
-    )  # 5-period future returns
+    )  # 5 - period future returns
 
     return data
-
 
 def create_sample_feature_engineering_code():
     """Create sample feature engineering code for analysis."""
@@ -78,25 +76,24 @@ def create_sample_feature_engineering_code():
     # Sample feature engineering code with proper lagging
 
     # Moving averages with proper lagging
-    ema20 = close.ewm(span=20).mean()
-    features["ema20_slope"] = ema20.diff(3).fillna(0)  # 3-period lag
+    ema20, close.ewm(span = 20).mean()
+    features["ema20_slope"] = ema20.diff(3).fillna(0)  # 3 - period lag
 
-    sma50 = close.rolling(50).mean()
-    features["sma50_slope"] = sma50.diff(3).fillna(0)  # 3-period lag
+    sma50, close.rolling(50).mean()
+    features["sma50_slope"] = sma50.diff(3).fillna(0)  # 3 - period lag
 
     # Market depth features
-    md = volume.rolling(10).mean()
-    features["market_depth_change"] = md.diff(3).fillna(0)  # 3-period lag
+    md, volume.rolling(10).mean()
+    features["market_depth_change"] = md.diff(3).fillna(0)  # 3 - period lag
     features["market_depth_returns"] = md.pct_change().fillna(0)
 
     # Volatility features
-    vol = close.rolling(20).std()
+    vol, close.rolling(20).std()
     features["volatility_20_change"] = vol.pct_change().fillna(0)
 
     # RSI momentum
-    features["rsi_momentum"] = rsi.diff(3).fillna(0)  # 3-period lag
+    features["rsi_momentum"] = rsi.diff(3).fillna(0)  # 3 - period lag
     """
-
 
 def demonstrate_enhanced_detector():
     """Demonstrate the enhanced LookaheadBiasDetector."""
@@ -104,11 +101,11 @@ def demonstrate_enhanced_detector():
     print("=" * 60)
 
     # Create sample data
-    data = create_sample_data()
-    feature_code = create_sample_feature_engineering_code()
+    data, create_sample_data()
+    feature_code, create_sample_feature_engineering_code()
 
     # Initialize enhanced detector
-    detector = LookaheadBiasDetector()
+    detector, LookaheadBiasDetector()
 
     # Prepare features and target
     feature_columns = [
@@ -121,18 +118,18 @@ def demonstrate_enhanced_detector():
         "rsi_momentum",
     ]
 
-    features_df = data[feature_columns].copy()
-    target_series = data["target"]
+    features_df, data[feature_columns].copy()
+    target_series, data["target"]
 
     print(f"📊 Analyzing {len(feature_columns)} features with enhanced detection...")
     print(f"📈 Features: {feature_columns}")
     print()
 
     # Run enhanced detection with implementation analysis
-    results = detector.detect_feature_lookahead_bias(
-        features_df = features_df, target_series=target_series,
+    results, detector.detect_feature_lookahead_bias(
+        features_df, features_df, target_series = target_series,
         timestamp_col="timestamp",
-        feature_engineering_code = feature_code
+        feature_engineering_code, feature_code
     )
 
     # Display results
@@ -166,7 +163,7 @@ def demonstrate_enhanced_detector():
 
     # Display implementation analysis
     if "implementation_analysis" in results:
-        impl = results["implementation_analysis"]
+        impl, results["implementation_analysis"]
         print("\n🔧 Implementation Analysis:")
         if "properly_lagged_features" in impl:
             print(
@@ -191,14 +188,13 @@ def demonstrate_enhanced_detector():
 
     return results
 
-
 def compare_with_old_detector():
     """Compare enhanced detector with old behavior."""
     print("\n🔄 Comparison with Old Detector Behavior")
     print("=" * 60)
 
     # Create data with the specific features that were causing false positives
-    data = create_sample_data()
+    data, create_sample_data()
 
     # Focus on the features that were flagged in the original warnings
     problematic_features = [
@@ -209,8 +205,8 @@ def compare_with_old_detector():
         "sma50_slope",
     ]
 
-    features_df = data[problematic_features].copy()
-    target_series = data["target"]
+    features_df, data[problematic_features].copy()
+    target_series, data["target"]
 
     print("📊 Original problematic features:")
     for feat in problematic_features:
@@ -219,9 +215,9 @@ def compare_with_old_detector():
     print("\n🔍 Enhanced detector analysis:")
 
     # Run enhanced detection
-    detector = LookaheadBiasDetector()
-    results = detector.detect_feature_lookahead_bias(
-        features_df = features_df, target_series=target_series,
+    detector, LookaheadBiasDetector()
+    results, detector.detect_feature_lookahead_bias(
+        features_df, features_df, target_series = target_series,
     )
 
     print(f"   • Warnings generated: {len(results['warnings'])}")
@@ -236,10 +232,9 @@ def compare_with_old_detector():
 
     print("\n✅ Enhanced detector correctly identifies these as legitimate!")
 
-
 if __name__ == "__main__":
     # Run demonstration
-    results = demonstrate_enhanced_detector()
+    results, demonstrate_enhanced_detector()
 
     # Compare with old behavior
     compare_with_old_detector()

@@ -1,4 +1,4 @@
-# src/utils/async_utils.py
+# src / utils / async_utils.py
 
 from collections.abc import Coroutine
 from typing import Any
@@ -20,7 +20,6 @@ from src.utils.error_handler import (
     warning,
 )
 
-
 class AsyncFileManager:
     """
     Enhanced async file manager with comprehensive error handling and type safety.
@@ -34,18 +33,18 @@ class AsyncFileManager:
             config: Configuration dictionary
         """
         self.config: dict[str, Any] = config
-        self.logger = system_logger.getChild("AsyncFileManager")
+        self.logger, system_logger.getChild("AsyncFileManager")
 
         # File management
         self.file_cache: dict[str, Any] = {}
-        self.max_cache_size: int = 100
-        self.cache_enabled: bool = True
+        self.max_cache_size: int, 100
+        self.cache_enabled: bool, True
 
         # Configuration
         self.file_config: dict[str, Any] = self.config.get("async_file_manager", {})
-        self.max_cache_size = int(self.file_config.get("max_cache_size", 100))
-        self.cache_enabled = bool(self.file_config.get("cache_enabled", True))
-        self.default_encoding: str = str(self.file_config.get("default_encoding", "utf-8"))
+        self.max_cache_size, int(self.file_config.get("max_cache_size", 100))
+        self.cache_enabled, bool(self.file_config.get("cache_enabled", True))
+        self.default_encoding: str, str(self.file_config.get("default_encoding", "utf - 8"))
 
     @handle_specific_errors(
         error_handlers={
@@ -53,7 +52,7 @@ class AsyncFileManager:
             AttributeError: (False, "Missing required file parameters"),
             KeyError: (False, "Missing configuration keys"),
         },
-        default_return=False,
+        default_return = False,
         context="async file manager initialization",
     )
     async def initialize(self) -> bool:
@@ -70,15 +69,15 @@ class AsyncFileManager:
 
         # Validate configuration
         if not self._validate_configuration():
-            self.logger.error(invalid("Invalid configuration for async file manager"))
-            return False
+        self.logger.error(invalid("Invalid configuration for async file manager"))
+        return False
 
         self.logger.info("✅ Async File Manager initialization completed successfully")
         return True
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+        default_return = None,
         context="file configuration loading",
     )
     async def _load_file_configuration(self) -> None:
@@ -86,20 +85,20 @@ class AsyncFileManager:
         # Set default file parameters
         self.file_config.setdefault("max_cache_size", 100)
         self.file_config.setdefault("cache_enabled", True)
-        self.file_config.setdefault("default_encoding", "utf-8")
+        self.file_config.setdefault("default_encoding", "utf - 8")
         self.file_config.setdefault("chunk_size", 8192)
         self.file_config.setdefault("timeout", 30)
 
         # Update configuration
-        self.max_cache_size = int(self.file_config["max_cache_size"])
-        self.cache_enabled = bool(self.file_config["cache_enabled"])
-        self.default_encoding = str(self.file_config["default_encoding"])
+        self.max_cache_size, int(self.file_config["max_cache_size"])
+        self.cache_enabled, bool(self.file_config["cache_enabled"])
+        self.default_encoding, str(self.file_config["default_encoding"])
 
         self.logger.info("File configuration loaded successfully")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=False,
+        default_return = False,
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
@@ -111,22 +110,22 @@ class AsyncFileManager:
         """
         # Validate cache size
         if self.max_cache_size <= 0:
-            self.logger.error(invalid("Invalid max cache size"))
-            return False
+        self.logger.error(invalid("Invalid max cache size"))
+        return False
 
         # Validate encoding
         if not self.default_encoding:
-            self.logger.error(invalid("Invalid default encoding"))
-            return False
+        self.logger.error(invalid("Invalid default encoding"))
+        return False
 
         self.logger.info("Configuration validation successful")
         return True
 
     @handle_file_operations(
-        default_return=None,
+        default_return = None,
         context="file reading",
     )
-    async def read_file(self, file_path: str, encoding: str | None = None) -> str | None:
+    async def read_file(self, file_path: str, encoding: str | None, None) -> str | None:
         """
         Read file asynchronously.
 
@@ -139,26 +138,26 @@ class AsyncFileManager:
         """
         # Check cache first
         if self.cache_enabled and file_path in self.file_cache:
-            self.logger.info(f"Reading {file_path} from cache")
-            return str(self.file_cache[file_path])
+        self.logger.info(f"Reading {file_path} from cache")
+        return str(self.file_cache[file_path])
 
         # Read file
-        chosen_encoding = encoding or self.default_encoding
-        async with aiofiles.open(file_path, mode="r", encoding=chosen_encoding) as f:
-            content = await f.read()
+        chosen_encoding, encoding or self.default_encoding
+        async with aiofiles.open(file_path, mode="r", encoding = chosen_encoding) as f:
+            content, await f.read()
 
         # Cache the content
         if self.cache_enabled:
-            self._add_to_cache(file_path, content)
+        self._add_to_cache(file_path, content)
 
         self.logger.info(f"Read file: {file_path}")
         return content
 
     @handle_file_operations(
-        default_return=False,
+        default_return = False,
         context="file writing",
     )
-    async def write_file(self, file_path: str, content: str, encoding: str | None = None) -> bool:
+    async def write_file(self, file_path: str, content: str, encoding: str | None, None) -> bool:
         """
         Write file asynchronously.
 
@@ -171,22 +170,22 @@ class AsyncFileManager:
             bool: True if successful, False otherwise
         """
         # Ensure directory exists
-        os.makedirs(os.path.dirname(file_path) or ".", exist_ok=True)
+        os.makedirs(os.path.dirname(file_path) or ".", exist_ok = True)
 
         # Write file
-        chosen_encoding = encoding or self.default_encoding
-        async with aiofiles.open(file_path, "w", encoding=chosen_encoding) as f:
-            await f.write(content)
+        chosen_encoding, encoding or self.default_encoding
+        async with aiofiles.open(file_path, "w", encoding = chosen_encoding) as f:
+        await f.write(content)
 
         # Update cache
         if self.cache_enabled:
-            self._add_to_cache(file_path, content)
+        self._add_to_cache(file_path, content)
 
         self.logger.info(f"Wrote file: {file_path}")
         return True
 
     @handle_file_operations(
-        default_return=None,
+        default_return = None,
         context="JSON file reading",
     )
     async def read_json(self, file_path: str) -> dict[str, Any] | None:
@@ -199,20 +198,20 @@ class AsyncFileManager:
         Returns:
             Optional[Dict[str, Any]]: JSON data or None if failed
         """
-        content = await self.read_file(file_path)
+        content, await self.read_file(file_path)
         if content is None:
         # Fallback implementation for content
-            return None
+        return None
 
         data: dict[str, Any] = json.loads(content)
         self.logger.info(f"Read JSON file: {file_path}")
         return data
 
     @handle_file_operations(
-        default_return=False,
+        default_return = False,
         context="JSON file writing",
     )
-    async def write_json(self, file_path: str, data: dict[str, Any], indent: int = 2) -> bool:
+    async def write_json(self, file_path: str, data: dict[str, Any], indent: int, 2) -> bool:
         """
         Write JSON file asynchronously.
 
@@ -224,15 +223,15 @@ class AsyncFileManager:
         Returns:
             bool: True if successful, False otherwise
         """
-        content = json.dumps(data, indent=indent, default=str)
-        success = await self.write_file(file_path, content)
+        content, json.dumps(data, indent = indent, default = str)
+        success, await self.write_file(file_path, content)
         if success:
-            self.logger.info(f"Wrote JSON file: {file_path}")
+        self.logger.info(f"Wrote JSON file: {file_path}")
         return success
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+        default_return = None,
         context="cache management",
     )
     def _add_to_cache(self, file_path: str, content: str) -> None:
@@ -245,9 +244,9 @@ class AsyncFileManager:
         """
         # Remove oldest entry if cache is full
         if len(self.file_cache) >= self.max_cache_size:
-            oldest_key = next(iter(self.file_cache))
+            oldest_key, next(iter(self.file_cache))
             del self.file_cache[oldest_key]
-            self.logger.debug(f"Removed {oldest_key} from cache")
+        self.logger.debug(f"Removed {oldest_key} from cache")
 
         # Add to cache
         self.file_cache[file_path] = content
@@ -255,12 +254,12 @@ class AsyncFileManager:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+        default_return = None,
         context="cache clearing",
     )
     def clear_cache(self) -> None:
         """Clear the file cache."""
-        cache_size = len(self.file_cache)
+        cache_size, len(self.file_cache)
         self.file_cache.clear()
         self.logger.info(f"Cleared cache ({cache_size} entries)")
 
@@ -280,7 +279,7 @@ class AsyncFileManager:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
+        default_return = None,
         context="async file manager cleanup",
     )
     async def stop(self) -> None:
@@ -288,7 +287,6 @@ class AsyncFileManager:
         self.logger.info("🛑 Stopping Async File Manager...")
         self.clear_cache()
         self.logger.info("✅ Async File Manager stopped successfully")
-
 
 class AsyncTaskManager:
     """
@@ -303,17 +301,17 @@ class AsyncTaskManager:
             config: Configuration dictionary
         """
         self.config: dict[str, Any] = config
-        self.logger = system_logger.getChild("AsyncTaskManager")
+        self.logger, system_logger.getChild("AsyncTaskManager")
 
         # Task management
         self.active_tasks: dict[str, asyncio.Task[Any]] = {}
         self.task_results: dict[str, Any] = {}
-        self.max_concurrent_tasks: int = 10
+        self.max_concurrent_tasks: int, 10
 
         # Configuration
         self.task_config: dict[str, Any] = self.config.get("async_task_manager", {})
-        self.max_concurrent_tasks = int(self.task_config.get("max_concurrent_tasks", 10))
-        self.task_timeout: int = int(self.task_config.get("task_timeout", 300))
+        self.max_concurrent_tasks, int(self.task_config.get("max_concurrent_tasks", 10))
+        self.task_timeout: int, int(self.task_config.get("task_timeout", 300))
 
     @handle_specific_errors(
         error_handlers={
@@ -321,7 +319,7 @@ class AsyncTaskManager:
             AttributeError: (False, "Missing required task parameters"),
             KeyError: (False, "Missing configuration keys"),
         },
-        default_return=False,
+        default_return = False,
         context="async task manager initialization",
     )
     async def initialize(self) -> bool:
@@ -338,15 +336,15 @@ class AsyncTaskManager:
 
         # Validate configuration
         if not self._validate_configuration():
-            self.logger.error(invalid("Invalid configuration for async task manager"))
-            return False
+        self.logger.error(invalid("Invalid configuration for async task manager"))
+        return False
 
         self.logger.info("✅ Async Task Manager initialization completed successfully")
         return True
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+        default_return = None,
         context="task configuration loading",
     )
     async def _load_task_configuration(self) -> None:
@@ -358,14 +356,14 @@ class AsyncTaskManager:
         self.task_config.setdefault("auto_cleanup_failed_tasks", True)
 
         # Update configuration
-        self.max_concurrent_tasks = int(self.task_config["max_concurrent_tasks"])
-        self.task_timeout = int(self.task_config["task_timeout"])
+        self.max_concurrent_tasks, int(self.task_config["max_concurrent_tasks"])
+        self.task_timeout, int(self.task_config["task_timeout"])
 
         self.logger.info("Task configuration loaded successfully")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=False,
+        default_return = False,
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
@@ -377,27 +375,27 @@ class AsyncTaskManager:
         """
         # Validate max concurrent tasks
         if self.max_concurrent_tasks <= 0:
-            self.logger.error(invalid("Invalid max concurrent tasks"))
-            return False
+        self.logger.error(invalid("Invalid max concurrent tasks"))
+        return False
 
         # Validate task timeout
         if self.task_timeout <= 0:
-            self.logger.error(invalid("Invalid task timeout"))
-            return False
+        self.logger.error(invalid("Invalid task timeout"))
+        return False
 
         self.logger.info("Configuration validation successful")
         return True
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+        default_return = None,
         context="task execution",
     )
     async def execute_task(
         self,
         task_name: str,
         coro: Coroutine[Any, Any, Any],
-        timeout: int | None = None,
+        timeout: int | None, None,
     ) -> Any | None:
         """
         Execute a task with timeout and error handling.
@@ -412,39 +410,39 @@ class AsyncTaskManager:
         """
         # Check if we can run more tasks
         if len(self.active_tasks) >= self.max_concurrent_tasks:
-            self.logger.warning(
+        self.logger.warning(
                 f"Maximum concurrent tasks reached ({self.max_concurrent_tasks})",
             )
-            return None
+        return None
 
         # Create task
-        chosen_timeout = timeout or self.task_timeout
-        task = asyncio.create_task(coro, name=task_name)
+        chosen_timeout, timeout or self.task_timeout
+        task, asyncio.create_task(coro, name = task_name)
         self.active_tasks[task_name] = task
 
         self.logger.info(f"Started task: {task_name}")
 
         try:
-            # Execute with timeout
-            result = await asyncio.wait_for(task, timeout=chosen_timeout)
-            self.task_results[task_name] = result
-            self.logger.info(f"Task completed: {task_name}")
-            return result
+        # Execute with timeout
+            result, await asyncio.wait_for(task, timeout = chosen_timeout)
+        self.task_results[task_name] = result
+        self.logger.info(f"Task completed: {task_name}")
+        return result
         except asyncio.TimeoutError:
-            self.logger.error(failed(f"Task timed out: {task_name}"))
+        self.logger.error(failed(f"Task timed out: {task_name}"))
             task.cancel()
-            return None
+        return None
         except Exception as e:  # noqa: BLE001
-            self.logger.error(failed(f"Task failed: {task_name} - {e}"))
-            return None
+        self.logger.error(failed(f"Task failed: {task_name} - {e}"))
+        return None
         finally:
-            # Remove from active tasks
-            if task_name in self.active_tasks:
+        # Remove from active tasks
+        if task_name in self.active_tasks:
                 del self.active_tasks[task_name]
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=False,
+        default_return = False,
         context="task cancellation",
     )
     async def cancel_task(self, task_name: str) -> bool:
@@ -458,14 +456,14 @@ class AsyncTaskManager:
             bool: True if successful, False otherwise
         """
         if task_name not in self.active_tasks:
-            self.logger.warning(missing(f"Task not found: {task_name}"))
-            return False
+        self.logger.warning(missing(f"Task not found: {task_name}"))
+        return False
 
-        task = self.active_tasks[task_name]
+        task, self.active_tasks[task_name]
         task.cancel()
 
         with contextlib.suppress(asyncio.CancelledError):
-            await task
+        await task
 
         del self.active_tasks[task_name]
         self.logger.info(f"Cancelled task: {task_name}")
@@ -473,21 +471,21 @@ class AsyncTaskManager:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None,
+        default_return = None,
         context="all tasks cancellation",
     )
     async def cancel_all_tasks(self) -> None:
         """Cancel all running tasks."""
         if not self.active_tasks:
-            self.logger.info("No active tasks to cancel")
+        self.logger.info("No active tasks to cancel")
             return
 
         self.logger.info(f"Cancelling {len(self.active_tasks)} active tasks...")
 
         for task in list(self.active_tasks.values()):
             task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await task
+        with contextlib.suppress(asyncio.CancelledError):
+        await task
 
         self.active_tasks.clear()
         self.logger.info("All tasks cancelled")
@@ -509,7 +507,7 @@ class AsyncTaskManager:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
+        default_return = None,
         context="async task manager cleanup",
     )
     async def stop(self) -> None:
@@ -519,19 +517,17 @@ class AsyncTaskManager:
         self.task_results.clear()
         self.logger.info("✅ Async Task Manager stopped successfully")
 
-
 # Global instances
-async_file_manager: AsyncFileManager | None = None
-async_task_manager: AsyncTaskManager | None = None
-
+async_file_manager: AsyncFileManager | None, None
+async_task_manager: AsyncTaskManager | None, None
 
 @handle_errors(
     exceptions=(Exception,),
-    default_return=None,
+    default_return = None,
     context="async utils setup",
 )
 async def setup_async_utils(
-    config: dict[str, Any] | None = None,
+    config: dict[str, Any] | None, None,
 ) -> tuple[AsyncFileManager | None, AsyncTaskManager | None]:
     """
     Setup global async utilities.
@@ -550,7 +546,7 @@ async def setup_async_utils(
             "async_file_manager": {
                 "max_cache_size": 100,
                 "cache_enabled": True,
-                "default_encoding": "utf-8",
+                "default_encoding": "utf - 8",
                 "chunk_size": 8192,
                 "timeout": 30,
             },
@@ -563,50 +559,49 @@ async def setup_async_utils(
         }
 
     # Create async file manager
-    async_file_manager = AsyncFileManager(config)
-    file_success = await async_file_manager.initialize()
+    async_file_manager, AsyncFileManager(config)
+    file_success, await async_file_manager.initialize()
 
     # Create async task manager
-    async_task_manager = AsyncTaskManager(config)
-    task_success = await async_task_manager.initialize()
+    async_task_manager, AsyncTaskManager(config)
+    task_success, await async_task_manager.initialize()
 
     if file_success and task_success:
         return async_file_manager, async_task_manager
     return None, None
-
 
 class AsyncProcessesManager:
     """
     Manager for async processes with comprehensive error handling.
     """
 
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
+    def __init__(self, config: dict[str, Any] | None, None) -> None:
         self.config: dict[str, Any] = config or {}
-        self.logger = system_logger.getChild("AsyncProcessesManager")
+        self.logger, system_logger.getChild("AsyncProcessesManager")
         self.processes: dict[str, asyncio.subprocess.Process] = {}
-        self.max_processes: int = int(self.config.get("max_processes", 10))
+        self.max_processes: int, int(self.config.get("max_processes", 10))
 
     async def start_process(
         self,
         name: str,
         command: list[str],
-        cwd: str | None = None,
+        cwd: str | None, None,
     ) -> asyncio.subprocess.Process | None:
         """Start an async process."""
         if len(self.processes) >= self.max_processes:
-            self.logger.warning(warning(f"Maximum processes ({self.max_processes}) reached"))
-            return None
+        self.logger.warning(warning(f"Maximum processes ({self.max_processes}) reached"))
+        return None
 
         try:
-            process = await asyncio.create_subprocess_exec(
+            process, await asyncio.create_subprocess_exec(
                 *command,
-                cwd=cwd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+                cwd = cwd,
+                stdout = asyncio.subprocess.PIPE,
+                stderr = asyncio.subprocess.PIPE,
             )
         except Exception as e:  # noqa: BLE001
-            self.logger.error(failed(f"Failed to start process '{name}': {e}"))
-            return None
+        self.logger.error(failed(f"Failed to start process '{name}': {e}"))
+        return None
 
         self.processes[name] = process
         self.logger.info(f"Started process '{name}' with PID {process.pid}")
@@ -615,19 +610,19 @@ class AsyncProcessesManager:
     async def stop_process(self, name: str) -> bool:
         """Stop a specific process."""
         if name not in self.processes:
-            self.logger.warning(missing(f"Process '{name}' not found"))
-            return False
+        self.logger.warning(missing(f"Process '{name}' not found"))
+        return False
 
-        process = self.processes[name]
+        process, self.processes[name]
         try:
             process.terminate()
-            await asyncio.wait_for(process.wait(), timeout=5.0)
+        await asyncio.wait_for(process.wait(), timeout = 5.0)
         except asyncio.TimeoutError:
             process.kill()
-            await process.wait()
+        await process.wait()
         except Exception as e:  # noqa: BLE001
-            self.logger.error(failed(f"Failed to stop process '{name}': {e}"))
-            return False
+        self.logger.error(failed(f"Failed to stop process '{name}': {e}"))
+        return False
 
         del self.processes[name]
         self.logger.info(f"Stopped process '{name}'")
@@ -636,7 +631,7 @@ class AsyncProcessesManager:
     async def stop_all_processes(self) -> None:
         """Stop all managed processes."""
         for name in list(self.processes.keys()):
-            await self.stop_process(name)
+        await self.stop_process(name)
 
     def get_process_status(self) -> dict[str, Any]:
         """Get status of all processes."""
@@ -645,10 +640,9 @@ class AsyncProcessesManager:
             "max_processes": self.max_processes,
             "processes": {
                 name: {"pid": proc.pid, "returncode": proc.returncode}
-                for name, proc in self.processes.items()
+        for name, proc in self.processes.items()
             },
         }
 
-
 # Create a global instance for backward compatibility
-async_processes_manager = AsyncProcessesManager()
+async_processes_manager, AsyncProcessesManager()

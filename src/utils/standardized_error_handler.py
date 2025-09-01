@@ -2,10 +2,7 @@
 Standardized Error Handler
 
 This module provides unified error handling patterns across all steps including:
-- Centralized error categorization
-- Error recovery strategies
-- Error reporting and logging
-- Error context tracking
+    pass - Centralized error categorization - Error recovery strategies - Error reporting and logging - Error context tracking
 """
 
 import traceback
@@ -16,14 +13,12 @@ from enum import Enum
 from .pipeline_standards import PipelineStandards, pipeline_standards
 from .logger import system_logger
 
-
 class ErrorSeverity(Enum):
     """Error severity levels."""
     CRITICAL = "critical"
     ERROR = "error"
     WARNING = "warning"
     INFO = "info"
-
 
 class ErrorCategory(Enum):
     """Error categories for classification."""
@@ -36,17 +31,16 @@ class ErrorCategory(Enum):
     VALIDATION = "validation"
     UNKNOWN = "unknown"
 
-
 class ErrorContext:
     """Error context information."""
 
     def __init__(self, step_name: str, operation: str, **kwargs):
-        self.step_name = step_name
-        self.operation = operation
-        self.timestamp = datetime.now().isoformat()
-        self.data_context = kwargs.get('data_context', {})
-        self.config_context = kwargs.get('config_context', {})
-        self.user_context = kwargs.get('user_context', {})
+        self.step_name, step_name
+        self.operation, operation
+        self.timestamp, datetime.now().isoformat()
+        self.data_context, kwargs.get('data_context', {})
+        self.config_context, kwargs.get('config_context', {})
+        self.user_context, kwargs.get('user_context', {})
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert context to dictionary."""
@@ -59,51 +53,50 @@ class ErrorContext:
             'user_context': self.user_context
         }
 
-
 class ErrorRecord:
     """Error record with full context."""
 
     def __init__(self, error: Exception, context: ErrorContext,
-                 severity: ErrorSeverity = ErrorSeverity.ERROR):
-        self.error = error
-        self.context = context
-        self.severity = severity
-        self.category = self._categorize_error(error)
-        self.traceback = traceback.format_exc()
-        self.recovery_strategy = self._get_recovery_strategy()
+                 severity: ErrorSeverity, ErrorSeverity.ERROR):
+        self.error, error
+        self.context, context
+        self.severity, severity
+        self.category, self._categorize_error(error)
+        self.traceback, traceback.format_exc()
+        self.recovery_strategy, self._get_recovery_strategy()
 
     def _categorize_error(self, error: Exception) -> ErrorCategory:
         """Categorize the error based on its type and message."""
-        error_type = type(error).__name__
-        error_message = str(error).lower()
+        error_type, type(error).__name__
+        error_message, str(error).lower()
 
         # Data quality errors
         if any(keyword in error_message for keyword in ['data', 'dataframe', 'nan', 'null', 'missing']):
-            return ErrorCategory.DATA_QUALITY
+        return ErrorCategory.DATA_QUALITY
 
         # Model training errors
         if any(keyword in error_message for keyword in ['model', 'training', 'fit', 'predict', 'loss']):
-            return ErrorCategory.MODEL_TRAINING
+        return ErrorCategory.MODEL_TRAINING
 
         # Configuration errors
         if any(keyword in error_message for keyword in ['config', 'parameter', 'setting', 'option']):
-            return ErrorCategory.CONFIGURATION
+        return ErrorCategory.CONFIGURATION
 
         # Dependency errors
         if any(keyword in error_message for keyword in ['import', 'module', 'package', 'dependency']):
-            return ErrorCategory.DEPENDENCY
+        return ErrorCategory.DEPENDENCY
 
         # Resource errors
         if any(keyword in error_message for keyword in ['memory', 'disk', 'cpu', 'gpu', 'resource']):
-            return ErrorCategory.RESOURCE
+        return ErrorCategory.RESOURCE
 
         # Network errors
         if any(keyword in error_message for keyword in ['network', 'connection', 'timeout', 'http']):
-            return ErrorCategory.NETWORK
+        return ErrorCategory.NETWORK
 
         # Validation errors
         if any(keyword in error_message for keyword in ['validation', 'schema', 'format', 'type']):
-            return ErrorCategory.VALIDATION
+        return ErrorCategory.VALIDATION
 
         return ErrorCategory.UNKNOWN
 
@@ -174,23 +167,22 @@ class ErrorRecord:
             'recovery_strategy': self.recovery_strategy
         }
 
-
 class StandardizedErrorHandler:
     """Centralized error handling system."""
 
     def __init__(self):
         """Initialize the error handler."""
-        self.standards = pipeline_standards
-        self.logger = system_logger
+        self.standards, pipeline_standards
+        self.logger, system_logger
         self.error_history: List[ErrorRecord] = []
-        self.max_history_size = 1000
+        self.max_history_size, 1000
 
     def handle_step_error(
         self,
         error: Exception,
         step_name: str,
         context: Optional[Dict[str, Any]] = None,
-        severity: ErrorSeverity = ErrorSeverity.ERROR
+        severity: ErrorSeverity, ErrorSeverity.ERROR
     ) -> ErrorRecord:
         """Handle an error in a pipeline step.
 
@@ -204,16 +196,16 @@ class StandardizedErrorHandler:
             ErrorRecord: Record of the error with context
         """
         # Create error context
-        error_context = ErrorContext(
-            step_name=step_name,
-            operation=context.get('operation', 'unknown') if context else 'unknown',
-            data_context=context.get('data_context', {}) if context else {},
-            config_context=context.get('config_context', {}) if context else {},
-            user_context=context.get('user_context', {}) if context else {}
+        error_context, ErrorContext(
+            step_name = step_name,
+            operation = context.get('operation', 'unknown') if context else 'unknown',
+            data_context = context.get('data_context', {}) if context else {},
+            config_context = context.get('config_context', {}) if context else {},
+            user_context = context.get('user_context', {}) if context else {}
         )
 
         # Create error record
-        error_record = ErrorRecord(error, error_context, severity)
+        error_record, ErrorRecord(error, error_context, severity)
 
         # Log the error
         self._log_error_with_context(error_record)
@@ -232,7 +224,7 @@ class StandardizedErrorHandler:
         Returns:
             ErrorCategory: Category of the error
         """
-        error_record = ErrorRecord(error, ErrorContext("unknown", "unknown"))
+        error_record, ErrorRecord(error, ErrorContext("unknown", "unknown"))
         return error_record.category
 
     def get_recovery_strategy(self, error_type: Union[Exception, ErrorCategory]) -> Dict[str, Any]:
@@ -245,14 +237,14 @@ class StandardizedErrorHandler:
             Dict: Recovery strategy
         """
         if isinstance(error_type, Exception):
-            error_record = ErrorRecord(error_type, ErrorContext("unknown", "unknown"))
-            return error_record.recovery_strategy
+            error_record, ErrorRecord(error_type, ErrorContext("unknown", "unknown"))
+        return error_record.recovery_strategy
         else:
-            # Direct category lookup
-            error_record = ErrorRecord(Exception("dummy"), ErrorContext("unknown", "unknown"))
-            error_record.category = error_type
-            error_record.recovery_strategy = error_record._get_recovery_strategy()
-            return error_record.recovery_strategy
+        # Direct category lookup
+            error_record, ErrorRecord(Exception("dummy"), ErrorContext("unknown", "unknown"))
+            error_record.category, error_type
+            error_record.recovery_strategy, error_record._get_recovery_strategy()
+        return error_record.recovery_strategy
 
     def log_error_with_context(
         self,
@@ -272,13 +264,14 @@ class StandardizedErrorHandler:
             'operation': 'unknown'
         }
 
-        error_record = self.handle_step_error(error, step_name, context)
+        error_record, self.handle_step_error(error, step_name, context)
         self._log_error_with_context(error_record)
 
     def _log_error_with_context(self, error_record: ErrorRecord) -> None:
         """Log error with full context."""
-        log_message = f"""
+        log_message, f"""
 Error in {error_record.context.step_name}:
+    pass
   Type: {type(error_record.error).__name__}
   Message: {str(error_record.error)}
   Category: {error_record.category.value}
@@ -288,13 +281,13 @@ Error in {error_record.context.step_name}:
 """
 
         if error_record.severity == ErrorSeverity.CRITICAL:
-            self.logger.critical(log_message)
+        self.logger.critical(log_message)
         elif error_record.severity == ErrorSeverity.ERROR:
-            self.logger.error(log_message)
+        self.logger.error(log_message)
         elif error_record.severity == ErrorSeverity.WARNING:
-            self.logger.warning(log_message)
+        self.logger.warning(log_message)
         else:
-            self.logger.info(log_message)
+        self.logger.info(log_message)
 
     def _add_to_history(self, error_record: ErrorRecord) -> None:
         """Add error record to history."""
@@ -302,7 +295,7 @@ Error in {error_record.context.step_name}:
 
         # Maintain history size
         if len(self.error_history) > self.max_history_size:
-            self.error_history.pop(0)
+        self.error_history.pop(0)
 
     def get_error_summary(self, step_name: Optional[str] = None) -> Dict[str, Any]:
         """Get summary of errors.
@@ -316,7 +309,7 @@ Error in {error_record.context.step_name}:
         if step_name:
             filtered_errors = [e for e in self.error_history if e.context.step_name == step_name]
         else:
-            filtered_errors = self.error_history
+            filtered_errors, self.error_history
 
         summary = {
             'total_errors': len(filtered_errors),
@@ -327,16 +320,16 @@ Error in {error_record.context.step_name}:
         }
 
         for error in filtered_errors:
-            # Count by severity
-            severity = error.severity.value
+        # Count by severity
+            severity, error.severity.value
             summary['by_severity'][severity] = summary['by_severity'].get(severity, 0) + 1
 
-            # Count by category
-            category = error.category.value
+        # Count by category
+            category, error.category.value
             summary['by_category'][category] = summary['by_category'].get(category, 0) + 1
 
-            # Count by step
-            step = error.context.step_name
+        # Count by step
+            step, error.context.step_name
             summary['by_step'][step] = summary['by_step'].get(step, 0) + 1
 
         # Get recent errors (last 10)
@@ -361,13 +354,12 @@ Error in {error_record.context.step_name}:
         """
         try:
             import json
-            with open(file_path, 'w') as f:
-                json.dump([error.to_dict() for error in self.error_history], f, indent=2)
-            return True
+        with open(file_path, 'w') as f:
+                json.dump([error.to_dict() for error in self.error_history], f, indent = 2)
+        return True
         except Exception as e:
-            self.logger.error(f"Failed to export errors: {e}")
-            return False
-
+        self.logger.error(f"Failed to export errors: {e}")
+        return False
 
 # Global instance
-standardized_error_handler = StandardizedErrorHandler()
+standardized_error_handler, StandardizedErrorHandler()

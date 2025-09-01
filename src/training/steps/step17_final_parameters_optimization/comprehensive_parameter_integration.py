@@ -1,9 +1,10 @@
-#!/usr/bin/env python3
+#!/usr / bin / env python3
 """
 Comprehensive Parameter Integration for Step17
 
-This module ensures that ALL parameters from ALL previous steps (1-16) are actually
+This module ensures that ALL parameters from ALL previous steps (1 - 16) are actually
 integrated with the step17 optimizer and using its results. It provides:
+    pass
 
 1. Parameter extraction from all previous steps
 2. Parameter application to all models and systems
@@ -27,10 +28,9 @@ warnings.filterwarnings('ignore')
 # Import MLflow for experiment tracking
 try:
     import mlflow
-    MLFLOW_AVAILABLE = True
+    MLFLOW_AVAILABLE, True
 except ImportError:
-    MLFLOW_AVAILABLE = False
-
+    MLFLOW_AVAILABLE, False
 
 class ComprehensiveParameterIntegration:
     """
@@ -38,13 +38,13 @@ class ComprehensiveParameterIntegration:
     are actually applied and used throughout the system.
     """
 
-    def __init__(self, config: Dict[str, Any], training_manager=None):
-        self.config = config
-        self.training_manager = training_manager
-        self.logger = logging.getLogger(__name__)
+    def __init__(self, config: Dict[str, Any], training_manager = None):
+        self.config, config
+        self.training_manager, training_manager
+        self.logger, logging.getLogger(__name__)
 
         # Parameter mapping from all steps
-        self.step_parameter_mapping = self._create_step_parameter_mapping()
+        self.step_parameter_mapping, self._create_step_parameter_mapping()
 
         # Integration status tracking
         self.integration_status = {}
@@ -155,12 +155,12 @@ class ComprehensiveParameterIntegration:
         all_parameters = {}
 
         for step_name, step_params in self.step_parameter_mapping.items():
-            try:
-                step_parameters = await self._extract_step_parameters(step_name, step_params)
+        try:
+                step_parameters, await self._extract_step_parameters(step_name, step_params)
                 all_parameters[step_name] = step_parameters
-                self.logger.info(f"✅ Extracted parameters from {step_name}")
-            except Exception as e:
-                self.logger.error(f"❌ Failed to extract parameters from {step_name}: {e}")
+        self.logger.info(f"✅ Extracted parameters from {step_name}")
+        except Exception as e:
+        self.logger.error(f"❌ Failed to extract parameters from {step_name}: {e}")
                 all_parameters[step_name] = {"error": str(e)}
 
         return all_parameters
@@ -170,12 +170,12 @@ class ComprehensiveParameterIntegration:
 
         # Try to get from training manager
         if self.training_manager and hasattr(self.training_manager, f'get_{step_name}_parameters'):
-            method = getattr(self.training_manager, f'get_{step_name}_parameters')
-            return await method()
+            method, getattr(self.training_manager, f'get_{step_name}_parameters')
+        return await method()
 
-        # Try to get from step-specific methods
+        # Try to get from step - specific methods
         if self.training_manager and hasattr(self.training_manager, 'get_step_parameters'):
-            return await self.training_manager.get_step_parameters(step_name)
+        return await self.training_manager.get_step_parameters(step_name)
 
         # Fallback: return default parameters based on config
         return self._get_default_step_parameters(step_name, step_config)
@@ -187,16 +187,16 @@ class ComprehensiveParameterIntegration:
 
         for category, params in step_config.items():
             default_params[category] = {}
-            for param_name, param_config in params.items():
-                if isinstance(param_config, tuple):
-                    # Numeric range parameter
-                    if len(param_config) == 2:
+        for param_name, param_config in params.items():
+        if isinstance(param_config, tuple):
+        # Numeric range parameter
+        if len(param_config) == 2:
                         default_params[category][param_name] = (param_config[0] + param_config[1]) / 2
                 elif isinstance(param_config, list):
-                    # Categorical parameter
+        # Categorical parameter
                     default_params[category][param_name] = param_config[0]
                 else:
-                    # Single value parameter
+        # Single value parameter
                     default_params[category][param_name] = param_config
 
         return default_params
@@ -212,8 +212,8 @@ class ComprehensiveParameterIntegration:
         }
 
         try:
-            for step_name, step_params in parameters.items():
-                if step_name == "summary" or "error" in step_params:
+        for step_name, step_params in parameters.items():
+        if step_name == "summary" or "error" in step_params:
                     continue
 
                 step_validation = {
@@ -222,28 +222,28 @@ class ComprehensiveParameterIntegration:
                     "errors": []
                 }
 
-                if step_name not in self.step_parameter_mapping:
+        if step_name not in self.step_parameter_mapping:
                     step_validation["errors"].append(f"Step {step_name} not found in parameter mapping")
                     step_validation["validation_passed"] = False
                     validation_results["step_validation"][step_name] = step_validation
                     continue
 
-                step_config = self.step_parameter_mapping[step_name]
+                step_config, self.step_parameter_mapping[step_name]
 
-                for category, category_params in step_params.items():
-                    if category not in step_config:
+        for category, category_params in step_params.items():
+        if category not in step_config:
                         continue
 
-                    for param_name, param_value in category_params.items():
-                        if param_name not in step_config[category]:
+        for param_name, param_value in category_params.items():
+        if param_name not in step_config[category]:
                             continue
 
-                        param_config = step_config[category][param_name]
+                        param_config, step_config[category][param_name]
 
-                        # Validate numeric parameters
-                        if isinstance(param_config, tuple) and len(param_config) == 2:
-                            min_val, max_val = param_config
-                            if not (min_val <= param_value <= max_val):
+        # Validate numeric parameters
+        if isinstance(param_config, tuple) and len(param_config) == 2:
+                            min_val, max_val, param_config
+        if not (min_val <= param_value <= max_val):
                                 out_of_bounds = {
                                     "step": step_name,
                                     "category": category,
@@ -254,9 +254,9 @@ class ComprehensiveParameterIntegration:
                                 step_validation["out_of_bounds"].append(out_of_bounds)
                                 step_validation["validation_passed"] = False
 
-                        # Validate categorical parameters
+        # Validate categorical parameters
                         elif isinstance(param_config, list):
-                            if param_value not in param_config:
+        if param_value not in param_config:
                                 out_of_bounds = {
                                     "step": step_name,
                                     "category": category,
@@ -269,19 +269,19 @@ class ComprehensiveParameterIntegration:
 
                 validation_results["step_validation"][step_name] = step_validation
 
-                if not step_validation["validation_passed"]:
+        if not step_validation["validation_passed"]:
                     validation_results["validation_passed"] = False
                     validation_results["out_of_bounds_parameters"].extend(step_validation["out_of_bounds"])
 
-            if not validation_results["validation_passed"]:
-                self.logger.warning(f"Parameter bounds validation failed: {len(validation_results['out_of_bounds_parameters'])} parameters out of bounds")
+        if not validation_results["validation_passed"]:
+        self.logger.warning(f"Parameter bounds validation failed: {len(validation_results['out_of_bounds_parameters'])} parameters out of bounds")
             else:
-                self.logger.info("✅ All parameters within defined bounds")
+        self.logger.info("✅ All parameters within defined bounds")
 
         except Exception as e:
             validation_results["validation_passed"] = False
             validation_results["validation_errors"].append(f"Parameter bounds validation failed: {e}")
-            self.logger.error(f"Parameter bounds validation error: {e}")
+        self.logger.error(f"Parameter bounds validation error: {e}")
 
         return validation_results
 
@@ -298,46 +298,46 @@ class ComprehensiveParameterIntegration:
         }
 
         try:
-            # Validate parameter bounds first
-            bounds_validation = self.validate_parameter_bounds(optimized_parameters)
-            if not bounds_validation["validation_passed"]:
-                self.logger.error("❌ Parameter bounds validation failed")
+        # Validate parameter bounds first
+            bounds_validation, self.validate_parameter_bounds(optimized_parameters)
+        if not bounds_validation["validation_passed"]:
+        self.logger.error("❌ Parameter bounds validation failed")
                 application_results["errors"].extend([
                     f"Parameter out of bounds: {param['parameter']} = {param['value']} (bounds: {param.get('bounds', param.get('allowed_values'))})"
-                    for param in bounds_validation["out_of_bounds_parameters"]
+        for param in bounds_validation["out_of_bounds_parameters"]
                 ])
-                return application_results
+        return application_results
 
-            # Apply parameters to each step
-            for step_name, step_params in optimized_parameters.items():
-                if step_name == "summary" or "error" in step_params:
+        # Apply parameters to each step
+        for step_name, step_params in optimized_parameters.items():
+        if step_name == "summary" or "error" in step_params:
                     continue
 
-                try:
-                    step_result = await self._apply_step_parameters(step_name, step_params)
+        try:
+                    step_result, await self._apply_step_parameters(step_name, step_params)
                     application_results["parameters_applied"][step_name] = step_result
 
-                    if step_result.get("success"):
+        if step_result.get("success"):
                         application_results["models_updated"].append(step_name)
 
-                except Exception as e:
-                    error_msg = f"Failed to apply parameters for {step_name}: {e}"
-                    self.logger.error(f"❌ {error_msg}")
+        except Exception as e:
+                    error_msg, f"Failed to apply parameters for {step_name}: {e}"
+        self.logger.error(f"❌ {error_msg}")
                     application_results["errors"].append(error_msg)
 
-            # Validate applied parameters
-            validation_results = await self._validate_all_applied_parameters(application_results)
+        # Validate applied parameters
+            validation_results, await self._validate_all_applied_parameters(application_results)
             application_results["validation_results"] = validation_results
 
-            # Log to MLflow
-            if MLFLOW_AVAILABLE:
-                self._log_parameter_application_to_mlflow(application_results)
+        # Log to MLflow
+        if MLFLOW_AVAILABLE:
+        self._log_parameter_application_to_mlflow(application_results)
 
-            self.logger.info("✅ All optimized parameters applied successfully")
+        self.logger.info("✅ All optimized parameters applied successfully")
 
         except Exception as e:
-            error_msg = f"Failed to apply optimized parameters: {e}"
-            self.logger.error(f"❌ {error_msg}")
+            error_msg, f"Failed to apply optimized parameters: {e}"
+        self.logger.error(f"❌ {error_msg}")
             application_results["errors"].append(error_msg)
 
         return application_results
@@ -354,30 +354,30 @@ class ComprehensiveParameterIntegration:
         }
 
         try:
-            # Try to apply via training manager
-            if self.training_manager and hasattr(self.training_manager, f'apply_{step_name}_parameters'):
-                method = getattr(self.training_manager, f'apply_{step_name}_parameters')
-                await method(step_params)
+        # Try to apply via training manager
+        if self.training_manager and hasattr(self.training_manager, f'apply_{step_name}_parameters'):
+                method, getattr(self.training_manager, f'apply_{step_name}_parameters')
+        await method(step_params)
                 result["success"] = True
                 result["parameters_applied"] = len(step_params)
                 result["models_updated"] = [step_name]
 
             elif self.training_manager and hasattr(self.training_manager, 'apply_step_parameters'):
-                await self.training_manager.apply_step_parameters(step_name, step_params)
+        await self.training_manager.apply_step_parameters(step_name, step_params)
                 result["success"] = True
                 result["parameters_applied"] = len(step_params)
                 result["models_updated"] = [step_name]
 
             else:
-                # Fallback: simulate parameter application
+        # Fallback: simulate parameter application
                 result["success"] = True
                 result["parameters_applied"] = len(step_params)
                 result["models_updated"] = [step_name]
-                self.logger.info(f"Simulated parameter application for {step_name}")
+        self.logger.info(f"Simulated parameter application for {step_name}")
 
         except Exception as e:
             result["errors"].append(str(e))
-            self.logger.error(f"Failed to apply parameters for {step_name}: {e}")
+        self.logger.error(f"Failed to apply parameters for {step_name}: {e}")
 
         return result
 
@@ -392,19 +392,19 @@ class ComprehensiveParameterIntegration:
         }
 
         try:
-            # Validate each step
-            for step_name, step_result in application_results.get("parameters_applied", {}).items():
-                if step_result.get("success"):
-                    step_validation = await self._validate_step_parameters(step_name, step_result)
+        # Validate each step
+        for step_name, step_result in application_results.get("parameters_applied", {}).items():
+        if step_result.get("success"):
+                    step_validation, await self._validate_step_parameters(step_name, step_result)
                     validation["step_validation"][step_name] = step_validation
 
-                    if not step_validation.get("validation_passed", False):
+        if not step_validation.get("validation_passed", False):
                         validation["validation_passed"] = False
                         validation["validation_errors"].append(f"Step {step_name} validation failed")
 
-            # Overall validation metrics
-            total_steps = len(application_results.get("parameters_applied", {}))
-            successful_steps = len([r for r in application_results.get("parameters_applied", {}).values() if r.get("success")])
+        # Overall validation metrics
+            total_steps, len(application_results.get("parameters_applied", {}))
+            successful_steps, len([r for r in application_results.get("parameters_applied", {}).values() if r.get("success")])
 
             validation["validation_metrics"] = {
                 "total_steps": total_steps,
@@ -432,29 +432,29 @@ class ComprehensiveParameterIntegration:
         }
 
         try:
-            # Get trading performance metrics for validation
-            trading_metrics = await self._get_trading_performance_metrics(step_name)
+        # Get trading performance metrics for validation
+            trading_metrics, await self._get_trading_performance_metrics(step_name)
 
-            if trading_metrics is None:
+        if trading_metrics is None:
                 validation["validation_errors"].append("Unable to retrieve trading performance metrics")
                 validation["validation_passed"] = False
-                return validation
+        return validation
 
-            # Validate against performance thresholds
-            validation_results = self._validate_trading_performance(trading_metrics)
+        # Validate against performance thresholds
+            validation_results, self._validate_trading_performance(trading_metrics)
 
             validation["validation_passed"] = validation_results["validation_passed"]
             validation["validation_score"] = validation_results["validation_score"]
             validation["validation_metrics"] = trading_metrics
 
-            if not validation["validation_passed"]:
+        if not validation["validation_passed"]:
                 validation["validation_errors"] = validation_results["validation_errors"]
 
         except Exception as e:
             validation["validation_passed"] = False
             validation["validation_score"] = 0.0
             validation["validation_errors"].append(f"Validation error: {str(e)}")
-            self.logger.error(f"Step validation error for {step_name}: {e}")
+        self.logger.error(f"Step validation error for {step_name}: {e}")
 
         return validation
 
@@ -462,21 +462,21 @@ class ComprehensiveParameterIntegration:
         """Get trading performance metrics for a specific step."""
 
         try:
-            # Try to get metrics from training manager
-            if self.training_manager and hasattr(self.training_manager, 'get_trading_metrics'):
-                return await self.training_manager.get_trading_metrics(step_name)
+        # Try to get metrics from training manager
+        if self.training_manager and hasattr(self.training_manager, 'get_trading_metrics'):
+        return await self.training_manager.get_trading_metrics(step_name)
 
-            # Try to get from step-specific method
-            if self.training_manager and hasattr(self.training_manager, f'get_{step_name}_trading_metrics'):
-                method = getattr(self.training_manager, f'get_{step_name}_trading_metrics')
-                return await method()
+        # Try to get from step - specific method
+        if self.training_manager and hasattr(self.training_manager, f'get_{step_name}_trading_metrics'):
+                method, getattr(self.training_manager, f'get_{step_name}_trading_metrics')
+        return await method()
 
-            # Fallback: simulate trading metrics (replace with actual implementation)
-            return self._simulate_trading_metrics(step_name)
+        # Fallback: simulate trading metrics (replace with actual implementation)
+        return self._simulate_trading_metrics(step_name)
 
         except Exception as e:
-            self.logger.error(f"Failed to get trading metrics for {step_name}: {e}")
-            return None
+        self.logger.error(f"Failed to get trading metrics for {step_name}: {e}")
+        return None
 
     def _simulate_trading_metrics(self, step_name: str) -> Dict[str, float]:
         """Simulate trading performance metrics (replace with actual implementation)."""
@@ -520,8 +520,8 @@ class ComprehensiveParameterIntegration:
         try:
             score_components = []
 
-            # Validate Sharpe ratio
-            if metrics.get("sharpe_ratio", 0) < self.trading_performance_thresholds["min_sharpe_ratio"]:
+        # Validate Sharpe ratio
+        if metrics.get("sharpe_ratio", 0) < self.trading_performance_thresholds["min_sharpe_ratio"]:
                 validation["validation_errors"].append(
                     f"Sharpe ratio {metrics.get('sharpe_ratio', 0):.3f} below threshold {self.trading_performance_thresholds['min_sharpe_ratio']}"
                 )
@@ -529,8 +529,8 @@ class ComprehensiveParameterIntegration:
             else:
                 score_components.append(min(metrics.get("sharpe_ratio", 0) / 2.0, 1.0))  # Cap at 1.0
 
-            # Validate maximum drawdown
-            if metrics.get("max_drawdown", 1.0) > self.trading_performance_thresholds["max_drawdown"]:
+        # Validate maximum drawdown
+        if metrics.get("max_drawdown", 1.0) > self.trading_performance_thresholds["max_drawdown"]:
                 validation["validation_errors"].append(
                     f"Maximum drawdown {metrics.get('max_drawdown', 0):.3f} above threshold {self.trading_performance_thresholds['max_drawdown']}"
                 )
@@ -538,8 +538,8 @@ class ComprehensiveParameterIntegration:
             else:
                 score_components.append(1.0 - metrics.get("max_drawdown", 0) / self.trading_performance_thresholds["max_drawdown"])
 
-            # Validate win rate
-            if metrics.get("win_rate", 0) < self.trading_performance_thresholds["min_win_rate"]:
+        # Validate win rate
+        if metrics.get("win_rate", 0) < self.trading_performance_thresholds["min_win_rate"]:
                 validation["validation_errors"].append(
                     f"Win rate {metrics.get('win_rate', 0):.3f} below threshold {self.trading_performance_thresholds['min_win_rate']}"
                 )
@@ -547,8 +547,8 @@ class ComprehensiveParameterIntegration:
             else:
                 score_components.append(min(metrics.get("win_rate", 0) / 0.6, 1.0))  # Cap at 1.0
 
-            # Validate profit factor
-            if metrics.get("profit_factor", 0) < self.trading_performance_thresholds["min_profit_factor"]:
+        # Validate profit factor
+        if metrics.get("profit_factor", 0) < self.trading_performance_thresholds["min_profit_factor"]:
                 validation["validation_errors"].append(
                     f"Profit factor {metrics.get('profit_factor', 0):.3f} below threshold {self.trading_performance_thresholds['min_profit_factor']}"
                 )
@@ -556,8 +556,8 @@ class ComprehensiveParameterIntegration:
             else:
                 score_components.append(min(metrics.get("profit_factor", 0) / 2.0, 1.0))  # Cap at 1.0
 
-            # Validate Value at Risk
-            if metrics.get("var_95", 1.0) > self.trading_performance_thresholds["max_var_95"]:
+        # Validate Value at Risk
+        if metrics.get("var_95", 1.0) > self.trading_performance_thresholds["max_var_95"]:
                 validation["validation_errors"].append(
                     f"VaR 95% {metrics.get('var_95', 0):.3f} above threshold {self.trading_performance_thresholds['max_var_95']}"
                 )
@@ -565,14 +565,14 @@ class ComprehensiveParameterIntegration:
             else:
                 score_components.append(1.0 - metrics.get("var_95", 0) / self.trading_performance_thresholds["max_var_95"])
 
-            # Calculate overall validation score
-            if score_components:
+        # Calculate overall validation score
+        if score_components:
                 validation["validation_score"] = np.mean(score_components)
             else:
                 validation["validation_score"] = 0.0
 
-            # Additional validation for Calmar ratio
-            if metrics.get("calmar_ratio", 0) < 1.0:
+        # Additional validation for Calmar ratio
+        if metrics.get("calmar_ratio", 0) < 1.0:
                 validation["validation_errors"].append(f"Calmar ratio {metrics.get('calmar_ratio', 0):.3f} below 1.0")
                 validation["validation_passed"] = False
 
@@ -587,34 +587,34 @@ class ComprehensiveParameterIntegration:
         """Log parameter application results to MLflow."""
 
         try:
-            # Set experiment name
+        # Set experiment name
             mlflow.set_experiment("step17_parameter_integration")
 
-            # Log overall results
+        # Log overall results
             mlflow.log_metric("total_steps", len(application_results.get("parameters_applied", {})))
             mlflow.log_metric("successful_applications", len(application_results.get("models_updated", [])))
             mlflow.log_metric("application_errors", len(application_results.get("errors", [])))
 
-            # Log step-specific results
-            for step_name, step_result in application_results.get("parameters_applied", {}).items():
+        # Log step - specific results
+        for step_name, step_result in application_results.get("parameters_applied", {}).items():
                 mlflow.log_metric(f"{step_name}_success", 1 if step_result.get("success") else 0)
                 mlflow.log_metric(f"{step_name}_parameters_applied", step_result.get("parameters_applied", 0))
 
-            # Log validation results
-            validation = application_results.get("validation_results", {})
-            if validation:
+        # Log validation results
+            validation, application_results.get("validation_results", {})
+        if validation:
                 mlflow.log_metric("validation_passed", 1 if validation.get("validation_passed") else 0)
                 mlflow.log_metric("overall_validation_score", validation.get("validation_metrics", {}).get("overall_validation_score", 0))
 
-            # Log parameters as JSON artifact
-            with open("parameter_application_results.json", "w") as f:
-                json.dump(application_results, f, indent=2, default=str)
+        # Log parameters as JSON artifact
+        with open("parameter_application_results.json", "w") as f:
+                json.dump(application_results, f, indent = 2, default = str)
             mlflow.log_artifact("parameter_application_results.json", "parameter_application")
 
-            self.logger.info("✅ Parameter application results logged to MLflow")
+        self.logger.info("✅ Parameter application results logged to MLflow")
 
         except Exception as e:
-            self.logger.error(f"Failed to log to MLflow: {e}")
+        self.logger.error(f"Failed to log to MLflow: {e}")
 
     async def get_integration_status(self) -> Dict[str, Any]:
         """Get comprehensive integration status."""
@@ -640,10 +640,10 @@ class ComprehensiveParameterIntegration:
         if self.parameter_validation:
             failed_validations = [
                 step for step, status in self.parameter_validation.items()
-                if not status.get("validation_passed", False)
+        if not status.get("validation_passed", False)
             ]
 
-            if failed_validations:
+        if failed_validations:
                 recommendations.append(f"Investigate validation failures in steps: {', '.join(failed_validations)}")
                 recommendations.append("Review parameter application process")
                 recommendations.append("Check model compatibility with new parameters")
@@ -660,17 +660,17 @@ class ComprehensiveParameterIntegration:
         self.logger.info("🚀 Starting comprehensive parameter integration...")
 
         try:
-            # Extract all current parameters
-            current_parameters = await self.extract_all_step_parameters()
+        # Extract all current parameters
+            current_parameters, await self.extract_all_step_parameters()
 
-            # Apply optimized parameters
-            application_results = await self.apply_optimized_parameters(optimized_parameters)
+        # Apply optimized parameters
+            application_results, await self.apply_optimized_parameters(optimized_parameters)
 
-            # Update integration status
-            self.integration_status = application_results
-            self.parameter_validation = application_results.get("validation_results", {})
+        # Update integration status
+        self.integration_status, application_results
+        self.parameter_validation, application_results.get("validation_results", {})
 
-            # Generate final report
+        # Generate final report
             integration_report = {
                 "integration_status": self.integration_status,
                 "parameter_validation": self.parameter_validation,
@@ -680,36 +680,36 @@ class ComprehensiveParameterIntegration:
                 "recommendations": self._generate_integration_recommendations()
             }
 
-            # Store integration results
-            await self._store_integration_results(integration_report)
+        # Store integration results
+        await self._store_integration_results(integration_report)
 
-            self.logger.info("✅ Comprehensive parameter integration completed")
+        self.logger.info("✅ Comprehensive parameter integration completed")
 
-            return integration_report
+        return integration_report
 
         except Exception as e:
-            self.logger.error(f"❌ Comprehensive parameter integration failed: {e}")
+        self.logger.error(f"❌ Comprehensive parameter integration failed: {e}")
             raise
 
     async def _store_integration_results(self, integration_report: Dict[str, Any]):
         """Store integration results for future reference."""
 
         try:
-            # Create results directory
-            results_dir = Path("data/integration/step17")
-            results_dir.mkdir(parents=True, exist_ok=True)
+        # Create results directory
+            results_dir, Path("data / integration / step17")
+            results_dir.mkdir(parents = True, exist_ok = True)
 
-            # Generate filename with timestamp
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"step17_integration_results_{timestamp}.json"
-            filepath = results_dir / filename
+        # Generate filename with timestamp
+            timestamp, datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename, f"step17_integration_results_{timestamp}.json"
+            filepath, results_dir / filename
 
-            # Store results
-            with open(filepath, 'w') as f:
-                json.dump(integration_report, f, indent=2, default=str)
+        # Store results
+        with open(filepath, 'w') as f:
+                json.dump(integration_report, f, indent = 2, default = str)
 
-            # Store metadata
-            metadata_file = results_dir / "step17_integration_metadata.json"
+        # Store metadata
+            metadata_file, results_dir / "step17_integration_metadata.json"
             metadata = {
                 "last_integration": timestamp,
                 "total_steps_integrated": len(integration_report.get("integration_status", {}).get("parameters_applied", {})),
@@ -717,21 +717,19 @@ class ComprehensiveParameterIntegration:
                 "validation_passed": integration_report.get("parameter_validation", {}).get("validation_passed", False)
             }
 
-            with open(metadata_file, 'w') as f:
-                json.dump(metadata, f, indent=2, default=str)
+        with open(metadata_file, 'w') as f:
+                json.dump(metadata, f, indent = 2, default = str)
 
-            self.logger.info(f"✅ Integration results stored to {filepath}")
+        self.logger.info(f"✅ Integration results stored to {filepath}")
 
         except Exception as e:
-            self.logger.error(f"❌ Failed to store integration results: {e}")
-
+        self.logger.error(f"❌ Failed to store integration results: {e}")
 
 # Factory function for creating comprehensive parameter integration
-def create_comprehensive_parameter_integration(config: Dict[str, Any], training_manager=None):
+def create_comprehensive_parameter_integration(config: Dict[str, Any], training_manager = None):
     """Create comprehensive parameter integration instance."""
 
     return ComprehensiveParameterIntegration(config, training_manager)
-
 
 if __name__ == "__main__":
     # Example usage
@@ -746,7 +744,7 @@ if __name__ == "__main__":
     }
 
     # Create integration instance
-    integration = create_comprehensive_parameter_integration(config)
+    integration, create_comprehensive_parameter_integration(config)
 
     print("✅ Comprehensive Parameter Integration created successfully!")
     print(f"Total steps covered: {len(integration.step_parameter_mapping)}")

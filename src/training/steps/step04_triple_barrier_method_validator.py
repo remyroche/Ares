@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr / bin / env python3
 """Validator for Step 4: Triple Barrier Method.
 
 This module validates the triple barrier method step outputs.
@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent
+project_root, Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
@@ -25,13 +25,12 @@ from src.utils.centralized_decorators import (
     quality_gate,
 )
 
-logger = system_logger.getChild("Step4TripleBarrierMethodValidator")
-
+logger, system_logger.getChild("Step4TripleBarrierMethodValidator")
 
 @with_tracing_span("validate_triple_barrier_method")
 @quality_gate(
-    min_quality_score=0.7,
-    max_correlation=0.95,
+    min_quality_score = 0.7,
+    max_correlation = 0.95,
     required_grade="C"
 )
 @comprehensive_data_validation
@@ -57,10 +56,10 @@ async def run_validator(
 
     try:
         # Extract parameters
-        symbol = training_input.get("symbol", "ETHUSDT")
-        exchange = training_input.get("exchange", "BINANCE")
-        timeframe = training_input.get("timeframe", "1m")
-        data_dir = training_input.get("data_dir", "data_cache")
+        symbol, training_input.get("symbol", "ETHUSDT")
+        exchange, training_input.get("exchange", "BINANCE")
+        timeframe, training_input.get("timeframe", "1m")
+        data_dir, training_input.get("data_dir", "data_cache")
 
         # Check if triple barrier labels file exists
         triple_barrier_path = Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet"
@@ -147,7 +146,6 @@ async def run_validator(
             "error": f"Validation error: {e}",
         }
 
-
 if __name__ == "__main__":
     # Test the validator
     async def test():
@@ -159,7 +157,7 @@ if __name__ == "__main__":
         }
         test_state = {}
 
-        result = await run_validator(test_input, test_state)
+        result, await run_validator(test_input, test_state)
         print(f"Validation result: {result}")
 
     asyncio.run(test())

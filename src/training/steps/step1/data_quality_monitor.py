@@ -1,7 +1,7 @@
-#!/usr/bin/env python3
-"""Data Quality Monitor for Real-time Monitoring and Alerting.
+#!/usr / bin / env python3
+"""Data Quality Monitor for Real - time Monitoring and Alerting.
 
-This module provides real-time monitoring of data quality metrics and alerting
+This module provides real - time monitoring of data quality metrics and alerting
 capabilities for the enhanced data quality system.
 """
 
@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional, Callable
 import pandas as pd
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent.parent
+project_root, Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
@@ -25,8 +25,7 @@ from src.utils.centralized_decorators import (
 )
 from src.utils.logger import system_logger
 
-logger = system_logger.getChild("DataQualityMonitor")
-
+logger, system_logger.getChild("DataQualityMonitor")
 
 class DataQualityAlert:
     """Represents a data quality alert."""
@@ -42,16 +41,16 @@ class DataQualityAlert:
         timestamp: datetime,
         details: Optional[Dict[str, Any]] = None
     ):
-        self.alert_type = alert_type
-        self.severity = severity  # "low", "medium", "high", "critical"
-        self.message = message
-        self.symbol = symbol
-        self.exchange = exchange
-        self.timeframe = timeframe
-        self.timestamp = timestamp
-        self.details = details or {}
-        self.acknowledged = False
-        self.resolved = False
+        self.alert_type, alert_type
+        self.severity, severity  # "low", "medium", "high", "critical"
+        self.message, message
+        self.symbol, symbol
+        self.exchange, exchange
+        self.timeframe, timeframe
+        self.timestamp, timestamp
+        self.details, details or {}
+        self.acknowledged, False
+        self.resolved, False
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert alert to dictionary."""
@@ -71,21 +70,20 @@ class DataQualityAlert:
     def __str__(self) -> str:
         return f"[{self.severity.upper()}] {self.alert_type}: {self.message}"
 
-
 class DataQualityMonitor:
-    """Real-time data quality monitor with alerting capabilities."""
+    """Real - time data quality monitor with alerting capabilities."""
 
     def __init__(self, data_cache_path: str = "data_cache") -> None:
-        self.data_cache_path = Path(data_cache_path)
-        self.data_cache_path.mkdir(exist_ok=True)
+        self.data_cache_path, Path(data_cache_path)
+        self.data_cache_path.mkdir(exist_ok = True)
 
         # Alert storage
         self.alerts: List[DataQualityAlert] = []
         self.alert_callbacks: List[Callable[[DataQualityAlert], None]] = []
 
         # Monitoring configuration
-        self.monitoring_active = False
-        self.monitoring_interval = 300  # 5 minutes
+        self.monitoring_active, False
+        self.monitoring_interval, 300  # 5 minutes
         self.quality_thresholds = {
             "gap_threshold": 10,  # Maximum number of gaps allowed
             "format_issues_threshold": 5,  # Maximum format issues allowed
@@ -105,7 +103,7 @@ class DataQualityMonitor:
     @with_tracing_span("start_monitoring")
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False,
+        default_return = False,
         context="data_quality_monitor.start_monitoring"
     )
     async def start_monitoring(
@@ -113,9 +111,9 @@ class DataQualityMonitor:
         symbols: List[str],
         exchanges: List[str],
         timeframes: List[str],
-        interval_seconds: int = 300
+        interval_seconds: int, 300
     ) -> bool:
-        """Start real-time monitoring of data quality.
+        """Start real - time monitoring of data quality.
 
         Args:
             symbols: List of symbols to monitor
@@ -127,25 +125,25 @@ class DataQualityMonitor:
             bool: True if monitoring started successfully
         """
         try:
-            self.monitoring_active = True
-            self.monitoring_interval = interval_seconds
+        self.monitoring_active, True
+        self.monitoring_interval, interval_seconds
 
             logger.info(f"🚀 Starting data quality monitoring for {len(symbols)} symbols")
             logger.info(f"📊 Monitoring interval: {interval_seconds} seconds")
 
-            # Start monitoring loop
+        # Start monitoring loop
             asyncio.create_task(self._monitoring_loop(symbols, exchanges, timeframes))
 
-            return True
+        return True
 
         except Exception as e:
             logger.exception(f"❌ Failed to start monitoring: {e}")
-            return False
+        return False
 
     @with_tracing_span("stop_monitoring")
     async def stop_monitoring(self) -> None:
-        """Stop real-time monitoring."""
-        self.monitoring_active = False
+        """Stop real - time monitoring."""
+        self.monitoring_active, False
         logger.info("🛑 Data quality monitoring stopped")
 
     @with_tracing_span("add_alert_callback")
@@ -177,74 +175,74 @@ class DataQualityMonitor:
     ) -> None:
         """Main monitoring loop."""
         while self.monitoring_active:
-            try:
-                start_time = datetime.now()
+        try:
+                start_time, datetime.now()
 
-                # Run quality checks for all combinations
-                for symbol in symbols:
-                    for exchange in exchanges:
-                        for timeframe in timeframes:
-                            await self._check_data_quality(symbol, exchange, timeframe)
+        # Run quality checks for all combinations
+        for symbol in symbols:
+        for exchange in exchanges:
+        for timeframe in timeframes:
+        await self._check_data_quality(symbol, exchange, timeframe)
 
-                # Update performance metrics
-                end_time = datetime.now()
+        # Update performance metrics
+                end_time, datetime.now()
                 duration = (end_time - start_time).total_seconds()
-                self.performance_metrics["total_checks"] += 1
-                self.performance_metrics["last_check_time"] = end_time
+        self.performance_metrics["total_checks"] += 1
+        self.performance_metrics["last_check_time"] = end_time
 
-                # Update average duration
-                current_avg = self.performance_metrics["average_check_duration"]
-                total_checks = self.performance_metrics["total_checks"]
-                self.performance_metrics["average_check_duration"] = (
+        # Update average duration
+                current_avg, self.performance_metrics["average_check_duration"]
+                total_checks, self.performance_metrics["total_checks"]
+        self.performance_metrics["average_check_duration"] = (
                     (current_avg * (total_checks - 1) + duration) / total_checks
                 )
 
                 logger.info(f"📊 Monitoring cycle completed in {duration:.2f}s")
 
-                # Wait for next cycle
-                await asyncio.sleep(self.monitoring_interval)
+        # Wait for next cycle
+        await asyncio.sleep(self.monitoring_interval)
 
-            except Exception as e:
+        except Exception as e:
                 logger.exception(f"❌ Error in monitoring loop: {e}")
-                await asyncio.sleep(60)  # Wait 1 minute before retrying
+        await asyncio.sleep(60)  # Wait 1 minute before retrying
 
     @with_tracing_span("check_data_quality")
     @resource_monitor
     async def _check_data_quality(self, symbol: str, exchange: str, timeframe: str) -> None:
-        """Check data quality for a specific symbol/exchange/timeframe combination."""
+        """Check data quality for a specific symbol / exchange / timeframe combination."""
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
 
-            manager = EnhancedDataQualityManager(str(self.data_cache_path))
+            manager, EnhancedDataQualityManager(str(self.data_cache_path))
 
-            # Run quality check
-            quality_results = await manager.comprehensive_quality_check(
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                check_gaps=True,
-                fill_gaps=False,  # Don't auto-fill during monitoring
-                validate_format=True
+        # Run quality check
+            quality_results, await manager.comprehensive_quality_check(
+                symbol = symbol,
+                exchange = exchange,
+                timeframe = timeframe,
+                check_gaps = True,
+                fill_gaps = False,  # Don't auto - fill during monitoring
+                validate_format = True
             )
 
-            # Check for quality issues and generate alerts
-            await self._evaluate_quality_results(quality_results, symbol, exchange, timeframe)
+        # Check for quality issues and generate alerts
+        await self._evaluate_quality_results(quality_results, symbol, exchange, timeframe)
 
         except Exception as e:
             logger.exception(f"❌ Error checking data quality for {exchange}_{symbol}_{timeframe}: {e}")
 
-            # Generate error alert
-            alert = DataQualityAlert(
+        # Generate error alert
+            alert, DataQualityAlert(
                 alert_type="monitoring_error",
                 severity="high",
-                message=f"Failed to check data quality: {str(e)}",
-                symbol=symbol,
-                exchange=exchange,
-                timeframe=timeframe,
-                timestamp=datetime.now(),
+                message = f"Failed to check data quality: {str(e)}",
+                symbol = symbol,
+                exchange = exchange,
+                timeframe = timeframe,
+                timestamp = datetime.now(),
                 details={"error": str(e)}
             )
-            await self._generate_alert(alert)
+        await self._generate_alert(alert)
 
     @with_tracing_span("evaluate_quality_results")
     async def _evaluate_quality_results(
@@ -256,49 +254,49 @@ class DataQualityMonitor:
     ) -> None:
         """Evaluate quality results and generate alerts if needed."""
         try:
-            # Check for gaps
-            gaps_detected = quality_results.get("gaps_detected", [])
-            if len(gaps_detected) > self.quality_thresholds["gap_threshold"]:
-                alert = DataQualityAlert(
+        # Check for gaps
+            gaps_detected, quality_results.get("gaps_detected", [])
+        if len(gaps_detected) > self.quality_thresholds["gap_threshold"]:
+                alert, DataQualityAlert(
                     alert_type="excessive_gaps",
                     severity="high" if len(gaps_detected) > 20 else "medium",
-                    message=f"Excessive data gaps detected: {len(gaps_detected)} gaps",
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
-                    timestamp=datetime.now(),
+                    message = f"Excessive data gaps detected: {len(gaps_detected)} gaps",
+                    symbol = symbol,
+                    exchange = exchange,
+                    timeframe = timeframe,
+                    timestamp = datetime.now(),
                     details={
                         "gaps_count": len(gaps_detected),
                         "threshold": self.quality_thresholds["gap_threshold"],
                         "gaps": gaps_detected[:5]  # First 5 gaps for details
                     }
                 )
-                await self._generate_alert(alert)
+        await self._generate_alert(alert)
 
-            # Check for format issues
-            format_issues = quality_results.get("format_issues", [])
-            if len(format_issues) > self.quality_thresholds["format_issues_threshold"]:
-                alert = DataQualityAlert(
+        # Check for format issues
+            format_issues, quality_results.get("format_issues", [])
+        if len(format_issues) > self.quality_thresholds["format_issues_threshold"]:
+                alert, DataQualityAlert(
                     alert_type="format_issues",
                     severity="medium",
-                    message=f"Data format issues detected: {len(format_issues)} issues",
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
-                    timestamp=datetime.now(),
+                    message = f"Data format issues detected: {len(format_issues)} issues",
+                    symbol = symbol,
+                    exchange = exchange,
+                    timeframe = timeframe,
+                    timestamp = datetime.now(),
                     details={
                         "issues_count": len(format_issues),
                         "threshold": self.quality_thresholds["format_issues_threshold"],
                         "issues": format_issues[:3]  # First 3 issues for details
                     }
                 )
-                await self._generate_alert(alert)
+        await self._generate_alert(alert)
 
-            # Check data freshness
-            await self._check_data_freshness(symbol, exchange, timeframe)
+        # Check data freshness
+        await self._check_data_freshness(symbol, exchange, timeframe)
 
-            # Check data completeness
-            await self._check_data_completeness(symbol, exchange, timeframe, quality_results)
+        # Check data completeness
+        await self._check_data_completeness(symbol, exchange, timeframe, quality_results)
 
         except Exception as e:
             logger.exception(f"❌ Error evaluating quality results: {e}")
@@ -307,30 +305,30 @@ class DataQualityMonitor:
     async def _check_data_freshness(self, symbol: str, exchange: str, timeframe: str) -> None:
         """Check if data is fresh (recently updated)."""
         try:
-            # Check klines data freshness
-            klines_file = self.data_cache_path / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
-            if klines_file.exists():
-                df = pd.read_parquet(klines_file)
-                if "timestamp" in df.columns:
-                    latest_timestamp = pd.to_datetime(df["timestamp"].max())
+        # Check klines data freshness
+            klines_file, self.data_cache_path / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
+        if klines_file.exists():
+                df, pd.read_parquet(klines_file)
+        if "timestamp" in df.columns:
+                    latest_timestamp, pd.to_datetime(df["timestamp"].max())
                     hours_old = (datetime.now() - latest_timestamp).total_seconds() / 3600
 
-                    if hours_old > self.quality_thresholds["data_freshness_hours"]:
-                        alert = DataQualityAlert(
+        if hours_old > self.quality_thresholds["data_freshness_hours"]:
+                        alert, DataQualityAlert(
                             alert_type="stale_data",
                             severity="medium",
-                            message=f"Data is stale: {hours_old:.1f} hours old",
-                            symbol=symbol,
-                            exchange=exchange,
-                            timeframe=timeframe,
-                            timestamp=datetime.now(),
+                            message = f"Data is stale: {hours_old:.1f} hours old",
+                            symbol = symbol,
+                            exchange = exchange,
+                            timeframe = timeframe,
+                            timestamp = datetime.now(),
                             details={
                                 "hours_old": hours_old,
                                 "threshold": self.quality_thresholds["data_freshness_hours"],
                                 "latest_timestamp": latest_timestamp.isoformat()
                             }
                         )
-                        await self._generate_alert(alert)
+        await self._generate_alert(alert)
 
         except Exception as e:
             logger.exception(f"❌ Error checking data freshness: {e}")
@@ -345,45 +343,45 @@ class DataQualityMonitor:
     ) -> None:
         """Check if data is complete and sufficient."""
         try:
-            # Check if data is ready for step3/step4
-            step3_step4_ready = quality_results.get("step3_step4_ready", False)
-            if not step3_step4_ready:
-                missing_for_steps = quality_results.get("missing_for_steps", [])
-                alert = DataQualityAlert(
+        # Check if data is ready for step3 / step4
+            step3_step4_ready, quality_results.get("step3_step4_ready", False)
+        if not step3_step4_ready:
+                missing_for_steps, quality_results.get("missing_for_steps", [])
+                alert, DataQualityAlert(
                     alert_type="incomplete_data",
                     severity="high",
-                    message=f"Data not ready for step3/step4: {len(missing_for_steps)} missing requirements",
-                    symbol=symbol,
-                    exchange=exchange,
-                    timeframe=timeframe,
-                    timestamp=datetime.now(),
+                    message = f"Data not ready for step3 / step4: {len(missing_for_steps)} missing requirements",
+                    symbol = symbol,
+                    exchange = exchange,
+                    timeframe = timeframe,
+                    timestamp = datetime.now(),
                     details={
                         "missing_requirements": missing_for_steps,
                         "step3_step4_ready": step3_step4_ready
                     }
                 )
-                await self._generate_alert(alert)
+        await self._generate_alert(alert)
 
-            # Check data volume
-            quality_metrics = quality_results.get("quality_metrics", {})
-            for file_metric in quality_metrics.values():
-                if isinstance(file_metric, dict) and "row_count" in file_metric:
-                    row_count = file_metric["row_count"]
-                    if row_count < self.quality_thresholds["min_data_rows"]:
-                        alert = DataQualityAlert(
+        # Check data volume
+            quality_metrics, quality_results.get("quality_metrics", {})
+        for file_metric in quality_metrics.values():
+        if isinstance(file_metric, dict) and "row_count" in file_metric:
+                    row_count, file_metric["row_count"]
+        if row_count < self.quality_thresholds["min_data_rows"]:
+                        alert, DataQualityAlert(
                             alert_type="insufficient_data",
                             severity="medium",
-                            message=f"Insufficient data rows: {row_count} (min: {self.quality_thresholds['min_data_rows']})",
-                            symbol=symbol,
-                            exchange=exchange,
-                            timeframe=timeframe,
-                            timestamp=datetime.now(),
+                            message = f"Insufficient data rows: {row_count} (min: {self.quality_thresholds['min_data_rows']})",
+                            symbol = symbol,
+                            exchange = exchange,
+                            timeframe = timeframe,
+                            timestamp = datetime.now(),
                             details={
                                 "row_count": row_count,
                                 "min_required": self.quality_thresholds["min_data_rows"]
                             }
                         )
-                        await self._generate_alert(alert)
+        await self._generate_alert(alert)
 
         except Exception as e:
             logger.exception(f"❌ Error checking data completeness: {e}")
@@ -392,22 +390,22 @@ class DataQualityMonitor:
     async def _generate_alert(self, alert: DataQualityAlert) -> None:
         """Generate and process an alert."""
         try:
-            # Add alert to storage
-            self.alerts.append(alert)
-            self.performance_metrics["total_alerts"] += 1
+        # Add alert to storage
+        self.alerts.append(alert)
+        self.performance_metrics["total_alerts"] += 1
 
-            # Log alert
+        # Log alert
             logger.warning(f"🚨 {alert}")
 
-            # Call alert callbacks
-            for callback in self.alert_callbacks:
-                try:
+        # Call alert callbacks
+        for callback in self.alert_callbacks:
+        try:
                     callback(alert)
-                except Exception as e:
+        except Exception as e:
                     logger.exception(f"❌ Error in alert callback {callback.__name__}: {e}")
 
-            # Save alert to file
-            await self._save_alert(alert)
+        # Save alert to file
+        await self._save_alert(alert)
 
         except Exception as e:
             logger.exception(f"❌ Error generating alert: {e}")
@@ -416,14 +414,14 @@ class DataQualityMonitor:
     async def _save_alert(self, alert: DataQualityAlert) -> None:
         """Save alert to persistent storage."""
         try:
-            alerts_dir = self.data_cache_path / "quality_alerts"
-            alerts_dir.mkdir(exist_ok=True)
+            alerts_dir, self.data_cache_path / "quality_alerts"
+            alerts_dir.mkdir(exist_ok = True)
 
-            # Save to daily file
-            date_str = alert.timestamp.strftime("%Y-%m-%d")
-            alert_file = alerts_dir / f"alerts_{date_str}.jsonl"
+        # Save to daily file
+            date_str, alert.timestamp.strftime("%Y-%m-%d")
+            alert_file, alerts_dir / f"alerts_{date_str}.jsonl"
 
-            with open(alert_file, "a") as f:
+        with open(alert_file, "a") as f:
                 f.write(json.dumps(alert.to_dict()) + "\n")
 
         except Exception as e:
@@ -438,7 +436,7 @@ class DataQualityMonitor:
         alert_type: Optional[str] = None,
         start_time: Optional[datetime] = None,
         end_time: Optional[datetime] = None,
-        limit: int = 100
+        limit: int, 100
     ) -> List[DataQualityAlert]:
         """Get filtered alerts.
 
@@ -457,23 +455,23 @@ class DataQualityMonitor:
         filtered_alerts = []
 
         for alert in self.alerts:
-            # Apply filters
-            if symbol and alert.symbol != symbol:
+        # Apply filters
+        if symbol and alert.symbol != symbol:
                 continue
-            if exchange and alert.exchange != exchange:
+        if exchange and alert.exchange != exchange:
                 continue
-            if severity and alert.severity != severity:
+        if severity and alert.severity != severity:
                 continue
-            if alert_type and alert.alert_type != alert_type:
+        if alert_type and alert.alert_type != alert_type:
                 continue
-            if start_time and alert.timestamp < start_time:
+        if start_time and alert.timestamp < start_time:
                 continue
-            if end_time and alert.timestamp > end_time:
+        if end_time and alert.timestamp > end_time:
                 continue
 
             filtered_alerts.append(alert)
 
-            if len(filtered_alerts) >= limit:
+        if len(filtered_alerts) >= limit:
                 break
 
         return filtered_alerts
@@ -489,14 +487,14 @@ class DataQualityMonitor:
             bool: True if alert was acknowledged
         """
         try:
-            if 0 <= alert_index < len(self.alerts):
-                self.alerts[alert_index].acknowledged = True
+        if 0 <= alert_index < len(self.alerts):
+        self.alerts[alert_index].acknowledged, True
                 logger.info(f"✅ Alert acknowledged: {self.alerts[alert_index]}")
-                return True
-            return False
+        return True
+        return False
         except Exception as e:
             logger.exception(f"❌ Error acknowledging alert: {e}")
-            return False
+        return False
 
     @with_tracing_span("resolve_alert")
     def resolve_alert(self, alert_index: int) -> bool:
@@ -509,14 +507,14 @@ class DataQualityMonitor:
             bool: True if alert was resolved
         """
         try:
-            if 0 <= alert_index < len(self.alerts):
-                self.alerts[alert_index].resolved = True
+        if 0 <= alert_index < len(self.alerts):
+        self.alerts[alert_index].resolved, True
                 logger.info(f"✅ Alert resolved: {self.alerts[alert_index]}")
-                return True
-            return False
+        return True
+        return False
         except Exception as e:
             logger.exception(f"❌ Error resolving alert: {e}")
-            return False
+        return False
 
     @with_tracing_span("get_performance_metrics")
     def get_performance_metrics(self) -> Dict[str, Any]:
@@ -562,17 +560,16 @@ class DataQualityMonitor:
             report.append(f"     {severity}: {count}")
 
         # Recent alerts
-        recent_alerts = sorted(self.alerts, key=lambda x: x.timestamp, reverse=True)[:10]
+        recent_alerts, sorted(self.alerts, key = lambda x: x.timestamp, reverse = True)[:10]
         if recent_alerts:
             report.append("")
             report.append("🕒 RECENT ALERTS:")
-            for alert in recent_alerts:
+        for alert in recent_alerts:
                 status = "✅" if alert.resolved else "⚠️" if alert.acknowledged else "🚨"
                 report.append(f"   {status} {alert.timestamp.strftime('%H:%M:%S')} - {alert}")
 
         report.append("=" * 80)
         return "\n".join(report)
-
 
 # Convenience functions for easy integration
 async def start_data_quality_monitoring(
@@ -580,11 +577,11 @@ async def start_data_quality_monitoring(
     exchanges: List[str],
     timeframes: List[str],
     data_cache_path: str = "data_cache",
-    interval_seconds: int = 300
+    interval_seconds: int, 300
 ) -> DataQualityMonitor:
     """Start data quality monitoring with default configuration."""
-    monitor = DataQualityMonitor(data_cache_path)
-    success = await monitor.start_monitoring(symbols, exchanges, timeframes, interval_seconds)
+    monitor, DataQualityMonitor(data_cache_path)
+    success, await monitor.start_monitoring(symbols, exchanges, timeframes, interval_seconds)
 
     if success:
         logger.info("✅ Data quality monitoring started successfully")
@@ -593,7 +590,6 @@ async def start_data_quality_monitoring(
 
     return monitor
 
-
 def create_email_alert_callback(email_address: str) -> Callable[[DataQualityAlert], None]:
     """Create an email alert callback function."""
     def email_callback(alert: DataQualityAlert) -> None:
@@ -601,7 +597,6 @@ def create_email_alert_callback(email_address: str) -> Callable[[DataQualityAler
         logger.info(f"📧 Would send email to {email_address}: {alert}")
 
     return email_callback
-
 
 def create_slack_alert_callback(webhook_url: str) -> Callable[[DataQualityAlert], None]:
     """Create a Slack alert callback function."""

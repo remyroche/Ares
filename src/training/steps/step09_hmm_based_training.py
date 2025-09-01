@@ -583,11 +583,12 @@ class HMMBasedTrainingStep:
             else:
         self.logger.warning("⚠️ S / R outcome model training failed or skipped")
 
-        # Emit regime forecasting artifacts (next - regime probabilities and exit - within - H)
+        # Enhanced regime forecasting artifacts with advanced capabilities
         try:
                 import json
                 import os
                 import pandas as _pd
+                import numpy as np
 
                 rf_dir, os.path.join(data_dir, "regime_forecasting")
                 os.makedirs(rf_dir, exist_ok = True)
@@ -601,54 +602,26 @@ class HMMBasedTrainingStep:
         if "composite_cluster_id" not in df.columns:
                             continue
 
-                        cids, df["composite_cluster_id"].astype(int)
-        # Empirical transition matrix
-                        transitions: dict[int, dict[int, int]] = {}
-                        prev, None
-        for cid in cids.tolist():
-        if prev is not None:
-                                transitions.setdefault(int(prev), {}).setdefault(int(cid), 0)
-                                transitions[int(prev)][int(cid)] += 1
-                            prev, cid
-        # Normalize to probabilities
-                        trans_prob: dict[int, dict[int, float]] = {}
-        for i, row in transitions.items():
-                            row_sum, float(sum(row.values()))
-        if row_sum <= 0:
-                                continue
-                            trans_prob[i] = {j: cnt / row_sum for j, cnt in row.items()}
-
-                        current_cid, int(cids.iloc[-1])
-                        next_probs, trans_prob.get(current_cid, {})
-                        p_stay, float(next_probs.get(current_cid, 0.0))
-                        H, 20
-                        exit_within_H, 1.0 - (p_stay ** H)
-
-                        artifact = {
-                            "timeframe": tf,
-                            "current_regime": current_cid,
-                            "next_regime_probabilities": next_probs,
-                            "exit_within_H_bars_prob": exit_within_H,
-                            "H": H,
-                        }
+                        # Enhanced regime forecasting with multiple lookahead periods
+                        artifact, await self._create_enhanced_regime_forecasting(df, tf, exchange, symbol)
                         regime_forecasting_summary[tf] = artifact
 
                         rf_path, os.path.join(
-                            rf_dir, f"{exchange}_{symbol}_{tf}_regime_forecasting.json",
+                            rf_dir, f"{exchange}_{symbol}_{tf}_enhanced_regime_forecasting.json",
                         )
         with open(rf_path, "w") as f:
                             json.dump(artifact, f, indent = 2)
-        self.logger.info(f"💾 Saved regime forecasting artifact -> {rf_path}")
+        self.logger.info(f"💾 Saved enhanced regime forecasting artifact -> {rf_path}")
         except Exception as _inner:
         self.logger.warning(
-                            f"⚠️ Regime forecasting generation failed for {tf}: {_inner}",
+                            f"⚠️ Enhanced regime forecasting generation failed for {tf}: {_inner}",
                         )
 
         if regime_forecasting_summary:
-                    pipeline_state["regime_forecasting"] = regime_forecasting_summary
+                    pipeline_state["enhanced_regime_forecasting"] = regime_forecasting_summary
         except Exception as _fe:
         self.logger.warning(
-                    f"⚠️ Skipped regime forecasting artifacts due to error: {_fe}",
+                    f"⚠️ Skipped enhanced regime forecasting artifacts due to error: {_fe}",
                 )
 
         self.logger.info("✅ HMM - Based Training completed successfully")
@@ -663,6 +636,271 @@ class HMMBasedTrainingStep:
         except Exception as e:
         self.logger.exception(f"❌ HMM - Based Training failed: {e}")
         return {"status": "FAILED", "error": str(e)}
+
+    async def _create_enhanced_regime_forecasting(
+        self, df: pd.DataFrame, timeframe: str, exchange: str, symbol: str
+    ) -> dict[str, Any]:
+        """Create enhanced regime forecasting with multiple lookahead periods and confidence measures."""
+        try:
+            cids = df["composite_cluster_id"].astype(int)
+            
+            # Build comprehensive transition matrix
+            transitions = self._build_transition_matrix(cids)
+            
+            # Calculate regime stability metrics
+            stability_metrics = self._calculate_regime_stability_metrics(cids, transitions)
+            
+            # Generate multi-horizon forecasts
+            current_cid = int(cids.iloc[-1])
+            multi_horizon_forecasts = self._generate_multi_horizon_forecasts(
+                current_cid, transitions, stability_metrics
+            )
+            
+            # Calculate regime change confidence
+            change_confidence = self._calculate_regime_change_confidence(
+                current_cid, transitions, stability_metrics
+            )
+            
+            # Generate regime persistence analysis
+            persistence_analysis = self._analyze_regime_persistence(cids, transitions)
+            
+            return {
+                "timeframe": timeframe,
+                "exchange": exchange,
+                "symbol": symbol,
+                "current_regime": current_cid,
+                "transition_matrix": transitions,
+                "stability_metrics": stability_metrics,
+                "multi_horizon_forecasts": multi_horizon_forecasts,
+                "change_confidence": change_confidence,
+                "persistence_analysis": persistence_analysis,
+                "forecasting_metadata": {
+                    "total_regimes": len(cids.unique()),
+                    "total_transitions": len(cids) - 1,
+                    "forecast_generated_at": pd.Timestamp.now().isoformat(),
+                    "lookback_periods": [5, 10, 20, 50, 100],
+                    "confidence_thresholds": {
+                        "high": 0.8,
+                        "medium": 0.6,
+                        "low": 0.4
+                    }
+                }
+            }
+            
+        except Exception as e:
+            self.logger.error(f"❌ Enhanced regime forecasting failed: {e}")
+            return {"error": str(e)}
+
+    def _build_transition_matrix(self, cids: pd.Series) -> dict[int, dict[int, float]]:
+        """Build comprehensive transition probability matrix."""
+        transitions = {}
+        prev = None
+        
+        for cid in cids.tolist():
+            if prev is not None:
+                transitions.setdefault(int(prev), {}).setdefault(int(cid), 0)
+                transitions[int(prev)][int(cid)] += 1
+            prev = cid
+        
+        # Normalize to probabilities with smoothing
+        trans_prob = {}
+        for i, row in transitions.items():
+            row_sum = float(sum(row.values()))
+            if row_sum > 0:
+                # Add small smoothing factor to avoid zero probabilities
+                smoothing = 0.01
+                total_states = len(set(cids))
+                trans_prob[i] = {
+                    j: (cnt + smoothing) / (row_sum + smoothing * total_states) 
+                    for j, cnt in row.items()
+                }
+        
+        return trans_prob
+
+    def _calculate_regime_stability_metrics(
+        self, cids: pd.Series, transitions: dict[int, dict[int, float]]
+    ) -> dict[str, Any]:
+        """Calculate regime stability and persistence metrics."""
+        try:
+            # Calculate regime durations
+            durations = []
+            current_regime = cids.iloc[0]
+            current_duration = 1
+            
+            for i in range(1, len(cids)):
+                if cids.iloc[i] == current_regime:
+                    current_duration += 1
+                else:
+                    durations.append(current_duration)
+                    current_regime = cids.iloc[i]
+                    current_duration = 1
+            durations.append(current_duration)  # Add last duration
+            
+            # Calculate stability metrics
+            avg_duration = np.mean(durations) if durations else 1
+            duration_std = np.std(durations) if durations else 0
+            max_duration = max(durations) if durations else 1
+            min_duration = min(durations) if durations else 1
+            
+            # Calculate regime persistence (self-transition probability)
+            persistence = {}
+            for regime, probs in transitions.items():
+                persistence[regime] = probs.get(regime, 0.0)
+            
+            return {
+                "average_duration": float(avg_duration),
+                "duration_std": float(duration_std),
+                "max_duration": int(max_duration),
+                "min_duration": int(min_duration),
+                "regime_persistence": persistence,
+                "total_regime_changes": len(durations) - 1,
+                "stability_score": float(avg_duration / (avg_duration + duration_std)) if duration_std > 0 else 1.0
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error calculating stability metrics: {e}")
+            return {"error": str(e)}
+
+    def _generate_multi_horizon_forecasts(
+        self, current_regime: int, transitions: dict[int, dict[int, float]], 
+        stability_metrics: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Generate forecasts for multiple time horizons."""
+        try:
+            horizons = [5, 10, 20, 50, 100]
+            forecasts = {}
+            
+            for horizon in horizons:
+                # Calculate exit probability within horizon
+                p_stay = transitions.get(current_regime, {}).get(current_regime, 0.0)
+                exit_prob = 1.0 - (p_stay ** horizon)
+                
+                # Calculate most likely next regimes
+                next_probs = transitions.get(current_regime, {})
+                sorted_regimes = sorted(next_probs.items(), key=lambda x: x[1], reverse=True)
+                
+                # Calculate regime change probability
+                change_prob = 1.0 - p_stay
+                
+                forecasts[f"horizon_{horizon}"] = {
+                    "exit_probability": float(exit_prob),
+                    "stay_probability": float(p_stay ** horizon),
+                    "change_probability": float(change_prob),
+                    "most_likely_regimes": [
+                        {"regime": regime, "probability": float(prob)} 
+                        for regime, prob in sorted_regimes[:3]
+                    ],
+                    "confidence_level": self._calculate_forecast_confidence(exit_prob, stability_metrics)
+                }
+            
+            return forecasts
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error generating multi-horizon forecasts: {e}")
+            return {"error": str(e)}
+
+    def _calculate_regime_change_confidence(
+        self, current_regime: int, transitions: dict[int, dict[int, float]], 
+        stability_metrics: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Calculate confidence in regime change predictions."""
+        try:
+            p_stay = transitions.get(current_regime, {}).get(current_regime, 0.0)
+            p_change = 1.0 - p_stay
+            
+            # Base confidence on transition probability and stability
+            base_confidence = p_change
+            stability_factor = stability_metrics.get("stability_score", 0.5)
+            
+            # Adjust confidence based on stability
+            adjusted_confidence = base_confidence * (1.0 + stability_factor) / 2.0
+            adjusted_confidence = min(1.0, max(0.0, adjusted_confidence))
+            
+            return {
+                "change_probability": float(p_change),
+                "stay_probability": float(p_stay),
+                "base_confidence": float(base_confidence),
+                "stability_adjusted_confidence": float(adjusted_confidence),
+                "confidence_level": self._get_confidence_level(adjusted_confidence),
+                "risk_assessment": self._assess_regime_change_risk(p_change, stability_metrics)
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error calculating change confidence: {e}")
+            return {"error": str(e)}
+
+    def _analyze_regime_persistence(
+        self, cids: pd.Series, transitions: dict[int, dict[int, float]]
+    ) -> dict[str, Any]:
+        """Analyze regime persistence patterns."""
+        try:
+            # Calculate regime frequency
+            regime_counts = cids.value_counts().to_dict()
+            total_periods = len(cids)
+            
+            # Calculate regime dominance
+            regime_frequencies = {
+                regime: count / total_periods 
+                for regime, count in regime_counts.items()
+            }
+            
+            # Identify dominant regimes
+            dominant_regimes = [
+                regime for regime, freq in regime_frequencies.items() 
+                if freq > 0.3  # More than 30% of time
+            ]
+            
+            # Calculate transition entropy (measure of randomness)
+            transition_entropy = {}
+            for regime, probs in transitions.items():
+                entropy = -sum(p * np.log(p + 1e-10) for p in probs.values() if p > 0)
+                transition_entropy[regime] = float(entropy)
+            
+            return {
+                "regime_frequencies": regime_frequencies,
+                "dominant_regimes": dominant_regimes,
+                "transition_entropy": transition_entropy,
+                "persistence_patterns": {
+                    "most_persistent": max(transitions.keys(), 
+                                         key=lambda x: transitions[x].get(x, 0.0)),
+                    "least_persistent": min(transitions.keys(), 
+                                          key=lambda x: transitions[x].get(x, 0.0)),
+                    "average_persistence": float(np.mean([
+                        transitions[r].get(r, 0.0) for r in transitions.keys()
+                    ]))
+                }
+            }
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error analyzing regime persistence: {e}")
+            return {"error": str(e)}
+
+    def _calculate_forecast_confidence(self, exit_prob: float, stability_metrics: dict[str, Any]) -> str:
+        """Calculate confidence level for forecasts."""
+        if exit_prob >= 0.8:
+            return "high"
+        elif exit_prob >= 0.6:
+            return "medium"
+        else:
+            return "low"
+
+    def _get_confidence_level(self, confidence: float) -> str:
+        """Get confidence level string."""
+        if confidence >= 0.8:
+            return "high"
+        elif confidence >= 0.6:
+            return "medium"
+        else:
+            return "low"
+
+    def _assess_regime_change_risk(self, change_prob: float, stability_metrics: dict[str, Any]) -> str:
+        """Assess risk level of regime change."""
+        if change_prob >= 0.7:
+            return "high"
+        elif change_prob >= 0.4:
+            return "medium"
+        else:
+            return "low"
 
     async def _load_hmm_data(
         self, exchange: str, symbol: str, data_dir: str, timeframes: list[str],

@@ -24,18 +24,16 @@ class RegimeTransitionConfig:
     transition_imminent_threshold: float = 0.8
 
     # Model blending during transitions
-    step09_5_weight: float = 0.4
-    step10_weight: float = 0.3
-    regime_expert_weight: float = 0.3
+    step10_weight: float = 0.5
+    regime_expert_weight: float = 0.5
 
     # Transition type classification
     range_breakout_threshold: float = 0.65
     volatility_spike_threshold: float = 0.55
 
     # Weight adjustment factors
-    step09_5_boost_factor: float = 0.5
-    step10_boost_factor: float = 0.3
-    regime_expert_boost_factor: float = 0.2
+    step10_boost_factor: float = 0.5
+    regime_expert_boost_factor: float = 0.5
 
     # Transition timing
     transition_lookback_periods: int = 5
@@ -77,18 +75,16 @@ def get_regime_transition_search_space() -> dict[str, dict[str, Any]]:
         "transition_imminent_threshold": {"min": 0.7, "max": 0.95, "type": "float"},
 
         # Model blending during transitions
-        "step09_5_weight": {"min": 0.2, "max": 0.6, "type": "float"},
-        "step10_weight": {"min": 0.2, "max": 0.5, "type": "float"},
-        "regime_expert_weight": {"min": 0.2, "max": 0.5, "type": "float"},
+        "step10_weight": {"min": 0.3, "max": 0.7, "type": "float"},
+        "regime_expert_weight": {"min": 0.3, "max": 0.7, "type": "float"},
 
         # Transition type classification
         "range_breakout_threshold": {"min": 0.55, "max": 0.8, "type": "float"},
         "volatility_spike_threshold": {"min": 0.45, "max": 0.7, "type": "float"},
 
         # Weight adjustment factors
-        "step09_5_boost_factor": {"min": 0.3, "max": 0.7, "type": "float"},
-        "step10_boost_factor": {"min": 0.2, "max": 0.5, "type": "float"},
-        "regime_expert_boost_factor": {"min": 0.1, "max": 0.4, "type": "float"},
+        "step10_boost_factor": {"min": 0.3, "max": 0.7, "type": "float"},
+        "regime_expert_boost_factor": {"min": 0.3, "max": 0.7, "type": "float"},
 
         # Transition timing
         "transition_lookback_periods": {"min": 3, "max": 10, "type": "int"},

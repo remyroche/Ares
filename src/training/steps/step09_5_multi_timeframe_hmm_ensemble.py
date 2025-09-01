@@ -2,9 +2,13 @@
 
 """Step 9.5: Multi-Timeframe HMM Ensemble Training with Regime-Specific Logic.
 
-This step trains a multi-timeframe HMM cluster ensemble system that combines
-predictions from HMM clusters across multiple timeframes (5m, 15m, 30m, 1h)
-to improve regime forecasting accuracy and reduce MAPE, with regime-specific optimization.
+This step trains a multi - timeframe HMM cluster ensemble system that combines
+predictions from Enhanced HMM regime forecasting across multiple timeframes (5m, 15m, 30m, 1h)
+to improve regime forecasting accuracy and reduce MAPE.
+
+
+The ensemble works with Enhanced HMM regime forecasting data from Step9 and Step3,
+providing multi-timeframe regime transition predictions.
 
 The ensemble predicts REGIME TRANSITIONS only, not price direction.
 Price direction predictions are made in other components.
@@ -652,7 +656,7 @@ async def run_step(
             ensemble_method = ensemble_config.get("ensemble_method", "meta_learner"),
         )
 
-        # Load regime forecasting data
+        # Load enhanced regime forecasting data
         regime_forecasting_data = {}
         rf_dir, os.path.join(data_dir, "regime_forecasting")
 
@@ -667,7 +671,12 @@ async def run_step(
         # Load data for each timeframe
         for tf_config in timeframe_configs:
             tf, tf_config.timeframe
-            rf_path, os.path.join(rf_dir, f"{exchange}_{symbol}_{tf}_regime_forecasting.json")
+            # Try enhanced regime forecasting first, fallback to old format
+            rf_path, os.path.join(rf_dir, f"{exchange}_{symbol}_{tf}_enhanced_regime_forecasting.json")
+            
+            if not os.path.exists(rf_path):
+                # Fallback to old format
+                rf_path, os.path.join(rf_dir, f"{exchange}_{symbol}_{tf}_regime_forecasting.json")
 
         if os.path.exists(rf_path):
         try:
@@ -675,15 +684,30 @@ async def run_step(
                         rf_data, json.load(f)
 
         # Convert to DataFrame format expected by ensemble
-        # Create a simple DataFrame with regime data
+        # Handle both enhanced and old format
+                    current_regime = rf_data.get('current_regime', 0)
+                    
+                    # Enhanced format has multi_horizon_forecasts
+                    if 'multi_horizon_forecasts' in rf_data:
+                        # Use enhanced format
+                        horizon_5 = rf_data['multi_horizon_forecasts'].get('horizon_5', {})
+                        regime_probabilities = horizon_5.get('most_likely_regimes', [])
+                        confidence = horizon_5.get('confidence_level', 'low')
+                    else:
+                        # Old format
+                        regime_probabilities = rf_data.get('next_regime_probabilities', {})
+                        confidence = 'medium'
+                    
+                    # Create a simple DataFrame with regime data
                     regime_df, pd.DataFrame({
                         'timestamp': pd.date_range(start = datetime.now(), periods = 100, freq='1H'),
-                        'composite_cluster_id': [rf_data.get('current_regime', 0)] * 100,
-                        'regime_probabilities': [rf_data.get('next_regime_probabilities', {})] * 100,
+                        'composite_cluster_id': [current_regime] * 100,
+                        'regime_probabilities': [regime_probabilities] * 100,
+                        'confidence_level': [confidence] * 100,
                     })
 
                     regime_forecasting_data[tf] = regime_df
-                    logger.info(f"✅ Loaded regime forecasting data for {tf}: {len(regime_df)} rows")
+                    logger.info(f"✅ Loaded enhanced regime forecasting data for {tf}: {len(regime_df)} rows")
 
         except Exception as e:
                     logger.warning(f"⚠️ Failed to load regime forecasting data for {tf}: {e}")

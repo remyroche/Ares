@@ -28,9 +28,8 @@ class TwoTierConfig:
     tier2_timeframes: list[str] = None
 
     # Integration thresholds
-    step09_5_weight: float = 0.4
-    step10_weight: float = 0.3
-    regime_expert_weight: float = 0.3
+    step10_weight: float = 0.5
+    regime_expert_weight: float = 0.5
 
     # Decision thresholds
     min_combined_confidence: float = 0.6

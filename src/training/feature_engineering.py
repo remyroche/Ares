@@ -2,104 +2,104 @@ from collections.abc import Callable
 
 import pandas as pd
 
-from src.utils.centralized_decorators import (
+from src.utils.centralized_decorators import ()
     guard_dataframe_nulls,
     validate_call_or_runtime_types,
     with_tracing_span,
-)
+
 
 
 class FeatureGenerator:
-    def __init__(
+    def __init__()
         self, custom_features: list[Callable[[pd.DataFrame], pd.DataFrame]] | None = None,
     ) -> None:
-        self.feature_functions = [
+        self.feature_functions = []
             self.price_features,
             self.moving_averages,
             self.volatility_features,
             self.volume_features,
             self.technical_indicators,
-        ]
+        
         if custom_features:
             self.feature_functions.extend(custom_features)
 
     @validate_call_or_runtime_types
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
+    @guard_dataframe_nulls(mode="warn", arg_index=1)""""
     @with_tracing_span("FeatureGenerator.generate", log_args=False)
     def generate(self, data: pd.DataFrame) -> pd.DataFrame:
-        features = pd.DataFrame(index=data.index)
-        for func in self.feature_functions:
-            feat = func(data)
+        features = pd.DataFrame(index=data.index)"
+        for func in self.feature_functions:"""
+            feat = func(data)""""
             features = features.join(feat, how="outer")
-        return features.fillna(0)  # Default - can be replaced by handle_missing_data
-
-    def generate_labels(self, data: pd.DataFrame) -> pd.Series:
-        # Example: simple trend-following label
+        return features.fillna(0)  # Default - can be replaced by handle_missing_data"
+"""
+    def generate_labels(self, data: pd.DataFrame) -> pd.Series:"""
+        # Example: simple trend-following label""""
         labels = (data["close"].shift(-1) > data["close"]).astype(int)
-        return labels.fillna(0)
-
-    @validate_call_or_runtime_types
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
+        return labels.fillna(0)"
+"""
+    @validate_call_or_runtime_types""""
+    @guard_dataframe_nulls(mode="warn", arg_index=1)""""
     @with_tracing_span("FeatureGenerator.price_features", log_args=False)
-    def price_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        return pd.DataFrame(
-            {
-                "price_change": data["close"].pct_change(),
-                "high_low_ratio": data["high"] / data["low"],
-                "open_close_ratio": data["open"] / data["close"],
+    def price_features(self, data: pd.DataFrame) -> pd.DataFrame:"
+        return pd.DataFrame()"""
+            {}"""
+                "price_change": data["close"].pct_change(),"""
+                "high_low_ratio": data["high"] / data["low"],"""
+                "open_close_ratio": data["open"] / data["close""],"
             },
             index=data.index,
-        )
-
-    @validate_call_or_runtime_types
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
+        "
+"""
+    @validate_call_or_runtime_types""""
+    @guard_dataframe_nulls(mode="warn", arg_index=1)""""
     @with_tracing_span("FeatureGenerator.moving_averages", log_args=False)
-    def moving_averages(self, data: pd.DataFrame) -> pd.DataFrame:
-        return pd.DataFrame(
-            {
-                "ma_5": data["close"].rolling(5).mean(),
-                "ma_10": data["close"].rolling(10).mean(),
-                "ma_20": data["close"].rolling(20).mean(),
+    def moving_averages(self, data: pd.DataFrame) -> pd.DataFrame:"
+        return pd.DataFrame()"""
+            {}"""
+                "ma_5": data["close"].rolling(5).mean(),"""
+                "ma_10": data["close"].rolling(10).mean(),"""
+                "ma_20": data["close""].rolling(20).mean(),"
             },
             index=data.index,
-        )
-
-    @validate_call_or_runtime_types
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
+        "
+"""
+    @validate_call_or_runtime_types""""
+    @guard_dataframe_nulls(mode="warn", arg_index=1)""""
     @with_tracing_span("FeatureGenerator.volatility_features", log_args=False)
-    def volatility_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        return pd.DataFrame(
-            {
-                "volatility_5": data["close"].rolling(5).std(),
+    def volatility_features(self, data: pd.DataFrame) -> pd.DataFrame:"
+        return pd.DataFrame()"""
+            {}"""
+                "volatility_5": data["close"].rolling(5).std(),"""
                 "volatility_10": data["close"].rolling(10).std(),
             },
             index=data.index,
-        )
-
-    @validate_call_or_runtime_types
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
-    @with_tracing_span("FeatureGenerator.volume_features", log_args=False)
-    def volume_features(self, data: pd.DataFrame) -> pd.DataFrame:
-        vol_ma_5 = data["volume"].rolling(5).mean()
-        return pd.DataFrame(
-            {
-                "volume_ma_5": vol_ma_5,
+        "
+"""
+    @validate_call_or_runtime_types""""
+    @guard_dataframe_nulls(mode="warn", arg_index=1)""""
+    @with_tracing_span("FeatureGenerator.volume_features", log_args=False)"""
+    def volume_features(self, data: pd.DataFrame) -> pd.DataFrame:""""
+        vol_ma_5 = data["volume"].rolling(5).mean()"
+        return pd.DataFrame()"""
+            {}"""
+                "volume_ma_5": vol_ma_5,"""
                 "volume_ratio": data["volume"] / vol_ma_5,
             },
             index=data.index,
-        )
-
-    @validate_call_or_runtime_types
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
+        "
+"""
+    @validate_call_or_runtime_types""""
+    @guard_dataframe_nulls(mode="warn", arg_index=1)""""
     @with_tracing_span("FeatureGenerator.technical_indicators", log_args=False)
-    def technical_indicators(self, data: pd.DataFrame) -> pd.DataFrame:
-        return pd.DataFrame(
-            {
-                "rsi": self._calculate_rsi(data["close"]),
+    def technical_indicators(self, data: pd.DataFrame) -> pd.DataFrame:"
+        return pd.DataFrame()"""
+            {}"""
+                "rsi": self._calculate_rsi(data["close"]),"""
                 "macd": self._calculate_macd(data["close"]),
             },
             index=data.index,
-        )
+        
 
     def _calculate_rsi(self, prices: pd.Series, period: int = 14) -> pd.Series:
         delta = prices.diff()
@@ -108,11 +108,12 @@ class FeatureGenerator:
         rs = gain / loss.replace(0, 1e-9)
         return 100 - (100 / (1 + rs))
 
-    def _calculate_macd(
+    def _calculate_macd()
         self, prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9,
     ) -> pd.Series:
         ema_fast = prices.ewm(span=fast).mean()
         ema_slow = prices.ewm(span=slow).mean()
         macd_line = ema_fast - ema_slow
-        signal_line = macd_line.ewm(span=signal).mean()
-        return macd_line - signal_line
+        signal_line = macd_line.ewm(span=signal).mean()"
+        return macd_line - signal_line""
+""""""""

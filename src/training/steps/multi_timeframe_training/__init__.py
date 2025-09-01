@@ -1,9 +1,9 @@
 # src / training / steps / multi_timeframe_training / __init__.py
 
-"""Multi - Timeframe Training Package.
-
-This package contains components for multi - timeframe training and analysis.
+""""""Multi - Timeframe Training Package."""
 """
+This package contains components for multi - timeframe training and analysis."""
+""""""""
 
     connection_error,
     critical,
@@ -17,10 +17,10 @@ This package contains components for multi - timeframe training and analysis.
     timeout,
     validation_error,
     warning,
-)
 
-from .multi_timeframe_training_manager import MultiTimeframeTrainingManager
 
-__all__ = [
-    "MultiTimeframeTrainingManager",
-]
+from .multi_timeframe_training_manager import MultiTimeframeTrainingManager"
+"""
+__all__ = []"""
+    "MultiTimeframeTrainingManager",""
+""""

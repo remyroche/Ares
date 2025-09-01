@@ -14,10 +14,10 @@ TargetArray = np.ndarray
 PredictionArray = np.ndarray
 
 # Feature engineering types
-
-
-class FeatureDict(TypedDict, total, False):
-    """Type-safe feature dictionary."""
+"
+"""
+class FeatureDict(TypedDict, total, False):"""
+    """Type-safe feature dictionary."""""
 
     technical_indicators: dict[str, float]
     market_microstructure: dict[str, float]
@@ -25,19 +25,19 @@ class FeatureDict(TypedDict, total, False):
     regime_features: dict[str, float]
     volatility_features: dict[str, float]
     volume_features: dict[str, float]
-
-
-class ModelInput(TypedDict):
-    """Type-safe model input structure."""
+"
+"""
+class ModelInput(TypedDict):"""
+    """Type-safe model input structure."""""
 
     features: FeatureArray
     timestamps: list[Timestamp]
     symbols: list[Symbol]
     metadata: dict[str, str | int | float]
-
-
-class PredictionResult(TypedDict):
-    """Type-safe prediction result."""
+"
+"""
+class PredictionResult(TypedDict):"""
+    """Type-safe prediction result."""""
 
     prediction: float | int | list[float]
     confidence: ConfidenceLevel
@@ -45,18 +45,18 @@ class PredictionResult(TypedDict):
     feature_importance: dict[str, float] | None
     model_id: ModelId
     timestamp: Timestamp
-
-
-class ModelOutput(TypedDict):
-    """Type-safe model output structure."""
+"
+"""
+class ModelOutput(TypedDict):"""
+    """Type-safe model output structure."""""
 
     predictions: list[PredictionResult]
     model_metadata: dict[str, str | int | float]
     processing_time_ms: float
-
-
-class ModelMetrics(TypedDict):
-    """Type-safe model performance metrics."""
+"
+"""
+class ModelMetrics(TypedDict):"""
+    """Type-safe model performance metrics."""""
 
     accuracy: Score
     precision: Score
@@ -67,10 +67,10 @@ class ModelMetrics(TypedDict):
     max_drawdown: float | None
     win_rate: Score | None
     profit_factor: float | None
-
-
-class TrainingData(TypedDict):
-    """Type-safe training data structure."""
+"
+"""
+class TrainingData(TypedDict):"""
+    """Type-safe training data structure."""""
 
     X_train: FeatureArray
     y_train: TargetArray
@@ -79,31 +79,31 @@ class TrainingData(TypedDict):
     feature_names: list[str]
     target_name: str
     data_split_info: dict[str, str | int | float]
-
-
-class ValidationData(TypedDict):
-    """Type-safe validation data structure."""
+"
+"""
+class ValidationData(TypedDict):"""
+    """Type-safe validation data structure."""""
 
     X_test: FeatureArray
     y_test: TargetArray
     predictions: PredictionArray
     metrics: ModelMetrics
     validation_timestamp: Timestamp
-
-
-class ModelConfig(TypedDict, total, False):
-    """Type-safe model configuration."""
-
-    model_type: Literal["classification", "regression", "time_series"]
+"
+"""
+class ModelConfig(TypedDict, total, False):"""
+    """Type-safe model configuration."""""
+""""
+    model_type: Literal["classification", "regression", "time_series"]""""
     algorithm: Literal["xgboost", "lightgbm", "neural_network", "ensemble"]
     hyperparameters: dict[str, int | float | str | bool]
     feature_selection: dict[str, bool | int | float]
     preprocessing: dict[str, bool | str | list[str]]
-
-
-class EnsembleConfig(TypedDict):
-    """Type-safe ensemble configuration."""
-
+"
+"""
+class EnsembleConfig(TypedDict):"""
+    """Type-safe ensemble configuration."""""
+""""
     ensemble_method: Literal["voting", "stacking", "blending", "boosting"]
     base_models: list[ModelConfig]
     meta_model: ModelConfig | None
@@ -112,23 +112,24 @@ class EnsembleConfig(TypedDict):
 
 
 # Regime and market state types
-
-
-class RegimeClassification(TypedDict):
-    """Type-safe regime classification result."""
-
+"
+"""
+class RegimeClassification(TypedDict):"""
+    """Type-safe regime classification result."""""
+""""
     regime: Literal["bullish", "bearish", "sideways", "volatile", "trending"]
     confidence: ConfidenceLevel
     regime_probabilities: dict[str, float]
     features_used: list[str]
     timestamp: Timestamp
-
-
-class MarketState(TypedDict):
-    """Type-safe market state information."""
-
-    regime: RegimeClassification
-    volatility_level: Literal["low", "medium", "high", "extreme"]
+"
+"""
+class MarketState(TypedDict):"""
+    """Type-safe market state information."""""
+""
+    regime: RegimeClassification""""
+    volatility_level: Literal["low", "medium", "high", "extreme"]""""
     trend_direction: Literal["up", "down", "sideways"]
-    momentum_score: Score
-    support_resistance: dict[str, float]
+    momentum_score: Score"
+    support_resistance: dict[str, float]""
+""""""""

@@ -1,6 +1,6 @@
-"""
-Live trading pipeline implementation (minimal scaffold).
-"""
+""""""""""
+Live trading pipeline implementation (minimal scaffold)."""
+""""""""
 
 
 from typing import Any, Dict
@@ -9,25 +9,26 @@ from typing import Any, Dict
     PerformanceLevel,
     handle_errors,
     handle_specific_errors,
-)
+
 from src.utils.logger import system_logger
 
 
-class LiveTradingPipeline:
-    def __init__(self, config: Dict[str, Any]) -> None:
-        self.config , config
+class LiveTradingPipeline:"
+    def __init__(self, config: Dict[str, Any]) -> None:"""
+        self.config , config""""
         self.logger = system_logger.getChild("LiveTradingPipeline")
 
-    @performance_monitor(level, PerformanceLevel.DETAILED)
-    @handle_specific_errors(
-        error_handlers, {
-            ValueError: (False, "Invalid live trading pipeline configuration"),
-            AttributeError: (False, "Missing required trading parameters"),
-            KeyError: (False, "Missing configuration keys"),
-        },
-        default_return, False,
-        context="live_trading_pipeline.initialize",
-    )
-    async def initialize(self) -> bool:
-        self.logger.info("Initializing LiveTradingPipeline ...")
-        return True
+    @performance_monitor(level, PerformanceLevel.DETAILED)"
+    @handle_specific_errors()"""
+        error_handlers, {}""""
+            ValueError: (False, "Invalid live trading pipeline configuration"),""""
+            AttributeError: (False, "Missing required trading parameters"),""""
+            KeyError: (False, "Missing configuration keys"),"
+        },"""
+        default_return, False,""""
+        context="live_trading_pipeline.initialize","
+    """
+    async def initialize(self) -> bool:""""
+        self.logger.info("Initializing LiveTradingPipeline ...")"
+        return True""
+""""""""

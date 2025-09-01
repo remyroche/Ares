@@ -1,9 +1,9 @@
 # src/training/optimization/__init__.py
 
-"""Training Optimization Package.
-
-This package contains optimization components for training processes.
+""""""Training Optimization Package."""
 """
+This package contains optimization components for training processes."""
+""""""""
 
     connection_error,
     critical,
@@ -17,10 +17,11 @@ This package contains optimization components for training processes.
     timeout,
     validation_error,
     warning,
-)
 
-from .rollback_manager import RollbackManager
 
-__all__ = [
-    "RollbackManager",
-]
+from .rollback_manager import RollbackManager"
+"""
+__all__ = []"""
+    "RollbackManager"","
+""
+"""""""

@@ -1,8 +1,8 @@
 # src/protocols/trading_protocols.py
 
-"""
-Enhanced trading system protocols with comprehensive type safety (minimal scaffold).
-"""
+""""""""""
+Enhanced trading system protocols with comprehensive type safety (minimal scaffold)."""
+""""""""
 
 
 from abc import abstractmethod
@@ -17,12 +17,12 @@ from src.custom_types.ml_types import ModelInput, PredictionResult
     RiskParameters,
     TradeDecision,
     TradingSignal,
-)
 
 
-@runtime_checkable
-class TradingDataProvider(Protocol):
-    """Protocol for trading data providers."""
+"
+@runtime_checkable"""
+class TradingDataProvider(Protocol):"""
+    """Protocol for trading data providers."""""
 
     @abstractmethod
     async def get_market_data(self, symbol: Symbol, start_time: Timestamp, end_time: Timestamp) -> dict:
@@ -44,10 +44,10 @@ class TradingDataProvider(Protocol):
     def is_connected(self) -> bool:
         ...
 
-
-@runtime_checkable
-class TradingMLPredictor(Protocol):
-    """Protocol for ML trading predictors."""
+"
+@runtime_checkable"""
+class TradingMLPredictor(Protocol):"""
+    """Protocol for ML trading predictors."""""
 
     @abstractmethod
     async def predict_market_direction(self, input_data: ModelInput) -> PredictionResult:
@@ -69,17 +69,17 @@ class TradingMLPredictor(Protocol):
     def is_model_ready(self) -> bool:
         ...
 
-
-@runtime_checkable
-class TradingRiskManager(Protocol):
-    """Protocol for trading risk management."""
+"
+@runtime_checkable"""
+class TradingRiskManager(Protocol):"""
+    """Protocol for trading risk management."""""
 
     @abstractmethod
     async def validate_trade(self, trade_decision: TradeDecision) -> bool:
         ...
 
     @abstractmethod
-    async def calculate_position_size(
+    async def calculate_position_size()
         self, symbol: Symbol, account_info: dict, risk_parameters: RiskParameters
     ) -> float:
         ...
@@ -89,5 +89,6 @@ class TradingRiskManager(Protocol):
         ...
 
     @abstractmethod
-    async def get_stop_loss_price(self, symbol: Symbol, entry_price: float, position_side: str) -> float:
-        ...
+    async def get_stop_loss_price(self, symbol: Symbol, entry_price: float, position_side: str) -> float:"
+        ...""
+""""""""

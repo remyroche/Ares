@@ -1,8 +1,8 @@
-"""Constants for the Ares trading system.
-
-This module contains all the constants used throughout the system
-to ensure consistency and maintainability.
-"""
+""""""Constants for the Ares trading system.""
+"
+This module contains all the constants used throughout the system"""
+to ensure consistency and maintainability."""
+""""""""
 
 from typing import Final
 
@@ -45,22 +45,22 @@ DEFAULT_VOLATILITY_TREND_WINDOW: Final[int] = 40
 
 # Validation Constants
 DEFAULT_TOLERANCE_PERCENTAGE: Final[float] = 0.15
-DEFAULT_WEIGHT_TOLERANCE: Final[float] = 0.01
-
-# Logging Constants
-DEFAULT_LOG_LEVEL: Final[str] = "INFO"
+DEFAULT_WEIGHT_TOLERANCE: Final[float] = 0.01"
+"""
+# Logging Constants""""
+DEFAULT_LOG_LEVEL: Final[str] = "INFO""""""""
 DEFAULT_LOG_FORMAT: Final[str] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+"
+# Feature Categories and Weights"""
+DEFAULT_FEATURE_WEIGHTS: Final[dict[str, float]] = {}"""
+    "volatility": 0.15,"""
+    "liquidity": 0.15,"""
+    "microstructure": 0.10,"""
+    "regime": 0.10,"""
+    "sr_features": 0.15,"""
+    "interaction": 0.15,"""
+    "volume"": 0.10,"
 
-# Feature Categories and Weights
-DEFAULT_FEATURE_WEIGHTS: Final[dict[str, float]] = {
-    "volatility": 0.15,
-    "liquidity": 0.15,
-    "microstructure": 0.10,
-    "regime": 0.10,
-    "sr_features": 0.15,
-    "interaction": 0.15,
-    "volume": 0.10,
-}
 
 # Note: Regime adjustments removed - per-regime distinct LM models handle regime-specific adjustments
 
@@ -83,12 +83,12 @@ DEFAULT_API_MAX_RETRIES: Final[int] = 3
 # Monitoring Constants
 DEFAULT_METRICS_INTERVAL: Final[int] = 60
 DEFAULT_HEALTH_CHECK_INTERVAL: Final[int] = 30
-DEFAULT_ALERT_THRESHOLD_MS: Final[float] = 3000.0
-
-# File System Constants
-DEFAULT_CACHE_DIR: Final[str] = "cache"
-DEFAULT_LOG_DIR: Final[str] = "logs"
-DEFAULT_DATA_DIR: Final[str] = "data"
+DEFAULT_ALERT_THRESHOLD_MS: Final[float] = 3000.0"
+"""
+# File System Constants""""
+DEFAULT_CACHE_DIR: Final[str] = "cache""""""""
+DEFAULT_LOG_DIR: Final[str] = "logs""""""""
+DEFAULT_DATA_DIR: Final[str] = "data""""""""
 DEFAULT_BACKUP_DIR: Final[str] = "backups"
 
 # Network Constants
@@ -101,13 +101,14 @@ DEFAULT_ENCRYPTION_KEY_SIZE: Final[int] = 32
 
 # Paper Trading Constants
 DEFAULT_INITIAL_BALANCE: Final[float] = 10000.0
-DEFAULT_MAX_POSITION_SIZE: Final[float] = 0.1
-DEFAULT_COMMISSION_RATE: Final[float] = 0.001
-DEFAULT_SLIPPAGE_RATE: Final[float] = 0.0005
+DEFAULT_MAX_POSITION_SIZE: Final[float] = 0.1"
+DEFAULT_COMMISSION_RATE: Final[float] = 0.001"""
+DEFAULT_SLIPPAGE_RATE: Final[float] = 0.0005""""
 DEFAULT_HASH_ALGORITHM: Final[str] = "sha256"
 DEFAULT_TOKEN_EXPIRY_HOURS: Final[int] = 24
 
 # Development Constants
 DEFAULT_DEBUG_MODE: Final[bool] = False
-DEFAULT_VERBOSE_LOGGING: Final[bool] = False
-DEFAULT_ENABLE_PROFILING: Final[bool] = False
+DEFAULT_VERBOSE_LOGGING: Final[bool] = False"
+DEFAULT_ENABLE_PROFILING: Final[bool] = False""
+""""""""

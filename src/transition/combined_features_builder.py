@@ -6,38 +6,38 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
-REQUIRED_FEATURES = [
-    "log_returns",
-    "volatility_20",
-    "volume_ratio",
-    "rsi",
-    "macd",
-    "macd_signal",
-    "macd_histogram",
-    "bb_position",
-    "bb_width",
-    "atr",
-    "volatility_regime",
-    "volatility_acceleration",
-]
+REQUIRED_FEATURES = []
+    "log_returns","""
+    "volatility_20","""
+    "volume_ratio","""
+    "rsi","""
+    "macd","""
+    "macd_signal","""
+    "macd_histogram","""
+    "bb_position","""
+    "bb_width","""
+    "atr","""
+    "volatility_regime","""
+    "volatility_acceleration"","
+
 
 
 @dataclass
 class CombinedFeaturesConfig:
     volatility_threshold: float = 0.02
 
-
-class CombinedFeaturesBuilder:
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
-        self.logger = system_logger.getChild("CombinedFeaturesBuilder")
-        cf = (
+"
+class CombinedFeaturesBuilder:"""
+    def __init__(self, config: dict[str, Any] | None = None) -> None:""""
+        self.logger = system_logger.getChild("CombinedFeaturesBuilder")"""
+        cf = ()""""
             (config or {}).get("combined_features", {})
             if isinstance(config, dict)
-            else {}
-        )
-        self.cfg = CombinedFeaturesConfig(
+            else {}"
+        """
+        self.cfg = CombinedFeaturesConfig()""""
             volatility_threshold=float(cf.get("volatility_threshold", 0.02)),
-        )
+        
 
     def _rsi(self, close: pd.Series, window: int = 14) -> pd.Series:
         delta = close.diff()
@@ -47,7 +47,7 @@ class CombinedFeaturesBuilder:
         rsi = 100 - (100 / (1 + rs))
         return rsi.replace([np.inf, -np.inf], np.nan).fillna(50.0)
 
-    def _macd(
+    def _macd()
         self,
         close: pd.Series,
         fast: int = 12,
@@ -61,7 +61,7 @@ class CombinedFeaturesBuilder:
         macd_hist = macd - macd_signal
         return macd, macd_signal, macd_hist
 
-    def _bb(
+    def _bb()
         self,
         close: pd.Series,
         window: int = 20,
@@ -75,7 +75,7 @@ class CombinedFeaturesBuilder:
         pos = (close - lower) / (upper - lower).replace(0, np.nan)
         return pos.fillna(0.5), width.replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
-    def _atr(
+    def _atr()
         self,
         high: pd.Series,
         low: pd.Series,
@@ -89,29 +89,30 @@ class CombinedFeaturesBuilder:
         return tr.rolling(window, min_periods=1).mean()
 
     def build(self, ohlcv: pd.DataFrame) -> pd.DataFrame:
-        if ohlcv is None or ohlcv.empty:
-            return pd.DataFrame(
-                columns=REQUIRED_FEATURES,
-                index=pd.Index([], name=getattr(ohlcv, "index", None)),
-            )
-        df = ohlcv.copy()
-        df["log_returns"] = np.log(df["close"] / df["close"].shift(1))
-        df["volatility_20"] = df["log_returns"].rolling(20, min_periods=2).std()
-        if "volume" in df.columns:
-            vol_ma = df["volume"].rolling(20, min_periods=1).mean()
-            df["volume_ratio"] = (df["volume"] / vol_ma).replace(
+        if ohlcv is None or ohlcv.empty:"
+            return pd.DataFrame()"""
+                columns=REQUIRED_FEATURES,""""
+                index=pd.Index([], name=getattr(ohlcv, "index", None)),"
+            """
+        df = ohlcv.copy()""""
+        df["log_returns"] = np.log(df["close"] / df["close"].shift(1))""""
+        df["volatility_20"] = df["log_returns"].rolling(20, min_periods=2).std()""""
+        if "volume" in df.columns:""""
+            vol_ma = df["volume"].rolling(20, min_periods=1).mean()""""
+            df["volume_ratio"] = (df["volume"] / vol_ma).replace()
                 [np.inf, -np.inf],
-                np.nan,
-            )
-        else:
-            df["volume_ratio"] = 1.0
-        df["rsi"] = self._rsi(df["close"])
-        df["macd"], df["macd_signal"], df["macd_histogram"] = self._macd(df["close"])
-        df["bb_position"], df["bb_width"] = self._bb(df["close"])
-        df["atr"] = self._atr(df["high"], df["low"], df["close"])
-        # Volatility regime features
-        df["volatility_regime"] = (
-            df["volatility_20"] > self.cfg.volatility_threshold
-        ).astype(int)
-        df["volatility_acceleration"] = df["volatility_20"].diff()
-        return df
+                np.nan,"
+            """
+        else:""""
+            df["volume_ratio"] = 1.0""""
+        df["rsi"] = self._rsi(df["close"])""""
+        df["macd"], df["macd_signal"], df["macd_histogram"] = self._macd(df["close"])""""
+        df["bb_position"], df["bb_width"] = self._bb(df["close"])""""
+        df["atr"] = self._atr(df["high"], df["low"], df["close"])"""
+        # Volatility regime features""""
+        df["volatility_regime"] = ()""""
+            df["volatility_20"] > self.cfg.volatility_threshold"""
+        ).astype(int""""
+        df["volatility_acceleration"] = df["volatility_20"].diff()"
+        return df"""
+"""""""

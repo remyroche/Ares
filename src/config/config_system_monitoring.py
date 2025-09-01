@@ -1,17 +1,17 @@
 # src/config/config_system_monitoring.py
 
-"""
-Configuration file for optimizable system monitoring and performance parameters.
-These parameters can be optimized in step12.
-"""
+"""""""""
+Configuration file for optimizable system monitoring and performance parameters."""
+These parameters can be optimized in step12."""
+""""""""
 
 from typing import Any
 from dataclasses import dataclass
 
-
-@dataclass
-class SystemMonitoringConfig:
-    """Optimizable system monitoring and performance parameters."""
+"
+@dataclass"""
+class SystemMonitoringConfig:"""
+    """Optimizable system monitoring and performance parameters."""""
 
     # Monitoring intervals
     analysis_interval: int = 3600  # seconds
@@ -69,10 +69,10 @@ class SystemMonitoringConfig:
     enable_persistence: bool = True
     enable_snapshots: bool = True
     snapshot_frequency: int = 3600  # seconds
-
-    # Export and reporting
-    export_formats: list[str] = None
-    export_directory: str = "exports"
+"
+    # Export and reporting"""
+    export_formats: list[str] = None""""
+    export_directory: str = "exports""""""""
     storage_path: str = "storage"
 
     # Learning and adaptation
@@ -92,74 +92,74 @@ class SystemMonitoringConfig:
     enable_risk_management: bool = True
     enable_rebalancing: bool = True
 
-    def __post_init__(self):
-        if self.behavior_thresholds is None:
-            self.behavior_thresholds , {
-                "consistency_threshold": 0.7,
-                "stability_threshold": 0.8,
-                "drift_threshold": 0.05,
-            }
-
-        if self.export_formats is None:
+    def __post_init__(self):"
+        if self.behavior_thresholds is None:"""
+            self.behavior_thresholds , {}"""
+                "consistency_threshold": 0.7,"""
+                "stability_threshold": 0.8,"""
+                "drift_threshold"": 0.05,"
+            "
+"""
+        if self.export_formats is None:""""
             self.export_formats = ["csv", "json", "parquet"]
-
-
-def get_system_monitoring_config() -> SystemMonitoringConfig:
-    """Get system monitoring configuration."""
+"
+"""
+def get_system_monitoring_config() -> SystemMonitoringConfig:"""
+    """Get system monitoring configuration."""""
     return SystemMonitoringConfig()
-
-
-def get_system_monitoring_search_space() -> dict[str, dict[str, Any]]:
-    """Get search space for system monitoring optimization."""
-    return {
-        # Monitoring intervals
-        "analysis_interval": {"min": 1800, "max": 7200, "type": "int"},
-        "supervision_interval": {"min": 30, "max": 120, "type": "int"},
-        "optimization_interval": {"min": 180, "max": 600, "type": "int"},
-        "monitoring_interval": {"min": 15, "max": 60, "type": "int"},
-        "tracking_interval": {"min": 30, "max": 120, "type": "int"},
-        "report_interval": {"min": 180, "max": 600, "type": "int"},
-        "weighting_interval": {"min": 60, "max": 300, "type": "int"},
-        "allocation_interval": {"min": 120, "max": 360, "type": "int"},
-        "management_interval": {"min": 180, "max": 480, "type": "int"},
-        "check_interval": {"min": 30, "max": 90, "type": "int"},
-        "processing_interval": {"min": 10, "max": 30, "type": "int"},
-        "strategy_interval": {"min": 60, "max": 180, "type": "int"},
-
-        # History limits
-        "max_analysis_history": {"min": 500, "max": 2000, "type": "int"},
-        "max_history": {"min": 50, "max": 200, "type": "int"},
-        "max_weighting_history": {"min": 250, "max": 1000, "type": "int"},
-        "max_management_history": {"min": 100, "max": 400, "type": "int"},
-        "max_calculation_history": {"min": 150, "max": 600, "type": "int"},
-        "max_history_size": {"min": 500, "max": 2000, "type": "int"},
-        "max_strategy_history": {"min": 75, "max": 300, "type": "int"},
-
-        # Performance monitoring
-        "real_time_interval": {"min": 15, "max": 60, "type": "int"},
-        "drift_check_interval": {"min": 180, "max": 600, "type": "int"},
-        "performance_snapshot_interval": {"min": 300, "max": 1200, "type": "int"},
-        "feature_analysis_interval": {"min": 600, "max": 1800, "type": "int"},
-        "prediction_drift_threshold": {"min": 0.02, "max": 0.1, "type": "float"},
-
-        # System performance
-        "max_cache_size": {"min": 500, "max": 2000, "type": "int"},
-        "max_workers": {"min": 4, "max": 16, "type": "int"},
-        "memory_threshold": {"min": 0.7, "max": 0.9, "type": "float"},
-        "max_recovery_attempts": {"min": 2, "max": 5, "type": "int"},
-        "recovery_cooldown": {"min": 30, "max": 120, "type": "int"},
-        "failure_threshold": {"min": 3, "max": 8, "type": "int"},
-        "timeout": {"min": 30, "max": 120, "type": "int"},
-
-        # Data processing
-        "snapshot_frequency": {"min": 1800, "max": 7200, "type": "int"},
-
-        # Learning and adaptation
-        "learning_rate": {"min": 0.005, "max": 0.05, "type": "float"},
-        "min_weight": {"min": 0.05, "max": 0.2, "type": "float"},
-        "max_weight": {"min": 0.7, "max": 0.9, "type": "float"},
-
-        # Performance multiplier parameters
-        "performance_multiplier_base": {"min": 0.3, "max": 0.7, "type": "float"},
-        "performance_multiplier_range": {"min": 0.5, "max": 1.5, "type": "float"},
-    }
+"
+"""
+def get_system_monitoring_search_space() -> dict[str, dict[str, Any]]:"""
+    """Get search space for system monitoring optimization.""""""
+    return {}"""
+        # Monitoring intervals"""
+        "analysis_interval": {"min": 1800, "max": 7200, "type": "int"},"""
+        "supervision_interval": {"min": 30, "max": 120, "type": "int"},"""
+        "optimization_interval": {"min": 180, "max": 600, "type": "int"},"""
+        "monitoring_interval": {"min": 15, "max": 60, "type": "int"},"""
+        "tracking_interval": {"min": 30, "max": 120, "type": "int"},"""
+        "report_interval": {"min": 180, "max": 600, "type": "int"},"""
+        "weighting_interval": {"min": 60, "max": 300, "type": "int"},"""
+        "allocation_interval": {"min": 120, "max": 360, "type": "int"},"""
+        "management_interval": {"min": 180, "max": 480, "type": "int"},"""
+        "check_interval": {"min": 30, "max": 90, "type": "int"},"""
+        "processing_interval": {"min": 10, "max": 30, "type": "int"},"""
+        "strategy_interval": {"min": 60, "max": 180, "type": "int"},"
+"""
+        # History limits"""
+        "max_analysis_history": {"min": 500, "max": 2000, "type": "int"},"""
+        "max_history": {"min": 50, "max": 200, "type": "int"},"""
+        "max_weighting_history": {"min": 250, "max": 1000, "type": "int"},"""
+        "max_management_history": {"min": 100, "max": 400, "type": "int"},"""
+        "max_calculation_history": {"min": 150, "max": 600, "type": "int"},"""
+        "max_history_size": {"min": 500, "max": 2000, "type": "int"},"""
+        "max_strategy_history": {"min": 75, "max": 300, "type": "int""},"
+""
+        # Performance monitoring"""
+        "real_time_interval": {"min": 15, "max": 60, "type": "int"},"""
+        "drift_check_interval": {"min": 180, "max": 600, "type": "int"},"""
+        "performance_snapshot_interval": {"min": 300, "max": 1200, "type": "int"},"""
+        "feature_analysis_interval": {"min": 600, "max": 1800, "type": "int"},"""
+        "prediction_drift_threshold": {"min": 0.02, "max": 0.1, "type": "float""},"
+""
+        # System performance"""
+        "max_cache_size": {"min": 500, "max": 2000, "type": "int"},"""
+        "max_workers": {"min": 4, "max": 16, "type": "int"},"""
+        "memory_threshold": {"min": 0.7, "max": 0.9, "type": "float"},"""
+        "max_recovery_attempts": {"min": 2, "max": 5, "type": "int"},"""
+        "recovery_cooldown": {"min": 30, "max": 120, "type": "int"},"""
+        "failure_threshold": {"min": 3, "max": 8, "type": "int"},"""
+        "timeout": {"min": 30, "max": 120, "type": "int""},"
+""
+        # Data processing"""
+        "snapshot_frequency": {"min": 1800, "max": 7200, "type": "int""},"
+""
+        # Learning and adaptation"""
+        "learning_rate": {"min": 0.005, "max": 0.05, "type": "float"},"""
+        "min_weight": {"min": 0.05, "max": 0.2, "type": "float"},"""
+        "max_weight": {"min": 0.7, "max": 0.9, "type": "float""},"
+""
+        # Performance multiplier parameters"""
+        "performance_multiplier_base": {"min": 0.3, "max": 0.7, "type": "float"},"""
+        "performance_multiplier_range": {"min": 0.5, "max": 1.5, "type": "float"},""
+    """"""""

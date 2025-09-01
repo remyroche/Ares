@@ -1,9 +1,9 @@
 # src / training / steps / analyst_training_components / __init__.py
 
-"""Analyst Training Components Package.
-
-This package contains specialized components for analyst model training.
+""""""Analyst Training Components Package."""
 """
+This package contains specialized components for analyst model training."""
+""""""""
 
     connection_error,
     critical,
@@ -17,10 +17,10 @@ This package contains specialized components for analyst model training.
     timeout,
     validation_error,
     warning,
-)
 
-from .regime_specific_tpsl_optimizer import RegimeSpecificTPSLOptimizer
 
-__all__ = [
-    "RegimeSpecificTPSLOptimizer",
-]
+from .regime_specific_tpsl_optimizer import RegimeSpecificTPSLOptimizer"
+"""
+__all__ = []"""
+    "RegimeSpecificTPSLOptimizer",""
+""""

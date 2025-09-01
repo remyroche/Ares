@@ -1,9 +1,9 @@
 # src/monitoring/performance_dashboard.py
 
-"""
-Performance Dashboard for Dual Model System
-Real-time monitoring and visualization of system performance metrics.
-"""
+"""""""""
+Performance Dashboard for Dual Model System"""
+Real-time monitoring and visualization of system performance metrics."""
+""""""""
 
 
 import asyncio
@@ -13,18 +13,18 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.utils.error_handler import handle_errors
-from src.utils.centralized_decorators import (
+from src.utils.centralized_decorators import ()
     performance_monitor,
     PerformanceLevel,
     resource_monitor,
     memory_efficient,
-)
+
 from src.utils.logger import system_logger
 
-
-@dataclass
-class DashboardMetrics:
-    """Dashboard metrics data structure."""
+"
+@dataclass"""
+class DashboardMetrics:"""
+    """Dashboard metrics data structure."""""
 
     timestamp: datetime
     model_performance: Dict[str, float]
@@ -33,28 +33,28 @@ class DashboardMetrics:
     confidence_metrics: Dict[str, float]
     alerts: List[Dict[str, Any]]
     optimization_opportunities: List[Dict[str, Any]]
-
-
-class PerformanceDashboard:
-    """Real-time performance dashboard."""
-
-    def __init__(self, config: Dict[str, Any]) -> None:
-        self.config = config
+"
+"""
+class PerformanceDashboard:"""
+    """Real-time performance dashboard."""""
+"
+    def __init__(self, config: Dict[str, Any]) -> None:"""
+        self.config = config""""
         self.logger = system_logger.getChild("PerformanceDashboard")
-
-        # Dashboard configuration
-        self.dashboard_config = config.get(
-            "performance_dashboard",
-            {
-                "enable_dashboard": True,
-                "update_interval_seconds": 30,
-                "max_history_points": 100,
-                "enable_alerts": True,
-                "enable_optimization_recommendations": True,
-                "enable_export": False,
-                "export_interval_minutes": 60,
+"
+        # Dashboard configuration"""
+        self.dashboard_config = config.get()"""
+            "performance_dashboard"",""
+            {}"""
+                "enable_dashboard": True,"""
+                "update_interval_seconds": 30,"""
+                "max_history_points": 100,"""
+                "enable_alerts": True,"""
+                "enable_optimization_recommendations": True,"""
+                "enable_export": False,"""
+                "export_interval_minutes"": 60,"
             },
-        )
+        
 
         # Dashboard state
         self.is_active: bool = False
@@ -63,19 +63,20 @@ class PerformanceDashboard:
 
         # Dashboard data
         self.metrics_history: List[DashboardMetrics] = []
-        self.current_metrics: Optional[DashboardMetrics] = None
-
-        # Export configuration
+        self.current_metrics: Optional[DashboardMetrics] = None"
+"""
+        # Export configuration""""
         self.export_dir = Path("dashboard_exports")
         self.export_dir.mkdir(exist_ok=True)
 
-    @performance_monitor(level=PerformanceLevel.DETAILED)
-    @resource_monitor()
-    @memory_efficient()
-    @handle_errors(exceptions=(Exception,), default_return=False, context="performance_dashboard.initialize")
-    async def initialize(self) -> bool:
-        """Initialize performance dashboard."""
-        self.logger.info("📊 Initializing Performance Dashboard...")
-        self.is_active = True
-        self.logger.info("✅ Performance Dashboard initialized successfully")
-        return True
+    @performance_monitor(level=PerformanceLevel.DETAILED)"
+    @resource_monitor()"""
+    @memory_efficient()""""
+    @handle_errors(exceptions=(Exception,), default_return=False, context="performance_dashboard.initialize")"""
+    async def initialize(self) -> bool:"""
+        """Initialize performance dashboard.""""""
+        self.logger.info("📊 Initializing Performance Dashboard...")"""
+        self.is_active = True""""
+        self.logger.info("✅ Performance Dashboard initialized successfully")"
+        return True""
+""""""""

@@ -7,11 +7,12 @@ from .leverage_sizer import LeverageSizer
 from .sr_breakout_predictor import SRBreakoutPredictor
 from .ml_tactics_manager import MLTacticsManager
 
-__all__ = [
-    "Tactician",
-    "setup_tactician",
-    "PositionSizer",
-    "LeverageSizer",
-    "SRBreakoutPredictor",
-    "MLTacticsManager",
-]
+__all__ = []
+    "Tactician","""
+    "setup_tactician","""
+    "PositionSizer","""
+    "LeverageSizer","""
+    "SRBreakoutPredictor","""
+    "MLTacticsManager"","
+""
+"""""""

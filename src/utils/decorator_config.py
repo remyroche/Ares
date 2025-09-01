@@ -2,22 +2,22 @@
 
 from dataclasses import dataclass
 from typing import Dict, Any, Optional
-from enum import Enum
-
-class ValidationMode(Enum):
-    STRICT , "strict"
-    WARNING = "warning"
-    PERMISSIVE = "permissive"
-
-class PerformanceMode(Enum):
-    DISABLED = "disabled"
-    BASIC = "basic"
-    DETAILED = "detailed"
+from enum import Enum"
+"""
+class ValidationMode(Enum):""""
+    STRICT , "strict""""""""
+    WARNING = "warning""""""""
+    PERMISSIVE = "permissive""
+"""
+class PerformanceMode(Enum):""""
+    DISABLED = "disabled""""""""
+    BASIC = "basic""""""""
+    DETAILED = "detailed""""""""
     PROFILING = "profiling"
-
-@dataclass
-class DecoratorConfig:
-    """Global configuration for decorators."""
+"
+@dataclass"""
+class DecoratorConfig:"""
+    """Global configuration for decorators."""""
 
     # Validation settings
     validation_mode: ValidationMode, ValidationMode.WARNING
@@ -39,31 +39,31 @@ class DecoratorConfig:
     # Data quality
     max_nan_ratio: float, 0.1
     max_infinite_count: int, 10
-    min_unique_values: int, 2
-
-    @classmethod
-    def from_dict(cls, config_dict: Dict[str, Any]) -> 'DecoratorConfig':
+    min_unique_values: int, 2"
+"""
+    @classmethod""""
+    def from_dict(cls, config_dict: Dict[str, Any]) -> 'DecoratorConfig':''''
         """Create config from dictionary."""
-        return cls(**config_dict)
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert config to dictionary."""
-        return {
-            'validation_mode': self.validation_mode.value,
-            'enable_data_quality_checks': self.enable_data_quality_checks,
-            'enable_performance_monitoring': self.enable_performance_monitoring,
-            'enable_error_recovery': self.enable_error_recovery,
-            'performance_mode': self.performance_mode.value,
-            'cache_enabled': self.cache_enabled,
-            'cache_size': self.cache_size,
-            'cache_ttl': self.cache_size,
-            'max_retries': self.max_retries,
-            'backoff_factor': self.backoff_factor,
-            'log_errors': self.log_errors,
-            'max_nan_ratio': self.max_nan_ratio,
-            'max_infinite_count': self.max_infinite_count,
-            'min_unique_values': self.min_unique_values,
-        }
-
-# Global configuration instance
-global_config , DecoratorConfig()
+        return cls(**config_dict)"
+"""
+    def to_dict(self) -> Dict[str, Any]:"""
+        """Convert config to dictionary.""""""
+        return {}""""
+            'validation_mode': self.validation_mode.value,'''
+            'enable_data_quality_checks': self.enable_data_quality_checks,'''
+            'enable_performance_monitoring': self.enable_performance_monitoring,'''
+            'enable_error_recovery': self.enable_error_recovery,'''
+            'performance_mode': self.performance_mode.value,'''
+            'cache_enabled': self.cache_enabled,'''
+            'cache_size': self.cache_size,'''
+            'cache_ttl': self.cache_size,'''
+            'max_retries': self.max_retries,'''
+            'backoff_factor': self.backoff_factor,'''
+            'log_errors': self.log_errors,'''
+            'max_nan_ratio': self.max_nan_ratio,'''
+            'max_infinite_count': self.max_infinite_count,'''
+            'min_unique_values'': self.min_unique_values,'
+        
+'
+# Global configuration instance'''
+global_config , DecoratorConfig()'''"""'''""""

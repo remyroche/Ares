@@ -29,9 +29,6 @@ execution_error,
 
 
 class MLConfidencePredictor:
-    pass  # TODO: Add implementation
-class MLConfidencePredictor:
-class MLConfidencePredictor:
     """
 ML Confidence Predictor that generates predictions with confidence scores
 for price increases and expected price decreases in table format.
@@ -244,11 +241,18 @@ current_price: Current market price
 Returns:
             Optional[Dict[str, Any]]: Prediction table with direction-neutral analysis
 """
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-self.logger.info("Generating price target confidence predictions...")
+        try:
+            # Validate input parameters
+            if market_data is None or market_data.empty:
+                self.logger.error("Invalid market data provided")
+                return None
+            if current_price <= 0:
+                self.logger.error("Invalid current price provided")
+                return None
+        except Exception as e:
+            self.logger.error(f"Error validating input parameters: {str(e)}")
+            return None
+        self.logger.info("Generating price target confidence predictions...")
 
 # Check model availability and prepare for prediction
 if not await self._prepare_for_prediction():
@@ -514,13 +518,23 @@ model_type: Type of model ("analyst" or "tactician")
 Returns:
             Dictionary containing predictions with meta-labels
 """
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if not self.meta_labeling_system:
-                self.print(warning("Meta-labeling system not available"))
-return None
+        try:
+            # Validate input parameters
+            if market_data is None or market_data.empty:
+                self.logger.error("Invalid market data provided")
+                return None
+            if current_price <= 0:
+                self.logger.error("Invalid current price provided")
+                return None
+            if model_type not in ["analyst", "tactician"]:
+                self.logger.error(f"Invalid model type: {model_type}")
+                return None
+        except Exception as e:
+            self.logger.error(f"Error validating input parameters: {str(e)}")
+            return None
+        if not self.meta_labeling_system:
+                self.logger.warning("Meta-labeling system not available")
+                return None
 
 # Generate base confidence predictions
 base_predictions = await self.predict_confidence_table(
@@ -549,11 +563,11 @@ if isinstance(meta_labels, dict):
                 for k in label_whitelist:
                     if k == "NO_SETUP":
                         continue
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if float(meta_labels.get(k, 0) or 0) > 0:
+                    try:
+                        meta_value = meta_labels.get(k, 0)
+                        if meta_value is None:
+                            continue
+                        if float(meta_value) > 0:
                             active_meta += 1
 except (ValueError, TypeError):
                         continue
@@ -585,21 +599,29 @@ self,
 features: pd.DataFrame,
 ) -> dict[str, Any]:
         """Generate predictions using ensemble models from enhanced training manager."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if not self.ensemble_models:
+        try:
+            # Validate input features
+            if features is None or features.empty:
+                self.logger.error("Invalid features provided for ensemble prediction")
+                return {}
+        except Exception as e:
+            self.logger.error(f"Error validating features: {str(e)}")
+            return {}
+        if not self.ensemble_models:
                 return {}
 
 ensemble_predictions = {}
 
 for ensemble_name, ensemble_model in self.ensemble_models.items():
-                try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Use the ensemble model to make predictions
+                                try:
+                    # Validate ensemble model
+                    if ensemble_model is None:
+                        self.logger.warning(f"Ensemble model {ensemble_name} is None")
+                        continue
+                except Exception as e:
+                    self.logger.error(f"Error validating ensemble model {ensemble_name}: {str(e)}")
+                    continue
+                # Use the ensemble model to make predictions
 if hasattr(ensemble_model, "predict"):
                         prediction = ensemble_model.predict(features)
 ensemble_predictions[ensemble_name] = prediction
@@ -629,9 +651,9 @@ market_data: pd.DataFrame,
 ) -> dict[str, Any]:
         """Generate analyst meta-labels for setup identification."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if not self.meta_labeling_system:
                 return {}
 
@@ -656,9 +678,9 @@ return {}
 async def refresh_models_from_enhanced_training(self) -> bool:
         """Refresh models from enhanced training manager."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if not self.enhanced_training_manager:
                 self.print(warning("Enhanced training manager not available"))
 return False
@@ -696,17 +718,17 @@ return False
 def get_enhanced_training_model_info(self) -> dict[str, Any]:
         """Get information about models from enhanced training manager."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if not self.enhanced_training_manager:
                 return {"error": "Enhanced training manager not available"}
 
 # Get training results from enhanced training manager
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 training_results = (
 self.enhanced_training_manager.get_enhanced_training_results()
 )
@@ -715,9 +737,9 @@ except AttributeError:
 
 # Get training status
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 training_status = (
 self.enhanced_training_manager.get_enhanced_training_status()
 )
@@ -771,9 +793,9 @@ market_data: pd.DataFrame,
 ) -> dict[str, Any]:
         """Generate tactician meta-labels for entry optimization."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if not self.meta_labeling_system:
                 return {}
 
@@ -803,9 +825,9 @@ context="enhanced training integration initialization",
 async def _initialize_enhanced_training_integration(self) -> None:
         """Initialize integration with enhanced training manager."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 # Import enhanced training manager
 from src.training.enhanced_training_manager import EnhancedTrainingManager
 
@@ -831,9 +853,9 @@ self.enhanced_training_manager = None
 async def _initialize_model_training_capabilities(self) -> None:
         """Initialize model training capabilities."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 # Set up training configuration
 self.training_config = self.config.get(
 "model_training",
@@ -873,9 +895,9 @@ context="feature engineering integration initialization",
 async def _initialize_feature_engineering_integration(self) -> None:
         """Initialize feature engineering integration."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 # Import feature engineering components
 from src.analyst.advanced_feature_engineering import (
 AdvancedFeatureEngineering,
@@ -939,9 +961,9 @@ context="meta labeling system initialization",
 async def _initialize_meta_labeling_system(self) -> None:
         """Initialize meta-labeling system integration."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 # Import meta-labeling system
 from src.analyst.meta_labeling_system import CompositeHMMRegimeSystem
 
@@ -994,9 +1016,9 @@ Returns:
             Dict containing analyst meta-labels
 """
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if not self.meta_labeling_system:
                 return {}
 
@@ -1040,9 +1062,9 @@ Returns:
             Dict containing tactician meta-labels
 """
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if not self.meta_labeling_system:
                 return {}
 
@@ -1071,9 +1093,9 @@ context="trained models loading from enhanced training",
 async def _load_trained_models_from_enhanced_training(self) -> None:
         """Load trained models from enhanced training manager."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if not self.enhanced_training_manager:
                 self.print(warning("Enhanced training manager not available"))
 return
@@ -1156,9 +1178,9 @@ and self.enhanced_training_manager.ensemble_creator
             return
 
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 ensemble_models = (
 self.enhanced_training_manager.ensemble_creator.get_ensembles()
 )
@@ -1191,9 +1213,9 @@ and self.enhanced_training_manager.regime_training_manager
             return
 
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 regime_models = self.enhanced_training_manager.regime_training_manager.get_regime_models()
 if regime_models:
                 self.regime_models = regime_models
@@ -1212,9 +1234,9 @@ and self.enhanced_training_manager.multi_timeframe_manager
             return
 
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 multi_timeframe_models = self.enhanced_training_manager.multi_timeframe_manager.get_timeframe_models()
 if multi_timeframe_models:
                 self.multi_timeframe_models = multi_timeframe_models
@@ -1229,9 +1251,9 @@ except Exception:
 def _load_label_expert_models(self) -> None:
         """Load label-level expert ensembles, calibrators, and reliability scores if provided by the training manager."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 etm = self.enhanced_training_manager
 if etm is None:
                 # attempt to load from disk if ETM is not provided
@@ -1244,9 +1266,9 @@ etm.label_expert_models, dict
                 self.label_expert_models = etm.label_expert_models
 elif hasattr(etm, "get_label_expert_models"):
                 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 self.label_expert_models = etm.get_label_expert_models() or {}
 except Exception:
                     self.label_expert_models = {}
@@ -1257,9 +1279,9 @@ etm.label_expert_calibrators, dict
                 self.label_expert_calibrators = etm.label_expert_calibrators
 elif hasattr(etm, "get_label_expert_calibrators"):
                 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 self.label_expert_calibrators = (
 etm.get_label_expert_calibrators() or {}
 )
@@ -1272,9 +1294,9 @@ etm.label_reliability, dict
                 self.label_reliability = etm.label_reliability
 elif hasattr(etm, "get_label_reliability"):
                 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 self.label_reliability = etm.get_label_reliability() or {}
 except Exception:
                     self.label_reliability = {}
@@ -1310,9 +1332,9 @@ for fname in os.listdir(tf_dir):
                     continue
 path = os.path.join(tf_dir, fname)
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 with open(path, "rb") as f:
                         model = pickle.load(f)
 # expected filename pattern: <LABEL>_<model>.pkl
@@ -1382,9 +1404,9 @@ async def _load_existing_model(self) -> None:
         """Load existing model if available."""
 if os.path.exists(self.model_path):
             try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 self.model = joblib.load(self.model_path)
 self.is_trained = True
 self.logger.info("✅ Loaded existing confidence predictor model")
@@ -1406,9 +1428,9 @@ Returns:
             bool: True if configuration is valid, False otherwise
 """
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 # Validate required parameters
 required_params = [
 "model_path",
@@ -1453,9 +1475,9 @@ Returns:
             Dict with ensemble predictions
 """
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 self.logger.info("🎯 Generating ensemble confidence predictions")
 
 if not ensemble_models:
@@ -1474,9 +1496,9 @@ weighted_predictions = {}
 
 for model_name, model in ensemble_models.items():
                 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 # Generate predictions for this model
 if hasattr(model, "predict_proba"):
                         # Use model's predict_proba method
@@ -1557,9 +1579,9 @@ market_data: pd.DataFrame,
 ) -> pd.DataFrame:
         """Prepare features for model prediction."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 # Basic feature preparation - in practice, this would be more sophisticated
 features = market_data.copy()
 
@@ -1578,9 +1600,9 @@ return pd.DataFrame()
 def _calculate_ensemble_diversity(self, predictions: dict[str, float]) -> float:
         """Calculate ensemble diversity score."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if len(predictions) < 2:
                 return 0.0
 
@@ -1594,9 +1616,9 @@ return 0.0
 def _calculate_ensemble_agreement(self, predictions: dict[str, float]) -> float:
         """Calculate ensemble agreement score."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if len(predictions) < 2:
                 return 1.0
 
@@ -1616,9 +1638,9 @@ return 0.5
 def _assess_ensemble_risk(self, predictions: dict[str, float]) -> dict[str, Any]:
         """Assess risk based on ensemble predictions."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 values = list(predictions.values())
 
 risk_assessment = {
@@ -1671,9 +1693,9 @@ Returns:
             Dictionary containing directional prediction and adversarial analysis
 """
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 self.logger.info(
 "Generating directional prediction with adversarial analysis...",
 )
@@ -1799,9 +1821,9 @@ Returns:
             Dictionary with adversarial analysis for each increment
 """
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 primary_direction = directional_prediction["direction"]
 magnitude_levels = directional_prediction["magnitude_levels"]
 
@@ -1922,9 +1944,9 @@ Returns:
             Weighted average confidence
 """
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if not predictions:
                 return 0.0
 
@@ -2126,9 +2148,9 @@ return f"LOW_RISK: {direction.upper()} position with normal position size"
 async def _initialize_enhanced_order_manager(self) -> None:
         """Initialize enhanced order manager and async order executor for tactician order management."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 # Import order management components
 from src.tactician.async_order_executor import setup_async_order_executor
 from src.tactician.enhanced_order_manager import (
@@ -2212,9 +2234,9 @@ Returns:
             Dictionary containing execution results
 """
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if not self.enhanced_order_manager:
                 return {
 "success": False,
@@ -2285,9 +2307,9 @@ Returns:
             Dictionary containing execution results
 """
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if not self.enhanced_order_manager:
                 return {
 "success": False,
@@ -2333,9 +2355,9 @@ return {"success": False, "error": str(e), "order_id": None}
 def get_order_status(self, order_id: str) -> dict[str, Any] | None:
         """Get the status of an order."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if not self.enhanced_order_manager:
                 return None
 
@@ -2366,9 +2388,9 @@ return None
 def get_strategy_orders(self, strategy_id: str) -> list[dict[str, Any]]:
         """Get all orders for a specific strategy."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if not self.enhanced_order_manager:
                 return []
 
@@ -2400,9 +2422,9 @@ return []
 def get_order_manager_performance(self) -> dict[str, Any]:
         """Get enhanced order manager performance metrics."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if not self.enhanced_order_manager:
                 return {}
 
@@ -2440,9 +2462,9 @@ Returns:
             Dictionary containing execution results
 """
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if not self.async_order_executor:
                 return {
 "success": False,
@@ -2515,9 +2537,9 @@ return {"success": False, "error": str(e), "execution_id": None}
 def get_execution_status(self, execution_id: str) -> dict[str, Any] | None:
         """Get execution status for a specific execution ID."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if not self.async_order_executor:
                 return {"error": "Async order executor not available"}
 
@@ -2543,9 +2565,9 @@ return {"error": str(e)}
 def get_execution_performance(self) -> dict[str, Any]:
         """Get overall execution performance metrics."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if not self.async_order_executor:
                 return {"error": "Async order executor not available"}
 
@@ -2573,9 +2595,9 @@ Returns:
             Dictionary containing training results
 """
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if not self.enhanced_training_manager:
                 return {
 "success": False,
@@ -2660,9 +2682,9 @@ return {"success": False, "error": str(e)}
 def _should_trigger_training(self) -> bool:
         """Determine if training should be triggered based on conditions."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 # Check time-based conditions
 if self.last_training_time is None:
                 return True  # First training
@@ -2697,9 +2719,9 @@ return False
 def _calculate_performance_degradation(self) -> float:
         """Calculate model performance degradation."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if len(self.model_performance_history) < 2:
                 return 0.0
 
@@ -2726,9 +2748,9 @@ performance_metrics: dict[str, Any],
 ) -> None:
         """Update model performance history."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 self.model_performance_history.append(
 {"timestamp": datetime.now(), "metrics": performance_metrics},
 )
@@ -2743,9 +2765,9 @@ except Exception:
 def get_training_status(self) -> dict[str, Any]:
         """Get current training status and history."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 return {
 "last_training_time": self.last_training_time.isoformat()
 if self.last_training_time
@@ -2773,9 +2795,9 @@ context="ML confidence predictor cleanup",
 async def stop(self) -> None:
         """Clean up resources."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 self.logger.info("Stopping ML Confidence Predictor...")
 # Cleanup code here if needed
 self.logger.info("✅ ML Confidence Predictor stopped successfully")
@@ -2849,9 +2871,9 @@ self.analyst_timeframes[0] if self.analyst_timeframes else "30m"
 confidences: dict[str, float] = {}
 for label in self.analyst_labels:
             try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 # Select model for label/timeframe
 model = None
 if label in self.label_expert_models:
@@ -2889,9 +2911,9 @@ else:
 calibrator = self.label_expert_calibrators.get(label)
 if calibrator is not None:
                     try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if hasattr(calibrator, "predict_proba"):
                             conf_val = float(
 np.clip(
@@ -3004,9 +3026,9 @@ self.tactician_timeframes[0] if self.tactician_timeframes else "1m"
 confidences: dict[str, float] = {}
 for label in self.tactician_labels:
             try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 model = None
 if label in self.label_expert_models:
                     model_map = self.label_expert_models[label]
@@ -3038,9 +3060,9 @@ else:
 calibrator = self.label_expert_calibrators.get(label)
 if calibrator is not None:
                     try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if hasattr(calibrator, "predict_proba"):
                             conf_val = float(
 np.clip(
@@ -3100,9 +3122,9 @@ Returns:
         Optional[MLConfidencePredictor]: Initialized predictor or None
 """
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if config is None:
             config = {}
 

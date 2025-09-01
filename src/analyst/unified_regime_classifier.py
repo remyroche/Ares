@@ -27,9 +27,6 @@ with_tracing_span,
 
 
 class UnifiedRegimeClassifier:
-    pass  # TODO: Add implementation
-class UnifiedRegimeClassifier:
-class UnifiedRegimeClassifier:
     """
 Unified Market Regime Classifier with HMM-based labeling and ensemble prediction.
 
@@ -232,9 +229,9 @@ _NUMPY_RNG_UNPICKLE_PATCHED = False
 async def initialize_sr_predictor(self) -> bool:
         """Initialize the SRBreakoutPredictor for enhanced S/R analysis."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if not self.enable_sr_integration:
                 self.logger.info("S/R integration disabled, skipping SRBreakoutPredictor initialization")
 return True
@@ -269,9 +266,9 @@ UnifiedRegimeClassifier._enable_numpy_rng_unpickle_compat, "_patched", False
 ):
             return
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 import numpy.random._pickle as np_random_pickle  # type: ignore[attr-defined]
 
 original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
@@ -287,9 +284,9 @@ bit_generator_name, state=None, *args, **kwargs
 ):  # type: ignore[override]
 name_candidate = bit_generator_name
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if hasattr(name_candidate, "__name__"):
                         name_candidate = name_candidate.__name__
 elif isinstance(name_candidate, str) and name_candidate.startswith(
@@ -300,29 +297,29 @@ except Exception:
                     pass
 effective_state = kwargs.get("state", state)
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 return original_ctor(name_candidate, effective_state)
 except (TypeError, ValueError):
                     try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 return original_ctor(name_candidate)
 except Exception as ctor_exc:  # noqa: BLE001
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 import numpy as _np
 
 bitgen_cls = getattr(_np.random, name_candidate, None)
 if bitgen_cls is None and name_candidate == "MT19937":
                                 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 import numpy.random._mt19937 as _mt  # type: ignore[attr-defined]
 
 bitgen_cls = getattr(_mt, "MT19937", None)
@@ -466,9 +463,9 @@ features_df["volatility_momentum"] = features_df["volatility_20"] - features_df[
 if self.sr_predictor and self.enable_sr_integration:
             # Handle async call for enhanced features
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 features_df = await self._add_enhanced_sr_features(features_df)
 except Exception as e:
                 self.logger.warning(f"Enhanced S/R features failed, falling back to basic: {e}")
@@ -604,9 +601,9 @@ async def _add_enhanced_sr_features(self, features_df: pd.DataFrame) -> pd.DataF
 Add enhanced S/R features using SRBreakoutPredictor for improved regime analysis.
 """
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 self.logger.info("🔧 Adding enhanced S/R features...")
 
 # Initialize enhanced S/R features
@@ -625,9 +622,9 @@ features_df["sr_isolation_score"] = 0.0
 # Calculate enhanced S/R features for each data point
 for i in range(50, len(features_df)):  # Start after enough data for S/R calculation
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 # Get window of data for S/R analysis
 window_data = features_df.iloc[max(0, i-100):i+1]
 current_price = features_df["close"].iloc[i]
@@ -737,9 +734,9 @@ def _add_basic_sr_features(self, features_df: pd.DataFrame) -> pd.DataFrame:
 Add basic S/R features as fallback when enhanced analysis is not available.
 """
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 self.logger.info("🔧 Adding basic S/R features...")
 
 # Initialize basic S/R features
@@ -758,9 +755,9 @@ features_df["sr_isolation_score"] = 0.0
 # Calculate basic S/R features using rolling windows
 for i in range(20, len(features_df)):
                 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 # Get window of data for basic S/R analysis
 window_data = features_df.iloc[max(0, i-20):i+1]
 current_price = features_df["close"].iloc[i]
@@ -1058,9 +1055,9 @@ Returns:
             Dict containing enhanced S/R levels with comprehensive metrics
 """
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if not self.sr_predictor or not self.enable_sr_integration:
                 # Fallback to basic pivot calculation if SRBreakoutPredictor not available
 return await self._calculate_basic_pivots(df_window)
@@ -1144,9 +1141,9 @@ Returns:
             Dict containing basic pivot levels
 """
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if len(df_window) < 5:
                 return {
 "s1": 0, "s2": 0, "r1": 0, "r2": 0, "pivot": 0,
@@ -1204,9 +1201,9 @@ async def _analyze_enhanced_volume_levels(self, df_window: pd.DataFrame) -> dict
 Analyzes enhanced volume levels using SRBreakoutPredictor's order flow analysis.
 """
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if not self.sr_predictor or not self.enable_sr_integration:
                 # Fallback to basic volume analysis
 return self._analyze_basic_volume_levels(df_window)
@@ -1540,14 +1537,14 @@ if self.sr_predictor and self.enable_sr_integration:
             # Use enhanced classification if SRBreakoutPredictor is available
 import asyncio
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 # Create event loop if none exists
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 loop = asyncio.get_event_loop()
 except RuntimeError:
                     loop = asyncio.new_event_loop()
@@ -1670,9 +1667,9 @@ async def train_hmm_labeler(self, historical_klines: pd.DataFrame) -> bool:
 Train HMM-based labeler for basic regimes (BULL, BEAR, SIDEWAYS, VOLATILE) with enhanced S/R integration.
 """
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 self.logger.info("🎓 Training HMM-based Market Regime Classifier with enhanced S/R integration...")
 
 # Initialize SRBreakoutPredictor for enhanced analysis
@@ -1740,9 +1737,9 @@ async def train_location_classifier(self, historical_klines: pd.DataFrame) -> bo
 Train location classifier for OPEN_RANGE, PIVOT_S, PIVOT_R, HVN_SUPPORT, HVN_RESISTANCE, CONFLUENCE_S, CONFLUENCE_R.
 """
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 self.logger.info("🎓 Training Location Classifier...")
 
 # Calculate features
@@ -1808,9 +1805,9 @@ async def train_basic_ensemble(self, historical_klines: pd.DataFrame) -> bool:
 Train ensemble for basic regime classification (BULL, BEAR, SIDEWAYS, VOLATILE).
 """
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 self.logger.info("🎓 Training Basic Regime Ensemble...")
 
 # Calculate features
@@ -1892,9 +1889,9 @@ async def train_complete_system(self, historical_klines: pd.DataFrame) -> bool:
 Train the complete regime and location classification system.
 """
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 self.logger.info("🎓 Training Complete Regime Classification System...")
 
 # Initialize SR analyzer
@@ -1940,9 +1937,9 @@ Returns:
             Tuple of (regime, confidence, additional_info)
 """
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if not self.trained:
                 self.logger.warning("Models not trained, returning default prediction")
 return "SIDEWAYS", 0.5, {}
@@ -2011,9 +2008,9 @@ Returns:
             Tuple of (regime, location, confidence, additional_info)
 """
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if not self.trained:
                 self.logger.warning("Models not trained, returning default predictions")
 return "SIDEWAYS", "OPEN_RANGE", 0.5, {}
@@ -2097,9 +2094,9 @@ return "SIDEWAYS", "OPEN_RANGE", 0.5, {"error": str(e)}
 def save_models(self) -> None:
         """Save all trained models."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if self.hmm_model:
                 joblib.dump(self.hmm_model, self.hmm_model_path)
 self.logger.info(f"✅ HMM model saved to {self.hmm_model_path}")
@@ -2135,9 +2132,9 @@ except Exception:
 def load_models(self) -> bool:
         """Load all trained models."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 # Log model directory and candidate paths
 self.logger.info(
 {
@@ -2247,9 +2244,9 @@ Returns:
             Dict containing regime classification results
 """
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 if not self.trained:
                 self.logger.info(
 "🎓 Models not trained, training complete system now...",

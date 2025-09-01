@@ -1,4 +1,4 @@
-#!/usr / bin / env python3
+#!/usr/bin/env python3
 """Step 3: HMM Regime Discovery with Standardized Data Quality Management.
 
 This module performs Hidden Markov Model (HMM) regime discovery with standardized
@@ -13,7 +13,7 @@ import time
 from datetime import datetime
 
 # Add project root to path
-project_root, Path(__file__).parent.parent.parent
+project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import pipeline standards
@@ -31,16 +31,16 @@ REQUIRED_MODULES = [
 ]
 
 # Validate environment dependencies
-dependency_status, PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 
 # Safe imports with fallbacks
-centralized_decorators, PipelineStandards.safe_import("src.utils.centralized_decorators", None)
-system_logger, PipelineStandards.safe_import("src.utils.logger", None)
-enhanced_mlflow, PipelineStandards.safe_import("src.utils.enhanced_mlflow_integration", None)
-sr_breakout_predictor, PipelineStandards.safe_import("src.tactician.sr_breakout_predictor", None)
-psutil, PipelineStandards.safe_import("psutil", None)
-numpy, PipelineStandards.safe_import("numpy", None)
-pandas, PipelineStandards.safe_import("pandas", None)
+centralized_decorators = PipelineStandards.safe_import("src.utils.centralized_decorators", None)
+system_logger = PipelineStandards.safe_import("src.utils.logger", None)
+enhanced_mlflow = PipelineStandards.safe_import("src.utils.enhanced_mlflow_integration", None)
+sr_breakout_predictor = PipelineStandards.safe_import("src.tactician.sr_breakout_predictor", None)
+psutil = PipelineStandards.safe_import("psutil", None)
+numpy = PipelineStandards.safe_import("numpy", None)
+pandas = PipelineStandards.safe_import("pandas", None)
 
 # Fallback functions if imports fail
 def create_fallback_logger():
@@ -55,62 +55,62 @@ def create_fallback_decorator():
 
 # Initialize fallbacks
 if system_logger is None:
-    system_logger, create_fallback_logger()
+    system_logger = create_fallback_logger()
 
 if centralized_decorators is None:
-    comprehensive_data_validation, create_fallback_decorator()
-    handle_errors, create_fallback_decorator()
-    memory_efficient, create_fallback_decorator()
-    resource_monitor, create_fallback_decorator()
-    secure_data_processing, create_fallback_decorator()
-    validate_data_structure, create_fallback_decorator()
-    with_tracing_span, create_fallback_decorator()
-    quality_gate, create_fallback_decorator()
-    monitor_feature_engineering, create_fallback_decorator()
-    ensure_data_integrity, create_fallback_decorator()
-    monitor_step_execution, create_fallback_decorator()
-    secure_step_execution, create_fallback_decorator()
-    validate_pipeline_step, create_fallback_decorator()
+    comprehensive_data_validation = create_fallback_decorator()
+    handle_errors = create_fallback_decorator()
+    memory_efficient = create_fallback_decorator()
+    resource_monitor = create_fallback_decorator()
+    secure_data_processing = create_fallback_decorator()
+    validate_data_structure = create_fallback_decorator()
+    with_tracing_span = create_fallback_decorator()
+    quality_gate = create_fallback_decorator()
+    monitor_feature_engineering = create_fallback_decorator()
+    ensure_data_integrity = create_fallback_decorator()
+    monitor_step_execution = create_fallback_decorator()
+    secure_step_execution = create_fallback_decorator()
+    validate_pipeline_step = create_fallback_decorator()
 else:
-    comprehensive_data_validation, centralized_decorators.comprehensive_data_validation
-    handle_errors, centralized_decorators.handle_errors
-    memory_efficient, centralized_decorators.memory_efficient
-    resource_monitor, centralized_decorators.resource_monitor
-    secure_data_processing, centralized_decorators.secure_data_processing
-    validate_data_structure, centralized_decorators.validate_data_structure
-    with_tracing_span, centralized_decorators.with_tracing_span
-    quality_gate, centralized_decorators.quality_gate
-    monitor_feature_engineering, centralized_decorators.monitor_feature_engineering
-    ensure_data_integrity, centralized_decorators.ensure_data_integrity
-    monitor_step_execution, centralized_decorators.monitor_step_execution
-    secure_step_execution, centralized_decorators.secure_step_execution
-    validate_pipeline_step, centralized_decorators.validate_pipeline_step
+    comprehensive_data_validation = centralized_decorators.comprehensive_data_validation
+    handle_errors = centralized_decorators.handle_errors
+    memory_efficient = centralized_decorators.memory_efficient
+    resource_monitor = centralized_decorators.resource_monitor
+    secure_data_processing = centralized_decorators.secure_data_processing
+    validate_data_structure = centralized_decorators.validate_data_structure
+    with_tracing_span = centralized_decorators.with_tracing_span
+    quality_gate = centralized_decorators.quality_gate
+    monitor_feature_engineering = centralized_decorators.monitor_feature_engineering
+    ensure_data_integrity = centralized_decorators.ensure_data_integrity
+    monitor_step_execution = centralized_decorators.monitor_step_execution
+    secure_step_execution = centralized_decorators.secure_step_execution
+    validate_pipeline_step = centralized_decorators.validate_pipeline_step
 
 if enhanced_mlflow is None:
-    with_enhanced_mlflow_logging, create_fallback_decorator()
-    log_step_artifact, lambda * args, **kwargs: "fallback_artifact"
-    log_step_dataframe, lambda * args, **kwargs: "fallback_dataframe"
-    log_step_dataframe_with_standardized_name, lambda * args, **kwargs: "fallback_dataframe"
-    log_step_report, lambda * args, **kwargs: "fallback_report"
-    log_step_artifact_with_standardized_name, lambda * args, **kwargs: "fallback_artifact"
+    with_enhanced_mlflow_logging = create_fallback_decorator()
+    log_step_artifact = lambda *args, **kwargs: "fallback_artifact"
+    log_step_dataframe = lambda *args, **kwargs: "fallback_dataframe"
+    log_step_dataframe_with_standardized_name = lambda *args, **kwargs: "fallback_dataframe"
+    log_step_report = lambda *args, **kwargs: "fallback_report"
+    log_step_artifact_with_standardized_name = lambda *args, **kwargs: "fallback_artifact"
 else:
-    with_enhanced_mlflow_logging, enhanced_mlflow.with_enhanced_mlflow_logging
-    log_step_artifact, enhanced_mlflow.log_step_artifact
-    log_step_dataframe, enhanced_mlflow.log_step_dataframe
-    log_step_dataframe_with_standardized_name, enhanced_mlflow.log_step_dataframe_with_standardized_name
-    log_step_report, enhanced_mlflow.log_step_report
-    log_step_artifact_with_standardized_name, enhanced_mlflow.log_step_artifact_with_standardized_name
+    with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
+    log_step_artifact = enhanced_mlflow.log_step_artifact
+    log_step_dataframe = enhanced_mlflow.log_step_dataframe
+    log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
+    log_step_report = enhanced_mlflow.log_step_report
+    log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
 
-logger, system_logger.getChild("Step3HMMRegimeDiscovery")
+logger = system_logger.getChild("Step3HMMRegimeDiscovery")
 
 class HMMRegimeDiscoveryStep:
     """Step 3: HMM Regime Discovery with standardized data quality management."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config, config
-        self.logger, system_logger.getChild("HMMRegimeDiscoveryStep")
-        self.standards, pipeline_standards
-        self.start_time, None
+        self.config = config
+        self.logger = system_logger.getChild("HMMRegimeDiscoveryStep")
+        self.standards = pipeline_standards
+        self.start_time = None
         self.step_timings = {}
 
         # Validate environment on initialization
@@ -123,10 +123,10 @@ class HMMRegimeDiscoveryStep:
 
         missing_modules = [module for module, available in dependency_status.items() if not available]
         if missing_modules:
-        self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
-        self.logger.info("📝 Pipeline will continue with fallback implementations")
+            self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+            self.logger.info("📝 Pipeline will continue with fallback implementations")
         else:
-        self.logger.info("✅ All required dependencies available")
+            self.logger.info("✅ All required dependencies available")
 
     def _initialize_components(self) -> None:
         """Initialize HMM and data quality components."""
@@ -134,20 +134,19 @@ class HMMRegimeDiscoveryStep:
 
         # Initialize SR Breakout Predictor if available
         if sr_breakout_predictor is not None:
-        try:
-                sr_config, self.config.copy()
+            try:
+                sr_config = self.config.copy()
                 sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
                 sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
-        self.sr_predictor, sr_breakout_predictor.SRBreakoutPredictor(sr_config)
-        self.logger.info("✅ SR Breakout Predictor initialized successfully")
-        except Exception as e:
-        self.logger.warning(f"⚠️ Could not initialize SR Breakout Predictor: {e}")
-        self.sr_predictor, None
+                self.sr_predictor = sr_breakout_predictor.SRBreakoutPredictor(sr_config)
+                self.logger.info("✅ SR Breakout Predictor initialized successfully")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Could not initialize SR Breakout Predictor: {e}")
+                self.sr_predictor = None
         else:
-        self.logger.warning("⚠️ SR Breakout Predictor not available")
-        self.sr_predictor, None
-        except Exception as e:
-        self.logger.warning(f"⚠️ Could not initialize SR Breakout Predictor: {e}")
+            self.logger.warning("⚠️ SR Breakout Predictor not available")
+            self.sr_predictor = None
+        
         self.logger.info("📝 Proceeding without SR analysis")
 
     @handle_errors(
@@ -157,7 +156,7 @@ class HMMRegimeDiscoveryStep:
     )
     async def initialize(self) -> None:
         """Initialize the HMM regime discovery step."""
-        self.start_time, time.time()
+        self.start_time = time.time()
         self.logger.info("🚀 Initializing HMM Regime Discovery Step...")
         self.logger.info("📋 Step 3 Configuration:")
         self.logger.info(f"   - Symbol: {self.config.get('SYMBOL', 'N / A')}")
@@ -167,17 +166,17 @@ class HMMRegimeDiscoveryStep:
 
         # Initialize SR Breakout Predictor if available
         if hasattr(self, 'sr_predictor'):
-        try:
-        await self.sr_predictor.initialize()
-        self.logger.info("✅ SR Breakout Predictor initialized successfully")
-        except Exception as e:
-        self.logger.warning(f"⚠️ Failed to initialize SR Breakout Predictor: {e}")
+            try:
+                await self.sr_predictor.initialize()
+                self.logger.info("✅ SR Breakout Predictor initialized successfully")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to initialize SR Breakout Predictor: {e}")
 
         self.logger.info("✅ HMM Regime Discovery Step initialized successfully")
 
     def _log_step_timing(self, step_name: str, start_time: float) -> None:
         """Log timing information for a step."""
-        elapsed, time.time() - start_time
+        elapsed = time.time() - start_time
         self.step_timings[step_name] = elapsed
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
@@ -236,144 +235,144 @@ class HMMRegimeDiscoveryStep:
         Returns:
             Updated pipeline state with regime discovery results
         """
-        step_start, time.time()
+        step_start = time.time()
         self.logger.info("🎯 Starting HMM regime discovery execution...")
         self.logger.info(f"📊 Training input keys: {list(training_input.keys())}")
         self.logger.info(f"🔄 Pipeline state keys: {list(pipeline_state.keys())}")
 
         # Initial memory usage
-        if PSUTIL_AVAILABLE:
-            initial_memory, psutil.virtual_memory()
-        self.logger.info(f"💾 Initial memory usage: {initial_memory.percent:.1f}% ({initial_memory.used / 1024**3:.1f}GB / {initial_memory.total / 1024**3:.1f}GB)")
+        if psutil is not None:
+            initial_memory = psutil.virtual_memory()
+            self.logger.info(f"💾 Initial memory usage: {initial_memory.percent:.1f}% ({initial_memory.used / 1024**3:.1f}GB / {initial_memory.total / 1024**3:.1f}GB)")
         else:
-        self.logger.info("💾 Memory monitoring not available (psutil not installed)")
+            self.logger.info("💾 Memory monitoring not available (psutil not installed)")
 
         try:
-        # Step 1: Ensure data quality and readiness
-        self.logger.info("=" * 60)
-        self.logger.info("STEP 1: Data Quality Validation")
-        self.logger.info("=" * 60)
-            data_quality_start, time.time()
-            data_ready, await self._ensure_data_quality(training_input)
-            data_quality_elapsed, time.time() - data_quality_start
-        self.logger.info(f"⏱️ Data Quality Validation completed in {data_quality_elapsed:.2f} seconds")
+            # Step 1: Ensure data quality and readiness
+            self.logger.info("=" * 60)
+            self.logger.info("STEP 1: Data Quality Validation")
+            self.logger.info("=" * 60)
+            data_quality_start = time.time()
+            data_ready = await self._ensure_data_quality(training_input)
+            data_quality_elapsed = time.time() - data_quality_start
+            self.logger.info(f"⏱️ Data Quality Validation completed in {data_quality_elapsed:.2f} seconds")
 
-        if not data_ready:
-        self.logger.error("❌ Data not ready for HMM regime discovery")
+            if not data_ready:
+                self.logger.error("❌ Data not ready for HMM regime discovery")
                 pipeline_state["hmm_regime_discovery_completed"] = False
                 pipeline_state["regime_discovery_error"] = "Data quality check failed"
-        return pipeline_state
+                return pipeline_state
 
-        # Step 2: Load and prepare data for HMM
-        self.logger.info("=" * 60)
-        self.logger.info("STEP 2: Data Loading and Preparation")
-        self.logger.info("=" * 60)
-            data_loading_start, time.time()
-            data_loaded, await self._load_and_prepare_data(training_input)
-            data_loading_elapsed, time.time() - data_loading_start
-        self.logger.info(f"⏱️ Data Loading and Preparation completed in {data_loading_elapsed:.2f} seconds")
+            # Step 2: Load and prepare data for HMM
+            self.logger.info("=" * 60)
+            self.logger.info("STEP 2: Data Loading and Preparation")
+            self.logger.info("=" * 60)
+            data_loading_start = time.time()
+            data_loaded = await self._load_and_prepare_data(training_input)
+            data_loading_elapsed = time.time() - data_loading_start
+            self.logger.info(f"⏱️ Data Loading and Preparation completed in {data_loading_elapsed:.2f} seconds")
 
-        if not data_loaded.get("success", False):
-        self.logger.error("❌ Failed to load and prepare data for HMM")
-                error_msg, data_loaded.get("error", "Unknown error")
-        self.logger.error(f"   Error details: {error_msg}")
+            if not data_loaded.get("success", False):
+                self.logger.error("❌ Failed to load and prepare data for HMM")
+                error_msg = data_loaded.get("error", "Unknown error")
+                self.logger.error(f"   Error details: {error_msg}")
                 pipeline_state["hmm_regime_discovery_completed"] = False
                 pipeline_state["regime_discovery_error"] = f"Data loading failed: {error_msg}"
-        return pipeline_state
+                return pipeline_state
 
-        # Step 3: Automatic Parameter Optimization (ALWAYS RUNS)
-            symbol, training_input.get("symbol", "ETHUSDT")
-            exchange, training_input.get("exchange", "BINANCE")
-            timeframe, training_input.get("timeframe", "1m")
+            # Step 3: Automatic Parameter Optimization (ALWAYS RUNS)
+            symbol = training_input.get("symbol", "ETHUSDT")
+            exchange = training_input.get("exchange", "BINANCE")
+            timeframe = training_input.get("timeframe", "1m")
 
-        # Use standardized path construction
-            data_dir, training_input.get("data_dir")
-        if data_dir is None:
-                data_dir, self.standards.build_path("processed_data", exchange, symbol)
+            # Use standardized path construction
+            data_dir = training_input.get("data_dir")
+            if data_dir is None:
+                data_dir = self.standards.build_path("processed_data", exchange, symbol)
 
-        self.logger.info("=" * 60)
-        self.logger.info("STEP 3: Automatic Parameter Optimization")
-        self.logger.info("=" * 60)
-            optimization_start, time.time()
+            self.logger.info("=" * 60)
+            self.logger.info("STEP 3: Automatic Parameter Optimization")
+            self.logger.info("=" * 60)
+            optimization_start = time.time()
 
-            optimized_params, await self._run_automatic_optimization(symbol, exchange, timeframe, data_dir)
-        if optimized_params:
-        self.logger.info("✅ Parameter optimization completed successfully")
-        # Apply optimized parameters
-        self._apply_optimized_parameters(optimized_params)
+            optimized_params = await self._run_automatic_optimization(symbol, exchange, timeframe, data_dir)
+            if optimized_params:
+                self.logger.info("✅ Parameter optimization completed successfully")
+                # Apply optimized parameters
+                self._apply_optimized_parameters(optimized_params)
                 pipeline_state["optimization_used"] = True
                 pipeline_state["optimized_params"] = optimized_params
             else:
-        self.logger.warning("⚠️ Parameter optimization failed, using default parameters")
+                self.logger.warning("⚠️ Parameter optimization failed, using default parameters")
                 pipeline_state["optimization_used"] = False
 
-            optimization_elapsed, time.time() - optimization_start
-        self.logger.info(f"⏱️ Parameter Optimization completed in {optimization_elapsed:.2f} seconds")
+            optimization_elapsed = time.time() - optimization_start
+            self.logger.info(f"⏱️ Parameter Optimization completed in {optimization_elapsed:.2f} seconds")
 
-        # Step 4: Perform HMM regime discovery
-        self.logger.info("=" * 60)
-        self.logger.info("STEP 4: HMM Regime Discovery")
-        self.logger.info("=" * 60)
-            hmm_start, time.time()
-            regime_results, await self._perform_hmm_regime_discovery(
+            # Step 4: Perform HMM regime discovery
+            self.logger.info("=" * 60)
+            self.logger.info("STEP 4: HMM Regime Discovery")
+            self.logger.info("=" * 60)
+            hmm_start = time.time()
+            regime_results = await self._perform_hmm_regime_discovery(
                 training_input, data_loaded["data"]
             )
-            hmm_elapsed, time.time() - hmm_start
-        self.logger.info(f"⏱️ HMM Regime Discovery completed in {hmm_elapsed:.2f} seconds")
+            hmm_elapsed = time.time() - hmm_start
+            self.logger.info(f"⏱️ HMM Regime Discovery completed in {hmm_elapsed:.2f} seconds")
 
-        if regime_results.get("success", False):
-        self.logger.info("✅ HMM regime discovery completed successfully")
+            if regime_results.get("success", False):
+                self.logger.info("✅ HMM regime discovery completed successfully")
                 pipeline_state["hmm_regime_discovery_completed"] = True
                 pipeline_state["regime_states"] = regime_results.get("regime_states", [])
                 pipeline_state["regime_transitions"] = regime_results.get("regime_transitions", {})
                 pipeline_state["regime_metrics"] = regime_results.get("metrics", {})
 
-        # Log detailed results
-        self._log_regime_discovery_results(regime_results)
+                # Log detailed results
+                self._log_regime_discovery_results(regime_results)
 
-        # Log artifacts to MLflow
-        await self._log_step03_artifacts_to_mlflow(regime_results, training_input)
+                # Log artifacts to MLflow
+                await self._log_step03_artifacts_to_mlflow(regime_results, training_input)
 
-        # Step 5: Perform SR Context Analysis
-        self.logger.info("=" * 60)
-        self.logger.info("STEP 5: SR Context Analysis")
-        self.logger.info("=" * 60)
-                sr_start, time.time()
+                # Step 5: Perform SR Context Analysis
+                self.logger.info("=" * 60)
+                self.logger.info("STEP 5: SR Context Analysis")
+                self.logger.info("=" * 60)
+                sr_start = time.time()
 
-        # Get SR context for regime analysis
-                current_price, data_loaded["data"]["close"].iloc[-1]
-                sr_context, await self._get_sr_context_for_regime_analysis(
+                # Get SR context for regime analysis
+                current_price = data_loaded["data"]["close"].iloc[-1]
+                sr_context = await self._get_sr_context_for_regime_analysis(
                     data_loaded["data"],
                     current_price
                 )
 
-        # Enhance regime analysis with SR context
-                enhanced_regime_results, await self._enhance_regime_analysis_with_sr(
+                # Enhance regime analysis with SR context
+                enhanced_regime_results = await self._enhance_regime_analysis_with_sr(
                     regime_results,
                     sr_context,
                     data_loaded["data"]
                 )
 
-        # Update pipeline state with SR - enhanced results
+                # Update pipeline state with SR-enhanced results
                 pipeline_state.update(enhanced_regime_results)
 
-                sr_elapsed, time.time() - sr_start
-        self.logger.info(f"⏱️ SR Context Analysis completed in {sr_elapsed:.2f} seconds")
+                sr_elapsed = time.time() - sr_start
+                self.logger.info(f"⏱️ SR Context Analysis completed in {sr_elapsed:.2f} seconds")
 
             else:
-        self.logger.error("❌ HMM regime discovery failed")
-                error_msg, regime_results.get("error", "Unknown error")
-        self.logger.error(f"   Error details: {error_msg}")
+                self.logger.error("❌ HMM regime discovery failed")
+                error_msg = regime_results.get("error", "Unknown error")
+                self.logger.error(f"   Error details: {error_msg}")
                 pipeline_state["hmm_regime_discovery_completed"] = False
                 pipeline_state["regime_discovery_error"] = error_msg
 
         except Exception as e:
-        self.logger.exception(f"❌ Unexpected error during HMM regime discovery: {e}")
+            self.logger.exception(f"❌ Unexpected error during HMM regime discovery: {e}")
             pipeline_state["hmm_regime_discovery_completed"] = False
             pipeline_state["regime_discovery_error"] = str(e)
 
         # Log overall execution summary
-        total_elapsed, time.time() - step_start
+        total_elapsed = time.time() - step_start
         self.logger.info("=" * 60)
         self.logger.info("EXECUTION SUMMARY")
         self.logger.info("=" * 60)
@@ -385,14 +384,14 @@ class HMMRegimeDiscoveryStep:
 
         # Add SR analysis timing if it was performed
         if 'sr_elapsed' in locals():
-        self.logger.info(f"   - SR Context Analysis: {sr_elapsed:.2f}s")
+            self.logger.info(f"   - SR Context Analysis: {sr_elapsed:.2f}s")
 
         # Memory usage summary
-        if PSUTIL_AVAILABLE:
-            memory_usage, psutil.virtual_memory()
-        self.logger.info(f"💾 Memory usage: {memory_usage.percent:.1f}% ({memory_usage.used / 1024**3:.1f}GB / {memory_usage.total / 1024**3:.1f}GB)")
+        if psutil is not None:
+            memory_usage = psutil.virtual_memory()
+            self.logger.info(f"💾 Memory usage: {memory_usage.percent:.1f}% ({memory_usage.used / 1024**3:.1f}GB / {memory_usage.total / 1024**3:.1f}GB)")
 
-        success, pipeline_state.get("hmm_regime_discovery_completed", False)
+        success = pipeline_state.get("hmm_regime_discovery_completed", False)
         self.logger.info(f"🎯 Final result: {'✅ SUCCESS' if success else '❌ FAILED'}")
 
         return pipeline_state

@@ -21,6 +21,9 @@ class EnhancedSyntaxFixer:
     def fix_file(self, filepath: str, dry_run: bool = True) -> bool:
         """Fix syntax errors in a single file."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             with open(filepath, 'r', encoding='utf-8') as f:
                 content = f.read()
             
@@ -93,7 +96,7 @@ class EnhancedSyntaxFixer:
             
             # Fix 5: Fix invalid decimal literals
             if re.search(r'\b\d+\.\d+\.\d+\b', line):
-                # Fix invalid decimal like 1.2.3
+                # Fix invalid decimal like 1_2_3
                 line = re.sub(r'\b(\d+)\.(\d+)\.(\d+)\b', r'\1_\2_\3', line)
             
             # Fix 6: Fix parameter order issues

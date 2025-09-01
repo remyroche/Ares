@@ -15,6 +15,7 @@ from src.utils.confidence import normalize_dual_confidence
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import error, initialization_error, missing
 from src.utils.centralized_decorators import validate_data_quality
+from kelly_criterion_formula import calculate_kelly_multiplier
 
 
 class PositionSizer:
@@ -286,54 +287,20 @@ class PositionSizer:
     ) -> float:
         """Calculate position size using Kelly criterion based on ML confidence scores."""
         try:
-            # Get average confidence for target levels (0.5% to 2.0%)
-            target_levels = [0.5, 1.0, 1.5, 2.0]
-            confidences = []
-
-            for level in target_levels:
-                closest_level = min(
-                    price_target_confidences.keys(),
-                    key=lambda x: abs(float(x.replace("%", "")) - level),
-                )
-                confidence = price_target_confidences.get(closest_level, 0.5)
-                confidences.append(confidence)
-
-            # Calculate average confidence
-            avg_confidence = sum(confidences) / len(confidences)
-
-            # Get average adverse risk
-            adverse_risks = []
-            for level in target_levels:
-                closest_level = min(
-                    adversarial_confidences.keys(),
-                    key=lambda x: abs(float(x.replace("%", "")) - level),
-                )
-                risk = adversarial_confidences.get(closest_level, 0.3)
-                adverse_risks.append(risk)
-
-            avg_adverse_risk = sum(adverse_risks) / len(adverse_risks)
-
-            # CORRECT Kelly criterion: f = (bp - q) / b
-            # where b = odds received, p = probability of win, q = probability of loss
-            # For our case: b = 1 (1:1 odds), so f = p - q
-            # where p = avg_confidence (probability of win)
-            # and q = avg_adverse_risk (probability of loss)
-
-            # Ensure probabilities are valid (0 <= p, q <= 1 and p + q <= 1)
-            p = max(0.0, min(1.0, avg_confidence))
-            q = max(0.0, min(1.0, avg_adverse_risk))
-
-            # If p + q > 1, normalize them
-            if p + q > 1.0:
-                total = p + q
-                p = p / total
-                q = q / total
-
-            # Calculate Kelly fraction
-            kelly_fraction = p - q
-
-            # Apply Kelly multiplier for conservative sizing
-            kelly_position_size = kelly_fraction * self.kelly_multiplier
+            # Use the new Kelly criterion formula module
+            kelly_multiplier = calculate_kelly_multiplier(
+                price_target_confidences=price_target_confidences,
+                adversarial_confidences=adversarial_confidences,
+                kelly_multiplier=self.kelly_multiplier,
+            )
+            
+            # The Kelly multiplier is already scaled by the conservative multiplier
+            # and normalized to 0-1 range, so we can use it directly
+            # Scale it to our position size range
+            kelly_position_size = (
+                self.min_position_size
+                + (self.max_position_size - self.min_position_size) * kelly_multiplier
+            )
 
             # Ensure within bounds
             return max(

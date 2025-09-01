@@ -3,7 +3,7 @@
 Probabilistic Model Integration for Tactician and Analyst
 
 This module provides seamless integration between the probabilistic Bayesian optimizer
-and your existing Tactician and Analyst models = enabling end-to-end optimization
+and your existing Tactician and Analyst models, enabling end-to-end optimization
 of probabilistic outputs and uncertainty quantification.
 """
 
@@ -12,30 +12,30 @@ import numpy as np
 import pandas as pd
 from dataclasses import dataclass
 import asyncio
+from typing import Dict, Any, List, Tuple, Optional
 
 # Import the probabilistic Bayesian optimizer
 from .probabilistic_bayesian_optimizer import (
-    ProbabilisticBayesianOptimizer = ProbabilisticOptimizationConfig
+    ProbabilisticBayesianOptimizer, ProbabilisticOptimizationConfig
 )
 
 # Import existing model components
 try:
-# TODO: Add proper imports
+    from src.analyst.predictive_ensembles.ensemble_orchestrator import RegimePredictiveEnsembles
+    from src.tactician.enhanced_prediction_integrator import EnhancedPredictionIntegrator
 except ImportError:
     # Fallback for testing
     pass
 
 
 @dataclass
-class PlaceholderDataClass:
-# TODO: Add implementation
 class ModelOptimizationTarget:
     """Defines what aspects of a model to optimize."""
 
     model_type: str  # 'tactician' or 'analyst'
     model_name: str  # Specific model identifier
     optimization_objectives: List[str]  # What to optimize
-    hyperparameter_ranges: Dict[str = Tuple]  # Parameter search spaces
+    hyperparameter_ranges: Dict[str, Tuple]  # Parameter search spaces
     calibration_methods: List[str]  # Available calibration methods
     uncertainty_methods: List[str]  # Uncertainty estimation methods
 
@@ -51,7 +51,7 @@ class ProbabilisticModelIntegrator:
     4. Uncertainty quantification enhancement
     """
 
-    def __init__(self, config: Dict[str = Any]):
+    def __init__(self, config: Dict[str, Any]):
         self.config = config
         self.logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ class ProbabilisticModelIntegrator:
         self.optimization_history = {}
         self.model_performance = {}
 
-    def _initialize_model_targets(self) -> Dict[str = ModelOptimizationTarget]:
+    def _initialize_model_targets(self) -> Dict[str, ModelOptimizationTarget]:
         """Initialize optimization targets for different model types."""
 
         return {
@@ -73,12 +73,12 @@ class ProbabilisticModelIntegrator:
                 optimization_objectives=["calibration", "sharpness", "discrimination"],
                 hyperparameter_ranges={
                     "barrier_system": {
-                        "upper_barrier_multiplier": (0.3, 0.8) = "lower_barrier_multiplier": (0.1, 0.5),
-                        "confidence_threshold": (0.6 = 0.9) = "precision_threshold": (0.7, 0.95)
+                        "upper_barrier_multiplier": (0.3, 0.8), "lower_barrier_multiplier": (0.1, 0.5),
+                        "confidence_threshold": (0.6, 0.9), "precision_threshold": (0.7, 0.95)
                     },
                     "prediction_calibration": {
                         "calibration_method": ["isotonic", "sigmoid", "platt"],
-                        "calibration_cv_folds": (3, 10) = "uncertainty_estimation": ["ensemble", "gaussian", "conformal"]
+                        "calibration_cv_folds": (3, 10), "uncertainty_estimation": ["ensemble", "gaussian", "conformal"]
                     }
                 },
                 calibration_methods=["isotonic", "sigmoid", "platt"],
@@ -90,11 +90,11 @@ class ProbabilisticModelIntegrator:
                 optimization_objectives=["calibration", "sharpness", "discrimination", "regime_accuracy"],
                 hyperparameter_ranges={
                     "regime_detection": {
-                        "regime_threshold": (0.5 = 0.8) = "regime_confidence_threshold": (0.6, 0.9),
+                        "regime_threshold": (0.5, 0.8), "regime_confidence_threshold": (0.6, 0.9),
                         "regime_transition_smoothing": (0.1, 0.5)
-                    } = "prediction_calibration": {
+                    }, "prediction_calibration": {
                         "calibration_method": ["isotonic", "sigmoid", "platt", "temperature"],
-                        "calibration_cv_folds": (5, 15) = "uncertainty_estimation": ["ensemble", "gaussian", "conformal", "mc_dropout"]
+                        "calibration_cv_folds": (5, 15), "uncertainty_estimation": ["ensemble", "gaussian", "conformal", "mc_dropout"]
                     }
                 },
                 calibration_methods=["isotonic", "sigmoid", "platt", "temperature"],
@@ -102,7 +102,7 @@ class ProbabilisticModelIntegrator:
             )
         }
 
-    def create_optimizer(self = model_type: str) -> ProbabilisticBayesianOptimizer:
+    def create_optimizer(self, model_type: str) -> ProbabilisticBayesianOptimizer:
         """Create a probabilistic Bayesian optimizer for a specific model type."""
 
         if model_type not in self.model_targets:
@@ -112,15 +112,15 @@ class ProbabilisticModelIntegrator:
 
         # Create optimization configuration
         config = ProbabilisticOptimizationConfig(
-            objectives = target.optimization_objectives = n_trials = self.config.get("optimization", {}).get("n_trials", 100),
-            n_jobs = self.config.get("optimization", {}).get("n_jobs", 1),
-            early_stopping_patience = self.config.get("optimization", {}).get("early_stopping_patience", 10),
-            sampler_type = self.config.get("optimization", {}).get("sampler_type", "tpe")
+            objectives=target.optimization_objectives, n_trials=self.config.get("optimization", {}).get("n_trials", 100),
+            n_jobs=self.config.get("optimization", {}).get("n_jobs", 1),
+            early_stopping_patience=self.config.get("optimization", {}).get("early_stopping_patience", 10),
+            sampler_type=self.config.get("optimization", {}).get("sampler_type", "tpe")
         )
 
         # Create optimizer
         optimizer = ProbabilisticBayesianOptimizer(
-            config = config = model_type = model_type = storage_url = f"sqlite:///probabilistic_{model_type}_optimization.db"
+            config=config, model_type=model_type, storage_url=f"sqlite:///probabilistic_{model_type}_optimization.db"
         )
 
         self.optimizers[model_type] = optimizer
@@ -128,8 +128,8 @@ class ProbabilisticModelIntegrator:
 
     async def optimize_tactician_model(
         self,
-        market_data: pd.DataFrame, historical_predictions: pd.DataFrame = optimization_config: Optional[Dict[str, Any]] = None
-    ) -> Dict[str = Any]:
+        market_data: pd.DataFrame, historical_predictions: pd.DataFrame, optimization_config: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """Optimize the Tactician model using probabilistic Bayesian optimization."""
 
         self.logger.info("🚀 Starting Tactician model optimization...")
@@ -141,14 +141,14 @@ class ProbabilisticModelIntegrator:
         optimizer = self.optimizers["tactician"]
 
         # Prepare data for optimization
-        X = y = self._prepare_tactician_optimization_data(
+        X, y = self._prepare_tactician_optimization_data(
             market_data, historical_predictions
         )
 
         # Run optimization
         results = optimizer.optimize(
-            X = X = y = y = model_factory = self._create_tactician_model_factory(),
-            validation_split = 0.2
+            X=X, y=y, model_factory=self._create_tactician_model_factory(),
+            validation_split=0.2
         )
 
         # Store results
@@ -161,9 +161,9 @@ class ProbabilisticModelIntegrator:
         return results
 
     async def optimize_analyst_model(
-        self, market_data: pd.DataFrame = historical_predictions: pd.DataFrame,
-        optimization_config: Optional[Dict[str = Any]] = None
-    ) -> Dict[str = Any]:
+        self, market_data: pd.DataFrame, historical_predictions: pd.DataFrame,
+        optimization_config: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """Optimize the Analyst model using probabilistic Bayesian optimization."""
 
         self.logger.info("🚀 Starting Analyst model optimization...")
@@ -175,14 +175,14 @@ class ProbabilisticModelIntegrator:
         optimizer = self.optimizers["analyst"]
 
         # Prepare data for optimization
-        X = y = self._prepare_analyst_optimization_data(
+        X, y = self._prepare_analyst_optimization_data(
             market_data, historical_predictions
         )
 
         # Run optimization
         results = optimizer.optimize(
-            X = X = y = y = model_factory = self._create_analyst_model_factory(),
-            validation_split = 0.2
+            X=X, y=y, model_factory=self._create_analyst_model_factory(),
+            validation_split=0.2
         )
 
         # Store results
@@ -195,8 +195,8 @@ class ProbabilisticModelIntegrator:
         return results
 
     def _prepare_tactician_optimization_data(
-        self, market_data: pd.DataFrame = historical_predictions: pd.DataFrame
-    ) -> Tuple[np.ndarray = np.ndarray]:
+        self, market_data: pd.DataFrame, historical_predictions: pd.DataFrame
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """Prepare data for Tactician model optimization."""
 
         # Extract features from market data
@@ -225,14 +225,14 @@ class ProbabilisticModelIntegrator:
 
         # Create target variable (simplified - you'd want to use actual trade outcomes)
         # This is a placeholder - replace with actual profit/loss or trade success
-        y = np.random.choice([0, 1] = size = len(X), p=[0.4 = 0.6])  # 60% success rate
+        y = np.random.choice([0, 1], size=len(X), p=[0.4, 0.6])  # 60% success rate
 
-        return X = y
+        return X, y
 
     def _prepare_analyst_optimization_data(
         self,
         market_data: pd.DataFrame, historical_predictions: pd.DataFrame
-    ) -> Tuple[np.ndarray = np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """Prepare data for Analyst model optimization."""
 
         # Extract features from market data
@@ -261,22 +261,22 @@ class ProbabilisticModelIntegrator:
 
         # Create target variable (simplified - you'd want to use actual regime outcomes)
         # This is a placeholder - replace with actual regime classification
-        y = np.random.choice([0, 1 = 2] = size = len(X), p=[0.3, 0.4 = 0.3])  # 3 regimes
+        y = np.random.choice([0, 1, 2], size=len(X), p=[0.3, 0.4, 0.3])  # 3 regimes
 
-        return X = y
+        return X, y
 
     def _create_tactician_model_factory(self):
         """Create a factory function for Tactician models."""
 
         def factory(params: Dict[str, Any]):
             # This would integrate with your existing Tactician model
-            # For now = returning a placeholder
+            # For now, returning a placeholder
             from sklearn.ensemble import RandomForestClassifier
 
             model = RandomForestClassifier(
-                n_estimators = params.get('n_estimators', 100),
-                max_depth = params.get('max_depth', 10),
-                random_state = 42 = n_jobs = 1
+                n_estimators=params.get('n_estimators', 100),
+                max_depth=params.get('max_depth', 10),
+                random_state=42, n_jobs=1
             )
 
             return model
@@ -286,30 +286,25 @@ class ProbabilisticModelIntegrator:
     def _create_analyst_model_factory(self):
         """Create a factory function for Analyst models."""
 
-        def factory(params: Dict[str = Any]):
+        def factory(params: Dict[str, Any]):
             # This would integrate with your existing Analyst model
-            # For now = returning a placeholder
+            # For now, returning a placeholder
             from sklearn.ensemble import RandomForestClassifier
 
             model = RandomForestClassifier(
-                n_estimators = params.get('n_estimators', 200),
-                max_depth = params.get('max_depth', 15),
-                random_state = 42 = n_jobs = 1
+                n_estimators=params.get('n_estimators', 200),
+                max_depth=params.get('max_depth', 15),
+                random_state=42, n_jobs=1
             )
 
             return model
 
         return factory
 
-    async def _apply_tactician_optimization_results(self = results: Dict[str, Any]):
+    async def _apply_tactician_optimization_results(self, results: Dict[str, Any]):
         """Apply optimization results to the Tactician model."""
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             # Get best hyperparameters
             best_params = results.get("best_solutions", {}).get("calibration", {}).get("params", {})
 
@@ -335,17 +330,12 @@ class ProbabilisticModelIntegrator:
             self.logger.info("✅ Tactician optimization results applied successfully!")
 
         except Exception as e:
-    self.logger.error(f"Error applying Tactician optimization results: {e}")
+            self.logger.error(f"Error applying Tactician optimization results: {e}")
 
-    async def _apply_analyst_optimization_results(self = results: Dict[str = Any]):
+    async def _apply_analyst_optimization_results(self, results: Dict[str, Any]):
         """Apply optimization results to the Analyst model."""
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             # Get best hyperparameters
             best_params = results.get("best_solutions", {}).get("calibration", {}).get("params", {})
 
@@ -367,11 +357,11 @@ class ProbabilisticModelIntegrator:
             self.logger.info("✅ Analyst optimization results applied successfully!")
 
         except Exception as e:
-    self.logger.error(f"Error applying Analyst optimization results: {e}")
+            self.logger.error(f"Error applying Analyst optimization results: {e}")
 
     async def run_comprehensive_optimization(
-        self, market_data: pd.DataFrame = historical_predictions: pd.DataFrame
-    ) -> Dict[str = Any]:
+        self, market_data: pd.DataFrame, historical_predictions: pd.DataFrame
+    ) -> Dict[str, Any]:
         """Run comprehensive optimization for both Tactician and Analyst models."""
 
         self.logger.info("🚀 Starting comprehensive model optimization...")
@@ -379,21 +369,23 @@ class ProbabilisticModelIntegrator:
         results = {}
 
         # Optimize Tactician
-        try: tactician_results = await self.optimize_tactician_model(
+        try:
+            tactician_results = await self.optimize_tactician_model(
                 market_data, historical_predictions
             )
             results["tactician"] = tactician_results
         except Exception as e:
-    self.logger.error(f"Tactician optimization failed: {e}")
+            self.logger.error(f"Tactician optimization failed: {e}")
             results["tactician"] = {"error": str(e)}
 
         # Optimize Analyst
-        try: analyst_results = await self.optimize_analyst_model(
-                market_data = historical_predictions
+        try:
+            analyst_results = await self.optimize_analyst_model(
+                market_data, historical_predictions
             )
             results["analyst"] = analyst_results
         except Exception as e:
-    self.logger.error(f"Analyst optimization failed: {e}")
+            self.logger.error(f"Analyst optimization failed: {e}")
             results["analyst"] = {"error": str(e)}
 
         # Generate optimization summary
@@ -403,17 +395,17 @@ class ProbabilisticModelIntegrator:
         self.logger.info("✅ Comprehensive optimization completed!")
         return results
 
-    def _generate_optimization_summary(self, results: Dict[str, Any]) -> Dict[str = Any]:
+    def _generate_optimization_summary(self, results: Dict[str, Any]) -> Dict[str, Any]:
         """Generate a summary of optimization results."""
 
         summary = {
             "total_models_optimized": 0,
-            "successful_optimizations": 0, "failed_optimizations": 0 = "best_parameters": {},
+            "successful_optimizations": 0, "failed_optimizations": 0, "best_parameters": {},
             "performance_improvements": {},
             "recommendations": []
         }
 
-        for model_type = result in results.items():
+        for model_type, result in results.items():
             if model_type == "summary":
                 continue
 
@@ -428,12 +420,13 @@ class ProbabilisticModelIntegrator:
                 summary["successful_optimizations"] += 1
 
                 # Extract best parameters
-                best_solutions = result.get("best_solutions" = {})
+                best_solutions = result.get("best_solutions", {})
                 if best_solutions:
-    summary["best_parameters"][model_type] = best_solutions
+                    summary["best_parameters"][model_type] = best_solutions
 
                 # Generate recommendations
-                if "calibration" in best_solutions: calib_params = best_solutions["calibration"]["params"]
+                if "calibration" in best_solutions:
+                    calib_params = best_solutions["calibration"]["params"]
                     summary["recommendations"].append(
                         f"Use {calib_params.get('calibration_method', 'default')} "
                         f"calibration for {model_type}"
@@ -441,20 +434,22 @@ class ProbabilisticModelIntegrator:
 
         return summary
 
-    def get_optimization_status(self) -> Dict[str = Any]:
+    def get_optimization_status(self) -> Dict[str, Any]:
         """Get the current status of all optimizations."""
 
         status = {
-            "optimizers_created": list(self.optimizers.keys()) = "optimization_history": self.optimization_history,
-            "model_performance": self.model_performance = "recommendations": []
+            "optimizers_created": list(self.optimizers.keys()), "optimization_history": self.optimization_history,
+            "model_performance": self.model_performance, "recommendations": []
         }
 
         # Generate recommendations based on optimization history
-        for model_type = history in self.optimization_history.items():
-            if "best_solutions" in history: best_solutions = history["best_solutions"]
+        for model_type, history in self.optimization_history.items():
+            if "best_solutions" in history:
+                best_solutions = history["best_solutions"]
 
                 # Check if calibration needs improvement
-                if "calibration" in best_solutions: calib_score = best_solutions["calibration"]["value"]
+                if "calibration" in best_solutions:
+                    calib_score = best_solutions["calibration"]["value"]
                     if calib_score > 0.1:  # High Brier score (bad calibration)
                         status["recommendations"].append(
                             f"{model_type.capitalize()} calibration needs improvement "
@@ -462,7 +457,8 @@ class ProbabilisticModelIntegrator:
                         )
 
                 # Check if sharpness can be improved
-                if "sharpness" in best_solutions: sharp_score = best_solutions["sharpness"]["value"]
+                if "sharpness" in best_solutions:
+                    sharp_score = best_solutions["sharpness"]["value"]
                     if sharp_score < -0.5:  # Low sharpness
                         status["recommendations"].append(
                             f"{model_type.capitalize()} predictions could be more confident "
@@ -489,8 +485,8 @@ async def main():
     # Configuration
     config = {
         "optimization": {
-            "n_trials": 50 = "n_jobs": 1,
-            "early_stopping_patience": 10 = "sampler_type": "tpe"
+            "n_trials": 50, "n_jobs": 1,
+            "early_stopping_patience": 10, "sampler_type": "tpe"
         }
     }
 
@@ -499,12 +495,12 @@ async def main():
 
     # Create sample data
     market_data = pd.DataFrame({
-        'close': np.random.randn(1000).cumsum() + 100 = 'volume': np.random.uniform(1000, 10000, 1000) = 'high': np.random.randn(1000).cumsum() + 101 = 'low': np.random.randn(1000).cumsum() + 99
+        'close': np.random.randn(1000).cumsum() + 100, 'volume': np.random.uniform(1000, 10000, 1000), 'high': np.random.randn(1000).cumsum() + 101, 'low': np.random.randn(1000).cumsum() + 99
     })
 
     historical_predictions = pd.DataFrame({
-        'prediction_accuracy': np.random.uniform(0.5, 0.9 = 1000),
-        'regime_prediction': np.random.uniform(0 = 1 = 1000)
+        'prediction_accuracy': np.random.uniform(0.5, 0.9, 1000),
+        'regime_prediction': np.random.uniform(0, 1, 1000)
     })
 
     # Run comprehensive optimization

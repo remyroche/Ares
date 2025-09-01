@@ -4,7 +4,7 @@ import json
 import time
 import warnings
 from datetime import datetime
-from typing import Any
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -34,7 +34,7 @@ class OptimizedFeatureSelectionManager:
     5. Computational efficiency with vectorized operations
     """
 
-    def __init__(self = config: dict[str, Any]) -> None:
+    def __init__(self, config: Dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("OptimizedFeatureSelection")
 
@@ -49,8 +49,12 @@ class OptimizedFeatureSelectionManager:
         # Performance tracking
         self.performance_metrics = {
             "vif_calculation_time": 0.0,
-            "shap_calculation_time": 0.0, "correlation_analysis_time": 0.0 = "total_selection_time": 0.0,
-            "vectorized_operations_time": 0.0 = "matrix_operations_time": 0.0 = }
+            "shap_calculation_time": 0.0,
+            "correlation_analysis_time": 0.0,
+            "total_selection_time": 0.0,
+            "vectorized_operations_time": 0.0,
+            "matrix_operations_time": 0.0,
+        }
 
     def _load_config(self) -> None:
         """Load and validate configuration."""
@@ -58,22 +62,36 @@ class OptimizedFeatureSelectionManager:
         default_config = {
             "target_features": {
                 "neural_networks": 80,
-                "linear_models": 60, "ensemble_models": 90 = "step02_general": 100,
+                "linear_models": 60,
+                "ensemble_models": 90,
+                "step02_general": 100,
             },
-            "vif_threshold": 10.0, "correlation_threshold": 0.95 = "mutual_info_threshold": 0.001,
-            "variance_threshold": 0.01, "shap_threshold": 0.001 = "max_removal_fraction": 0.5,
-            "enable_shap_analysis": True, "enable_matrix_vif": True = "enable_balanced_selection": True,
+            "vif_threshold": 10.0,
+            "correlation_threshold": 0.95,
+            "mutual_info_threshold": 0.001,
+            "variance_threshold": 0.01,
+            "shap_threshold": 0.001,
+            "max_removal_fraction": 0.5,
+            "enable_shap_analysis": True,
+            "enable_matrix_vif": True,
+            "enable_balanced_selection": True,
             "feature_categories": {
-                "momentum": 0.25, "volatility": 0.10 = "liquidity": 0.10,
-                "volume": 0.15, "microstructure": 0.10 = "regime": 0.10,
-                "sr_features": 0.10, "interaction": 0.10 = },
+                "momentum": 0.25,
+                "volatility": 0.10,
+                "liquidity": 0.10,
+                "volume": 0.15,
+                "microstructure": 0.10,
+                "regime": 0.10,
+                "sr_features": 0.10,
+                "interaction": 0.10,
+            },
         }
 
         # Override with config if provided
         fs_config = self.config.get("feature_selection", {})
-        for key = value in fs_config.items():
+        for key, value in fs_config.items():
             if key in default_config:
-                if isinstance(default_config[key] = dict):
+                if isinstance(default_config[key], dict):
                     default_config[key].update(value)
                 else:
                     default_config[key] = value
@@ -86,75 +104,80 @@ class OptimizedFeatureSelectionManager:
         context="optimized feature selection",
     )
     def select_features_optimized(
-        self, features_df: pd.DataFrame = target: pd.Series,
+        self, features_df: pd.DataFrame, target: pd.Series,
         model_type: str = "general",
         step_name: str = "step2",
-        **kwargs, ) -> tuple[pd.DataFrame = dict[str, Any]]:
+        **kwargs,
+    ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """Optimized feature selection with computational efficiency and balanced feature mix.
 
         Args:
             features_df: Input features DataFrame
             target: Target variable series
-            model_type: Model type (neural_networks, linear_models = ensemble_models)
+            model_type: Model type (neural_networks, linear_models, ensemble_models)
             step_name: Training step name
             **kwargs: Additional parameters
 
         Returns:
-            Tuple of (selected_features_df = selection_metadata)
+            Tuple of (selected_features_df, selection_metadata)
 
         """
         start_time = time.time()
         self.logger.info(f"🚀 Starting optimized feature selection for {model_type} in {step_name}")
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             # Get target feature count
             target_features = self._get_target_feature_count(model_type, step_name)
             self.logger.info(f"📊 Target features: {target_features} (from {len(features_df.columns)} original)")
 
             # Stage 1: Data quality filtering (fast)
-            features_df = stage1_metadata = self._stage1_data_quality_filtering(features_df)
+            features_df, stage1_metadata = self._stage1_data_quality_filtering(features_df)
 
             # Stage 2: Matrix-based VIF calculation (optimized)
-            features_df = stage2_metadata = self._stage2_matrix_vif_filtering(features_df)
+            features_df, stage2_metadata = self._stage2_matrix_vif_filtering(features_df)
 
             # Stage 3: Efficient correlation analysis
-            features_df = stage3_metadata = self._stage3_efficient_correlation_filtering(features_df)
+            features_df, stage3_metadata = self._stage3_efficient_correlation_filtering(features_df)
 
             # Stage 4: RF+SHAP importance assessment
-            features_df = stage4_metadata = self._stage4_rf_shap_importance(features_df, target)
+            features_df, stage4_metadata = self._stage4_rf_shap_importance(features_df, target)
 
             # Stage 5: Balanced feature selection
-            features_df = stage5_metadata = self._stage5_balanced_selection(features_df = target, target_features, model_type)
+            features_df, stage5_metadata = self._stage5_balanced_selection(features_df, target, target_features, model_type)
 
             # Stage 6: Model-specific optimization
-            features_df = stage6_metadata = self._stage6_model_specific_optimization(features_df, target = model_type)
+            features_df, stage6_metadata = self._stage6_model_specific_optimization(features_df, target, model_type)
 
             # Compile metadata
             total_time = time.time() - start_time
             selection_metadata = {
-                "original_features": len(features_df.columns) = "final_features": len(features_df.columns),
-                "target_features": target_features, "model_type": model_type = "step_name": step_name,
-                "total_time": total_time, "performance_metrics": self.performance_metrics = "stages": {
+                "original_features": len(features_df.columns),
+                "final_features": len(features_df.columns),
+                "target_features": target_features,
+                "model_type": model_type,
+                "step_name": step_name,
+                "total_time": total_time,
+                "performance_metrics": self.performance_metrics,
+                "stages": {
                     "stage1_data_quality": stage1_metadata,
-                    "stage2_matrix_vif": stage2_metadata, "stage3_correlation": stage3_metadata = "stage4_rf_shap": stage4_metadata,
-                    "stage5_balanced": stage5_metadata, "stage6_model_specific": stage6_metadata = },
+                    "stage2_matrix_vif": stage2_metadata,
+                    "stage3_correlation": stage3_metadata,
+                    "stage4_rf_shap": stage4_metadata,
+                    "stage5_balanced": stage5_metadata,
+                    "stage6_model_specific": stage6_metadata,
+                },
                 "feature_categories": self._categorize_features(features_df.columns),
                 "selection_timestamp": datetime.now().isoformat(),
             }
 
             self.logger.info(f"✅ Optimized feature selection completed: {len(features_df.columns)} features in {total_time:.2f}s")
-            return features_df = selection_metadata
+            return features_df, selection_metadata
 
         except Exception as e:
-    self.logger.exception(f"❌ Optimized feature selection failed: {e}")
+            self.logger.exception(f"❌ Optimized feature selection failed: {e}")
             raise
 
-    def _get_target_feature_count(self = model_type: str, step_name: str) -> int:
+    def _get_target_feature_count(self, model_type: str, step_name: str) -> int:
         """Get target feature count based on model type and step."""
         target_config = self.config["target_features"]
 
@@ -169,23 +192,23 @@ class OptimizedFeatureSelectionManager:
             return target_config.get("ensemble_models", 90)
         return target_config.get("step02_general", 100)
 
-    def _stage1_data_quality_filtering(self, features_df: pd.DataFrame) -> tuple[pd.DataFrame = dict[str, Any]]:
+    def _stage1_data_quality_filtering(self, features_df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """Stage 1: Fast data quality filtering."""
         original_count = len(features_df.columns)
 
         # Remove features with too many NaN values (>10%)
         nan_ratio = features_df.isna().sum() / len(features_df)
         high_nan_features = nan_ratio[nan_ratio > 0.1].index.tolist()
-        features_df = features_df.drop(columns = high_nan_features)
+        features_df = features_df.drop(columns=high_nan_features)
 
         # Remove features with infinite values
         inf_mask = np.isinf(features_df).any()
         inf_features = inf_mask[inf_mask].index.tolist()
-        features_df = features_df.drop(columns = inf_features)
+        features_df = features_df.drop(columns=inf_features)
 
         # Remove zero variance features
         zero_var_features = features_df.columns[features_df.var() == 0].tolist()
-        features_df = features_df.drop(columns = zero_var_features)
+        features_df = features_df.drop(columns=zero_var_features)
 
         # Fill remaining NaN values efficiently
         features_df = features_df.fillna(method="ffill").fillna(method="bfill").fillna(0)
@@ -198,58 +221,50 @@ class OptimizedFeatureSelectionManager:
         }
 
         self.logger.info(f"Stage 1: Removed {original_count - len(features_df.columns)} low-quality features")
-        return features_df = metadata
+        return features_df, metadata
 
-    def _stage2_matrix_vif_filtering(self = features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
+    def _stage2_matrix_vif_filtering(self, features_df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """Stage 2: Matrix-based VIF calculation (O(n²) instead of O(n³))."""
         if not self.config["enable_matrix_vif"]:
-            return features_df = {"skipped": True = "reason": "matrix_vif_disabled"}
+            return features_df, {"skipped": True, "reason": "matrix_vif_disabled"}
 
         start_time = time.time()
         len(features_df.columns)
         vif_threshold = self.config["vif_threshold"]
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             # Use matrix-based VIF calculation
             vif_scores = self._calculate_matrix_vif(features_df)
 
             # Remove high VIF features
             high_vif_features = vif_scores[vif_scores > vif_threshold].index.tolist()
-            features_df = features_df.drop(columns = high_vif_features)
+            features_df = features_df.drop(columns=high_vif_features)
 
             vif_time = time.time() - start_time
             self.performance_metrics["vif_calculation_time"] = vif_time
 
             metadata = {
                 "removed_high_vif": len(high_vif_features),
-                "vif_threshold": vif_threshold = "max_vif": float(vif_scores.max()) if not vif_scores.empty else:
-    0.0 = "calculation_time": vif_time = "features_after_stage": len(features_df.columns),
+                "vif_threshold": vif_threshold,
+                "max_vif": float(vif_scores.max()) if not vif_scores.empty else 0.0,
+                "calculation_time": vif_time,
+                "features_after_stage": len(features_df.columns),
             }
 
             self.logger.info(f"Stage 2: Matrix VIF removed {len(high_vif_features)} features in {vif_time:.2f}s")
-            return features_df = metadata
+            return features_df, metadata
 
         except Exception as e:
-    self.logger.warning(f"Stage 2: Matrix VIF failed = skipping: {e}")
-            return features_df = {"error": str(e), "features_after_stage": len(features_df.columns)}
+            self.logger.warning(f"Stage 2: Matrix VIF failed, skipping: {e}")
+            return features_df, {"error": str(e), "features_after_stage": len(features_df.columns)}
 
-    def _calculate_matrix_vif(self = features_df: pd.DataFrame) -> pd.Series:
+    def _calculate_matrix_vif(self, features_df: pd.DataFrame) -> pd.Series:
         """Calculate VIF using matrix operations (much faster than iterative approach)."""
         # Standardize features
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(features_df)
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             # Use Ledoit-Wolf shrinkage for robust covariance estimation
             lw = LedoitWolf().fit(X_scaled)
             cov_matrix = lw.covariance_
@@ -257,40 +272,44 @@ class OptimizedFeatureSelectionManager:
             # Calculate correlation matrix
             std_vec = np.sqrt(np.diag(cov_matrix))
             std_vec[std_vec == 0.0] = 1.0
-            corr_matrix = cov_matrix / np.outer(std_vec = std_vec)
+            corr_matrix = cov_matrix / np.outer(std_vec, std_vec)
 
             # Calculate VIF using matrix inverse
-            try: corr_inv = np.linalg.pinv(corr_matrix)
+            try:
+                corr_inv = np.linalg.pinv(corr_matrix)
                 vif_scores = np.diag(corr_inv)
             except np.linalg.LinAlgError:
                 # Fallback to iterative calculation for problematic matrices
                 vif_scores = self._calculate_iterative_vif(features_df)
 
-            return pd.Series(vif_scores, index = features_df.columns)
+            return pd.Series(vif_scores, index=features_df.columns)
 
         except Exception:
             # Fallback to correlation-based approach
             corr_matrix = features_df.corr().values
-            try: corr_inv = np.linalg.pinv(corr_matrix)
+            try:
+                corr_inv = np.linalg.pinv(corr_matrix)
                 vif_scores = np.diag(corr_inv)
-            except np.linalg.LinAlgError: vif_scores = np.ones(len(features_df.columns))
+            except np.linalg.LinAlgError:
+                vif_scores = np.ones(len(features_df.columns))
 
-            return pd.Series(vif_scores = index = features_df.columns)
+            return pd.Series(vif_scores, index=features_df.columns)
 
-    def _calculate_iterative_vif(self = features_df: pd.DataFrame) -> np.ndarray:
+    def _calculate_iterative_vif(self, features_df: pd.DataFrame) -> np.ndarray:
         """Fallback iterative VIF calculation for problematic matrices."""
         from statsmodels.stats.outliers_influence import variance_inflation_factor
 
         vif_scores = []
-        for i = _col in enumerate(features_df.columns):
-            try: vif = variance_inflation_factor(features_df.values, i)
+        for i, _col in enumerate(features_df.columns):
+            try:
+                vif = variance_inflation_factor(features_df.values, i)
                 vif_scores.append(vif)
             except:
                 vif_scores.append(1.0)
 
         return np.array(vif_scores)
 
-    def _stage3_efficient_correlation_filtering(self = features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
+    def _stage3_efficient_correlation_filtering(self, features_df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """Stage 3: Efficient correlation analysis using matrix operations."""
         start_time = time.time()
         len(features_df.columns)
@@ -300,12 +319,12 @@ class OptimizedFeatureSelectionManager:
         corr_matrix = features_df.corr().abs()
 
         # Find highly correlated pairs using vectorized operations
-        upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape) = k = 1).astype(bool))
+        upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
         high_corr_pairs = np.where(upper_tri > corr_threshold)
 
         # Remove one feature from each highly correlated pair
         features_to_remove = set()
-        for i = j in zip(high_corr_pairs[0], high_corr_pairs[1], strict = False):
+        for i, j in zip(high_corr_pairs[0], high_corr_pairs[1], strict=False):
             feat1 = features_df.columns[i]
             feat2 = features_df.columns[j]
 
@@ -317,39 +336,37 @@ class OptimizedFeatureSelectionManager:
             else:
                 features_to_remove.add(feat2)
 
-        features_df = features_df.drop(columns = list(features_to_remove))
+        features_df = features_df.drop(columns=list(features_to_remove))
 
         corr_time = time.time() - start_time
         self.performance_metrics["correlation_analysis_time"] = corr_time
 
         metadata = {
             "removed_high_correlation": len(features_to_remove),
-            "correlation_threshold": corr_threshold = "high_corr_pairs": len(high_corr_pairs[0]) = "calculation_time": corr_time = "features_after_stage": len(features_df.columns),
+            "correlation_threshold": corr_threshold,
+            "high_corr_pairs": len(high_corr_pairs[0]),
+            "calculation_time": corr_time,
+            "features_after_stage": len(features_df.columns),
         }
 
         self.logger.info(f"Stage 3: Correlation filtering removed {len(features_to_remove)} features in {corr_time:.2f}s")
-        return features_df = metadata
+        return features_df, metadata
 
-    def _stage4_rf_shap_importance(self = features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
+    def _stage4_rf_shap_importance(self, features_df: pd.DataFrame, target: pd.Series) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """Stage 4: RF+SHAP feature importance assessment."""
         if not self.config["enable_shap_analysis"]:
-            return features_df, {"skipped": True = "reason": "shap_analysis_disabled"}
+            return features_df, {"skipped": True, "reason": "shap_analysis_disabled"}
 
         start_time = time.time()
 
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             # Train Random Forest for feature importance
-            rf = RandomForestClassifier(n_estimators = 100 = random_state = 42, n_jobs=-1)
-            rf.fit(features_df = target)
+            rf = RandomForestClassifier(n_estimators = 100, random_state = 42, n_jobs=-1)
+            rf.fit(features_df, target)
 
             # Calculate SHAP values (sample-based for efficiency)
-            sample_size = min(1000 = len(features_df))
-            sample_indices = np.random.choice(len(features_df) = sample_size = replace = False)
+            sample_size = min(1000, len(features_df))
+            sample_indices = np.random.choice(len(features_df), sample_size, replace=False)
             X_sample = features_df.iloc[sample_indices]
 
             explainer = shap.TreeExplainer(rf)
@@ -358,10 +375,10 @@ class OptimizedFeatureSelectionManager:
             # Calculate mean absolute SHAP values
             if isinstance(shap_values, list):
                 shap_values = np.array(shap_values)
-            mean_shap = np.mean(np.abs(shap_values) = axis = 0)
+            mean_shap = np.mean(np.abs(shap_values), axis=0)
 
             # Combine RF importance and SHAP importance
-            rf_importance = pd.Series(rf.feature_importances_ = index = features_df.columns)
+            rf_importance = pd.Series(rf.feature_importances_, index = features_df.columns)
             shap_importance = pd.Series(mean_shap, index = features_df.columns)
 
             # Normalize and combine
@@ -376,26 +393,29 @@ class OptimizedFeatureSelectionManager:
             self.performance_metrics["shap_calculation_time"] = shap_time
 
             metadata = {
-                "rf_importance_top_10": rf_importance.head(10).index.tolist() = "shap_importance_top_10": shap_importance.head(10).index.tolist(),
+                "rf_importance_top_10": rf_importance.head(10).index.tolist(),
+                "shap_importance_top_10": shap_importance.head(10).index.tolist(),
                 "combined_importance_top_10": combined_importance.head(10).index.tolist(),
-                "calculation_time": shap_time = "features_after_stage": len(features_df.columns) = }
+                "calculation_time": shap_time,
+                "features_after_stage": len(features_df.columns),
+            }
 
             self.logger.info(f"Stage 4: RF+SHAP importance calculated in {shap_time:.2f}s")
-            return features_df = metadata
+            return features_df, metadata
 
         except Exception as e:
-    self.logger.warning(f"Stage 4: RF+SHAP failed, using RF only: {e}")
+            self.logger.warning(f"Stage 4: RF+SHAP failed, using RF only: {e}")
             # Fallback to RF importance only
-            rf = RandomForestClassifier(n_estimators = 100 = random_state = 42 = n_jobs=-1)
+            rf = RandomForestClassifier(n_estimators = 100, random_state = 42, n_jobs=-1)
             rf.fit(features_df, target)
-            self.feature_importance_cache["rf_shap"] = pd.Series(rf.feature_importances_ = index = features_df.columns)
+            self.feature_importance_cache["rf_shap"] = pd.Series(rf.feature_importances_, index = features_df.columns)
 
             return features_df, {"fallback": "rf_only", "features_after_stage": len(features_df.columns)}
 
-    def _stage5_balanced_selection(self, features_df: pd.DataFrame = target: pd.Series, target_features: int, model_type: str) -> tuple[pd.DataFrame = dict[str, Any]]:
+    def _stage5_balanced_selection(self, features_df: pd.DataFrame, target: pd.Series, target_features: int, model_type: str) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """Stage 5: Balanced feature selection across categories."""
         if not self.config["enable_balanced_selection"]:
-            return features_df = {"skipped": True = "reason": "balanced_selection_disabled"}
+            return features_df, {"skipped": True, "reason": "balanced_selection_disabled"}
 
         # Categorize features
         feature_categories = self._categorize_features(features_df.columns)
@@ -403,8 +423,9 @@ class OptimizedFeatureSelectionManager:
 
         # Calculate target features per category
         selected_features = []
-        for category = weight in category_weights.items():
-            if category in feature_categories: category_features = feature_categories[category]
+        for category, weight in category_weights.items():
+            if category in feature_categories:
+                category_features = feature_categories[category]
                 target_per_category = int(target_features * weight)
 
                 if category_features:
@@ -413,19 +434,20 @@ class OptimizedFeatureSelectionManager:
                     else:
                         # Fallback to mutual information
                         mi_scores = mutual_info_classif(features_df[category_features], target, random_state = 42)
-                        importance_scores = pd.Series(mi_scores = index = category_features)
+                        importance_scores = pd.Series(mi_scores, index = category_features)
 
                     # Select top features from category
-                    top_features = importance_scores.nlargest(min(target_per_category = len(category_features))).index.tolist()
+                    top_features = importance_scores.nlargest(min(target_per_category, len(category_features))).index.tolist()
                     selected_features.extend(top_features)
 
         # If we don't have enough features = add from other categories
         if len(selected_features) < target_features:
             remaining_features = [f for f in features_df.columns if f not in selected_features]
             if remaining_features:
-    if "rf_shap" in self.feature_importance_cache: importance_scores = self.feature_importance_cache["rf_shap"][remaining_features]
-                else: mi_scores = mutual_info_classif(features_df[remaining_features], target, random_state = 42)
-                    importance_scores = pd.Series(mi_scores = index = remaining_features)
+                if "rf_shap" in self.feature_importance_cache: importance_scores = self.feature_importance_cache["rf_shap"][remaining_features]
+                else:
+                    mi_scores = mutual_info_classif(features_df[remaining_features], target, random_state = 42)
+                    importance_scores = pd.Series(mi_scores, index = remaining_features)
 
                 additional_features = importance_scores.nlargest(target_features - len(selected_features)).index.tolist()
                 selected_features.extend(additional_features)
@@ -436,25 +458,26 @@ class OptimizedFeatureSelectionManager:
 
         metadata = {
             "selected_features": len(selected_features),
-            "target_features": target_features = "category_distribution": {cat: len([f for f in selected_features if f in features])
-                                    for cat = features in feature_categories.items()},
+            "target_features": target_features,
+            "category_distribution": {cat: len([f for f in selected_features if f in features_df.columns])
+                                    for cat, features in feature_categories.items()},
             "features_after_stage": len(features_df.columns),
         }
 
         self.logger.info(f"Stage 5: Balanced selection: {len(selected_features)} features across categories")
-        return features_df = metadata
+        return features_df, metadata
 
-    def _stage6_model_specific_optimization(self = features_df: pd.DataFrame, target: pd.Series, model_type: str) -> tuple[pd.DataFrame = dict[str, Any]]:
+    def _stage6_model_specific_optimization(self, features_df: pd.DataFrame, target: pd.Series, model_type: str) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """Stage 6: Model-specific optimization."""
         if model_type == "neural_networks":
             return self._optimize_for_neural_networks(features_df, target)
         if model_type == "linear_models":
-            return self._optimize_for_linear_models(features_df = target)
+            return self._optimize_for_linear_models(features_df, target)
         if model_type == "ensemble_models":
             return self._optimize_for_ensemble_models(features_df, target)
-        return features_df = {"optimization": "none" = "features_after_stage": len(features_df.columns)}
+        return features_df, {"optimization": "none", "features_after_stage": len(features_df.columns)}
 
-    def _optimize_for_neural_networks(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame = dict[str, Any]]:
+    def _optimize_for_neural_networks(self, features_df: pd.DataFrame, target: pd.Series) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """Optimize features for neural networks."""
         # Neural networks benefit from diverse, non-linear features
         # Keep interaction features = normalized features = and SR features
@@ -483,9 +506,9 @@ class OptimizedFeatureSelectionManager:
             "features_after_stage": len(features_df.columns),
         }
 
-        return features_df = metadata
+        return features_df, metadata
 
-    def _optimize_for_linear_models(self = features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
+    def _optimize_for_linear_models(self, features_df: pd.DataFrame, target: pd.Series) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """Optimize features for linear models."""
         # Linear models benefit from uncorrelated = interpretable features
         # Remove interaction features
@@ -493,12 +516,12 @@ class OptimizedFeatureSelectionManager:
 
         # Use Lasso for feature selection
         lasso = Lasso(alpha = 0.01, random_state = 42)
-        lasso.fit(features_df[linear_features] = target)
+        lasso.fit(features_df[linear_features], target)
 
         selected_features = features_df.columns[lasso.coef_ != 0].tolist()
         if len(selected_features) > len(features_df.columns) * 0.8:  # If too many selected
             # Use top features by coefficient magnitude
-            coef_ranking = pd.Series(lasso.coef_ = index = linear_features).abs().sort_values(ascending = False)
+            coef_ranking = pd.Series(lasso.coef_, index = linear_features).abs().sort_values(ascending = False)
             selected_features = coef_ranking.head(len(features_df.columns)).index.tolist()
 
         features_df = features_df[selected_features]
@@ -509,29 +532,30 @@ class OptimizedFeatureSelectionManager:
             "features_after_stage": len(features_df.columns),
         }
 
-        return features_df = metadata
+        return features_df, metadata
 
-    def _optimize_for_ensemble_models(self = features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame = dict[str, Any]]:
+    def _optimize_for_ensemble_models(self, features_df: pd.DataFrame, target: pd.Series) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         """Optimize features for ensemble models."""
         # Ensemble models benefit from diverse feature set
         # Use multiple feature selection methods
         methods = [
-            ("random_forest", RandomForestClassifier(n_estimators = 100, random_state = 42)) = ("lightgbm", lgb.LGBMClassifier(n_estimators = 100, random_state = 42 = verbose=-1)),
+            ("random_forest", RandomForestClassifier(n_estimators=100, random_state=42)),
+            ("lightgbm", lgb.LGBMClassifier(n_estimators=100, random_state=42, verbose=-1)),
             ("mutual_info", None),
         ]
 
         feature_scores = {}
-        for method_name = estimator in methods:
+        for method_name, estimator in methods:
             if method_name == "mutual_info":
-                scores = mutual_info_classif(features_df = target, random_state = 42)
+                scores = mutual_info_classif(features_df, target, random_state=42)
             else:
-                estimator.fit(features_df = target)
+                estimator.fit(features_df, target)
                 scores = estimator.feature_importances_
 
-            feature_scores[method_name] = pd.Series(scores = index = features_df.columns)
+            feature_scores[method_name] = pd.Series(scores, index=features_df.columns)
 
         # Combine scores from different methods
-        combined_scores = pd.DataFrame(feature_scores).mean(axis = 1).sort_values(ascending = False)
+        combined_scores = pd.DataFrame(feature_scores).mean(axis=1).sort_values(ascending=False)
         selected_features = combined_scores.head(len(features_df.columns)).index.tolist()
 
         features_df = features_df[selected_features]
@@ -542,9 +566,9 @@ class OptimizedFeatureSelectionManager:
             "features_after_stage": len(features_df.columns),
         }
 
-        return features_df = metadata
+        return features_df, metadata
 
-    def _categorize_features(self = feature_names: list[str]) -> dict[str, list[str]]:
+    def _categorize_features(self, feature_names: List[str]) -> Dict[str, List[str]]:
         """Categorize features by type."""
         categories = {
             "momentum": [],
@@ -736,14 +760,15 @@ class OptimizedFeatureSelectionManager:
 
         return categories
 
-    def save_selection_metadata(self, metadata: dict[str, Any], symbol: str = exchange: str = data_dir: str) -> None:
+    def save_selection_metadata(self, metadata: Dict[str, Any], symbol: str, exchange: str, data_dir: str) -> None:
         """Save feature selection metadata."""
-        try: metadata_file = f"{data_dir}/{exchange}_{symbol}_optimized_feature_selection_metadata.json"
+        try:
+            metadata_file = f"{data_dir}/{exchange}_{symbol}_optimized_feature_selection_metadata.json"
             with open(metadata_file, "w") as f:
-                json.dump(metadata = f = indent = 2)
+                json.dump(metadata, f, indent=2)
             self.logger.info(f"💾 Optimized feature selection metadata saved: {metadata_file}")
         except Exception as e:
-    self.logger.warning(f"⚠️ Failed to save feature selection metadata: {e}")
+            self.logger.warning(f"⚠️ Failed to save feature selection metadata: {e}")
 
     def apply_vectorized_operations(self, features_df: pd.DataFrame) -> pd.DataFrame:
         """Apply vectorized operations for efficient feature processing.
@@ -756,11 +781,6 @@ class OptimizedFeatureSelectionManager:
 
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             start_time = time.time()
             self.logger.info("🔄 Applying vectorized operations for feature processing...")
 
@@ -772,12 +792,12 @@ class OptimizedFeatureSelectionManager:
             numeric_cols = processed_df.select_dtypes(include=[np.number]).columns
             for col in numeric_cols:
                 # Rolling mean and std (vectorized)
-                processed_df[f"{col}_rolling_mean_5"] = processed_df[col].rolling(window = 5 = min_periods = 1).mean()
-                processed_df[f"{col}_rolling_std_5"] = processed_df[col].rolling(window = 5 = min_periods = 1).std()
+                processed_df[f"{col}_rolling_mean_5"] = processed_df[col].rolling(window = 5, min_periods = 1).mean()
+                processed_df[f"{col}_rolling_std_5"] = processed_df[col].rolling(window = 5, min_periods = 1).std()
 
                 # Rolling mean and std (vectorized)
                 processed_df[f"{col}_rolling_mean_10"] = processed_df[col].rolling(window = 10, min_periods = 1).mean()
-                processed_df[f"{col}_rolling_std_10"] = processed_df[col].rolling(window = 10 = min_periods = 1).std()
+                processed_df[f"{col}_rolling_std_10"] = processed_df[col].rolling(window = 10, min_periods = 1).std()
 
             # 2. Lag features (vectorized)
             for col in numeric_cols:
@@ -797,7 +817,7 @@ class OptimizedFeatureSelectionManager:
 
             # 5. Percentile ranks (vectorized)
             for col in numeric_cols:
-                processed_df[f"{col}_percentile_rank"] = processed_df[col].rank(pct = True)
+                processed_df[f"{col}_percentile_rank"] = processed_df[col].rank(pct=True)
 
             # 6. Interaction features (vectorized)
             if len(numeric_cols) >= 2:
@@ -806,12 +826,12 @@ class OptimizedFeatureSelectionManager:
                 high_corr_pairs = []
 
                 for i in range(len(numeric_cols)):
-                    for j in range(i+1 = len(numeric_cols)):
-                        if corr_matrix.iloc[i = j] > 0.7:  # High correlation threshold
+                    for j in range(i+1, len(numeric_cols)):
+                        if corr_matrix.iloc[i, j] > 0.7:  # High correlation threshold
                             high_corr_pairs.append((numeric_cols[i], numeric_cols[j]))
 
                 # Create interaction features for highly correlated pairs
-                for col1 = col2 in high_corr_pairs[:10]:  # Limit to top 10 interactions
+                for col1, col2 in high_corr_pairs[:10]:  # Limit to top 10 interactions
                     processed_df[f"{col1}_x_{col2}"] = processed_df[col1] * processed_df[col2]
                     processed_df[f"{col1}_div_{col2}"] = processed_df[col1] / (processed_df[col2] + 1e-8)
 
@@ -827,10 +847,10 @@ class OptimizedFeatureSelectionManager:
             return processed_df
 
         except Exception as e:
-    self.logger.exception(f"❌ Vectorized operations failed: {e}")
+            self.logger.exception(f"❌ Vectorized operations failed: {e}")
             return features_df
 
-    def apply_matrix_operations(self = features_df: pd.DataFrame) -> pd.DataFrame:
+    def apply_matrix_operations(self, features_df: pd.DataFrame) -> pd.DataFrame:
         """Apply efficient matrix operations for feature processing.
 
         Args:
@@ -841,11 +861,6 @@ class OptimizedFeatureSelectionManager:
 
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             start_time = time.time()
             self.logger.info("🔄 Applying matrix operations for feature processing...")
 
@@ -866,13 +881,13 @@ class OptimizedFeatureSelectionManager:
             # 3. Matrix-based PCA for dimensionality reduction
             if X.shape[1] > 50:  # Only apply PCA if we have many features
                 # Standardize the data
-                X_std = (X - np.mean(X, axis = 0)) / (np.std(X = axis = 0) + 1e-8)
+                X_std = (X - np.mean(X, axis=0)) / (np.std(X, axis=0) + 1e-8)
 
                 # Compute covariance matrix
                 cov_matrix = np.cov(X_std.T)
 
                 # Compute eigenvalues and eigenvectors
-                eigenvals = eigenvecs = np.linalg.eigh(cov_matrix)
+                eigenvals, eigenvecs = np.linalg.eigh(cov_matrix)
 
                 # Sort eigenvalues and eigenvectors
                 idx = eigenvals.argsort()[::-1]
@@ -891,27 +906,28 @@ class OptimizedFeatureSelectionManager:
                 pca_feature_names = [f"pca_component_{i+1}" for i in range(n_components)]
 
                 # Create DataFrame with PCA features
-                pca_df = pd.DataFrame(X_pca = columns = pca_feature_names = index=features_df.index)
+                pca_df = pd.DataFrame(X_pca, columns=pca_feature_names, index=features_df.index)
 
                 # Combine with original features
-                result_df = pd.concat([features_df, pca_df], axis = 1)
+                result_df = pd.concat([features_df, pca_df], axis=1)
 
                 self.logger.info(f"📊 PCA reduced features from {X.shape[1]} to {n_components} components")
-            else: result_df = features_df
+            else:
+                result_df = features_df
 
             # 4. Matrix-based feature scaling
             if len(numeric_cols) > 0:
                 # Min-max scaling
-                X_min = np.min(X = axis = 0)
-                X_max = np.max(X = axis = 0)
+                X_min = np.min(X, axis=0)
+                X_max = np.max(X, axis=0)
                 X_scaled = (X - X_min) / (X_max - X_min + 1e-8)
 
                 # Create scaled features
                 scaled_cols = [f"{col}_scaled" for col in numeric_cols]
-                scaled_df = pd.DataFrame(X_scaled, columns = scaled_cols, index = features_df.index)
+                scaled_df = pd.DataFrame(X_scaled, columns=scaled_cols, index=features_df.index)
 
                 # Combine with result
-                result_df = pd.concat([result_df = scaled_df], axis = 1)
+                result_df = pd.concat([result_df, scaled_df], axis=1)
 
             matrix_time = time.time() - start_time
             self.performance_metrics["matrix_operations_time"] = matrix_time
@@ -922,5 +938,5 @@ class OptimizedFeatureSelectionManager:
             return result_df
 
         except Exception as e:
-    self.logger.exception(f"❌ Matrix operations failed: {e}")
+            self.logger.exception(f"❌ Matrix operations failed: {e}")
             return features_df

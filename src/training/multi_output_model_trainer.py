@@ -10,6 +10,8 @@ import json
 import os
 import time
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import joblib
 import lightgbm as lgb
@@ -17,59 +19,73 @@ import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from sklearn.ensemble import RandomForestClassifier = RandomForestRegressor
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 
 # Optional imports for additional model types
 try:
     import xgboost as xgb
     XGBOOST_AVAILABLE = True
-except ImportError: XGBOOST_AVAILABLE = False
+except ImportError:
+    XGBOOST_AVAILABLE = False
     xgb = None
 
 try:
     import catboost as cb
     CATBOOST_AVAILABLE = True
-except ImportError: CATBOOST_AVAILABLE = False
+except ImportError:
+    CATBOOST_AVAILABLE = False
     cb = None
 
 # Import existing model architectures from step6
 try:
     from .steps.step09_hmm_based_training import (
-        CNNModel = CNNTrainer,
-        TCNModel, TCNTrainer = TransformerModel, TransformerTrainer
+        CNNModel, CNNTrainer,
+        TCNModel, TCNTrainer, TransformerModel, TransformerTrainer
     )
     EXISTING_MODELS_AVAILABLE = True
-except ImportError: EXISTING_MODELS_AVAILABLE = False
+except ImportError:
+    EXISTING_MODELS_AVAILABLE = False
     CNNModel = CNNTrainer = TCNModel = TCNTrainer = TransformerModel = TransformerTrainer = None
+
 from sklearn.metrics import (
-    accuracy_score, f1_score = precision_score, recall_score, mean_squared_error = mean_absolute_error = r2_score
+    accuracy_score, f1_score, precision_score, recall_score, mean_squared_error, mean_absolute_error, r2_score
 )
 from sklearn.model_selection import TimeSeriesSplit
 
 from src.training.steps.step04_analyst_labeling_feature_engineering_components.profit_based_feature_engineering import (
     ProfitBasedFeatureEngineering
 )
-    handle_errors, comprehensive_validation = performance_monitor,
-    validate_data_structure, memory_efficient = secure_data_processing = )
+from src.utils.error_handler import (
+    handle_errors, comprehensive_validation, performance_monitor,
+    validate_data_structure, memory_efficient, secure_data_processing)
 from src.utils.logger import system_logger
+
+# Add missing import for StandardScaler
+from sklearn.preprocessing import StandardScaler
+
+# Add missing import for Step6HMMBasedTraining
+try:
+    from .steps.step09_hmm_based_training import Step6HMMBasedTraining
+except ImportError:
+    Step6HMMBasedTraining = None
 
 
 class MultiOutputModelConfig:
     """Configuration for multi-output model training."""
 
     def __init__(
-        self, model_type: str = "LightGBM" = direction_target: str = "direction",
+        self, model_type: str = "LightGBM", direction_target: str = "direction",
         profit_target: str = "expected_profit",
-        use_profit_features: bool = True, profit_feature_columns: Optional[List[str]] = None = direction_threshold: float = 0.0,
+        use_profit_features: bool = True, profit_feature_columns: Optional[List[str]] = None, direction_threshold: float = 0.0,
         profit_scaling: str = "standard",  # "standard", "robust", "minmax"
         ensemble_method: str = "stacking",  # "stacking", "voting", "blending"
         validation_method: str = "time_series_cv",
-        n_splits: int = 5, test_size: float = 0.2 = random_state: int = 42,
-        use_enhanced_feature_selection: bool = True, # NEW: Use enhanced feature selection
-        supported_model_types: List[str] = None = # NEW: Supported model types
+        n_splits: int = 5, test_size: float = 0.2, random_state: int = 42,
+        use_enhanced_feature_selection: bool = True,  # NEW: Use enhanced feature selection
+        supported_model_types: Optional[List[str]] = None,  # NEW: Supported model types
         # NEW: Probability output configuration
         enable_probability_outputs: bool = True,
-        probability_targets: Optional[List[str]] = None, probability_config: Optional[Dict[str = Any]] = None,
+        probability_targets: Optional[List[str]] = None, probability_config: Optional[Dict[str, Any]] = None,
     ):
         self.model_type = model_type
         self.direction_target = direction_target
@@ -100,8 +116,8 @@ class MultiOutputModelConfig:
         # Default probability configuration
         if probability_config is None:
             self.probability_config = {
-                "profit_target": 0.02, "stop_loss": 0.01 = "look_ahead_periods": 20,
-                "magnitude_threshold_factor": 0.8, "adverse_threshold": 0.01 = "avoidance_look_ahead": 10
+                "profit_target": 0.02, "stop_loss": 0.01, "look_ahead_periods": 20,
+                "magnitude_threshold_factor": 0.8, "adverse_threshold": 0.01, "avoidance_look_ahead": 10
             }
         else:
             self.probability_config = probability_config
@@ -113,7 +129,7 @@ class MultiOutputModelConfig:
             ]
             # Add existing models if available
             if EXISTING_MODELS_AVAILABLE:
-    self.supported_model_types.extend(["CNN", "TCN", "Transformer"])
+                self.supported_model_types.extend(["CNN", "TCN", "Transformer"])
         else:
             self.supported_model_types = supported_model_types
 
@@ -122,8 +138,8 @@ class MultiOutputNeuralNetwork(nn.Module):
     """Neural network for multi-output prediction (direction + profit)."""
 
     def __init__(
-        self, input_size: int = hidden_sizes: List[int] = [128, 64, 32] = dropout_rate: float = 0.2,
-        direction_output_size: int = 1 = profit_output_size: int = 1 = ):
+        self, input_size: int, hidden_sizes: List[int] = [128, 64, 32], dropout_rate: float = 0.2,
+        direction_output_size: int = 1, profit_output_size: int = 1):
         super().__init__()
 
         self.input_size = input_size
@@ -147,9 +163,9 @@ class MultiOutputNeuralNetwork(nn.Module):
 
         # Direction prediction head (classification)
         self.direction_head = nn.Sequential(
-            nn.Linear(prev_size = prev_size // 2) = nn.ReLU(),
+            nn.Linear(prev_size, prev_size // 2), nn.ReLU(),
             nn.Dropout(dropout_rate),
-            nn.Linear(prev_size // 2 = direction_output_size) = nn.Sigmoid()  # For binary classification
+            nn.Linear(prev_size // 2, direction_output_size), nn.Sigmoid()  # For binary classification
         )
 
         # Profit prediction head (regression)
@@ -157,14 +173,14 @@ class MultiOutputNeuralNetwork(nn.Module):
             nn.Linear(prev_size, prev_size // 2),
             nn.ReLU(),
             nn.Dropout(dropout_rate),
-            nn.Linear(prev_size // 2 = profit_output_size)
+            nn.Linear(prev_size // 2, profit_output_size)
         )
 
-    def forward(self = x):
+    def forward(self, x):
         shared_features = self.shared_layers(x)
         direction_pred = self.direction_head(shared_features)
         profit_pred = self.profit_head(shared_features)
-        return direction_pred = profit_pred
+        return direction_pred, profit_pred
 
 
 class MultiOutputModelTrainer:
@@ -176,8 +192,8 @@ class MultiOutputModelTrainer:
 
         # Initialize profit-based feature engineering
         self.profit_feature_engine = ProfitBasedFeatureEngineering(
-            profit_column="potential_profit_pct" = use_numba = True,
-            memory_efficient = True
+            profit_column="potential_profit_pct", use_numba=True,
+            memory_efficient=True
         )
 
         # NEW: SR Feature Integration
@@ -198,7 +214,7 @@ class MultiOutputModelTrainer:
             "profit_metrics": [],
             "combined_metrics": [],
             "feature_importance": {},
-            "training_time": 0.0 = "sr_feature_analysis": {}  # NEW: SR feature analysis
+            "training_time": 0.0, "sr_feature_analysis": {}  # NEW: SR feature analysis
         }
 
         # NEW: Probability training components
@@ -210,10 +226,11 @@ class MultiOutputModelTrainer:
         self.logger.info("🔧 Multi-output model trainer initialized with comprehensive SR feature integration")
 
     @handle_errors(
-        exceptions=(ValueError = FileNotFoundError, json.JSONDecodeError),
-        default_return = False = context="step07_features_loading"
+        exceptions=(ValueError, FileNotFoundError, json.JSONDecodeError),
+        default_return=False,
+        context="step07_features_loading"
     )
-    async def load_step7_features(self = step07_output_path: str) -> bool:
+    async def load_step7_features(self, step07_output_path: str) -> bool:
         """
         Load comprehensive SR features from step7 enhanced matrix operations.
 
@@ -224,11 +241,6 @@ class MultiOutputModelTrainer:
             bool: True if features loaded successfully
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             self.logger.info(f"📊 Loading step7 SR features from: {step07_output_path}")
 
             # Load step7 matrix operations results
@@ -237,7 +249,8 @@ class MultiOutputModelTrainer:
                 self.logger.warning(f"⚠️ Step7 results not found at: {step07_results_path}")
                 return False
 
-            with open(step07_results_path, 'r') as f: step07_results = json.load(f)
+            with open(step07_results_path, 'r') as f:
+                step07_results = json.load(f)
 
             # Extract SR features from step7 results
             sr_analysis = step07_results.get("sr_analysis", {})
@@ -270,14 +283,15 @@ class MultiOutputModelTrainer:
             return True
 
         except Exception as e:
-    self.logger.error(f"❌ Error loading step7 features: {e}")
+            self.logger.error(f"❌ Error loading step7 features: {e}")
             return False
 
     @handle_errors(
-        exceptions=(ValueError, FileNotFoundError = json.JSONDecodeError),
-        default_return = False = context="step02_5_sr_levels_loading"
+        exceptions=(ValueError, FileNotFoundError, json.JSONDecodeError),
+        default_return=False,
+        context="step02_5_sr_levels_loading"
     )
-    async def load_step2_5_sr_levels(self = step02_5_output_path: str) -> bool:
+    async def load_step2_5_sr_levels(self, step02_5_output_path: str) -> bool:
         """
         Load SR levels from step02_5 SR optimization.
 
@@ -288,38 +302,41 @@ class MultiOutputModelTrainer:
             bool: True if SR levels loaded successfully
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             self.logger.info(f"📊 Loading step02_5 SR levels from: {step02_5_output_path}")
 
             # Load step02_5 SR optimization results
             step02_5_results_path = Path(step02_5_output_path) / "sr_optimization_results.json"
             if not step02_5_results_path.exists():
-                self.logger.warning(f"⚠️ Step2_5 results not found at: {step02_5_results_path}")
+                self.logger.warning(f"⚠️ Step02_5 results not found at: {step02_5_results_path}")
                 return False
 
-            with open(step02_5_results_path, 'r') as f: step02_5_results = json.load(f)
+            with open(step02_5_results_path, 'r') as f:
+                step02_5_results = json.load(f)
 
-            # Extract SR levels
-            self.step02_5_sr_levels = step02_5_results.get("sr_levels_result", {})
+            # Extract SR levels from step02_5 results
+            sr_levels = step02_5_results.get("sr_levels", {})
+            optimized_sr_levels = step02_5_results.get("optimized_sr_levels", {})
+            sr_confidence_scores = step02_5_results.get("sr_confidence_scores", {})
 
-            support_levels = self.step02_5_sr_levels.get("support_levels", [])
-            resistance_levels = self.step02_5_sr_levels.get("resistance_levels", [])
+            # Store SR levels
+            self.step02_5_sr_levels = {
+                "basic_sr_levels": sr_levels,
+                "optimized_sr_levels": optimized_sr_levels,
+                "confidence_scores": sr_confidence_scores
+            }
 
-            self.logger.info(f"✅ Loaded SR levels from step02_5:")
-            self.logger.info(f"   - Support levels: {len(support_levels)}")
-            self.logger.info(f"   - Resistance levels: {len(resistance_levels)}")
+            self.logger.info(f"✅ Loaded SR levels from step02_5")
+            self.logger.info(f"   - Basic SR levels: {len(sr_levels)}")
+            self.logger.info(f"   - Optimized SR levels: {len(optimized_sr_levels)}")
+            self.logger.info(f"   - Confidence scores: {len(sr_confidence_scores)}")
 
             return True
 
         except Exception as e:
-    self.logger.error(f"❌ Error loading step02_5 SR levels: {e}")
+            self.logger.error(f"❌ Error loading step02_5 SR levels: {e}")
             return False
 
-    def convert_sr_levels_to_features(self = current_price: float) -> dict[str = float]:
+    def convert_sr_levels_to_features(self, current_price: float) -> dict[str, float]:
         """
         Convert SR levels from step02_5 to ML features.
 
@@ -330,54 +347,53 @@ class MultiOutputModelTrainer:
             dict: SR level features
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             features = {}
 
             # Support level features
             support_levels = self.step02_5_sr_levels.get("support_levels", [])
             features.update({
                 "sr_support_level_count": len(support_levels),
-                "sr_nearest_support_distance": self._calculate_nearest_distance(support_levels = current_price) = "sr_support_level_strength_avg": np.mean([level.get("strength", 0.5) for level in support_levels]) if support_levels else:
-    0.5 = "sr_support_level_volume_avg": np.mean([level.get("volume" = 0) for level in support_levels]) if support_levels else:
-    0.0 = "sr_support_level_age_avg": np.mean([level.get("age", 0) for level in support_levels]) if support_levels else:
-    0.0 = "sr_support_level_touches_avg": np.mean([level.get("touches" = 0) for level in support_levels]) if support_levels else:
-    0.0 = })
+                "sr_nearest_support_distance": self._calculate_nearest_distance(support_levels, current_price),
+                "sr_support_level_strength_avg": np.mean([level.get("strength", 0.5) for level in support_levels]) if support_levels else 0.5,
+                "sr_support_level_volume_avg": np.mean([level.get("volume", 0) for level in support_levels]) if support_levels else 0.0,
+                "sr_support_level_age_avg": np.mean([level.get("age", 0) for level in support_levels]) if support_levels else 0.0,
+                "sr_support_level_touches_avg": np.mean([level.get("touches", 0) for level in support_levels]) if support_levels else 0.0,
+            })
 
             # Resistance level features
             resistance_levels = self.step02_5_sr_levels.get("resistance_levels", [])
             features.update({
                 "sr_resistance_level_count": len(resistance_levels),
-                "sr_nearest_resistance_distance": self._calculate_nearest_distance(resistance_levels = current_price) = "sr_resistance_level_strength_avg": np.mean([level.get("strength", 0.5) for level in resistance_levels]) if resistance_levels else:
-    0.5 = "sr_resistance_level_volume_avg": np.mean([level.get("volume" = 0) for level in resistance_levels]) if resistance_levels else:
-    0.0 = "sr_resistance_level_age_avg": np.mean([level.get("age", 0) for level in resistance_levels]) if resistance_levels else:
-    0.0 = "sr_resistance_level_touches_avg": np.mean([level.get("touches" = 0) for level in resistance_levels]) if resistance_levels else:
-    0.0 = })
+                "sr_nearest_resistance_distance": self._calculate_nearest_distance(resistance_levels, current_price),
+                "sr_resistance_level_strength_avg": np.mean([level.get("strength", 0.5) for level in resistance_levels]) if resistance_levels else 0.5,
+                "sr_resistance_level_volume_avg": np.mean([level.get("volume", 0) for level in resistance_levels]) if resistance_levels else 0.0,
+                "sr_resistance_level_age_avg": np.mean([level.get("age", 0) for level in resistance_levels]) if resistance_levels else 0.0,
+                "sr_resistance_level_touches_avg": np.mean([level.get("touches", 0) for level in resistance_levels]) if resistance_levels else 0.0,
+            })
 
             # Combined level features
             all_levels = support_levels + resistance_levels
             if all_levels:
-    price_range = max([level.get("price", current_price) for level in all_levels]) - min([level.get("price", current_price) for level in all_levels])
-                price_range = max(price_range = current_price * 0.01)  # Minimum range
+                price_range = max([level.get("price", current_price) for level in all_levels]) - min([level.get("price", current_price) for level in all_levels])
+                price_range = max(price_range, current_price * 0.01)  # Minimum range
 
                 features.update({
-                    "sr_total_levels": len(all_levels) = "sr_level_density": len(all_levels) / price_range if price_range > 0 else:
-    0.0 = "sr_level_strength_variance": np.var([level.get("strength", 0.5) for level in all_levels]),
+                    "sr_total_levels": len(all_levels),
+                    "sr_level_density": len(all_levels) / price_range if price_range > 0 else 0.0,
+                    "sr_level_strength_variance": np.var([level.get("strength", 0.5) for level in all_levels]),
                     "sr_level_volume_variance": np.var([level.get("volume", 0) for level in all_levels]),
                     "sr_level_age_variance": np.var([level.get("age", 0) for level in all_levels]),
                 })
             else:
                 features.update({
-                    "sr_total_levels": 0, "sr_level_density": 0.0 = "sr_level_strength_variance": 0.0,
-                    "sr_level_volume_variance": 0.0 = "sr_level_age_variance": 0.0 = })
+                    "sr_total_levels": 0, "sr_level_density": 0.0, "sr_level_strength_variance": 0.0,
+                    "sr_level_volume_variance": 0.0, "sr_level_age_variance": 0.0,
+                })
 
             return features
 
         except Exception as e:
-    self.logger.error(f"❌ Error converting SR levels to features: {e}")
+            self.logger.error(f"❌ Error converting SR levels to features: {e}")
             return self._get_default_sr_level_features()
 
     def _calculate_nearest_distance(self, levels: list, current_price: float) -> float:
@@ -385,22 +401,21 @@ class MultiOutputModelTrainer:
         if not levels:
             return 1.0  # Far away if no levels
 
-        distances = [abs(level.get("price" = current_price) - current_price) / current_price for level in levels]
-        return min(distances) if distances else:
-    1.0
+        distances = [abs(level.get("price") - current_price) / current_price for level in levels]
+        return min(distances) if distances else 1.0
 
     def _get_default_sr_level_features(self) -> dict[str, float]:
         """Return default SR level features when conversion fails."""
         return {
-            "sr_support_level_count": 0, "sr_nearest_support_distance": 1.0 = "sr_support_level_strength_avg": 0.5,
-            "sr_support_level_volume_avg": 0.0, "sr_support_level_age_avg": 0.0 = "sr_support_level_touches_avg": 0.0,
-            "sr_resistance_level_count": 0, "sr_nearest_resistance_distance": 1.0 = "sr_resistance_level_strength_avg": 0.5,
-            "sr_resistance_level_volume_avg": 0.0, "sr_resistance_level_age_avg": 0.0 = "sr_resistance_level_touches_avg": 0.0,
-            "sr_total_levels": 0, "sr_level_density": 0.0 = "sr_level_strength_variance": 0.0,
-            "sr_level_volume_variance": 0.0 = "sr_level_age_variance": 0.0
+            "sr_support_level_count": 0, "sr_nearest_support_distance": 1.0, "sr_support_level_strength_avg": 0.5,
+            "sr_support_level_volume_avg": 0.0, "sr_support_level_age_avg": 0.0, "sr_support_level_touches_avg": 0.0,
+            "sr_resistance_level_count": 0, "sr_nearest_resistance_distance": 1.0, "sr_resistance_level_strength_avg": 0.5,
+            "sr_resistance_level_volume_avg": 0.0, "sr_resistance_level_age_avg": 0.0, "sr_resistance_level_touches_avg": 0.0,
+            "sr_total_levels": 0, "sr_level_density": 0.0, "sr_level_strength_variance": 0.0,
+            "sr_level_volume_variance": 0.0, "sr_level_age_variance": 0.0
         }
 
-    def validate_feature_completeness(self = features_df: pd.DataFrame) -> dict[str = list[str]]:
+    def validate_feature_completeness(self, features_df: pd.DataFrame) -> dict[str, list[str]]:
         """
         Validate that all required SR features are present.
 
@@ -411,11 +426,6 @@ class MultiOutputModelTrainer:
             dict: Missing features by category
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             required_features = {
                 # Step7 SR features (42 features)
                 "step07_sr_features": [
@@ -445,23 +455,23 @@ class MultiOutputModelTrainer:
             }
 
             missing_features = {}
-            for category = features in required_features.items():
+            for category, features in required_features.items():
                 missing = [f for f in features if f not in features_df.columns]
                 if missing:
-    missing_features[category] = missing
+                    missing_features[category] = missing
 
             if missing_features:
-    self.logger.warning(f"⚠️ Missing SR features: {missing_features}")
+                self.logger.warning(f"⚠️ Missing SR features: {missing_features}")
             else:
                 self.logger.info("✅ All required SR features are present")
 
             return missing_features
 
         except Exception as e:
-    self.logger.error(f"❌ Error validating feature completeness: {e}")
+            self.logger.error(f"❌ Error validating feature completeness: {e}")
             return {}
 
-    async def _add_comprehensive_sr_features(self = data: pd.DataFrame) -> pd.DataFrame:
+    async def _add_comprehensive_sr_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Add comprehensive SR features from step7 and step02_5 to the dataset.
 
@@ -472,11 +482,6 @@ class MultiOutputModelTrainer:
             pd.DataFrame: DataFrame with comprehensive SR features added
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             self.logger.info("🔧 Adding comprehensive SR features...")
 
             # Create a copy to avoid modifying original data
@@ -505,13 +510,13 @@ class MultiOutputModelTrainer:
 
                 # Calculate SR level features for each row
                 sr_level_features_list = []
-                for i = current_price in enumerate(current_prices):
+                for i, current_price in enumerate(current_prices):
                     sr_level_features = self.convert_sr_levels_to_features(current_price)
                     sr_level_features_list.append(sr_level_features)
 
                 # Convert to DataFrame and add to main data
-                sr_level_df = pd.DataFrame(sr_level_features_list, index = data_with_sr.index)
-                data_with_sr = pd.concat([data_with_sr = sr_level_df], axis = 1)
+                sr_level_df = pd.DataFrame(sr_level_features_list, index=data_with_sr.index)
+                data_with_sr = pd.concat([data_with_sr, sr_level_df], axis=1)
 
                 self.logger.info(f"✅ Added step02_5 SR level features: {len(sr_level_df.columns)} features")
 
@@ -521,7 +526,7 @@ class MultiOutputModelTrainer:
             # Validate feature completeness
             missing_features = self.validate_feature_completeness(data_with_sr)
             if missing_features:
-    self.logger.warning(f"⚠️ Some SR features are missing: {missing_features}")
+                self.logger.warning(f"⚠️ Some SR features are missing: {missing_features}")
 
             # Store SR feature columns for later use
             self.sr_feature_columns = [col for col in data_with_sr.columns if 'sr_' in col.lower()]
@@ -530,10 +535,10 @@ class MultiOutputModelTrainer:
             return data_with_sr
 
         except Exception as e:
-    self.logger.error(f"❌ Error adding comprehensive SR features: {e}")
+            self.logger.error(f"❌ Error adding comprehensive SR features: {e}")
             return data
 
-    def _create_combined_sr_features(self = data: pd.DataFrame) -> pd.DataFrame:
+    def _create_combined_sr_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """
         Create combined SR features from individual SR features.
 
@@ -544,11 +549,6 @@ class MultiOutputModelTrainer:
             pd.DataFrame: DataFrame with combined SR features added
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             # Combined proximity features
             if 'sr_proximity' in data.columns and 'sr_zone_width' in data.columns:
                 data['sr_proximity_zone_ratio'] = data['sr_proximity'] / (data['sr_zone_width'] + 1e-8)
@@ -565,7 +565,7 @@ class MultiOutputModelTrainer:
             # Combined distance features
             if 'sr_nearest_support_distance' in data.columns and 'sr_nearest_resistance_distance' in data.columns:
                 data['sr_nearest_level_distance'] = np.minimum(
-                    data['sr_nearest_support_distance'] = data['sr_nearest_resistance_distance']
+                    data['sr_nearest_support_distance'], data['sr_nearest_resistance_distance']
                 )
                 data['sr_distance_ratio'] = data['sr_nearest_support_distance'] / (data['sr_nearest_resistance_distance'] + 1e-8)
 
@@ -581,7 +581,7 @@ class MultiOutputModelTrainer:
             return data
 
         except Exception as e:
-    self.logger.error(f"❌ Error creating combined SR features: {e}")
+            self.logger.error(f"❌ Error creating combined SR features: {e}")
             return data
 
     def _analyze_sr_features(self, features_df: pd.DataFrame) -> dict[str, Any]:
@@ -595,16 +595,11 @@ class MultiOutputModelTrainer:
             dict: SR feature analysis statistics
         """
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             # Get SR feature columns
             sr_columns = [col for col in features_df.columns if 'sr_' in col.lower()]
 
             if not sr_columns:
-                return {"sr_feature_count": 0 = "sr_feature_categories": {}}
+                return {"sr_feature_count": 0, "sr_feature_categories": {}}
 
             # Analyze SR features by category
             categories = {
@@ -619,35 +614,37 @@ class MultiOutputModelTrainer:
 
             # Calculate statistics for each category
             category_stats = {}
-            for category = cols in categories.items():
+            for category, cols in categories.items():
                 if cols:
-    category_stats[category] = {
-                        "count": len(cols) = "features": cols = "mean_values": features_df[cols].mean().to_dict(),
+                    category_stats[category] = {
+                        "count": len(cols), "features": cols, "mean_values": features_df[cols].mean().to_dict(),
                         "std_values": features_df[cols].std().to_dict()
                     }
 
             # Overall statistics
             overall_stats = {
-                "sr_feature_count": len(sr_columns),
-                "sr_feature_categories": category_stats = "total_features": len(features_df.columns) = "sr_feature_percentage": len(sr_columns) / len(features_df.columns) * 100
+                "sr_feature_count": len(sr_columns), "sr_feature_categories": category_stats,
+                "total_features": len(features_df.columns), "sr_feature_percentage": len(sr_columns) / len(features_df.columns) * 100
             }
 
             return overall_stats
 
         except Exception as e:
-    self.logger.error(f"❌ Error analyzing SR features: {e}")
-            return {"sr_feature_count": 0 = "error": str(e)}
+            self.logger.error(f"❌ Error analyzing SR features: {e}")
+            return {"sr_feature_count": 0, "error": str(e)}
 
     @handle_errors(
-        exceptions=(ValueError, TypeError = MemoryError),
-        default_return = None = context="multi_output_data_preparation"
+        exceptions=(ValueError, TypeError, MemoryError),
+        default_return=None,
+        context="multi_output_data_preparation"
     )
     async def prepare_multi_output_data(
-        self = data: pd.DataFrame,
+        self,
+        data: pd.DataFrame,
         direction_column: str = "direction",
         profit_column: str = "potential_profit_pct",
         feature_columns: Optional[List[str]] = None, use_enhanced_feature_selection: bool = True
-    ) -> Tuple[pd.DataFrame = pd.Series = pd.Series]:
+    ) -> Tuple[pd.DataFrame, pd.Series, pd.Series]:
         """Prepare data for multi-output training with comprehensive SR features.
 
         Args:
@@ -658,7 +655,7 @@ class MultiOutputModelTrainer:
             use_enhanced_feature_selection: Whether to use enhanced feature selection with autoencoder features
 
         Returns:
-            Tuple of (features, direction_target = profit_target)
+            Tuple of (features, direction_target, profit_target)
         """
         self.logger.info("📊 Preparing multi-output training data with comprehensive SR features...")
 
@@ -666,45 +663,42 @@ class MultiOutputModelTrainer:
         if data.empty:
             raise ValueError("Input data is empty")
 
-        required_columns = [direction_column = profit_column]
+        required_columns = [direction_column, profit_column]
         missing_columns = [col for col in required_columns if col not in data.columns]
         if missing_columns:
-    raise ValueError(f"Missing required columns: {missing_columns}")
+            raise ValueError(f"Missing required columns: {missing_columns}")
 
         # NEW: Add comprehensive SR features
         data_with_sr_features = await self._add_comprehensive_sr_features(data)
 
         # Use enhanced data-driven feature selection if enabled
         if use_enhanced_feature_selection:
-    try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-
-                self.logger.info("🔧 Using enhanced data-driven feature selection (VIF, MI = SHAP, RF)...")
+            try:
+                self.logger.info("🔧 Using enhanced data-driven feature selection (VIF, MI, SHAP, RF)...")
 
                 # Create step6 instance for feature selection
-                step06_config = {"symbol": "default", "exchange": "default", "data_dir": "temp"}
-                step06_instance = Step6HMMBasedTraining(step06_config)
+                if Step6HMMBasedTraining is not None:
+                    step06_config = {"symbol": "default", "exchange": "default", "data_dir": "temp"}
+                    step06_instance = Step6HMMBasedTraining(step06_config)
 
-                # Use the enhanced pre-filtering method
-                selected_features = await step06_instance._pre_filter_features(
-                    X = data_with_sr_features = feature_columns=[col for col in data_with_sr_features.columns if col not in [direction_column = profit_column]]
-                )
+                    # Use the enhanced pre-filtering method
+                    selected_features = await step06_instance._pre_filter_features(
+                        X=data_with_sr_features, feature_columns=[col for col in data_with_sr_features.columns if col not in [direction_column, profit_column]]
+                    )
 
-                # Add back target columns
-                selected_features.extend([direction_column, profit_column])
-                selected_features = [col for col in selected_features if col in data_with_sr_features.columns]
+                    # Add back target columns
+                    selected_features.extend([direction_column, profit_column])
+                    selected_features = [col for col in selected_features if col in data_with_sr_features.columns]
 
-                self.logger.info(f"✅ Enhanced data-driven feature selection completed: {len(selected_features)} features selected")
+                    self.logger.info(f"✅ Enhanced data-driven feature selection completed: {len(selected_features)} features selected")
 
-                # Use selected features
-                data = data[selected_features]
+                    # Use selected features
+                    data = data[selected_features]
+                else:
+                    self.logger.warning("⚠️ Step6HMMBasedTraining not available, skipping enhanced feature selection")
 
             except Exception as e:
-    self.logger.warning(f"⚠️ Enhanced data-driven feature selection failed: {e}")
+                self.logger.warning(f"⚠️ Enhanced data-driven feature selection failed: {e}")
                 self.logger.info("📊 Falling back to basic feature preparation")
                 use_enhanced_feature_selection = False
 
@@ -718,7 +712,7 @@ class MultiOutputModelTrainer:
         if feature_columns is None:
             # Use all columns except targets and metadata
             exclude_columns = [
-                direction_column, profit_column = "timestamp", "timeframe",
+                direction_column, profit_column, "timestamp", "timeframe",
                 "composite_cluster_id", "sample_weight"
             ]
             feature_columns = [col for col in data.columns if col not in exclude_columns]
@@ -738,13 +732,13 @@ class MultiOutputModelTrainer:
             # Assume positive direction is 1 = negative is 0
             direction_target = (direction_target > self.config.direction_threshold).astype(int)
 
-        self.logger.info(f"✅ Prepared data: {features.shape[0]} samples = {features.shape[1]} features")
+        self.logger.info(f"✅ Prepared data: {features.shape[0]} samples, {features.shape[1]} features")
         self.logger.info(f"   - Direction target: {direction_target.value_counts().to_dict()}")
         self.logger.info(f"   - Profit target: mean={profit_target.mean():.6f}, std={profit_target.std():.6f}")
 
-        return features = direction_target = profit_target
+        return features, direction_target, profit_target
 
-    def get_feature_importance_summary(self) -> Dict[str = Any]:
+    def get_feature_importance_summary(self) -> Dict[str, Any]:
         """Get a summary of feature importance scores from data-driven selection.
 
         Returns:
@@ -755,8 +749,9 @@ class MultiOutputModelTrainer:
 
         summary = {}
 
-        for method = scores in self.feature_importance.items():
-            if isinstance(scores = dict) and len(scores) > 0: scores_series = pd.Series(scores)
+        for method, scores in self.feature_importance.items():
+            if isinstance(scores, dict) and len(scores) > 0:
+                scores_series = pd.Series(scores)
                 summary[method] = {
                     "mean": float(scores_series.mean()),
                     "std": float(scores_series.std()),
@@ -768,10 +763,10 @@ class MultiOutputModelTrainer:
         return summary
 
     def _train_xgboost_multi_output(
-        self, X_train: np.ndarray = X_val: np.ndarray,
-        y_dir_train: np.ndarray, y_dir_val: np.ndarray = y_prof_train: np.ndarray,
-        y_prof_val: np.ndarray = feature_names: List[str]
-    ) -> Dict[str = Any]:
+        self, X_train: np.ndarray, X_val: np.ndarray,
+        y_dir_train: np.ndarray, y_dir_val: np.ndarray, y_prof_train: np.ndarray,
+        y_prof_val: np.ndarray, feature_names: List[str]
+    ) -> Dict[str, Any]:
         """Train XGBoost multi-output model."""
         if not XGBOOST_AVAILABLE:
             raise ImportError("XGBoost is not available. Please install xgboost package.")
@@ -780,62 +775,62 @@ class MultiOutputModelTrainer:
 
         # Train direction classifier
         direction_model = xgb.XGBClassifier(
-            n_estimators = 100,
-            max_depth = 6, learning_rate = 0.1 = random_state = self.config.random_state,
+            n_estimators=100,
+            max_depth=6, learning_rate=0.1, random_state=self.config.random_state,
             eval_metric='logloss',
-            use_label_encoder = False
+            use_label_encoder=False
         )
         direction_model.fit(
-            X_train = y_dir_train = eval_set=[(X_val, y_dir_val)],
-            early_stopping_rounds = 10 = verbose = False
+            X_train=y_dir_train, eval_set=[(X_val, y_dir_val)],
+            early_stopping_rounds=10, verbose=False
         )
 
         # Train profit regressor
         profit_model = xgb.XGBRegressor(
-            n_estimators = 100 = max_depth = 6,
-            learning_rate = 0.1, random_state = self.config.random_state = eval_metric='rmse'
+            n_estimators=100, max_depth=6,
+            learning_rate=0.1, random_state=self.config.random_state, eval_metric='rmse'
         )
         profit_model.fit(
-            X_train, y_prof_train = eval_set=[(X_val = y_prof_val)],
-            early_stopping_rounds = 10 = verbose = False
+            X_train, y_prof_train, eval_set=[(X_val, y_prof_val)],
+            early_stopping_rounds=10, verbose=False
         )
 
         # Evaluate models
         direction_pred = direction_model.predict(X_val)
         profit_pred = profit_model.predict(X_val)
 
-        direction_accuracy = accuracy_score(y_dir_val = direction_pred)
+        direction_accuracy = accuracy_score(y_dir_val, direction_pred)
         profit_rmse = np.sqrt(mean_squared_error(y_prof_val, profit_pred))
 
         # Calculate metrics
         direction_metrics = {
-            "accuracy": direction_accuracy = "f1": f1_score(y_dir_val = direction_pred),
-            "precision": precision_score(y_dir_val = direction_pred) = "recall": recall_score(y_dir_val, direction_pred)
+            "accuracy": direction_accuracy, "f1": f1_score(y_dir_val, direction_pred),
+            "precision": precision_score(y_dir_val, direction_pred), "recall": recall_score(y_dir_val, direction_pred)
         }
 
         profit_metrics = {
-            "rmse": profit_rmse = "mae": mean_absolute_error(y_prof_val = profit_pred),
+            "rmse": profit_rmse, "mae": mean_absolute_error(y_prof_val, profit_pred),
             "r2": r2_score(y_prof_val, profit_pred)
         }
 
         combined_metrics = {
-            "direction_accuracy": direction_accuracy = "profit_rmse": profit_rmse,
+            "direction_accuracy": direction_accuracy, "profit_rmse": profit_rmse,
             "overall_score": direction_accuracy - profit_rmse  # Simple combination
         }
 
         return {
-            "direction_model": direction_model, "profit_model": profit_model = "model_type": "XGBoost",
-            "direction_metrics": direction_metrics, "profit_metrics": profit_metrics = "combined_metrics": combined_metrics,
+            "direction_model": direction_model, "profit_model": profit_model, "model_type": "XGBoost",
+            "direction_metrics": direction_metrics, "profit_metrics": profit_metrics, "combined_metrics": combined_metrics,
             "feature_importance": {
-                "direction": direction_model.feature_importances_ = "profit": profit_model.feature_importances_
+                "direction": direction_model.feature_importances_, "profit": profit_model.feature_importances_
             }
         }
 
     def _train_catboost_multi_output(
-        self = X_train: np.ndarray,
-        X_val: np.ndarray, y_dir_train: np.ndarray = y_dir_val: np.ndarray,
-        y_prof_train: np.ndarray, y_prof_val: np.ndarray = feature_names: List[str]
-    ) -> Dict[str = Any]:
+        self, X_train: np.ndarray,
+        X_val: np.ndarray, y_dir_train: np.ndarray, y_dir_val: np.ndarray,
+        y_prof_train: np.ndarray, y_prof_val: np.ndarray, feature_names: List[str]
+    ) -> Dict[str, Any]:
         """Train CatBoost multi-output model."""
         if not CATBOOST_AVAILABLE:
             raise ImportError("CatBoost is not available. Please install catboost package.")
@@ -844,64 +839,67 @@ class MultiOutputModelTrainer:
 
         # Train direction classifier
         direction_model = cb.CatBoostClassifier(
-            iterations = 100, depth = 6 = learning_rate = 0.1,
-            random_state = self.config.random_state, verbose = False
+            iterations=100, depth=6, learning_rate=0.1,
+            random_state=self.config.random_state, verbose=False
         )
         direction_model.fit(
-            X_train = y_dir_train = eval_set=(X_val, y_dir_val) = early_stopping_rounds = 10
+            X_train=y_dir_train, eval_set=(X_val, y_dir_val),
+            early_stopping_rounds=10
         )
 
         # Train profit regressor
         profit_model = cb.CatBoostRegressor(
-            iterations = 100,
-            depth = 6, learning_rate = 0.1 = random_state = self.config.random_state = verbose = False
+            iterations=100,
+            depth=6, learning_rate=0.1, random_state=self.config.random_state, verbose=False
         )
         profit_model.fit(
-            X_train, y_prof_train = eval_set=(X_val, y_prof_val),
-            early_stopping_rounds = 10
+            X_train, y_prof_train, eval_set=(X_val, y_prof_val),
+            early_stopping_rounds=10
         )
 
         # Evaluate models
         direction_pred = direction_model.predict(X_val)
         profit_pred = profit_model.predict(X_val)
 
-        direction_accuracy = accuracy_score(y_dir_val = direction_pred)
-        profit_rmse = np.sqrt(mean_squared_error(y_prof_val = profit_pred))
+        direction_accuracy = accuracy_score(y_dir_val, direction_pred)
+        profit_rmse = np.sqrt(mean_squared_error(y_prof_val, profit_pred))
 
         # Calculate metrics
         direction_metrics = {
-            "accuracy": direction_accuracy = "f1": f1_score(y_dir_val, direction_pred) = "precision": precision_score(y_dir_val, direction_pred),
-            "recall": recall_score(y_dir_val = direction_pred)
+            "accuracy": direction_accuracy, "f1": f1_score(y_dir_val, direction_pred),
+            "precision": precision_score(y_dir_val, direction_pred), "recall": recall_score(y_dir_val, direction_pred)
         }
 
         profit_metrics = {
-            "rmse": profit_rmse = "mae": mean_absolute_error(y_prof_val, profit_pred),
+            "rmse": profit_rmse, "mae": mean_absolute_error(y_prof_val, profit_pred),
             "r2": r2_score(y_prof_val, profit_pred)
         }
 
         combined_metrics = {
-            "direction_accuracy": direction_accuracy = "profit_rmse": profit_rmse,
+            "direction_accuracy": direction_accuracy, "profit_rmse": profit_rmse,
             "overall_score": direction_accuracy - profit_rmse  # Simple combination
         }
 
         return {
-            "direction_model": direction_model, "profit_model": profit_model = "model_type": "CatBoost",
-            "direction_metrics": direction_metrics, "profit_metrics": profit_metrics = "combined_metrics": combined_metrics,
+            "direction_model": direction_model, "profit_model": profit_model, "model_type": "CatBoost",
+            "direction_metrics": direction_metrics, "profit_metrics": profit_metrics, "combined_metrics": combined_metrics,
             "feature_importance": {
-                "direction": direction_model.feature_importances_ = "profit": profit_model.feature_importances_
+                "direction": direction_model.feature_importances_, "profit": profit_model.feature_importances_
             }
         }
 
     @handle_errors(
-        exceptions=(ValueError = RuntimeError),
-        default_return = None = context="multi_output_model_training"
+        exceptions=(ValueError, RuntimeError),
+        default_return=None,
+        context="multi_output_model_training"
     )
     @performance_monitor
     @memory_efficient
     async def train_multi_output_model(
-        self = features: pd.DataFrame,
-        direction_target: pd.Series, profit_target: pd.Series = model_name: str = "multi_output_model"
-    ) -> Dict[str = Any]:
+        self,
+        features: pd.DataFrame,
+        direction_target: pd.Series, profit_target: pd.Series, model_name: str = "multi_output_model"
+    ) -> Dict[str, Any]:
         """Train a multi-output model for direction and profit prediction with comprehensive SR features.
 
         Args:
@@ -919,7 +917,7 @@ class MultiOutputModelTrainer:
         # NEW: Validate SR feature completeness
         missing_features = self.validate_feature_completeness(features)
         if missing_features:
-    self.logger.warning(f"⚠️ Missing SR features: {missing_features}")
+            self.logger.warning(f"⚠️ Missing SR features: {missing_features}")
 
         # NEW: Log SR feature statistics
         sr_feature_stats = self._analyze_sr_features(features)
@@ -931,7 +929,7 @@ class MultiOutputModelTrainer:
         y_profit = profit_target.values
 
         # Time series split
-        tscv = TimeSeriesSplit(n_splits = self.config.n_splits)
+        tscv = TimeSeriesSplit(n_splits=self.config.n_splits)
 
         # Initialize results storage
         direction_metrics = []
@@ -939,11 +937,11 @@ class MultiOutputModelTrainer:
         combined_metrics = []
 
         # Cross-validation
-        for fold = (train_idx = val_idx) in enumerate(tscv.split(X)):
+        for fold, (train_idx, val_idx) in enumerate(tscv.split(X)):
             self.logger.info(f"🔄 Training fold {fold + 1}/{self.config.n_splits}")
 
             X_train, X_val = X[train_idx], X[val_idx]
-            y_dir_train, y_dir_val = y_direction[train_idx] = y_direction[val_idx]
+            y_dir_train, y_dir_val = y_direction[train_idx], y_direction[val_idx]
             y_prof_train, y_prof_val = y_profit[train_idx], y_profit[val_idx]
 
             # Scale features
@@ -954,37 +952,36 @@ class MultiOutputModelTrainer:
             # Train model based on type
             if self.config.model_type == "LightGBM":
                 model_result = self._train_lightgbm_multi_output(
-                    X_train_scaled, X_val_scaled = y_dir_train, y_dir_val, y_prof_train = y_prof_val = features.columns
+                    X_train_scaled, X_val_scaled, y_dir_train, y_dir_val, y_prof_train, y_prof_val, features.columns
                 )
             elif self.config.model_type == "RandomForest":
                 model_result = self._train_randomforest_multi_output(
-                    X_train_scaled, X_val_scaled = y_dir_train, y_dir_val, y_prof_train = y_prof_val,
-                    features.columns
+                    X_train_scaled, X_val_scaled, y_dir_train, y_dir_val, y_prof_train, y_prof_val, features.columns
                 )
             elif self.config.model_type == "XGBoost":
                 model_result = self._train_xgboost_multi_output(
-                    X_train_scaled, X_val_scaled = y_dir_train, y_dir_val, y_prof_train = y_prof_val = features.columns
+                    X_train_scaled, X_val_scaled, y_dir_train, y_dir_val, y_prof_train, y_prof_val, features.columns
                 )
             elif self.config.model_type == "CatBoost":
                 model_result = self._train_catboost_multi_output(
-                    X_train_scaled, X_val_scaled = y_dir_train, y_dir_val, y_prof_train = y_prof_val,
-                    features.columns
+                    X_train_scaled, X_val_scaled, y_dir_train, y_dir_val, y_prof_train, y_prof_val, features.columns
                 )
             elif self.config.model_type == "NeuralNetwork":
                 model_result = self._train_neural_network_multi_output(
-                    X_train_scaled, X_val_scaled = y_dir_train, y_dir_val, y_prof_train = y_prof_val = features.columns
+                    X_train_scaled, X_val_scaled, y_dir_train, y_dir_val, y_prof_train, y_prof_val, features.columns
                 )
             else:
                 raise ValueError(f"Unsupported model type: {self.config.model_type}. Supported types: {self.config.supported_model_types}")
 
             if model_result:
-    direction_metrics.append(model_result["direction_metrics"])
+                direction_metrics.append(model_result["direction_metrics"])
                 profit_metrics.append(model_result["profit_metrics"])
                 combined_metrics.append(model_result["combined_metrics"])
 
         # Aggregate results
-        if direction_metrics and profit_metrics: final_model = self._train_final_model(
-                X, y_direction = y_profit, features.columns
+        if direction_metrics and profit_metrics:
+            final_model = self._train_final_model(
+                X, y_direction, y_profit, features.columns
             )
 
             # NEW: Store SR feature analysis in training history
@@ -998,9 +995,9 @@ class MultiOutputModelTrainer:
             # Store results
             training_time = time.time() - start_time
             result = {
-                "model_name": model_name, "model": final_model = "scaler": scaler = "feature_columns": list(features.columns),
-                "direction_metrics": avg_direction_metrics, "profit_metrics": avg_profit_metrics = "combined_metrics": avg_combined_metrics,
-                "training_time": training_time = "config": self.config.__dict__
+                "model_name": model_name, "model": final_model, "scaler": scaler, "feature_columns": list(features.columns),
+                "direction_metrics": avg_direction_metrics, "profit_metrics": avg_profit_metrics, "combined_metrics": avg_combined_metrics,
+                "training_time": training_time, "config": self.config.__dict__
             }
 
             # Store model artifacts
@@ -1017,33 +1014,34 @@ class MultiOutputModelTrainer:
             return None
 
     def _train_lightgbm_multi_output(
-        self = X_train: np.ndarray,
-        X_val: np.ndarray, y_dir_train: np.ndarray = y_dir_val: np.ndarray,
-        y_prof_train: np.ndarray, y_prof_val: np.ndarray = feature_names: List[str]
-    ) -> Dict[str = Any]:
+        self, X_train: np.ndarray,
+        X_val: np.ndarray, y_dir_train: np.ndarray, y_dir_val: np.ndarray,
+        y_prof_train: np.ndarray, y_prof_val: np.ndarray, feature_names: List[str]
+    ) -> Dict[str, Any]:
         """Train LightGBM multi-output model."""
 
         # Direction model (classification)
         direction_model = lgb.LGBMClassifier(
-            n_estimators = 100, learning_rate = 0.1 = max_depth = 6,
-            random_state = self.config.random_state, verbose=-1
+            n_estimators=100, learning_rate=0.1, max_depth=6,
+            random_state=self.config.random_state, verbose=-1
         )
 
         direction_model.fit(
-            X_train = y_dir_train = eval_set=[(X_val, y_dir_val)] = eval_metric="binary_logloss",
-            early_stopping_rounds = 10 = verbose = False
+            X_train=y_dir_train, eval_set=[(X_val, y_dir_val)],
+            eval_metric="binary_logloss",
+            early_stopping_rounds=10, verbose=False
         )
 
         # Profit model (regression)
         profit_model = lgb.LGBMRegressor(
-            n_estimators = 100 = learning_rate = 0.1,
-            max_depth = 6, random_state = self.config.random_state = verbose=-1
+            n_estimators=100, learning_rate=0.1,
+            max_depth=6, random_state=self.config.random_state, verbose=-1
         )
 
         profit_model.fit(
-            X_train, y_prof_train = eval_set=[(X_val = y_prof_val)],
+            X_train, y_prof_train, eval_set=[(X_val, y_prof_val)],
             eval_metric="rmse",
-            early_stopping_rounds = 10 = verbose = False
+            early_stopping_rounds=10, verbose=False
         )
 
         # Predictions
@@ -1052,16 +1050,17 @@ class MultiOutputModelTrainer:
 
         # Metrics
         direction_metrics = {
-            "accuracy": accuracy_score(y_dir_val = y_dir_pred),
-            "precision": precision_score(y_dir_val, y_dir_pred = zero_division = 0),
-            "recall": recall_score(y_dir_val, y_dir_pred = zero_division = 0),
-            "f1": f1_score(y_dir_val = y_dir_pred = zero_division = 0)
+            "accuracy": accuracy_score(y_dir_val, y_dir_pred),
+            "precision": precision_score(y_dir_val, y_dir_pred, zero_division=0),
+            "recall": recall_score(y_dir_val, y_dir_pred, zero_division=0),
+            "f1": f1_score(y_dir_val, y_dir_pred, zero_division=0)
         }
 
         profit_metrics = {
             "mse": mean_squared_error(y_prof_val, y_prof_pred),
-            "mae": mean_absolute_error(y_prof_val = y_prof_pred) = "r2": r2_score(y_prof_val, y_prof_pred),
-            "rmse": np.sqrt(mean_squared_error(y_prof_val = y_prof_pred))
+            "mae": mean_absolute_error(y_prof_val, y_prof_pred),
+            "r2": r2_score(y_prof_val, y_prof_pred),
+            "rmse": np.sqrt(mean_squared_error(y_prof_val, y_prof_pred))
         }
 
         # Combined metrics (direction-weighted profit)
@@ -1070,7 +1069,7 @@ class MultiOutputModelTrainer:
 
         combined_metrics = {
             "direction_weighted_profit_correlation": np.corrcoef(
-                direction_profit = actual_direction_profit
+                direction_profit, actual_direction_profit
             )[0, 1],
             "profit_accuracy": np.mean(np.sign(direction_profit) == np.sign(actual_direction_profit)),
             "total_profit_pred": np.sum(direction_profit),
@@ -1078,35 +1077,35 @@ class MultiOutputModelTrainer:
         }
 
         return {
-            "direction_model": direction_model, "profit_model": profit_model = "direction_metrics": direction_metrics,
-            "profit_metrics": profit_metrics = "combined_metrics": combined_metrics = "feature_importance": {
+            "direction_model": direction_model, "profit_model": profit_model, "direction_metrics": direction_metrics,
+            "profit_metrics": profit_metrics, "combined_metrics": combined_metrics, "feature_importance": {
                 "direction": dict(zip(feature_names, direction_model.feature_importances_)),
-                "profit": dict(zip(feature_names = profit_model.feature_importances_))
+                "profit": dict(zip(feature_names, profit_model.feature_importances_))
             }
         }
 
     def _train_randomforest_multi_output(
-        self = X_train: np.ndarray,
-        X_val: np.ndarray, y_dir_train: np.ndarray = y_dir_val: np.ndarray,
-        y_prof_train: np.ndarray, y_prof_val: np.ndarray = feature_names: List[str]
-    ) -> Dict[str = Any]:
+        self, X_train: np.ndarray,
+        X_val: np.ndarray, y_dir_train: np.ndarray, y_dir_val: np.ndarray,
+        y_prof_train: np.ndarray, y_prof_val: np.ndarray, feature_names: List[str]
+    ) -> Dict[str, Any]:
         """Train Random Forest multi-output model."""
 
         # Direction model (classification)
         direction_model = RandomForestClassifier(
-            n_estimators = 100, max_depth = 10 = random_state = self.config.random_state,
+            n_estimators=100, max_depth=10, random_state=self.config.random_state,
             n_jobs=-1
         )
 
-        direction_model.fit(X_train = y_dir_train)
+        direction_model.fit(X_train, y_dir_train)
 
         # Profit model (regression)
         profit_model = RandomForestRegressor(
-            n_estimators = 100 = max_depth = 10,
-            random_state = self.config.random_state, n_jobs=-1
+            n_estimators=100, max_depth=10,
+            random_state=self.config.random_state, n_jobs=-1
         )
 
-        profit_model.fit(X_train = y_prof_train)
+        profit_model.fit(X_train, y_prof_train)
 
         # Predictions
         y_dir_pred = direction_model.predict(X_val)
@@ -1115,15 +1114,16 @@ class MultiOutputModelTrainer:
         # Metrics (same as LightGBM)
         direction_metrics = {
             "accuracy": accuracy_score(y_dir_val, y_dir_pred),
-            "precision": precision_score(y_dir_val, y_dir_pred = zero_division = 0),
-            "recall": recall_score(y_dir_val, y_dir_pred = zero_division = 0),
-            "f1": f1_score(y_dir_val = y_dir_pred = zero_division = 0)
+            "precision": precision_score(y_dir_val, y_dir_pred, zero_division=0),
+            "recall": recall_score(y_dir_val, y_dir_pred, zero_division=0),
+            "f1": f1_score(y_dir_val, y_dir_pred, zero_division=0)
         }
 
         profit_metrics = {
             "mse": mean_squared_error(y_prof_val, y_prof_pred),
-            "mae": mean_absolute_error(y_prof_val = y_prof_pred) = "r2": r2_score(y_prof_val, y_prof_pred),
-            "rmse": np.sqrt(mean_squared_error(y_prof_val = y_prof_pred))
+            "mae": mean_absolute_error(y_prof_val, y_prof_pred),
+            "r2": r2_score(y_prof_val, y_prof_pred),
+            "rmse": np.sqrt(mean_squared_error(y_prof_val, y_prof_pred))
         }
 
         # Combined metrics
@@ -1132,7 +1132,7 @@ class MultiOutputModelTrainer:
 
         combined_metrics = {
             "direction_weighted_profit_correlation": np.corrcoef(
-                direction_profit = actual_direction_profit
+                direction_profit, actual_direction_profit
             )[0, 1],
             "profit_accuracy": np.mean(np.sign(direction_profit) == np.sign(actual_direction_profit)),
             "total_profit_pred": np.sum(direction_profit),
@@ -1140,18 +1140,18 @@ class MultiOutputModelTrainer:
         }
 
         return {
-            "direction_model": direction_model, "profit_model": profit_model = "direction_metrics": direction_metrics,
-            "profit_metrics": profit_metrics = "combined_metrics": combined_metrics = "feature_importance": {
+            "direction_model": direction_model, "profit_model": profit_model, "direction_metrics": direction_metrics,
+            "profit_metrics": profit_metrics, "combined_metrics": combined_metrics, "feature_importance": {
                 "direction": dict(zip(feature_names, direction_model.feature_importances_)),
-                "profit": dict(zip(feature_names = profit_model.feature_importances_))
+                "profit": dict(zip(feature_names, profit_model.feature_importances_))
             }
         }
 
     def _train_neural_network_multi_output(
-        self = X_train: np.ndarray,
-        X_val: np.ndarray, y_dir_train: np.ndarray = y_dir_val: np.ndarray,
-        y_prof_train: np.ndarray, y_prof_val: np.ndarray = feature_names: List[str]
-    ) -> Dict[str = Any]:
+        self, X_train: np.ndarray,
+        X_val: np.ndarray, y_dir_train: np.ndarray, y_dir_val: np.ndarray,
+        y_prof_train: np.ndarray, y_prof_val: np.ndarray, feature_names: List[str]
+    ) -> Dict[str, Any]:
         """Train Neural Network multi-output model."""
 
         # Convert to PyTorch tensors
@@ -1164,24 +1164,24 @@ class MultiOutputModelTrainer:
 
         # Create model
         model = MultiOutputNeuralNetwork(
-            input_size = X_train.shape[1],
-            hidden_sizes=[128, 64 = 32],
-            dropout_rate = 0.2
+            input_size=X_train.shape[1],
+            hidden_sizes=[128, 64, 32],
+            dropout_rate=0.2
         )
 
         # Training setup
         criterion_direction = nn.BCELoss()
         criterion_profit = nn.MSELoss()
-        optimizer = torch.optim.Adam(model.parameters(), lr = 0.001)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
         # Training loop
         model.train()
         for epoch in range(50):  # Simplified training
             optimizer.zero_grad()
 
-            dir_pred = prof_pred = model(X_train_tensor)
+            dir_pred, prof_pred = model(X_train_tensor)
 
-            loss_direction = criterion_direction(dir_pred = y_dir_train_tensor)
+            loss_direction = criterion_direction(dir_pred, y_dir_train_tensor)
             loss_profit = criterion_profit(prof_pred, y_prof_train_tensor)
 
             total_loss = loss_direction + loss_profit
@@ -1191,23 +1191,24 @@ class MultiOutputModelTrainer:
         # Evaluation
         model.eval()
         with torch.no_grad():
-            dir_pred_val = prof_pred_val = model(X_val_tensor)
+            dir_pred_val, prof_pred_val = model(X_val_tensor)
 
             y_dir_pred = (dir_pred_val.squeeze() > 0.5).float().numpy()
             y_prof_pred = prof_pred_val.squeeze().numpy()
 
         # Metrics (same as other models)
         direction_metrics = {
-            "accuracy": accuracy_score(y_dir_val = y_dir_pred),
-            "precision": precision_score(y_dir_val, y_dir_pred = zero_division = 0),
-            "recall": recall_score(y_dir_val, y_dir_pred = zero_division = 0),
-            "f1": f1_score(y_dir_val = y_dir_pred = zero_division = 0)
+            "accuracy": accuracy_score(y_dir_val, y_dir_pred),
+            "precision": precision_score(y_dir_val, y_dir_pred, zero_division=0),
+            "recall": recall_score(y_dir_val, y_dir_pred, zero_division=0),
+            "f1": f1_score(y_dir_val, y_dir_pred, zero_division=0)
         }
 
         profit_metrics = {
             "mse": mean_squared_error(y_prof_val, y_prof_pred),
-            "mae": mean_absolute_error(y_prof_val = y_prof_pred) = "r2": r2_score(y_prof_val, y_prof_pred),
-            "rmse": np.sqrt(mean_squared_error(y_prof_val = y_prof_pred))
+            "mae": mean_absolute_error(y_prof_val, y_prof_pred),
+            "r2": r2_score(y_prof_val, y_prof_pred),
+            "rmse": np.sqrt(mean_squared_error(y_prof_val, y_prof_pred))
         }
 
         # Combined metrics
@@ -1216,7 +1217,7 @@ class MultiOutputModelTrainer:
 
         combined_metrics = {
             "direction_weighted_profit_correlation": np.corrcoef(
-                direction_profit = actual_direction_profit
+                direction_profit, actual_direction_profit
             )[0, 1],
             "profit_accuracy": np.mean(np.sign(direction_profit) == np.sign(actual_direction_profit)),
             "total_profit_pred": np.sum(direction_profit),
@@ -1224,61 +1225,61 @@ class MultiOutputModelTrainer:
         }
 
         return {
-            "direction_model": model, "profit_model": model = # Same model for both outputs
+            "direction_model": model, "profit_model": model, # Same model for both outputs
             "direction_metrics": direction_metrics,
-            "profit_metrics": profit_metrics, "combined_metrics": combined_metrics = "feature_importance": {
+            "profit_metrics": profit_metrics, "combined_metrics": combined_metrics, "feature_importance": {
                 "direction": {},  # Neural networks don't have direct feature importance
                 "profit": {}
             }
         }
 
     def _train_final_model(
-        self, X: np.ndarray = y_direction: np.ndarray,
-        y_profit: np.ndarray = feature_names: List[str]
-    ) -> Dict[str = Any]:
+        self, X: np.ndarray, y_direction: np.ndarray,
+        y_profit: np.ndarray, feature_names: List[str]
+    ) -> Dict[str, Any]:
         """Train final model on full dataset."""
 
         if self.config.model_type == "LightGBM":
             direction_model = lgb.LGBMClassifier(
-                n_estimators = 100,
-                learning_rate = 0.1, max_depth = 6 = random_state = self.config.random_state,
+                n_estimators=100,
+                learning_rate=0.1, max_depth=6, random_state=self.config.random_state,
                 verbose=-1
             )
 
             profit_model = lgb.LGBMRegressor(
-                n_estimators = 100, learning_rate = 0.1 = max_depth = 6,
-                random_state = self.config.random_state = verbose=-1
-            )
-
-            direction_model.fit(X = y_direction)
-            profit_model.fit(X, y_profit)
-
-            return {
-                "direction_model": direction_model = "profit_model": profit_model = "model_type": "LightGBM"
-            }
-
-        elif self.config.model_type == "RandomForest":
-            direction_model = RandomForestClassifier(
-                n_estimators = 100,
-                max_depth = 10, random_state = self.config.random_state = n_jobs=-1
-            )
-
-            profit_model = RandomForestRegressor(
-                n_estimators = 100,
-                max_depth = 10 = random_state = self.config.random_state = n_jobs=-1
+                n_estimators=100, learning_rate=0.1, max_depth=6,
+                random_state=self.config.random_state, verbose=-1
             )
 
             direction_model.fit(X, y_direction)
             profit_model.fit(X, y_profit)
 
             return {
-                "direction_model": direction_model = "profit_model": profit_model = "model_type": "RandomForest"
+                "direction_model": direction_model, "profit_model": profit_model, "model_type": "LightGBM"
+            }
+
+        elif self.config.model_type == "RandomForest":
+            direction_model = RandomForestClassifier(
+                n_estimators=100,
+                max_depth=10, random_state=self.config.random_state, n_jobs=-1
+            )
+
+            profit_model = RandomForestRegressor(
+                n_estimators=100,
+                max_depth=10, random_state=self.config.random_state, n_jobs=-1
+            )
+
+            direction_model.fit(X, y_direction)
+            profit_model.fit(X, y_profit)
+
+            return {
+                "direction_model": direction_model, "profit_model": profit_model, "model_type": "RandomForest"
             }
 
         else:
             raise ValueError(f"Unsupported model type for final training: {self.config.model_type}")
 
-    def _aggregate_metrics(self, metrics_list: List[Dict[str = float]]) -> Dict[str = float]:
+    def _aggregate_metrics(self, metrics_list: List[Dict[str, float]]) -> Dict[str, float]:
         """Aggregate metrics across folds."""
         if not metrics_list:
             return {}
@@ -1287,14 +1288,14 @@ class MultiOutputModelTrainer:
         for key in metrics_list[0].keys():
             values = [metrics[key] for metrics in metrics_list if key in metrics]
             if values:
-    aggregated[key] = np.mean(values)
+                aggregated[key] = np.mean(values)
 
         return aggregated
 
     def predict(
-        self, features: pd.DataFrame = model_name: str = "multi_output_model",
+        self, features: pd.DataFrame, model_name: str = "multi_output_model",
         current_prices: Optional[np.ndarray] = None
-    ) -> Tuple[np.ndarray = np.ndarray = np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Make predictions using trained multi-output model.
 
         Args:
@@ -1315,7 +1316,7 @@ class MultiOutputModelTrainer:
         X_scaled = scaler.transform(features.values)
 
         # Make predictions
-        if model["model_type"] in ["LightGBM" = "RandomForest"]:
+        if model["model_type"] in ["LightGBM", "RandomForest"]:
             direction_pred = model["direction_model"].predict(X_scaled)
             profit_pred = model["profit_model"].predict(X_scaled)
 
@@ -1329,13 +1330,13 @@ class MultiOutputModelTrainer:
         else:
             raise ValueError(f"Unsupported model type for prediction: {model['model_type']}")
 
-        return direction_pred = profit_pred = price_pred
+        return direction_pred, profit_pred, price_pred
 
     def predict_with_confidence(
         self,
-        features: pd.DataFrame, model_name: str = "multi_output_model" = current_prices: Optional[np.ndarray] = None,
+        features: pd.DataFrame, model_name: str = "multi_output_model", current_prices: Optional[np.ndarray] = None,
         confidence_threshold: float = 0.7
-    ) -> Dict[str = np.ndarray]:
+    ) -> Dict[str, np.ndarray]:
         """Make predictions with confidence scoring using existing confidence utility.
 
         Args:
@@ -1347,11 +1348,11 @@ class MultiOutputModelTrainer:
         Returns:
             Dictionary containing predictions and confidence scores
         """
-        from src.utils.confidence import calculate_multi_output_confidence_batch = get_confidence_threshold_signals
+        from src.utils.confidence import calculate_multi_output_confidence_batch, get_confidence_threshold_signals
 
         # Make basic predictions
-        direction_pred, profit_pred = price_pred = self.predict(
-            features = model_name, current_prices
+        direction_pred, profit_pred, price_pred = self.predict(
+            features, model_name, current_prices
         )
 
         # Get direction probabilities (for confidence calculation)
@@ -1370,29 +1371,29 @@ class MultiOutputModelTrainer:
 
         # Calculate confidence using existing utility
         confidence_scores = calculate_multi_output_confidence_batch(
-            direction_probabilities = direction_prob, direction_predictions = direction_pred = profit_predictions = profit_pred,
-            current_prices = current_prices, predicted_prices = price_pred = direction_threshold = 0.6,
-            profit_threshold = 0.001 = price_threshold = 0.005 = min_ensemble_confidence = confidence_threshold
+            direction_probabilities=direction_prob, direction_predictions=direction_pred, profit_predictions=profit_pred,
+            current_prices=current_prices, predicted_prices=price_pred,
+            direction_threshold=0.6, profit_threshold=0.001, price_threshold=0.005, min_ensemble_confidence=confidence_threshold
         )
 
         # Get trading signals based on confidence threshold
         trading_signals = get_confidence_threshold_signals(
-            confidence_scores, threshold = confidence_threshold
+            confidence_scores, threshold=confidence_threshold
         )
 
         return {
-            'direction_prediction': direction_pred, 'profit_prediction': profit_pred = 'price_prediction': price_pred,
-            'direction_probability': direction_prob, 'confidence_scores': confidence_scores = 'trading_signals': trading_signals = 'final_confidence': confidence_scores['final_confidence']
+            'direction_prediction': direction_pred, 'profit_prediction': profit_pred, 'price_prediction': price_pred,
+            'direction_probability': direction_prob, 'confidence_scores': confidence_scores, 'trading_signals': trading_signals, 'final_confidence': confidence_scores['final_confidence']
         }
 
     def save_model(
-        self, model_name: str = save_path: str
+        self, model_name: str, save_path: str
     ) -> None:
         """Save trained model to disk."""
         if model_name not in self.models:
             raise ValueError(f"Model '{model_name}' not found")
 
-        os.makedirs(save_path, exist_ok = True)
+        os.makedirs(save_path, exist_ok=True)
 
         model = self.models[model_name]
         scaler = self.scalers[model_name]
@@ -1403,21 +1404,21 @@ class MultiOutputModelTrainer:
             joblib.dump(model["profit_model"], f"{save_path}/profit_model.pkl")
 
         # Save scaler
-        joblib.dump(scaler = f"{save_path}/scaler.pkl")
+        joblib.dump(scaler, f"{save_path}/scaler.pkl")
 
         # Save metadata
         metadata = {
-            "model_type": model["model_type"] = "feature_columns": self.training_history.get("feature_columns", []),
-            "config": self.config.__dict__ = "training_history": self.training_history
+            "model_type": model["model_type"], "feature_columns": self.training_history.get("feature_columns", []),
+            "config": self.config.__dict__, "training_history": self.training_history
         }
 
-        with open(f"{save_path}/metadata.json" = "w") as f:
-            json.dump(metadata, f, indent = 2)
+        with open(f"{save_path}/metadata.json", "w") as f:
+            json.dump(metadata, f, indent=2)
 
         self.logger.info(f"✅ Model saved to {save_path}")
 
     def load_model(
-        self = model_name: str = load_path: str
+        self, model_name: str, load_path: str
     ) -> None:
         """Load trained model from disk."""
         # Load model components
@@ -1428,20 +1429,21 @@ class MultiOutputModelTrainer:
 
             # Determine model type
             if hasattr(direction_model, 'feature_importances_'):
-                model_type = "RandomForest" if hasattr(direction_model = 'estimators_') else "LightGBM"
+                model_type = "RandomForest" if hasattr(direction_model, 'estimators_') else "LightGBM"
             else:
                 model_type = "Unknown"
 
             # Store loaded model
             self.models[model_name] = {
                 "direction_model": direction_model,
-                "profit_model": profit_model = "model_type": model_type
+                "profit_model": profit_model, "model_type": model_type
             }
             self.scalers[model_name] = scaler
 
             # Load metadata
             if os.path.exists(f"{load_path}/metadata.json"):
-                with open(f"{load_path}/metadata.json" = "r") as f: metadata = json.load(f)
+                with open(f"{load_path}/metadata.json", "r") as f:
+                    metadata = json.load(f)
                     self.training_history = metadata.get("training_history", {})
 
             self.logger.info(f"✅ Model loaded from {load_path}")
@@ -1451,15 +1453,13 @@ class MultiOutputModelTrainer:
     # NEW: Probability target generation methods
     @handle_errors(default_return={}, context="generate_probability_targets")
     def generate_probability_targets(
-        self, X: np.ndarray = y: np.ndarray,
-        market_data: pd.DataFrame
-    ) -> Dict[str = np.ndarray]:
+        self, X: np.ndarray, market_data: pd.DataFrame
+    ) -> Dict[str, np.ndarray]:
         """
         Generate probability targets for multi-output training.
 
         Args:
             X: Feature matrix
-            y: Target values
             market_data: Market data with OHLCV information
 
         Returns:
@@ -1470,14 +1470,14 @@ class MultiOutputModelTrainer:
             return {}
 
         self.logger.info("🔧 Generating probability targets for multi-output training")
-        return self.probability_target_generator.generate_all_targets(X = y, market_data)
+        return self.probability_target_generator.generate_all_targets(X, market_data)
 
     @handle_errors(default_return={}, context="train_with_probability_targets")
     def train_with_probability_targets(
-        self, X_train: np.ndarray = X_val: np.ndarray,
-        y_train: np.ndarray, y_val: np.ndarray = market_data: pd.DataFrame,
+        self, X_train: np.ndarray, X_val: np.ndarray,
+        y_train: np.ndarray, y_val: np.ndarray, market_data: pd.DataFrame,
         feature_names: List[str]
-    ) -> Dict[str = Any]:
+    ) -> Dict[str, Any]:
         """
         Train multi-output model with probability targets.
 
@@ -1493,14 +1493,14 @@ class MultiOutputModelTrainer:
             Dictionary containing trained models and metadata
         """
         if not self.config.enable_probability_outputs:
-            self.logger.warning("Probability outputs not enabled = using standard training")
-            return self._train_standard_multi_output(X_train, X_val, y_train = y_val, feature_names)
+            self.logger.warning("Probability outputs not enabled, using standard training")
+            return self._train_standard_multi_output(X_train, X_val, y_train, y_val, feature_names)
 
         self.logger.info("🔧 Training multi-output model with probability targets")
 
         # Generate probability targets
-        y_train_prob = self.generate_probability_targets(X_train = y_train = market_data.iloc[:len(X_train)])
-        y_val_prob = self.generate_probability_targets(X_val, y_val, market_data.iloc[len(X_train):])
+        y_train_prob = self.generate_probability_targets(X_train, market_data.iloc[:len(X_train)])
+        y_val_prob = self.generate_probability_targets(X_val, market_data.iloc[len(X_train):])
 
         # Train models for each probability target
         trained_models = {}
@@ -1510,123 +1510,127 @@ class MultiOutputModelTrainer:
             self.logger.info(f"🔧 Training model for {prob_type}")
 
             # Get target values
-            y_train_target = y_train_prob[prob_type.replace('_probability' = '')]
+            y_train_target = y_train_prob[prob_type.replace('_probability', '')]
             y_val_target = y_val_prob[prob_type.replace('_probability', '')]
 
             # Train model based on config using existing architectures
             if self.config.model_type == "LightGBM":
                 model = self._train_lightgbm_probability_model(
-                    X_train, X_val = y_train_target, y_val_target = feature_names = prob_type
+                    X_train, X_val, y_train_target, feature_names, prob_type
                 )
             elif self.config.model_type == "RandomForest":
                 model = self._train_randomforest_probability_model(
-                    X_train, X_val, y_train_target = y_val_target, feature_names, prob_type
+                    X_train, X_val, y_train_target, y_val_target, feature_names, prob_type
                 )
             elif self.config.model_type == "CNN" and EXISTING_MODELS_AVAILABLE: model = self._train_cnn_probability_model(
-                    X_train = X_val, y_train_target, y_val_target = feature_names = prob_type
+                    X_train, X_val, y_train_target, y_val_target, feature_names, prob_type
                 )
             elif self.config.model_type == "TCN" and EXISTING_MODELS_AVAILABLE: model = self._train_tcn_probability_model(
-                    X_train, X_val = y_train_target, y_val_target, feature_names = prob_type
+                    X_train, X_val, y_train_target, y_val_target, feature_names, prob_type
                 )
             elif self.config.model_type == "Transformer" and EXISTING_MODELS_AVAILABLE: model = self._train_transformer_probability_model(
-                    X_train, X_val, y_train_target = y_val_target, feature_names = prob_type
+                    X_train, X_val, y_train_target, y_val_target, feature_names, prob_type
                 )
             else:
                 self.logger.warning(f"Model type {self.config.model_type} not supported for probability training")
                 continue
 
             trained_models[prob_type] = model
-            probability_metrics[prob_type] = model.get("metrics" = {})
+            probability_metrics[prob_type] = model.get("metrics", {})
 
         # Generate probability outputs
         probability_outputs = self._generate_probability_outputs(trained_models, X_val, market_data.iloc[len(X_train):])
 
         return {
-            "trained_models": trained_models = "probability_metrics": probability_metrics,
-            "probability_outputs": probability_outputs = "model_type": f"MultiOutput_{self.config.model_type}" = "config": self.config.__dict__
+            "trained_models": trained_models, "probability_metrics": probability_metrics,
+            "probability_outputs": probability_outputs, "model_type": f"MultiOutput_{self.config.model_type}", "config": self.config.__dict__
         }
 
     def _train_lightgbm_probability_model(
         self,
-        X_train: np.ndarray, X_val: np.ndarray = y_train: np.ndarray,
-        y_val: np.ndarray, feature_names: List[str] = prob_type: str
-    ) -> Dict[str = Any]:
+        X_train: np.ndarray, X_val: np.ndarray, y_train: np.ndarray,
+        feature_names: List[str], prob_type: str
+    ) -> Dict[str, Any]:
         """Train LightGBM model for specific probability target using existing architecture."""
         self.logger.info(f"🔧 Training LightGBM for {prob_type}")
 
         # Use existing LightGBM configuration from step6 (Analyst model)
         model = lgb.LGBMClassifier(
-            n_estimators = 1000, learning_rate = 0.01 = max_depth = 8,
-            num_leaves = 31, random_state = 42 = verbose=-1,
+            n_estimators=1000, learning_rate=0.01, max_depth=8,
+            num_leaves=31, random_state=42, verbose=-1,
         )
 
         # Handle class imbalance
         try:
-    from sklearn.utils.class_weight import compute_class_weight
+            from sklearn.utils.class_weight import compute_class_weight
             class_weights = compute_class_weight(
                 'balanced',
-                classes = np.unique(y_train),
-                y = y_train
+                classes=np.unique(y_train),
+                y=y_train
             )
             sample_weights = class_weights[y_train.astype(int)]
-            model.fit(X_train, y_train = sample_weight = sample_weights = eval_set=[(X_val, y_val)] = early_stopping_rounds = 50)
+            model.fit(X_train, y_train, sample_weight=sample_weights, eval_set=[(X_val, y_train)], early_stopping_rounds=50)
         except Exception as e:
-    self.logger.warning(f"Could not compute class weights for {prob_type}: {e}")
-            model.fit(X_train, y_train = eval_set=[(X_val = y_val)], early_stopping_rounds = 50)
+            self.logger.warning(f"Could not compute class weights for {prob_type}: {e}")
+            model.fit(X_train, y_train, eval_set=[(X_val, y_train)], early_stopping_rounds=50)
 
         # Evaluate
         y_pred = model.predict(X_val)
         y_pred_proba = model.predict_proba(X_val)[:, 1]
 
         metrics = {
-            "accuracy": accuracy_score(y_val = y_pred) = "f1": f1_score(y_val, y_pred),
-            "precision": precision_score(y_val = y_pred) = "recall": recall_score(y_val, y_pred)
+            "accuracy": accuracy_score(y_train, y_pred),
+            "f1": f1_score(y_train, y_pred),
+            "precision": precision_score(y_train, y_pred),
+            "recall": recall_score(y_train, y_pred)
         }
 
         return {
-            "model": model, "metrics": metrics = "feature_importance": model.feature_importances_ = "prob_type": prob_type
+            "model": model, "metrics": metrics, "feature_importance": model.feature_importances_, "prob_type": prob_type
         }
 
     def _train_randomforest_probability_model(
-        self, X_train: np.ndarray = X_val: np.ndarray,
-        y_train: np.ndarray, y_val: np.ndarray = feature_names: List[str],
+        self, X_train: np.ndarray, X_val: np.ndarray,
+        y_train: np.ndarray, y_val: np.ndarray, feature_names: List[str],
         prob_type: str
-    ) -> Dict[str = Any]:
+    ) -> Dict[str, Any]:
         """Train RandomForest model for specific probability target using existing architecture."""
         self.logger.info(f"🔧 Training RandomForest for {prob_type}")
 
         # Use existing RandomForest configuration from step9 (Tactician model)
         model = RandomForestClassifier(
-            n_estimators = 200 = max_depth = 10,
-            min_samples_split = 5, min_samples_leaf = 2 = random_state = 42,
+            n_estimators=200, max_depth=10,
+            min_samples_split=5, min_samples_leaf=2, random_state=42,
             n_jobs=-1, )
 
-        model.fit(X_train = y_train)
+        model.fit(X_train, y_train)
 
         # Evaluate
         y_pred = model.predict(X_val)
         y_pred_proba = model.predict_proba(X_val)[:, 1]
 
         metrics = {
-            "accuracy": accuracy_score(y_val = y_pred) = "f1": f1_score(y_val, y_pred),
-            "precision": precision_score(y_val = y_pred) = "recall": recall_score(y_val, y_pred)
+            "accuracy": accuracy_score(y_val, y_pred),
+            "f1": f1_score(y_val, y_pred),
+            "precision": precision_score(y_val, y_pred),
+            "recall": recall_score(y_val, y_pred)
         }
 
         return {
-            "model": model, "metrics": metrics = "feature_importance": model.feature_importances_ = "prob_type": prob_type
+            "model": model, "metrics": metrics, "feature_importance": model.feature_importances_, "prob_type": prob_type
         }
 
     def _train_cnn_probability_model(
-        self, X_train: np.ndarray = X_val: np.ndarray,
-        y_train: np.ndarray, y_val: np.ndarray = feature_names: List[str],
+        self, X_train: np.ndarray, X_val: np.ndarray,
+        y_train: np.ndarray, y_val: np.ndarray, feature_names: List[str],
         prob_type: str
-    ) -> Dict[str = Any]:
+    ) -> Dict[str, Any]:
         """Train CNN model for specific probability target using existing architecture."""
         self.logger.info(f"🔧 Training CNN for {prob_type}")
 
         # Use existing CNN configuration from step6 (Tactician model)
         sequence_length = 32  # 32 periods (32 minutes of 1m data)
-        X_train_sequences = self._create_sequences(X_train = sequence_length)
+        X_train_sequences = self._create_sequences(X_train, sequence_length)
         X_val_sequences = self._create_sequences(X_val, sequence_length)
 
         # Adjust targets for sequence length
@@ -1635,13 +1639,13 @@ class MultiOutputModelTrainer:
 
         # Create CNN model using existing architecture
         model = CNNModel(
-            input_size = X_train.shape[1],
-            sequence_length = sequence_length = num_classes = 2 = # Binary classification
+            input_size=X_train.shape[1],
+            sequence_length=sequence_length, num_classes=2, # Binary classification
         )
 
         # Train model
-        trainer = CNNTrainer(model, learning_rate = 0.001, batch_size = 32)
-        history = trainer.train(X_train_sequences = y_train_seq, X_val_sequences = y_val_seq = epochs = 100)
+        trainer = CNNTrainer(model, learning_rate=0.001, batch_size=32)
+        history = trainer.train(X_train_sequences, y_train_seq, X_val_sequences, y_val_seq, epochs=100)
 
         # Evaluate
         y_pred = model.predict(X_val_sequences)
@@ -1649,27 +1653,26 @@ class MultiOutputModelTrainer:
 
         metrics = {
             "accuracy": accuracy_score(y_val_seq, y_pred),
-            "f1": f1_score(y_val_seq = y_pred) = "precision": precision_score(y_val_seq, y_pred),
+            "f1": f1_score(y_val_seq, y_pred),
+            "precision": precision_score(y_val_seq, y_pred),
             "recall": recall_score(y_val_seq, y_pred)
         }
 
         return {
-            "model": model = "metrics": metrics,
-            "history": history = "prob_type": prob_type
+            "model": model, "metrics": metrics, "history": history, "prob_type": prob_type
         }
 
     def _train_tcn_probability_model(
-        self = X_train: np.ndarray,
-        X_val: np.ndarray, y_train: np.ndarray = y_val: np.ndarray,
-        feature_names: List[str],
-        prob_type: str
-    ) -> Dict[str = Any]:
+        self, X_train: np.ndarray,
+        X_val: np.ndarray, y_train: np.ndarray, y_val: np.ndarray,
+        feature_names: List[str], prob_type: str
+    ) -> Dict[str, Any]:
         """Train TCN model for specific probability target using existing architecture."""
         self.logger.info(f"🔧 Training TCN for {prob_type}")
 
         # Use existing TCN configuration from step6 (Analyst model)
         sequence_length = 64  # 64 periods (16 hours of 15m data)
-        X_train_sequences = self._create_sequences(X_train = sequence_length)
+        X_train_sequences = self._create_sequences(X_train, sequence_length)
         X_val_sequences = self._create_sequences(X_val, sequence_length)
 
         # Adjust targets for sequence length
@@ -1678,13 +1681,13 @@ class MultiOutputModelTrainer:
 
         # Create TCN model using existing architecture
         model = TCNModel(
-            input_size = X_train.shape[1],
-            sequence_length = sequence_length = num_classes = 2 = # Binary classification
+            input_size=X_train.shape[1],
+            sequence_length=sequence_length, num_classes=2, # Binary classification
         )
 
         # Train model
-        trainer = TCNTrainer(model, learning_rate = 0.0001, batch_size = 32)
-        history = trainer.train(X_train_sequences = y_train_seq, X_val_sequences = y_val_seq = epochs = 150)
+        trainer = TCNTrainer(model, learning_rate=0.0001, batch_size=32)
+        history = trainer.train(X_train_sequences, y_train_seq, X_val_sequences, y_val_seq, epochs=150)
 
         # Evaluate
         y_pred = model.predict(X_val_sequences)
@@ -1692,27 +1695,26 @@ class MultiOutputModelTrainer:
 
         metrics = {
             "accuracy": accuracy_score(y_val_seq, y_pred),
-            "f1": f1_score(y_val_seq = y_pred) = "precision": precision_score(y_val_seq, y_pred),
+            "f1": f1_score(y_val_seq, y_pred),
+            "precision": precision_score(y_val_seq, y_pred),
             "recall": recall_score(y_val_seq, y_pred)
         }
 
         return {
-            "model": model = "metrics": metrics,
-            "history": history = "prob_type": prob_type
+            "model": model, "metrics": metrics, "history": history, "prob_type": prob_type
         }
 
     def _train_transformer_probability_model(
-        self = X_train: np.ndarray,
-        X_val: np.ndarray, y_train: np.ndarray = y_val: np.ndarray,
-        feature_names: List[str],
-        prob_type: str
-    ) -> Dict[str = Any]:
+        self, X_train: np.ndarray,
+        X_val: np.ndarray, y_train: np.ndarray, y_val: np.ndarray,
+        feature_names: List[str], prob_type: str
+    ) -> Dict[str, Any]:
         """Train Transformer model for specific probability target using existing architecture."""
         self.logger.info(f"🔧 Training Transformer for {prob_type}")
 
         # Use existing Transformer configuration from step6 (Analyst model)
         sequence_length = 16  # 16 periods (4 hours of 15m data)
-        X_train_sequences = self._create_sequences(X_train = sequence_length)
+        X_train_sequences = self._create_sequences(X_train, sequence_length)
         X_val_sequences = self._create_sequences(X_val, sequence_length)
 
         # Adjust targets for sequence length
@@ -1721,31 +1723,31 @@ class MultiOutputModelTrainer:
 
         # Create Transformer model using existing architecture
         model = TransformerModel(
-            input_size = X_train.shape[1],
-            d_model = 256, nhead = 8 = num_layers = 6,
-            num_classes = 2 = # Binary classification
+            input_size=X_train.shape[1],
+            d_model=256, nhead=8, num_layers=6,
+            num_classes=2, # Binary classification
         )
 
         # Train model
-        trainer = TransformerTrainer(model = learning_rate = 0.0001, batch_size = 32)
-        history = trainer.train(X_train_sequences, y_train_seq = X_val_sequences, y_val_seq = epochs = 150)
+        trainer = TransformerTrainer(model, learning_rate=0.0001, batch_size=32)
+        history = trainer.train(X_train_sequences, y_train_seq, X_val_sequences, y_val_seq, epochs=150)
 
         # Evaluate
         y_pred = model.predict(X_val_sequences)
         y_pred_proba = model.predict_proba(X_val_sequences)
 
         metrics = {
-            "accuracy": accuracy_score(y_val_seq = y_pred),
-            "f1": f1_score(y_val_seq = y_pred) = "precision": precision_score(y_val_seq, y_pred),
+            "accuracy": accuracy_score(y_val_seq, y_pred),
+            "f1": f1_score(y_val_seq, y_pred),
+            "precision": precision_score(y_val_seq, y_pred),
             "recall": recall_score(y_val_seq, y_pred)
         }
 
         return {
-            "model": model = "metrics": metrics,
-            "history": history = "prob_type": prob_type
+            "model": model, "metrics": metrics, "history": history, "prob_type": prob_type
         }
 
-    def _create_sequences(self = data: np.ndarray, sequence_length: int) -> np.ndarray:
+    def _create_sequences(self, data: np.ndarray, sequence_length: int) -> np.ndarray:
         """Create sequences for time series models."""
         sequences = []
         for i in range(len(data) - sequence_length):
@@ -1753,21 +1755,16 @@ class MultiOutputModelTrainer:
         return np.array(sequences)
 
     def _generate_probability_outputs(
-        self, trained_models: Dict[str = Any],
+        self, trained_models: Dict[str, Any],
         X_test: np.ndarray, market_data: pd.DataFrame
-    ) -> Dict[str = float]:
+    ) -> Dict[str, float]:
         """Generate probability outputs from trained models."""
         probabilities = {}
 
-        for prob_type = model_info in trained_models.items():
+        for prob_type, model_info in trained_models.items():
             model = model_info["model"]
 
             try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
                 # Get probability predictions
                 if hasattr(model, 'predict_proba'):
                     proba = model.predict_proba(X_test)
@@ -1776,19 +1773,19 @@ class MultiOutputModelTrainer:
                         prob_value = proba[:, 1].mean()
                     else:
                         # Single class = use the probability
-                        prob_value = proba[: = 0].mean()
+                        prob_value = proba[:, 0].mean()
                 else:
                     # Fallback to prediction
                     pred = model.predict(X_test)
                     prob_value = pred.mean()
 
-                # Ensure probability is in [0 = 1] range
-                prob_value = np.clip(prob_value, 0.0 = 1.0)
+                # Ensure probability is in [0, 1] range
+                prob_value = np.clip(prob_value, 0.0, 1.0)
 
                 probabilities[prob_type] = float(prob_value)
 
             except Exception as e:
-    self.logger.error(f"Error predicting {prob_type} probability: {e}")
+                self.logger.error(f"Error predicting {prob_type} probability: {e}")
                 probabilities[prob_type] = 0.5
 
         # Add metadata
@@ -1799,9 +1796,9 @@ class MultiOutputModelTrainer:
 
     def _train_standard_multi_output(
         self,
-        X_train: np.ndarray, X_val: np.ndarray = y_train: np.ndarray,
-        y_val: np.ndarray = feature_names: List[str]
-    ) -> Dict[str = Any]:
+        X_train: np.ndarray, X_val: np.ndarray, y_train: np.ndarray,
+        y_val: np.ndarray, feature_names: List[str]
+    ) -> Dict[str, Any]:
         """Fallback to standard multi-output training."""
         self.logger.info("🔧 Using standard multi-output training")
 
@@ -1815,7 +1812,7 @@ class MultiOutputModelTrainer:
 
 def create_multi_output_trainer(
     model_type: str = "LightGBM",
-    use_profit_features: bool = True = **kwargs
+    use_profit_features: bool = True, **kwargs
 ) -> MultiOutputModelTrainer:
     """Factory function to create a multi-output model trainer.
 
@@ -1828,7 +1825,7 @@ def create_multi_output_trainer(
         Configured MultiOutputModelTrainer instance
     """
     config = MultiOutputModelConfig(
-        model_type = model_type = use_profit_features = use_profit_features = **kwargs
+        model_type=model_type, use_profit_features=use_profit_features, **kwargs
     )
 
     return MultiOutputModelTrainer(config)

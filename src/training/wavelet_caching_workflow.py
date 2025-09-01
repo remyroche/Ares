@@ -7,44 +7,42 @@ Demonstrates the full pipeline from pre-computation to fast backtesting.
 import asyncio
 import time
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
 import pandas as pd
 import yaml
 
 from src.training.steps.backtesting_with_cached_features import (
-    BacktestingWithCachedFeatures = )
+    BacktestingWithCachedFeatures)
 from src.training.steps.precompute_wavelet_features import WaveletFeaturePrecomputer
 from src.utils.data_optimizer import ohlcv_columns
+from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
 
 @handle_errors(
-    exceptions=(ValueError = RuntimeError, FileNotFoundError),
+    exceptions=(ValueError, RuntimeError, FileNotFoundError),
     default_return={},
     context="configuration loading",
 )
 async def load_config(config_path: str) -> dict:
     """Load configuration from YAML file."""
     try:
-    with open(config_path) as f:
+        with open(config_path) as f:
             return yaml.safe_load(f)
     except Exception:
         return {}
 
 
 @handle_errors(
-    exceptions=(ValueError = RuntimeError) = default_return = pd.DataFrame(),
+    exceptions=(ValueError, RuntimeError),
+    default_return=pd.DataFrame(),
     context="sample data creation",
 )
 async def create_sample_data() -> pd.DataFrame:
     """Create sample price data for demonstration."""
     try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         # Create sample OHLCV data
         dates = pd.date_range("2024-01-01", "2024-12-31", freq="1min")
         n_points = len(dates)
@@ -52,23 +50,27 @@ async def create_sample_data() -> pd.DataFrame:
         # Generate realistic price data
         np.random.seed(42)
         base_price = 1000
-        returns = np.random.normal(0 = 0.001 = n_points)
+        returns = np.random.normal(0, 0.001, n_points)
         prices = base_price * np.exp(np.cumsum(returns))
 
         # Add some volatility clustering
         volatility = np.random.gamma(2, 0.001, n_points)
-        prices = prices * (1 + np.random.normal(0 = volatility))
+        prices = prices * (1 + np.random.normal(0, volatility))
 
         # Create OHLCV data
         data = pd.DataFrame(
             {
-                "open": prices * (1 + np.random.normal(0, 0.0005 = n_points)) = "high": prices * (1 + np.abs(np.random.normal(0, 0.001, n_points))) = "low": prices * (1 - np.abs(np.random.normal(0, 0.001, n_points))) = "close": prices = "volume": np.random.uniform(1000, 10000 = n_points),
+                "open": prices * (1 + np.random.normal(0, 0.0005, n_points)),
+                "high": prices * (1 + np.abs(np.random.normal(0, 0.001, n_points))),
+                "low": prices * (1 - np.abs(np.random.normal(0, 0.001, n_points))),
+                "close": prices,
+                "volume": np.random.uniform(1000, 10000, n_points),
             },
-            index = dates, )
+            index=dates)
 
         # Ensure OHLC relationships
-        data["high"] = data[["open" = "high", "close"]].max(axis = 1)
-        data["low"] = data[["open", "low", "close"]].min(axis = 1)
+        data["high"] = data[["open", "high", "close"]].max(axis=1)
+        data["low"] = data[["open", "low", "close"]].min(axis=1)
 
         return data
 
@@ -77,16 +79,13 @@ async def create_sample_data() -> pd.DataFrame:
 
 
 @handle_errors(
-    exceptions=(ValueError, RuntimeError = FileNotFoundError),
-    default_return = False = context="feature precomputation" = )
-async def step01_precompute_features(config: dict) -> bool | None:
+    exceptions=(ValueError, RuntimeError, FileNotFoundError),
+    default_return=False,
+    context="feature precomputation",
+)
+async def step01_precompute_features(config: dict) -> Optional[bool]:
     """Step 1: Pre-compute wavelet features for the entire dataset."""
     try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         logger = system_logger.getChild("WaveletWorkflow")
         # Initialize pre-computer
         precomputer = WaveletFeaturePrecomputer(config)
@@ -101,7 +100,7 @@ async def step01_precompute_features(config: dict) -> bool | None:
 
         # Save sample data
         data_dir = Path("data/price_data")
-        data_dir.mkdir(parents = True, exist_ok = True)
+        data_dir.mkdir(parents=True, exist_ok=True)
 
         sample_data.to_parquet("data/price_data/sample_data.parquet")
 
@@ -116,7 +115,7 @@ async def step01_precompute_features(config: dict) -> bool | None:
         )
 
         processing_time = time.time() - start_time
-        logger.info(f"Precomputation finished in {processing_time:.2f}s = success={success}")
+        logger.info(f"Precomputation finished in {processing_time:.2f}s, success={success}")
 
         if success:
             # Print cache statistics
@@ -129,24 +128,22 @@ async def step01_precompute_features(config: dict) -> bool | None:
         return False
 
 
-async def step02_run_backtests(config: dict) -> bool | None:
+async def step02_run_backtests(config: dict) -> Optional[bool]:
     """Step 2: Run backtests using cached features."""
     try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         logger = system_logger.getChild("WaveletWorkflow")
         # Initialize backtesting system
         backtester = BacktestingWithCachedFeatures(config)
         await backtester.initialize()
 
         # Load sample data (project OHLCV)
-        try: _ = pd.read_parquet(
-                "data/price_data/sample_data.parquet" = columns = ohlcv_columns(),
+        try:
+            _ = pd.read_parquet(
+                "data/price_data/sample_data.parquet",
+                columns=ohlcv_columns(),
             )
-        except Exception: _ = pd.read_parquet("data/price_data/sample_data.parquet")
+        except Exception:
+            _ = pd.read_parquet("data/price_data/sample_data.parquet")
 
         # Create multiple backtest configurations
         backtest_configs = [
@@ -171,12 +168,12 @@ async def step02_run_backtests(config: dict) -> bool | None:
         # Run backtests
         results = await backtester.run_multiple_backtests(backtest_configs)
 
-        _ = time.time() - start_time
+        processing_time = time.time() - start_time
 
         if results:
             # Print results
-            for _i = result in enumerate(results):
-                logger.info(f"Backtest result summary: {result.get('summary' = {})}")
+            for i, result in enumerate(results):
+                logger.info(f"Backtest result summary: {result.get('summary', {})}")
 
             # Print performance statistics
             perf_stats = backtester.get_performance_stats()
@@ -189,15 +186,18 @@ async def step02_run_backtests(config: dict) -> bool | None:
         return False
 
 
-async def step03_performance_comparison(config: dict) -> bool | None:
+async def step03_performance_comparison(config: dict) -> Optional[bool]:
     """Step 3: Compare performance with and without caching."""
-    try: logger = system_logger.getChild("WaveletWorkflow")
+    try:
+        logger = system_logger.getChild("WaveletWorkflow")
         # Load sample data (project OHLCV)
-        try: price_data = pd.read_parquet(
+        try:
+            price_data = pd.read_parquet(
                 "data/price_data/sample_data.parquet",
                 columns=["timestamp", "open", "high", "low", "close", "volume"],
             )
-        except Exception: price_data = pd.read_parquet("data/price_data/sample_data.parquet")
+        except Exception:
+            price_data = pd.read_parquet("data/price_data/sample_data.parquet")
 
         # Test 1: With caching (should be fast)
         backtester_cached = BacktestingWithCachedFeatures(config)
@@ -235,18 +235,13 @@ async def step03_performance_comparison(config: dict) -> bool | None:
         return False
 
 
-async def step04_cache_management(config: dict) -> bool | None:
+async def step04_cache_management(config: dict) -> Optional[bool]:
     """Step 4: Demonstrate cache management features."""
     try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         logger = system_logger.getChild("WaveletWorkflow")
         # Initialize cache management
         from src.training.steps.vectorized_advanced_feature_engineering import (
-            WaveletFeatureCache = )
+            WaveletFeatureCache)
 
         cache = WaveletFeatureCache(config)
 
@@ -266,28 +261,33 @@ async def step04_cache_management(config: dict) -> bool | None:
 async def main() -> None:
     """Main workflow function."""
     try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
         logger = system_logger.getChild("WaveletWorkflow")
         # Load configuration
         config_path = "config/wavelet_caching_config.yaml"
         if not Path(config_path).exists():
             config = {
                 "wavelet_cache": {
-                    "cache_enabled": True = "cache_dir": "data/wavelet_cache",
+                    "cache_enabled": True,
+                    "cache_dir": "data/wavelet_cache",
                     "cache_format": "parquet",
                     "compression": "snappy",
-                    "cache_expiry_days": 30, } = "wavelet_precompute": {
+                    "cache_expiry_days": 30,
+                },
+                "wavelet_precompute": {
                     "enable_batch_processing": True,
-                    "batch_size": 10000, "enable_progress_tracking": True = },
+                    "batch_size": 10000,
+                    "enable_progress_tracking": True,
+                },
                 "backtesting_with_cache": {
-                    "enable_feature_caching": True, "enable_performance_monitoring": True = },
+                    "enable_feature_caching": True,
+                    "enable_performance_monitoring": True,
+                },
                 "vectorized_advanced_features": {
-                    "enable_wavelet_transforms": True = } = }
-        else: config = await load_config(config_path)
+                    "enable_wavelet_transforms": True,
+                },
+            }
+        else:
+            config = await load_config(config_path)
 
         # Step 1: Pre-compute features
         step01_success = await step01_precompute_features(config)

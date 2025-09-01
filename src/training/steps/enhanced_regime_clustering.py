@@ -43,6 +43,16 @@ except ImportError:
     VIZ_AVAILABLE = False
     logging.warning("matplotlib/seaborn not available, skipping visualizations")
 
+# Explainable AI imports
+try:
+    import lime
+    import lime.lime_tabular
+    import shap
+    EXPLAINABLE_AI_AVAILABLE = True
+except ImportError:
+    EXPLAINABLE_AI_AVAILABLE = False
+    logging.warning("LIME/SHAP not available, using feature importance fallback")
+
 
 class EnhancedRegimeClustering:
     """Enhanced regime clustering with quality-driven optimization."""
@@ -69,6 +79,20 @@ class EnhancedRegimeClustering:
         self.bayesian_calls = config.get("bayesian_calls", 100)
         self.eps_range = config.get("eps_range", (0.01, 2.0))
         self.min_samples_range = config.get("min_samples_range", (2, 50))
+        
+        # Explainable AI parameters
+        self.use_lime_shap = config.get("use_lime_shap", True)
+        self.lime_samples = config.get("lime_samples", 1000)
+        self.shap_samples = config.get("shap_samples", 100)
+        
+        # Smart splitting parameters
+        self.smart_splitting = config.get("smart_splitting", True)
+        self.min_cluster_size_for_split = config.get("min_cluster_size_for_split", 20)
+        
+        # Automated K-means parameters
+        self.auto_k_means = config.get("auto_k_means", True)
+        self.max_k_for_auto = config.get("max_k_for_auto", 10)
+        self.k_selection_method = config.get("k_selection_method", "silhouette")  # "silhouette" or "elbow"
         
     def calculate_composite_score(self, features: np.ndarray, labels: np.ndarray) -> Dict[str, float]:
         """Calculate comprehensive quality metrics and composite score."""
@@ -261,8 +285,16 @@ class EnhancedRegimeClustering:
         # Strategy 1: Try to cluster noise points if there are enough
         if noise_count > 50:
             try:
-                # Use K-means on noise points
-                n_noise_clusters = min(5, noise_count // 10)
+                # Use automated K-means on noise points
+                if self.auto_k_means:
+                    n_noise_clusters = self.find_optimal_k_automated(
+                        noise_features, 
+                        max_k=min(5, noise_count // 10), 
+                        method=self.k_selection_method
+                    )
+                else:
+                    n_noise_clusters = min(5, noise_count // 10)
+                
                 kmeans = KMeans(n_clusters=n_noise_clusters, random_state=42)
                 noise_labels = kmeans.fit_predict(noise_features)
                 
@@ -274,7 +306,7 @@ class EnhancedRegimeClustering:
                 new_labels = labels.copy()
                 new_labels[noise_mask] = noise_labels
                 
-                self.logger.info(f"   ✅ Created {n_noise_clusters} clusters from noise points")
+                self.logger.info(f"   ✅ Created {n_noise_clusters} clusters from noise points (automated k selection)")
                 return new_labels
                 
             except Exception as e:
@@ -349,36 +381,24 @@ class EnhancedRegimeClustering:
                 self.logger.info(f"   ✅ Coverage threshold reached ({current_score_dict['coverage']:.3f})")
                 break
             
-            # Try splits
-            clusters = set(current_labels)
-            for cluster_id in clusters:
-                cluster_mask = current_labels == cluster_id
-                cluster_size = sum(cluster_mask)
+            # Try smart splits
+            if current_score_dict["n_clusters"] < self.target_clusters:
+                # Use smart splitting to select the best cluster to split
+                cluster_to_split = self.select_cluster_for_splitting(features, current_labels)
                 
-                if cluster_size > 20:  # Only split large clusters
-                    # Try splitting this cluster
-                    cluster_features = features[cluster_mask]
+                if cluster_to_split is not None:
+                    # Use automated K-means for splitting
+                    new_labels, split_count = self.split_cluster_automated(features, current_labels, cluster_to_split)
                     
-                    try:
-                        kmeans = KMeans(n_clusters=2, random_state=42)
-                        split_labels = kmeans.fit_predict(cluster_features)
-                        
-                        # Create new labels
-                        new_labels = current_labels.copy()
-                        new_cluster_start = max(clusters) + 1
-                        new_labels[cluster_mask] = split_labels + new_cluster_start
-                        
+                    if split_count > 0:  # Split was successful
                         new_score_dict = self.calculate_composite_score(features, new_labels)
                         new_score = new_score_dict["composite_score"]
                         
                         if new_score > best_new_score:
                             best_change = new_labels
                             best_new_score = new_score
-                            best_action = f"split_cluster_{cluster_id}"
+                            best_action = f"smart_split_cluster_{cluster_to_split}_into_{split_count}"
                             best_details = new_score_dict
-                            
-                    except Exception as e:
-                        self.logger.debug(f"   Failed to split cluster {cluster_id}: {e}")
             
             # Try merges
             for i, j in itertools.combinations(clusters, 2):
@@ -479,7 +499,8 @@ class EnhancedRegimeClustering:
             cluster_stats = {
                 "size": len(cluster_features),
                 "percentage": len(cluster_features) / len(valid_features) * 100,
-                "features": {}
+                "features": {},
+                "explainable_ai": {}
             }
             
             # Analyze each feature
@@ -496,6 +517,17 @@ class EnhancedRegimeClustering:
                     "percentile_75": float(np.percentile(feature_values, 75)),
                     "z_score_vs_overall": float((np.mean(feature_values) - np.mean(overall_values)) / np.std(overall_values))
                 }
+            
+            # Add explainable AI analysis for significant clusters
+            if len(cluster_features) >= 10 and self.use_lime_shap:
+                try:
+                    explainable_analysis = self.analyze_cluster_with_lime_shap(
+                        valid_features, valid_labels, feature_names, cluster_id
+                    )
+                    cluster_stats["explainable_ai"] = explainable_analysis
+                except Exception as e:
+                    self.logger.warning(f"Explainable AI analysis failed for cluster {cluster_id}: {e}")
+                    cluster_stats["explainable_ai"] = {}
             
             analysis["clusters"][f"cluster_{cluster_id}"] = cluster_stats
         
@@ -639,6 +671,59 @@ class EnhancedRegimeClustering:
                 feature_data = cluster_data["features"][feature_name]
                 direction = "↑" if feature_data["z_score_vs_overall"] > 0 else "↓"
                 report.append(f"  • {feature_name}: {feature_data['mean']:.4f} {direction} (z={z_score:.2f})")
+            
+            # Add explainable AI insights
+            if "explainable_ai" in cluster_data and cluster_data["explainable_ai"]:
+                explainable_data = cluster_data["explainable_ai"]
+                if "feature_importance" in explainable_data and explainable_data["feature_importance"]:
+                    report.append("  🔍 Explainable AI Insights:")
+                    
+                    # Sort features by importance
+                    importance_scores = []
+                    for feature_name, importance in explainable_data["feature_importance"].items():
+                        importance_scores.append((feature_name, importance))
+                    
+                    importance_scores.sort(key=lambda x: x[1], reverse=True)
+                    
+                    for i, (feature_name, importance) in enumerate(importance_scores[:3]):
+                        report.append(f"    • {feature_name}: {importance:.3f} (LIME/SHAP importance)")
+        
+        report.append("")
+        
+        # Explainable AI Summary
+        if any("explainable_ai" in cluster_data and cluster_data["explainable_ai"] 
+               for cluster_data in cluster_analysis["clusters"].values()):
+            report.append("🤖 EXPLAINABLE AI SUMMARY")
+            report.append("-" * 40)
+            
+            # Aggregate feature importance across all clusters
+            all_importance = {}
+            cluster_count = 0
+            
+            for cluster_id, cluster_data in cluster_analysis["clusters"].items():
+                if "explainable_ai" in cluster_data and cluster_data["explainable_ai"]:
+                    explainable_data = cluster_data["explainable_ai"]
+                    if "feature_importance" in explainable_data:
+                        cluster_count += 1
+                        for feature_name, importance in explainable_data["feature_importance"].items():
+                            if feature_name in all_importance:
+                                all_importance[feature_name] += importance
+                            else:
+                                all_importance[feature_name] = importance
+            
+            if all_importance and cluster_count > 0:
+                # Average importance across clusters
+                for feature_name in all_importance:
+                    all_importance[feature_name] /= cluster_count
+                
+                # Sort by average importance
+                avg_importance = sorted(all_importance.items(), key=lambda x: x[1], reverse=True)
+                
+                report.append("Top Features by Explainable AI Importance:")
+                for i, (feature_name, importance) in enumerate(avg_importance[:5]):
+                    report.append(f"  {i+1:2d}. {feature_name}: {importance:.3f}")
+                
+                report.append(f"\nAnalysis based on {cluster_count} clusters with explainable AI data")
         
         report.append("")
         
@@ -711,3 +796,342 @@ class EnhancedRegimeClustering:
         self.logger.info(f"   Final score: {self.results['final_score_dict']['composite_score']:.4f}")
         
         return self.results
+    
+    def calculate_cluster_silhouette_scores(self, features: np.ndarray, labels: np.ndarray) -> Dict[int, float]:
+        """Calculate individual silhouette scores for each cluster."""
+        try:
+            valid_mask = labels != -1
+            valid_labels = labels[valid_mask]
+            valid_features = features[valid_mask]
+            
+            if len(set(valid_labels)) < 2:
+                return {}
+            
+            # Calculate silhouette scores for each sample
+            from sklearn.metrics import silhouette_samples
+            sample_silhouettes = silhouette_samples(valid_features, valid_labels)
+            
+            # Aggregate by cluster
+            cluster_silhouettes = {}
+            for cluster_id in set(valid_labels):
+                cluster_mask = valid_labels == cluster_id
+                cluster_silhouettes[cluster_id] = float(np.mean(sample_silhouettes[cluster_mask]))
+            
+            return cluster_silhouettes
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating cluster silhouette scores: {e}")
+            return {}
+    
+    def find_optimal_k_automated(self, features: np.ndarray, max_k: int = 10, method: str = "silhouette") -> int:
+        """Automatically determine optimal k for K-means using Elbow Method or Silhouette Method."""
+        try:
+            if len(features) < 10:
+                return min(2, len(features))
+            
+            max_k = min(max_k, len(features) // 2, 10)
+            k_range = range(2, max_k + 1)
+            
+            if method == "silhouette":
+                # Silhouette Method
+                silhouette_scores = []
+                for k in k_range:
+                    try:
+                        kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+                        cluster_labels = kmeans.fit_predict(features)
+                        
+                        if len(set(cluster_labels)) < 2:
+                            silhouette_scores.append(-1)
+                            continue
+                        
+                        sil_score = silhouette_score(features, cluster_labels)
+                        silhouette_scores.append(sil_score)
+                        
+                    except Exception:
+                        silhouette_scores.append(-1)
+                
+                # Find k with maximum silhouette score
+                if max(silhouette_scores) > 0:
+                    optimal_k = k_range[np.argmax(silhouette_scores)]
+                else:
+                    optimal_k = 2
+                    
+                self.logger.info(f"   Silhouette method: optimal k = {optimal_k} (score: {max(silhouette_scores):.4f})")
+                
+            elif method == "elbow":
+                # Elbow Method
+                inertias = []
+                for k in k_range:
+                    try:
+                        kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
+                        kmeans.fit(features)
+                        inertias.append(kmeans.inertia_)
+                    except Exception:
+                        inertias.append(float('inf'))
+                
+                # Calculate second derivative to find elbow
+                if len(inertias) > 2:
+                    second_derivatives = []
+                    for i in range(1, len(inertias) - 1):
+                        second_deriv = inertias[i+1] - 2*inertias[i] + inertias[i-1]
+                        second_derivatives.append(second_deriv)
+                    
+                    # Find the k with maximum second derivative (elbow point)
+                    elbow_idx = np.argmax(second_derivatives)
+                    optimal_k = k_range[elbow_idx + 1]
+                else:
+                    optimal_k = 2
+                    
+                self.logger.info(f"   Elbow method: optimal k = {optimal_k}")
+                
+            else:
+                optimal_k = 2
+                self.logger.warning(f"   Unknown method '{method}', using k=2")
+            
+            return optimal_k
+            
+        except Exception as e:
+            self.logger.error(f"Error in automated k selection: {e}")
+            return 2
+    
+    def analyze_cluster_with_lime_shap(self, features: np.ndarray, labels: np.ndarray, 
+                                     feature_names: List[str], cluster_id: int) -> Dict[str, Any]:
+        """Analyze cluster characteristics using LIME and SHAP for explainable AI."""
+        try:
+            if not EXPLAINABLE_AI_AVAILABLE:
+                return self._fallback_feature_importance(features, labels, feature_names, cluster_id)
+            
+            # Get cluster data
+            cluster_mask = labels == cluster_id
+            cluster_features = features[cluster_mask]
+            
+            if len(cluster_features) < 10:
+                return self._fallback_feature_importance(features, labels, feature_names, cluster_id)
+            
+            # Create a simple classifier for the cluster (1 if in cluster, 0 otherwise)
+            cluster_labels = (labels == cluster_id).astype(int)
+            
+            # Train a simple model to predict cluster membership
+            from sklearn.ensemble import RandomForestClassifier
+            model = RandomForestClassifier(n_estimators=50, random_state=42)
+            model.fit(features, cluster_labels)
+            
+            analysis = {
+                "lime_analysis": {},
+                "shap_analysis": {},
+                "feature_importance": {}
+            }
+            
+            # LIME Analysis
+            try:
+                explainer = lime.lime_tabular.LimeTabularExplainer(
+                    features,
+                    feature_names=feature_names,
+                    class_names=['not_cluster', 'cluster'],
+                    mode='classification'
+                )
+                
+                # Sample a few instances from the cluster
+                sample_indices = np.random.choice(
+                    np.where(cluster_mask)[0], 
+                    min(self.lime_samples, len(cluster_features)), 
+                    replace=False
+                )
+                
+                lime_weights = {}
+                for idx in sample_indices:
+                    exp = explainer.explain_instance(
+                        features[idx], 
+                        model.predict_proba, 
+                        num_features=len(feature_names)
+                    )
+                    
+                    for feature, weight in exp.as_list():
+                        if feature in lime_weights:
+                            lime_weights[feature] += abs(weight)
+                        else:
+                            lime_weights[feature] = abs(weight)
+                
+                # Normalize weights
+                total_weight = sum(lime_weights.values())
+                if total_weight > 0:
+                    lime_weights = {k: v/total_weight for k, v in lime_weights.items()}
+                
+                analysis["lime_analysis"] = lime_weights
+                
+            except Exception as e:
+                self.logger.warning(f"LIME analysis failed: {e}")
+                analysis["lime_analysis"] = {}
+            
+            # SHAP Analysis
+            try:
+                # Use TreeExplainer for RandomForest
+                explainer = shap.TreeExplainer(model)
+                
+                # Sample data for SHAP analysis
+                sample_indices = np.random.choice(
+                    np.where(cluster_mask)[0], 
+                    min(self.shap_samples, len(cluster_features)), 
+                    replace=False
+                )
+                sample_features = features[sample_indices]
+                
+                shap_values = explainer.shap_values(sample_features)
+                
+                # Aggregate SHAP values
+                if isinstance(shap_values, list):
+                    shap_values = shap_values[1]  # Positive class
+                
+                mean_shap_values = np.mean(np.abs(shap_values), axis=0)
+                total_shap = np.sum(mean_shap_values)
+                
+                if total_shap > 0:
+                    shap_weights = {feature_names[i]: float(mean_shap_values[i]/total_shap) 
+                                   for i in range(len(feature_names))}
+                else:
+                    shap_weights = {feature_names[i]: 0.0 for i in range(len(feature_names))}
+                
+                analysis["shap_analysis"] = shap_weights
+                
+            except Exception as e:
+                self.logger.warning(f"SHAP analysis failed: {e}")
+                analysis["shap_analysis"] = {}
+            
+            # Combined feature importance
+            if analysis["lime_analysis"] and analysis["shap_analysis"]:
+                combined_importance = {}
+                for feature in feature_names:
+                    lime_weight = analysis["lime_analysis"].get(feature, 0.0)
+                    shap_weight = analysis["shap_analysis"].get(feature, 0.0)
+                    combined_importance[feature] = (lime_weight + shap_weight) / 2
+                
+                analysis["feature_importance"] = combined_importance
+            else:
+                analysis["feature_importance"] = analysis["lime_analysis"] or analysis["shap_analysis"]
+            
+            return analysis
+            
+        except Exception as e:
+            self.logger.error(f"Error in LIME/SHAP analysis: {e}")
+            return self._fallback_feature_importance(features, labels, feature_names, cluster_id)
+    
+    def _fallback_feature_importance(self, features: np.ndarray, labels: np.ndarray, 
+                                   feature_names: List[str], cluster_id: int) -> Dict[str, Any]:
+        """Fallback feature importance when LIME/SHAP is not available."""
+        try:
+            # Get cluster data
+            cluster_mask = labels == cluster_id
+            cluster_features = features[cluster_mask]
+            
+            if len(cluster_features) < 2:
+                return {"feature_importance": {name: 0.0 for name in feature_names}}
+            
+            # Calculate feature importance based on variance ratio
+            overall_var = np.var(features, axis=0)
+            cluster_var = np.var(cluster_features, axis=0)
+            
+            # Features with high variance ratio are more important
+            importance_scores = cluster_var / (overall_var + 1e-8)
+            total_importance = np.sum(importance_scores)
+            
+            if total_importance > 0:
+                feature_importance = {feature_names[i]: float(importance_scores[i]/total_importance) 
+                                    for i in range(len(feature_names))}
+            else:
+                feature_importance = {name: 1.0/len(feature_names) for name in feature_names}
+            
+            return {
+                "lime_analysis": {},
+                "shap_analysis": {},
+                "feature_importance": feature_importance
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error in fallback feature importance: {e}")
+            return {"feature_importance": {name: 1.0/len(feature_names) for name in feature_names}}
+    
+    def select_cluster_for_splitting(self, features: np.ndarray, labels: np.ndarray) -> Optional[int]:
+        """Smart cluster selection for splitting based on internal silhouette scores."""
+        try:
+            if not self.smart_splitting:
+                # Fallback to largest cluster
+                cluster_sizes = {}
+                for cluster_id in set(labels):
+                    if cluster_id != -1:
+                        cluster_sizes[cluster_id] = sum(labels == cluster_id)
+                
+                if cluster_sizes:
+                    largest_cluster = max(cluster_sizes, key=cluster_sizes.get)
+                    if cluster_sizes[largest_cluster] >= self.min_cluster_size_for_split:
+                        return largest_cluster
+                return None
+            
+            # Calculate silhouette scores for each cluster
+            cluster_silhouettes = self.calculate_cluster_silhouette_scores(features, labels)
+            
+            if not cluster_silhouettes:
+                return None
+            
+            # Filter clusters by size
+            valid_clusters = {}
+            for cluster_id, sil_score in cluster_silhouettes.items():
+                cluster_size = sum(labels == cluster_id)
+                if cluster_size >= self.min_cluster_size_for_split:
+                    valid_clusters[cluster_id] = sil_score
+            
+            if not valid_clusters:
+                return None
+            
+            # Select cluster with lowest silhouette score (most "unhappy")
+            worst_cluster = min(valid_clusters, key=valid_clusters.get)
+            worst_score = valid_clusters[worst_cluster]
+            
+            self.logger.info(f"   Smart splitting: selected cluster {worst_cluster} with silhouette score {worst_score:.4f}")
+            
+            return worst_cluster
+            
+        except Exception as e:
+            self.logger.error(f"Error in smart cluster selection: {e}")
+            return None
+    
+    def split_cluster_automated(self, features: np.ndarray, labels: np.ndarray, 
+                               cluster_id: int) -> Tuple[np.ndarray, int]:
+        """Split a cluster using automated K-means with optimal k selection."""
+        try:
+            # Get cluster data
+            cluster_mask = labels == cluster_id
+            cluster_features = features[cluster_mask]
+            
+            if len(cluster_features) < 10:
+                return labels, 0
+            
+            # Determine optimal k automatically
+            if self.auto_k_means:
+                optimal_k = self.find_optimal_k_automated(
+                    cluster_features, 
+                    max_k=self.max_k_for_auto, 
+                    method=self.k_selection_method
+                )
+            else:
+                optimal_k = 2  # Default to 2 clusters
+            
+            # Apply K-means with optimal k
+            kmeans = KMeans(n_clusters=optimal_k, random_state=42, n_init=10)
+            split_labels = kmeans.fit_predict(cluster_features)
+            
+            # Create new labels
+            new_labels = labels.copy()
+            new_cluster_start = max(set(labels) - {-1}) + 1
+            
+            # Assign new cluster IDs
+            for i, split_label in enumerate(split_labels):
+                original_idx = np.where(cluster_mask)[0][i]
+                new_labels[original_idx] = split_label + new_cluster_start
+            
+            self.logger.info(f"   Automated splitting: cluster {cluster_id} split into {optimal_k} clusters")
+            
+            return new_labels, optimal_k
+            
+        except Exception as e:
+            self.logger.error(f"Error in automated cluster splitting: {e}")
+            return labels, 0

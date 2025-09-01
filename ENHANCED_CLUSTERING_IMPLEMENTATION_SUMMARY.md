@@ -9,6 +9,9 @@ The Enhanced Regime Clustering System has been successfully implemented with all
 3. **Hybrid Refinement with Quality Preservation**
 4. **Adaptive Target Clusters**
 5. **Comprehensive Reporting System**
+6. **LIME/SHAP Explainable AI** (NEW)
+7. **Smart Splitting** (NEW)
+8. **Automated K-means** (NEW)
 
 ## 📁 Files Created/Modified
 
@@ -21,6 +24,9 @@ The Enhanced Regime Clustering System has been successfully implemented with all
    - Hybrid refinement
    - Quality metrics calculation
    - Comprehensive reporting
+   - LIME/SHAP explainable AI
+   - Smart splitting
+   - Automated K-means
 
 2. **`requirements_enhanced_clustering.txt`**
    - Dependencies for enhanced clustering
@@ -34,14 +40,20 @@ The Enhanced Regime Clustering System has been successfully implemented with all
    - Configuration options
    - Troubleshooting guide
 
-4. **`test_enhanced_clustering.py`**
+4. **`docs/ENHANCED_CLUSTERING_ADVANCED_FEATURES.md`**
+   - LIME/SHAP explainable AI guide
+   - Smart splitting documentation
+   - Automated K-means explanation
+   - Advanced configuration options
+
+5. **`test_enhanced_clustering.py`**
    - Complete test suite
    - Synthetic data generation
    - Quality metrics testing
    - Noise handling verification
    - Full system integration test
 
-5. **`ENHANCED_CLUSTERING_IMPLEMENTATION_SUMMARY.md`** (this file)
+6. **`ENHANCED_CLUSTERING_IMPLEMENTATION_SUMMARY.md`** (this file)
    - Implementation summary
    - Feature breakdown
    - Usage instructions
@@ -160,6 +172,77 @@ The system generates detailed reports including:
 - **Quality Metrics**: Individual scores, composite breakdown
 - **Cluster Analysis**: Top clusters, feature importance, characteristics
 - **Iteration History**: Step-by-step refinement process
+
+### 7. LIME/SHAP Explainable AI
+
+```python
+def analyze_cluster_with_lime_shap(self, features, labels, feature_names, cluster_id):
+    """Analyze cluster characteristics using LIME and SHAP."""
+    
+    # Create classifier to predict cluster membership
+    cluster_labels = (labels == cluster_id).astype(int)
+    model = RandomForestClassifier(n_estimators=50, random_state=42)
+    model.fit(features, cluster_labels)
+    
+    # LIME Analysis
+    explainer = lime.lime_tabular.LimeTabularExplainer(features, feature_names)
+    
+    # SHAP Analysis
+    explainer = shap.TreeExplainer(model)
+    shap_values = explainer.shap_values(sample_features)
+    
+    # Combine importance scores
+    combined_importance = (lime_weights + shap_weights) / 2
+```
+
+**Benefits:**
+- **Qualitative Insights**: Understand why points belong to specific clusters
+- **Feature Importance**: Identify most defining features per cluster
+- **Interpretability**: Make clustering results more explainable
+- **Validation**: Verify clusters make intuitive sense
+
+### 8. Smart Splitting
+
+```python
+def select_cluster_for_splitting(self, features, labels):
+    """Smart cluster selection based on internal silhouette scores."""
+    
+    # Calculate silhouette scores for each cluster
+    cluster_silhouettes = self.calculate_cluster_silhouette_scores(features, labels)
+    
+    # Select cluster with lowest silhouette score (most "unhappy")
+    worst_cluster = min(valid_clusters, key=valid_clusters.get)
+    return worst_cluster
+```
+
+**Benefits:**
+- **Quality-Driven**: Split clusters that would benefit most from splitting
+- **Intelligent Selection**: Avoid splitting well-formed clusters
+- **Better Results**: Improve overall clustering quality
+- **Efficient**: Focus computational effort where it matters most
+
+### 9. Automated K-means
+
+```python
+def find_optimal_k_automated(self, features, max_k=10, method="silhouette"):
+    """Automatically determine optimal k using Elbow or Silhouette method."""
+    
+    if method == "silhouette":
+        # Find k with maximum silhouette score
+        optimal_k = k_range[np.argmax(silhouette_scores)]
+    elif method == "elbow":
+        # Find elbow point using second derivative
+        elbow_idx = np.argmax(second_derivatives)
+        optimal_k = k_range[elbow_idx + 1]
+    
+    return optimal_k
+```
+
+**Benefits:**
+- **Automated**: No manual parameter tuning required
+- **Adaptive**: Optimal k varies with data characteristics
+- **Robust**: Multiple methods available (Silhouette/Elbow)
+- **Efficient**: Focuses on relevant k range
 
 ## 🔧 Configuration Options
 

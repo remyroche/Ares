@@ -462,7 +462,21 @@ class FinalRegimeClusteringStep:
             "max_iterations": 50,
             "no_improvement_limit": 10,
             "min_coverage_threshold": 0.98,
-            "bayesian_calls": 50  # Reduced for faster execution
+            "bayesian_calls": 50,  # Reduced for faster execution
+            
+            # Explainable AI settings
+            "use_lime_shap": True,
+            "lime_samples": 500,  # Reduced for faster execution
+            "shap_samples": 50,    # Reduced for faster execution
+            
+            # Smart splitting settings
+            "smart_splitting": True,
+            "min_cluster_size_for_split": 20,
+            
+            # Automated K-means settings
+            "auto_k_means": True,
+            "max_k_for_auto": 8,  # Reduced for faster execution
+            "k_selection_method": "silhouette"  # "silhouette" or "elbow"
         }
         
         enhanced_clustering = EnhancedRegimeClustering(enhanced_config)

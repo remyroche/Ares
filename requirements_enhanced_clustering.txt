@@ -9,6 +9,10 @@ pandas>=2.0.0
 # Bayesian optimization (optional, falls back to grid search if not available)
 scikit-optimize>=0.9.0
 
+# Explainable AI (optional, falls back to feature importance if not available)
+lime>=0.2.0
+shap>=0.41.0
+
 # Visualization (optional)
 matplotlib>=3.7.0
 seaborn>=0.12.0

@@ -16,10 +16,6 @@ from .regime_ensembles.volatile_regime_ensemble import VolatileRegimeEnsemble
 
 
 class RegimePredictiveEnsembles:
-    # Implementation placeholder - add specific implementation as needed
-class RegimePredictiveEnsembles:
-    pass  # TODO: Add implementation
-class RegimePredictiveEnsembles:
     """
 Orchestrates the training and prediction workflows for all specialized ensembles.
 Now includes checkpointing for ensemble models and a sophisticated global meta-learner

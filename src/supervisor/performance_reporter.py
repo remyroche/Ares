@@ -8,86 +8,90 @@ import numpy as np
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 
+from src.utils.supervisor_error_handler import (supervisor_component_error_handler,, supervisor_critical_error_handler,, supervisor_safe_error_handler,, supervisor_error_context,, handle_component_failure,, handle_portfolio_error,, handle_risk_error,, handle_performance_error,, handle_model_error,, handle_exchange_error,, ComponentFailureError,, PortfolioManagementError,, RiskManagementError,, PerformanceMonitoringError,, ModelManagementError,, ExchangeIntegrationError,, )
+)
+
 class AdvancedReportingEngine:
     """Advanced reporting engine with real-time analytics and comprehensive analysis."""
 
-def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
-self.logger = system_logger.getChild("AdvancedReportingEngine")
-self.report_templates: dict[str, Any] = {}
-self.real_time_metrics: dict[str, Any] = {}
-self.performance_trends: dict[str, list[float]] = {}
+        self.logger = system_logger.getChild("AdvancedReportingEngine")
+        self.report_templates: dict[str, Any] = {}
+        self.real_time_metrics: dict[str, Any] = {}
+        self.performance_trends: dict[str, list[float]] = {}
 
-@handle_errors(
-exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
-default_return=None
-)
-async def generate_real_time_report(
-self,
-performance_data: dict[str, Any],
-) -> dict[str, Any]:
+    @handle_errors(
+        exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
+        default_return=None
+    )
+    async def generate_real_time_report(
+        self,
+        performance_data: dict[str, Any],
+    ) -> dict[str, Any]:
         """Generate real-time performance report with advanced analytics."""
         try:
             report = {
-"timestamp": datetime.now().isoformat(),
-"real_time_metrics": await self._calculate_real_time_metrics(
-performance_data,
-),
-"performance_trends": await self._analyze_performance_trends(
-performance_data,
-),
-"risk_analysis": await self._perform_risk_analysis(performance_data),
-"attribution_analysis": await self._perform_attribution_analysis(
-performance_data,
-),
-"forecasting": await self._generate_performance_forecast(
-performance_data,
-),
-}
+                "timestamp": datetime.now().isoformat(),
+                "real_time_metrics": await self._calculate_real_time_metrics(
+                    performance_data,
+                ),
+                "performance_trends": await self._analyze_performance_trends(
+                    performance_data,
+                ),
+                "risk_analysis": await self._perform_risk_analysis(performance_data),
+                "attribution_analysis": await self._perform_attribution_analysis(
+                    performance_data,
+                ),
+                "forecasting": await self._generate_performance_forecast(
+                    performance_data,
+                ),
+            }
 
-# Cache the report
-self._cache_report("real_time", report)
+            # Cache the report
+            self._cache_report("real_time", report)
 
-return report
+            return report
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"Error generating real-time report: {e}")
-return {}
+            return {}
 
-@handle_errors(
-exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
-default_return=None
-)
-async def _calculate_real_time_metrics(
-self,
-performance_data: dict[str, Any],
-) -> dict[str, Any]:
-                """Calculate real-time performance metrics."""
+    @handle_errors(
+        exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
+        default_return=None
+    )
+    async def _calculate_real_time_metrics(
+        self,
+        performance_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Calculate real-time performance metrics."""
         try:
+
             returns = performance_data.get("returns", [])
-if not returns:
+            if not returns:
                 return {}
 
-return {
-"current_return": returns[-1] if returns else 0,
-"rolling_1h_return": np.mean(returns[-60:])
-if len(returns) >= 60
-else np.mean(returns),
-"rolling_24h_return": np.mean(returns[-1440:])
-if len(returns) >= 1440
-else np.mean(returns),
-"volatility": np.std(returns[-100:])
-if len(returns) >= 100
-else np.std(returns),
-"sharpe_ratio": self._calculate_sharpe_ratio(returns),
-"max_drawdown": self._calculate_max_drawdown(returns),
-"win_rate": self._calculate_win_rate(returns),
-"profit_factor": self._calculate_profit_factor(returns),
-}
+            return {
+                "current_return": returns[-1] if returns else 0,
+                "rolling_1h_return": np.mean(returns[-60:])
+                if len(returns) >= 60
+                else np.mean(returns),
+                "rolling_24h_return": np.mean(returns[-1440:])
+                if len(returns) >= 1440
+                else np.mean(returns),
+                "volatility": np.std(returns[-100:])
+                if len(returns) >= 100
+                else np.std(returns),
+                "sharpe_ratio": self._calculate_sharpe_ratio(returns),
+                "max_drawdown": self._calculate_max_drawdown(returns),
+                "win_rate": self._calculate_win_rate(returns),
+                "profit_factor": self._calculate_profit_factor(returns),
+            }
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"Error calculating real-time metrics: {e}")
-return {}
+            return {}
 
 @handle_errors(
 exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
@@ -100,7 +104,7 @@ performance_data: dict[str, Any],
                 """Analyze performance trends."""
         try:
             returns = performance_data.get("returns", [])
-if not returns:
+            if not returns:
                 return {}
 
 short_trend = (
@@ -135,7 +139,7 @@ self, performance_data: dict[str, Any]
                 """Perform comprehensive risk analysis."""
         try:
             returns = performance_data.get("returns", [])
-if not returns:
+            if not returns:
                 return {}
 
 return {
@@ -162,7 +166,7 @@ self, performance_data: dict[str, Any]
                 """Perform performance attribution analysis."""
         try:
             returns = performance_data.get("returns", [])
-if not returns:
+            if not returns:
                 return {}
 
 # Simulate attribution analysis
@@ -188,6 +192,8 @@ self, performance_data: dict[str, Any]
                 """Generate performance forecast."""
         try:
     pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
 returns = performance_data.get("returns", [])
 if not returns:
                 return {}
@@ -211,11 +217,8 @@ return {}
 
 def _calculate_sharpe_ratio(self, returns: list[float]) -> float:
         """Calculate Sharpe ratio."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if not returns:
+        try:
+            if not returns:
                 return 0.0
 
 mean_return = np.mean(returns)
@@ -234,7 +237,7 @@ return 0.0
 
 def _calculate_max_drawdown(self, returns: list[float]) -> float:
         """Calculate maximum drawdown."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -253,7 +256,7 @@ return 0.0
 
 def _calculate_win_rate(self, returns: list[float]) -> float:
         """Calculate win rate."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -269,7 +272,7 @@ return 0.0
 
 def _calculate_profit_factor(self, returns: list[float]) -> float:
         """Calculate profit factor."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -290,7 +293,7 @@ return 0.0
 
 def _calculate_var(self, returns: list[float], confidence_level: float) -> float:
         """Calculate Value at Risk."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -305,7 +308,7 @@ return 0.0
 
 def _calculate_cvar(self, returns: list[float], confidence_level: float) -> float:
         """Calculate Conditional Value at Risk."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -326,7 +329,7 @@ return 0.0
 
 def _calculate_downside_deviation(self, returns: list[float]) -> float:
         """Calculate downside deviation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -345,7 +348,7 @@ return 0.0
 
 def _calculate_tail_risk(self, returns: list[float]) -> float:
         """Calculate tail risk."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -361,7 +364,7 @@ return 0.0
 
 def _calculate_correlation_risk(self, returns: list[float]) -> float:
         """Calculate correlation risk."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -377,7 +380,7 @@ return 0.0
 
 def _cache_report(self, report_type: str, report: dict[str, Any]) -> None:
         """Cache a report."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -391,15 +394,11 @@ except Exception as e:
             self.logger.error(f"Error caching report: {e}")
 
 class PerformanceReporter:
-    pass  # TODO: Add implementation
-class PerformanceReporter:
-    pass  # TODO: Add implementation
-class PerformanceReporter:
     """
 Enhanced Performance Reporter component with DI, type hints, robust error handling, and advanced reporting capabilities.
 """
 
-def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         """
 Initialize performance reporter with enhanced type safety.
 
@@ -467,7 +466,7 @@ Initialize performance reporter with enhanced error handling.
 Returns:
             bool: True if initialization successful, False otherwise
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -507,7 +506,7 @@ context="reporter configuration loading",
 )
 async def _load_reporter_configuration(self) -> None:
         """Load performance reporter configuration."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -546,7 +545,7 @@ Validate performance reporter configuration.
 Returns:
             bool: True if configuration is valid, False otherwise
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -584,7 +583,7 @@ context="advanced reporting setup",
 )
 async def _setup_advanced_reporting(self) -> None:
         """Setup advanced reporting engine."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -605,7 +604,7 @@ context="real-time reporting setup",
 )
 async def _setup_real_time_reporting(self) -> None:
         """Setup real-time reporting."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -625,7 +624,7 @@ context="export directory setup",
 )
 async def _setup_export_directory(self) -> None:
         """Setup export directory."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -652,7 +651,7 @@ Start the performance reporter.
 Returns:
             bool: True if reporter started successfully, False otherwise
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -673,7 +672,7 @@ context="performance report generation",
 )
 async def _generate_performance_report(self) -> None:
         """Generate a comprehensive performance report."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -705,7 +704,7 @@ context="real-time report generation",
 )
 async def _generate_real_time_report(self) -> None:
         """Generate a real-time performance report."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -737,7 +736,7 @@ Collect performance data for reporting.
 Returns:
             dict: Performance data including returns, positions, trades, and metrics.
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -769,7 +768,7 @@ self,
 performance_data: dict[str, Any],
 ) -> dict[str, Any]:
         """Create a comprehensive performance report using the advanced engine."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -805,7 +804,7 @@ context="report export",
 )
 async def _export_report(self, report: dict[str, Any]) -> None:
         """Export the generated report to various formats."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -827,7 +826,7 @@ context="JSON report export",
 )
 async def _export_json_report(self, report: dict[str, Any], timestamp: str) -> None:
         """Export report to JSON format."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -849,7 +848,7 @@ context="CSV report export",
 )
 async def _export_csv_report(self, report: dict[str, Any], timestamp: str) -> None:
         """Export report to CSV format."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -869,7 +868,7 @@ except Exception as e:
 
 def _convert_report_to_csv(self, report: dict[str, Any]) -> str:
         """Convert report to CSV format."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -900,7 +899,7 @@ context="performance reporter stop",
 async def stop(self) -> None:
         """Stop the performance reporter."""
 self.logger.info("🛑 Stopping Performance Reporter...")
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -947,7 +946,7 @@ def analyze_performance_attribution(
 self, portfolio_data: dict[str, Any], benchmark_data: dict[str, Any] | None = None
 ) -> dict[str, Any]:
         """Analyze performance attribution with enhanced factors."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -982,7 +981,7 @@ def _calculate_factor_contribution(
 self, factor: str, portfolio_data: dict[str, Any], benchmark_data: dict[str, Any] | None = None
 ) -> dict[str, Any]:
         """Calculate contribution of a specific factor."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1008,7 +1007,7 @@ def _calculate_market_timing_contribution(
 self, portfolio_data: dict[str, Any], benchmark_data: dict[str, Any] | None = None
 ) -> dict[str, Any]:
         """Calculate market timing contribution."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1027,7 +1026,7 @@ def _calculate_stock_selection_contribution(
 self, portfolio_data: dict[str, Any], benchmark_data: dict[str, Any] | None = None
 ) -> dict[str, Any]:
         """Calculate stock selection contribution."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1046,7 +1045,7 @@ def _calculate_risk_management_contribution(
 self, portfolio_data: dict[str, Any]
 ) -> dict[str, Any]:
         """Calculate risk management contribution."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1063,7 +1062,7 @@ return {"contribution": 0.0, "method": "unknown", "significance": "low"}
 
 def _calculate_leverage_contribution(self, portfolio_data: dict[str, Any]) -> dict[str, Any]:
         """Calculate leverage contribution."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1080,7 +1079,7 @@ return {"contribution": 0.0, "method": "unknown", "significance": "low"}
 
 def _decompose_risk(self, portfolio_data: dict[str, Any]) -> dict[str, Any]:
         """Decompose risk into various components."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1102,7 +1101,7 @@ return {}
 
 def _analyze_timing(self, portfolio_data: dict[str, Any]) -> dict[str, Any]:
         """Analyze market timing effectiveness."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1123,7 +1122,7 @@ return {}
 
 def _calculate_max_drawdown(self, returns: list[float]) -> float:
         """Calculate maximum drawdown."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1139,7 +1138,7 @@ return 0.0
 
 def _calculate_downside_deviation(self, returns: list[float]) -> float:
         """Calculate downside deviation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1155,7 +1154,7 @@ return 0.0
 
 def _calculate_tail_risk(self, returns: list[float]) -> float:
         """Calculate tail risk."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1188,7 +1187,7 @@ Args:
 Returns:
         PerformanceReporter instance or None if setup fails.
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling

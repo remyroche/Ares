@@ -6,22 +6,19 @@ from typing import Any
 import asyncio
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.warning_symbols import (
+from src.utils.warning_symbols import (, from src.utils.supervisor_error_handler import (, supervisor_component_error_handler,, supervisor_critical_error_handler,, supervisor_safe_error_handler,, supervisor_error_context,, handle_component_failure,, handle_portfolio_error,, handle_risk_error,, handle_performance_error,, handle_model_error,, handle_exchange_error,, ComponentFailureError,, PortfolioManagementError,, RiskManagementError,, PerformanceMonitoringError,, ModelManagementError,, ExchangeIntegrationError,, ))
+)
 error,
 failed,
 invalid
 )
 
 class Monitoring:
-    pass  # TODO: Add implementation
-class Monitoring:
-    pass  # TODO: Add implementation
-class Monitoring:
     """
 Enhanced Monitoring component with DI, type hints, and robust error handling.
 """
 
-def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
 self.logger = system_logger.getChild("Monitoring")
 self.is_running: bool = False
@@ -42,7 +39,7 @@ KeyError: (False, "Missing configuration keys"),
 default_return=False, context="monitoring initialization",
 )
 async def initialize(self) -> bool:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -62,7 +59,7 @@ exceptions=(ValueError, AttributeError),
 default_return=None, context="monitoring configuration loading",
 )
 async def _load_monitoring_configuration(self) -> None:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -79,7 +76,7 @@ exceptions=(ValueError, AttributeError),
 default_return=False, context="configuration validation",
 )
 def _validate_configuration(self) -> bool:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -102,7 +99,7 @@ Exception: (False, "Monitoring run failed"),
 default_return=False, context="monitoring run",
 )
 async def run(self) -> bool:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -122,7 +119,7 @@ exceptions=(Exception,),
 default_return=None, context="monitoring step",
 )
 async def _perform_monitoring(self) -> None:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -142,7 +139,7 @@ exceptions=(Exception,),
 default_return=None, context="system health check",
 )
 async def _check_system_health(self) -> None:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -163,7 +160,7 @@ exceptions=(Exception,),
 default_return=None, context="metrics update",
 )
 async def _update_metrics(self) -> None:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -180,7 +177,7 @@ default_return=None, context="monitoring stop",
 )
 async def stop(self) -> None:
         self.logger.info("🛑 Stopping Monitoring...")
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -214,7 +211,7 @@ default_return=None, context="monitoring setup",
 async def setup_monitoring(
 config: dict[str, Any] | None = None,
 ) -> Monitoring | None:
-    try:
+            try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling

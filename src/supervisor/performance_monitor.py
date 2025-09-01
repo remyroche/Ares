@@ -6,7 +6,8 @@ from scipy import stats
 from src.utils.logger import system_logger
 from typing import Any
 from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.warning_symbols import (
+from src.utils.warning_symbols import (, from src.utils.supervisor_error_handler import (, supervisor_component_error_handler,, supervisor_critical_error_handler,, supervisor_safe_error_handler,, supervisor_error_context,, handle_component_failure,, handle_portfolio_error,, handle_risk_error,, handle_performance_error,, handle_model_error,, handle_exchange_error,, ComponentFailureError,, PortfolioManagementError,, RiskManagementError,, PerformanceMonitoringError,, ModelManagementError,, ExchangeIntegrationError,, ))
+)
 error,
 failed,
 invalid,
@@ -14,15 +15,11 @@ warning,
 )
 
 class PerformanceMonitor:
-    pass  # TODO: Add implementation
-class PerformanceMonitor:
-    pass  # TODO: Add implementation
-class PerformanceMonitor:
     """
 Enhanced Performance Monitor component with DI = type hints, and robust error handling.
 """
 
-def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
 self.logger = system_logger.getChild("PerformanceMonitor")
 self.is_running: bool = False
@@ -72,7 +69,7 @@ default_return=False,
 context="performance monitor initialization",
 )
 async def initialize(self) -> bool:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -95,7 +92,7 @@ default_return=None,
 context="monitor configuration loading",
 )
 async def _load_monitor_configuration(self) -> None:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -114,7 +111,7 @@ context="configuration validation",
 )
 
 def _validate_configuration(self) -> bool:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -138,7 +135,7 @@ default_return=False,
 context="performance monitor run",
 )
 async def run(self) -> bool:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -159,7 +156,7 @@ default_return=None,
 context="performance monitoring step",
 )
 async def _perform_monitoring(self) -> None:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -180,7 +177,7 @@ default_return=None,
 context="performance metrics collection",
 )
 async def _collect_performance_metrics(self) -> None:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -203,7 +200,7 @@ default_return=None,
 context="performance alerts check",
 )
 async def _check_performance_alerts(self) -> None:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -237,7 +234,7 @@ context="performance monitor stop",
 )
 async def stop(self) -> None:
         self.logger.info("🛑 Stopping Performance Monitor...")
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -277,7 +274,7 @@ current_performance: Current performance metric (e.g., accuracy = F1-score)
 Returns:
             bool: True if concept drift is detected
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -348,7 +345,7 @@ f"Performance degradation: {recent_mean:.4f} vs {historical_mean:.4f}",
 )
 
 # Method 4: Kolmogorov-Smirnov test for distribution shift
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -418,7 +415,7 @@ prediction: float, actual_outcome: float,
 timestamp: datetime = None
 ) -> None:
         """Update real-time performance tracking for a model."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -457,7 +454,7 @@ default_return=None, context="real-time metrics calculation",
 )
 async def _calculate_real_time_metrics(self, model_name: str) -> None:
         """Calculate real-time performance metrics for a model."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -509,7 +506,7 @@ default_return=None, context="retraining trigger check",
 )
 async def _check_retraining_triggers(self, model_name: str) -> None:
         """Check if model retraining is needed."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -581,7 +578,7 @@ self, model_names: list[str],
 current_regime: str = None, required_count: int = 3
 ) -> list[str]:
         """Select best performing models based on real-time metrics."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -629,7 +626,7 @@ return model_names[:required_count]
 
 def _get_regime_performance_adjustment(self, model_name: str, regime: str) -> float:
         """Get regime-specific performance adjustment for a model."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -666,7 +663,7 @@ context="performance feedback loop",
 )
 async def get_performance_feedback(self) -> dict[str , Any]:
         """Get comprehensive performance feedback for the system."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -687,7 +684,7 @@ return {}
 
 def _calculate_system_health(self) -> dict[str , Any]:
         """Calculate overall system health metrics."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -741,7 +738,7 @@ context="performance monitor setup",
 async def setup_performance_monitor(
 config: dict[str , Any] | None = None,
 ) -> PerformanceMonitor | None:
-    try:
+            try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling

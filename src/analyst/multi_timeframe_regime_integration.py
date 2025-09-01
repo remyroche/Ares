@@ -43,10 +43,6 @@ invalid,
 
 
 class MultiTimeframeRegimeIntegration:
-    # Implementation placeholder - add specific implementation as needed
-class MultiTimeframeRegimeIntegration:
-    pass  # TODO: Add implementation
-class MultiTimeframeRegimeIntegration:
     """
 Integrates HMM regime classification with multi-timeframe system.
 

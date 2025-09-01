@@ -159,6 +159,36 @@ self.critical_data_requirements = {
 "required_files": ["data / training/*_final_models.pkl"],
 "required_columns": [],
 "min_rows": 0
+},
+"step16_confidence_calibration": {
+"required_files": ["data / training/*_extended_calibration_results.pkl"],
+"required_columns": [],
+"min_rows": 0
+},
+"step17_final_parameters_optimization": {
+"required_files": ["data / training/*_extended_optimization_results.json"],
+"required_columns": [],
+"min_rows": 0
+},
+"step18_walk_forward_validation": {
+"required_files": ["data / training/*_extended_walk_forward_results.json"],
+"required_columns": [],
+"min_rows": 0
+},
+"step19_monte_carlo_validation": {
+"required_files": ["data / training/*_extended_monte_carlo_results.json"],
+"required_columns": [],
+"min_rows": 0
+},
+"step20_ab_testing": {
+"required_files": ["data / training/*_extended_ab_test_results.json"],
+"required_columns": [],
+"min_rows": 0
+},
+"step21_saving": {
+"required_files": ["data / training/*_extended_final_models.pkl"],
+"required_columns": [],
+"min_rows": 0
 }
 }
 

@@ -18,10 +18,6 @@ from src.analyst.regime_runtime import get_current_regime_info
 
 
 class RegimeExpertOrchestrator:
-    # Implementation placeholder - add specific implementation as needed
-class RegimeExpertOrchestrator:
-    pass  # TODO: Add implementation
-class RegimeExpertOrchestrator:
     """
 Orchestrates regime detection and expert selection using composite_cluster_id.
 Integrates with Step 9.5 (HMM-LM Generalist) and Step 10 (Event Transition Modeling).

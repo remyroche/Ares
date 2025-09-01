@@ -36,10 +36,6 @@ warnings.filterwarnings("ignore", category=UserWarning, module="arch")
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 class BaseEnsemble:
-    # Implementation placeholder - add specific implementation as needed
-class BaseEnsemble:
-    pass  # TODO: Add implementation
-class BaseEnsemble:
     """
 Base class for all child ensembles to train highly optimized and robust models.
 Includes common utilities for training, prediction, and now, model persistence.
@@ -1011,10 +1007,34 @@ self.trained = False
 return False
 
 def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
-    def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
-    def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
-    def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
-        raise NotImplementedError
+        """
+        Train base models for the ensemble.
+        
+        Args:
+            aligned_data: DataFrame with aligned features
+            y_encoded: Encoded target labels
+            
+        Returns:
+            bool: True if training successful
+        """
+        try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
+            # Initialize base models if not already done
+            if not self.models:
+                self._initialize_base_models()
+            
+            # Train each base model
+            for model_name, model in self.models.items():
+                self.logger.info(f"Training base model: {model_name}")
+                model.fit(aligned_data, y_encoded)
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error training base models: {e}")
+            return False
 
 # SR context features were moved to step4 unified S/R system.
 
@@ -1395,7 +1415,41 @@ context="meta features extraction",
 def _get_meta_features(
 self, df: pd.DataFrame,
 is_live: bool = False, **kwargs: Any) -> pd.DataFrame | dict:
-        raise NotImplementedError
+        """
+        Extract meta features from base model predictions.
+        
+        Args:
+            df: Input DataFrame
+            is_live: Whether this is live prediction
+            **kwargs: Additional arguments
+            
+        Returns:
+            DataFrame with meta features or dict with meta features
+        """
+        try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
+            meta_features = {}
+            
+            # Get predictions from all base models
+            for model_name, model in self.models.items():
+                if hasattr(model, 'predict_proba'):
+                    pred_proba = model.predict_proba(df)
+                    meta_features[f'{model_name}_proba'] = pred_proba[:, 1] if pred_proba.shape[1] > 1 else pred_proba.flatten()
+                else:
+                    pred = model.predict(df)
+                    meta_features[f'{model_name}_pred'] = pred
+            
+            # Add ensemble-specific features
+            if 'ensemble_confidence' not in meta_features:
+                meta_features['ensemble_confidence'] = np.mean(list(meta_features.values()), axis=0)
+            
+            return meta_features if is_live else pd.DataFrame(meta_features)
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting meta features: {e}")
+            return {} if is_live else pd.DataFrame()
 
 @handle_errors(
 exceptions=(ValueError, AttributeError, KeyError, TypeError),

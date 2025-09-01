@@ -3,12 +3,15 @@ from src.utils.logger import system_logger
 from typing import Any
 from src.utils.error_handler import handle_errors, handle_specific_errors
 
+from src.utils.supervisor_error_handler import (supervisor_component_error_handler,, supervisor_critical_error_handler,, supervisor_safe_error_handler,, supervisor_error_context,, handle_component_failure,, handle_portfolio_error,, handle_risk_error,, handle_performance_error,, handle_model_error,, handle_exchange_error,, ComponentFailureError,, PortfolioManagementError,, RiskManagementError,, PerformanceMonitoringError,, ModelManagementError,, ExchangeIntegrationError,, )
+)
+
 class DynamicWeighter:
     """
 Dynamic Weighter with comprehensive error handling and type safety.
 """
 
-def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         """
 Initialize dynamic weighter with enhanced type safety.
 
@@ -85,6 +88,9 @@ Returns:
             bool: True if initialization successful, False otherwise
 """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("Initializing Dynamic Weighter...")
 
 # Load dynamic weighter configuration
@@ -115,6 +121,9 @@ context="weighter configuration loading",
 async def _load_weighter_configuration(self) -> None:
         """Load dynamic weighter configuration."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Set default weighter parameters
 self.weighter_config.setdefault("weighting_interval", 3600)
 self.weighter_config.setdefault("max_weighting_history", 100)
@@ -153,6 +162,9 @@ Returns:
             bool: True if configuration is valid, False otherwise
 """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Validate weighting interval
 if self.weighting_interval <= 0:
                 self.logger.error("Invalid weighting interval")
@@ -191,6 +203,9 @@ context="weighter modules initialization",
 async def _initialize_weighter_modules(self) -> None:
         """Initialize dynamic weighter modules."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Initialize performance weighting module
 if self.enable_performance_weighting:
                 await self._initialize_performance_weighting()
@@ -224,6 +239,9 @@ context="performance weighting initialization",
 async def _initialize_performance_weighting(self) -> None:
         """Initialize performance weighting components."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.performance_weighting_components = {
 "return_based_weighting": True,
 "sharpe_based_weighting": True,
@@ -244,6 +262,9 @@ context="risk weighting initialization",
 async def _initialize_risk_weighting(self) -> None:
         """Initialize risk weighting components."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.risk_weighting_components = {
 "var_based_weighting": True,
 "volatility_based_weighting": True,
@@ -264,6 +285,9 @@ context="adaptive weighting initialization",
 async def _initialize_adaptive_weighting(self) -> None:
         """Initialize adaptive weighting components."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.adaptive_weighting_components = {
 "market_regime_weighting": True,
 "regime_detection": True,
@@ -284,6 +308,9 @@ context="momentum weighting initialization",
 async def _initialize_momentum_weighting(self) -> None:
         """Initialize momentum weighting components."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.momentum_weighting_components = {
 "price_momentum_weighting": True,
 "volume_momentum_weighting": True,
@@ -304,6 +331,9 @@ context="volatility weighting initialization",
 async def _initialize_volatility_weighting(self) -> None:
         """Initialize volatility weighting components."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.volatility_weighting_components = {
 "realized_volatility_weighting": True,
 "implied_volatility_weighting": True,
@@ -336,6 +366,9 @@ Returns:
             bool: True if successful, False otherwise
 """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("Executing Dynamic Weighting...")
 
 # Validate weighting inputs
@@ -402,6 +435,9 @@ Returns:
             bool: True if valid, False otherwise
 """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if not isinstance(weighting_input, dict):
                 self.logger.error("Weighting input must be a dictionary")
 return False
@@ -428,7 +464,7 @@ async def _perform_performance_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform performance-based weighting."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -474,6 +510,9 @@ self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
                 """Perform risk-based weighting."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             results = {}
 
 # VaR-based weighting
@@ -516,6 +555,9 @@ self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
                 """Perform adaptive weighting."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             results = {}
 
 # Market regime weighting
@@ -555,21 +597,24 @@ self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
                 """Perform return based weighting."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Calculate return-based weights
             returns = weighting_input.get("returns", {})
             if not returns:
                 return {"error": "No returns data provided"}
-            
+
             # Calculate total return
             total_return = sum(returns.values())
             if total_return == 0:
                 return {"error": "Zero total return"}
-            
+
             # Calculate weights proportional to returns
             weights = {}
             for asset, ret in returns.items():
                 weights[asset] = ret / total_return if total_return > 0 else 1.0 / len(returns)
-            
+
             return {
                 "return_based_weighting_completed": True,
                 "weights": weights,
@@ -591,14 +636,17 @@ self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
                 """Perform Sharpe based weighting."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Calculate Sharpe ratio based weights
             returns = weighting_input.get("returns", {})
             volatilities = weighting_input.get("volatilities", {})
             risk_free_rate = weighting_input.get("risk_free_rate", 0.02)  # Default 2%
-            
+
             if not returns or not volatilities:
                 return {"error": "Missing returns or volatility data"}
-            
+
             # Calculate Sharpe ratios
             sharpe_ratios = {}
             for asset in returns:
@@ -607,16 +655,16 @@ self, weighting_input: dict[str, Any]
                     sharpe_ratios[asset] = excess_return / volatilities[asset]
                 else:
                     sharpe_ratios[asset] = 0
-            
+
             # Calculate weights
             total_sharpe = sum(sharpe_ratios.values())
             if total_sharpe == 0:
                 return {"error": "Zero total Sharpe ratio"}
-            
+
             weights = {}
             for asset, ratio in sharpe_ratios.items():
                 weights[asset] = ratio / total_sharpe if total_sharpe > 0 else 1.0 / len(sharpe_ratios)
-            
+
             return {
                 "sharpe_based_weighting_completed": True,
                 "weights": weights,
@@ -638,14 +686,17 @@ self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
                 """Perform Sortino based weighting."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Calculate Sortino ratio based weights
             returns = weighting_input.get("returns", {})
             downside_deviations = weighting_input.get("downside_deviations", {})
             risk_free_rate = weighting_input.get("risk_free_rate", 0.02)  # Default 2%
-            
+
             if not returns or not downside_deviations:
                 return {"error": "Missing returns or downside deviation data"}
-            
+
             # Calculate Sortino ratios
             sortino_ratios = {}
             for asset in returns:
@@ -654,16 +705,16 @@ self, weighting_input: dict[str, Any]
                     sortino_ratios[asset] = excess_return / downside_deviations[asset]
                 else:
                     sortino_ratios[asset] = 0
-            
+
             # Calculate weights
             total_sortino = sum(sortino_ratios.values())
             if total_sortino == 0:
                 return {"error": "Zero total Sortino ratio"}
-            
+
             weights = {}
             for asset, ratio in sortino_ratios.items():
                 weights[asset] = ratio / total_sortino if total_sortino > 0 else 1.0 / len(sortino_ratios)
-            
+
             return {
                 "sortino_based_weighting_completed": True,
                 "weights": weights,
@@ -685,13 +736,16 @@ self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
                 """Perform Calmar based weighting."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Calculate Calmar ratio based weights
             returns = weighting_input.get("returns", {})
             max_drawdowns = weighting_input.get("max_drawdowns", {})
-            
+
             if not returns or not max_drawdowns:
                 return {"error": "Missing returns or drawdown data"}
-            
+
             # Calculate Calmar ratios
             calmar_ratios = {}
             for asset in returns:
@@ -699,16 +753,16 @@ self, weighting_input: dict[str, Any]
                     calmar_ratios[asset] = returns[asset] / abs(max_drawdowns[asset])
                 else:
                     calmar_ratios[asset] = 0
-            
+
             # Calculate weights
             total_calmar = sum(calmar_ratios.values())
             if total_calmar == 0:
                 return {"error": "Zero total Calmar ratio"}
-            
+
             weights = {}
             for asset, ratio in calmar_ratios.items():
                 weights[asset] = ratio / total_calmar if total_calmar > 0 else 1.0 / len(calmar_ratios)
-            
+
             return {
                 "calmar_based_weighting_completed": True,
                 "weights": weights,
@@ -732,13 +786,16 @@ self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
                 """Perform VaR based weighting."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Calculate VaR-based weights
             returns = weighting_input.get("returns", {})
             volatilities = weighting_input.get("volatilities", {})
-            
+
             if not returns or not volatilities:
                 return {"error": "Missing returns or volatility data"}
-            
+
             # Calculate VaR (simplified: return - 2*volatility)
             var_scores = {}
             for asset in returns:
@@ -746,24 +803,24 @@ self, weighting_input: dict[str, Any]
                     var_scores[asset] = returns[asset] - 2 * volatilities[asset]
                 else:
                     var_scores[asset] = returns[asset]
-            
+
             # Calculate weights (inverse VaR - lower VaR gets higher weight)
             total_var = sum(var_scores.values())
             if total_var == 0:
                 return {"error": "Zero total VaR score"}
-            
+
             weights = {}
             for asset, var_score in var_scores.items():
                 # Invert VaR score for weighting (lower VaR = higher weight)
                 inverse_var = 1 / (abs(var_score) + 1e-8)  # Add small constant to avoid division by zero
                 weights[asset] = inverse_var
-            
+
             # Normalize weights
             total_weight = sum(weights.values())
             if total_weight > 0:
                 for asset in weights:
                     weights[asset] /= total_weight
-            
+
             return {
                 "var_based_weighting_completed": True,
                 "weights": weights,
@@ -785,16 +842,19 @@ self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
                 """Perform volatility based weighting."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Calculate volatility-based weights
             volatilities = weighting_input.get("volatilities", {})
-            
+
             if not volatilities:
                 return {"error": "No volatility data provided"}
-            
+
             # Calculate inverse volatility weights (lower volatility = higher weight)
             weights = {}
             total_inverse_vol = 0
-            
+
             for asset, vol in volatilities.items():
                 if vol > 0:
                     inverse_vol = 1 / vol
@@ -802,7 +862,7 @@ self, weighting_input: dict[str, Any]
                     total_inverse_vol += inverse_vol
                 else:
                     weights[asset] = 0
-            
+
             # Normalize weights
             if total_inverse_vol > 0:
                 for asset in weights:
@@ -812,7 +872,7 @@ self, weighting_input: dict[str, Any]
                 num_assets = len(volatilities)
                 for asset in weights:
                     weights[asset] = 1.0 / num_assets
-            
+
             return {
                 "volatility_based_weighting_completed": True,
                 "weights": weights,
@@ -834,16 +894,19 @@ self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
                 """Perform drawdown based weighting."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Calculate drawdown-based weights
             max_drawdowns = weighting_input.get("max_drawdowns", {})
-            
+
             if not max_drawdowns:
                 return {"error": "No drawdown data provided"}
-            
+
             # Calculate inverse drawdown weights (lower drawdown = higher weight)
             weights = {}
             total_inverse_dd = 0
-            
+
             for asset, drawdown in max_drawdowns.items():
                 if drawdown > 0:
                     inverse_dd = 1 / drawdown
@@ -851,7 +914,7 @@ self, weighting_input: dict[str, Any]
                     total_inverse_dd += inverse_dd
                 else:
                     weights[asset] = 0
-            
+
             # Normalize weights
             if total_inverse_dd > 0:
                 for asset in weights:
@@ -861,7 +924,7 @@ self, weighting_input: dict[str, Any]
                 num_assets = len(max_drawdowns)
                 for asset in weights:
                     weights[asset] = 1.0 / num_assets
-            
+
             return {
                 "drawdown_based_weighting_completed": True,
                 "weights": weights,
@@ -883,16 +946,19 @@ self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
                 """Perform correlation based weighting."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Calculate correlation-based weights
             correlation_matrix = weighting_input.get("correlation_matrix", {})
-            
+
             if not correlation_matrix:
                 return {"error": "No correlation matrix provided"}
-            
+
             # Calculate diversification weights (lower correlation = higher weight)
             weights = {}
             total_diversification = 0
-            
+
             for asset, correlations in correlation_matrix.items():
                 if isinstance(correlations, dict):
                     # Calculate average correlation with other assets
@@ -907,7 +973,7 @@ self, weighting_input: dict[str, Any]
                         weights[asset] = 0
                 else:
                     weights[asset] = 0
-            
+
             # Normalize weights
             if total_diversification > 0:
                 for asset in weights:
@@ -917,7 +983,7 @@ self, weighting_input: dict[str, Any]
                 num_assets = len(correlation_matrix)
                 for asset in weights:
                     weights[asset] = 1.0 / num_assets
-            
+
             return {
                 "correlation_based_weighting_completed": True,
                 "weights": weights,
@@ -941,13 +1007,16 @@ self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
                 """Perform market regime weighting."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Calculate market regime-based weights
             market_data = weighting_input.get("market_data", {})
             current_regime = weighting_input.get("current_regime", "neutral")
-            
+
             if not market_data:
                 return {"error": "No market data provided"}
-            
+
             # Define regime-specific weight adjustments
             regime_adjustments = {
                 "bull_market": 1.2,  # Increase weights in bull market
@@ -956,26 +1025,26 @@ self, weighting_input: dict[str, Any]
                 "volatile_market": 0.9,  # Slight decrease in volatile market
                 "neutral": 1.0  # Default
             }
-            
+
             # Get base weights (could be from other weighting methods)
             base_weights = weighting_input.get("base_weights", {})
             if not base_weights:
                 # Use equal weights if no base weights provided
                 assets = list(market_data.keys())
                 base_weights = {asset: 1.0 / len(assets) for asset in assets}
-            
+
             # Apply regime adjustment
             adjustment = regime_adjustments.get(current_regime, 1.0)
             weights = {}
             for asset, base_weight in base_weights.items():
                 weights[asset] = base_weight * adjustment
-            
+
             # Normalize weights
             total_weight = sum(weights.values())
             if total_weight > 0:
                 for asset in weights:
                     weights[asset] /= total_weight
-            
+
             return {
                 "market_regime_weighting_completed": True,
                 "weights": weights,
@@ -998,23 +1067,26 @@ self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
                 """Perform regime detection."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Detect market regime based on market data
             market_data = weighting_input.get("market_data", {})
-            
+
             if not market_data:
                 return {"error": "No market data provided"}
-            
+
             # Extract key metrics for regime detection
             returns = market_data.get("returns", [])
             volatilities = market_data.get("volatilities", [])
-            
+
             if not returns or not volatilities:
                 return {"error": "Missing returns or volatility data"}
-            
+
             # Calculate regime indicators
             avg_return = sum(returns) / len(returns) if returns else 0
             avg_volatility = sum(volatilities) / len(volatilities) if volatilities else 0
-            
+
             # Simple regime detection logic
             if avg_return > 0.02 and avg_volatility < 0.15:  # High return, low volatility
                 regime = "bull_market"
@@ -1036,7 +1108,7 @@ self, weighting_input: dict[str, Any]
                 regime = "neutral"
                 probability = 0.4
                 confidence = 0.65
-            
+
             return {
                 "regime_detection_completed": True,
                 "detected_regime": regime,
@@ -1060,7 +1132,7 @@ def _perform_regime_transition(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform regime transition."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1080,7 +1152,7 @@ def _perform_regime_optimization(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform regime optimization."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1100,7 +1172,7 @@ def _perform_adaptive_learning(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform adaptive learning weighting."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1120,7 +1192,7 @@ def _perform_dynamic_adjustment(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform dynamic adjustment weighting."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1142,7 +1214,7 @@ def _perform_price_momentum(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform price momentum weighting."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1162,7 +1234,7 @@ def _perform_volume_momentum(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform volume momentum weighting."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1182,7 +1254,7 @@ def _perform_momentum_regime(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform momentum regime weighting."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1202,7 +1274,7 @@ def _perform_momentum_optimization(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform momentum optimization."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1227,7 +1299,7 @@ async def _perform_momentum_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform momentum-based weighting."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1267,7 +1339,7 @@ def _perform_price_momentum_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform price momentum weighting."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1287,7 +1359,7 @@ def _perform_volume_momentum_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform volume momentum weighting."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1307,7 +1379,7 @@ def _perform_momentum_breakout_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform momentum breakout weighting."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1327,7 +1399,7 @@ def _perform_momentum_reversal_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform momentum reversal weighting."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1349,7 +1421,7 @@ def _perform_historical_volatility_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform historical volatility weighting."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1371,7 +1443,7 @@ def _perform_implied_volatility_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform implied volatility weighting."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1391,7 +1463,7 @@ def _perform_volatility_regime_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform volatility regime weighting."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1411,7 +1483,7 @@ def _perform_volatility_optimization(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform volatility optimization."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1436,7 +1508,7 @@ async def _perform_volatility_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform volatility-based weighting."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1476,7 +1548,7 @@ def _perform_realized_volatility_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform realized volatility weighting."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1496,7 +1568,7 @@ def _perform_implied_volatility_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform implied volatility weighting."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1516,7 +1588,7 @@ def _perform_volatility_regime_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform volatility regime weighting."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1536,7 +1608,7 @@ def _perform_volatility_forecast_weighting(
 self, weighting_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform volatility forecast weighting."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1559,7 +1631,7 @@ context="weighting results storage",
 )
 async def _update_weighting_history(self) -> None:
         """Store weighting results."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1595,7 +1667,7 @@ Args:
 Returns:
             dict[str, Any]: Weighting results
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1622,7 +1694,7 @@ Args:
 Returns:
             list[dict[str, Any]]: Weighting history
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1680,7 +1752,7 @@ async def update_model_weights_online(
 self, model_predictions: dict[str, float], actual_outcomes: dict[str, float], timestamp: datetime = None
 ) -> None:
         """Update model weights using online learning."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1742,7 +1814,7 @@ async def get_regime_aware_weights(
 self, current_regime: str, model_names: list[str]
 ) -> dict[str, float]:
         """Get regime-specific ensemble weights."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1797,7 +1869,7 @@ async def get_uncertainty_aware_weights(
 self, model_predictions: dict[str, float], model_uncertainties: dict[str, float]
 ) -> dict[str, float]:
         """Get uncertainty-aware ensemble weights."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1837,7 +1909,7 @@ async def calculate_enhanced_ensemble_weights(
 self, model_predictions: dict[str, float], model_uncertainties: dict[str, float], current_regime: str = None
 ) -> dict[str, float]:
         """Calculate enhanced ensemble weights combining multiple factors."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1878,7 +1950,7 @@ return {model: 1.0 / len(model_predictions) for model in model_predictions.keys(
 
 def _get_recent_regime_performance(self, model_name: str, regime: str) -> float:
         """Get recent performance of a model in a specific regime."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1910,7 +1982,7 @@ context="weight normalization",
 )
 async def _normalize_weights(self) -> None:
         """Normalize model weights to sum to 1."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1935,7 +2007,7 @@ async def stop(self) -> None:
         """Stop the dynamic weighter."""
 self.logger.info("🛑 Stopping Dynamic Weighter...")
 
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1973,7 +2045,7 @@ Args:
 Returns:
         DynamicWeighter | None: Global dynamic weighter instance
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling

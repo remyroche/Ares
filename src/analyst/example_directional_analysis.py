@@ -52,8 +52,6 @@ data = {
 return pd.DataFrame(data)
 
 async def demonstrate_directional_analysis():
-    # Implementation placeholder - add specific implementation as needed
-async def demonstrate_directional_analysis():
     pass  # TODO: Add implementation
 async def demonstrate_directional_analysis():
     """

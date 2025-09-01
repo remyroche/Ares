@@ -16,6 +16,7 @@ import json
 
 @dataclass
 class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 # TODO: Add implementation
 class OptimizedTimeframeConfig:
     """Configuration for optimized timeframe features."""

@@ -47,6 +47,7 @@ from src.utils.centralized_decorators import (
 
 @dataclass
 class PlaceholderDataClass:
+    pass  # TODO: Add implementation
 # TODO: Add implementation
 class MatrixOperationsConfig:
     """Configuration for enhanced matrix operations."""

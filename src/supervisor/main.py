@@ -16,10 +16,9 @@ from src.supervisor.risk_allocator import RiskAllocator
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.state_manager import StateManager
 
-class Supervisor:
-    pass  # TODO: Add implementation
-class Supervisor:
-    pass  # TODO: Add implementation
+from src.utils.supervisor_error_handler import (supervisor_component_error_handler,, supervisor_critical_error_handler,, supervisor_safe_error_handler,, supervisor_error_context,, handle_component_failure,, handle_portfolio_error,, handle_risk_error,, handle_performance_error,, handle_model_error,, handle_exchange_error,, ComponentFailureError,, PortfolioManagementError,, RiskManagementError,, PerformanceMonitoringError,, ModelManagementError,, ExchangeIntegrationError,, )
+)
+
 class Supervisor:
     """
 The central real-time orchestrator of the Ares Trading Bot.
@@ -27,7 +26,7 @@ It initializes, manages, and connects all the core components of the
 trading pipeline, ensuring they run concurrently and communicate efficiently.
 """
 
-def __init__(
+    def __init__(
 self, symbol: str,
 exchange_name: str, exchange_client: Any,
 state_manager: StateManager, db_manager: Any,
@@ -151,10 +150,6 @@ default_return=None,
 context="supervisor start",
 )
 async def start(self):
-    pass  # TODO: Add implementation
-async def start(self):
-    pass  # TODO: Add implementation
-async def start(self):
         """
 Starts all bot components and the main processing loop.
 """
@@ -199,7 +194,7 @@ else:
 self.running = False
 return
 
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -228,15 +223,11 @@ default_return=None,
 context="exchange state synchronization",
 )
 async def _synchronize_exchange_state(self):
-    pass  # TODO: Add implementation
-async def _synchronize_exchange_state(self):
-    pass  # TODO: Add implementation
-async def _synchronize_exchange_state(self):
         """
 Fetches the current account equity and open positions from the exchange
 and updates the persistent state. This is key for crash recovery.
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -328,15 +319,11 @@ exc_info=True
 )
 
 class MainSupervisor:
-    pass  # TODO: Add implementation
-class MainSupervisor:
-    pass  # TODO: Add implementation
-class MainSupervisor:
     """
 Main Supervisor Entrypoint with DI, type hints, and robust error handling.
 """
 
-def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
 self.logger = system_logger.getChild("MainSupervisor")
 self.is_running: bool = False
@@ -460,7 +447,7 @@ context="main supervisor stop",
 )
 async def stop(self) -> None:
         self.logger.info("🛑 Stopping Main Supervisor...")
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling

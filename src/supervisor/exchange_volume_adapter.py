@@ -10,7 +10,8 @@ from datetime import datetime
 from src.utils.logger import system_logger
 from typing import Any
 from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.error_handler import (
+from src.utils.error_handler import (, from src.utils.supervisor_error_handler import (, supervisor_component_error_handler,, supervisor_critical_error_handler,, supervisor_safe_error_handler,, supervisor_error_context,, handle_component_failure,, handle_portfolio_error,, handle_risk_error,, handle_performance_error,, handle_model_error,, handle_exchange_error,, ComponentFailureError,, PortfolioManagementError,, RiskManagementError,, PerformanceMonitoringError,, ModelManagementError,, ExchangeIntegrationError,, ))
+)
 error,
 execution_error,
 initialization_error,
@@ -18,10 +19,6 @@ invalid,
 warning
 )
 
-class ExchangeVolumeAdapter:
-    pass  # TODO: Add implementation
-class ExchangeVolumeAdapter:
-    pass  # TODO: Add implementation
 class ExchangeVolumeAdapter:
     """
 Adapts trading strategies and position sizing based on exchange volume characteristics.
@@ -33,7 +30,7 @@ This class handles the critical differences between exchanges:
 - Data quality adjustments
 """
 
-def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
 self.logger = system_logger.getChild("ExchangeVolumeAdapter")
 
@@ -98,7 +95,7 @@ context="exchange volume adapter initialization",
 )
 async def initialize(self) -> bool:
         """Initialize the exchange volume adapter."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -133,7 +130,7 @@ context="adapter configuration loading",
 )
 async def _load_adapter_configuration(self) -> None:
         """Load adapter configuration."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -156,7 +153,7 @@ context="configuration validation",
 )
 def _validate_configuration(self) -> bool:
         """Validate adapter configuration."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -182,7 +179,7 @@ context="volume metrics initialization",
 )
 async def _initialize_volume_metrics(self) -> None:
         """Initialize volume metrics for all exchanges."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -230,7 +227,7 @@ confidence_score: Model confidence score (optional)
 Returns:
             Adjusted position size
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -281,7 +278,7 @@ return base_position_size * 0.5  # Conservative fallback
 
 def calculate_spread_adjustment(self, exchange: str, base_spread: float) -> float:
         """Calculate spread adjustment based on exchange characteristics."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -297,7 +294,7 @@ def calculate_slippage_adjustment(
 self, exchange: str,
 base_slippage: float = None) -> float:
         """Calculate slippage adjustment based on exchange characteristics."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -323,7 +320,7 @@ data_quality_metrics: Optional data quality metrics
 Returns:
             Adjusted confidence score
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -375,7 +372,7 @@ market_impact_threshold: Custom market impact threshold
 Returns:
             Tuple of (should_execute = reason)
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -412,7 +409,7 @@ context="adaptation factor retrieval",
 )
 async def get_adaptation_factor(self, exchange: str) -> float:
         """Get adaptation factor for an exchange based on volume characteristics."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -449,7 +446,7 @@ return 1.0
 
 def get_adaptation_summary(self) -> dict[str , Any]:
         """Get summary of current volume adaptations."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -470,7 +467,7 @@ self, exchange: str,
 current_volume: float = None, spread: float = None,
 slippage: float = None) -> None:
         """Update volume metrics for an exchange."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -505,7 +502,7 @@ except Exception:
 
 async def cleanup(self) -> None:
         """Cleanup resources."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -526,7 +523,7 @@ async def setup_exchange_volume_adapter(
 config: dict[str , Any] | None = None,
 ) -> ExchangeVolumeAdapter | None:
     """Setup exchange volume adapter."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling

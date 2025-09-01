@@ -31,10 +31,6 @@ from .base_ensemble import BaseEnsemble
 
 
 class VolatileRegimeEnsemble(BaseEnsemble):
-    # Implementation placeholder - add specific implementation as needed
-class VolatileRegimeEnsemble(BaseEnsemble):
-    pass  # TODO: Add implementation
-class VolatileRegimeEnsemble(BaseEnsemble):
     """
 This ensemble specializes in detecting and predicting during volatile market conditions.
 It combines signals from multiple models optimized for high volatility periods.

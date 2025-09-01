@@ -161,10 +161,6 @@ return {
 
 
 class MetaLabelRelevanceEvaluator:
-    # Implementation placeholder - add specific implementation as needed
-class MetaLabelRelevanceEvaluator:
-    pass  # TODO: Add implementation
-class MetaLabelRelevanceEvaluator:
     """Evaluate meta-label relevance with complementarity checks and persist active labels.
 
 Removal rule: remove a label only if it's weak alone AND does not add complementary information together with any other label.

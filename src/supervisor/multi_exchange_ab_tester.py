@@ -10,6 +10,9 @@ from src.supervisor.exchange_volume_adapter import ExchangeVolumeAdapter
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from dataclasses import dataclass
 
+from src.utils.supervisor_error_handler import (supervisor_component_error_handler,, supervisor_critical_error_handler,, supervisor_safe_error_handler,, supervisor_error_context,, handle_component_failure,, handle_portfolio_error,, handle_risk_error,, handle_performance_error,, handle_model_error,, handle_exchange_error,, ComponentFailureError,, PortfolioManagementError,, RiskManagementError,, PerformanceMonitoringError,, ModelManagementError,, ExchangeIntegrationError,, )
+)
+
 #!/usr/bin/env python3
 """
 Multi-Exchange A/B Testing Framework
@@ -20,14 +23,8 @@ to compare performance, validate transfer learning, and identify exchange-specif
 
 
 if TYPE_CHECKING:
-    pass  # TODO: Add proper implementation
+    pass
 @dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class MultiExchangeTestConfig:
-    pass  # TODO: Add implementation
-class MultiExchangeTestConfig:
-    pass  # TODO: Add implementation
 class MultiExchangeTestConfig:
     """Multi-exchange A/B test configuration."""
 
@@ -42,12 +39,6 @@ enable_volume_adaptation: bool = True
 enable_performance_tracking: bool = True
 
 @dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class ExchangeTestResult:
-    pass  # TODO: Add implementation
-class ExchangeTestResult:
-    pass  # TODO: Add implementation
 class ExchangeTestResult:
     """Single exchange test result."""
 
@@ -64,12 +55,6 @@ adaptation_factor: float | None = None
 error_message: str | None = None
 
 @dataclass
-class PlaceholderDataClass:
-    pass  # TODO: Add implementation
-class MultiExchangeTestSummary:
-    pass  # TODO: Add implementation
-class MultiExchangeTestSummary:
-    pass  # TODO: Add implementation
 class MultiExchangeTestSummary:
     """Multi-exchange test summary."""
 
@@ -87,15 +72,11 @@ best_performing_exchange: str | None = None
 worst_performing_exchange: str | None = None
 
 class MultiExchangeABTester:
-    pass  # TODO: Add implementation
-class MultiExchangeABTester:
-    pass  # TODO: Add implementation
-class MultiExchangeABTester:
     """
 Multi-exchange A/B testing framework for comparing model performance across exchanges.
 """
 
-def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         """
 Initialize multi-exchange A/B tester.
 
@@ -146,7 +127,7 @@ context="multi-exchange A/B test initialization",
 )
 async def initialize(self) -> bool:
         """Initialize the multi-exchange A/B tester."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -173,7 +154,7 @@ context="test configuration validation",
 )
 def _validate_test_config(self, test_config: MultiExchangeTestConfig) -> bool:
         """Validate test configuration."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -213,7 +194,7 @@ context="multi-exchange A/B test start",
 )
 async def start_multi_exchange_test(self, test_config: MultiExchangeTestConfig) -> bool:
         """Start a new multi-exchange A/B test."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -261,7 +242,7 @@ context="multi-exchange test execution",
 )
 async def execute_multi_exchange_test(self) -> None:
         """Execute the multi-exchange A/B test."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -289,7 +270,7 @@ context="test cycle execution",
 )
 async def _execute_test_cycle(self) -> None:
         """Execute a single test cycle across all exchanges."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -319,7 +300,7 @@ prediction: float,
 confidence: float
 ) -> None:
         """Execute test on a single exchange."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -379,7 +360,7 @@ context="metrics update",
 )
 def _update_exchange_metrics(self, exchange: str, result: ExchangeTestResult) -> None:
         """Update performance metrics for an exchange."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -423,7 +404,7 @@ context="test summary generation",
 )
 async def _generate_test_summary(self) -> None:
         """Generate comprehensive test summary."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -508,7 +489,7 @@ context="test summary saving",
 )
 async def _save_test_summary(self, summary: MultiExchangeTestSummary) -> None:
         """Save test summary to file."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -538,7 +519,7 @@ context="multi-exchange A/B test stop",
 )
 async def stop_multi_exchange_test(self) -> None:
         """Stop the current multi-exchange A/B test."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -556,7 +537,7 @@ context="multi-exchange A/B test cleanup",
 )
 async def cleanup(self) -> None:
         """Clean up resources."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -589,7 +570,7 @@ Args:
 Returns:
         MultiExchangeABTester instance or None if setup fails
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling

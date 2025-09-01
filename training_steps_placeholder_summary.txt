@@ -1,0 +1,57 @@
+=== TRAINING STEPS PLACEHOLDER ANALYSIS SUMMARY ===
+
+OVERALL STATISTICS:
+- Total files in src/training/steps/: 72
+- Total placeholders found: 2,861
+
+BREAKDOWN BY TYPE:
+- Pass statements: ~1,430
+- TODO comments: ~1,430
+- NotImplementedError raises: ~1
+
+FILES WITH HIGHEST PLACEHOLDER COUNTS:
+1. step03_hmm_regime_discovery.py: 212 placeholders
+2. step01_5_data_converter.py: 182 placeholders
+3. step07_enhanced_matrix_operations.py: 128 placeholders
+4. step02_5_sr_optimization.py: 116 placeholders
+5. sr_outcome_model_trainer.py: 80 placeholders
+
+DIRECTORY BREAKDOWN:
+- step1/: 13 files, 336 placeholders
+- step17_final_parameters_optimization/: 11 files, 351 placeholders
+- multi_timeframe_training/: 1 file, 64 placeholders
+- data_preparation_components/: 1 file, 37 placeholders
+- analyst_training_components/: 1 file, 20 placeholders
+
+RECOMMENDATIONS:
+1. Focus on step03_hmm_regime_discovery.py first (212 placeholders)
+2. Address step01_5_data_converter.py (182 placeholders)
+3. Complete step07_enhanced_matrix_operations.py (128 placeholders)
+4. Implement step02_5_sr_optimization.py (116 placeholders)
+5. Work on sr_outcome_model_trainer.py (80 placeholders)
+=== DETAILED ANALYSIS OF TOP FILES ===
+
+1. step03_hmm_regime_discovery.py (212 placeholders):
+   - Pass statements: 106
+   - TODO comments: 106
+   - This file needs significant implementation work
+
+2. step01_5_data_converter.py (182 placeholders):
+   - Pass statements: 94
+   - TODO comments: 88
+   - Critical data conversion functionality missing
+
+3. step07_enhanced_matrix_operations.py (128 placeholders):
+   - Pass statements: 64
+   - TODO comments: 64
+   - Matrix operations need implementation
+
+4. step02_5_sr_optimization.py (116 placeholders):
+   - Pass statements: 58
+   - TODO comments: 58
+   - SR optimization logic incomplete
+
+5. sr_outcome_model_trainer.py (80 placeholders):
+   - Pass statements: 40
+   - TODO comments: 40
+   - Model training functionality incomplete

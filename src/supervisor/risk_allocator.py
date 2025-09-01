@@ -8,10 +8,9 @@ import numpy as np
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 
-class RiskAllocator:
-    pass  # TODO: Add implementation
-class RiskAllocator:
-    pass  # TODO: Add implementation
+from src.utils.supervisor_error_handler import (supervisor_component_error_handler,, supervisor_critical_error_handler,, supervisor_safe_error_handler,, supervisor_error_context,, handle_component_failure,, handle_portfolio_error,, handle_risk_error,, handle_performance_error,, handle_model_error,, handle_exchange_error,, ComponentFailureError,, PortfolioManagementError,, RiskManagementError,, PerformanceMonitoringError,, ModelManagementError,, ExchangeIntegrationError,, )
+)
+
 class RiskAllocator:
     """
 Portfolio-Level Risk Allocator component responsible for:
@@ -56,7 +55,7 @@ default_return=False,
 context="risk allocator initialization",
 )
 async def initialize(self) -> bool:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -77,7 +76,7 @@ default_return=None,
 context="risk configuration loading",
 )
 async def _load_risk_configuration(self) -> None:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -95,7 +94,7 @@ default_return=False,
 context="configuration validation",
 )
 def _validate_configuration(self) -> bool:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -119,7 +118,7 @@ default_return=False,
 context="risk allocator run",
 )
 async def run(self) -> bool:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -140,7 +139,7 @@ default_return=None,
 context="risk allocation step",
 )
 async def _perform_risk_allocation(self) -> None:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -161,7 +160,7 @@ default_return=None,
 context="risk allocation calculation",
 )
 async def _calculate_risk_allocations(self) -> None:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -183,7 +182,7 @@ default_return=None,
 context="risk limits update",
 )
 async def _update_risk_limits(self) -> None:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -206,7 +205,7 @@ context="risk allocator stop",
 )
 async def stop(self) -> None:
         self.logger.info("🛑 Stopping Risk Allocator...")
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -242,7 +241,7 @@ confidence_level: Confidence level for VaR calculation (default: 0.95)
 Returns:
             float: VaR value
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -273,7 +272,7 @@ confidence_level: Confidence level for ES calculation (default: 0.95)
 Returns:
             float: Expected Shortfall value
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -309,7 +308,7 @@ Args:
 Returns:
             dict: VaR values for different timeframes
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -344,7 +343,7 @@ current_es: Current Expected Shortfall value
 Returns:
             dict: Risk monitoring results and alerts
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -414,7 +413,7 @@ Args:
 Returns:
             dict: Risk metrics for the specified timeframe
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -439,7 +438,7 @@ return {}
 
 def _calculate_risk_summary(self) -> dict[str, Any]:
         """Calculate summary statistics for risk metrics."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -481,7 +480,7 @@ context="risk allocator setup",
 async def setup_risk_allocator(
 config: dict[str, Any] | None = None,
 ) -> RiskAllocator | None:
-    try:
+            try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling

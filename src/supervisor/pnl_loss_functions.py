@@ -4,6 +4,9 @@ from typing import Any
 from keras import backend as K
 from src.utils.error_handler import handle_errors, handle_specific_errors
 
+from src.utils.supervisor_error_handler import (supervisor_component_error_handler,, supervisor_critical_error_handler,, supervisor_safe_error_handler,, supervisor_error_context,, handle_component_failure,, handle_portfolio_error,, handle_risk_error,, handle_performance_error,, handle_model_error,, handle_exchange_error,, ComponentFailureError,, PortfolioManagementError,, RiskManagementError,, PerformanceMonitoringError,, ModelManagementError,, ExchangeIntegrationError,, )
+)
+
 def create_pnl_aware_loss(
 pnl_multiplier=0.1,
 liquidation_penalty=2.0,
@@ -16,10 +19,6 @@ component that heavily penalizes high-risk errors and rewards high-profit
 correct predictions, teaching the model to prioritize capital preservation.
 """
 
-def pnl_aware_loss(y_true, y_pred):
-    def pnl_aware_loss(y_true, y_pred):
-    def pnl_aware_loss(y_true, y_pred):
-    def pnl_aware_loss(y_true, y_pred):
         """
 Calculates the combined loss.
 
@@ -71,7 +70,7 @@ class PnLLossFunctions:
 PnL Loss Functions with comprehensive error handling and type safety.
 """
 
-def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         """
 Initialize PnL loss functions with enhanced type safety.
 
@@ -141,6 +140,9 @@ Returns:
             bool: True if initialization successful, False otherwise
 """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("Initializing PnL Loss Functions...")
 
 # Load PnL loss functions configuration
@@ -171,6 +173,9 @@ context="PnL configuration loading",
 async def _load_pnl_configuration(self) -> None:
         """Load PnL loss functions configuration."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Set default PnL parameters
 self.pnl_config.setdefault("calculation_interval", 3600)
 self.pnl_config.setdefault("max_calculation_history", 100)
@@ -207,6 +212,9 @@ Returns:
             bool: True if configuration is valid, False otherwise
 """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Validate calculation interval
 if self.calculation_interval <= 0:
                 self.logger.error("Invalid calculation interval")
@@ -245,6 +253,9 @@ context="PnL modules initialization",
 async def _initialize_pnl_modules(self) -> None:
         """Initialize PnL loss functions modules."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Initialize PnL calculation module
 if self.enable_pnl_calculation:
                 await self._initialize_pnl_calculation()
@@ -278,6 +289,9 @@ context="PnL calculation initialization",
 async def _initialize_pnl_calculation(self) -> None:
         """Initialize PnL calculation components."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.pnl_calculation_components = {
 "realized_pnl": True,
 "unrealized_pnl": True,
@@ -297,7 +311,7 @@ context="loss calculation initialization",
 )
 async def _initialize_loss_calculation(self) -> None:
         """Initialize loss calculation components."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -320,7 +334,7 @@ context="risk metrics initialization",
 )
 async def _initialize_risk_metrics(self) -> None:
         """Initialize risk metrics components."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -345,7 +359,7 @@ context="performance metrics initialization",
 )
 async def _initialize_performance_metrics(self) -> None:
         """Initialize performance metrics components."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -370,7 +384,7 @@ context="optimization metrics initialization",
 )
 async def _initialize_optimization_metrics(self) -> None:
         """Initialize optimization metrics components."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -406,6 +420,9 @@ Returns:
             bool: True if successful, False otherwise
 """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("Executing PnL Loss Functions Calculation...")
 
 # Validate calculation inputs
@@ -468,6 +485,9 @@ Returns:
             bool: True if valid, False otherwise
 """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             if not isinstance(calculation_input, dict):
                 self.logger.error("Calculation input must be a dictionary")
 return False
@@ -495,6 +515,9 @@ self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
                 """Perform PnL-based calculation."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             results = {}
 
 # Realized PnL
@@ -533,6 +556,9 @@ self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
                 """Perform loss-based calculation."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             results = {}
 
 # Maximum drawdown
@@ -575,6 +601,9 @@ self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
                 """Perform risk metrics calculation."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             results = {}
 
 # VaR 95%
@@ -618,7 +647,7 @@ async def _perform_performance_metrics(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform performance metrics calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -663,7 +692,7 @@ async def _perform_optimization_metrics(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform optimization metrics calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -697,7 +726,7 @@ def _perform_realized_pnl(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform realized PnL calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -717,7 +746,7 @@ def _perform_unrealized_pnl(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform unrealized PnL calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -735,7 +764,7 @@ return {}
 
 def _perform_total_pnl(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
         """Perform total PnL calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -755,7 +784,7 @@ def _perform_pnl_attribution(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform PnL attribution calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -777,7 +806,7 @@ def _perform_maximum_drawdown(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform maximum drawdown calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -797,7 +826,7 @@ def _perform_var_calculation(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform VaR calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -817,7 +846,7 @@ def _perform_cvar_calculation(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform CVaR calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -837,7 +866,7 @@ def _perform_loss_distribution(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform loss distribution calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -859,7 +888,7 @@ def _perform_sharpe_ratio(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform Sharpe ratio calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -879,7 +908,7 @@ def _perform_sortino_ratio(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform Sortino ratio calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -899,7 +928,7 @@ def _perform_calmar_ratio(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform Calmar ratio calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -919,7 +948,7 @@ def _perform_information_ratio(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform information ratio calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -941,7 +970,7 @@ def _perform_return_metrics(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform return metrics calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -961,7 +990,7 @@ def _perform_volatility_metrics(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform volatility metrics calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -981,7 +1010,7 @@ def _perform_correlation_metrics(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform correlation metrics calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1001,7 +1030,7 @@ def _perform_beta_metrics(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform beta metrics calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1023,7 +1052,7 @@ def _perform_objective_functions(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform objective functions calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1043,7 +1072,7 @@ def _perform_constraint_functions(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform constraint functions calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1063,7 +1092,7 @@ def _perform_penalty_functions(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform penalty functions calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1083,7 +1112,7 @@ def _perform_reward_functions(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform reward functions calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1106,7 +1135,7 @@ context="calculation results storage",
 )
 def _update_calculation_history(self) -> None:
         """Store calculation results."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1142,7 +1171,7 @@ Args:
 Returns:
             dict[str, Any]: Calculation results
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1169,7 +1198,7 @@ Args:
 Returns:
             list[dict[str, Any]]: Calculation history
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1212,7 +1241,7 @@ async def stop(self) -> None:
         """Stop the PnL loss functions."""
 self.logger.info("🛑 Stopping PnL Loss Functions...")
 
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1250,7 +1279,7 @@ Args:
 Returns:
         PnLLossFunctions | None: Global PnL loss functions instance
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1286,7 +1315,7 @@ def _perform_treynor_ratio(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform Treynor ratio calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1306,7 +1335,7 @@ def _perform_jensen_alpha(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform Jensen alpha calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1326,7 +1355,7 @@ def _perform_var_95(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform VaR 95% calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1346,7 +1375,7 @@ def _perform_var_99(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform VaR 99% calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1366,7 +1395,7 @@ def _perform_cvar_95(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform CVaR 95% calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1386,7 +1415,7 @@ def _perform_cvar_99(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform CVaR 99% calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1406,7 +1435,7 @@ def _perform_expected_shortfall(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform expected shortfall calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1426,7 +1455,7 @@ def _perform_tail_risk(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform tail risk calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1446,7 +1475,7 @@ def _perform_kelly_criterion(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform Kelly criterion calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1466,7 +1495,7 @@ def _perform_optimal_leverage(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform optimal leverage calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1486,7 +1515,7 @@ def _perform_position_sizing(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform position sizing calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1506,7 +1535,7 @@ def _perform_risk_budget(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
         """Perform risk budget calculation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling

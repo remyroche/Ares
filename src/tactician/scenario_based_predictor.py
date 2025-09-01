@@ -19,29 +19,16 @@ logger = logging.getLogger(__name__)
 
 # Simple error handling decorator
 def handle_errors(func):
-    def handle_errors(func):
-    def handle_errors(func):
-    def handle_errors(func):
     """Simple error handling decorator."""
-def wrapper(*args, **kwargs):
-    def wrapper(*args, **kwargs):
-    def wrapper(*args, **kwargs):
     def wrapper(*args, **kwargs):
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-return func(*args, **kwargs)
-except Exception as e:
+            return func(*args, **kwargs)
+        except Exception as e:
             logger.error(f"Error in {func.__name__}: {e}")
-return None
-return wrapper
+            return None
+    return wrapper
 
 
-class ScenarioBasedPredictor:
-    pass  # TODO: Add implementation
-class ScenarioBasedPredictor:
-    pass  # TODO: Add implementation
 class ScenarioBasedPredictor:
     """
 Implements probabilistic scenario analysis for Tactician.
@@ -152,114 +139,114 @@ self.model_performance: Dict[str, float] = {}
 
 async def initialize(self) -> bool:
         """
-Initialize scenario-based predictor.
+        Initialize scenario-based predictor.
 
-Returns:
+        Returns:
             bool: True if initialization successful, False otherwise
-"""
-try:
+        """
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-self.logger.info("Initializing Scenario-Based Predictor...")
+            self.logger.info("Initializing Scenario-Based Predictor...")
 
-# Validate configuration
-if not self._validate_configuration():
+            # Validate configuration
+            if not self._validate_configuration():
                 self.logger.error("Invalid configuration for scenario predictor")
-return False
+                return False
 
-# Initialize model
-self.model = lgb.LGBMClassifier(**self.model_config)
+            # Initialize model
+            self.model = lgb.LGBMClassifier(**self.model_config)
 
-self.logger.info("✅ Scenario-Based Predictor initialized successfully")
-return True
+            self.logger.info("✅ Scenario-Based Predictor initialized successfully")
+            return True
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"❌ Scenario-Based Predictor initialization failed: {e}")
-return False
+            return False
 
 def _validate_configuration(self) -> bool:
         """
-Validate scenario predictor configuration.
+        Validate scenario predictor configuration.
 
-Returns:
+        Returns:
             bool: True if configuration is valid, False otherwise
-"""
-try:
+        """
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-# Validate scenarios
-for scenario_id, scenario in self.scenarios.items():
+            # Validate scenarios
+            for scenario_id, scenario in self.scenarios.items():
                 if scenario["profit_target"] <= 0 and scenario_id != 5:  # Neutral can have 0
-self.logger.error(f"Invalid profit target for scenario {scenario_id}")
-return False
+                    self.logger.error(f"Invalid profit target for scenario {scenario_id}")
+                    return False
 
-if scenario["stop_loss"] >= 0 and scenario_id != 5:  # Neutral can have 0
-self.logger.error(f"Invalid stop loss for scenario {scenario_id}")
-return False
+                if scenario["stop_loss"] >= 0 and scenario_id != 5:  # Neutral can have 0
+                    self.logger.error(f"Invalid stop loss for scenario {scenario_id}")
+                    return False
 
-# Validate time limit
-if self.time_limit_minutes <= 0:
+            # Validate time limit
+            if self.time_limit_minutes <= 0:
                 self.logger.error("Invalid time limit")
-return False
+                return False
 
-# Validate thresholds
-for threshold_name, threshold in self.decision_thresholds.items():
+            # Validate thresholds
+            for threshold_name, threshold in self.decision_thresholds.items():
                 if threshold < 0 or threshold > 1:
                     self.logger.error(f"Invalid threshold for {threshold_name}")
-return False
+                    return False
 
-# Validate feature config
-for param_name, param_value in self.feature_config.items():
+            # Validate feature config
+            for param_name, param_value in self.feature_config.items():
                 if param_value <= 0:
                     self.logger.error(f"Invalid feature parameter for {param_name}")
-return False
+                    return False
 
-return True
+            return True
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"❌ Configuration validation failed: {e}")
-return False
+            return False
 
 @handle_errors
 def prepare_scenario_targets(
-self,
-X: np.ndarray,
-market_data: pd.DataFrame,
-base_price_column: str = "close"
+    self,
+    X: np.ndarray,
+    market_data: pd.DataFrame,
+    base_price_column: str = "close"
 ) -> np.ndarray:
-        """
-Label each data point with the scenario that occurred first.
+    """
+    Label each data point with the scenario that occurred first.
 
-Args:
-            X: Feature array
-market_data: Market data with OHLCV
-base_price_column: Column to use for price calculations
+    Args:
+        X: Feature array
+        market_data: Market data with OHLCV
+        base_price_column: Column to use for price calculations
 
-Returns:
-            np.ndarray: Scenario labels for each data point
-"""
-try:
+    Returns:
+        np.ndarray: Scenario labels for each data point
+    """
+    try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-if len(X) != len(market_data):
-                raise ValueError("Feature array and market data must have same length")
+        if len(X) != len(market_data):
+            raise ValueError("Feature array and market data must have same length")
 
-scenario_labels = []
-prices = market_data[base_price_column].values
+        scenario_labels = []
+        prices = market_data[base_price_column].values
 
-for i in range(len(X)):
-                # Look ahead to see which scenario occurs first
-scenario = self._determine_first_scenario(
-prices[i:], i, self.time_limit_minutes
-)
-scenario_labels.append(scenario)
+        for i in range(len(X)):
+            # Look ahead to see which scenario occurs first
+            scenario = self._determine_first_scenario(
+                prices[i:], i, self.time_limit_minutes
+            )
+            scenario_labels.append(scenario)
 
-return np.array(scenario_labels)
+        return np.array(scenario_labels)
 
-except Exception as e:
+    except Exception as e:
             self.logger.error(f"❌ Scenario labeling failed: {e}")
 return np.full(len(X), 5)  # Default to neutral
 
@@ -281,9 +268,9 @@ Returns:
             int: Scenario label (0-5)
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 if len(future_prices) < 2:
                 return 5  # Neutral if not enough data
 
@@ -323,9 +310,9 @@ Returns:
             bool: True if scenario is triggered
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 profit_target = scenario["profit_target"]
 stop_loss = scenario["stop_loss"]
 
@@ -374,9 +361,9 @@ Returns:
             bool: True if training successful, False otherwise
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 self.logger.info("Training scenario prediction model...")
 
 # Prepare scenario targets if not provided
@@ -443,9 +430,9 @@ Returns:
             dict: Scenario predictions with probabilities and metadata
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 if not self.is_trained:
                 self.logger.warning("Model not trained, using fallback predictions")
 return self._generate_fallback_predictions(X)
@@ -493,9 +480,9 @@ Returns:
             dict: Analysis results
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 # Calculate combined probabilities
 profit_zone_prob = sum(probabilities[i] for i in [0, 1, 2])
 risk_zone_prob = sum(probabilities[i] for i in [3, 4])
@@ -543,9 +530,9 @@ Returns:
             float: Confidence score (0-1)
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 # Use entropy-based confidence
 # Lower entropy = higher confidence
 entropy = -np.sum(probabilities * np.log(probabilities + 1e-8))
@@ -571,9 +558,9 @@ Returns:
             dict: Fallback predictions
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 # Simple heuristic-based predictions
 n_scenarios = len(self.scenarios)
 base_prob = 1.0 / n_scenarios
@@ -636,9 +623,9 @@ Returns:
             np.ndarray: Feature array
 """
 try:
-    pass  # TODO: Add proper exception handling
+    
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    
 features = []
 
 if len(market_data) < self.feature_config["lookback_periods"]:

@@ -4,7 +4,8 @@ from datetime import datetime
 from src.utils.logger import system_logger
 from typing import Any
 from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.warning_symbols import (
+from src.utils.warning_symbols import (, from src.utils.supervisor_error_handler import (, supervisor_component_error_handler,, supervisor_critical_error_handler,, supervisor_safe_error_handler,, supervisor_error_context,, handle_component_failure,, handle_portfolio_error,, handle_risk_error,, handle_performance_error,, handle_model_error,, handle_exchange_error,, ComponentFailureError,, PortfolioManagementError,, RiskManagementError,, PerformanceMonitoringError,, ModelManagementError,, ExchangeIntegrationError,, ))
+)
 error,
 initialization_error,
 invalid,
@@ -15,7 +16,7 @@ class GlobalPortfolioManager:
 Global Portfolio Manager with comprehensive error handling and type safety.
 """
 
-def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         """
 Initialize global portfolio manager with enhanced type safety.
 
@@ -75,6 +76,9 @@ Returns:
             bool: True if initialization successful, False otherwise
 """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             self.logger.info("Initializing Global Portfolio Manager...")
 
 # Load global portfolio manager configuration
@@ -108,6 +112,9 @@ default_return=None, context="portfolio configuration loading",
 async def _load_portfolio_configuration(self) -> None:
         """Load global portfolio manager configuration."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Set default portfolio parameters
 self.portfolio_config.setdefault("management_interval", 3600)
 self.portfolio_config.setdefault("max_management_history", 100)
@@ -151,6 +158,9 @@ Returns:
             bool: True if configuration is valid, False otherwise
 """
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Validate management interval
 if self.management_interval <= 0:
                 self.print(invalid("Invalid management interval"))
@@ -188,6 +198,9 @@ default_return=None, context="portfolio modules initialization",
 async def _initialize_portfolio_modules(self) -> None:
         """Initialize global portfolio manager modules."""
         try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
             # Initialize portfolio allocation module
 if self.enable_portfolio_allocation:
                 await self._initialize_portfolio_allocation()
@@ -223,7 +236,7 @@ default_return=None, context="portfolio allocation initialization",
 )
 async def _initialize_portfolio_allocation(self) -> None:
         """Initialize portfolio allocation module."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -246,7 +259,7 @@ default_return=None, context="risk management initialization",
 )
 async def _initialize_risk_management(self) -> None:
         """Initialize risk management module."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -268,7 +281,7 @@ default_return=None, context="rebalancing initialization",
 )
 async def _initialize_rebalancing(self) -> None:
         """Initialize rebalancing module."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -290,7 +303,7 @@ context="performance monitoring initialization",
 )
 async def _initialize_performance_monitoring(self) -> None:
         """Initialize performance monitoring module."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -313,7 +326,7 @@ default_return=None, context="optimization initialization",
 )
 async def _initialize_optimization(self) -> None:
         """Initialize optimization module."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -348,7 +361,7 @@ Args:
 Returns:
             bool: True if successful = False otherwise
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -415,7 +428,7 @@ Args:
 Returns:
             bool: True if valid = False otherwise
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -459,7 +472,7 @@ Args:
 Returns:
             dict[str , Any]: Portfolio allocation results
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -508,7 +521,7 @@ Args:
 Returns:
             dict[str , Any]: Risk management results
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -556,7 +569,7 @@ Args:
 Returns:
             dict[str , Any]: Rebalancing results
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -607,7 +620,7 @@ Args:
 Returns:
             dict[str, Any]: Performance monitoring results
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -661,7 +674,7 @@ Args:
 Returns:
             dict[str , Any]: Optimization results
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -703,7 +716,7 @@ def _perform_asset_allocation(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform asset allocation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -722,7 +735,7 @@ def _perform_sector_allocation(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform sector allocation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -747,7 +760,7 @@ def _perform_geographic_allocation(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform geographic allocation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -772,7 +785,7 @@ def _perform_strategy_allocation(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform strategy allocation."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -802,7 +815,7 @@ def _perform_stop_loss_management(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform stop loss management."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -821,7 +834,7 @@ def _perform_correlation_management(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform correlation management."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -840,7 +853,7 @@ def _perform_volatility_management(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform volatility management."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -861,7 +874,7 @@ def _perform_periodic_rebalancing(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform periodic rebalancing."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -881,7 +894,7 @@ def _perform_threshold_rebalancing(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform threshold rebalancing."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -901,7 +914,7 @@ def _perform_drift_rebalancing(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform drift rebalancing."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -921,7 +934,7 @@ def _perform_opportunistic_rebalancing(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform opportunistic rebalancing."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -943,7 +956,7 @@ def _perform_return_monitoring(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform return monitoring."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -963,7 +976,7 @@ def _perform_risk_monitoring(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform risk monitoring."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -983,7 +996,7 @@ def _perform_attribution_monitoring(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform attribution monitoring."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1006,7 +1019,7 @@ def _perform_benchmark_monitoring(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform benchmark monitoring."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1028,7 +1041,7 @@ def _perform_mean_variance_optimization(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform mean variance optimization."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1048,7 +1061,7 @@ def _perform_black_litterman_optimization(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform Black Litterman optimization."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1068,7 +1081,7 @@ def _perform_risk_parity_optimization(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform risk parity optimization."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1088,7 +1101,7 @@ def _perform_factor_optimization(
 self, management_input: dict[str, Any],
 ) -> dict[str , Any]:
         """Perform factor optimization."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1110,7 +1123,7 @@ default_return=None, context="management results storage",
 )
 async def _store_management_results(self) -> None:
         """Store management results."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1146,7 +1159,7 @@ Args:
 Returns:
             dict[str , Any]: Management results
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1173,7 +1186,7 @@ Args:
 Returns:
             list[dict[str , Any]]: Management history
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1221,7 +1234,7 @@ async def stop(self) -> None:
         """Stop the global portfolio manager."""
 self.logger.info("🛑 Stopping Global Portfolio Manager...")
 
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -1258,7 +1271,7 @@ Args:
 Returns:
         GlobalPortfolioManager | None: Global portfolio manager instance
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling

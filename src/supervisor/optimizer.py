@@ -7,16 +7,15 @@ import pandas as pd
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 
-class Optimizer:
-    pass  # TODO: Add implementation
-class Optimizer:
-    pass  # TODO: Add implementation
+from src.utils.supervisor_error_handler import (supervisor_component_error_handler,, supervisor_critical_error_handler,, supervisor_safe_error_handler,, supervisor_error_context,, handle_component_failure,, handle_portfolio_error,, handle_risk_error,, handle_performance_error,, handle_model_error,, handle_exchange_error,, ComponentFailureError,, PortfolioManagementError,, RiskManagementError,, PerformanceMonitoringError,, ModelManagementError,, ExchangeIntegrationError,, )
+)
+
 class Optimizer:
     """
 Enhanced Optimizer component with DI, type hints, and robust error handling.
 """
 
-def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
 self.logger = system_logger.getChild("Optimizer")
 self.is_running: bool = False
@@ -41,7 +40,7 @@ default_return=False,
 context="optimizer initialization",
 )
 async def initialize(self) -> bool:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -62,7 +61,7 @@ default_return=None,
 context="optimizer configuration loading",
 )
 async def _load_optimizer_configuration(self) -> None:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -80,7 +79,7 @@ default_return=False,
 context="configuration validation",
 )
 def _validate_configuration(self) -> bool:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -104,7 +103,7 @@ default_return=False,
 context="optimizer run",
 )
 async def run(self) -> bool:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -125,7 +124,7 @@ default_return=None,
 context="optimization step",
 )
 async def _perform_optimization(self) -> None:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -146,7 +145,7 @@ default_return=None,
 context="parameter optimization",
 )
 async def _optimize_parameters(self) -> None:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -168,7 +167,7 @@ default_return=None,
 context="optimization results update",
 )
 async def _update_optimization_results(self) -> None:
-        try:
+                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -187,7 +186,7 @@ context="optimizer stop",
 )
 async def stop(self) -> None:
         self.logger.info("🛑 Stopping Optimizer...")
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -238,7 +237,7 @@ futures_df: Futures data
 Returns:
             dict: Optimization results
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -291,7 +290,7 @@ return {"status": "failed", "error": str(e)}
 
 def _get_sr_levels(self, daily_df: pd.DataFrame) -> list:
         """Get support/resistance levels from daily data."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -321,7 +320,7 @@ default_return=None,
 context="optimizer setup",
 )
 async def setup_optimizer(config: dict[str, Any] | None = None) -> Optimizer | None:
-    try:
+            try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling

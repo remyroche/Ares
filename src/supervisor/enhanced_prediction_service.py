@@ -19,10 +19,6 @@ from src.utils.caching import intelligent_caching
 
 
 class EnhancedPredictionService:
-    pass  # TODO: Add implementation
-class EnhancedPredictionService:
-    pass  # TODO: Add implementation
-class EnhancedPredictionService:
     """
 Enhanced Prediction Service that provides calibrated confidence scores from ML models.
 
@@ -30,77 +26,72 @@ This service ONLY provides calibrated confidence scores for both Analyst and Tac
 It fails if calibrated confidence doesn't exist for either model set.
 """
 
-def __init__(self, config: Optional[Dict[str, Any]] = None):
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the Enhanced Prediction Service."""
-self.config = config or get_enhanced_prediction_service_config()
-self.logger = get_logger(__name__)
+        self.config = config or get_enhanced_prediction_service_config()
+        self.logger = get_logger(__name__)
 
-# Service state
-self.is_initialized = False
-self.data_dir = self.config.get("data_directory", "data")
+        # Service state
+        self.is_initialized = False
+        self.data_dir = self.config.get("data_directory", "data")
 
-# ML model storage
-self.analyst_ml_models: Dict[str, Dict[str, Any]] = {}
-self.tactician_ml_models: Dict[str, Dict[str, Any]] = {}
+        # ML model storage
+        self.analyst_ml_models: Dict[str, Dict[str, Any]] = {}
+        self.tactician_ml_models: Dict[str, Dict[str, Any]] = {}
 
-# Calibration and optimization results
-self.calibration_results: Dict[str, Any] = {}
-self.optimization_results: Dict[str, Any] = {}
+        # Calibration and optimization results
+        self.calibration_results: Dict[str, Any] = {}
+        self.optimization_results: Dict[str, Any] = {}
 
-# Configuration parameters
-self.entry_threshold = self.config.get("entry_threshold", 0.6)
-self.max_confidence_threshold = self.config.get("max_confidence_threshold", 0.7)
+        # Configuration parameters
+        self.entry_threshold = self.config.get("entry_threshold", 0.6)
+        self.max_confidence_threshold = self.config.get("max_confidence_threshold", 0.7)
 
-self.logger.info("Enhanced Prediction Service initialized")
+        self.logger.info("Enhanced Prediction Service initialized")
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=False,
-context="initializing enhanced prediction service",
-)
-@with_tracing_span("initialize_enhanced_prediction_service")
-async def initialize(self) -> bool:
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="initializing enhanced prediction service",
+    )
+    @with_tracing_span("initialize_enhanced_prediction_service")
+    async def initialize(self) -> bool:
         """Initialize the Enhanced Prediction Service."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-self.logger.info("🚀 Initializing Enhanced Prediction Service...")
+        try:
+    except Exception as e:
+        pass  # TODO: Add proper exception handling
+            self.logger.info("🚀 Initializing Enhanced Prediction Service...")
 
-# Load ML models for both Analyst and Tactician
-await self._load_analyst_ml_models()
-await self._load_tactician_ml_models()
+            # Load ML models for both Analyst and Tactician
+            await self._load_analyst_ml_models()
+            await self._load_tactician_ml_models()
 
-# Load calibration and optimization results
-await self._load_calibration_results()
-await self._load_optimization_results()
+            # Load calibration and optimization results
+            await self._load_calibration_results()
+            await self._load_optimization_results()
 
-self.is_initialized = True
-self.logger.info("✅ Enhanced Prediction Service initialized successfully")
-return True
+            self.is_initialized = True
+            self.logger.info("✅ Enhanced Prediction Service initialized successfully")
+            return True
 
-except Exception as e:
-            self.logger.error(error(f"❌ Failed to initialize Enhanced Prediction Service: {e}"))
-return False
+        except Exception as e:
+            self.logger.error(f"❌ Failed to initialize Enhanced Prediction Service: {e}")
+            return False
 
-@handle_errors(
-exceptions=(Exception,),
-default_return=False,
-context="loading analyst ML models",
-)
-@with_tracing_span("load_analyst_ml_models")
-@intelligent_caching(cache_key="analyst_ml_models")
-async def _load_analyst_ml_models(self) -> None:
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="loading analyst ML models",
+    )
+    @with_tracing_span("load_analyst_ml_models")
+    @intelligent_caching(cache_key="analyst_ml_models")
+    async def _load_analyst_ml_models(self) -> None:
         """Load Analyst ML models (higher timeframe) from steps 6-14."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-analyst_models_path = Path(self.data_dir) / "ml_profit_models" / "analyst_models"
-if not analyst_models_path.exists():
+        try:
+    except Exception as e:
+        pass  # TODO: Add proper exception handling
+            analyst_models_path = Path(self.data_dir) / "ml_profit_models" / "analyst_models"
+            if not analyst_models_path.exists():
                 raise ValueError(f"Analyst ML models directory not found: {analyst_models_path}")
 
 # Load different types of Analyst models
@@ -115,7 +106,7 @@ if type_path.exists():
                     self.analyst_ml_models[model_type] = {}
 
 for model_file in type_path.glob("*.pkl"):
-                        try:
+                                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -151,7 +142,7 @@ context="loading tactician ML models",
 @intelligent_caching(cache_key="tactician_ml_models")
 async def _load_tactician_ml_models(self) -> None:
         """Load Tactician ML models (lower timeframe) from steps 6-14."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -171,7 +162,7 @@ if type_path.exists():
                     self.tactician_ml_models[model_type] = {}
 
 for model_file in type_path.glob("*.pkl"):
-                        try:
+                                try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -206,14 +197,14 @@ context="loading calibration results",
 @with_tracing_span("load_calibration_results")
 async def _load_calibration_results(self) -> None:
         """Load calibration results from step 11 (model performance vs actual reliability)."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
 calibration_path = Path(self.data_dir) / "calibration_results"
 if calibration_path.exists():
                 for calibration_file in calibration_path.glob("*.json"):
-                    try:
+                            try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -239,18 +230,21 @@ context="loading optimization results",
 @with_tracing_span("load_optimization_results")
 async def _load_optimization_results(self) -> None:
         """Load optimization results from step 11 (model performance vs actual reliability)."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
 optimization_path = Path(self.data_dir) / "optimization_results"
 if optimization_path.exists():
                 for optimization_file in optimization_path.glob("*.json"):
-                    try:
+                            try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
 import json
+
+from src.utils.supervisor_error_handler import (supervisor_component_error_handler,, supervisor_critical_error_handler,, supervisor_safe_error_handler,, supervisor_error_context,, handle_component_failure,, handle_portfolio_error,, handle_risk_error,, handle_performance_error,, handle_model_error,, handle_exchange_error,, ComponentFailureError,, PortfolioManagementError,, RiskManagementError,, PerformanceMonitoringError,, ModelManagementError,, ExchangeIntegrationError,, )
+)
 with open(optimization_file, "r") as f:
                             optimization_data = json.load(f)
 
@@ -304,7 +298,7 @@ Returns:
 Raises:
             ValueError: If calibrated confidence doesn't exist for either model set
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -355,7 +349,7 @@ symbol: str,
 exchange: str
 ) -> Dict[str, float]:
         """Get calibrated confidence scores from Analyst ML models based on step 11 calibration."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -363,7 +357,7 @@ analyst_scores = {}
 
 for model_type, models in self.analyst_ml_models.items():
                 for model_name, model_data in models.items():
-                    try:
+                            try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -410,7 +404,7 @@ symbol: str,
 exchange: str
 ) -> Dict[str, float]:
         """Get calibrated confidence scores from Tactician ML models based on step 11 calibration."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -418,7 +412,7 @@ tactician_scores = {}
 
 for model_type, models in self.tactician_ml_models.items():
                 for model_name, model_data in models.items():
-                    try:
+                            try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -473,7 +467,7 @@ model_type: Type of model (analyst/tactician)
 Returns:
             Calibrated confidence score or None if calibration fails
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -570,7 +564,7 @@ model_name: Name of the model for logging
 Returns:
             True if probabilities are valid, False otherwise
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -630,7 +624,7 @@ model_name: Name of the model for logging
 Returns:
             True if model has valid probability outputs, False otherwise
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -665,7 +659,7 @@ Verify that ALL loaded models have probability outputs.
 Returns:
             Dictionary with verification results for all models
 """
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -733,7 +727,7 @@ context="checking service health",
 @with_tracing_span("check_service_health")
 async def check_service_health(self) -> bool:
         """Check if the service is healthy and has loaded models with probability outputs."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
@@ -766,7 +760,7 @@ return False
 
 def get_service_info(self) -> Dict[str, Any]:
         """Get service information and statistics."""
-try:
+        try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling

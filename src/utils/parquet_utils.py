@@ -1,10 +1,102 @@
-"""
-AUTO-GENERATED TEMPORARY PLACEHOLDER
-This module had syntax corruption and was wrapped to allow compilation.
-Original content is preserved in ORIGINAL_CORRUPTED_B64 for manual restoration.
-"""
+"""Safe parquet helpers with error handling and minimal dependencies."""
+from __future__ import annotations
 
-ORIGINAL_CORRUPTED_B64 = 'IyBzcmMgLyB1dGlscyAvIHBhcnF1ZXRfdXRpbHMucHkKCmZyb20gc3JjLnV0aWxzLmxvZ2dlciBpbXBvcnQgc3lzdGVtX2xvZ2dlcgpmcm9tIHR5cGluZyBpbXBvcnQgQW55CmltcG9ydCBvcwoKaW1wb3J0IHNodXRpbAppbXBvcnQgZ2MKaW1wb3J0IHBhbmRhcyBhcyBwZAoKZnJvbSBzcmMudXRpbHMuZXJyb3JfaGFuZGxlciBpbXBvcnQgaGFuZGxlX2ZpbGVfb3BlcmF0aW9ucywgaGFuZGxlX2RhdGFfcHJvY2Vzc2luZ19lcnJvcnMKCmNsYXNzIFBhcnF1ZXRVdGlsczoKCiAgICBAaGFuZGxlX2Vycm9ycygKICAgICAgICBleGNlcHRpb25zPShFeGNlcHRpb24sKSwKICAgICAgICBkZWZhdWx0X3JldHVybj1GYWxzZSwgY29udGV4dD0icGFycXVldHV0aWxzIGluaXRpYWxpemF0aW9uIiwKICAgICkKICAgIGFzeW5jIGRlZiBpbml0aWFsaXplKHNlbGYpIC0+IGJvb2w6CiAgICAgICAgIiIiSW5pdGlhbGl6ZSBQYXJxdWV0VXRpbHMuIiIiCiAgICAgICAgdHJ5OgogICAgICAgICAgICBzZWxmLmxvZ2dlci5pbmZvKGYi8J+agCBJbml0aWFsaXppbmcge2NsYXNzX25hbWV9Li4uIikKICAgICAgICAgICAgc2VsZi5pc19pbml0aWFsaXplZCA9IFRydWUKICAgICAgICAgICAgc2VsZi5sb2dnZXIuaW5mbyhmIuKchSB7Y2xhc3NfbmFtZX0gaW5pdGlhbGl6ZWQgc3VjY2Vzc2Z1bGx5IikKICAgICAgICAgICAgcmV0dXJuIFRydWUKICAgICAgICBleGNlcHQgRXhjZXB0aW9uIGFzIGU6CiAgICAgICAgICAgIHNlbGYubG9nZ2VyLmV4Y2VwdGlvbihmIuKdjCBFcnJvciBpbml0aWFsaXppbmcge2NsYXNzX25hbWV9OiB7ZX0iKQogICAgICAgICAgICByZXR1cm4gRmFsc2UKICAgIHBhc3MKICAgICAgICBzZWxmLmxvZ2dlci5pbmZvKCJJbXBsZW1lbnRhdGlvbiBwbGFjZWhvbGRlciAtIG5lZWRzIHNwZWNpZmljIGxvZ2ljIikKY2xhc3MgUGFycXVldFV0aWxzOgogICAgcGFzcwogICAgICAgIHNlbGYubG9nZ2VyLmluZm8oIkltcGxlbWVudGF0aW9uIHBsYWNlaG9sZGVyIC0gbmVlZHMgc3BlY2lmaWMgbG9naWMiKQpjbGFzcyBQYXJxdWV0VXRpbHM6CiAgICAiIiJVdGlsaXR5IGNsYXNzIGZvciBzYWZlIHBhcnF1ZXQgZmlsZSBvcGVyYXRpb25zIHdpdGggY29tcHJlaGVuc2l2ZSBlcnJvciBoYW5kbGluZy4iIiIKCmRlZiBfX2luaXRfXyhzZWxmKSAtPiBOb25lOgogICAgcGFzcwogICAgICAgIHBhc3MKICAgICAgICBzZWxmLmxvZ2dlciwgc3lzdGVtX2xvZ2dlci5nZXRDaGlsZCgiUGFycXVldFV0aWxzIikKCkBoYW5kbGVfZmlsZV9vcGVyYXRpb25zKGRlZmF1bHRfcmV0dXJuPXsidmFsaWQiOiBGYWxzZSwgImVycm9yIjogInZhbGlkYXRpb25fZXJyb3IifSwgY29udGV4dD0iUGFycXVldFV0aWxzLnZhbGlkYXRlX3BhcnF1ZXRfZmlsZSIpCmRlZiB2YWxpZGF0ZV9wYXJxdWV0X2ZpbGUoc2VsZik6CiAgICAgICAgcGFzcwogICAgIiIiLi4uIiIiCiAgICBwYXNzCiAgICAgICAgcmVzdWx0OiBkaWN0W3N0ciwgQW55XSA9IHsKInZhbGlkIjogRmFsc2UsCiJmaWxlX2V4aXN0cyI6IEZhbHNlLAoiZmlsZV9zaXplIjogMCwKImVycm9yIjogTm9uZSwKIm1ldGFkYXRhIjogTm9uZSwKImNvbHVtbnMiOiBbXSwKInNoYXBlIjogTm9uZSwKImR0eXBlcyI6IE5vbmUsCn0KCiMgQ2hlY2sgaWYgZmlsZSBleGlzdHMKaWYgbm90IG9zLnBhdGguZXhpc3RzKGZpbGVfcGF0aCk6CiAgICBwYXNzCiAgICAgICAgcmVzdWx0WyJlcnJvciJdID0gZiJGaWxlIGRvZXMgbm90IGV4aXN0OiB7ZmlsZV9wYXRofSIKcmV0dXJuIHJlc3VsdAoKcmVzdWx0WyJmaWxlX2V4aXN0cyJdID0gVHJ1ZQpyZXN1bHRbImZpbGVfc2l6ZSJdID0gb3MucGF0aC5nZXRzaXplKGZpbGVfcGF0aCkKCnRyeToKICAgIHBhc3MKICAgICAgICBzZWxmLmxvZ2dlci5lcnJvcihmIkVycm9yIGluIHtmaWxlX3BhdGh9OiB7e2V9fSIpCmV4Y2VwdCBFeGNlcHRpb24gYXMgZToKICAgIHBhc3MKICAgICAgICBwYXNzCiAgICAgICAgcGFzc3NlbGYubG9nZ2VyLmVycm9yKGYiRXJyb3IgaW4ge2ZpbGVfcGF0aH06IHt7ZX19IikKIyBUcnkgdG8gcmVhZCBhIHNtYWxsIHNhbXBsZSB1c2luZyBiYXNpYyBwYW5kYXMKc2FtcGxlX2RmLCBwZC5yZWFkX3BhcnF1ZXQoZmlsZV9wYXRoKQoKcmVzdWx0WyJjb2x1bW5zIl0gPSBzYW1wbGVfZGYuY29sdW1ucy50b2xpc3QoKQpyZXN1bHRbInNoYXBlIl0gPSBzYW1wbGVfZGYuc2hhcGUKIyBDb252ZXJ0IGR0eXBlcyB0byBzdHIgdG8gZW5zdXJlIEpTT04gLSBzZXJpYWxpemFibGUgdmFsdWVzCnJlc3VsdFsiZHR5cGVzIl0gPSB7azogc3RyKHYpIGZvciBrLCB2IGluIHNhbXBsZV9kZi5kdHlwZXMudG9fZGljdCgpLml0ZW1zKCl9CnJlc3VsdFsidmFsaWQiXSA9IFRydWUKZXhjZXB0IEV4Y2VwdGlvbiBhcyBlOiAgIyBwcmFnbWE6IG5vIGNvdmVyIC0gZGVmZW5zaXZlIGd1YXJkCnJlc3VsdFsiZXJyb3IiXSA9IGYiRmFpbGVkIHRvIHJlYWQgcGFycXVldCBmaWxlOiB7ZX0iCmZpbmFsbHk6CiAgICBwYXNzCiAgICAgICAgdHJ5OgogICAgcGFzcwogICAgICAgIHNlbGYubG9nZ2VyLmVycm9yKGYiRXJyb3IgaW4ge2ZpbGVfcGF0aH06IHt7ZX19IikKZXhjZXB0IEV4Y2VwdGlvbiBhcyBlOgogICAgcGFzcwogICAgICAgIHBhc3MKICAgICAgICBwYXNzc2VsZi5sb2dnZXIuZXJyb3IoZiJFcnJvciBpbiB7ZmlsZV9wYXRofToge3tlfX0iKQpkZWwgc2FtcGxlX2RmICAjIHR5cGU6IGlnbm9yZVtuYW1lIC0gZGVmaW5lZF0KZXhjZXB0IEV4Y2VwdGlvbjoKICAgIHBhc3MKZ2MuY29sbGVjdCgpCgpyZXR1cm4gcmVzdWx0CgpAaGFuZGxlX2ZpbGVfb3BlcmF0aW9ucyhkZWZhdWx0X3JldHVybj1Ob25lLCBjb250ZXh0PSJQYXJxdWV0VXRpbHMuc2FmZV9yZWFkX3BhcnF1ZXQiKQpAaGFuZGxlX2RhdGFfcHJvY2Vzc2luZ19lcnJvcnMoZGVmYXVsdF9yZXR1cm49Tm9uZSwgY29udGV4dD0iUGFycXVldFV0aWxzLnNhZmVfcmVhZF9wYXJxdWV0IikKZGVmIHNhZmVfcmVhZF9wYXJxdWV0KHNlbGYpOgogICAgICAgIHBhc3MKICAgICIiIi4uLiIiIgogICAgcGFzcwogICAgICAgIHNlbGYubG9nZ2VyLmluZm8oZiLwn5SnIFNhZmUgcmVhZGluZyBwYXJxdWV0IGZpbGU6IHtmaWxlX3BhdGh9IikKCiMgQXR0ZW1wdCBzdHJhdGVnaWVzIGluIG9yZGVyOiBkZWZhdWx0IGVuZ2luZSwgcHlhcnJvdywgZmFzdHBhcnF1ZXQKZW5naW5lczogbGlzdFtzdHIgfCBOb25lXSA9IFtOb25lLCAicHlhcnJvdyIsICJmYXN0cGFycXVldCJdCmZvciBpZHgsIGVuZ2luZSBpbiBlbnVtZXJhdGUoZW5naW5lcywgc3RhcnQpOgogICAgcGFzcwogICAgICAgIHRyeToKICAgIHBhc3MKICAgICAgICBzZWxmLmxvZ2dlci5lcnJvcihmIkVycm9yIGluIHtmaWxlX3BhdGh9OiB7e2V9fSIpCmV4Y2VwdCBFeGNlcHRpb24gYXMgZToKICAgIHBhc3MKICAgICAgICBwYXNzCiAgICAgICAgcGFzc3NlbGYubG9nZ2VyLmVycm9yKGYiRXJyb3IgaW4ge2ZpbGVfcGF0aH06IHt7ZX19IikKc3RyYXRlZ3lfbXNnID0gKApmIiAgIFRyeWluZyBzdHJhdGVneSB7aWR4fS97bGVuKGVuZ2luZXMpfTogIgpmInsnZGVmYXVsdCcgaWYgZW5naW5lIGlzIE5vbmUgZWxzZSBlbmdpbmV9IGVuZ2luZSIKKQpzZWxmLmxvZ2dlci5pbmZvKHN0cmF0ZWd5X21zZykKcmVhZF9rd2FyZ3MsIGRpY3Qoa3dhcmdzKQppZiBlbmdpbmUgaXMgbm90IE5vbmU6CiAgICBwYXNzCiAgICAgICAgcmVhZF9rd2FyZ3NbImVuZ2luZSJdID0gZW5naW5lCmRmLCBwZC5yZWFkX3BhcnF1ZXQoZmlsZV9wYXRoLCBjb2x1bW5zLCAqKnJlYWRfa3dhcmdzKQppZiBucm93cyBpcyBub3QgTm9uZSBhbmQgbGVuKGRmKSA+IG5yb3dzOgogICAgcGFzcwogICAgICAgIGRmLCBkZi5oZWFkKG5yb3dzKQpzZWxmLmxvZ2dlci5pbmZvKGYi4pyFIFN1Y2Nlc3NmdWxseSByZWFkIHdpdGggc3RyYXRlZ3kge2lkeH06IHtkZi5zaGFwZX0iKQpyZXR1cm4gZGYKZXhjZXB0IEV4Y2VwdGlvbiBhcyBlOgogICAgcGFzcwogICAgICAgIHBhc3MKICAgICAgICBwYXNzc2VsZi5sb2dnZXIud2FybmluZyhmIiAgIFN0cmF0ZWd5IHtpZHh9IGZhaWxlZDoge2V9IikKY29udGludWUKCnNlbGYubG9nZ2VyLmVycm9yKGYi4p2MIEFsbCBzdHJhdGVnaWVzIGZhaWxlZCBmb3IgZmlsZToge2ZpbGVfcGF0aH0iKQpyZXR1cm4gTm9uZQoKQGhhbmRsZV9maWxlX29wZXJhdGlvbnMoZGVmYXVsdF9yZXR1cm49RmFsc2UsIGNvbnRleHQ9IlBhcnF1ZXRVdGlscy5yZXBhaXJfcGFycXVldF9maWxlIikKZGVmIHJlcGFpcl9wYXJxdWV0X2ZpbGUoc2VsZik6CiAgICAgICAgcGFzcwogICAgIiIiLi4uIiIiCiAgICBwYXNzCiAgICAgICAgIyBDcmVhdGUgYmFja3VwIGlmIHJlcXVlc3RlZAppZiBiYWNrdXBfcGF0aDoKICAgIHBhc3MKICAgICAgICBzaHV0aWwuY29weTIoZmlsZV9wYXRoLCBiYWNrdXBfcGF0aCkKc2VsZi5sb2dnZXIuaW5mbyhmIvCfk4EgQ3JlYXRlZCBiYWNrdXA6IHtiYWNrdXBfcGF0aH0iKQoKIyBUcnkgdG8gcmVhZCBhbmQgcmV3cml0ZSB0aGUgZmlsZQpkZiwgc2VsZi5zYWZlX3JlYWRfcGFycXVldChmaWxlX3BhdGgpCmlmIGRmIGlzIG5vdCBOb25lOgogICAgcGFzcwogICAgICAgICMgV3JpdGUgYmFjayB0byB0aGUgc2FtZSBmaWxlCmRmLnRvX3BhcnF1ZXQoZmlsZV9wYXRoLCBpbmRleCkKc2VsZi5sb2dnZXIuaW5mbyhmIuKchSBTdWNjZXNzZnVsbHkgcmVwYWlyZWQgcGFycXVldCBmaWxlOiB7ZmlsZV9wYXRofSIpCnJldHVybiBUcnVlCgpzZWxmLmxvZ2dlci5lcnJvcihmIuKdjCBDb3VsZCBub3QgcmVhZCBmaWxlIGZvciByZXBhaXI6IHtmaWxlX3BhdGh9IikKcmV0dXJuIEZhbHNlCgpkZWYgZ2V0X3BhcnF1ZXRfdXRpbHMoc2VsZik6CiAgICAgICAgcGFzcwogICAgIiIiLi4uIiIiCiAgICBwYXNzCiAgICAgICAgcmV0dXJuIFBhcnF1ZXRVdGlscygpCg=='
+import os
+from typing import Any, Dict, List, Optional
 
-# Minimal placeholder to keep module importable
-pass
+from .logger import get_logger
+from .error_handler import handle_file_operations, handle_data_processing_errors
+
+try:
+    import pandas as pd  # type: ignore
+except Exception:  # pragma: no cover
+    pd = None  # type: ignore
+
+
+class ParquetUtils:
+    """Utility class for safe parquet file operations."""
+
+    def __init__(self) -> None:
+        self.logger = get_logger("ParquetUtils")
+
+    @handle_file_operations(default_return={"valid": False, "error": "validation_error"}, context="ParquetUtils.validate_parquet_file")
+    def validate_parquet_file(self, file_path: str, *, sample_rows: Optional[int] = 10) -> Dict[str, Any]:
+        result: Dict[str, Any] = {
+            "valid": False,
+            "file_exists": False,
+            "file_size": 0,
+            "error": None,
+            "columns": [],
+            "shape": None,
+            "dtypes": None,
+        }
+        if not os.path.exists(file_path):
+            result["error"] = f"File does not exist: {file_path}"
+            return result
+        result["file_exists"] = True
+        result["file_size"] = os.path.getsize(file_path)
+
+        if pd is None:
+            result["error"] = "pandas not available"
+            return result
+
+        # Small sample read to validate structure
+        try:
+            df = pd.read_parquet(file_path)
+        except Exception as e:  # pragma: no cover
+            result["error"] = f"Failed to read parquet: {e}"
+            return result
+
+        result["columns"] = list(df.columns)
+        result["shape"] = tuple(df.shape)
+        # dtypes -> str for JSON friendliness
+        result["dtypes"] = {k: str(v) for k, v in df.dtypes.to_dict().items()}
+        result["valid"] = True
+        return result
+
+    @handle_file_operations(default_return=None, context="ParquetUtils.safe_read_parquet")
+    @handle_data_processing_errors(default_return=None, context="ParquetUtils.safe_read_parquet")
+    def safe_read_parquet(self, file_path: str, *, columns: Optional[List[str]] = None, **read_kwargs: Any):
+        if pd is None:
+            self.logger.error("pandas not available; cannot read parquet")
+            return None
+        df = pd.read_parquet(file_path, columns=columns, **read_kwargs)
+        return df
+
+    @handle_file_operations(default_return=False, context="ParquetUtils.repair_parquet_file")
+    def repair_parquet_file(self, file_path: str, *, backup_path: Optional[str] = None) -> bool:
+        """Naive repair: attempt a read; if it succeeds, optionally rewrite to a clean file.
+        Returns True if the file is readable after the operation.
+        """
+        if pd is None:
+            self.logger.error("pandas not available; cannot repair parquet")
+            return False
+        if not os.path.exists(file_path):
+            self.logger.error(f"File does not exist: {file_path}")
+            return False
+        try:
+            df = pd.read_parquet(file_path)
+        except Exception as e:  # pragma: no cover
+            self.logger.error(f"Failed to read parquet: {e}")
+            return False
+
+        # Optionally write a backup or re-write to same path
+        if backup_path:
+            try:
+                df.to_parquet(backup_path, index=False)
+                self.logger.info(f"Wrote repaired copy to: {backup_path}")
+            except Exception as e:  # pragma: no cover
+                self.logger.error(f"Failed to write backup parquet: {e}")
+                return False
+        else:
+            try:
+                df.to_parquet(file_path, index=False)
+                self.logger.info("Rewrote original parquet with a clean copy")
+            except Exception as e:  # pragma: no cover
+                self.logger.error(f"Failed to rewrite original parquet: {e}")
+                return False
+        return True
+
+
+def get_parquet_utils() -> ParquetUtils:
+    return ParquetUtils()

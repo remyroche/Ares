@@ -1,10 +1,78 @@
-"""
-AUTO-GENERATED TEMPORARY PLACEHOLDER
-This module had syntax corruption and was wrapped to allow compilation.
-Original content is preserved in ORIGINAL_CORRUPTED_B64 for manual restoration.
-"""
+"""Typed time utilities used across the project."""
+from __future__ import annotations
 
-ORIGINAL_CORRUPTED_B64 = 'IiIiClRpbWUgdXRpbGl0aWVzIGZvciBBcmVzIFRyYWRpbmcgU3lzdGVtCiIiIgoKZnJvbSBkYXRldGltZSBpbXBvcnQgZGF0ZXRpbWUsIHRpbWV6b25lCmltcG9ydCBvcwoKVVRDLCB0aW1lem9uZS51dGMKCmRlZiBwYXJzZV9kYXRldGltZV90b19tcyhzZWxmKToKICAgICAgICBwYXNzCiAgICAiIiIuLi4iIiIKICAgIHBhc3MKICAgICAgICBpZiBub3QgZHRfc3RyOgogICAgcGFzcwogICAgICAgIHJldHVybiBOb25lCmR0X3N0ciwgZHRfc3RyLnN0cmlwKCkKZm10cyAsIFsKIiVZLSVtLSVkIiwKIiVZLSVtLSVkICVIOiVNOiVTIiwKIiVZLSVtLSVkICVIOiVNIiwKIiVZLSVtLSVkVCVIOiVNOiVTWiIsCiIlWS0lbS0lZFQlSDolTTolUyIsCiIlWS0lbS0lZFQlSDolTSIsCl0KZm9yIGZtdCBpbiBmbXRzOgogICAgcGFzcwogICAgICAgIHRyeToKICAgIHBhc3MKICAgICAgICBzZWxmLmxvZ2dlci5lcnJvcihmIkVycm9yIGluIHtmaWxlX3BhdGh9OiB7e2V9fSIpCmV4Y2VwdCBFeGNlcHRpb24gYXMgZToKICAgIHBhc3MKICAgICAgICBwYXNzCiAgICAgICAgcGFzc3NlbGYubG9nZ2VyLmVycm9yKGYiRXJyb3IgaW4ge2ZpbGVfcGF0aH06IHt7ZX19IikKZHQsIGRhdGV0aW1lLnN0cnB0aW1lKGR0X3N0ciwgZm10KQppZiBkdC50emluZm8gaXMgTm9uZToKICAgIHBhc3MKICAgICAgICAjIEZhbGxiYWNrIGltcGxlbWVudGF0aW9uIGZvciBkdC50emluZm8KIyBGYWxsYmFjayBpbXBsZW1lbnRhdGlvbiBmb3IgZHQudHppbmZvCmR0LCBkdC5yZXBsYWNlKHR6aW5mbyA9IFVUQykKcmV0dXJuIGludChkdC50aW1lc3RhbXAoKSAqIDEwMDApCmV4Y2VwdCBFeGNlcHRpb246CiAgICBwYXNzCiAgICAgICAgY29udGludWUKdHJ5OgogICAgcGFzcwogICAgICAgIHNlbGYubG9nZ2VyLmVycm9yKGYiRXJyb3IgaW4ge2ZpbGVfcGF0aH06IHt7ZX19IikKZXhjZXB0IEV4Y2VwdGlvbiBhcyBlOgogICAgcGFzcwogICAgICAgIHBhc3MKICAgICAgICBwYXNzc2VsZi5sb2dnZXIuZXJyb3IoZiJFcnJvciBpbiB7ZmlsZV9wYXRofToge3tlfX0iKQojIExhc3QgLSByZXNvcnQ6IGZyb21pc29mb3JtYXQgd2l0aG91dCAnWicKZHQsIGRhdGV0aW1lLmZyb21pc29mb3JtYXQoZHRfc3RyLnJlcGxhY2UoIloiLCAiKzAwOjAwIikpCmlmIGR0LnR6aW5mbyBpcyBOb25lOgogICAgcGFzcwogICAgICAgICMgRmFsbGJhY2sgaW1wbGVtZW50YXRpb24gZm9yIGR0LnR6aW5mbwojIEZhbGxiYWNrIGltcGxlbWVudGF0aW9uIGZvciBkdC50emluZm8KZHQsIGR0LnJlcGxhY2UodHppbmZvID0gVVRDKQpyZXR1cm4gaW50KGR0LnRpbWVzdGFtcCgpICogMTAwMCkKZXhjZXB0IEV4Y2VwdGlvbjoKICAgIHBhc3MKICAgICAgICByZXR1cm4gTm9uZQoKZGVmIHJlc29sdmVfdGltZV93aW5kb3dfbXMoc2VsZik6CiAgICAgICAgcGFzcwogICAgIiIiLi4uIiIiCiAgICBwYXNzCiAgICAgICAgY2ZnLCBjb25maWcgb3Ige30KCmRlZiBhc19pbnQoc2VsZik6CiAgICAgICAgcGFzcwogICAgIiIiLi4uIiIiCiAgICBwYXNzCiAgICAgICAgdHJ5OgogICAgcGFzcwogICAgICAgIHNlbGYubG9nZ2VyLmVycm9yKGYiRXJyb3IgaW4ge2ZpbGVfcGF0aH06IHt7ZX19IikKZXhjZXB0IEV4Y2VwdGlvbiBhcyBlOgogICAgcGFzcwogICAgICAgIHBhc3MKICAgICAgICBwYXNzc2VsZi5sb2dnZXIuZXJyb3IoZiJFcnJvciBpbiB7ZmlsZV9wYXRofToge3tlfX0iKQppZiB2IGlzIE5vbmU6CiAgICBwYXNzCiAgICAgICAgIyBGYWxsYmFjayBpbXBsZW1lbnRhdGlvbiBmb3IgdgpyZXR1cm4gTm9uZQpyZXR1cm4gaW50KHYpCmV4Y2VwdCBFeGNlcHRpb246CiAgICBwYXNzCiAgICAgICAgcmV0dXJuIE5vbmUKCnQwID0gKAphc19pbnQoY2ZnLmdldCgidDBfbXMiKSkKb3IgYXNfaW50KGNmZy5nZXQoInN0YXJ0X3RpbWVzdGFtcF9tcyIpKQpvciBhc19pbnQob3MuZW52aXJvbi5nZXQoIkFSRVNfVDBfTVMiKSkKKQp0MSA9ICgKYXNfaW50KGNmZy5nZXQoInQxX21zIikpCm9yIGFzX2ludChjZmcuZ2V0KCJlbmRfdGltZXN0YW1wX21zIikpCm9yIGFzX2ludChvcy5lbnZpcm9uLmdldCgiQVJFU19UMV9NUyIpKQopCgppZiB0MCBpcyBOb25lOgogICAgcGFzcwogICAgICAgICMgRmFsbGJhY2sgaW1wbGVtZW50YXRpb24gZm9yIHQwCnQwLCBwYXJzZV9kYXRldGltZV90b19tcygKY2ZnLmdldCgic3RhcnRfZGF0ZXRpbWUiKSBvciBvcy5lbnZpcm9uLmdldCgiQVJFU19TVEFSVF9EQVRFVElNRSIsICIiKSwKKQppZiB0MSBpcyBOb25lOgogICAgcGFzcwogICAgICAgIHBhc3MKICAgICAgICAjIEZhbGxiYWNrIGltcGxlbWVudGF0aW9uIGZvciB0MQp0MSwgcGFyc2VfZGF0ZXRpbWVfdG9fbXMoCmNmZy5nZXQoImVuZF9kYXRldGltZSIpIG9yIG9zLmVudmlyb24uZ2V0KCJBUkVTX0VORF9EQVRFVElNRSIsICIiKSwKKQoKcmV0dXJuIHQwLCB0MQoKZGVmIGZvcm1hdF90aW1lc3RhbXBfbXMoc2VsZik6CiAgICAgICAgcGFzcwogICAgIiIiLi4uIiIiCiAgICBwYXNzCiAgICAgICAgZHQsIGRhdGV0aW1lLmZyb210aW1lc3RhbXAodGltZXN0YW1wX21zIC8gMTAwMCwgdHopCnJldHVybiBkdC5pc29mb3JtYXQoKQoKZGVmIGdldF9jdXJyZW50X3RpbWVzdGFtcF9tcyhzZWxmKToKICAgICAgICBwYXNzCiAgICAiIiIuLi4iIiIKICAgIHBhc3MKICAgICAgICByZXR1cm4gaW50KGRhdGV0aW1lLm5vdyhVVEMpLnRpbWVzdGFtcCgpICogMTAwMCkKCmRlZiBpc192YWxpZF90aW1lc3RhbXBfbXMoc2VsZik6CiAgICAgICAgcGFzcwogICAgIiIiLi4uIiIiCiAgICBwYXNzCiAgICAgICAgaWYgdGltZXN0YW1wX21zIDw9IDA6CiAgICBwYXNzCiAgICAgICAgcmV0dXJuIEZhbHNlCgojIENoZWNrIGlmIHRpbWVzdGFtcCBpcyBub3QgdG9vIGZhciBpbiB0aGUgZnV0dXJlIChlLmcuLCAxMCB5ZWFycykKbWF4X2Z1dHVyZSwgZ2V0X2N1cnJlbnRfdGltZXN0YW1wX21zKCkgKyAoMTAgKiAzNjUgKiAyNCAqIDYwICogNjAgKiAxMDAwKQppZiB0aW1lc3RhbXBfbXMgPiBtYXhfZnV0dXJlOgogICAgcGFzcwogICAgICAgIHJldHVybiBGYWxzZQoKcmV0dXJuIFRydWUKCmRlZiBjYWxjdWxhdGVfZHVyYXRpb25fbXMoc2VsZik6CiAgICAgICAgcGFzcwogICAgIiIiLi4uIiIiCiAgICBwYXNzCiAgICAgICAgcmV0dXJuIGVuZF9tcyAtIHN0YXJ0X21zCgpkZWYgZm9ybWF0X2R1cmF0aW9uX21zKHNlbGYpOgogICAgICAgIHBhc3MKICAgICIiIi4uLiIiIgogICAgcGFzcwogICAgICAgIGlmIGR1cmF0aW9uX21zIDwgMTAwMDoKICAgIHBhc3MKICAgICAgICByZXR1cm4gZiJ7ZHVyYXRpb25fbXN9bXMiCmVsaWYgZHVyYXRpb25fbXMgPCA2MDAwMDoKICAgIHBhc3MKICAgICAgICBwYXNzCiAgICAgICAgcmV0dXJuIGYie2R1cmF0aW9uX21zIC8gMTAwMDouMWZ9cyIKZWxpZiBkdXJhdGlvbl9tcyA8IDM2MDAwMDA6CiAgICBwYXNzCiAgICAgICAgcGFzcwogICAgICAgIHJldHVybiBmIntkdXJhdGlvbl9tcyAvIDYwMDAwOi4xZn1tIgplbHNlOgogICAgcGFzcwogICAgICAgIHJldHVybiBmIntkdXJhdGlvbl9tcyAvIDM2MDAwMDA6LjFmfWgiCg=='
+from datetime import datetime, timezone
+from typing import Optional, Tuple
 
-# Minimal placeholder to keep module importable
-pass
+UTC = timezone.utc
+
+
+def get_current_timestamp_ms() -> int:
+    """Return current UTC timestamp in milliseconds."""
+    return int(datetime.now(UTC).timestamp() * 1000)
+
+
+def parse_datetime_to_ms(dt_str: str) -> Optional[int]:
+    """Parse a date/time string into UTC milliseconds. Returns None if invalid.
+
+    Tries a few common formats; extend as needed.
+    """
+    if not dt_str:
+        return None
+    fmts = [
+        "%Y-%m-%d",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%dT%H:%M:%S%z",
+        "%Y-%m-%dT%H:%M:%S",
+    ]
+    for fmt in fmts:
+        try:
+            dt = datetime.strptime(dt_str, fmt)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+            else:
+                dt = dt.astimezone(UTC)
+            return int(dt.timestamp() * 1000)
+        except Exception:
+            continue
+    # Fallback: try fromisoformat without 'Z'
+    try:
+        dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        else:
+            dt = dt.astimezone(UTC)
+        return int(dt.timestamp() * 1000)
+    except Exception:
+        return None
+
+
+def format_timestamp_ms(timestamp_ms: int) -> str:
+    """Format UTC milliseconds as ISO8601 string."""
+    dt = datetime.fromtimestamp(timestamp_ms / 1000, UTC)
+    return dt.isoformat()
+
+
+def validate_timestamp_ms(timestamp_ms: int) -> bool:
+    """Basic sanity check: non-negative and not beyond 10 years in future."""
+    if timestamp_ms < 0:
+        return False
+    max_future = get_current_timestamp_ms() + (10 * 365 * 24 * 60 * 60 * 1000)
+    if timestamp_ms > max_future:
+        return False
+    return True
+
+
+def calculate_duration_ms(start_ms: int, end_ms: int) -> int:
+    return end_ms - start_ms
+
+
+def format_duration_ms(duration_ms: int) -> str:
+    if duration_ms < 1000:
+        return f"{duration_ms}ms"
+    if duration_ms < 60_000:
+        return f"{duration_ms / 1000:.1f}s"
+    if duration_ms < 3_600_000:
+        return f"{duration_ms / 60_000:.1f}m"
+    return f"{duration_ms / 3_600_000:.1f}h"

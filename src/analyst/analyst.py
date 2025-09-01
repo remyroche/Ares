@@ -1,990 +1,160 @@
 # src/analyst/analyst.py
 
+from __future__ import annotations
+
 from datetime import datetime
-from typing import (
-TYPE_CHECKING,
-Any,
-)
+from typing import TYPE_CHECKING, Any, Optional
 
 import pandas as pd
 
-from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
+from src.analyst.feature_engineering_orchestrator import \
+    FeatureEngineeringOrchestrator
 from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
-
-# Import dual model system and other components
-from src.utils.error_handler import (
-handle_errors,
-handle_specific_errors,
-)
+from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-error,
-failed,
-initialization_error,
-)
-from src.utils.decorators import (
-comprehensive_data_validation,
-validate_data_quality,
-with_tracing_span,
-)
 
 if TYPE_CHECKING:
-    passfrom src.analyst.liquidation_risk_model import LiquidationRiskModel
-from src.analyst.market_health_analyzer import MarketHealthAnalyzer
-from src.training.dual_model_system import DualModelSystem
+    from src.analyst.liquidation_risk_model import LiquidationRiskModel
+    from src.analyst.market_health_analyzer import MarketHealthAnalyzer
+    from src.training.dual_model_system import DualModelSystem
 
 
 class Analyst:
-    pass"""
-Analyst with comprehensive error handling and type safety.
-Determines IF we should enter a trade & which direction (short/long).
-Passes market health, volatility, and liquidation risk information to tactician.
-"""
-
-def __init__(...) -> ...:
-    pass"""..."""
-    passself.config: dict[str, Any] = config
-self.logger = system_logger.getChild("Analyst")
-
-# Analyst state
-self.is_analyzing: bool = False
-self.analysis_results: dict[str, Any] = {}
-self.analysis_history: list[dict[str, Any]] = []
-
-# Configuration
-self.analyst_config: dict[str, Any] = self.config.get("analyst", {})
-self.analysis_interval: int = self.analyst_config.get("analysis_interval", 3600)
-self.max_analysis_history: int = self.analyst_config.get(
-"max_analysis_history",
-100,
-)
-self.enable_technical_analysis: bool = self.analyst_config.get(
-"enable_technical_analysis",
-True,
-)
-
-# Dual Model System integration
-self.dual_model_system: DualModelSystem | None = None
-self.enable_dual_model_system: bool = self.analyst_config.get(
-"enable_dual_model_system",
-True,
-)
-
-# Market Health Analyzer integration
-self.market_health_analyzer: MarketHealthAnalyzer | None = None
-self.enable_market_health_analysis: bool = self.analyst_config.get(
-"enable_market_health_analysis",
-True,
-)
-
-# Liquidation Risk Model integration
-self.liquidation_risk_model: LiquidationRiskModel | None = None
-self.enable_liquidation_risk_analysis: bool = self.analyst_config.get(
-"enable_liquidation_risk_analysis",
-True,
-)
-
-# Feature Engineering Orchestrator integration
-self.feature_engineering_orchestrator: FeatureEngineeringOrchestrator | None = (
-None
-)
-self.enable_feature_engineering: bool = self.analyst_config.get(
-"enable_feature_engineering",
-True,
-)
-
-# ML Confidence Predictor integration
-self.ml_confidence_predictor = None
-self.enable_ml_predictions: bool = self.analyst_config.get(
-"enable_ml_predictions",
-True,
-)
-
-# Enhanced predictions from supervisor
-self.enable_enhanced_predictions: bool = self.analyst_config.get(
-"enable_enhanced_predictions",
-True,
-)
-
-# Unified Regime Classifier integration
-self.regime_classifier = None
-self.enable_regime_classification: bool = self.analyst_config.get(
-"enable_regime_classification",
-True,
-)
-
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid analyst configuration"),
-AttributeError: (False, "Missing required analyst parameters"),
-KeyError: (False, "Missing configuration keys"),
-},
-default_return=False,
-context="analyst initialization",
-)
-async def initialize(...) -> ...:
-    """..."""
-    passself.logger.info("Initializing Analyst...")
-
-# Load analyst configuration
-await self._load_analyst_configuration()
-
-# Validate configuration
-if not self._validate_configuration():
-    passself.logger.error("Invalid configuration for analyst")
-return False
-
-# Initialize analyst modules
-await self._initialize_analyst_modules()
-
-# Initialize Dual Model System
-if self.enable_dual_model_system:
-    passpassawait self._initialize_dual_model_system()
-
-# Initialize Market Health Analyzer
-if self.enable_market_health_analysis:
-    passawait self._initialize_market_health_analyzer()
-
-# Initialize Liquidation Risk Model
-if self.enable_liquidation_risk_analysis:
-    passawait self._initialize_liquidation_risk_model()
-
-# Initialize Feature Engineering Orchestrator
-if self.enable_feature_engineering:
-    passawait self._initialize_feature_engineering_orchestrator()
-
-# Initialize ML Confidence Predictor
-if self.enable_ml_predictions:
-    passawait self._initialize_ml_confidence_predictor()
-
-# Enhanced predictions are now handled by the supervisor
-# No local initialization needed
-
-# Initialize Unified Regime Classifier
-if self.enable_regime_classification:
-    passawait self._initialize_regime_classifier()
-
-self.logger.info("✅ Analyst initialization completed successfully")
-return True
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="analyst configuration loading",
-)
-async def _load_analyst_configuration(...) -> ...:
-    """..."""
-    passself.logger.info("Loading analyst configuration...")
-
-# Additional configuration can be loaded here
-self.logger.info("Analyst configuration loaded successfully")
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False,
-context="configuration validation",
-)
-def _validate_configuration(...) -> ...:
-    """..."""
-    passtry:
-    pass# Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
-if self.analysis_interval <= 0:
-    passself.logger.error("analysis_interval must be positive")
-return False
-
-self.logger.info("Analyst configuration validation passed")
-return True
-
-except Exception:
-    passpassself.logger.exception("Configuration validation failed")
-return False
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="analyst modules initialization",
-)
-async def _initialize_analyst_modules(...) -> ...:
-    """..."""
-    passself.logger.info("Initializing analyst modules...")
-
-if self.enable_technical_analysis:
-    passawait self._initialize_technical_analysis()
-
-if self.enable_risk_analysis:
-    passawait self._initialize_risk_analysis()
-
-self.logger.info("Analyst modules initialized successfully")
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="technical analysis initialization",
-)
-async def _initialize_technical_analysis(...) -> ...:
-    """..."""
-    passself.logger.info("Initializing technical analysis...")
-# Technical analysis initialization logic here
-self.logger.info("Technical analysis initialized successfully")
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="risk analysis initialization",
-)
-async def _initialize_risk_analysis(...) -> ...:
-    """..."""
-    passself.logger.info("Initializing risk analysis...")
-# Risk analysis initialization logic here
-self.logger.info("Risk analysis initialized successfully")
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="dual model system initialization",
-)
-async def _initialize_dual_model_system(...) -> ...:
-    """..."""
-    passtry:
-    pass# Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
-from src.training.dual_model_system import setup_dual_model_system
-
-self.dual_model_system = await setup_dual_model_system(self.config)
-if self.dual_model_system:
-    passself.logger.info("✅ Dual Model System initialized successfully")
-else:
-    passself.print(failed("❌ Failed to initialize Dual Model System"))
-except Exception:
-    passpassself.print(
-initialization_error("Error initializing Dual Model System: {e}"),
-)
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="market health analyzer initialization",
-)
-async def _initialize_market_health_analyzer(...) -> ...:
-    """..."""
-    passtry:
-    pass# Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
-from src.analyst.market_health_analyzer import setup_market_health_analyzer
-
-self.market_health_analyzer = await setup_market_health_analyzer(
-self.config,
-)
-if self.market_health_analyzer:
-    passself.logger.info("✅ Market Health Analyzer initialized successfully")
-else:
-    passself.print(failed("❌ Failed to initialize Market Health Analyzer"))
-except Exception:
-    passpassself.print(
-initialization_error("Error initializing Market Health Analyzer: {e}"),
-)
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="liquidation risk model initialization",
-)
-async def _initialize_liquidation_risk_model(...) -> ...:
-    """..."""
-    passtry:
-    pass# Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
-from src.analyst.liquidation_risk_model import setup_liquidation_risk_model
-
-self.liquidation_risk_model = await setup_liquidation_risk_model(
-self.config,
-)
-if self.liquidation_risk_model:
-    passself.logger.info("✅ Liquidation Risk Model initialized successfully")
-else:
-    passself.print(failed("❌ Failed to initialize Liquidation Risk Model"))
-except Exception:
-    passpassself.print(
-initialization_error("Error initializing Liquidation Risk Model: {e}"),
-)
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="feature engineering orchestrator initialization",
-)
-async def _initialize_feature_engineering_orchestrator(...) -> ...:
-    """..."""
-    passtry:
-    pass# Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
-self.feature_engineering_orchestrator = FeatureEngineeringOrchestrator(
-self.config,
-)
-self.logger.info(
-"✅ Feature Engineering Orchestrator initialized successfully",
-)
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.exception(
-f"Error initializing Feature Engineering Orchestrator: {e}",
-)
-
-# Legacy S/R analyzer initialization method removed
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="ML confidence predictor initialization",
-)
-async def _initialize_ml_confidence_predictor(...) -> ...:
-    """..."""
-    passself.logger.info("Initializing ML Confidence Predictor...")
-# ML confidence predictor initialization logic here
-self.logger.info("ML Confidence Predictor initialized successfully")
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="regime classifier initialization",
-)
-async def _initialize_regime_classifier(...) -> ...:
-    """..."""
-    passself.logger.info("Initializing Unified Regime Classifier...")
-self.regime_classifier = UnifiedRegimeClassifier(
-self.config,
-"UNKNOWN",
-"UNKNOWN",
-)
-self.logger.info("Unified Regime Classifier initialized successfully")
-
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid analysis parameters"),
-AttributeError: (False, "Missing analysis components"),
-KeyError: (False, "Missing required analysis data"),
-},
-default_return=False,
-context="analysis execution",
-)
-async def execute_analysis(...) -> ...:
-    """..."""
-    passtry:
-    pass# Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
-if not self._validate_analysis_inputs(analysis_input):
-    passself.logger.error("Invalid analysis inputs")
-return False
-
-self.is_analyzing = True
-self.logger.info("Starting comprehensive analysis...")
-
-# Extract market data
-market_data = analysis_input.get("market_data")
-current_price = analysis_input.get("current_price")
-current_position = analysis_input.get("current_position")
-
-# 1. Generate features using orchestrator
-if self.feature_engineering_orchestrator:
-    passself.logger.info("Generating features...")
-features_df = (
-self.feature_engineering_orchestrator.generate_all_features(
-market_data,
-analysis_input.get("agg_trades_df"),
-analysis_input.get("futures_df"),
-analysis_input.get("sr_levels"),
-)
-)
-else:
-    passfeatures_df = market_data
-
-# 2. Perform market health analysis
-market_health_results = {}
-if self.market_health_analyzer:
-    passself.logger.info("Performing market health analysis...")
-health_input = {
-"market_data": features_df,
-"current_price": current_price,
-}
-await self.market_health_analyzer.execute_market_health_analysis(
-health_input,
-)
-market_health_results = (
-self.market_health_analyzer.get_analysis_results()
-)
-
-# 3. Perform liquidation risk analysis
-liquidation_risk_results = {}
-if self.liquidation_risk_model and self.ml_confidence_predictor:
-    passself.logger.info("Performing liquidation risk analysis...")
-# Get ML predictions first
-ml_predictions = await self._get_ml_predictions(
-features_df,
-current_price,
-)
-if ml_predictions:
-    passliquidation_risk_results = (
-await self.liquidation_risk_model.calculate_liquidation_risk(
-ml_predictions,
-current_price,
-analysis_input.get("target_direction", "long"),
-)
-)
-
-# 4. Make trading decision using dual model system
-trading_decision = {}
-if self.dual_model_system:
-    passself.logger.info("Making trading decision with dual model system...")
-trading_decision = await self.dual_model_system.make_trading_decision(
-features_df,
-current_price,
-current_position,
-)
-
-# 5. Get enhanced predictions from supervisor if available
-enhanced_predictions = {}
-if self.enable_enhanced_predictions and hasattr(self, 'supervisor'):
-    passpassenhanced_predictions = await self.supervisor.get_analyst_predictions(
-features_df, regime_info, symbol, exchange, timeframe
-)
-
-# 6. Compile comprehensive analysis results
-self.analysis_results = {
-"timestamp": datetime.now().isoformat(),
-"market_health": market_health_results,
-"liquidation_risk": liquidation_risk_results,
-"trading_decision": trading_decision,
-"enhanced_predictions": enhanced_predictions,
-"features_shape": features_df.shape
-if features_df is not None
-else None,
-"current_price": current_price,
-"analysis_status": "completed",
-}
-
-# Store analysis results
-await self._store_analysis_results()
-
-self.is_analyzing = False
-self.logger.info("✅ Comprehensive analysis completed successfully")
-return True
-
-except Exception:
-    passpassself.is_analyzing = False
-self.print(failed("❌ Analysis failed: {e}"))
-return False
-
-@handle_errors(
-exceptions=(Exception,),
-default_return={},
-context="ML predictions",
-)
-async def _get_ml_predictions(...) -> ...:
-    """..."""
-    passif self.ml_confidence_predictor:
-    passreturn await self.ml_confidence_predictor.predict_confidence_table(
-features_df,
-current_price,
-)
-# Fallback predictions
-return {
-"confidence": 0.5,
-"increase_probabilities": {0.1: 0.3, 0.2: 0.2, 0.3: 0.1},
-"decrease_probabilities": {0.1: 0.3, 0.2: 0.2, 0.3: 0.1},
-}
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False,
-context="analysis inputs validation",
-)
-def _validate_analysis_inputs(...) -> ...:
-    """..."""
-    passtry:
-    pass# Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
-required_keys = ["market_data", "current_price"]
-for key in required_keys:
-    passif key not in analysis_input:
-    passself.logger.error("Missing required analysis input: %s", key)
-return False
-
-market_data = analysis_input.get("market_data")
-if not isinstance(market_data, pd.DataFrame) or market_data.empty:
-    passself.logger.error("Invalid market data provided")
-return False
-
-current_price = analysis_input.get("current_price")
-if not isinstance(current_price, (int, float)) or current_price <= 0:
-    passself.logger.error("Invalid current price provided")
-return False
-
-return True
-
-except Exception:
-    passpassself.logger.exception("Analysis inputs validation failed")
-return False
-
-@handle_errors(
-exceptions=(Exception,),
-default_return={},
-context="technical analysis",
-)
-async def _perform_technical_analysis(...) -> ...:
-    """..."""
-    passanalysis_input.get("market_data")
-analysis_input.get("current_price")
-
-# Perform technical analysis
-technical_results = {
-"price_analysis": self._perform_price_analysis(analysis_input),
-"volume_analysis": self._perform_volume_analysis(analysis_input),
-"indicator_analysis": self._perform_indicator_analysis(analysis_input),
-"pattern_analysis": self._perform_pattern_analysis(analysis_input),
-"volatility_analysis": self._perform_volatility_analysis(analysis_input),
-"correlation_analysis": self._perform_correlation_analysis(analysis_input),
-"drawdown_analysis": self._perform_drawdown_analysis(analysis_input),
-"risk_scoring": self._perform_risk_scoring(analysis_input),
-"timestamp": datetime.now().isoformat(),
-}
-
-self.logger.info("Technical analysis completed successfully")
-return technical_results
-
-@validate_data_quality(validation_level="WARNING")
-@with_tracing_span("price_analysis")
-def _perform_price_analysis(...) -> ...:
-    """..."""
-    passtry:
-    pass# Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
-market_data = analysis_input.get("market_data")
-current_price = analysis_input.get("current_price")
-
-# Simple price analysis
-return {
-"current_price": current_price,
-"price_change_1h": market_data["close"].pct_change(1).iloc[-1]
-if len(market_data) > 0
-else 0,
-"price_change_24h": market_data["close"].pct_change(24).iloc[-1]
-if len(market_data) > 24
-else 0,
-"price_trend": "bullish"
-if market_data["close"].iloc[-1] > market_data["close"].iloc[-20]
-else "bearish",
-}
-
-except Exception:
-    passpasspassself.print(error("Error performing price analysis: {e}"))
-return {}
-
-@validate_data_quality(validation_level="WARNING")
-@with_tracing_span("volume_analysis")
-def _perform_volume_analysis(...) -> ...:
-    """..."""
-    passtry:
-    pass# Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
-market_data = analysis_input.get("market_data")
-
-if "volume" not in market_data.columns:
-    passreturn {}
-
-return {
-"current_volume": market_data["volume"].iloc[-1],
-"volume_ma": market_data["volume"].rolling(window=20).mean().iloc[-1],
-"volume_ratio": market_data["volume"].iloc[-1]
-/ market_data["volume"].rolling(window=20).mean().iloc[-1],
-"volume_trend": "high"
-if market_data["volume"].iloc[-1]
-> market_data["volume"].rolling(window=20).mean().iloc[-1]
-else "low",
-}
-
-except Exception:
-    passpasspassself.print(error("Error performing volume analysis: {e}"))
-return {}
-
-@validate_data_quality(validation_level="WARNING")
-@with_tracing_span("indicator_analysis")
-def _perform_indicator_analysis(...) -> ...:
-    """..."""
-    passtry:
-    pass# Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
-market_data = analysis_input.get("market_data")
-
-return {
-"rsi": market_data.get("rsi", {}).iloc[-1]
-if "rsi" in market_data.columns
-else None,
-"macd": market_data.get("macd", {}).iloc[-1]
-if "macd" in market_data.columns
-else None,
-"bb_position": (
-market_data["close"].iloc[-1]
-- market_data.get("bb_lower", {}).iloc[-1]
-)
-/ (
-market_data.get("bb_upper", {}).iloc[-1]
-- market_data.get("bb_lower", {}).iloc[-1]
-)
-if all(col in market_data.columns for col in ["bb_upper", "bb_lower"])
-else None,
-}
-
-except Exception:
-    passpasspasspassself.print(error("Error performing indicator analysis: {e}"))
-return {}
-
-@validate_data_quality(validation_level="WARNING")
-@with_tracing_span("pattern_analysis")
-def _perform_pattern_analysis(...) -> ...:
-    """..."""
-    passtry:
-    pass# Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
-# Simple pattern analysis
-return {
-"patterns_detected": [],
-"pattern_confidence": 0.0,
-}
-
-except Exception:
-    passpassself.print(error("Error performing pattern analysis: {e}"))
-return {}
-
-@validate_data_quality(validation_level="WARNING")
-@with_tracing_span("volatility_analysis")
-def _perform_volatility_analysis(...) -> ...:
-    """..."""
-    passtry:
-    pass# Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
-market_data = analysis_input.get("market_data")
-
-returns = market_data["close"].pct_change()
-return {
-"current_volatility": returns.rolling(window=20).std().iloc[-1],
-"volatility_regime": "high"
-if returns.rolling(window=20).std().iloc[-1] > 0.04
-else "normal",
-"volatility_trend": "increasing"
-if returns.rolling(window=20).std().iloc[-1]
-> returns.rolling(window=50).std().iloc[-1]
-else "decreasing",
-}
-
-except Exception:
-    passpasspassself.print(error("Error performing volatility analysis: {e}"))
-return {}
-
-@validate_data_quality(validation_level="WARNING")
-@with_tracing_span("correlation_analysis")
-def _perform_correlation_analysis(...) -> ...:
-    """..."""
-    passtry:
-    pass# Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
-# Simple correlation analysis
-return {
-"price_volume_correlation": 0.0,
-"correlation_regime": "normal",
-}
-
-except Exception:
-    passpassself.print(error("Error performing correlation analysis: {e}"))
-return {}
-
-@validate_data_quality(validation_level="WARNING")
-@with_tracing_span("drawdown_analysis")
-def _perform_drawdown_analysis(...) -> ...:
-    """..."""
-    passtry:
-    pass# Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
-market_data = analysis_input.get("market_data")
-
-rolling_max = market_data["close"].rolling(window=20).max()
-drawdown = (market_data["close"] - rolling_max) / rolling_max
-return {
-"current_drawdown": drawdown.iloc[-1],
-"max_drawdown": drawdown.min(),
-"drawdown_regime": "high"
-if abs(drawdown.iloc[-1]) > 0.05
-else "normal",
-}
-
-except Exception:
-    passpasspassself.print(error("Error performing drawdown analysis: {e}"))
-return {}
-
-@validate_data_quality(validation_level="WARNING")
-@with_tracing_span("risk_scoring")
-def _perform_risk_scoring(...) -> ...:
-    """..."""
-    passtry:
-    pass# Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
-# Simple risk scoring
-return {
-"overall_risk_score": 0.5,
-"risk_level": "medium",
-"risk_factors": [],
-}
-
-except Exception:
-    passpassself.print(error("Error performing risk scoring: {e}"))
-return {}
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="ML predictions",
-)
-async def _perform_ml_predictions(...) -> ...:
-    """..."""
-    passtry:
-    pass# Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
-market_data = analysis_input.get("market_data")
-current_price = analysis_input.get("current_price")
-
-if self.ml_confidence_predictor:
-    passml_results = (
-await self.ml_confidence_predictor.predict_confidence_table(
-market_data,
-current_price,
-)
-)
-else:
-    pass# Fallback ML results
-ml_results = {
-"confidence": 0.5,
-"prediction": "neutral",
-"timestamp": datetime.now().isoformat(),
-}
-
-self.logger.info("ML predictions completed successfully")
-return ml_results
-
-except Exception:
-    passpassself.print(error("Error performing ML predictions: {e}"))
-return {}
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="SR analysis",
-)
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="regime classification",
-)
-async def _perform_regime_classification(...) -> ...:
-    """..."""
-    passtry:
-    pass# Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
-market_data = analysis_input.get("market_data")
-analysis_input.get("current_price")
-
-if self.regime_classifier:
-    pass# Use the new unified regime classifier for both regime and location
-regime, location, confidence, additional_info = (
-self.regime_classifier.predict_regime_and_location(market_data)
-)
-
-regime_results = {
-"regime": regime,
-"location": location,
-"confidence": confidence,
-"regime_confidence": additional_info.get(
-"regime_confidence",
-confidence,
-),
-"location_confidence": additional_info.get(
-"location_confidence",
-confidence,
-),
-"regime_duration": 0,  # Could be enhanced with duration tracking
-"timestamp": datetime.now().isoformat(),
-"additional_info": additional_info,
-}
-else:
-    pass# Fallback regime results
-regime_results = {
-"regime": "SIDEWAYS",
-"location": "OPEN_RANGE",
-"confidence": 0.5,
-"regime_confidence": 0.5,
-"location_confidence": 0.5,
-"regime_duration": 0,
-"timestamp": datetime.now().isoformat(),
-}
-
-self.logger.info(
-f"Regime and location classification completed: {regime_results['regime']} at {regime_results['location']}",
-)
-return regime_results
-
-except Exception:
-    passpassself.print(error("Error performing regime classification: {e}"))
-return {}
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="analysis results storage",
-)
-async def _store_analysis_results(...) -> ...:
-    """..."""
-    passtry:
-    pass# Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
-self.logger.info("Storing analysis results...")
-
-# Add to history
-self.analysis_history.append(self.analysis_results.copy())
-
-# Limit history size
-if len(self.analysis_history) > self.max_analysis_history:
-    passself.analysis_history.pop(0)
-
-self.logger.info("Analysis results stored successfully")
-except Exception:
-    passpassself.print(error("Error storing analysis results: {e}"))
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="analysis results getting",
-)
-def get_analysis_results(...) -> ...:
-    """..."""
-    passtry:
-    pass# Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
-if analysis_type is None:
-    passreturn self.analysis_results
-return self.analysis_results.get(analysis_type, {})
-
-except Exception:
-    passpassself.print(error("Error getting analysis results: {e}"))
-return {}
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="analysis history getting",
-)
-def get_analysis_history(...) -> ...:
-    """..."""
-    passtry:
-    pass# Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
-if limit is None:
-    passreturn self.analysis_history
-return self.analysis_history[-limit:]
-
-except Exception:
-    passpassself.print(error("Error getting analysis history: {e}"))
-return []
-
-def get_analysis_status(...) -> ...:
-    """..."""
-    passreturn {
-"is_analyzing": self.is_analyzing,
-"last_analysis": self.analysis_results.get("timestamp"),
-"analysis_count": len(self.analysis_history),
-"dual_model_system_initialized": self.dual_model_system is not None,
-"market_health_analyzer_initialized": self.market_health_analyzer
-is not None,
-"liquidation_risk_model_initialized": self.liquidation_risk_model
-is not None,
-"feature_engineering_orchestrator_initialized": self.feature_engineering_orchestrator
-is not None,
-}
-
-# Enhanced predictions are now handled by the supervisor
-# No local methods needed
-
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="analyst cleanup",
-)
-async def stop(...) -> ...:
-    """..."""
-    passtry:
-    pass# Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
-self.logger.info("Stopping Analyst...")
-self.is_analyzing = False
-
-# Stop sub-components
-if self.dual_model_system:
-    passawait self.dual_model_system.stop()
-
-if self.market_health_analyzer:
-    passawait self.market_health_analyzer.stop()
-
-if self.liquidation_risk_model:
-    passawait self.liquidation_risk_model.stop()
-
-self.analysis_results = {}
-self.analysis_history = []
-
-self.logger.info("✅ Analyst stopped successfully")
-except Exception:
-    passpassself.print(error("❌ Error stopping Analyst: {e}"))
-
-
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="analyst setup",
-)
-async def setup_analyst(...) -> ...:
-    """..."""
-    passtry:
-    pass# Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    passpasspasspasspasspasspass# Exception handling placeholder - implement specific error handling as needed
-if config is None:
-    passconfig = {}
-
-analyst = Analyst(config)
-
-if await analyst.initialize():
-    passsystem_logger.info("✅ Analyst setup completed successfully")
-return analyst
-system_logger.error("❌ Analyst setup failed")
-return None
-
-except Exception:
-    passpasssystem_logger.exception("❌ Error setting up Analyst")
-return None
+    """
+    Minimal, syntactically-correct Analyst facade to unblock imports and flows.
+    """
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.config = config
+        self.logger = system_logger.getChild("Analyst")
+
+        analyst_cfg = config.get("analyst", {})
+        self.analysis_interval: int = int(analyst_cfg.get("analysis_interval", 3600))
+        self.max_analysis_history: int = int(
+            analyst_cfg.get("max_analysis_history", 100)
+        )
+        self.enable_technical_analysis: bool = bool(
+            analyst_cfg.get("enable_technical_analysis", True)
+        )
+        self.enable_dual_model_system: bool = bool(
+            analyst_cfg.get("enable_dual_model_system", True)
+        )
+        self.enable_market_health_analysis: bool = bool(
+            analyst_cfg.get("enable_market_health_analysis", True)
+        )
+        self.enable_liquidation_risk_analysis: bool = bool(
+            analyst_cfg.get("enable_liquidation_risk_analysis", True)
+        )
+        self.enable_feature_engineering: bool = bool(
+            analyst_cfg.get("enable_feature_engineering", True)
+        )
+        self.enable_ml_predictions: bool = bool(
+            analyst_cfg.get("enable_ml_predictions", True)
+        )
+        self.enable_regime_classification: bool = bool(
+            analyst_cfg.get("enable_regime_classification", True)
+        )
+
+        self.is_analyzing: bool = False
+        self.analysis_results: dict[str, Any] = {}
+        self.analysis_history: list[dict[str, Any]] = []
+
+        self.dual_model_system: Optional[DualModelSystem] = None
+        self.market_health_analyzer: Optional[MarketHealthAnalyzer] = None
+        self.liquidation_risk_model: Optional[LiquidationRiskModel] = None
+        self.feature_engineering_orchestrator: Optional[
+            FeatureEngineeringOrchestrator
+        ] = None
+        self.regime_classifier: Optional[UnifiedRegimeClassifier] = None
+        self.ml_confidence_predictor: Any = None
+
+    @handle_errors(
+        exceptions=(Exception,), default_return=False, context="analyst initialization"
+    )
+    async def initialize(self) -> bool:
+        self.logger.info("Initializing Analyst...")
+        if not self._validate_configuration():
+            self.logger.error("Invalid configuration for analyst")
+            return False
+        await self._initialize_modules()
+        self.logger.info("Analyst initialization completed successfully")
+        return True
+
+    def _validate_configuration(self) -> bool:
+        try:
+            if self.analysis_interval <= 0:
+                self.logger.error("analysis_interval must be positive")
+                return False
+            return True
+        except Exception as e:
+            self.logger.exception(f"Configuration validation failed: {e}")
+            return False
+
+    async def _initialize_modules(self) -> None:
+        if self.enable_dual_model_system:
+            try:
+                from src.training.dual_model_system import \
+                    setup_dual_model_system
+
+                self.dual_model_system = await setup_dual_model_system(self.config)
+                if self.dual_model_system:
+                    self.logger.info("Dual Model System initialized successfully")
+            except Exception as e:
+                self.logger.exception(f"Error initializing Dual Model System: {e}")
+        if self.enable_market_health_analysis:
+            try:
+                from src.analyst.market_health_analyzer import \
+                    setup_market_health_analyzer
+
+                self.market_health_analyzer = await setup_market_health_analyzer(
+                    self.config
+                )
+                if self.market_health_analyzer:
+                    self.logger.info("Market Health Analyzer initialized successfully")
+            except Exception as e:
+                self.logger.exception(f"Error initializing Market Health Analyzer: {e}")
+        if self.enable_liquidation_risk_analysis:
+            try:
+                from src.analyst.liquidation_risk_model import \
+                    setup_liquidation_risk_model
+
+                self.liquidation_risk_model = await setup_liquidation_risk_model(
+                    self.config
+                )
+                if self.liquidation_risk_model:
+                    self.logger.info("Liquidation Risk Model initialized successfully")
+            except Exception as e:
+                self.logger.exception(f"Error initializing Liquidation Risk Model: {e}")
+        if self.enable_feature_engineering:
+            try:
+                self.feature_engineering_orchestrator = FeatureEngineeringOrchestrator()
+                await self.feature_engineering_orchestrator.initialize()
+            except Exception as e:
+                self.logger.exception(
+                    f"Error initializing Feature Engineering Orchestrator: {e}"
+                )
+        if self.enable_regime_classification:
+            try:
+                self.regime_classifier = UnifiedRegimeClassifier(self.config)
+                await self.regime_classifier.initialize()
+            except Exception as e:
+                self.logger.exception(
+                    f"Error initializing Unified Regime Classifier: {e}"
+                )
+
+    @handle_errors(exceptions=(Exception,), default_return=None, context="analyst run")
+    async def run_analysis(self, klines_df: pd.DataFrame) -> Optional[dict[str, Any]]:
+        if klines_df is None or klines_df.empty:
+            return None
+        self.is_analyzing = True
+        try:
+            result = {
+                "timestamp": datetime.utcnow().isoformat(),
+                "rows": int(len(klines_df)),
+            }
+            self.analysis_history.append(result)
+            self.analysis_history = self.analysis_history[-self.max_analysis_history :]
+            self.analysis_results = result
+            return result
+        finally:
+            self.is_analyzing = False

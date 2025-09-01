@@ -617,12 +617,9 @@ context="performance metrics",
 async def _perform_performance_metrics(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
-        """Perform performance metrics calculation."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-results = {}
+                """Perform performance metrics calculation."""
+        try:
+            results = {}
 
 # Sharpe ratio
 if self.performance_metrics_components.get("sharpe_ratio", False):
@@ -662,12 +659,9 @@ context="optimization metrics",
 async def _perform_optimization_metrics(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
-        """Perform optimization metrics calculation."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-results = {}
+                """Perform optimization metrics calculation."""
+        try:
+            results = {}
 
 # Kelly criterion
 if self.optimization_metrics_components.get("kelly_criterion", False):
@@ -696,19 +690,40 @@ return {}
 def _perform_realized_pnl(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
-        """Perform realized PnL calculation."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Simulate realized PnL calculation
-return {
-"realized_pnl_completed": True,
-"realized_pnl_value": 1250.50,
-"realized_pnl_percentage": 0.025,
-"realized_trades": 45,
-"training_time": datetime.now().isoformat(),
-}
+                """Perform realized PnL calculation."""
+        try:
+            # Calculate realized PnL from closed trades
+            trades = calculation_input.get("trades", [])
+            initial_capital = calculation_input.get("initial_capital", 10000.0)
+            
+            if not trades:
+                return {"error": "No trades data provided"}
+            
+            # Calculate realized PnL from closed trades
+            realized_pnl = 0.0
+            realized_trades = 0
+            
+            for trade in trades:
+                if trade.get("status") == "closed":
+                    entry_price = trade.get("entry_price", 0)
+                    exit_price = trade.get("exit_price", 0)
+                    quantity = trade.get("quantity", 0)
+                    
+                    if entry_price > 0 and exit_price > 0 and quantity > 0:
+                        trade_pnl = (exit_price - entry_price) * quantity
+                        realized_pnl += trade_pnl
+                        realized_trades += 1
+            
+            # Calculate percentage return
+            realized_pnl_percentage = realized_pnl / initial_capital if initial_capital > 0 else 0
+            
+            return {
+                "realized_pnl_completed": True,
+                "realized_pnl_value": realized_pnl,
+                "realized_pnl_percentage": realized_pnl_percentage,
+                "realized_trades": realized_trades,
+                "initial_capital": initial_capital
+            }
 except Exception as e:
             self.logger.error(f"Error performing realized PnL: {e}")
 return {}
@@ -716,37 +731,78 @@ return {}
 def _perform_unrealized_pnl(
 self, calculation_input: dict[str, Any]
 ) -> dict[str, Any]:
-        """Perform unrealized PnL calculation."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Simulate unrealized PnL calculation
-return {
-"unrealized_pnl_completed": True,
-"unrealized_pnl_value": 850.25,
-"unrealized_pnl_percentage": 0.017,
-"open_positions": 8,
-"training_time": datetime.now().isoformat(),
-}
+                """Perform unrealized PnL calculation."""
+        try:
+            # Calculate unrealized PnL from open positions
+            trades = calculation_input.get("trades", [])
+            current_prices = calculation_input.get("current_prices", {})
+            initial_capital = calculation_input.get("initial_capital", 10000.0)
+            
+            if not trades:
+                return {"error": "No trades data provided"}
+            
+            # Calculate unrealized PnL from open positions
+            unrealized_pnl = 0.0
+            open_positions = 0
+            
+            for trade in trades:
+                if trade.get("status") == "open":
+                    entry_price = trade.get("entry_price", 0)
+                    quantity = trade.get("quantity", 0)
+                    symbol = trade.get("symbol", "")
+                    
+                    if entry_price > 0 and quantity > 0 and symbol in current_prices:
+                        current_price = current_prices[symbol]
+                        trade_pnl = (current_price - entry_price) * quantity
+                        unrealized_pnl += trade_pnl
+                        open_positions += 1
+            
+            # Calculate percentage return
+            unrealized_pnl_percentage = unrealized_pnl / initial_capital if initial_capital > 0 else 0
+            
+            return {
+                "unrealized_pnl_completed": True,
+                "unrealized_pnl_value": unrealized_pnl,
+                "unrealized_pnl_percentage": unrealized_pnl_percentage,
+                "open_positions": open_positions,
+                "initial_capital": initial_capital
+            }
 except Exception as e:
             self.logger.error(f"Error performing unrealized PnL: {e}")
 return {}
 
 def _perform_total_pnl(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
-        """Perform total PnL calculation."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-# Simulate total PnL calculation
-return {
-"total_pnl_completed": True,
-"total_pnl_value": 2100.75,
-"total_pnl_percentage": 0.042,
-"total_trades": 53,
-"training_time": datetime.now().isoformat(),
-}
+                """Perform total PnL calculation."""
+        try:
+            # Calculate total PnL (realized + unrealized)
+            realized_result = self._perform_realized_pnl(calculation_input)
+            unrealized_result = self._perform_unrealized_pnl(calculation_input)
+            
+            if "error" in realized_result or "error" in unrealized_result:
+                return {"error": "Failed to calculate realized or unrealized PnL"}
+            
+            realized_pnl = realized_result.get("realized_pnl_value", 0)
+            unrealized_pnl = unrealized_result.get("unrealized_pnl_value", 0)
+            total_pnl = realized_pnl + unrealized_pnl
+            
+            realized_trades = realized_result.get("realized_trades", 0)
+            open_positions = unrealized_result.get("open_positions", 0)
+            total_trades = realized_trades + open_positions
+            
+            initial_capital = calculation_input.get("initial_capital", 10000.0)
+            total_pnl_percentage = total_pnl / initial_capital if initial_capital > 0 else 0
+            
+            return {
+                "total_pnl_completed": True,
+                "total_pnl_value": total_pnl,
+                "total_pnl_percentage": total_pnl_percentage,
+                "realized_pnl": realized_pnl,
+                "unrealized_pnl": unrealized_pnl,
+                "total_trades": total_trades,
+                "realized_trades": realized_trades,
+                "open_positions": open_positions,
+                "initial_capital": initial_capital
+            }
 except Exception as e:
             self.logger.error(f"Error performing total PnL: {e}")
 return {}

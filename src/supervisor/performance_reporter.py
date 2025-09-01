@@ -210,12 +210,9 @@ except Exception as e:
 return {}
 
 def _calculate_sharpe_ratio(self, returns: list[float]) -> float:
-        """Calculate Sharpe ratio."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if not returns:
+                """Calculate Sharpe ratio."""
+        try:
+            if not returns:
                 return 0.0
 
 mean_return = np.mean(returns)

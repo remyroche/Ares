@@ -20,7 +20,6 @@ from src.training.multi_output_probability_trainer import (
     MultiOutputProbabilityTrainer,
     ProbabilityTargetGenerator
 )
-from src.training.multi_output_model_trainer import (
     create_multi_output_trainer,
     MultiOutputModelConfig
 )

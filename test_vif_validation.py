@@ -9,7 +9,6 @@ NaN, infinite, and zero VIF values with comprehensive logging.
 import numpy as np
 import pandas as pd
 import logging
-from typing import Dict, Any
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')

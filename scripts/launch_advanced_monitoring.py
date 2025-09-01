@@ -6,13 +6,11 @@ This script demonstrates how to set up and use the advanced monitoring and track
 for the Ares trading bot.
 """
 
-from datetime import datetime
 from src.utils.logger import system_logger
 from typing import Any
 import asyncio
 import signal
 import sys
-import time
 
 from src.monitoring import MonitoringIntegrationManager
 from src.utils.warning_symbols import error, failed, initialization_error, warning

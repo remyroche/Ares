@@ -4,7 +4,6 @@ Direct execution of step2_feature_engineering without pipeline dependencies.
 """
 
 import asyncio
-import os
 import sys
 from pathlib import Path
 

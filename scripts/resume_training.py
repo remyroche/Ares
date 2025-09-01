@@ -19,7 +19,6 @@ from src.training.steps.step1_data_collection import run_step as run_data_collec
 from src.utils.logger import setup_logging, system_logger
 import asyncio
 import sys
-from typing import Any
 
 from src.config import CONFIG
 from src.database.sqlite_manager import SQLiteManager

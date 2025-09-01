@@ -14,7 +14,6 @@ from pathlib import Path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.comprehensive_file_validation import (
     ComprehensiveFileValidator,
     validate_step1_file,
     validate_step1_5_file,
@@ -84,7 +83,6 @@ def test_schema_validation():
 
     import pandas as pd
     import numpy as np
-    from datetime import datetime, timedelta
 
     # Create sample data for testing
     dates = pd.date_range(start='2023-01-01', end='2023-01-10', freq='1min')

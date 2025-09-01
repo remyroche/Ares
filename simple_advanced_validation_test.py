@@ -74,7 +74,6 @@ def test_class_definitions():
 
     try:
         # Test advanced ML validation classes
-        from src.utils.advanced_ml_validation import (
             StatisticalDataValidator,
             TimeSeriesValidator,
             FinancialDataValidator,
@@ -90,7 +89,6 @@ def test_class_definitions():
         print("✅ Advanced ML validation classes")
 
         # Test quality alert system classes
-        from src.utils.quality_alert_system import (
             QualityAlertManager,
             StreamingQualityValidator,
             QualityDashboard,
@@ -100,7 +98,6 @@ def test_class_definitions():
         print("✅ Quality alert system classes")
 
         # Test enhanced decorators
-        from src.utils.centralized_decorators import (
             validate_ml_data_quality_decorator,
             quality_gate,
             continuous_quality_monitoring,
@@ -124,7 +121,6 @@ def test_function_definitions():
 
     try:
         # Test convenience functions
-        from src.utils.advanced_ml_validation import (
             validate_ml_data_quality,
             detect_data_drift,
             calculate_data_quality_score
@@ -132,7 +128,6 @@ def test_function_definitions():
         print("✅ Advanced ML validation convenience functions")
 
         # Test alert system functions
-        from src.utils.quality_alert_system import (
             create_alert_config,
             setup_quality_monitoring
         )

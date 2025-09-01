@@ -14,9 +14,6 @@ This script automatically fixes common Python syntax errors:
 import os
 import re
 import ast
-import tokenize
-from pathlib import Path
-from typing import List, Tuple, Dict, Optional
 import logging
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")

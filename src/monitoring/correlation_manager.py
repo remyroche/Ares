@@ -6,7 +6,6 @@ Centralized correlation ID management and request/response correlation tracking
 for the Ares trading bot.
 """
 
-from __future__ import annotations
 
 from dataclasses import dataclass, asdict
 from datetime import datetime

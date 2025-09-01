@@ -15,7 +15,6 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 import lightgbm as lgb
 from sklearn.model_selection import train_test_split
-from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import log_loss, accuracy_score
 import logging
 import talib

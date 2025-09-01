@@ -9,7 +9,6 @@ the SR calculation logic from sr_breakout_predictor.py
 import asyncio
 import sys
 from pathlib import Path
-from typing import Any, Dict
 
 # Add project root to path
 project_root = Path(__file__).parent
@@ -28,7 +27,6 @@ def validate_imports():
 
         # Test 2: Import SRLevelsManager
         print("\n📦 Test 2: Importing SRLevelsManager")
-        from src.tactician.sr_levels_manager import SRLevelsManager, SRLevel
         print("✅ SRLevelsManager imported successfully")
 
         # Test 3: Import SR Trading Intelligence

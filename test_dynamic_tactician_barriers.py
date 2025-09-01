@@ -9,11 +9,8 @@ This script validates the dynamic implementation that:
 4. Provides adaptive barriers based on market conditions
 """
 
-import asyncio
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
-from typing import Dict, Any
 
 # Import the dynamic components
 from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator

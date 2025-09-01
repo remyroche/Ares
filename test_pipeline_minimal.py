@@ -6,7 +6,6 @@ This script tests the basic pipeline structure with mock data generation
 without requiring all the complex dependencies.
 """
 
-import asyncio
 import os
 import sys
 from pathlib import Path

@@ -11,12 +11,10 @@ This test validates the enhanced outlier handler and data schema validation incl
 """
 
 import sys
-import os
 import json
 import time
 from pathlib import Path
 from typing import Dict, Any, List
-import tempfile
 
 # Add project root to path
 project_root = Path(__file__).parent
@@ -24,9 +22,7 @@ sys.path.insert(0, str(project_root))
 
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
 
-from src.utils.enhanced_outlier_handler import enhanced_outlier_handler, OutlierSeverity, DataSchema
 from src.utils.logger import system_logger
 
 

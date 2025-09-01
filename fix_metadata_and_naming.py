@@ -5,7 +5,6 @@ Script to fix metadata fields and standardized naming for partially integrated s
 
 import re
 from pathlib import Path
-from typing import List, Dict, Any
 
 # Steps that need metadata and naming fixes
 STEPS_TO_FIX = [

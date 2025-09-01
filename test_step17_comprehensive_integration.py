@@ -14,8 +14,6 @@ import asyncio
 import logging
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
-from pathlib import Path
 import json
 
 # Set up logging
@@ -24,7 +22,6 @@ logger = logging.getLogger(__name__)
 
 # Import the step17 components
 try:
-    from src.training.steps.step17_final_parameters_optimization import (
         Step17ProbabilisticBayesianOptimization,
         create_step17_probabilistic_bayesian_optimization,
         ComprehensiveParameterIntegration,

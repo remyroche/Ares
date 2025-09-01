@@ -7,7 +7,6 @@ without requiring external dependencies like pandas or numpy.
 """
 
 import asyncio
-import json
 import sys
 import time
 from datetime import datetime

@@ -11,7 +11,6 @@ This module provides standardized utilities for the data pipeline including:
 - Metadata standards
 """
 
-import os
 import sys
 import logging
 from pathlib import Path

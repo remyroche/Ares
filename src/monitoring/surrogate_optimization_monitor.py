@@ -10,14 +10,12 @@ This module provides comprehensive monitoring capabilities for surrogate optimiz
 - Dashboard integration
 """
 
-import asyncio
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 from typing import Dict, Any, List, Optional, Tuple
 import time
-import json
 import os
 from datetime import datetime, timedelta
 from dataclasses import dataclass, asdict
@@ -26,7 +24,6 @@ import queue
 
 # Utilities
 from src.utils.logger import system_logger
-from src.utils.decorators import handle_errors
 
 
 @dataclass

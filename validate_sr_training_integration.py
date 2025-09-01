@@ -7,7 +7,6 @@ This script checks syntax and method calls without requiring external dependenci
 import ast
 import sys
 from pathlib import Path
-from typing import Dict, List, Set
 
 def check_file_syntax(file_path: str) -> bool:
     """Check if a Python file has valid syntax."""

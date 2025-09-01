@@ -7,8 +7,6 @@ with confidence to reach upper barriers (50%/25%) before hitting lower barriers 
 """
 
 import sys
-import os
-import yaml
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta

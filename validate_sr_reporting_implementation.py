@@ -6,7 +6,6 @@ Checks for comprehensive reporting capabilities and integration.
 
 import ast
 import re
-from pathlib import Path
 
 def check_file_syntax(file_path: str) -> bool:
     """Check if a Python file has valid syntax."""

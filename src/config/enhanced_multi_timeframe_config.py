@@ -6,7 +6,6 @@ optimizer that uses optimized lookback periods from the matrix optimization syst
 """
 
 from typing import Dict, List, Any
-from dataclasses import dataclass
 
 def get_enhanced_multi_timeframe_config() -> Dict[str, Any]:
     """Get configuration for enhanced multi-timeframe optimization."""

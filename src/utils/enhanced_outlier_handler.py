@@ -13,7 +13,6 @@ import pandas as pd
 import numpy as np
 from typing import Any, Dict, List, Optional, Union, Tuple, Set
 from datetime import datetime, timedelta
-from pathlib import Path
 import logging
 from enum import Enum
 
@@ -524,7 +523,6 @@ class EnhancedOutlierHandler:
         outliers = []
 
         try:
-            from scipy.stats import chi2
 
             # For single column, use modified Z-score approach
             median = data[column].median()

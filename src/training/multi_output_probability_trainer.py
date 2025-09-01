@@ -9,13 +9,11 @@ import numpy as np
 import pandas as pd
 from typing import Dict, Any, Union, Optional, Tuple, List
 from datetime import datetime
-import logging
 from sklearn.utils.class_weight import compute_class_weight
 from sklearn.calibration import CalibratedClassifierCV
 from scipy.optimize import minimize
 import lightgbm as lgb
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LogisticRegression
 
 # Import advanced neural network models
 from .advanced_neural_models import (

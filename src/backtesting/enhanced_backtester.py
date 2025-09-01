@@ -6,7 +6,6 @@ This module provides enhanced backtesting capabilities with detailed reporting
 that matches the paper trading metrics for consistency across all trading modes.
 """
 
-from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, TYPE_CHECKING

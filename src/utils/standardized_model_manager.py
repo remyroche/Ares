@@ -8,9 +8,7 @@ This module provides centralized model management functionality including:
 - Model lifecycle management
 """
 
-import os
 import json
-import pickle
 import joblib
 from datetime import datetime
 from pathlib import Path

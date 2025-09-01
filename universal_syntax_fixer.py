@@ -18,7 +18,6 @@ import os
 import re
 import sys
 import glob
-from pathlib import Path
 
 def fix_import_statements(content):
     """Fix malformed import statements."""

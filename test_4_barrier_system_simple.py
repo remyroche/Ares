@@ -6,7 +6,6 @@ This script tests the core logic of the 4-barrier system without external depend
 """
 
 import sys
-import os
 from pathlib import Path
 
 # Add src to path

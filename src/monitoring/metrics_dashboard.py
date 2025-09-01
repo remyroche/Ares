@@ -5,7 +5,6 @@ Real-time Metrics Dashboard
 Provides real-time metrics visualization scaffolding for the Ares trading bot.
 """
 
-from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass

@@ -1,6 +1,5 @@
 # src/analyst/meta_label_relevance.py
 
-from __future__ import annotations
 
 from typing import Any
 

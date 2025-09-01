@@ -1,6 +1,5 @@
 # src/transition/event_window_dataset.py
 
-from __future__ import annotations
 from src.transition.state_sequence_builder import StateSequenceBuilder
 from src.utils.logger import system_logger
 from typing import Any

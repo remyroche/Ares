@@ -7,19 +7,13 @@ This module analyzes the relevance of different timeframes for high leverage tra
 and optimizes the ensemble configuration accordingly.
 """
 
-import asyncio
 import json
-import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Optional
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import cross_val_score
-from sklearn.metrics import mean_squared_error, mean_absolute_error
-import shap
 
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors

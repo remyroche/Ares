@@ -11,9 +11,6 @@ import asyncio
 import logging
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
-from pathlib import Path
-import json
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -21,7 +18,6 @@ logger = logging.getLogger(__name__)
 
 # Import the regime-specific optimizer
 try:
-    from src.training.steps.step17_final_parameters_optimization import (
         RegimeSpecificTripleBarrierOptimizer,
         create_regime_specific_triple_barrier_optimizer
     )

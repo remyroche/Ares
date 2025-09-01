@@ -5,7 +5,6 @@ Error Detection and Alerting System (minimal scaffold)
 Provides scaffolding for error and anomaly detection.
 """
 
-from __future__ import annotations
 
 from enum import Enum
 from typing import Any, Dict

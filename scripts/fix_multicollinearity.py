@@ -10,7 +10,6 @@ Usage:
     python scripts/fix_multicollinearity.py
 """
 
-from __future__ import annotations
 
 from typing import Any, Dict, List
 from src.utils.error_handler import handle_errors

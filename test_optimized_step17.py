@@ -15,8 +15,6 @@ import asyncio
 import logging
 import numpy as np
 import pandas as pd
-from datetime import datetime, timedelta
-from pathlib import Path
 import json
 
 # Set up logging
@@ -25,7 +23,6 @@ logger = logging.getLogger(__name__)
 
 # Import the optimized step17 implementation
 try:
-    from src.training.steps.step17_final_parameters_optimization import (
         HierarchicalOptimizer,
         IntelligentParameterPruner,
         AdaptiveTrialAllocator,

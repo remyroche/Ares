@@ -5,7 +5,6 @@ Regime and Support/Resistance Tracker (minimal scaffold)
 Scaffolding for regime detection and S/R tracking.
 """
 
-from __future__ import annotations
 
 from enum import Enum
 from typing import Any, Dict

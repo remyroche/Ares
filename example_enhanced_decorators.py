@@ -126,7 +126,6 @@ def example_configuration_management():
     print("\n⚙️ Configuration Management")
     print("=" * 50)
 
-    from src.utils.decorator_config import global_config, ValidationMode, PerformanceMode
     from src.utils.decorator_compatibility import (
         get_decorator_config,
         set_decorator_config

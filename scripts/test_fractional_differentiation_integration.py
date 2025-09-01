@@ -3,7 +3,6 @@
 """Test fractional differentiation integration into feature engineering pipeline."""
 
 import sys
-import os
 from pathlib import Path
 import json
 from datetime import datetime

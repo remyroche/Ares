@@ -9,13 +9,10 @@ It shows various ways to integrate PyTorch models and functionality.
 import sys
 import os
 import numpy as np
-import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
-import matplotlib.pyplot as plt
-import seaborn as sns
 
 # Add the src directory to the path so we can import the existing modules
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
@@ -44,7 +41,6 @@ def test_existing_models():
 
     try:
         # Import the existing models
-        from src.training.steps.step6_hmm_based_training import (
             CNNModel, TCNModel, TransformerModel, TemporalBlock
         )
 

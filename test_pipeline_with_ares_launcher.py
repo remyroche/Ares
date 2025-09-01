@@ -9,13 +9,10 @@ Usage:
     python test_pipeline_with_ares_launcher.py
 """
 
-import asyncio
 import os
 import sys
-import time
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List
 
 import numpy as np
 import pandas as pd
@@ -28,7 +25,6 @@ sys.path.insert(0, str(project_root))
 try:
     from ares_launcher import AresLauncher
     from src.utils.logger import system_logger, setup_logging
-    from src.config import CONFIG
 except ImportError as e:
     print(f"❌ Import error: {e}")
     print("Please ensure you're running this from the project root directory")

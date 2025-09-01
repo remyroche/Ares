@@ -5,7 +5,6 @@ Trade Conditions Monitor (minimal scaffold)
 Scaffolding for monitoring trade conditions and decisions.
 """
 
-from __future__ import annotations
 
 from enum import Enum
 from typing import Any, Dict

@@ -18,7 +18,6 @@ DEFAULT_COMPUTATION_TIME_THRESHOLD: Final[float] = 0.1  # 100ms
 DEFAULT_LOOKBACK_DAYS: Final[int] = 730  # 2 years default lookback window
 
 # Import training mode constants from centralized configuration
-from .training_modes import (
     FULL_TRAINING_LOOKBACK_DAYS,
     BLANK_TRAINING_LOOKBACK_DAYS,
     SHORT_BLANK_LOOKBACK_DAYS,

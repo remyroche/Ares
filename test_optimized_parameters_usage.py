@@ -5,8 +5,6 @@ are properly used by sr_breakout_predictor.py
 """
 
 import asyncio
-import json
-import os
 import sys
 from pathlib import Path
 from typing import Dict, Any
@@ -21,7 +19,6 @@ from datetime import datetime, timedelta
 # Import components to test
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor, ensure_optimized_sr_config
 from src.tactician.sr_detection_optimization import SRDetectionOptimizer
-from src.utils.logger import system_logger
 
 
 def generate_test_market_data(days: int = 100) -> pd.DataFrame:

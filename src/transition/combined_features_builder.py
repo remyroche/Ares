@@ -1,6 +1,5 @@
 # src/transition/combined_features_builder.py
 
-from __future__ import annotations
 from src.utils.logger import system_logger
 from typing import Any
 from dataclasses import dataclass

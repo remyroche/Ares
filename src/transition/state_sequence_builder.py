@@ -1,6 +1,5 @@
 # src/transition/state_sequence_builder.py
 
-from __future__ import annotations
 from sklearn.preprocessing import StandardScaler
 import asyncio
 from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier

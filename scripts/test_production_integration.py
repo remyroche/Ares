@@ -5,7 +5,6 @@ Tests the integration of fractional feature selector, monitoring system, and com
 """
 
 import sys
-import os
 from pathlib import Path
 import json
 from datetime import datetime

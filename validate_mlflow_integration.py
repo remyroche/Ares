@@ -10,7 +10,6 @@ This script validates:
 5. Standardized naming patterns
 """
 
-import os
 import re
 from pathlib import Path
 from typing import Dict, List, Any, Tuple

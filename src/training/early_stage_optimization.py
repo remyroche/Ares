@@ -12,12 +12,10 @@ These optimizations happen early in the pipeline to ensure:
 - Optimal foundation for ML model training
 """
 
-import asyncio
 import logging
 import numpy as np
 import pandas as pd
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple, Union
 import json
 import warnings

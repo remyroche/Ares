@@ -3,7 +3,6 @@
 """Optimize fractional labeling parameters for best performance."""
 
 import sys
-import os
 from pathlib import Path
 import json
 import itertools

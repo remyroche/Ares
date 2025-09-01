@@ -1,6 +1,5 @@
 # src/transition/baseline_rf.py
 
-from __future__ import annotations
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report
 from src.utils.logger import system_logger

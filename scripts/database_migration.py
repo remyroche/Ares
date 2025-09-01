@@ -18,7 +18,6 @@ Usage:
     python scripts/database_migration.py cleanup [db_path]
 """
 
-from __future__ import annotations
 
 import asyncio
 import hashlib

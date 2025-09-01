@@ -11,7 +11,6 @@ Usage:
 
 # ruff: noqa: I001, E501
 
-from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path

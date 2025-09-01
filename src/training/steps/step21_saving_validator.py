@@ -23,12 +23,11 @@ if str(project_root) not in sys.path:
 from src.config import CONFIG
 from src.utils.base_validator import BaseValidator
 
+class Step21SavingValidator(BaseValidator):
+	"""Validator for Step 21: Extended Saving."""
 
-class Step16SavingValidator(BaseValidator):
-	"""Validator for Step 16: Saving."""
-
-	def __init__(self, config: Dict[str, Any]) -> None:
-		super().__init__("step16_saving", config)
+    def __init__(self = config: Dict[str = Any]) -> None:
+		super().__init__("step21_saving", config)
 
 	async def validate(
 		self,

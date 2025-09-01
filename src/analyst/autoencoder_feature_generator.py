@@ -20,25 +20,15 @@ try:
     from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
     from tensorflow.keras import Model, layers
     from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
-except Exception as e:
-    # Handle missing dependencies gracefully
-import numpy as np
-import optuna
-import pandas as pd
-import tensorflow as tf
-from optuna.integration import TFKerasPruningCallback
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import MinMaxScaler, RobustScaler, StandardScaler
-from tensorflow.keras import Model, layers
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 
-DEPENDENCIES_AVAILABLE = True
+    DEPENDENCIES_AVAILABLE = True
 except ImportError as e:
+    # Handle missing dependencies gracefully
     DEPENDENCIES_AVAILABLE = False
-MISSING_DEPENDENCY = str(e)
-print(f" Missing dependency: {MISSING_DEPENDENCY}")
-print("📦 Please install required packages:")
-print("   pip install numpy pandas scikit-learn tensorflow optuna shap pyyaml")
+    MISSING_DEPENDENCY = str(e)
+    print(f" Missing dependency: {MISSING_DEPENDENCY}")
+    print("📦 Please install required packages:")
+    print("   pip install numpy pandas scikit-learn tensorflow optuna shap pyyaml")
 
 # Set up comprehensive logging
 from src.utils.logger import setup_logging
@@ -53,11 +43,10 @@ import sys
 sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
-handle_errors,
-)
+from src.utils.error_handling import handle_errors
 from src.utils.warning_symbols import (
-error,
-warning,
+    error,
+    warning,
 )
 from src.utils.decorators import (
 comprehensive_data_validation,
@@ -69,23 +58,20 @@ with_tracing_span,
 class AutoencoderConfig:
     """Configuration manager for autoencoder feature generator."""
 
-def __init__(self, config_path: str | None = None):
-    def __init__(self, config_path: str | None = None):
-    def __init__(self, config_path: str | None = None):
     def __init__(self, config_path: str | None = None):
         if not DEPENDENCIES_AVAILABLE:
             msg = f"Required dependencies not available: {MISSING_DEPENDENCY}"
-raise ImportError(
-msg,
-)
+            raise ImportError(
+                msg,
+            )
 
-# Initialize logger first
-self.logger = system_logger.getChild("AutoencoderConfig")
+        # Initialize logger first
+        self.logger = system_logger.getChild("AutoencoderConfig")
 
-self.config_path = config_path or "src/analyst/autoencoder_config.yaml"
-self.config = self._load_config()
+        self.config_path = config_path or "src/analyst/autoencoder_config.yaml"
+        self.config = self._load_config()
 
-def _load_config(self) -> dict[str, Any]:
+    def _load_config(self) -> dict[str, Any]:
         """Load configuration from YAML file."""
         try:
             # Validate config path
@@ -95,84 +81,83 @@ def _load_config(self) -> dict[str, Any]:
         except Exception as e:
             self.logger.error(f"Error validating config path: {str(e)}")
             return self._get_default_config()
-        with open(self.config_path) as file:
+        
+        try:
+            with open(self.config_path) as file:
                 config = yaml.safe_load(file)
-self.logger.info(
-f"📋 Configuration loaded successfully from {self.config_path}"
-)
-self.logger.info(f"📊 Configuration sections: {list(config.keys())}")
-return config
-except Exception:
+            self.logger.info(
+                f"📋 Configuration loaded successfully from {self.config_path}"
+            )
+            self.logger.info(f"📊 Configuration sections: {list(config.keys())}")
+            return config
+        except Exception:
             self.logger.exception(
-"⚠️ Error loading config file, using default configuration"
-)
-return self._get_default_config()
+                "⚠️ Error loading config file, using default configuration"
+            )
+            return self._get_default_config()
 
-def _get_default_config(self) -> dict[str, Any]:
+    def _get_default_config(self) -> dict[str, Any]:
         """Get default configuration if file loading fails."""
-# This default config is a fallback and should be customized in the YAML file.
-default_config = {
-"preprocessing": {
-"scaler_type": "robust",
-"outlier_threshold": 3.0,
-"missing_value_strategy": "forward_fill",
-"iqr_multiplier": 3.0,
-"use_price_returns": True,  # NEW: Use price differences instead of absolute prices
-"price_return_method": "pct_change",  # NEW: Method for calculating returns
-"primary_price_feature": "close",
-"primary_volume_feature": "volume",
-"enable_feature_selection": True,
-},
-"sequence": {"timesteps": 10, "overlap": 0.5},
-"autoencoder": {
-"epochs": 100,
-"early_stopping_patience": 10,
-"reduce_lr_patience": 5,
-"min_lr": 1e-6,
-},
-"training": {"n_trials": 50, "n_jobs": 1, "pruning_enabled": True},
-"feature_filtering": {
-"n_estimators": 100,
-"max_depth": 10,
-"importance_threshold": 0.99,
-"shap_imbalance_threshold": 100.0,  # Threshold for extreme imbalance in SHAP computation
-"enable_shap_imbalance_handling": True,  # Enable extreme imbalance handling for SHAP
-},
-"feature_analysis": {
-"enable_analysis": True,  # Enable feature importance analysis
-"high_correlation_threshold": 0.7,  # Threshold for high correlation features
-"low_correlation_threshold": 0.1,  # Threshold for low correlation features
-"stability_window": 100,  # Window size for stability analysis
-"stability_threshold": 0.7,  # Threshold for stable features
-"regime_analysis_enabled": True,  # Enable regime-specific analysis
-"comparison_with_original": True,  # Compare with original features
-},
-"output": {"output_dir": "models/autoencoder_features"},
-}
-return default_config
+        # This default config is a fallback and should be customized in the YAML file.
+        default_config = {
+            "preprocessing": {
+                "scaler_type": "robust",
+                "outlier_threshold": 3.0,
+                "missing_value_strategy": "forward_fill",
+                "iqr_multiplier": 3.0,
+                "use_price_returns": True,  # NEW: Use price differences instead of absolute prices
+                "price_return_method": "pct_change",  # NEW: Method for calculating returns
+                "primary_price_feature": "close",
+                "primary_volume_feature": "volume",
+                "enable_feature_selection": True,
+            },
+            "sequence": {"timesteps": 10, "overlap": 0.5},
+            "autoencoder": {
+                "epochs": 100,
+                "early_stopping_patience": 10,
+                "reduce_lr_patience": 5,
+                "min_lr": 1e-6,
+            },
+            "training": {"n_trials": 50, "n_jobs": 1, "pruning_enabled": True},
+            "feature_filtering": {
+                "n_estimators": 100,
+                "max_depth": 10,
+                "importance_threshold": 0.99,
+                "shap_imbalance_threshold": 100.0,  # Threshold for extreme imbalance in SHAP computation
+                "enable_shap_imbalance_handling": True,  # Enable extreme imbalance handling for SHAP
+            },
+            "feature_analysis": {
+                "enable_analysis": True,  # Enable feature importance analysis
+                "high_correlation_threshold": 0.7,  # Threshold for high correlation features
+                "low_correlation_threshold": 0.1,  # Threshold for low correlation features
+                "stability_window": 100,  # Window size for stability analysis
+                "stability_threshold": 0.7,  # Threshold for stable features
+                "regime_analysis_enabled": True,  # Enable regime-specific analysis
+                "comparison_with_original": True,  # Compare with original features
+            },
+            "output": {"output_dir": "models/autoencoder_features"},
+        }
+        return default_config
 
-def get(self, key: str, default: Any = None) -> Any:
+    def get(self, key: str, default: Any = None) -> Any:
         """Get configuration value using dot notation."""
-keys = key.split(".")
-value = self.config
-for k in keys:
+        keys = key.split(".")
+        value = self.config
+        for k in keys:
             if isinstance(value, dict) and k in value:
                 value = value[k]
-else:
+            else:
                 return default
-return value
+        return value
 
-def save_config(self, output_path: str) -> None:
+    def save_config(self, output_path: str) -> None:
         """Save current configuration to file."""
-try:
-    # Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
-os.makedirs(os.path.dirname(output_path), exist_ok=True)
-with open(output_path, "w") as file:
+        try:
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            with open(output_path, "w") as file:
                 yaml.dump(self.config, file, default_flow_style=False)
-self.logger.info(f"📋 Configuration saved successfully to {output_path}")
-except Exception:
+            self.logger.info(f"📋 Configuration saved successfully to {output_path}")
+        except Exception:
             self.logger.exception("⚠️ Error saving config file")
 
 
@@ -812,778 +797,753 @@ class FeatureFilter:
                         X_sample = X.iloc[sample_indices]
                         y_sample = y[sample_indices]
                         self.logger.info(f"📊 Random sample size: {len(X_sample)} rows")
-else:
+                else:
                     self.logger.warning(
-f"⚠️ Insufficient samples per class for stratification (min: {min_class_count})"
-)
-self.logger.info("🔄 Using random sampling...")
-sample_indices = np.random.choice(
-len(X), sample_size, replace=False
-)
-X_sample = X.iloc[sample_indices]
-y_sample = y[sample_indices]
-self.logger.info(f"📊 Random sample size: {len(X_sample)} rows")
-else:
+                        f"⚠️ Insufficient samples per class for stratification (min: {min_class_count})"
+                    )
+                    self.logger.info("🔄 Using random sampling...")
+                    sample_indices = np.random.choice(
+                        len(X), sample_size, replace=False
+                    )
+                    X_sample = X.iloc[sample_indices]
+                    y_sample = y[sample_indices]
+                    self.logger.info(f"📊 Random sample size: {len(X_sample)} rows")
+            else:
                 X_sample = X
-y_sample = y
-self.logger.info("📊 Using full dataset (no sampling needed)")
+                y_sample = y
+                self.logger.info("📊 Using full dataset (no sampling needed)")
 
-# EFFICIENCY OPTIMIZATION 3: Feature reduction before SHAP
-enable_prefiltering = self.config.get(
-"feature_filtering.enable_feature_prefiltering", True
-)
-max_features_for_shap = self.config.get(
-"feature_filtering.max_features_for_shap", 50
-)
+            # EFFICIENCY OPTIMIZATION 3: Feature reduction before SHAP
+            enable_prefiltering = self.config.get(
+                "feature_filtering.enable_feature_prefiltering", True
+            )
+            max_features_for_shap = self.config.get(
+                "feature_filtering.max_features_for_shap", 50
+            )
 
-if enable_prefiltering and len(X_sample.columns) > max_features_for_shap:
+            if enable_prefiltering and len(X_sample.columns) > max_features_for_shap:
                 self.logger.info(
-f"📊 High feature count ({len(X_sample.columns)}), applying pre-filtering"
-)
-self.logger.info(f"📊 Target feature count: {max_features_for_shap}")
+                    f"📊 High feature count ({len(X_sample.columns)}), applying pre-filtering"
+                )
+                self.logger.info(f"📊 Target feature count: {max_features_for_shap}")
 
-# Use Random Forest feature importance for initial filtering
-pre_filter_rf = RandomForestClassifier(
-n_estimators=50,  # Fewer trees for speed
-max_depth=8,  # Shallow trees for speed
-random_state=42,
-n_jobs=-1,
-)
-pre_filter_rf.fit(X_sample, y_sample)
+                # Use Random Forest feature importance for initial filtering
+                pre_filter_rf = RandomForestClassifier(
+                    n_estimators=50,  # Fewer trees for speed
+                    max_depth=8,  # Shallow trees for speed
+                    random_state=42,
+                    n_jobs=-1,
+                )
+                pre_filter_rf.fit(X_sample, y_sample)
 
-# Keep top features based on importance
-feature_importance = pre_filter_rf.feature_importances_
-top_feature_indices = np.argsort(feature_importance)[
--max_features_for_shap:
+                # Keep top features based on importance
+                feature_importance = pre_filter_rf.feature_importances_
+                top_feature_indices = np.argsort(feature_importance)[
+                    -max_features_for_shap:
                 ]  # Keep top N features
-X_sample = X_sample.iloc[:, top_feature_indices]
+                X_sample = X_sample.iloc[:, top_feature_indices]
 
-self.logger.info(
-f"📊 Pre-filtered to top {len(X_sample.columns)} features"
-)
-self.logger.info(f"📊 Selected features: {list(X_sample.columns)}")
-else:
                 self.logger.info(
-f"📊 No pre-filtering needed (features: {len(X_sample.columns)}, max: {max_features_for_shap})"
-)
+                    f"📊 Pre-filtered to top {len(X_sample.columns)} features"
+                )
+                self.logger.info(f"📊 Selected features: {list(X_sample.columns)}")
+            else:
+                self.logger.info(
+                    f"📊 No pre-filtering needed (features: {len(X_sample.columns)}, max: {max_features_for_shap})"
+                )
 
-# EFFICIENCY OPTIMIZATION 4: Optimized Random Forest for SHAP
-# Use configurable parameters for SHAP model optimization
-shap_n_estimators = self.config.get(
-"feature_filtering.shap_n_estimators", 50
-)
-shap_max_depth = self.config.get("feature_filtering.shap_max_depth", 8)
-shap_min_samples_split = self.config.get(
-"feature_filtering.shap_min_samples_split", 10
-)
-shap_min_samples_leaf = self.config.get(
-"feature_filtering.shap_min_samples_leaf", 5
-)
+            # EFFICIENCY OPTIMIZATION 4: Optimized Random Forest for SHAP
+            # Use configurable parameters for SHAP model optimization
+            shap_n_estimators = self.config.get(
+                "feature_filtering.shap_n_estimators", 50
+            )
+            shap_max_depth = self.config.get("feature_filtering.shap_max_depth", 8)
+            shap_min_samples_split = self.config.get(
+                "feature_filtering.shap_min_samples_split", 10
+            )
+            shap_min_samples_leaf = self.config.get(
+                "feature_filtering.shap_min_samples_leaf", 5
+            )
 
-shap_rf_model = RandomForestClassifier(
-n_estimators=shap_n_estimators,
-max_depth=shap_max_depth,
-min_samples_split=shap_min_samples_split,
-min_samples_leaf=shap_min_samples_leaf,
-random_state=42,
-n_jobs=-1,
-)
+            shap_rf_model = RandomForestClassifier(
+                n_estimators=shap_n_estimators,
+                max_depth=shap_max_depth,
+                min_samples_split=shap_min_samples_split,
+                min_samples_leaf=shap_min_samples_leaf,
+                random_state=42,
+                n_jobs=-1,
+            )
 
-self.logger.info(
-f"🌲 SHAP RF Parameters: n_estimators={shap_n_estimators}, max_depth={shap_max_depth}"
-)
+            self.logger.info(
+                f"🌲 SHAP RF Parameters: n_estimators={shap_n_estimators}, max_depth={shap_max_depth}"
+            )
 
-self.logger.info("🌲 Training optimized Random Forest for SHAP...")
-shap_rf_model.fit(X_sample, y_sample)
-self.logger.info(
-f"✅ Optimized RF training completed (score: {shap_rf_model.score(X_sample, y_sample):.4f})"
-)
+            self.logger.info("🌲 Training optimized Random Forest for SHAP...")
+            shap_rf_model.fit(X_sample, y_sample)
+            self.logger.info(
+                f"✅ Optimized RF training completed (score: {shap_rf_model.score(X_sample, y_sample):.4f})"
+            )
 
-# EFFICIENCY OPTIMIZATION 5: Create explainer with optimized settings
-explainer = TreeExplainer(
-shap_rf_model,
-feature_names=X_sample.columns.tolist(),
-model_output="raw",  # Use raw output for compatibility
-)
-self.logger.info("🔧 Optimized SHAP explainer created successfully")
+            # EFFICIENCY OPTIMIZATION 5: Create explainer with optimized settings
+            explainer = TreeExplainer(
+                shap_rf_model,
+                feature_names=X_sample.columns.tolist(),
+                model_output="raw",  # Use raw output for compatibility
+            )
+            self.logger.info("🔧 Optimized SHAP explainer created successfully")
 
-# Add timeout protection for SHAP computation
-import signal
-import platform
+            # Add timeout protection for SHAP computation
+            import signal
+            import platform
 
-# EFFICIENCY OPTIMIZATION 6: Flexible timeout based on dataset size
-# Calculate timeout based on sample size: 1 minute per 5000 samples
-base_timeout_per_5000 = self.config.get(
-"feature_filtering.timeout_per_5000_samples", 60
-)  # 1 minute per 5000
-calculated_timeout = int(len(X_sample) / 5000 * base_timeout_per_5000)
+            # EFFICIENCY OPTIMIZATION 6: Flexible timeout based on dataset size
+            # Calculate timeout based on sample size: 1 minute per 5000 samples
+            base_timeout_per_5000 = self.config.get(
+                "feature_filtering.timeout_per_5000_samples", 60
+            )  # 1 minute per 5000
+            calculated_timeout = int(len(X_sample) / 5000 * base_timeout_per_5000)
 
-# More flexible bounds: Min 30s, Max 15 minutes (increased from 5min)
-timeout_seconds = max(30, min(900, calculated_timeout))
+            # More flexible bounds: Min 30s, Max 15 minutes (increased from 5min)
+            timeout_seconds = max(30, min(900, calculated_timeout))
 
-self.logger.info("⏱️ Flexible timeout calculation:")
-self.logger.info(f"   📊 Sample size: {len(X_sample)} rows")
-self.logger.info(
-f"   📊 Base rate: {base_timeout_per_5000}s per 5000 samples"
-)
-self.logger.info(f"   📊 Calculated timeout: {calculated_timeout}s")
-self.logger.info(
-f"   ⏱️ Final timeout: {timeout_seconds}s (bounded: 30s-900s)"
-)
+            self.logger.info("⏱️ Flexible timeout calculation:")
+            self.logger.info(f"   📊 Sample size: {len(X_sample)} rows")
+            self.logger.info(
+                f"   📊 Base rate: {base_timeout_per_5000}s per 5000 samples"
+            )
+            self.logger.info(f"   📊 Calculated timeout: {calculated_timeout}s")
+            self.logger.info(
+                f"   ⏱️ Final timeout: {timeout_seconds}s (bounded: 30s-900s)"
+            )
 
-if platform.system() != "Windows":
+            if platform.system() != "Windows":
                 # Unix-like systems can use signal.SIGALRM
-def timeout_handler(signum, frame):
-    def timeout_handler(signum, frame):
-    def timeout_handler(signum, frame):
-    def timeout_handler(signum, frame):
+                def timeout_handler(signum, frame):
+                    self.logger.error("⏱️ SHAP computation timed out!")
                     raise TimeoutError("SHAP computation timed out")
 
-signal.signal(signal.SIGALRM, timeout_handler)
-signal.alarm(timeout_seconds)
-else:
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(timeout_seconds)
+            else:
                 # Windows doesn't support SIGALRM, we'll use a simpler approach
-self.logger.info(
-"⚠️ Windows detected - using simplified timeout protection"
-)
-
-try:
-    # Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
-# EFFICIENCY OPTIMIZATION 7: Use background values for faster computation
-# Calculate background values from a small subset
-background_size = min(100, len(X_sample) // 10)
-background_indices = np.random.choice(
-len(X_sample), background_size, replace=False
-)
-background_values = X_sample.iloc[background_indices]
-
-self.logger.info(
-f"📊 Computing SHAP values with background set of {len(background_values)} samples..."
-)
-
-# Compute SHAP values (simplified for compatibility)
-shap_values = explainer.shap_values(X_sample)
-
-self.logger.info(
-"✅ SHAP values computed successfully with optimizations"
-)
-
-# Cancel the alarm on Unix systems
-if platform.system() != "Windows":
-                    signal.alarm(0)
-shap_time = time.time() - start_time
-self.logger.info(f"✅ SHAP values computed in {shap_time:.2f} seconds")
-
-except TimeoutError:
-                # Cancel the alarm on Unix systems
-if platform.system() != "Windows":
-                    signal.alarm(0)
-self.logger.warning(
-"⏰ SHAP computation timed out, falling back to Random Forest feature importance"
-)
-# Fallback to Random Forest feature importance
-feature_importance = rf_model.feature_importances_
-shap_time = time.time() - start_time
-self.logger.info(
-f"✅ Fallback feature importance computed in {shap_time:.2f} seconds"
-)
-
-# Skip SHAP-specific processing and go directly to feature selection
-sorted_indices = np.argsort(feature_importance)[::-1]
-sorted_importance = feature_importance[sorted_indices]
-cumulative_importance = np.cumsum(sorted_importance)
-total_importance = cumulative_importance[-1]
-
-self.logger.info(f"📊 Total importance: {total_importance:.6f}")
-self.logger.info("🏆 Top 5 most important features:")
-for i in range(min(5, len(sorted_indices))):
-                    feature_name = X.columns[sorted_indices[i]]
-importance = sorted_importance[i]
-cumulative = cumulative_importance[i]
-self.logger.info(
-f"   {i+1}. {feature_name}: {importance:.6f} (cumulative: {cumulative:.6f})"
-)
-
-threshold = self.config.get(
-"feature_filtering.importance_threshold", 0.99
-)
-importance_cutoff = threshold * total_importance
-
-self.logger.info(
-f"🎯 Importance threshold: {threshold} ({threshold*100}%)"
-)
-self.logger.info(f"📊 Importance cutoff: {importance_cutoff:.6f}")
-
-# Find the first index where cumulative importance exceeds the threshold
-cutoff_index = (
-np.where(cumulative_importance >= importance_cutoff)[0][0] + 1
-)
-selected_indices = sorted_indices[:cutoff_index]
-
-self.logger.info(
-f"📊 Features needed to reach threshold: {cutoff_index}"
-)
-self.logger.info(
-f"📊 Cumulative importance at cutoff: {cumulative_importance[cutoff_index-1]:.6f}"
-)
-
-# Enforce minimum number of features
-min_features = self.config.get(
-"feature_filtering.min_features_for_ae", 15
-)
-self.logger.info(f"🔒 Minimum features required: {min_features}")
-
-if len(selected_indices) < min_features:
-                    self.logger.info(
-f"⚠️ Selected features ({len(selected_indices)}) below minimum ({min_features}), expanding selection"
-)
-selected_indices = sorted_indices[
-: max(min_features, len(sorted_indices))
-]
-self.logger.info(
-f"📊 Expanded selection to {len(selected_indices)} features"
-)
-
-selected_features = X.columns.to_numpy()[selected_indices].tolist()
-
-self.logger.info(
-f"✅ Selected {len(selected_features)} features out of {len(X.columns)} using fallback method.",
-)
-self.logger.info(f"📊 Selected features: {selected_features}")
-
-# Ensure we keep at least min_features after any refinement
-shap_refine_min = self.config.get(
-"feature_filtering.min_features_for_shap", 20
-)
-self.logger.info(f"🔒 SHAP refinement minimum: {shap_refine_min}")
-
-final_features = selected_features
-if len(selected_features) > shap_refine_min:
-                    k = max(min_features, len(selected_features))
-final_features = selected_features[:k]
-self.logger.info(
-f"📊 Refined selection to {len(final_features)} features"
-)
-
-self.logger.info(
-"🎉 Feature filtering completed successfully with fallback method!"
-)
-self.logger.info(f"📊 Final feature count: {len(final_features)}")
-self.logger.info(f"📊 Final features: {final_features}")
-
-return features_df[final_features].copy()
-
-# Compute mean absolute SHAP importance per feature
-self.logger.info("📊 Computing feature importance from SHAP values...")
-start_time = time.time()
-
-# Handle multiple SHAP return formats across versions
-if hasattr(shap_values, "values"):
-                self.logger.info("📦 SHAP values format: shap_values.values")
-shap_arr = np.asarray(shap_values.values)
-elif isinstance(shap_values, list):
                 self.logger.info(
-f"📦 SHAP values format: list of {len(shap_values)} arrays"
-)
-# List of arrays per class -> (n_classes, n_samples, n_features)
-shap_arr = np.stack([np.asarray(sv) for sv in shap_values], axis=0)
-else:
+                    "⚠️ Windows detected - using simplified timeout protection"
+                )
+
+            try:
+                # EFFICIENCY OPTIMIZATION 7: Use background values for faster computation
+                # Calculate background values from a small subset
+                background_size = min(100, len(X_sample) // 10)
+                background_indices = np.random.choice(
+                    len(X_sample), background_size, replace=False
+                )
+                background_values = X_sample.iloc[background_indices]
+
+                self.logger.info(
+                    f"📊 Computing SHAP values with background set of {len(background_values)} samples..."
+                )
+
+                # Compute SHAP values (simplified for compatibility)
+                shap_values = explainer.shap_values(X_sample)
+
+                self.logger.info(
+                    "✅ SHAP values computed successfully with optimizations"
+                )
+
+                # Cancel the alarm on Unix systems
+                if platform.system() != "Windows":
+                    signal.alarm(0)
+                shap_time = time.time() - start_time
+                self.logger.info(f"✅ SHAP values computed in {shap_time:.2f} seconds")
+
+            except TimeoutError:
+                # Cancel the alarm on Unix systems
+                if platform.system() != "Windows":
+                    signal.alarm(0)
+                self.logger.warning(
+                    "⏰ SHAP computation timed out, falling back to Random Forest feature importance"
+                )
+                # Fallback to Random Forest feature importance
+                feature_importance = rf_model.feature_importances_
+                shap_time = time.time() - start_time
+                self.logger.info(
+                    f"✅ Fallback feature importance computed in {shap_time:.2f} seconds"
+                )
+
+                # Skip SHAP-specific processing and go directly to feature selection
+                sorted_indices = np.argsort(feature_importance)[::-1]
+                sorted_importance = feature_importance[sorted_indices]
+                cumulative_importance = np.cumsum(sorted_importance)
+                total_importance = cumulative_importance[-1]
+
+                self.logger.info(f"📊 Total importance: {total_importance:.6f}")
+                self.logger.info("🏆 Top 5 most important features:")
+                for i in range(min(5, len(sorted_indices))):
+                    feature_name = X.columns[sorted_indices[i]]
+                    importance = sorted_importance[i]
+                    cumulative = cumulative_importance[i]
+                    self.logger.info(
+                        f"   {i+1}. {feature_name}: {importance:.6f} (cumulative: {cumulative:.6f})"
+                    )
+
+                threshold = self.config.get(
+                    "feature_filtering.importance_threshold", 0.99
+                )
+                importance_cutoff = threshold * total_importance
+
+                self.logger.info(
+                    f"🎯 Importance threshold: {threshold} ({threshold*100}%)"
+                )
+                self.logger.info(f"📊 Importance cutoff: {importance_cutoff:.6f}")
+
+                # Find the first index where cumulative importance exceeds the threshold
+                cutoff_index = (
+                    np.where(cumulative_importance >= importance_cutoff)[0][0] + 1
+                )
+                selected_indices = sorted_indices[:cutoff_index]
+
+                self.logger.info(
+                    f"📊 Features needed to reach threshold: {cutoff_index}"
+                )
+                self.logger.info(
+                    f"📊 Cumulative importance at cutoff: {cumulative_importance[cutoff_index-1]:.6f}"
+                )
+
+                # Enforce minimum number of features
+                min_features = self.config.get(
+                    "feature_filtering.min_features_for_ae", 15
+                )
+                self.logger.info(f"🔒 Minimum features required: {min_features}")
+
+                if len(selected_indices) < min_features:
+                    self.logger.info(
+                        f"⚠️ Selected features ({len(selected_indices)}) below minimum ({min_features}), expanding selection"
+                    )
+                    selected_indices = sorted_indices[
+                        : max(min_features, len(sorted_indices))
+                    ]
+                    self.logger.info(
+                        f"📊 Expanded selection to {len(selected_indices)} features"
+                    )
+
+                selected_features = X.columns.to_numpy()[selected_indices].tolist()
+
+                self.logger.info(
+                    f"✅ Selected {len(selected_features)} features out of {len(X.columns)} using fallback method.",
+                )
+                self.logger.info(f"📊 Selected features: {selected_features}")
+
+                # Ensure we keep at least min_features after any refinement
+                shap_refine_min = self.config.get(
+                    "feature_filtering.min_features_for_shap", 20
+                )
+                self.logger.info(f"🔒 SHAP refinement minimum: {shap_refine_min}")
+
+                final_features = selected_features
+                if len(selected_features) > shap_refine_min:
+                    k = max(min_features, len(selected_features))
+                    final_features = selected_features[:k]
+                    self.logger.info(
+                        f"📊 Refined selection to {len(final_features)} features"
+                    )
+
+                self.logger.info(
+                    "🎉 Feature filtering completed successfully with fallback method!"
+                )
+                self.logger.info(f"📊 Final feature count: {len(final_features)}")
+                self.logger.info(f"📊 Final features: {final_features}")
+
+                return features_df[final_features].copy()
+
+            # Compute mean absolute SHAP importance per feature
+            self.logger.info("📊 Computing feature importance from SHAP values...")
+            start_time = time.time()
+
+            # Handle multiple SHAP return formats across versions
+            if hasattr(shap_values, "values"):
+                self.logger.info("📦 SHAP values format: shap_values.values")
+                shap_arr = np.asarray(shap_values.values)
+            elif isinstance(shap_values, list):
+                self.logger.info(
+                    f"📦 SHAP values format: list of {len(shap_values)} arrays"
+                )
+                # List of arrays per class -> (n_classes, n_samples, n_features)
+                shap_arr = np.stack([np.asarray(sv) for sv in shap_values], axis=0)
+            else:
                 self.logger.info("📦 SHAP values format: numpy array")
-shap_arr = np.asarray(shap_values)
+                shap_arr = np.asarray(shap_values)
 
-self.logger.info(f"📐 SHAP array shape: {shap_arr.shape}")
+            self.logger.info(f"📐 SHAP array shape: {shap_arr.shape}")
 
-# Ensure we always end up with shape (..., n_samples, n_features)
-if shap_arr.ndim == 2:
+            # Ensure we always end up with shape (..., n_samples, n_features)
+            if shap_arr.ndim == 2:
                 # (n_samples, n_features) -> add class axis
-self.logger.info("🔄 Adding class dimension to SHAP array")
-shap_arr = shap_arr[None, ...]
-elif shap_arr.ndim == 1:
+                self.logger.info("🔄 Adding class dimension to SHAP array")
+                shap_arr = shap_arr[None, ...]
+            elif shap_arr.ndim == 1:
                 # Degenerate case, treat as single feature vector over samples
-self.logger.info("🔄 Reshaping SHAP array for single feature")
-shap_arr = shap_arr[None, :, None]
+                self.logger.info("🔄 Reshaping SHAP array for single feature")
+                shap_arr = shap_arr[None, :, None]
 
-# Now take mean abs over classes and samples → per-feature importance
-self.logger.info(
-"📊 Computing mean absolute SHAP importance per feature..."
-)
-feature_importance = np.nanmean(np.abs(shap_arr), axis=(0, 1))
+            # Now take mean abs over classes and samples → per-feature importance
+            self.logger.info(
+                "📊 Computing mean absolute SHAP importance per feature..."
+            )
+            feature_importance = np.nanmean(np.abs(shap_arr), axis=(0, 1))
 
-# Guard against any NaNs/inf
-feature_importance = np.nan_to_num(
-feature_importance, nan=0.0, posinf=0.0, neginf=0.0
-)
+            # Guard against any NaNs/inf
+            feature_importance = np.nan_to_num(
+                feature_importance, nan=0.0, posinf=0.0, neginf=0.0
+            )
 
-importance_time = time.time() - start_time
-self.logger.info(
-f"✅ Feature importance computed in {importance_time:.2f} seconds"
-)
+            importance_time = time.time() - start_time
+            self.logger.info(
+                f"✅ Feature importance computed in {importance_time:.2f} seconds"
+            )
 
-# Sort features by importance
-self.logger.info("📈 Sorting features by importance...")
-sorted_indices = np.argsort(feature_importance)[::-1]
-sorted_importance = feature_importance[sorted_indices]
-cumulative_importance = np.cumsum(sorted_importance)
-total_importance = cumulative_importance[-1]
+            # Sort features by importance
+            self.logger.info("📈 Sorting features by importance...")
+            sorted_indices = np.argsort(feature_importance)[::-1]
+            sorted_importance = feature_importance[sorted_indices]
+            cumulative_importance = np.cumsum(sorted_importance)
+            total_importance = cumulative_importance[-1]
 
-self.logger.info(f"📊 Total importance: {total_importance:.6f}")
-self.logger.info("🏆 Top 5 most important features:")
-for i in range(min(5, len(sorted_indices))):
+            self.logger.info(f"📊 Total importance: {total_importance:.6f}")
+            self.logger.info("🏆 Top 5 most important features:")
+            for i in range(min(5, len(sorted_indices))):
                 feature_name = X.columns[sorted_indices[i]]
-importance = sorted_importance[i]
-cumulative = cumulative_importance[i]
-self.logger.info(
-f"   {i+1}. {feature_name}: {importance:.6f} (cumulative: {cumulative:.6f})"
+                importance = sorted_importance[i]
+                cumulative = cumulative_importance[i]
+                self.logger.info(
+                    f"   {i+1}. {feature_name}: {importance:.6f} (cumulative: {cumulative:.6f})"
+                )
+
+            # Get feature selection parameters from config
+            threshold = self.config.get(
+                "feature_filtering.importance_threshold", 0.95
+            )  # Reduced from 0.99
+            min_features = self.config.get(
+                "feature_filtering.min_features_to_keep", 5
+            )  # Reduced from 15
+            max_features = self.config.get(
+                "feature_filtering.max_features_to_keep", 50
+            )  # New constraint
+            min_importance_per_feature = self.config.get(
+                "feature_filtering.min_importance_per_feature", 0.001
+            )
+
+            importance_cutoff = threshold * total_importance
+
+            self.logger.info("🎯 Feature selection parameters:")
+            self.logger.info(
+                f"   📊 Importance threshold: {threshold:.3f} ({threshold*100:.1f}%)"
+            )
+            self.logger.info(f"   📊 Min features to keep: {min_features}")
+            self.logger.info(f"   📊 Max features to keep: {max_features}")
+            self.logger.info(
+                f"   📊 Min importance per feature: {min_importance_per_feature:.6f}"
+            )
+            self.logger.info(f"   📊 Importance cutoff: {importance_cutoff:.6f}")
+
+            # ENHANCED LOGIC: Use multiple criteria for feature selection
+            # 1. Features that meet the cumulative importance threshold
+            threshold_cutoff = np.where(cumulative_importance >= importance_cutoff)[0]
+            threshold_cutoff = (
+                threshold_cutoff[0] + 1
+                if len(threshold_cutoff) > 0
+                else len(sorted_indices)
+            )
+
+            # 2. Features that meet minimum individual importance
+            min_importance_cutoff = np.where(
+                sorted_importance >= min_importance_per_feature
+            )[0]
+            min_importance_cutoff = (
+                len(min_importance_cutoff) if len(min_importance_cutoff) > 0 else 0
+            )
+
+            # 3. Use the larger of the two cutoffs to be less aggressive
+            cutoff_index = max(threshold_cutoff, min_importance_cutoff, min_features)
+            selected_indices = sorted_indices[:cutoff_index]
+
+            self.logger.info("📊 Enhanced selection analysis:")
+            self.logger.info(f"   📊 Threshold cutoff: {threshold_cutoff} features")
+            self.logger.info(
+                f"   📊 Min importance cutoff: {min_importance_cutoff} features"
+            )
+            self.logger.info(f"   📊 Min features requirement: {min_features} features")
+            self.logger.info(f"   📊 Final cutoff: {cutoff_index} features")
+            self.logger.info("📊 Initial selection results:")
+            self.logger.info(f"   📊 Features selected: {cutoff_index}")
+            # Ensure we don't exceed array bounds
+            actual_cutoff = min(cutoff_index, len(cumulative_importance))
+            self.logger.info(
+                f"   📊 Cumulative importance at cutoff: {cumulative_importance[actual_cutoff-1]:.6f}"
+            )
+            self.logger.info(
+                f"   📊 Actual importance captured: {cumulative_importance[actual_cutoff-1]/total_importance*100:.1f}%"
 )
 
-# Get feature selection parameters from config
-threshold = self.config.get(
-"feature_filtering.importance_threshold", 0.95
-)  # Reduced from 0.99
-min_features = self.config.get(
-"feature_filtering.min_features_to_keep", 5
-)  # Reduced from 15
-max_features = self.config.get(
-"feature_filtering.max_features_to_keep", 50
-)  # New constraint
-min_importance_per_feature = self.config.get(
-"feature_filtering.min_importance_per_feature", 0.001
-)
-
-importance_cutoff = threshold * total_importance
-
-self.logger.info("🎯 Feature selection parameters:")
-self.logger.info(
-f"   📊 Importance threshold: {threshold:.3f} ({threshold*100:.1f}%)"
-)
-self.logger.info(f"   📊 Min features to keep: {min_features}")
-self.logger.info(f"   📊 Max features to keep: {max_features}")
-self.logger.info(
-f"   📊 Min importance per feature: {min_importance_per_feature:.6f}"
-)
-self.logger.info(f"   📊 Importance cutoff: {importance_cutoff:.6f}")
-
-# ENHANCED LOGIC: Use multiple criteria for feature selection
-# 1. Features that meet the cumulative importance threshold
-threshold_cutoff = np.where(cumulative_importance >= importance_cutoff)[0]
-threshold_cutoff = (
-threshold_cutoff[0] + 1
-if len(threshold_cutoff) > 0
-else len(sorted_indices)
-)
-
-# 2. Features that meet minimum individual importance
-min_importance_cutoff = np.where(
-sorted_importance >= min_importance_per_feature
-)[0]
-min_importance_cutoff = (
-len(min_importance_cutoff) if len(min_importance_cutoff) > 0 else 0
-)
-
-# 3. Use the larger of the two cutoffs to be less aggressive
-cutoff_index = max(threshold_cutoff, min_importance_cutoff, min_features)
-selected_indices = sorted_indices[:cutoff_index]
-
-self.logger.info("📊 Enhanced selection analysis:")
-self.logger.info(f"   📊 Threshold cutoff: {threshold_cutoff} features")
-self.logger.info(
-f"   📊 Min importance cutoff: {min_importance_cutoff} features"
-)
-self.logger.info(f"   📊 Min features requirement: {min_features} features")
-self.logger.info(f"   📊 Final cutoff: {cutoff_index} features")
-self.logger.info("📊 Initial selection results:")
-self.logger.info(f"   📊 Features selected: {cutoff_index}")
-# Ensure we don't exceed array bounds
-actual_cutoff = min(cutoff_index, len(cumulative_importance))
-self.logger.info(
-f"   📊 Cumulative importance at cutoff: {cumulative_importance[actual_cutoff-1]:.6f}"
-)
-self.logger.info(
-f"   📊 Actual importance captured: {cumulative_importance[actual_cutoff-1]/total_importance*100:.1f}%"
-)
-
-# Apply minimum feature constraint
-if len(selected_indices) < min_features:
+            # Apply minimum feature constraint
+            if len(selected_indices) < min_features:
                 self.logger.warning(
-f"⚠️ Selected features ({len(selected_indices)}) below minimum ({min_features})"
-)
-self.logger.info(
-"🔄 Expanding selection to meet minimum requirement..."
-)
-# Ensure we don't exceed the available features
-actual_min_features = min(min_features, len(sorted_indices))
-selected_indices = sorted_indices[:actual_min_features]
-actual_importance = (
-cumulative_importance[actual_min_features - 1]
-if len(sorted_importance) >= actual_min_features
-else cumulative_importance[-1]
-)
-self.logger.info(
-f"📊 Expanded to {len(selected_indices)} features (importance: {actual_importance/total_importance*100:.1f}%)"
-)
+                    f"⚠️ Selected features ({len(selected_indices)}) below minimum ({min_features})"
+                )
+                self.logger.info(
+                    "🔄 Expanding selection to meet minimum requirement..."
+                )
+                # Ensure we don't exceed the available features
+                actual_min_features = min(min_features, len(sorted_indices))
+                selected_indices = sorted_indices[:actual_min_features]
+                actual_importance = (
+                    cumulative_importance[actual_min_features - 1]
+                    if len(sorted_importance) >= actual_min_features
+                    else cumulative_importance[-1]
+                )
+                self.logger.info(
+                    f"📊 Expanded to {len(selected_indices)} features (importance: {actual_importance/total_importance*100:.1f}%)"
+                )
 
-# If we still don't have enough features, we need to map back to original features
-if len(selected_indices) < min_features and hasattr(
-self, "_prefiltered_features"
-):
+                # If we still don't have enough features, we need to map back to original features
+                if len(selected_indices) < min_features and hasattr(
+                    self, "_prefiltered_features"
+                ):
                     self.logger.warning(
-"⚠️ Still below minimum after expansion. This may indicate insufficient important features in the dataset."
-)
+                        "⚠️ Still below minimum after expansion. This may indicate insufficient important features in the dataset."
+                    )
 
-# Apply maximum feature constraint
-if len(selected_indices) > max_features:
+            # Apply maximum feature constraint
+            if len(selected_indices) > max_features:
                 self.logger.warning(
-f"⚠️ Selected features ({len(selected_indices)}) above maximum ({max_features})"
-)
-self.logger.info(
-"🔄 Truncating selection to meet maximum requirement..."
-)
-selected_indices = sorted_indices[:max_features]
-actual_importance = (
-cumulative_importance[max_features - 1]
-if len(sorted_importance) >= max_features
-else cumulative_importance[-1]
-)
-self.logger.info(
-f"📊 Truncated to {len(selected_indices)} features (importance: {actual_importance/total_importance*100:.1f}%)"
-)
+                    f"⚠️ Selected features ({len(selected_indices)}) above maximum ({max_features})"
+                )
+                self.logger.info(
+                    "🔄 Truncating selection to meet maximum requirement..."
+                )
+                selected_indices = sorted_indices[:max_features]
+                actual_importance = (
+                    cumulative_importance[max_features - 1]
+                    if len(sorted_importance) >= max_features
+                    else cumulative_importance[-1]
+                )
+                self.logger.info(
+                    f"📊 Truncated to {len(selected_indices)} features (importance: {actual_importance/total_importance*100:.1f}%)"
+                )
 
-selected_features = X.columns.to_numpy()[selected_indices].tolist()
+            selected_features = X.columns.to_numpy()[selected_indices].tolist()
 
-self.logger.info("✅ Final feature selection:")
-self.logger.info(
-f"   📊 Features selected: {len(selected_features)} out of {len(X.columns)}"
-)
-self.logger.info(
-f"   📊 Importance captured: {cumulative_importance[len(selected_indices)-1]/total_importance*100:.1f}%"
-)
-self.logger.info(f"   📊 Selected features: {selected_features}")
+            self.logger.info("✅ Final feature selection:")
+            self.logger.info(
+                f"   📊 Features selected: {len(selected_features)} out of {len(X.columns)}"
+            )
+            self.logger.info(
+                f"   📊 Importance captured: {cumulative_importance[len(selected_indices)-1]/total_importance*100:.1f}%"
+            )
+            self.logger.info(f"   📊 Selected features: {selected_features}")
 
-self.logger.info("🎉 Feature filtering completed successfully!")
-self.logger.info(f"📊 Final feature count: {len(selected_features)}")
-self.logger.info(f"📊 Final features: {selected_features}")
+            self.logger.info("🎉 Feature filtering completed successfully!")
+            self.logger.info(f"📊 Final feature count: {len(selected_features)}")
+            self.logger.info(f"📊 Final features: {selected_features}")
 
-return features_df[selected_features].copy()
+            return features_df[selected_features].copy()
 
-except Exception:
+        except Exception:
             self.logger.exception("Error in feature filtering")
-return features_df
+            return features_df
 
 
-class ImprovedAutoencoderPreprocessor:
-    # Implementation placeholder - add specific implementation as needed
-class ImprovedAutoencoderPreprocessor:
-    pass  # TODO: Add implementation
 class ImprovedAutoencoderPreprocessor:
     """Enhanced preprocessor with separate fit/transform and no data leakage."""
 
-def __init__(self, config: AutoencoderConfig):
-    def __init__(self, config: AutoencoderConfig):
-    def __init__(self, config: AutoencoderConfig):
     def __init__(self, config: AutoencoderConfig):
         if not DEPENDENCIES_AVAILABLE:
             msg = f"Required dependencies not available: {MISSING_DEPENDENCY}"
-raise ImportError(
-msg,
-)
-self.config = config
-scaler_type = config.get("preprocessing.scaler_type", "robust")
+            raise ImportError(
+                msg,
+            )
+        self.config = config
+        scaler_type = config.get("preprocessing.scaler_type", "robust")
 
-if scaler_type == "robust":
+        if scaler_type == "robust":
             self.scaler = RobustScaler()
-elif scaler_type == "standard":
+        elif scaler_type == "standard":
             self.scaler = StandardScaler()
-else:
+        else:
             self.scaler = MinMaxScaler()
 
-self.outlier_lower_bounds_ = None
-self.outlier_upper_bounds_ = None
-self.is_fitted = False
-self.logger = system_logger.getChild("AutoencoderPreprocessor")
+        self.outlier_lower_bounds_ = None
+        self.outlier_upper_bounds_ = None
+        self.is_fitted = False
+        self.logger = system_logger.getChild("AutoencoderPreprocessor")
 
-def fit(self, X: pd.DataFrame) -> "ImprovedAutoencoderPreprocessor":
+    def fit(self, X: pd.DataFrame) -> "ImprovedAutoencoderPreprocessor":
         """Fit the preprocessor on training data only."""
-self.logger.info(f"🔧 Fitting preprocessor on data with shape {X.shape}")
+        self.logger.info(f"🔧 Fitting preprocessor on data with shape {X.shape}")
 
-# Handle missing values
-self.logger.info("📊 Handling missing values...")
-X_clean = self._handle_missing_values(X)
-missing_count = X.isnull().sum().sum()
-if missing_count > 0:
+        # Handle missing values
+        self.logger.info("📊 Handling missing values...")
+        X_clean = self._handle_missing_values(X)
+        missing_count = X.isnull().sum().sum()
+        if missing_count > 0:
             self.logger.info(
-f"📊 Missing values handled: {missing_count} values filled"
-)
+                f"📊 Missing values handled: {missing_count} values filled"
+            )
 
-# Calculate outlier bounds using IQR method
-X_numeric = X_clean.select_dtypes(include=[np.number])
-self.logger.info(
-f"📊 Numeric features for outlier detection: {X_numeric.shape[1]} columns"
-)
+        # Calculate outlier bounds using IQR method
+        X_numeric = X_clean.select_dtypes(include=[np.number])
+        self.logger.info(
+            f"📊 Numeric features for outlier detection: {X_numeric.shape[1]} columns"
+        )
 
-Q1 = X_numeric.quantile(0.25)
-Q3 = X_numeric.quantile(0.75)
-IQR = Q3 - Q1
-iqr_mult = self.config.get("preprocessing.iqr_multiplier", 3.0)
+        Q1 = X_numeric.quantile(0.25)
+        Q3 = X_numeric.quantile(0.75)
+        IQR = Q3 - Q1
+        iqr_mult = self.config.get("preprocessing.iqr_multiplier", 3.0)
 
-self.outlier_lower_bounds_ = Q1 - iqr_mult * IQR
-self.outlier_upper_bounds_ = Q3 + iqr_mult * IQR
+        self.outlier_lower_bounds_ = Q1 - iqr_mult * IQR
+        self.outlier_upper_bounds_ = Q3 + iqr_mult * IQR
 
-self.logger.info(f"📊 Outlier detection: IQR method with multiplier {iqr_mult}")
-self.logger.info(
-f"📊 Outlier bounds calculated for {len(self.outlier_lower_bounds_)} features"
-)
+        self.logger.info(f"📊 Outlier detection: IQR method with multiplier {iqr_mult}")
+        self.logger.info(
+            f"📊 Outlier bounds calculated for {len(self.outlier_lower_bounds_)} features"
+        )
 
-# Align bounds to columns to avoid pandas alignment errors
-lower_bounds = self.outlier_lower_bounds_.reindex(X_numeric.columns)
-upper_bounds = self.outlier_upper_bounds_.reindex(X_numeric.columns)
-X_clipped = X_numeric.clip(lower=lower_bounds, upper=upper_bounds, axis=1)
+        # Align bounds to columns to avoid pandas alignment errors
+        lower_bounds = self.outlier_lower_bounds_.reindex(X_numeric.columns)
+        upper_bounds = self.outlier_upper_bounds_.reindex(X_numeric.columns)
+        X_clipped = X_numeric.clip(lower=lower_bounds, upper=upper_bounds, axis=1)
 
-# Count outliers clipped
-outliers_clipped = (
-((X_numeric < lower_bounds) | (X_numeric > upper_bounds)).sum().sum()
-)
-if outliers_clipped > 0:
+        # Count outliers clipped
+        outliers_clipped = (
+            ((X_numeric < lower_bounds) | (X_numeric > upper_bounds)).sum().sum()
+        )
+        if outliers_clipped > 0:
             self.logger.info(f"📊 Outliers clipped: {outliers_clipped} values")
 
-# Fit scaler
-scaler_type = self.config.get("preprocessing.scaler_type", "robust")
-self.logger.info(f"📊 Fitting {scaler_type} scaler...")
-self.scaler.fit(X_clipped.values)
+        # Fit scaler
+        scaler_type = self.config.get("preprocessing.scaler_type", "robust")
+        self.logger.info(f"📊 Fitting {scaler_type} scaler...")
+        self.scaler.fit(X_clipped.values)
 
-self.is_fitted = True
-self.logger.info("✅ Preprocessor fitted successfully")
-return self
+        self.is_fitted = True
+        self.logger.info("✅ Preprocessor fitted successfully")
+        return self
 
-def transform(self, X: pd.DataFrame) -> np.ndarray:
+    def transform(self, X: pd.DataFrame) -> np.ndarray:
         """Transform data using fitted preprocessor."""
-if not self.is_fitted:
+        if not self.is_fitted:
             msg = "Preprocessor must be fitted before transform can be called."
-raise ValueError(
-msg,
-)
+            raise ValueError(
+                msg,
+            )
 
-self.logger.info(f"🔧 Transforming data with shape {X.shape}")
+        self.logger.info(f"🔧 Transforming data with shape {X.shape}")
 
-# Handle missing values
-X_clean = self._handle_missing_values(X)
+        # Handle missing values
+        X_clean = self._handle_missing_values(X)
 
-# Clip outliers
-X_clipped = self._clip_outliers(X_clean)
+        # Clip outliers
+        X_clipped = self._clip_outliers(X_clean)
 
-# Scale data
-self.logger.info("📊 Scaling data...")
-X_scaled = self.scaler.transform(X_clipped.values)
+        # Scale data
+        self.logger.info("📊 Scaling data...")
+        X_scaled = self.scaler.transform(X_clipped.values)
 
-# Final clipping for extreme values
-final_threshold = self.config.get("preprocessing.outlier_threshold", 3.0)
-X_final = np.clip(X_scaled, -final_threshold, final_threshold)
+        # Final clipping for extreme values
+        final_threshold = self.config.get("preprocessing.outlier_threshold", 3.0)
+        X_final = np.clip(X_scaled, -final_threshold, final_threshold)
 
-# Count extreme values clipped
-extreme_values_clipped = (
-(X_scaled < -final_threshold) | (X_scaled > final_threshold)
-).sum()
-if extreme_values_clipped > 0:
+        # Count extreme values clipped
+        extreme_values_clipped = (
+            (X_scaled < -final_threshold) | (X_scaled > final_threshold)
+        ).sum()
+        if extreme_values_clipped > 0:
             self.logger.info(
-f"📊 Extreme values clipped: {extreme_values_clipped} values (threshold: ±{final_threshold})"
-)
+                f"📊 Extreme values clipped: {extreme_values_clipped} values (threshold: ±{final_threshold})"
+            )
 
-try:
-    # Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
-self.logger.info("✅ Transform completed successfully")
-self.logger.info(f"📊 Input shape: {X.shape}")
-self.logger.info(f"📊 Output shape: {X_final.shape}")
-self.logger.info(f"📊 Final clipping threshold: ±{final_threshold}")
-except Exception as e:
+        try:
+            self.logger.info("✅ Transform completed successfully")
+            self.logger.info(f"📊 Input shape: {X.shape}")
+            self.logger.info(f"📊 Output shape: {X_final.shape}")
+            self.logger.info(f"📊 Final clipping threshold: ±{final_threshold}")
+        except Exception as e:
             self.logger.warning(f"⚠️ Could not log transform details: {str(e)}")
 
-return X_final
+        return X_final
 
-def _handle_missing_values(self, X: pd.DataFrame) -> pd.DataFrame:
+    def _handle_missing_values(self, X: pd.DataFrame) -> pd.DataFrame:
         """Handle missing values based on strategy."""
-strategy = self.config.get(
-"preprocessing.missing_value_strategy",
-"forward_fill",
-)
-if strategy == "forward_fill":
+        strategy = self.config.get(
+            "preprocessing.missing_value_strategy",
+            "forward_fill",
+        )
+        if strategy == "forward_fill":
             return X.fillna(method="ffill").fillna(method="bfill").fillna(0)
-# Default to zero fill
-return X.fillna(0)
+        # Default to zero fill
+        return X.fillna(0)
 
-def _clip_outliers(self, X: pd.DataFrame) -> pd.DataFrame:
+    def _clip_outliers(self, X: pd.DataFrame) -> pd.DataFrame:
         """Clip outliers using pre-calculated bounds to prevent data leakage."""
-X_numeric = X.select_dtypes(include=[np.number])
-lower_bounds = self.outlier_lower_bounds_.reindex(X_numeric.columns)
-upper_bounds = self.outlier_upper_bounds_.reindex(X_numeric.columns)
-return X_numeric.clip(lower=lower_bounds, upper=upper_bounds, axis=1)
+        X_numeric = X.select_dtypes(include=[np.number])
+        lower_bounds = self.outlier_lower_bounds_.reindex(X_numeric.columns)
+        upper_bounds = self.outlier_upper_bounds_.reindex(X_numeric.columns)
+        return X_numeric.clip(lower=lower_bounds, upper=upper_bounds, axis=1)
 
 
 def create_sequences_with_index(
-X: np.ndarray,
-timesteps: int,
-original_index: pd.Index,
+    X: np.ndarray,
+    timesteps: int,
+    original_index: pd.Index,
 ) -> tuple[np.ndarray, np.ndarray, pd.Index]:
     """Convert 2D array to 3D sequences, tracking the index of the target."""
-sequences, targets, target_indices = [], [], []
+    sequences, targets, target_indices = [], [], []
 
-# Ensure X is 2D
-if X.ndim == 1:
+    # Ensure X is 2D
+    if X.ndim == 1:
         X = X.reshape(-1, 1)
 
-# Calculate sequence information
-total_samples = len(X)
-num_sequences = total_samples - timesteps + 1
-overlap_percentage = ((timesteps - 1) / timesteps) * 100
+    # Calculate sequence information
+    total_samples = len(X)
+    num_sequences = total_samples - timesteps + 1
+    overlap_percentage = ((timesteps - 1) / timesteps) * 100
 
-# Log sequence creation details
-logger = logging.getLogger(__name__)
-logger.info(f"📊 Creating sequences from {total_samples} samples")
-logger.info(
-f"📊 Sequence configuration: {timesteps} timesteps, {num_sequences} sequences"
-)
-logger.info(f"📊 Overlap: {overlap_percentage:.1f}% between consecutive sequences")
-logger.info(
-f"📊 Input shape: {X.shape} -> Output shapes: ({num_sequences}, {timesteps}, {X.shape[1]})"
-)
+    # Log sequence creation details
+    logger = logging.getLogger(__name__)
+    logger.info(f"📊 Creating sequences from {total_samples} samples")
+    logger.info(
+        f"📊 Sequence configuration: {timesteps} timesteps, {num_sequences} sequences"
+    )
+    logger.info(f"📊 Overlap: {overlap_percentage:.1f}% between consecutive sequences")
+    logger.info(
+        f"📊 Input shape: {X.shape} -> Output shapes: ({num_sequences}, {timesteps}, {X.shape[1]})"
+    )
 
-for i in range(num_sequences):
+    for i in range(num_sequences):
         sequence = X[i : i + timesteps]
-target = X[i + timesteps - 1]  # Target is the last timestep
-sequences.append(sequence)
-targets.append(target)
-target_indices.append(original_index[i + timesteps - 1])
+        target = X[i + timesteps - 1]  # Target is the last timestep
+        sequences.append(sequence)
+        targets.append(target)
+        target_indices.append(original_index[i + timesteps - 1])
 
-sequences_array = np.array(sequences)
-targets_array = np.array(targets)
-target_indices_array = pd.Index(target_indices)
+    sequences_array = np.array(sequences)
+    targets_array = np.array(targets)
+    target_indices_array = pd.Index(target_indices)
 
-logger.info("✅ Sequence creation completed")
-logger.info(f"📊 Sequences shape: {sequences_array.shape}")
-logger.info(f"📊 Targets shape: {targets_array.shape}")
-logger.info(f"📊 Target indices: {len(target_indices_array)} samples")
+    logger.info("✅ Sequence creation completed")
+    logger.info(f"📊 Sequences shape: {sequences_array.shape}")
+    logger.info(f"📊 Targets shape: {targets_array.shape}")
+    logger.info(f"📊 Target indices: {len(target_indices_array)} samples")
 
-return sequences_array, targets_array, target_indices_array
+    return sequences_array, targets_array, target_indices_array
 
 
-class SequenceAwareAutoencoder:
-    # Implementation placeholder - add specific implementation as needed
-class SequenceAwareAutoencoder:
-    pass  # TODO: Add implementation
 class SequenceAwareAutoencoder:
     """1D-CNN based autoencoder that learns to reconstruct the last timestep of a sequence."""
 
-def __init__(self, config: AutoencoderConfig):
-    def __init__(self, config: AutoencoderConfig):
-    def __init__(self, config: AutoencoderConfig):
     def __init__(self, config: AutoencoderConfig):
         if not DEPENDENCIES_AVAILABLE:
             msg = f"Required dependencies not available: {MISSING_DEPENDENCY}"
-raise ImportError(
-msg,
-)
-self.config = config
-self.logger = system_logger.getChild("SequenceAwareAutoencoder")
-self.autoencoder = None
-self.encoder = None
+            raise ImportError(
+                msg,
+            )
+        self.config = config
+        self.logger = system_logger.getChild("SequenceAwareAutoencoder")
+        self.autoencoder = None
+        self.encoder = None
 
-def build_model(
-self,
-input_shape: tuple[int, int],
-trial: optuna.Trial | None = None,
-) -> Model:
+    def build_model(
+        self,
+        input_shape: tuple[int, int],
+        trial: optuna.Trial | None = None,
+    ) -> Model:
         """Build 1D-CNN autoencoder model."""
-timesteps, features = input_shape
+        timesteps, features = input_shape
 
-if trial:
+        if trial:
             filters = trial.suggest_categorical("filters", [16, 32, 64])
-kernel_size = trial.suggest_int("kernel_size", 3, 7)
-dropout_rate = trial.suggest_float("dropout_rate", 0.1, 0.5)
-learning_rate = trial.suggest_float("learning_rate", 1e-4, 1e-2, log=True)
-encoding_dim = trial.suggest_int("encoding_dim", 8, 64)
-else:  # Fallback to config for final training
-encoding_dim = self.config.get("autoencoder.encoding_dim", 32)
-# Use a dictionary for best_params from Optuna
-best_params = self.config.get("best_params", {})
-filters = best_params.get("filters", 32)
-kernel_size = best_params.get("kernel_size", 5)
-dropout_rate = best_params.get("dropout_rate", 0.3)
-learning_rate = best_params.get("learning_rate", 0.001)
+            kernel_size = trial.suggest_int("kernel_size", 3, 7)
+            dropout_rate = trial.suggest_float("dropout_rate", 0.1, 0.5)
+            learning_rate = trial.suggest_float("learning_rate", 1e-4, 1e-2, log=True)
+            encoding_dim = trial.suggest_int("encoding_dim", 8, 64)
+        else:  # Fallback to config for final training
+            encoding_dim = self.config.get("autoencoder.encoding_dim", 32)
+        # Use a dictionary for best_params from Optuna
+        best_params = self.config.get("best_params", {})
+        filters = best_params.get("filters", 32)
+        kernel_size = best_params.get("kernel_size", 5)
+        dropout_rate = best_params.get("dropout_rate", 0.3)
+        learning_rate = best_params.get("learning_rate", 0.001)
 
-# Log the model configuration
-self.logger.info("🔧 Building autoencoder model architecture...")
-self.logger.info(
-f"📊 Input shape: (timesteps={timesteps}, features={features})"
-)
-self.logger.info("📊 Model hyperparameters:")
-self.logger.info(f"   📊 Filters: {filters}")
-self.logger.info(f"   📊 Kernel size: {kernel_size}")
-self.logger.info(f"   📊 Dropout rate: {dropout_rate}")
-self.logger.info(f"   📊 Encoding dimension: {encoding_dim}")
-self.logger.info(f"   📊 Learning rate: {learning_rate}")
+        # Log the model configuration
+        self.logger.info("🔧 Building autoencoder model architecture...")
+        self.logger.info(
+            f"📊 Input shape: (timesteps={timesteps}, features={features})"
+        )
+        self.logger.info("📊 Model hyperparameters:")
+        self.logger.info(f"   📊 Filters: {filters}")
+        self.logger.info(f"   📊 Kernel size: {kernel_size}")
+        self.logger.info(f"   📊 Dropout rate: {dropout_rate}")
+        self.logger.info(f"   📊 Encoding dimension: {encoding_dim}")
+        self.logger.info(f"   📊 Learning rate: {learning_rate}")
 
-input_layer = layers.Input(shape=(timesteps, features))
+        input_layer = layers.Input(shape=(timesteps, features))
 
-# Encoder
-x = layers.Conv1D(
-filters=filters,
-kernel_size=kernel_size,
-activation="relu",
-padding="same",
-)(input_layer)
-x = layers.BatchNormalization()(x)
-x = layers.Dropout(dropout_rate)(x)
-x = layers.Conv1D(
-filters=filters // 2,
-kernel_size=kernel_size,
-activation="relu",
-padding="same",
-)(x)
-x = layers.BatchNormalization()(x)
-x = layers.GlobalAveragePooling1D()(x)
+        # Encoder
+        x = layers.Conv1D(
+            filters=filters,
+            kernel_size=kernel_size,
+            activation="relu",
+            padding="same",
+        )(input_layer)
+        x = layers.BatchNormalization()(x)
+        x = layers.Dropout(dropout_rate)(x)
+        x = layers.Conv1D(
+            filters=filters // 2,
+            kernel_size=kernel_size,
+            activation="relu",
+            padding="same",
+        )(x)
+        x = layers.BatchNormalization()(x)
+        x = layers.GlobalAveragePooling1D()(x)
 
-bottleneck = layers.Dense(encoding_dim, activation="tanh", name="bottleneck")(x)
+        bottleneck = layers.Dense(encoding_dim, activation="tanh", name="bottleneck")(x)
 
-# Decoder - Reconstructs the feature vector of the last timestep
-output_layer = layers.Dense(features, activation="linear")(bottleneck)
+        # Decoder - Reconstructs the feature vector of the last timestep
+        output_layer = layers.Dense(features, activation="linear")(bottleneck)
 
-self.autoencoder = Model(inputs=input_layer, outputs=output_layer)
-self.encoder = Model(inputs=input_layer, outputs=bottleneck)
+        self.autoencoder = Model(inputs=input_layer, outputs=output_layer)
+        self.encoder = Model(inputs=input_layer, outputs=bottleneck)
 
-optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-self.autoencoder.compile(optimizer=optimizer, loss="huber", metrics=["mae"])
+        optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+        self.autoencoder.compile(optimizer=optimizer, loss="huber", metrics=["mae"])
 
-try:
-    # Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
-total_params = int(
-np.sum([np.prod(v.shape) for v in self.autoencoder.trainable_weights])
-)
-self.logger.info("✅ Model compiled successfully!")
-self.logger.info(f"📊 Optimizer: Adam(learning_rate={learning_rate})")
-self.logger.info("📊 Loss function: Huber")
-self.logger.info("📊 Metrics: MAE")
-self.logger.info(f"📊 Total trainable parameters: {total_params:,}")
+        try:
+            total_params = int(
+                np.sum([np.prod(v.shape) for v in self.autoencoder.trainable_weights])
+            )
+            self.logger.info("✅ Model compiled successfully!")
+            self.logger.info(f"📊 Optimizer: Adam(learning_rate={learning_rate})")
+            self.logger.info("📊 Loss function: Huber")
+            self.logger.info("📊 Metrics: MAE")
+            self.logger.info(f"📊 Total trainable parameters: {total_params:,}")
 
-# Model complexity assessment
-if total_params < 10000:
+            # Model complexity assessment
+            if total_params < 10000:
                 complexity = "Lightweight"
-elif total_params < 100000:
+            elif total_params < 100000:
                 complexity = "Moderate"
-elif total_params < 1000000:
+            elif total_params < 1000000:
                 complexity = "Complex"
-else:
+            else:
                 complexity = "Very Complex"
 
-self.logger.info(f"📊 Model complexity: {complexity}")
+            self.logger.info(f"📊 Model complexity: {complexity}")
 
-except Exception as e:
+        except Exception as e:
             self.logger.warning(f"⚠️ Could not calculate model parameters: {str(e)}")
 
-return self.autoencoder
+        return self.autoencoder
 
 def fit(
 self,
@@ -1621,11 +1581,11 @@ self.logger.info("📊 Optuna pruning callback enabled")
 
 # Determine batch size
 if trial:
-            batch_size = trial.suggest_categorical("batch_size", [32, 64, 128])
-self.logger.info(f"📊 Trial batch size: {batch_size}")
+    batch_size = trial.suggest_categorical("batch_size", [32, 64, 128])
+    self.logger.info(f"📊 Trial batch size: {batch_size}")
 else:
-            batch_size = self.config.get("best_params", {}).get("batch_size", 32)
-self.logger.info(f"📊 Final training batch size: {batch_size}")
+    batch_size = self.config.get("best_params", {}).get("batch_size", 32)
+    self.logger.info(f"📊 Final training batch size: {batch_size}")
 
 epochs = self.config.get("autoencoder.epochs", 100)
 
@@ -1659,10 +1619,6 @@ verbose=0,
 training_time = time.time() - start_time
 
 # Enhanced training summary
-try:
-    # Exception handling placeholder - implement specific error handling as needed
-except Exception as e:
-    # Exception handling placeholder - implement specific error handling as needed
 val_losses = history.history.get("val_loss", [])
 train_losses = history.history.get("loss", [])
 val_mae = history.history.get("val_mae", [])
@@ -1682,23 +1638,24 @@ self.logger.info(f"📊 Best validation loss: {best_val_loss:.6f}")
 self.logger.info(f"📊 Final training loss: {final_train_loss:.6f}")
 self.logger.info(f"📊 Final validation loss: {final_val_loss:.6f}")
 
-if val_mae:
-                    best_val_mae = val_mae[best_epoch]
-final_val_mae = val_mae[-1]
-self.logger.info(f"📊 Best validation MAE: {best_val_mae:.6f}")
-self.logger.info(f"📊 Final validation MAE: {final_val_mae:.6f}")
+try:
+    if val_mae:
+        best_val_mae = val_mae[best_epoch]
+        final_val_mae = val_mae[-1]
+        self.logger.info(f"📊 Best validation MAE: {best_val_mae:.6f}")
+        self.logger.info(f"📊 Final validation MAE: {final_val_mae:.6f}")
 
-# Performance assessment
-if best_val_loss < 0.1:
-                    performance = "Excellent"
-elif best_val_loss < 0.3:
-                    performance = "Good"
-elif best_val_loss < 0.5:
-                    performance = "Acceptable"
-else:
-                    performance = "Needs improvement"
+    # Performance assessment
+    if best_val_loss < 0.1:
+        performance = "Excellent"
+    elif best_val_loss < 0.3:
+        performance = "Good"
+    elif best_val_loss < 0.5:
+        performance = "Acceptable"
+    else:
+        performance = "Needs improvement"
 
-self.logger.info(f"📊 Model performance: {performance}")
+    self.logger.info(f"📊 Model performance: {performance}")
 
 except Exception as e:
             self.logger.warning(
@@ -1709,22 +1666,15 @@ return history
 
 
 class AutoencoderFeatureAnalyzer:
-    # Implementation placeholder - add specific implementation as needed
-class AutoencoderFeatureAnalyzer:
-    pass  # TODO: Add implementation
-class AutoencoderFeatureAnalyzer:
     """Comprehensive feature importance analysis for autoencoder-generated features."""
 
-def __init__(self, config: AutoencoderConfig):
-    def __init__(self, config: AutoencoderConfig):
-    def __init__(self, config: AutoencoderConfig):
     def __init__(self, config: AutoencoderConfig):
         if not DEPENDENCIES_AVAILABLE:
             msg = f"Required dependencies not available: {MISSING_DEPENDENCY}"
-raise ImportError(msg)
+            raise ImportError(msg)
 
-self.config = config
-self.logger = system_logger.getChild("AutoencoderFeatureAnalyzer")
+        self.config = config
+        self.logger = system_logger.getChild("AutoencoderFeatureAnalyzer")
 
 # Analysis results storage
 self.importance_scores = {}

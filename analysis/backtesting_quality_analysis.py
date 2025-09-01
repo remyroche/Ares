@@ -478,10 +478,10 @@ class BacktestingQualityAnalyzer:
         print("-" * 50)
         
         # Calculate composite quality scores
-        performance_score, 0
+        performance_score = 0
         if self.report.get('performance_metrics'):
             performance_scores = [analysis['score'] for analysis in self.report['performance_metrics'].values()]
-            performance_score, np.mean(performance_scores) if performance_scores else 0
+            performance_score = np.mean(performance_scores) if performance_scores else 0
         
         risk_score = 0
         if self.report.get('risk_metrics'):

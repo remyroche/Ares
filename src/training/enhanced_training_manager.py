@@ -2201,7 +2201,7 @@ class EnhancedTrainingManager:
                         self.logger.exception(f"❌ Step 7 validator failed: {e} - stopping pipeline")
                         return False
 
-                # Step 8: Enhanced HMM-Based Training with Multi-Output Support
+                # Step 8: Enhanced HMM-Based Training
                 self._heartbeat("Step 8: Enhanced HMM-Based Training")
 
                 should_run_step8 = _should_run("step08_enhanced_hmm_based_training")
@@ -2233,7 +2233,8 @@ class EnhancedTrainingManager:
                         method_a_cfg = self.config.get("method_a_mixture_of_experts", {})
                         enable_multi_output = self.config.get("enable_multi_output", True)
 
-                        step08_success = await step06_hmm_based_training_enhanced.run_enhanced_step(
+                        # Use regime-specific enhanced training
+                        step08_success = await step09_hmm_based_training_enhanced.run_enhanced_regime_specific_step(
                             symbol=symbol,
                             data_dir=data_dir,
                             method_a_mixture_of_experts=method_a_cfg,
@@ -2300,7 +2301,8 @@ class EnhancedTrainingManager:
                     try:
                         from src.training.steps import step09_5_multi_timeframe_hmm_ensemble
 
-                        step09_5_success = await step09_5_multi_timeframe_hmm_ensemble.run_step(
+                        # Use regime-specific ensemble creation
+                        step09_5_success = await step09_5_multi_timeframe_hmm_ensemble.run_regime_specific_ensemble_step(
                             symbol=symbol,
                             exchange=exchange,
                             data_dir=data_dir,

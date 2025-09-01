@@ -24,6 +24,7 @@ run "Circular Imports (Python)" "$SCRIPT_DIR/scripts/circular_imports_python.sh"
 run "Complexity (Python)" "$SCRIPT_DIR/scripts/complexity_python.sh"
 run "Dependency Audit (Python)" "$SCRIPT_DIR/scripts/deps_audit_python.sh"
 run "Dependency Map (Python)" "$SCRIPT_DIR/scripts/deps_map_python.sh"
+run "Placeholder Finder" "$SCRIPT_DIR/scripts/placeholder_finder.sh"
 run "Test Coverage (Python)" "$SCRIPT_DIR/scripts/coverage_python.sh"
 
 # Optional JS/TS

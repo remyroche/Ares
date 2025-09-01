@@ -1,0 +1,547 @@
+"""
+Intelligent Feature Caching System
+
+This module provides an intelligent caching system for feature engineering
+that optimizes memory usage and computational efficiency.
+"""
+
+import asyncio
+from functools import wraps
+from pathlib import Path
+from typing import Any
+import hashlib
+import logging
+import time
+import gzip
+
+import gc
+import numpy as np
+import pandas as pd
+import pickle
+
+logger, logging.getLogger(__name__)
+
+class IntelligentFeatureCache:
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False, context="intelligentfeaturecache initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize IntelligentFeatureCache."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    pass
+        pass
+        self.logger.info("Implementation placeholder - needs specific logic")
+class IntelligentFeatureCache:
+    pass
+        self.logger.info("Implementation placeholder - needs specific logic")
+class IntelligentFeatureCache:
+    """
+Intelligent caching system for feature engineering with memory optimization.
+"""
+
+def __init__(self):
+        pass
+    pass
+        """..."""
+    pass
+        self.cache_dir, Path(cache_dir)
+self.cache_dir.mkdir(parents, True)
+
+self.max_memory_mb, max_memory_mb
+self.max_cache_size_mb, max_cache_size_mb
+self.enable_compression, enable_compression
+
+# In - memory cache
+self.memory_cache: dict[str, Any] = {}
+self.cache_metadata: dict[str, dict[str, Any]] = {}
+
+# Performance tracking
+self.hit_count, 0
+self.miss_count, 0
+self.eviction_count, 0
+
+logger.info("🔧 Initialized IntelligentFeatureCache:")
+logger.info(f"   Cache directory: {self.cache_dir}")
+logger.info(f"   Max memory: {max_memory_mb} MB")
+logger.info(f"   Max cache size: {max_cache_size_mb} MB")
+logger.info(f"   Compression: {enable_compression}")
+
+def _generate_cache_key(self):
+        pass
+    """..."""
+    pass
+        try:
+    pass
+        self.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    pass
+        pass
+        passself.logger.error(f"Error in {file_path}: {{e}}")
+key_data = {
+"function": function_name,
+"args": self._make_pickle_safe(args),
+"kwargs": self._make_pickle_safe(kwargs),
+}
+key_bytes, pickle.dumps(key_data)
+return hashlib.md5(key_bytes).hexdigest()
+except (pickle.PicklingError, TypeError) as e:
+    pass
+        pass
+        pass
+        # Fallback to simple hash if pickling fails
+logger.warning(f"⚠️ Pickling failed for cache key generation: {e}")
+key_str, f"{function_name}_{hash(str(args))}_{hash(str(kwargs))}"
+return hashlib.md5(key_str.encode()).hexdigest()
+
+def _make_pickle_safe(self):
+        pass
+    """..."""
+    pass
+        if isinstance(obj, dict):
+    pass
+        return {k: self._make_pickle_safe(v) for k, v in obj.items()}
+if isinstance(obj, (list, tuple)):
+    pass
+        pass
+        return type(obj)(self._make_pickle_safe(item) for item in obj)
+if hasattr(obj, "__await__") or asyncio.iscoroutine(obj):
+    pass
+        pass
+        # Replace coroutines with a placeholder
+return f"<coroutine_{type(obj).__name__}>"
+if hasattr(obj, "__aiter__") or hasattr(obj, "__anext__"):
+    pass
+        pass
+        # Replace async iterators with a placeholder
+return f"<async_iterator_{type(obj).__name__}>"
+if callable(obj) and asyncio.iscoroutinefunction(obj):
+    pass
+        pass
+        # Replace async functions with a placeholder
+return f"<async_function_{getattr(obj, '__name__', 'unknown')}>"
+return obj
+
+def _get_cache_file_path(self):
+        pass
+    """..."""
+    pass
+        suffix = ".pkl.gz" if self.enable_compression else ".pkl"
+return self.cache_dir / f"{cache_key}{suffix}"
+
+def _get_memory_usage_mb(self):
+        pass
+    """..."""
+    pass
+        total_memory, 0
+for value in self.memory_cache.values():
+    pass
+        if isinstance(value, pd.DataFrame):
+    pass
+        total_memory += int(value.memory_usage(deep = True).sum())
+elif isinstance(value, np.ndarray):
+    pass
+        pass
+        total_memory += int(value.nbytes)
+else:
+    pass
+        total_memory += len(pickle.dumps(value))
+return total_memory / (1024 * 1024)
+
+def _evict_least_used(self):
+        pass
+    """..."""
+    pass
+        current_memory, self._get_memory_usage_mb()
+if current_memory <= target_memory_mb:
+    pass
+        return
+
+# Sort by last access time (oldest first)
+sorted_items, sorted(
+self.cache_metadata.items(),
+key = lambda x: x[1].get("last_access", 0),
+)
+
+for key, _metadata in sorted_items:
+    pass
+        if key in self.memory_cache:
+    pass
+        del self.memory_cache[key]
+self.eviction_count += 1
+current_memory, self._get_memory_usage_mb()
+if current_memory <= target_memory_mb:
+    pass
+        break
+
+# Force garbage collection
+gc.collect()
+
+def _save_to_disk(self):
+        pass
+    """..."""
+    pass
+        cache_file, self._get_cache_file_path(cache_key)
+cache_data = {"data": data, "metadata": metadata, "timestamp": time.time()}
+try:
+    pass
+        self.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    pass
+        pass
+        passself.logger.error(f"Error in {file_path}: {{e}}")
+if self.enable_compression:
+    pass
+        with gzip.open(cache_file, "wb") as f:
+    pass
+        pickle.dump(cache_data, f, protocol.HIGHEST_PROTOCOL)
+else:
+    pass
+        with open(cache_file, "wb") as f:
+    pass
+        pickle.dump(cache_data, f, protocol.HIGHEST_PROTOCOL)
+logger.debug(f"💾 Saved to disk cache: {cache_key}")
+except Exception as e:
+    pass
+        pass
+        passlogger.warning(f"Failed to save to disk cache {cache_key}: {e}")
+
+def _load_from_disk(self):
+        pass
+    """..."""
+    pass
+        cache_file, self._get_cache_file_path(cache_key)
+if not cache_file.exists():
+    pass
+        return None
+
+try:
+    pass
+        self.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    pass
+        pass
+        passself.logger.error(f"Error in {file_path}: {{e}}")
+if self.enable_compression:
+    pass
+        with gzip.open(cache_file, "rb") as f:
+    pass
+        cache_data, pickle.load(f)
+else:
+    pass
+        with open(cache_file, "rb") as f:
+    pass
+        cache_data, pickle.load(f)
+data, cache_data["data"]
+metadata, cache_data["metadata"]
+logger.debug(f"📂 Loaded from disk cache: {cache_key}")
+return data, metadata
+except Exception as e:
+    pass
+        pass
+        passlogger.warning(f"Failed to load from disk cache {cache_key}: {e}")
+return None
+
+def get(self):
+        pass
+    """..."""
+    pass
+        # Check memory cache first
+if cache_key in self.memory_cache:
+    pass
+        self.hit_count += 1
+self.cache_metadata[cache_key]["last_access"] = time.time()
+self.cache_metadata[cache_key]["access_count"] += 1
+return self.memory_cache[cache_key]
+
+# Check disk cache
+disk_result, self._load_from_disk(cache_key)
+if disk_result is not None:
+    pass
+        data, metadata, disk_result
+self.hit_count += 1
+
+# Load into memory cache if there's space
+data_size_mb, self._estimate_data_size_mb(data)
+if data_size_mb < self.max_memory_mb * 0.1:  # Only load if < 10% of max memory
+self.memory_cache[cache_key] = data
+self.cache_metadata[cache_key] = metadata
+self.cache_metadata[cache_key]["last_access"] = time.time()
+self.cache_metadata[cache_key]["access_count"] += 1
+
+return data
+
+self.miss_count += 1
+return None
+
+def set(self):
+        pass
+    """..."""
+    pass
+        if metadata is None:
+    pass
+        # Fallback implementation for metadata
+metadata = {}
+
+# Add metadata
+metadata.update(
+{
+"created": time.time(),
+"last_access": time.time(),
+"access_count": 1,
+"size_mb": self._estimate_data_size_mb(data),
+},
+)
+
+# Check memory usage and evict if necessary
+data_size_mb, float(metadata["size_mb"])
+current_memory, self._get_memory_usage_mb()
+if current_memory + data_size_mb > self.max_memory_mb:
+    pass
+        # Evict to 80% of max
+self._evict_least_used(self.max_memory_mb * 0.8)
+
+# Store in memory if there's space
+if self._get_memory_usage_mb() + data_size_mb <= self.max_memory_mb:
+    pass
+        self.memory_cache[cache_key] = data
+self.cache_metadata[cache_key] = metadata
+
+# Always save to disk
+self._save_to_disk(cache_key, data, metadata)
+
+def _estimate_data_size_mb(self):
+        pass
+    """..."""
+    pass
+        if isinstance(data, pd.DataFrame):
+    pass
+        return float(data.memory_usage(deep = True).sum()) / (1024 * 1024)
+if isinstance(data, np.ndarray):
+    pass
+        return float(data.nbytes) / (1024 * 1024)
+return float(len(pickle.dumps(data))) / (1024 * 1024)
+
+def clear(self):
+        pass
+    """..."""
+    pass
+        self.memory_cache.clear()
+self.cache_metadata.clear()
+
+# Clear disk cache
+for cache_file in self.cache_dir.glob("*.pkl*"):
+    pass
+        try:
+    pass
+        self.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    pass
+        pass
+        passself.logger.error(f"Error in {file_path}: {{e}}")
+cache_file.unlink()
+except Exception as e:
+    pass
+        pass
+        passlogger.warning(f"Failed to delete cache file {cache_file}: {e}")
+
+logger.info("🧹 Cleared all caches")
+
+def get_stats(self):
+        pass
+    """..."""
+    pass
+        memory_usage, self._get_memory_usage_mb()
+disk_usage, sum(
+f.stat().st_size for f in self.cache_dir.glob("*.pkl*")
+) / (1024 * 1024)
+
+total_requests, self.hit_count + self.miss_count
+hit_rate, self.hit_count / total_requests if total_requests > 0 else 0.0
+
+return {
+"memory_usage_mb": memory_usage,
+"disk_usage_mb": disk_usage,
+"memory_cache_size": len(self.memory_cache),
+"hit_count": self.hit_count,
+"miss_count": self.miss_count,
+"hit_rate": hit_rate,
+"eviction_count": self.eviction_count,
+"total_requests": total_requests,
+}
+
+def log_stats(self):
+        pass
+    """..."""
+    pass
+        stats, self.get_stats()
+logger.info("📊 Cache Statistics:")
+logger.info(f"   Memory usage: {stats['memory_usage_mb']:.2f} MB")
+logger.info(f"   Disk usage: {stats['disk_usage_mb']:.2f} MB")
+logger.info(f"   Memory cache size: {stats['memory_cache_size']}")
+logger.info(f"   Hit rate: {stats['hit_rate']:.1%}")
+logger.info(f"   Total requests: {stats['total_requests']}")
+logger.info(f"   Evictions: {stats['eviction_count']}")
+
+# Global cache instance
+_feature_cache: IntelligentFeatureCache | None, None
+
+def get_feature_cache(self):
+        pass
+    """..."""
+    pass
+        global _feature_cache
+if _feature_cache is None:
+    pass
+        # Fallback implementation for _feature_cache
+_feature_cache, IntelligentFeatureCache()
+return _feature_cache
+
+def cache_feature_engineering(*args, **kwargs):
+    pass
+    pass
+        pass
+        def cache_feature_engineering(*args, **kwargs):
+    pass
+    pass
+        def cache_feature_engineering(*args, **kwargs):
+    pass
+    pass
+        def cache_feature_engineering(*args, **kwargs):
+    pass
+    """
+Decorator for caching feature engineering functions.
+Supports both sync and async functions.
+
+Args:
+    pass
+        max_memory_mb: Maximum memory usage for cache
+
+Returns:
+    pass
+        Decorator function
+"""
+
+def decorator(*args, **kwargs):
+    pass
+    pass
+        def decorator(*args, **kwargs):
+    pass
+    pass
+        def decorator(*args, **kwargs):
+    pass
+    pass
+        def decorator(*args, **kwargs):
+    pass
+    pass
+        # Check if function is async
+is_async, asyncio.iscoroutinefunction(func)
+
+if is_async:
+    pass
+        @wraps(func)
+async def async_wrapper(*args, **kwargs):
+    pass
+    pass
+        self.logger.info("Implementation placeholder - needs specific logic")
+async def async_wrapper(*args, **kwargs):
+    pass
+    pass
+        self.logger.info("Implementation placeholder - needs specific logic")
+async def async_wrapper(*args, **kwargs):
+    pass
+    pass
+        cache, get_feature_cache()
+cache.max_memory_mb, max_memory_mb
+
+# Generate cache key
+cache_key, cache._generate_cache_key(func.__name__, args, kwargs)
+
+# Try to get from cache
+cached_result, cache.get(cache_key)
+if cached_result is not None:
+    pass
+        logger.info(f"⚡ Cache HIT for {func.__name__}")
+return cached_result
+
+# Compute result
+logger.info(f"🔄 Computing {func.__name__} (cache miss)")
+result, await func(*args, **kwargs)
+
+# Cache the result
+metadata = {
+"function": func.__name__,
+"args_count": len(args),
+"kwargs_count": len(kwargs),
+}
+cache.set(cache_key, result, metadata)
+
+return result
+
+return async_wrapper
+
+@wraps(func)
+def sync_wrapper(*args, **kwargs):
+    pass
+    pass
+        def sync_wrapper(*args, **kwargs):
+    pass
+    pass
+        def sync_wrapper(*args, **kwargs):
+    pass
+    pass
+        def sync_wrapper(*args, **kwargs):
+    pass
+    pass
+        cache, get_feature_cache()
+cache.max_memory_mb, max_memory_mb
+
+# Generate cache key
+cache_key, cache._generate_cache_key(func.__name__, args, kwargs)
+
+# Try to get from cache
+cached_result, cache.get(cache_key)
+if cached_result is not None:
+    pass
+        logger.info(f"⚡ Cache HIT for {func.__name__}")
+return cached_result
+
+# Compute result
+logger.info(f"🔄 Computing {func.__name__} (cache miss)")
+result, func(*args, **kwargs)
+
+# Cache the result
+metadata = {
+"function": func.__name__,
+"args_count": len(args),
+"kwargs_count": len(kwargs),
+}
+cache.set(cache_key, result, metadata)
+
+return result
+
+return sync_wrapper
+
+return decorator
+
+def clear_feature_cache(self):
+        pass
+    """..."""
+    pass
+        cache, get_feature_cache()
+cache.clear()
+
+def log_feature_cache_stats(self):
+        pass
+    """..."""
+    pass
+        cache, get_feature_cache()
+cache.log_stats()

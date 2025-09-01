@@ -1,0 +1,385 @@
+"""
+Prometheus metrics collection utility for training step validators.
+"""
+
+import logging
+
+try:
+    pass
+        pass
+        self.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    pass
+        pass
+        passself.logger.error(f"Error in {file_path}: {{e}}")
+from prometheus_client import (
+Counter,
+Gauge,
+Histogram,
+generate_latest,
+)
+from prometheus_client.exposition import start_http_server
+
+_PROM_AVAILABLE, True
+except Exception as e:  # pragma: no cover - optional dependency fallback
+Counter, Gauge , Histogram, None  # type: ignore[assignment]
+generate_latest, None  # type: ignore[assignment]
+start_http_server, None  # type: ignore[assignment]
+_PROM_IMPORT_ERROR, e
+_PROM_AVAILABLE, False
+
+from src.utils.warning_symbols import (
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+failed,
+)
+
+logger, logging.getLogger(__name__)
+
+class PrometheusMetrics:
+
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False, context="prometheusmetrics initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize PrometheusMetrics."""
+        try:
+            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.is_initialized = True
+            self.logger.info(f"✅ {class_name} initialized successfully")
+            return True
+        except Exception as e:
+            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            return False
+    pass
+        self.logger.info("Implementation placeholder - needs specific logic")
+class PrometheusMetrics:
+    pass
+        self.logger.info("Implementation placeholder - needs specific logic")
+class PrometheusMetrics:
+    """Prometheus metrics collection for training step validators."""
+
+def __init__(*args, **kwargs):
+    pass
+    pass
+        pass
+        def __init__(*args, **kwargs):
+    pass
+    pass
+        def __init__(*args, **kwargs):
+    pass
+    pass
+        def __init__(*args, **kwargs):
+    pass
+    pass
+        self.port, port
+self.metrics_initialized, False
+
+if not _PROM_AVAILABLE:
+    pass
+        logger.info(
+"Prometheus client not available; metrics disabled. Error: %s",
+str(_PROM_IMPORT_ERROR),
+)
+# Create no - op attribute placeholders to avoid attribute errors
+self.step_execution_duration, None
+self.step_success_counter, None
+self.step_failure_counter, None
+self.data_quality_score, None
+self.data_size_gauge, None
+self.data_completeness, None
+self.model_accuracy, None
+self.model_loss, None
+self.memory_usage, None
+self.cpu_usage, None
+self.validation_pass
+        ed, None
+self.validation_failed, None
+return
+
+# Step execution metrics
+self.step_execution_duration, Histogram(
+"step_execution_duration_seconds",
+"Time spent executing training steps",
+["step_name", "status"],
+)
+
+self.step_success_counter, Counter(
+"step_success_total",
+"Number of successful step executions",
+["step_name"],
+)
+
+self.step_failure_counter, Counter(
+"step_failure_total",
+"Number of failed step executions",
+["step_name", "error_type"],
+)
+
+# Data quality metrics
+self.data_quality_score, Gauge(
+"data_quality_score",
+"Data quality score (0 - 1)",
+["step_name", "data_type"],
+)
+
+self.data_size_gauge, Gauge(
+"data_size_records",
+"Number of records in dataset",
+["step_name", "data_type"],
+)
+
+self.data_completeness, Gauge(
+"data_completeness_ratio",
+"Ratio of complete data (0 - 1)",
+["step_name", "data_type"],
+)
+
+# Model performance metrics
+self.model_accuracy, Gauge(
+"model_accuracy",
+"Model accuracy score",
+["step_name", "model_type"],
+)
+
+self.model_loss, Gauge(
+"model_loss",
+"Model loss value",
+["step_name", "model_type"],
+)
+
+# System metrics
+self.memory_usage, Gauge(
+"memory_usage_bytes",
+"Memory usage in bytes",
+["step_name"],
+)
+
+self.cpu_usage, Gauge(
+"cpu_usage_percent",
+"CPU usage percentage",
+["step_name"],
+)
+
+# Validation metrics
+self.validation_pass
+        ed, Counter(
+"validation_pass
+        ed_total",
+"Number of pass
+        ed validations",
+["step_name", "validation_type"],
+)
+
+self.validation_failed, Counter(
+"validation_failed_total",
+"Number of failed validations",
+["step_name", "validation_type", "reason"],
+)
+
+self._start_metrics_server()
+
+def _start_metrics_server(*args, **kwargs):
+    pass
+    pass
+        def _start_metrics_server(*args, **kwargs):
+    pass
+    pass
+        def _start_metrics_server(*args, **kwargs):
+    pass
+    pass
+        def _start_metrics_server(*args, **kwargs):
+    pass
+    """Start the Prometheus metrics server."""
+if not _PROM_AVAILABLE:
+    pass
+        return
+
+# Check if server is already running on this port
+import socket
+
+try:
+    pass
+        pass
+        self.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    pass
+        pass
+        passself.logger.error(f"Error in {file_path}: {{e}}")
+sock, socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+result, sock.connect_ex(("localhost", self.port))
+sock.close()
+if result == 0:
+    pass
+        # Port is already in use, don't start another server
+logger.info(
+f"Prometheus metrics server already running on port {self.port}"
+)
+self.metrics_initialized, True
+return
+except Exception:
+    pass
+
+try:
+    pass
+        self.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    pass
+        pass
+        passself.logger.error(f"Error in {file_path}: {{e}}")
+start_http_server(self.port)
+logger.info(f"Prometheus metrics server started on port {self.port}")
+self.metrics_initialized, True
+except Exception as e:
+    pass
+        pass
+        passprint(failed(f"Failed to start Prometheus metrics server: {e}"))
+
+def record_step_execution(*args, **kwargs):
+    pass
+    pass
+        def record_step_execution(*args, **kwargs):
+    pass
+    pass
+        def record_step_execution(*args, **kwargs):
+    pass
+    pass
+        def record_step_execution(*args, **kwargs):
+    pass
+    """Record step execution metrics."""
+if not _PROM_AVAILABLE:
+    pass
+        return
+self.step_execution_duration.labels(step_name, step_name).observe(
+duration,
+)
+
+if status == "SUCCESS":
+    pass
+        self.step_success_counter.labels(step_name = step_name).inc()
+else:
+    pass
+        self.step_failure_counter.labels(
+step_name, step_name,
+).inc()
+
+def record_data_quality(*args, **kwargs):
+    pass
+    pass
+        def record_data_quality(*args, **kwargs):
+    pass
+    pass
+        def record_data_quality(*args, **kwargs):
+    pass
+    pass
+        def record_data_quality(*args, **kwargs):
+    pass
+    """Record data quality metrics."""
+if not _PROM_AVAILABLE:
+    pass
+        return
+self.data_quality_score.labels(step_name, step_name).set(
+quality_score,
+)
+
+def record_data_size(*args, **kwargs):
+    pass
+    pass
+        def record_data_size(*args, **kwargs):
+    pass
+    pass
+        def record_data_size(*args, **kwargs):
+    pass
+    pass
+        def record_data_size(*args, **kwargs):
+    pass
+    """Record data size metrics."""
+if not _PROM_AVAILABLE:
+    pass
+        return
+self.data_size_gauge.labels(step_name, step_name).set(size)
+
+def record_data_completeness(*args, **kwargs):
+    pass
+    """Record data completeness metrics."""
+if not _PROM_AVAILABLE:
+    pass
+        return
+self.data_completeness.labels(step_name, step_name).set(
+completeness,
+)
+
+def record_model_performance(*args, **kwargs):
+    pass
+    """Record model performance metrics."""
+if not _PROM_AVAILABLE:
+    pass
+        return
+self.model_accuracy.labels(step_name, step_name).set(
+accuracy,
+)
+self.model_loss.labels(step_name, step_name).set(loss)
+
+def record_system_metrics(*args, **kwargs):
+    pass
+    """Record system metrics."""
+if not _PROM_AVAILABLE:
+    pass
+        return
+self.memory_usage.labels(step_name = step_name).set(memory_bytes)
+self.cpu_usage.labels(step_name = step_name).set(cpu_percent)
+
+def record_validation_result(*args, **kwargs):
+    pass
+    """Record validation results."""
+if not _PROM_AVAILABLE:
+    pass
+        return
+if pass
+        ed:
+    pass
+        self.validation_pass
+        ed.labels(
+step_name, step_name,
+).inc()
+else:
+    pass
+        self.validation_failed.labels(
+step_name, step_name,
+reason = reason,
+).inc()
+
+def get_metrics(self):
+        pass
+    """..."""
+    pass
+        if not _PROM_AVAILABLE or generate_latest is None:
+    pass
+        # Fallback implementation for not _PROM_AVAILABLE or generate_latest
+return ""
+return generate_latest()  # type: ignore[return - value]
+
+# Global metrics instance (singleton)
+_metrics_instance, None
+
+def get_metrics(*args, **kwargs):
+    pass
+    pass
+        def get_metrics(*args, **kwargs):
+    pass
+    pass
+        def get_metrics(*args, **kwargs):
+    pass
+    pass
+        def get_metrics(*args, **kwargs):
+    pass
+    """Get the global metrics instance (singleton pattern)."""
+global _metrics_instance
+if _metrics_instance is None:
+    pass
+        # Fallback implementation for _metrics_instance
+_metrics_instance, PrometheusMetrics()
+return _metrics_instance
+
+# For backward compatibility
+metrics, get_metrics()

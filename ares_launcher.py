@@ -1649,34 +1649,26 @@ class AresLauncher:
         """Get all steps that need to be validated before starting from a specific step."""
         required_steps = []
         
-        # Use a simple approach: validate all steps that come before the start step
+        # Updated step order for the new 21-step pipeline
         step_order = [
             "step1_data_collection",           # Download and prepare market data
             "step1_5_data_converter",          # Convert data to unified format
-            "step2_data_reading",              # Read and validate data quality
-            "step2_5_sr_optimization",         # S/R detection optimization
-            "step3_hmm_regime_discovery",      # Define HMM regime clusters (with basic features)
-            "step3_5_final_regime_clustering", # Final regime clustering
-            "step4_triple_barrier_method",     # Apply triple barrier method
-            "step4_regime_data_splitting",     # Regime data splitting (legacy step)
-            "step5_labeling",                  # Create labels
-            "step6_feature_engineering",       # Complete feature engineering (simple + advanced)
-            "step7_enhanced_matrix_operations", # Enhanced matrix operations for analysis
-            "step8_regime_data_splitting",     # Split data by regimes
-            "step9_hmm_based_training",        # HMM-based model training
-            "step9_5_hmm_lm_generalist_training", # HMM LM generalist training
-            "step10_unified_regime_intelligence", # Unified regime intelligence
-            "step11_analyst_creation",         # Analyst creation (NEW STEP)
-            "step12_analyst_enhancement",      # Analyst enhancement
-            "step13_analyst_ensemble_creation", # Analyst ensemble creation
-            "step14_tactician_labeling",       # Tactician labeling
-            "step15_tactician_specialist_training", # Tactician specialist training
-            "step16_confidence_calibration",   # Confidence calibration
-            "step17_final_parameters_optimization", # Final parameters optimization
-            "step18_walk_forward_validation",  # Walk forward validation
-            "step19_monte_carlo_validation",   # Monte Carlo validation
-            "step20_ab_testing",               # A/B testing
-            "step21_saving",                   # Save final models
+            "step2_feature_engineering",       # Feature engineering
+            "step2_5_enhanced_matrix_operations", # Enhanced matrix operations
+            "step3_hmm_regime_discovery",      # Define HMM regime clusters
+            "step4_processing_labeling",       # Processing & labeling
+            "step5_regime_data_splitting",     # Regime data splitting
+            "step6_hmm_based_training",        # HMM-based training
+            "step6_5_unified_regime_intelligence", # Unified regime intelligence
+            "step7_analyst_enhancement",        # Analyst enhancement
+            "step8_tactician_labeling",        # Tactician labeling
+            "step9_tactician_specialist_training", # Tactician specialist training
+            "step10_confidence_calibration",   # Confidence calibration
+            "step11_final_parameters_optimization", # Final parameters optimization
+            "step12_walk_forward_validation",  # Walk forward validation
+            "step13_monte_carlo_validation",   # Monte Carlo validation
+            "step14_ab_testing",               # A/B testing
+            "step15_saving",                   # Save final models
         ]
         
         try:
@@ -2478,7 +2470,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
-                start_step="step2_5_sr_optimization",
+                start_step="step2_5_enhanced_matrix_operations",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,
@@ -2498,7 +2490,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
-                start_step="step3_5_final_regime_clustering",
+                start_step="step3_hmm_regime_discovery",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,
@@ -2508,7 +2500,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
-                start_step="step4_regime_data_splitting",
+                start_step="step4_processing_labeling",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,
@@ -2518,7 +2510,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
-                start_step="step5_labeling",
+                start_step="step5_regime_data_splitting",
                 training_mode=args.training_mode,
                 force_rerun=force_flag,
                 with_gui=args.gui,

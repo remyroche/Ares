@@ -65,7 +65,7 @@ def init_otlp_logging() -> None:
     except Exception:  # pragma: no cover
         print(failed("Failed to initialize OTLP logging: {exc}"))
 
-def init_observability(_: dict[str, Any] | None, None) -> None:
+def init_observability(_: dict[str, Any] | None = None) -> None:
     """Initialize production observability hooks: Sentry and OTLP if configured."""
     init_sentry()
     init_otlp_logging()

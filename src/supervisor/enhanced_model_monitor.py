@@ -17,10 +17,6 @@ from dataclasses import asdict, dataclass
 from enum import Enum
 from src.supervisor.performance_monitor import PerformanceMonitor
 from src.utils.error_handler import handle_errors, handle_specific_errors
-    error,
-    failed,
-    initialization_error,
-)
 
 class ModelDriftType(Enum):
     """Model drift types."""

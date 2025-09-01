@@ -87,8 +87,8 @@ class SRWeightOptimizer:
 
             # Initialize SR predictor
             # Use optimized configuration
-        optimized_config = ensure_optimized_sr_config(self.config)
-        self.sr_predictor = await setup_sr_breakout_predictor(optimized_config)
+            optimized_config = ensure_optimized_sr_config(self.config)
+            self.sr_predictor = await setup_sr_breakout_predictor(optimized_config)
 
             if not self.sr_predictor:
                 self.logger.error("Failed to initialize SR predictor")

@@ -1172,8 +1172,8 @@ class EnhancedTrainingManager:
             )
             self.logger.info(f"📈 Lookback Days: {self.lookback_days}")
             self.logger.info(f"🔧 Blank Training Mode: {self.blank_training_mode}")
-                    self.logger.info(f"🔧 Max Trials: {self.max_trials}")
-        self.logger.info(f"🔧 N Trials: {self.n_trials}")
+            self.logger.info(f"🔧 Max Trials: {self.max_trials}")
+            self.logger.info(f"🔧 N Trials: {self.n_trials}")
 
         # Initialize enhanced reporting
         self.current_pipeline_execution_id = f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{enhanced_training_input.get('symbol', 'unknown')}_{enhanced_training_input.get('exchange', 'unknown')}"

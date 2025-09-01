@@ -19,9 +19,8 @@ import psutil
 from src.utils.logger import system_logger
 
 # Type variables
-T = TypeVar("T")
-F = TypeVar("F", bound=Callable[..., Any])
-
+T, TypeVar("T")
+F, TypeVar("F", bound = Callable[..., Any])
 
 class TradeSide(Enum):
     """Trade side enumeration."""
@@ -30,7 +29,6 @@ class TradeSide(Enum):
     SELL = "sell"
     HOLD = "hold"
 
-
 class ExecutionMode(Enum):
     """Execution mode enumeration."""
 
@@ -38,7 +36,6 @@ class ExecutionMode(Enum):
     BACKTEST = "backtest"
     PAPER = "paper"
     SIMULATION = "simulation"
-
 
 @dataclass
 class TradeContext:
@@ -50,15 +47,14 @@ class TradeContext:
     price: float
     timestamp: datetime
     execution_mode: ExecutionMode
-    model_weights: dict[str, float] = field(default_factory=dict)
-    model_confidences: dict[str, float] = field(default_factory=dict)
-    regime_analysis: dict[str, Any] = field(default_factory=dict)
-    support_resistance_levels: dict[str, float] = field(default_factory=dict)
+    model_weights: dict[str, float] = field(default_factory = dict)
+    model_confidences: dict[str, float] = field(default_factory = dict)
+    regime_analysis: dict[str, Any] = field(default_factory = dict)
+    support_resistance_levels: dict[str, float] = field(default_factory = dict)
     hmm_regime: str = ""
-    market_conditions: dict[str, Any] = field(default_factory=dict)
-    risk_metrics: dict[str, float] = field(default_factory=dict)
-    execution_metadata: dict[str, Any] = field(default_factory=dict)
-
+    market_conditions: dict[str, Any] = field(default_factory = dict)
+    risk_metrics: dict[str, float] = field(default_factory = dict)
+    execution_metadata: dict[str, Any] = field(default_factory = dict)
 
 @dataclass
 class PerformanceMetrics:
@@ -66,13 +62,12 @@ class PerformanceMetrics:
 
     execution_time: float
     success: bool
-    error_message: str | None = None
-    trade_id: str | None = None
-    pnl: float | None = None
-    drawdown: float | None = None
-    sharpe_ratio: float | None = None
-    max_drawdown: float | None = None
-
+    error_message: str | None, None
+    trade_id: str | None, None
+    pnl: float | None, None
+    drawdown: float | None, None
+    sharpe_ratio: float | None, None
+    max_drawdown: float | None, None
 
 class TradeTracker:
     """Centralized trade tracking system."""
@@ -81,7 +76,7 @@ class TradeTracker:
         """Initialize trade tracker."""
         self.trades: list[dict[str, Any]] = []
         self.performance_history: list[PerformanceMetrics] = []
-        self.logger = system_logger.getChild("TradeTracker")
+        self.logger, system_logger.getChild("TradeTracker")
 
     def log_trade(
         self,
@@ -105,12 +100,10 @@ class TradeTracker:
         self.performance_history.append(metrics)
         self.logger.info(f"Trade logged: {trade_record}")
 
-
 # Global trade tracker instance
-trade_tracker = TradeTracker()
+trade_tracker, TradeTracker()
 
-
-def error_handler(exceptions: tuple = (Exception,), default_return: Any = None):
+def error_handler(exceptions: tuple = (Exception,), default_return: Any, None):
     """Decorator for comprehensive error handling in trading operations.
 
     Args:
@@ -121,16 +114,15 @@ def error_handler(exceptions: tuple = (Exception,), default_return: Any = None):
     def decorator(func: F) -> F:
         @wraps(func)
         def wrapper(*args, **kwargs):
-            try:
-                return func(*args, **kwargs)
-            except exceptions as e:
+        try:
+        return func(*args, **kwargs)
+        except exceptions as e:
                 system_logger.error(f"Error in {func.__name__}: {e}")
-                return default_return
+        return default_return
 
         return wrapper
 
     return decorator
-
 
 def performance_monitor(func: F) -> F:
     """Decorator to monitor function performance and resource usage.
@@ -144,23 +136,23 @@ def performance_monitor(func: F) -> F:
 
     @wraps(func)
     def wrapper(*args, **kwargs):
-        start_time = time.time()
-        start_memory = psutil.Process().memory_info().rss
+        start_time, time.time()
+        start_memory, psutil.Process().memory_info().rss
 
         try:
-            result = func(*args, **kwargs)
-            success = True
-            error_msg = None
+            result, func(*args, **kwargs)
+            success, True
+            error_msg, None
         except Exception as e:
-            result = None
-            success = False
-            error_msg = str(e)
+            result, None
+            success, False
+            error_msg, str(e)
 
-        end_time = time.time()
-        end_memory = psutil.Process().memory_info().rss
+        end_time, time.time()
+        end_memory, psutil.Process().memory_info().rss
 
-        execution_time = end_time - start_time
-        memory_delta = end_memory - start_memory
+        execution_time, end_time - start_time
+        memory_delta, end_memory - start_memory
 
         system_logger.info(
             f"Performance: {func.__name__} - "
@@ -172,7 +164,6 @@ def performance_monitor(func: F) -> F:
         return result
 
     return wrapper
-
 
 def trade_logger(func: F) -> F:
     """Decorator to log trade execution details.
@@ -189,17 +180,16 @@ def trade_logger(func: F) -> F:
         system_logger.info(f"Starting trade execution: {func.__name__}")
 
         try:
-            result = func(*args, **kwargs)
+            result, func(*args, **kwargs)
             system_logger.info(f"Trade execution completed: {func.__name__}")
-            return result
+        return result
         except Exception as e:
             system_logger.error(f"Trade execution failed: {func.__name__} - {e}")
             raise
 
     return wrapper
 
-
-def risk_manager(max_drawdown: float = 0.1, max_position_size: float = 0.2):
+def risk_manager(max_drawdown: float, 0.1, max_position_size: float, 0.2):
     """Decorator for risk management in trading operations.
 
     Args:
@@ -213,34 +203,33 @@ def risk_manager(max_drawdown: float = 0.1, max_position_size: float = 0.2):
     def decorator(func: F) -> F:
         @wraps(func)
         def wrapper(*args, **kwargs):
-            # Check current drawdown
-            current_drawdown = get_current_drawdown()
-            if current_drawdown > max_drawdown:
+        # Check current drawdown
+            current_drawdown, get_current_drawdown()
+        if current_drawdown > max_drawdown:
                 system_logger.warning(
                     f"Risk limit exceeded: drawdown {current_drawdown:.2%} > {max_drawdown:.2%}",
                 )
-                return None
+        return None
 
-            # Check position size
-            position_size = get_position_size(*args, **kwargs)
-            if position_size > max_position_size:
+        # Check position size
+            position_size, get_position_size(*args, **kwargs)
+        if position_size > max_position_size:
                 system_logger.warning(
                     f"Position size limit exceeded: {position_size:.2%} > {max_position_size:.2%}",
                 )
-                return None
+        return None
 
-            return func(*args, **kwargs)
+        return func(*args, **kwargs)
 
         return wrapper
 
     return decorator
 
-
 def regime_aware(func: F) -> F:
     """Decorator to make functions aware of market regime.
 
     Args:
-        func: Function to make regime-aware
+        func: Function to make regime - aware
 
     Returns:
         Wrapped function with regime awareness
@@ -248,7 +237,7 @@ def regime_aware(func: F) -> F:
 
     @wraps(func)
     def wrapper(*args, **kwargs):
-        current_regime = get_current_regime()
+        current_regime, get_current_regime()
         system_logger.info(f"Current regime: {current_regime}")
 
         # Add regime context to kwargs
@@ -257,7 +246,6 @@ def regime_aware(func: F) -> F:
         return func(*args, **kwargs)
 
     return wrapper
-
 
 def backtest_mode(func: F) -> F:
     """Decorator to enable backtest mode for trading functions.
@@ -277,7 +265,6 @@ def backtest_mode(func: F) -> F:
 
     return wrapper
 
-
 def live_trading_mode(func: F) -> F:
     """Decorator to enable live trading mode.
 
@@ -295,7 +282,6 @@ def live_trading_mode(func: F) -> F:
         return func(*args, **kwargs)
 
     return wrapper
-
 
 def paper_trading_mode(func: F) -> F:
     """Decorator to enable paper trading mode.
@@ -315,7 +301,6 @@ def paper_trading_mode(func: F) -> F:
 
     return wrapper
 
-
 def async_trade_executor(func: F) -> F:
     """Decorator to handle async trade execution.
 
@@ -331,15 +316,14 @@ def async_trade_executor(func: F) -> F:
         system_logger.info(f"Starting async trade execution: {func.__name__}")
 
         try:
-            result = await func(*args, **kwargs)
+            result, await func(*args, **kwargs)
             system_logger.info(f"Async trade execution completed: {func.__name__}")
-            return result
+        return result
         except Exception as e:
             system_logger.error(f"Async trade execution failed: {func.__name__} - {e}")
             raise
 
     return wrapper
-
 
 def trade_validation(func: F) -> F:
     """Decorator to validate trade parameters before execution.
@@ -356,13 +340,12 @@ def trade_validation(func: F) -> F:
         # Validate trade parameters
         if not validate_trade_params(*args, **kwargs):
             system_logger.error(f"Trade validation failed: {func.__name__}")
-            return None
+        return None
 
         system_logger.info(f"Trade validation passed: {func.__name__}")
         return func(*args, **kwargs)
 
     return wrapper
-
 
 # Helper functions (implementations would depend on your specific trading system)
 
@@ -371,36 +354,32 @@ def get_current_drawdown() -> float:
     # Implementation would depend on your portfolio tracking system
     return 0.05  # Placeholder
 
-
 def get_position_size(*args, **kwargs) -> float:
     """Get current position size as fraction of portfolio."""
     # Implementation would depend on your position sizing logic
     return 0.1  # Placeholder
-
 
 def get_current_regime() -> str:
     """Get current market regime."""
     # Implementation would depend on your regime detection system
     return "trending"  # Placeholder
 
-
 def validate_trade_params(*args, **kwargs) -> bool:
     """Validate trade parameters."""
     # Implementation would depend on your validation logic
     return True  # Placeholder
-
 
 def get_trade_tracker():
     """Get a trade tracker instance for monitoring trade execution."""
     # Simple implementation - in a real system this would be more sophisticated
     class TradeTracker:
         def __init__(self):
-            self.trades = []
-            self.current_trade = None
+        self.trades = []
+        self.current_trade, None
 
         def start_trade(self, trade_id: str, symbol: str, side: str, quantity: float, price: float):
             """Start tracking a new trade."""
-            self.current_trade = {
+        self.current_trade = {
                 "trade_id": trade_id,
                 "symbol": symbol,
                 "side": side,
@@ -410,35 +389,34 @@ def get_trade_tracker():
                 "status": "executing"
             }
 
-        def complete_trade(self, trade_id: str, final_price: float, commission: float = 0.0):
+        def complete_trade(self, trade_id: str, final_price: float, commission: float, 0.0):
             """Complete tracking a trade."""
-            if self.current_trade and self.current_trade["trade_id"] == trade_id:
-                self.current_trade["final_price"] = final_price
-                self.current_trade["commission"] = commission
-                self.current_trade["end_time"] = time.time()
-                self.current_trade["status"] = "completed"
-                self.trades.append(self.current_trade)
-                self.current_trade = None
+        if self.current_trade and self.current_trade["trade_id"] == trade_id:
+        self.current_trade["final_price"] = final_price
+        self.current_trade["commission"] = commission
+        self.current_trade["end_time"] = time.time()
+        self.current_trade["status"] = "completed"
+        self.trades.append(self.current_trade)
+        self.current_trade, None
 
         def get_trade_history(self):
             """Get all tracked trades."""
-            return self.trades.copy()
+        return self.trades.copy()
 
         def get_current_trade(self):
             """Get the currently executing trade."""
-            return self.current_trade
+        return self.current_trade
 
     return TradeTracker()
 
-
 def comprehensive_trading_decorator(
-    enable_error_handling: bool = True,
-    enable_performance_monitoring: bool = True,
-    enable_trade_logging: bool = True,
-    enable_risk_management: bool = True,
-    enable_regime_awareness: bool = True,
-    max_drawdown: float = 0.1,
-    max_position_size: float = 0.2,
+    enable_error_handling: bool, True,
+    enable_performance_monitoring: bool, True,
+    enable_trade_logging: bool, True,
+    enable_risk_management: bool, True,
+    enable_regime_awareness: bool, True,
+    max_drawdown: float, 0.1,
+    max_position_size: float, 0.2,
 ):
     """Comprehensive decorator that combines multiple trading enhancements.
 
@@ -458,19 +436,19 @@ def comprehensive_trading_decorator(
     def decorator(func: F) -> F:
         # Apply decorators based on configuration
         if enable_error_handling:
-            func = error_handler()(func)
+            func, error_handler()(func)
 
         if enable_performance_monitoring:
-            func = performance_monitor(func)
+            func, performance_monitor(func)
 
         if enable_trade_logging:
-            func = trade_logger(func)
+            func, trade_logger(func)
 
         if enable_risk_management:
-            func = risk_manager(max_drawdown, max_position_size)(func)
+            func, risk_manager(max_drawdown, max_position_size)(func)
 
         if enable_regime_awareness:
-            func = regime_aware(func)
+            func, regime_aware(func)
 
         return func
 

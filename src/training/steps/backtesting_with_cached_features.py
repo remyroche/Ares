@@ -1,7 +1,7 @@
-# src/training/steps/backtesting_with_cached_features.py
+# src / training / steps / backtesting_with_cached_features.py
 
 """Backtesting integration with cached wavelet features.
-Demonstrates how to use pre-computed wavelet features for fast backtesting
+Demonstrates how to use pre - computed wavelet features for fast backtesting
 without recalculating expensive wavelet transforms.
 """
 
@@ -22,53 +22,52 @@ from src.utils.data_optimizer import ohlcv_columns
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
-
 class BacktestingWithCachedFeatures:
-    """Backtesting system that leverages pre-computed wavelet features for fast execution."""
+    """Backtesting system that leverages pre - computed wavelet features for fast execution."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
-        self.logger = system_logger.getChild("BacktestingWithCachedFeatures")
+        self.config, config
+        self.logger, system_logger.getChild("BacktestingWithCachedFeatures")
 
         # Backtesting configuration
-        self.backtest_config = config.get("backtesting_with_cache", {})
-        self.enable_feature_caching = self.backtest_config.get(
+        self.backtest_config, config.get("backtesting_with_cache", {})
+        self.enable_feature_caching, self.backtest_config.get(
             "enable_feature_caching",
             True,
         )
-        self.cache_lookup_timeout = self.backtest_config.get(
+        self.cache_lookup_timeout, self.backtest_config.get(
             "cache_lookup_timeout",
             5.0,
         )
-        self.enable_performance_monitoring = self.backtest_config.get(
+        self.enable_performance_monitoring, self.backtest_config.get(
             "enable_performance_monitoring",
             True,
         )
-        self.max_backtest_iterations = self.backtest_config.get(
+        self.max_backtest_iterations, self.backtest_config.get(
             "max_backtest_iterations",
             1000,
         )
 
         # Initialize components
-        self.feature_engineer: VectorizedAdvancedFeatureEngineering | None = None
-        self.wavelet_cache: WaveletFeatureCache | None = None
+        self.feature_engineer: VectorizedAdvancedFeatureEngineering | None, None
+        self.wavelet_cache: WaveletFeatureCache | None, None
         self.performance_stats: dict[str, Any] = {}
 
-    @handle_errors(exceptions=(Exception,), default_return=False, context="backtesting.initialize")
+    @handle_errors(exceptions=(Exception,), default_return = False, context="backtesting.initialize")
     async def initialize(self) -> bool:
         """Initialize the backtesting system."""
         try:
-            self.logger.info("🚀 Initializing backtesting with cached features...")
+        self.logger.info("🚀 Initializing backtesting with cached features...")
 
-            # Initialize feature engineering
-            self.feature_engineer = VectorizedAdvancedFeatureEngineering(self.config)
-            await self.feature_engineer.initialize()
+        # Initialize feature engineering
+        self.feature_engineer, VectorizedAdvancedFeatureEngineering(self.config)
+        await self.feature_engineer.initialize()
 
-            # Initialize cache
-            self.wavelet_cache = WaveletFeatureCache(self.config)
+        # Initialize cache
+        self.wavelet_cache, WaveletFeatureCache(self.config)
 
-            # Initialize performance monitoring
-            self.performance_stats = {
+        # Initialize performance monitoring
+        self.performance_stats = {
                 "cache_hits": 0,
                 "cache_misses": 0,
                 "total_feature_load_time": 0.0,
@@ -76,21 +75,21 @@ class BacktestingWithCachedFeatures:
                 "iterations_completed": 0,
             }
 
-            self.logger.info(
+        self.logger.info(
                 "✅ Backtesting with cached features initialized successfully",
             )
-            return True
+        return True
 
         except Exception as e:  # noqa: BLE001
-            self.logger.exception(f"❌ Error initializing backtesting system: {e}")
-            return False
+        self.logger.exception(f"❌ Error initializing backtesting system: {e}")
+        return False
 
     @handle_errors(exceptions=(Exception,), default_return={"error": "run_backtest failed"}, context="backtesting.run_backtest")
     async def run_backtest(
         self,
         price_data: pd.DataFrame,
-        volume_data: pd.DataFrame | None = None,
-        strategy_config: dict[str, Any] | None = None,
+        volume_data: pd.DataFrame | None, None,
+        strategy_config: dict[str, Any] | None, None,
     ) -> dict[str, Any]:
         """Run backtest using cached wavelet features.
 
@@ -103,21 +102,21 @@ class BacktestingWithCachedFeatures:
             Backtest results dictionary
 
         """
-        start_time = time.time()
+        start_time, time.time()
         self.logger.info(f"📊 Starting backtest with {len(price_data)} data points")
 
         # Get wavelet features with caching
-        wavelet_features = await self._get_cached_wavelet_features(
+        wavelet_features, await self._get_cached_wavelet_features(
             price_data,
             volume_data,
         )
 
         if not wavelet_features:
-            self.logger.error("No wavelet features available for backtesting")
-            return {"error": "No wavelet features available"}
+        self.logger.error("No wavelet features available for backtesting")
+        return {"error": "No wavelet features available"}
 
         # Run strategy backtest
-        backtest_results = await self._run_strategy_backtest(
+        backtest_results, await self._run_strategy_backtest(
             price_data,
             volume_data,
             wavelet_features,
@@ -125,7 +124,7 @@ class BacktestingWithCachedFeatures:
         )
 
         # Update performance stats
-        total_time = time.time() - start_time
+        total_time, time.time() - start_time
         self.performance_stats["total_backtest_time"] += total_time
         self.performance_stats["iterations_completed"] += 1
 
@@ -134,7 +133,7 @@ class BacktestingWithCachedFeatures:
 
     @handle_errors(exceptions=(Exception,), default_return={}, context="backtesting.get_cached_features")
     async def _get_cached_wavelet_features(
-        self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None = None
+        self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None, None
     ) -> dict[str, Any]:
         """Get wavelet features with caching support.
 
@@ -147,21 +146,21 @@ class BacktestingWithCachedFeatures:
 
         """
         if not self.feature_engineer:
-            self.logger.error("Feature engineer not initialized")
-            return {}
+        self.logger.error("Feature engineer not initialized")
+        return {}
 
         if not self.wavelet_cache:
-            self.logger.warning(
+        self.logger.warning(
                 "Wavelet cache not available, using direct computation",
             )
-            return await self.feature_engineer._get_wavelet_features_with_caching(  # noqa: SLF001
+        return await self.feature_engineer._get_wavelet_features_with_caching(  # noqa: SLF001
                 price_data,
                 volume_data,
             )
 
         # Generate cache key
-        wavelet_config = self.feature_engineer.wavelet_analyzer.wavelet_config  # type: ignore[attr-defined]
-        cache_key = self.wavelet_cache.generate_cache_key(
+        wavelet_config, self.feature_engineer.wavelet_analyzer.wavelet_config  # type: ignore[attr - defined]
+        cache_key, self.wavelet_cache.generate_cache_key(
             price_data,
             wavelet_config,
             {
@@ -170,24 +169,24 @@ class BacktestingWithCachedFeatures:
         )
 
         # Check cache with timing
-        cache_start_time = time.time()
+        cache_start_time, time.time()
         if self.wavelet_cache.cache_exists(cache_key):
-            self.logger.info(f"📦 Loading wavelet features from cache: {cache_key}")
-            cached_features, _metadata = self.wavelet_cache.load_from_cache(
+        self.logger.info(f"📦 Loading wavelet features from cache: {cache_key}")
+            cached_features, _metadata, self.wavelet_cache.load_from_cache(
                 cache_key,
             )
 
-            cache_load_time = time.time() - cache_start_time
-            self.performance_stats["cache_hits"] += 1
-            self.performance_stats["total_feature_load_time"] += cache_load_time
+            cache_load_time, time.time() - cache_start_time
+        self.performance_stats["cache_hits"] += 1
+        self.performance_stats["total_feature_load_time"] += cache_load_time
 
-            self.logger.info(f"⚡ Cache load time: {cache_load_time:.3f}s")
-            return cached_features
+        self.logger.info(f"⚡ Cache load time: {cache_load_time:.3f}s")
+        return cached_features
 
         # Cache miss - compute features
         self.logger.info(f"🔧 Computing wavelet features (cache miss): {cache_key}")
         wavelet_features = (
-            await self.feature_engineer._get_wavelet_features_with_caching(  # noqa: SLF001
+        await self.feature_engineer._get_wavelet_features_with_caching(  # noqa: SLF001
                 price_data,
                 volume_data,
             )
@@ -201,13 +200,13 @@ class BacktestingWithCachedFeatures:
             "backtest_generated": True,
         }
 
-        cache_success = self.wavelet_cache.save_to_cache(
+        cache_success, self.wavelet_cache.save_to_cache(
             cache_key,
             wavelet_features,
             metadata,
         )
         if cache_success:
-            self.logger.info(
+        self.logger.info(
                 f"💾 Cached wavelet features for future backtests: {cache_key}",
             )
 
@@ -227,7 +226,7 @@ class BacktestingWithCachedFeatures:
         Args:
             price_data: Price data
             volume_data: Volume data (optional)
-            wavelet_features: Pre-computed wavelet features
+            wavelet_features: Pre - computed wavelet features
             strategy_config: Strategy configuration (optional)
 
         Returns:
@@ -239,12 +238,12 @@ class BacktestingWithCachedFeatures:
             **wavelet_features,
             "price": price_data["close"].values,
             "volume": volume_data["volume"].values
-            if volume_data is not None
+        if volume_data is not None
             else np.ones(len(price_data)),
         }
 
         # Simple strategy example using wavelet features
-        results = await self._execute_simple_strategy(
+        results, await self._execute_simple_strategy(
             price_data,
             all_features,
             strategy_config or {},
@@ -289,38 +288,38 @@ class BacktestingWithCachedFeatures:
         returns: list[float] = []
 
         for i in range(len(price_data)):
-            # Calculate signal based on wavelet features
-            signal = 0
+        # Calculate signal based on wavelet features
+            signal, 0
 
-            # Use energy features for trend following
-            if energy_features:
-                # Average last value across energy arrays if consistent
-                try:
+        # Use energy features for trend following
+        if energy_features:
+        # Average last value across energy arrays if consistent
+        try:
                     last_vals = [float(v[min(i, len(v) - 1)]) for v in energy_features.values() if len(v) > 0]
-                    if last_vals:
-                        if float(np.mean(last_vals)) > float(np.median(last_vals)):
-                            signal = 1  # Buy signal
-                except Exception:  # noqa: BLE001
+        if last_vals:
+        if float(np.mean(last_vals)) > float(np.median(last_vals)):
+                            signal, 1  # Buy signal
+        except Exception:  # noqa: BLE001
                     pass
 
-            # Use entropy features for mean reversion
-            if entropy_features:
-                try:
+        # Use entropy features for mean reversion
+        if entropy_features:
+        try:
                     last_vals_e = [float(v[min(i, len(v) - 1)]) for v in entropy_features.values() if len(v) > 0]
-                    if last_vals_e:
-                        if float(np.mean(last_vals_e)) < float(np.median(last_vals_e)):
+        if last_vals_e:
+        if float(np.mean(last_vals_e)) < float(np.median(last_vals_e)):
                             signal = -1  # Sell signal
-                except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001
                     pass
 
             signals.append(signal)
 
-            # Calculate position and returns
-            if i > 0:
+        # Calculate position and returns
+        if i > 0:
                 price_return = (
                     float(price_data["close"].iloc[i]) - float(price_data["close"].iloc[i - 1])
-                ) / max(float(price_data["close"].iloc[i - 1]), 1e-12)
-                position_return = float(signal) * float(price_return)
+                ) / max(float(price_data["close"].iloc[i - 1]), 1e - 12)
+                position_return, float(signal) * float(price_return)
                 returns.append(position_return)
             else:
                 returns.append(0.0)
@@ -328,11 +327,11 @@ class BacktestingWithCachedFeatures:
             positions.append(signal)
 
         # Calculate performance metrics
-        cumulative_returns = np.cumsum(returns)
+        cumulative_returns, np.cumsum(returns)
         sharpe_ratio = (
-            float(np.mean(returns)) / (float(np.std(returns)) + 1e-8) * np.sqrt(252)
+            float(np.mean(returns)) / (float(np.std(returns)) + 1e - 8) * np.sqrt(252)
         )  # Annualized
-        max_drawdown = float(
+        max_drawdown, float(
             np.min(cumulative_returns - np.maximum.accumulate(cumulative_returns))
         )
 
@@ -359,137 +358,136 @@ class BacktestingWithCachedFeatures:
 
         """
         try:
-            self.logger.info(f"🚀 Starting {len(backtest_configs)} backtests")
+        self.logger.info(f"🚀 Starting {len(backtest_configs)} backtests")
 
             results: list[dict[str, Any]] = []
-            for i, config in enumerate(backtest_configs):
-                self.logger.info(f"📊 Running backtest {i + 1}/{len(backtest_configs)}")
+        for i, config in enumerate(backtest_configs):
+        self.logger.info(f"📊 Running backtest {i + 1}/{len(backtest_configs)}")
 
-                # Load data
-                price_data = await self._load_backtest_data(config.get("data_path"))
-                volume_data = await self._load_volume_data(config.get("volume_path"))
+        # Load data
+                price_data, await self._load_backtest_data(config.get("data_path"))
+                volume_data, await self._load_volume_data(config.get("volume_path"))
 
-                if price_data is None:
-                    self.logger.error(f"Failed to load data for backtest {i + 1}")
+        if price_data is None:
+        self.logger.error(f"Failed to load data for backtest {i + 1}")
                     continue
 
-                # Run backtest
-                result = await self.run_backtest(
-                    price_data=price_data,
-                    volume_data=volume_data,
-                    strategy_config=config.get("strategy_config"),
+        # Run backtest
+                result, await self.run_backtest(
+                    price_data = price_data,
+                    volume_data = volume_data,
+                    strategy_config = config.get("strategy_config"),
                 )
 
                 result["backtest_id"] = i + 1
                 result["config"] = config
                 results.append(result)
 
-            self.logger.info(f"✅ Completed {len(results)} backtests")
-            return results
+        self.logger.info(f"✅ Completed {len(results)} backtests")
+        return results
 
         except Exception as e:  # noqa: BLE001
-            self.logger.exception(f"Error in multiple backtests: {e}")
-            return []
+        self.logger.exception(f"Error in multiple backtests: {e}")
+        return []
 
-    @handle_errors(exceptions=(Exception,), default_return=None, context="backtesting.load_backtest_data")
+    @handle_errors(exceptions=(Exception,), default_return = None, context="backtesting.load_backtest_data")
     async def _load_backtest_data(self, data_path: str) -> pd.DataFrame | None:
         """Load backtest data."""
         try:
-            if not data_path:
-                return None
+        if not data_path:
+        return None
 
-            file_path = Path(data_path)
-            if file_path.suffix.lower() == ".parquet":
-                # Prefer dataset scan if a partitioned base is provided in path
-                try:
+            file_path, Path(data_path)
+        if file_path.suffix.lower() == ".parquet":
+        # Prefer dataset scan if a partitioned base is provided in path
+        try:
                     from src.training.enhanced_training_manager_optimized import (
                         ParquetDatasetManager,
                     )
 
-                    pdm = ParquetDatasetManager(logger=self.logger)
+                    pdm, ParquetDatasetManager(logger = self.logger)
                     columns = ["timestamp", "open", "high", "low", "close", "volume"]
-                    # If data_path points to a directory, perform a dataset scan
-                    if Path(data_path).is_dir():
-                        return pdm.scan_dataset(
-                            base_dir=data_path, columns=columns, to_pandas=True
+        # If data_path points to a directory, perform a dataset scan
+        if Path(data_path).is_dir():
+        return pdm.scan_dataset(
+                            base_dir = data_path, columns = columns, to_pandas = True
                         )
-                except Exception:
+        except Exception:
                     pass
-                try:
+        try:
                     from src.utils.logger import log_io_operation
 
-                    with log_io_operation(
-                        self.logger, "read_parquet", data_path, columns=ohlcv_columns()
+        with log_io_operation(
+        self.logger, "read_parquet", data_path, columns = ohlcv_columns()
                     ):
-                        return pd.read_parquet(data_path, columns=ohlcv_columns())
-                except Exception:
+        return pd.read_parquet(data_path, columns = ohlcv_columns())
+        except Exception:
                     from src.utils.logger import log_io_operation
 
-                    with log_io_operation(self.logger, "read_parquet", data_path):
-                        return pd.read_parquet(data_path)
-            if file_path.suffix.lower() == ".csv":
+        with log_io_operation(self.logger, "read_parquet", data_path):
+        return pd.read_parquet(data_path)
+        if file_path.suffix.lower() == ".csv":
                 from src.utils.logger import log_io_operation
 
-                with log_io_operation(self.logger, "read_csv", data_path):
-                    return pd.read_csv(data_path, parse_dates=True)
-            self.logger.error(f"Unsupported file format: {file_path.suffix}")
-            return None
+        with log_io_operation(self.logger, "read_csv", data_path):
+        return pd.read_csv(data_path, parse_dates = True)
+        self.logger.error(f"Unsupported file format: {file_path.suffix}")
+        return None
 
         except Exception as e:  # noqa: BLE001
-            self.logger.exception(f"Error loading backtest data: {e}")
-            return None
+        self.logger.exception(f"Error loading backtest data: {e}")
+        return None
 
-    @handle_errors(exceptions=(Exception,), default_return=None, context="backtesting.load_volume_data")
+    @handle_errors(exceptions=(Exception,), default_return = None, context="backtesting.load_volume_data")
     async def _load_volume_data(self, volume_path: str) -> pd.DataFrame | None:
         """Load volume data."""
         try:
-            if not volume_path:
-                return None
+        if not volume_path:
+        return None
 
-            return await self._load_backtest_data(volume_path)
+        return await self._load_backtest_data(volume_path)
 
         except Exception as e:  # noqa: BLE001
-            self.logger.exception(f"Error loading volume data: {e}")
-            return None
+        self.logger.exception(f"Error loading volume data: {e}")
+        return None
 
     def get_performance_stats(self) -> dict[str, Any]:
         """Get performance statistics."""
         try:
-            stats = self.performance_stats.copy()
+            stats, self.performance_stats.copy()
 
-            if stats.get("iterations_completed", 0) > 0:
+        if stats.get("iterations_completed", 0) > 0:
                 stats["avg_backtest_time"] = (
                     stats["total_backtest_time"] / stats["iterations_completed"]
                 )
                 stats["avg_feature_load_time"] = (
                     stats["total_feature_load_time"] / stats["cache_hits"]
-                    if stats["cache_hits"] > 0
+        if stats["cache_hits"] > 0
                     else 0
                 )
                 stats["cache_hit_rate"] = (
                     stats["cache_hits"] / (stats["cache_hits"] + stats["cache_misses"])
-                    if (stats["cache_hits"] + stats["cache_misses"]) > 0
+        if (stats["cache_hits"] + stats["cache_misses"]) > 0
                     else 0
                 )
 
             stats["timestamp"] = datetime.now().isoformat()
-            return stats
+        return stats
 
         except Exception as e:  # noqa: BLE001
-            self.logger.exception(f"Error getting performance stats: {e}")
-            return {"error": str(e)}
+        self.logger.exception(f"Error getting performance stats: {e}")
+        return {"error": str(e)}
 
     def clear_cache(self) -> bool:
         """Clear wavelet cache."""
         try:
-            if self.wavelet_cache:
-                return bool(self.wavelet_cache.clear_cache())
-            return False
+        if self.wavelet_cache:
+        return bool(self.wavelet_cache.clear_cache())
+        return False
 
         except Exception as e:  # noqa: BLE001
-            self.logger.exception(f"Error clearing cache: {e}")
-            return False
-
+        self.logger.exception(f"Error clearing cache: {e}")
+        return False
 
 async def main() -> None:
     """Main function for backtesting with cached features."""
@@ -498,7 +496,7 @@ async def main() -> None:
         config = {
             "wavelet_cache": {
                 "cache_enabled": True,
-                "cache_dir": "data/wavelet_cache",
+                "cache_dir": "data / wavelet_cache",
                 "cache_format": "parquet",
                 "compression": "snappy",
                 "cache_expiry_days": 30,
@@ -523,22 +521,22 @@ async def main() -> None:
         }
 
         # Initialize backtesting system
-        backtester = BacktestingWithCachedFeatures(config)
+        backtester, BacktestingWithCachedFeatures(config)
         await backtester.initialize()
 
         # Example backtest configurations
         backtest_configs = [
             {
-                "data_path": "data/price_data/ETHUSDT_1m.parquet",
-                "volume_path": "data/volume_data/ETHUSDT_1m.parquet",
+                "data_path": "data / price_data / ETHUSDT_1m.parquet",
+                "volume_path": "data / volume_data / ETHUSDT_1m.parquet",
                 "strategy_config": {
                     "strategy_type": "wavelet_energy",
                     "parameters": {"energy_threshold": 0.5},
                 },
             },
             {
-                "data_path": "data/price_data/BTCUSDT_1m.parquet",
-                "volume_path": "data/volume_data/BTCUSDT_1m.parquet",
+                "data_path": "data / price_data / BTCUSDT_1m.parquet",
+                "volume_path": "data / volume_data / BTCUSDT_1m.parquet",
                 "strategy_config": {
                     "strategy_type": "wavelet_entropy",
                     "parameters": {"entropy_threshold": 0.3},
@@ -547,17 +545,16 @@ async def main() -> None:
         ]
 
         # Run multiple backtests
-        results = await backtester.run_multiple_backtests(backtest_configs)
+        results, await backtester.run_multiple_backtests(backtest_configs)
 
         # Print results
-        for i, result in enumerate(results, start=1):
+        for i, result in enumerate(results, start = 1):
             backtester.logger.info(f"Backtest {i} results summary: keys={list(result.keys())}")
         # Print performance stats
         backtester.logger.info(f"Performance stats: {backtester.get_performance_stats()}")
 
     except Exception as e:  # noqa: BLE001
         system_logger.exception(f"Backtesting main failed: {e}")
-
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -8,14 +8,14 @@ with explicit imports to avoid namespace pollution.
 try:
     from .step01_data_collection import DataCollectionStep
 except ImportError:
-    DataCollectionStep = None
+    DataCollectionStep, None
 
 # Temporarily comment out to avoid syntax errors
 # try:
 #     from .step02_feature_engineering import FeatureEngineeringStep
 # except ImportError:
 #     FeatureEngineeringStep, None
-FeatureEngineeringStep = None
+FeatureEngineeringStep, None
 
 # Temporarily comment out all step imports to avoid syntax errors
 # try:
@@ -94,28 +94,28 @@ FeatureEngineeringStep = None
 #     SavingStep, None
 
 # Set all step classes to None temporarily
-HMMRegimeDiscoveryStep = None
-ProcessingLabelingStep = None
-MarketRegimeClassificationStep = None
-RegimeDataSplittingStep = None
-UnifiedRegimeIntelligenceStep = None
-HMMBasedTrainingStep = None
-AnalystEnhancementStep = None
-TacticianLabelingStep = None
-TacticianSpecialistTrainingStep = None
-ConfidenceCalibrationStep = None
-FinalParametersOptimizationStep = None
-WalkForwardValidationStep = None
-MonteCarloValidationStep = None
-ABTestingStep = None
-SavingStep = None
+HMMRegimeDiscoveryStep, None
+ProcessingLabelingStep, None
+MarketRegimeClassificationStep, None
+RegimeDataSplittingStep, None
+UnifiedRegimeIntelligenceStep, None
+HMMBasedTrainingStep, None
+AnalystEnhancementStep, None
+TacticianLabelingStep, None
+TacticianSpecialistTrainingStep, None
+ConfidenceCalibrationStep, None
+FinalParametersOptimizationStep, None
+WalkForwardValidationStep, None
+MonteCarloValidationStep, None
+ABTestingStep, None
+SavingStep, None
 
 # Import utility functions
 try:
     from .unified_data_loader import UnifiedDataLoader, get_unified_data_loader
 except ImportError:
-    get_unified_data_loader = None
-    UnifiedDataLoader = None
+    get_unified_data_loader, None
+    UnifiedDataLoader, None
 
 # Export all available classes
 __all__ = [

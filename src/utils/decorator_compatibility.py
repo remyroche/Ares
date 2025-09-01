@@ -29,7 +29,7 @@ from .enhanced_decorators import (
 from .decorator_registry import decorator_registry
 from .decorator_config import global_config
 
-F = TypeVar('F', bound=Callable[..., Any])
+F, TypeVar('F', bound = Callable[..., Any])
 
 def _deprecation_warning(old_name: str, new_name: str, removal_version: str = "3.0"):
     """Emit deprecation warning."""
@@ -37,7 +37,7 @@ def _deprecation_warning(old_name: str, new_name: str, removal_version: str = "3
         f"Decorator '{old_name}' is deprecated and will be removed in version {removal_version}. "
         f"Use '{new_name}' instead.",
         DeprecationWarning,
-        stacklevel=3
+        stacklevel = 3
     )
 
 # Legacy decorator mappings for backwards compatibility
@@ -116,9 +116,9 @@ def set_decorator_config(**kwargs):
         else:
             warnings.warn(f"Unknown configuration key: {key}")
 
-def list_available_decorators(include_deprecated: bool = False):
+def list_available_decorators(include_deprecated: bool, False):
     """List all available decorators."""
-    return decorator_registry.list_decorators(include_deprecated=include_deprecated)
+    return decorator_registry.list_decorators(include_deprecated = include_deprecated)
 
 def get_decorator_usage_stats():
     """Get usage statistics for all decorators."""
@@ -135,49 +135,49 @@ def legacy_decorator_factory(legacy_name: str, new_name: str):
         _deprecation_warning(legacy_name, new_name)
         # Import the new decorator dynamically to avoid circular imports
         if new_name == "smart_error_recovery":
-            return smart_error_recovery(*args, **kwargs)
+        return smart_error_recovery(*args, **kwargs)
         elif new_name == "cached_validation":
-            return cached_validation(*args, **kwargs)
+        return cached_validation(*args, **kwargs)
         elif new_name == "enhanced_validation":
-            return enhanced_validation(*args, **kwargs)
+        return enhanced_validation(*args, **kwargs)
         elif new_name == "performance_monitor_v2":
-            return performance_monitor_v2(*args, **kwargs)
+        return performance_monitor_v2(*args, **kwargs)
         else:
-            # Fallback to importing from the main decorators module
+        # Fallback to importing from the main decorators module
             import importlib
-            decorators_module = importlib.import_module("src.utils.decorators")
-            new_decorator = getattr(decorators_module, new_name)
-            return new_decorator(*args, **kwargs)
+            decorators_module, importlib.import_module("src.utils.decorators")
+            new_decorator, getattr(decorators_module, new_name)
+        return new_decorator(*args, **kwargs)
     return decorator
 
 # Register legacy decorators in the registry for discovery
 decorator_registry.register(
     name="validate_call",
-    decorator=validate_call,
+    decorator = validate_call,
     version="1.0",
     description="Legacy decorator - use validate_call_or_runtime_types instead",
     tags=["legacy", "deprecated"],
-    deprecated=True,
+    deprecated = True,
     aliases=["validate_call"]
 )
 
 decorator_registry.register(
     name="check_input",
-    decorator=check_input,
+    decorator = check_input,
     version="1.0",
     description="Legacy decorator - use pa_check_input instead",
     tags=["legacy", "deprecated"],
-    deprecated=True,
+    deprecated = True,
     aliases=["check_input"]
 )
 
 decorator_registry.register(
     name="check_output",
-    decorator=check_output,
+    decorator = check_output,
     version="1.0",
     description="Legacy decorator - use pa_check_output instead",
     tags=["legacy", "deprecated"],
-    deprecated=True,
+    deprecated = True,
     aliases=["check_output"]
 )
 

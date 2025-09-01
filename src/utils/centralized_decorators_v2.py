@@ -12,23 +12,23 @@ from typing import Any, Callable, Dict, List, Optional, Union, Tuple
 # Handle optional dependencies
 try:
     import numpy as np
-    NUMPY_AVAILABLE = True
+    NUMPY_AVAILABLE, True
 except ImportError:
-    NUMPY_AVAILABLE = False
-    np = None
+    NUMPY_AVAILABLE, False
+    np, None
 
 try:
     import pandas as pd
-    PANDAS_AVAILABLE = True
+    PANDAS_AVAILABLE, True
 except ImportError:
-    PANDAS_AVAILABLE = False
-    pd = None
+    PANDAS_AVAILABLE, False
+    pd, None
 
 try:
     from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+    from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 except ImportError:
-    system_logger = logging.getLogger("CentralizedDecoratorsV2")
+    system_logger, logging.getLogger("CentralizedDecoratorsV2")
 
 # Import the new enhanced decorator system
 from .decorator_registry import decorator_registry, global_config
@@ -107,17 +107,17 @@ from .advanced_decorators import (
 @decorator_registry.register(
     name="validate_data_quality_v2",
     version="2.0",
-    description="Enhanced data quality validation with configurable levels and auto-fixing",
-    tags=["validation", "data-quality", "auto-fix"]
+    description="Enhanced data quality validation with configurable levels and auto - fixing",
+    tags=["validation", "data - quality", "auto - fix"]
 )
 def validate_data_quality_v2(
     validation_level: Union[str, ValidationLevel] = "WARNING",
     context: str = "data validation",
-    auto_fix: bool = False,
+    auto_fix: bool, False,
     **validation_kwargs
 ):
     """
-    Enhanced data quality validation decorator with configurable levels and auto-fixing.
+    Enhanced data quality validation decorator with configurable levels and auto - fixing.
 
     Args:
         validation_level: Validation severity level
@@ -128,87 +128,87 @@ def validate_data_quality_v2(
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
-            logger = system_logger.getChild(f"DataQualityV2.{context}")
+            logger, system_logger.getChild(f"DataQualityV2.{context}")
 
-            # Pre-validation
-            if global_config.enable_data_quality_checks:
-                try:
-                    # Apply data quality checks based on validation level
-                    if validation_level in ["ERROR", "CRITICAL", "STRICT"]:
-                        # Strict validation - fail on any issues
-                        await _validate_data_quality_strict(args, kwargs, context, logger)
+        # Pre - validation
+        if global_config.enable_data_quality_checks:
+        try:
+        # Apply data quality checks based on validation level
+        if validation_level in ["ERROR", "CRITICAL", "STRICT"]:
+        # Strict validation - fail on any issues
+        await _validate_data_quality_strict(args, kwargs, context, logger)
                     elif validation_level == "WARNING":
-                        # Warning mode - log issues but continue
-                        await _validate_data_quality_warning(args, kwargs, context, logger)
+        # Warning mode - log issues but continue
+        await _validate_data_quality_warning(args, kwargs, context, logger)
                     elif validation_level == "INFO":
-                        # Info mode - just log information
-                        await _validate_data_quality_info(args, kwargs, context, logger)
-                except Exception as e:
-                    if auto_fix:
-                        logger.warning(f"Auto-fixing data quality issues in {context}: {e}")
-                        args, kwargs = await _apply_data_quality_fixes(args, kwargs, context)
+        # Info mode - just log information
+        await _validate_data_quality_info(args, kwargs, context, logger)
+        except Exception as e:
+        if auto_fix:
+                        logger.warning(f"Auto - fixing data quality issues in {context}: {e}")
+                        args, kwargs, await _apply_data_quality_fixes(args, kwargs, context)
                     else:
                         raise
 
-            # Execute the function
-            try:
-                result = await func(*args, **kwargs)
-            except Exception as e:
+        # Execute the function
+        try:
+                result, await func(*args, **kwargs)
+        except Exception as e:
                 logger.error(f"❌ Function execution failed in {context}: {e}")
                 raise
 
-            # Post-validation
-            if global_config.enable_data_quality_checks:
-                try:
-                    await _validate_output_quality(result, context, logger)
-                except Exception as e:
-                    if auto_fix:
-                        logger.warning(f"Auto-fixing output quality issues in {context}: {e}")
-                        result = await _apply_output_quality_fixes(result, context)
+        # Post - validation
+        if global_config.enable_data_quality_checks:
+        try:
+        await _validate_output_quality(result, context, logger)
+        except Exception as e:
+        if auto_fix:
+                        logger.warning(f"Auto - fixing output quality issues in {context}: {e}")
+                        result, await _apply_output_quality_fixes(result, context)
                     else:
                         raise
 
-            return result
+        return result
 
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
-            logger = system_logger.getChild(f"DataQualityV2.{context}")
+            logger, system_logger.getChild(f"DataQualityV2.{context}")
 
-            # Pre-validation
-            if global_config.enable_data_quality_checks:
-                try:
-                    if validation_level in ["ERROR", "CRITICAL", "STRICT"]:
+        # Pre - validation
+        if global_config.enable_data_quality_checks:
+        try:
+        if validation_level in ["ERROR", "CRITICAL", "STRICT"]:
                         _validate_data_quality_strict_sync(args, kwargs, context, logger)
                     elif validation_level == "WARNING":
                         _validate_data_quality_warning_sync(args, kwargs, context, logger)
                     elif validation_level == "INFO":
                         _validate_data_quality_info_sync(args, kwargs, context, logger)
-                except Exception as e:
-                    if auto_fix:
-                        logger.warning(f"Auto-fixing data quality issues in {context}: {e}")
-                        args, kwargs = _apply_data_quality_fixes_sync(args, kwargs, context)
+        except Exception as e:
+        if auto_fix:
+                        logger.warning(f"Auto - fixing data quality issues in {context}: {e}")
+                        args, kwargs, _apply_data_quality_fixes_sync(args, kwargs, context)
                     else:
                         raise
 
-            # Execute the function
-            try:
-                result = func(*args, **kwargs)
-            except Exception as e:
+        # Execute the function
+        try:
+                result, func(*args, **kwargs)
+        except Exception as e:
                 logger.error(f"❌ Function execution failed in {context}: {e}")
                 raise
 
-            # Post-validation
-            if global_config.enable_data_quality_checks:
-                try:
+        # Post - validation
+        if global_config.enable_data_quality_checks:
+        try:
                     _validate_output_quality_sync(result, context, logger)
-                except Exception as e:
-                    if auto_fix:
-                        logger.warning(f"Auto-fixing output quality issues in {context}: {e}")
-                        result = _apply_output_quality_fixes_sync(result, context)
+        except Exception as e:
+        if auto_fix:
+                        logger.warning(f"Auto - fixing output quality issues in {context}: {e}")
+                        result, _apply_output_quality_fixes_sync(result, context)
                     else:
                         raise
 
-            return result
+        return result
 
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
 
@@ -225,7 +225,7 @@ def validate_data_quality_v2(
     tags=["quality", "gate", "thresholds"]
 )
 def quality_gate_v2(
-    min_quality_score: float = 0.7,
+    min_quality_score: float, 0.7,
     required_grade: str = "C",
     action_on_failure: str = "warn",  # "warn", "raise", "degrade"
     context: str = "quality gate"
@@ -242,76 +242,76 @@ def quality_gate_v2(
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
-            logger = system_logger.getChild(f"QualityGateV2.{context}")
+            logger, system_logger.getChild(f"QualityGateV2.{context}")
 
-            # Execute the function
-            result = await func(*args, **kwargs)
+        # Execute the function
+            result, await func(*args, **kwargs)
 
-            # Assess quality
-            quality_score, grade = _assess_quality(result, context)
+        # Assess quality
+            quality_score, grade, _assess_quality(result, context)
 
-            if quality_score < min_quality_score or _grade_to_score(grade) < _grade_to_score(required_grade):
-                msg = f"Quality gate failed: score {quality_score:.3f} (grade {grade}) below threshold {min_quality_score:.3f} (grade {required_grade})"
+        if quality_score < min_quality_score or _grade_to_score(grade) < _grade_to_score(required_grade):
+                msg, f"Quality gate failed: score {quality_score:.3f} (grade {grade}) below threshold {min_quality_score:.3f} (grade {required_grade})"
 
-                if action_on_failure == "raise":
+        if action_on_failure == "raise":
                     raise ValueError(f"Quality gate failed in {context}: {msg}")
                 elif action_on_failure == "warn":
                     logger.warning(f"Quality gate warning in {context}: {msg}")
                 elif action_on_failure == "degrade":
                     logger.warning(f"Quality gate degradation in {context}: {msg}")
-                    # Apply degradation logic
-                    result = _apply_quality_degradation(result, quality_score, context)
+        # Apply degradation logic
+                    result, _apply_quality_degradation(result, quality_score, context)
 
             logger.info(f"✅ Quality gate passed in {context}: score {quality_score:.3f} (grade {grade})")
-            return result
+        return result
 
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
-            logger = system_logger.getChild(f"QualityGateV2.{context}")
+            logger, system_logger.getChild(f"QualityGateV2.{context}")
 
-            # Execute the function
-            result = func(*args, **kwargs)
+        # Execute the function
+            result, func(*args, **kwargs)
 
-            # Assess quality
-            quality_score, grade = _assess_quality(result, context)
+        # Assess quality
+            quality_score, grade, _assess_quality(result, context)
 
-            if quality_score < min_quality_score or _grade_to_score(grade) < _grade_to_score(required_grade):
-                msg = f"Quality gate failed: score {quality_score:.3f} (grade {grade}) below threshold {min_quality_score:.3f} (grade {required_grade})"
+        if quality_score < min_quality_score or _grade_to_score(grade) < _grade_to_score(required_grade):
+                msg, f"Quality gate failed: score {quality_score:.3f} (grade {grade}) below threshold {min_quality_score:.3f} (grade {required_grade})"
 
-                if action_on_failure == "raise":
+        if action_on_failure == "raise":
                     raise ValueError(f"Quality gate failed in {context}: {msg}")
                 elif action_on_failure == "warn":
                     logger.warning(f"Quality gate warning in {context}: {msg}")
                 elif action_on_failure == "degrade":
                     logger.warning(f"Quality gate degradation in {context}: {msg}")
-                    # Apply degradation logic
-                    result = _apply_quality_degradation(result, quality_score, context)
+        # Apply degradation logic
+                    result, _apply_quality_degradation(result, quality_score, context)
 
             logger.info(f"✅ Quality gate passed in {context}: score {quality_score:.3f} (grade {grade})")
-            return result
+        return result
 
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
 
     return decorator
 
 # ============================================================================
-# STEP-SPECIFIC ML VALIDATION DECORATOR
+# STEP - SPECIFIC ML VALIDATION DECORATOR
 # ============================================================================
 
 @decorator_registry.register(
     name="step_specific_ml_validation_v2",
     version="2.0",
-    description="Enhanced step-specific ML validation with adaptive thresholds",
-    tags=["ml", "validation", "step-specific", "adaptive"]
+    description="Enhanced step - specific ML validation with adaptive thresholds",
+    tags=["ml", "validation", "step - specific", "adaptive"]
 )
 def step_specific_ml_validation_v2(
     step_name: str,
     validation_config: Dict[str, Any] = None,
-    adaptive_thresholds: bool = True,
+    adaptive_thresholds: bool, True,
     context: str = "ml validation"
 ):
     """
-    Enhanced step-specific ML validation decorator with adaptive thresholds.
+    Enhanced step - specific ML validation decorator with adaptive thresholds.
 
     Args:
         step_name: Name of the ML pipeline step
@@ -322,61 +322,61 @@ def step_specific_ml_validation_v2(
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
-            logger = system_logger.getChild(f"StepMLValidationV2.{step_name}")
+            logger, system_logger.getChild(f"StepMLValidationV2.{step_name}")
 
-            # Determine validation thresholds
-            thresholds = _get_validation_thresholds(step_name, validation_config, adaptive_thresholds, args, kwargs)
+        # Determine validation thresholds
+            thresholds, _get_validation_thresholds(step_name, validation_config, adaptive_thresholds, args, kwargs)
 
-            # Pre-validation
-            await _validate_ml_step_prerequisites(args, kwargs, step_name, thresholds, logger)
+        # Pre - validation
+        await _validate_ml_step_prerequisites(args, kwargs, step_name, thresholds, logger)
 
-            # Execute the function
-            result = await func(*args, **kwargs)
+        # Execute the function
+            result, await func(*args, **kwargs)
 
-            # Post-validation
-            await _validate_ml_step_output(result, step_name, thresholds, logger)
+        # Post - validation
+        await _validate_ml_step_output(result, step_name, thresholds, logger)
 
-            return result
+        return result
 
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
-            logger = system_logger.getChild(f"StepMLValidationV2.{step_name}")
+            logger, system_logger.getChild(f"StepMLValidationV2.{step_name}")
 
-            # Determine validation thresholds
-            thresholds = _get_validation_thresholds(step_name, validation_config, adaptive_thresholds, args, kwargs)
+        # Determine validation thresholds
+            thresholds, _get_validation_thresholds(step_name, validation_config, adaptive_thresholds, args, kwargs)
 
-            # Pre-validation
+        # Pre - validation
             _validate_ml_step_prerequisites_sync(args, kwargs, step_name, thresholds, logger)
 
-            # Execute the function
-            result = func(*args, **kwargs)
+        # Execute the function
+            result, func(*args, **kwargs)
 
-            # Post-validation
+        # Post - validation
             _validate_ml_step_output_sync(result, step_name, thresholds, logger)
 
-            return result
+        return result
 
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
 
     return decorator
 
 # ============================================================================
-# AUTO-FIX DATA QUALITY ISSUES DECORATOR
+# AUTO - FIX DATA QUALITY ISSUES DECORATOR
 # ============================================================================
 
 @decorator_registry.register(
     name="auto_fix_data_quality_issues_v2",
     version="2.0",
-    description="Enhanced auto-fix decorator with intelligent issue resolution",
-    tags=["auto-fix", "data-quality", "intelligent"]
+    description="Enhanced auto - fix decorator with intelligent issue resolution",
+    tags=["auto - fix", "data - quality", "intelligent"]
 )
 def auto_fix_data_quality_issues_v2(
-    context: str = "auto-fix",
+    context: str = "auto - fix",
     fix_strategies: List[str] = None,
-    max_fix_attempts: int = 3
+    max_fix_attempts: int, 3
 ):
     """
-    Enhanced auto-fix decorator with intelligent issue resolution.
+    Enhanced auto - fix decorator with intelligent issue resolution.
 
     Args:
         context: Context for logging and error messages
@@ -386,41 +386,41 @@ def auto_fix_data_quality_issues_v2(
     def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
-            logger = system_logger.getChild(f"AutoFixV2.{context}")
+            logger, system_logger.getChild(f"AutoFixV2.{context}")
 
-            # Execute with auto-fixing
-            for attempt in range(max_fix_attempts):
-                try:
-                    result = await func(*args, **kwargs)
-                    return result
-                except Exception as e:
-                    if attempt < max_fix_attempts - 1:
-                        logger.warning(f"Attempt {attempt + 1} failed, applying auto-fix: {e}")
-                        args, kwargs = await _apply_intelligent_fixes(args, kwargs, context, fix_strategies)
+        # Execute with auto - fixing
+        for attempt in range(max_fix_attempts):
+        try:
+                    result, await func(*args, **kwargs)
+        return result
+        except Exception as e:
+        if attempt < max_fix_attempts - 1:
+                        logger.warning(f"Attempt {attempt + 1} failed, applying auto - fix: {e}")
+                        args, kwargs, await _apply_intelligent_fixes(args, kwargs, context, fix_strategies)
                     else:
-                        logger.error(f"All auto-fix attempts failed in {context}: {e}")
+                        logger.error(f"All auto - fix attempts failed in {context}: {e}")
                         raise
 
-            return None  # Should never reach here
+        return None  # Should never reach here
 
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
-            logger = system_logger.getChild(f"AutoFixV2.{context}")
+            logger, system_logger.getChild(f"AutoFixV2.{context}")
 
-            # Execute with auto-fixing
-            for attempt in range(max_fix_attempts):
-                try:
-                    result = func(*args, **kwargs)
-                    return result
-                except Exception as e:
-                    if attempt < max_fix_attempts - 1:
-                        logger.warning(f"Attempt {attempt + 1} failed, applying auto-fix: {e}")
-                        args, kwargs = _apply_intelligent_fixes_sync(args, kwargs, context, fix_strategies)
+        # Execute with auto - fixing
+        for attempt in range(max_fix_attempts):
+        try:
+                    result, func(*args, **kwargs)
+        return result
+        except Exception as e:
+        if attempt < max_fix_attempts - 1:
+                        logger.warning(f"Attempt {attempt + 1} failed, applying auto - fix: {e}")
+                        args, kwargs, _apply_intelligent_fixes_sync(args, kwargs, context, fix_strategies)
                     else:
-                        logger.error(f"All auto-fix attempts failed in {context}: {e}")
+                        logger.error(f"All auto - fix attempts failed in {context}: {e}")
                         raise
 
-            return None  # Should never reach here
+        return None  # Should never reach here
 
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
 
@@ -434,40 +434,40 @@ def auto_fix_data_quality_issues_v2(
     name="monitor_feature_engineering_v2",
     version="2.0",
     description="Enhanced feature engineering monitoring with detailed metrics",
-    tags=["monitoring", "feature-engineering", "metrics"]
+    tags=["monitoring", "feature - engineering", "metrics"]
 )
 def monitor_feature_engineering_v2(
-    track_feature_stats: bool = True,
-    track_correlation_changes: bool = True,
-    track_memory_usage: bool = True,
+    track_feature_stats: bool, True,
+    track_correlation_changes: bool, True,
+    track_memory_usage: bool, True,
     context: str = "feature engineering"
 ):
     """Enhanced feature engineering monitoring decorator."""
     return performance_monitor_v2(
         level="detailed",
-        track_memory=track_memory_usage,
-        track_cpu=True,
-        track_io=track_feature_stats
+        track_memory = track_memory_usage,
+        track_cpu = True,
+        track_io = track_feature_stats
     )
 
 @decorator_registry.register(
     name="monitor_data_collection_v2",
     version="2.0",
     description="Enhanced data collection monitoring with quality metrics",
-    tags=["monitoring", "data-collection", "quality"]
+    tags=["monitoring", "data - collection", "quality"]
 )
 def monitor_data_collection_v2(
-    track_data_volume: bool = True,
-    track_quality_metrics: bool = True,
-    track_collection_time: bool = True,
+    track_data_volume: bool, True,
+    track_quality_metrics: bool, True,
+    track_collection_time: bool, True,
     context: str = "data collection"
 ):
     """Enhanced data collection monitoring decorator."""
     return performance_monitor_v2(
         level="detailed",
-        track_memory=True,
-        track_cpu=True,
-        track_io=track_data_volume
+        track_memory = True,
+        track_cpu = True,
+        track_io = track_data_volume
     )
 
 # ============================================================================
@@ -480,13 +480,13 @@ async def _validate_data_quality_strict(args, kwargs, context, logger):
     pass
 
 async def _validate_data_quality_warning(args, kwargs, context, logger):
-    """Warning-based data quality validation."""
-    # Implementation for warning-based validation
+    """Warning - based data quality validation."""
+    # Implementation for warning - based validation
     pass
 
 async def _validate_data_quality_info(args, kwargs, context, logger):
-    """Info-based data quality validation."""
-    # Implementation for info-based validation
+    """Info - based data quality validation."""
+    # Implementation for info - based validation
     pass
 
 def _validate_data_quality_strict_sync(args, kwargs, context, logger):
@@ -494,11 +494,11 @@ def _validate_data_quality_strict_sync(args, kwargs, context, logger):
     pass
 
 def _validate_data_quality_warning_sync(args, kwargs, context, logger):
-    """Synchronous warning-based data quality validation."""
+    """Synchronous warning - based data quality validation."""
     pass
 
 def _validate_data_quality_info_sync(args, kwargs, context, logger):
-    """Synchronous info-based data quality validation."""
+    """Synchronous info - based data quality validation."""
     pass
 
 async def _apply_data_quality_fixes(args, kwargs, context):

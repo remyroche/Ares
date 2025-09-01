@@ -1,4 +1,4 @@
-# src/training/steps/step04_analyst_labeling_feature_engineering_components/fractional_triple_barrier_labeling.py
+# src / training / steps / step04_analyst_labeling_feature_engineering_components / fractional_triple_barrier_labeling.py
 
 """Fractional Triple Barrier Labeling for enhanced model training.
 Implements continuous labeling instead of binary classification for better
@@ -17,23 +17,19 @@ from src.utils.centralized_decorators import (
 from src.utils.logger import get_logger
 from .optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
 
-
 class FractionalTripleBarrierLabeling:
     """Enhanced triple barrier labeling with fractional (continuous) labels.
 
     Instead of binary labels (1/-1), generates continuous values based on:
-    - Distance to barriers
-    - Time decay factors
-    - Volatility normalization
-    - Regime-specific scaling
+    - Distance to barriers - Time decay factors - Volatility normalization - Regime - specific scaling
     """
 
     def __init__(
         self,
-        profit_take_multiplier: float = 0.002,
-        stop_loss_multiplier: float = 0.001,
-        time_barrier_minutes: int = 30,
-        max_lookahead: int = 100,
+        profit_take_multiplier: float, 0.002,
+        stop_loss_multiplier: float, 0.001,
+        time_barrier_minutes: int, 30,
+        max_lookahead: int, 100,
         fractional_config: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Initialize fractional triple barrier labeling.
@@ -45,16 +41,16 @@ class FractionalTripleBarrierLabeling:
             max_lookahead: Maximum lookahead points
             fractional_config: Configuration for fractional labeling
         """
-        self.base_labeler = OptimizedTripleBarrierLabeling(
-            profit_take_multiplier=profit_take_multiplier,
-            stop_loss_multiplier=stop_loss_multiplier,
-            time_barrier_minutes=time_barrier_minutes,
-            max_lookahead=max_lookahead,
-            binary_classification=False,  # We want all samples for fractional processing
+        self.base_labeler, OptimizedTripleBarrierLabeling(
+            profit_take_multiplier = profit_take_multiplier,
+            stop_loss_multiplier = stop_loss_multiplier,
+            time_barrier_minutes = time_barrier_minutes,
+            max_lookahead = max_lookahead,
+            binary_classification = False,  # We want all samples for fractional processing
         )
 
         # Default fractional configuration
-        self.fractional_config = fractional_config or {
+        self.fractional_config, fractional_config or {
             "enable_distance_scaling": True,
             "enable_time_decay": True,
             "enable_volatility_normalization": True,
@@ -66,15 +62,15 @@ class FractionalTripleBarrierLabeling:
             "max_confidence_threshold": 0.95,
         }
 
-        self.logger = get_logger("FractionalTripleBarrierLabeling")
+        self.logger, get_logger("FractionalTripleBarrierLabeling")
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=pd.DataFrame(),
+        default_return = pd.DataFrame(),
         context="fractional_triple_barrier_labeling.apply"
     )
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
-    @with_tracing_span("FractionalTripleBarrier.apply", log_args=False)
+    @guard_dataframe_nulls(mode="warn", arg_index = 1)
+    @with_tracing_span("FractionalTripleBarrier.apply", log_args = False)
     def apply_fractional_triple_barrier_labeling(
         self,
         data: pd.DataFrame,
@@ -85,7 +81,7 @@ class FractionalTripleBarrierLabeling:
 
         Args:
             data: OHLCV data
-            regime_labels: Optional regime labels for regime-specific scaling
+            regime_labels: Optional regime labels for regime - specific scaling
             volatility_series: Optional volatility series for normalization
 
         Returns:
@@ -94,18 +90,18 @@ class FractionalTripleBarrierLabeling:
         self.logger.info("Applying fractional triple barrier labeling")
 
         # Step 1: Get base binary labels
-        labeled_data = self.base_labeler.apply_triple_barrier_labeling_vectorized(data)
+        labeled_data, self.base_labeler.apply_triple_barrier_labeling_vectorized(data)
 
         # Step 2: Calculate fractional components
-        fractional_components = self._calculate_fractional_components(
+        fractional_components, self._calculate_fractional_components(
             labeled_data, regime_labels, volatility_series
         )
 
         # Step 3: Combine into final fractional labels
-        final_labels = self._combine_fractional_components(fractional_components)
+        final_labels, self._combine_fractional_components(fractional_components)
 
         # Step 4: Add confidence scores
-        confidence_scores = self._calculate_confidence_scores(
+        confidence_scores, self._calculate_confidence_scores(
             labeled_data, fractional_components
         )
 
@@ -117,8 +113,8 @@ class FractionalTripleBarrierLabeling:
         labeled_data["volatility_score"] = fractional_components["volatility_score"]
 
         # Step 6: Filter by confidence threshold
-        min_confidence = self.fractional_config["min_confidence_threshold"]
-        filtered_data = labeled_data[confidence_scores >= min_confidence].copy()
+        min_confidence, self.fractional_config["min_confidence_threshold"]
+        filtered_data, labeled_data[confidence_scores >= min_confidence].copy()
 
         self.logger.info(f"Fractional labeling complete: {len(filtered_data)}/{len(labeled_data)} samples retained")
 
@@ -131,14 +127,14 @@ class FractionalTripleBarrierLabeling:
         volatility_series: Optional[pd.Series] = None,
     ) -> Dict[str, np.ndarray]:
         """Calculate individual fractional components."""
-        n = len(labeled_data)
+        n, len(labeled_data)
         components = {
             "distance_score": np.zeros(n),
             "time_score": np.zeros(n),
             "volatility_score": np.zeros(n),
         }
 
-        # Distance-based scoring
+        # Distance - based scoring
         if self.fractional_config["enable_distance_scaling"]:
             components["distance_score"] = self._calculate_distance_scores(labeled_data)
 
@@ -155,22 +151,22 @@ class FractionalTripleBarrierLabeling:
         return components
 
     def _calculate_distance_scores(self, labeled_data: pd.DataFrame) -> np.ndarray:
-        """Calculate distance-based fractional scores."""
-        scores = np.zeros(len(labeled_data))
+        """Calculate distance - based fractional scores."""
+        scores, np.zeros(len(labeled_data))
 
         # For profit hits: score based on how quickly profit was achieved
-        profit_hits = labeled_data["label"] == 1
+        profit_hits, labeled_data["label"] == 1
         if profit_hits.any():
-            profit_pcts = labeled_data.loc[profit_hits, "potential_profit_pct"]
-            # Normalize by target profit
-            target_profit = self.base_labeler.profit_take_multiplier
+            profit_pcts, labeled_data.loc[profit_hits, "potential_profit_pct"]
+        # Normalize by target profit
+            target_profit, self.base_labeler.profit_take_multiplier
             scores[profit_hits] = np.clip(profit_pcts / target_profit, 0, 1)
 
         # For stop loss hits: score based on how quickly stop was hit
-        stop_hits = labeled_data["label"] == -1
+        stop_hits, labeled_data["label"] == -1
         if stop_hits.any():
-            stop_pcts = labeled_data.loc[stop_hits, "potential_profit_pct"]
-            # Normalize by target loss (negative)
+            stop_pcts, labeled_data.loc[stop_hits, "potential_profit_pct"]
+        # Normalize by target loss (negative)
             target_loss = -self.base_labeler.stop_loss_multiplier
             scores[stop_hits] = np.clip(stop_pcts / target_loss, 0, 1)
 
@@ -178,23 +174,23 @@ class FractionalTripleBarrierLabeling:
 
     def _calculate_time_decay_scores(self, labeled_data: pd.DataFrame) -> np.ndarray:
         """Calculate time decay scores based on how quickly barriers were hit."""
-        scores = np.zeros(len(labeled_data))
+        scores, np.zeros(len(labeled_data))
 
-        # This would require tracking the actual time/bar index when barriers were hit
+        # This would require tracking the actual time / bar index when barriers were hit
         # For now, use a simplified approach based on profit percentages
         # Higher profit percentages (achieved quickly) get higher scores
 
-        profit_hits = labeled_data["label"] == 1
-        stop_hits = labeled_data["label"] == -1
+        profit_hits, labeled_data["label"] == 1
+        stop_hits, labeled_data["label"] == -1
 
         if profit_hits.any():
-            # Quick profit hits get higher scores
-            profit_pcts = labeled_data.loc[profit_hits, "potential_profit_pct"]
+        # Quick profit hits get higher scores
+            profit_pcts, labeled_data.loc[profit_hits, "potential_profit_pct"]
             scores[profit_hits] = np.clip(profit_pcts / self.base_labeler.profit_take_multiplier, 0, 1)
 
         if stop_hits.any():
-            # Quick stop hits get lower scores (worse performance)
-            stop_pcts = labeled_data.loc[stop_hits, "potential_profit_pct"]
+        # Quick stop hits get lower scores (worse performance)
+            stop_pcts, labeled_data.loc[stop_hits, "potential_profit_pct"]
             scores[stop_hits] = np.clip(stop_pcts / self.base_labeler.stop_loss_multiplier, 0, 1)
 
         return scores
@@ -204,19 +200,19 @@ class FractionalTripleBarrierLabeling:
         labeled_data: pd.DataFrame,
         volatility_series: Optional[pd.Series] = None
     ) -> np.ndarray:
-        """Calculate volatility-normalized scores."""
-        scores = np.zeros(len(labeled_data))
+        """Calculate volatility - normalized scores."""
+        scores, np.zeros(len(labeled_data))
 
         if volatility_series is not None:
-            # Normalize by volatility - higher volatility periods get adjusted scores
-            volatility_norm = volatility_series / volatility_series.rolling(20).mean()
-            scores = np.clip(1 / volatility_norm, 0.5, 2.0)  # Bounded normalization
+        # Normalize by volatility - higher volatility periods get adjusted scores
+            volatility_norm, volatility_series / volatility_series.rolling(20).mean()
+            scores, np.clip(1 / volatility_norm, 0.5, 2.0)  # Bounded normalization
         else:
-            # Use simple rolling volatility from price data
-            returns = labeled_data["close"].pct_change()
-            rolling_vol = returns.rolling(20).std()
-            vol_norm = rolling_vol / rolling_vol.rolling(100).mean()
-            scores = np.clip(1 / vol_norm, 0.5, 2.0)
+        # Use simple rolling volatility from price data
+            returns, labeled_data["close"].pct_change()
+            rolling_vol, returns.rolling(20).std()
+            vol_norm, rolling_vol / rolling_vol.rolling(100).mean()
+            scores, np.clip(1 / vol_norm, 0.5, 2.0)
 
         return scores
 
@@ -239,7 +235,7 @@ class FractionalTripleBarrierLabeling:
         )
 
         # Scale to [-1, 1] range
-        final_labels = np.clip(final_labels, -1, 1)
+        final_labels, np.clip(final_labels, -1, 1)
 
         return final_labels
 
@@ -250,25 +246,25 @@ class FractionalTripleBarrierLabeling:
     ) -> np.ndarray:
         """Calculate confidence scores for fractional labels."""
         # Base confidence from barrier hit certainty
-        base_confidence = np.abs(labeled_data["label"])
+        base_confidence, np.abs(labeled_data["label"])
 
         # Additional confidence from component consistency
-        component_std = np.std([
+        component_std, np.std([
             components["distance_score"],
             components["time_score"],
             components["volatility_score"]
-        ], axis=0)
+        ], axis = 0)
 
         # Higher consistency (lower std) means higher confidence
-        consistency_confidence = 1 - component_std
+        consistency_confidence, 1 - component_std
 
         # Combine base and consistency confidence
-        final_confidence = 0.7 * base_confidence + 0.3 * consistency_confidence
+        final_confidence, 0.7 * base_confidence + 0.3 * consistency_confidence
 
         # Apply thresholds
-        min_conf = self.fractional_config["min_confidence_threshold"]
-        max_conf = self.fractional_config["max_confidence_threshold"]
-        final_confidence = np.clip(final_confidence, min_conf, max_conf)
+        min_conf, self.fractional_config["min_confidence_threshold"]
+        max_conf, self.fractional_config["max_confidence_threshold"]
+        final_confidence, np.clip(final_confidence, min_conf, max_conf)
 
         return final_confidence
 

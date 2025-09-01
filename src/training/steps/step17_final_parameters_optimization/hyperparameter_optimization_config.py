@@ -1,4 +1,4 @@
-# src/training/steps/step17_final_parameters_optimization/
+# src / training / steps / step17_final_parameters_optimization/
 # hyperparameter_optimization_config.py
 
 """Hyperparameter Optimization Configuration.
@@ -13,7 +13,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-
 class OptimizationStrategy(Enum):
     """Optimization strategies for different parameter categories."""
 
@@ -23,7 +22,6 @@ class OptimizationStrategy(Enum):
     GRID_SEARCH = "grid_search"
     RANDOM_SEARCH = "random_search"
     EVOLUTIONARY = "evolutionary"
-
 
 class EvaluationMetric(Enum):
     """Evaluation metrics for optimization."""
@@ -41,22 +39,20 @@ class EvaluationMetric(Enum):
     AVERAGE_WIN = "average_win"
     AVERAGE_LOSS = "average_loss"
 
-
 @dataclass
 class SearchSpace:
     """Defines the search space for a parameter category."""
 
     name: str = ""
-    parameters: dict[str, dict[str, Any]] = field(default_factory=dict)
-    optimization_strategy: OptimizationStrategy = OptimizationStrategy.SINGLE_OBJECTIVE
-    n_trials: int = 50
-    timeout_seconds: int = 1800
-    early_stopping_patience: int = 10
-    evaluation_metrics: list[EvaluationMetric] = field(default_factory=list)
-    constraints: dict[str, Any] = field(default_factory=dict)
-    warm_start: bool = True
-    parallel_trials: int = 1
-
+    parameters: dict[str, dict[str, Any]] = field(default_factory = dict)
+    optimization_strategy: OptimizationStrategy, OptimizationStrategy.SINGLE_OBJECTIVE
+    n_trials: int, 50
+    timeout_seconds: int, 1800
+    early_stopping_patience: int, 10
+    evaluation_metrics: list[EvaluationMetric] = field(default_factory = list)
+    constraints: dict[str, Any] = field(default_factory = dict)
+    warm_start: bool, True
+    parallel_trials: int, 1
 
 @dataclass
 class ConfidenceThresholdsSearchSpace(SearchSpace):
@@ -64,9 +60,9 @@ class ConfidenceThresholdsSearchSpace(SearchSpace):
 
     def __post_init__(self) -> None:
         self.name = "confidence_thresholds"
-        self.optimization_strategy = OptimizationStrategy.MULTI_OBJECTIVE
-        self.n_trials = 100
-        self.timeout_seconds = 1800
+        self.optimization_strategy, OptimizationStrategy.MULTI_OBJECTIVE
+        self.n_trials, 100
+        self.timeout_seconds, 1800
         self.evaluation_metrics = [
             EvaluationMetric.WIN_RATE,
             EvaluationMetric.AVERAGE_WIN,
@@ -141,15 +137,14 @@ class ConfidenceThresholdsSearchSpace(SearchSpace):
             "ensemble_confidence_threshold": {"min": 0.65, "max": 0.9},
         }
 
-
 @dataclass
 class VolatilityParametersSearchSpace(SearchSpace):
     """Search space for volatility parameters optimization."""
 
     def __post_init__(self) -> None:
         self.name = "volatility_parameters"
-        self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
-        self.n_trials = 50
+        self.optimization_strategy, OptimizationStrategy.SINGLE_OBJECTIVE
+        self.n_trials, 50
         self.evaluation_metrics = [
             EvaluationMetric.SHARPE_RATIO,
             EvaluationMetric.VOLATILITY,
@@ -210,15 +205,14 @@ class VolatilityParametersSearchSpace(SearchSpace):
             },
         }
 
-
 @dataclass
 class PositionSizingSearchSpace(SearchSpace):
     """Search space for position sizing parameters optimization."""
 
     def __post_init__(self) -> None:
         self.name = "position_sizing_parameters"
-        self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
-        self.n_trials = 60
+        self.optimization_strategy, OptimizationStrategy.SINGLE_OBJECTIVE
+        self.n_trials, 60
         self.evaluation_metrics = [
             EvaluationMetric.TOTAL_RETURN,
             EvaluationMetric.MAX_DRAWDOWN,
@@ -294,15 +288,14 @@ class PositionSizingSearchSpace(SearchSpace):
             "kelly_multiplier": {"min": 0.15, "max": 0.4},
         }
 
-
 @dataclass
 class RiskManagementSearchSpace(SearchSpace):
     """Search space for risk management parameters optimization."""
 
     def __post_init__(self) -> None:
         self.name = "risk_management_parameters"
-        self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
-        self.n_trials = 50
+        self.optimization_strategy, OptimizationStrategy.SINGLE_OBJECTIVE
+        self.n_trials, 50
         self.evaluation_metrics = [
             EvaluationMetric.MAX_DRAWDOWN,
             EvaluationMetric.VALUE_AT_RISK,
@@ -366,15 +359,14 @@ class RiskManagementSearchSpace(SearchSpace):
             },
         }
 
-
 @dataclass
 class EnsembleParametersSearchSpace(SearchSpace):
     """Search space for ensemble parameters optimization."""
 
     def __post_init__(self) -> None:
         self.name = "ensemble_parameters"
-        self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
-        self.n_trials = 40
+        self.optimization_strategy, OptimizationStrategy.SINGLE_OBJECTIVE
+        self.n_trials, 40
         self.evaluation_metrics = [
             EvaluationMetric.WIN_RATE,
             EvaluationMetric.PROFIT_FACTOR,
@@ -428,21 +420,20 @@ class EnsembleParametersSearchSpace(SearchSpace):
             "ensemble_minimum_models": {"type": "int", "min": 2, "max": 5, "step": 1},
         }
 
-
 @dataclass
 class RegimeSpecificSearchSpace(SearchSpace):
-    """Search space for regime-specific parameters optimization."""
+    """Search space for regime - specific parameters optimization."""
 
     def __post_init__(self) -> None:
         self.name = "regime_specific_parameters"
-        self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
-        self.n_trials = 30
+        self.optimization_strategy, OptimizationStrategy.SINGLE_OBJECTIVE
+        self.n_trials, 30
         self.evaluation_metrics = [
             EvaluationMetric.SHARPE_RATIO,
             EvaluationMetric.TOTAL_RETURN,
         ]
-        # Meta-label mixture defaults for downstream use
-        # (can be tuned via study-specific configs)
+        # Meta - label mixture defaults for downstream use
+        # (can be tuned via study - specific configs)
         self.meta_label_mixture_defaults = {
             "alpha": 1.0,
             "beta": 1.0,
@@ -504,15 +495,14 @@ class RegimeSpecificSearchSpace(SearchSpace):
             },
         }
 
-
 @dataclass
 class TimingParametersSearchSpace(SearchSpace):
     """Search space for timing parameters optimization."""
 
     def __post_init__(self) -> None:
         self.name = "timing_parameters"
-        self.optimization_strategy = OptimizationStrategy.SINGLE_OBJECTIVE
-        self.n_trials = 30
+        self.optimization_strategy, OptimizationStrategy.SINGLE_OBJECTIVE
+        self.n_trials, 30
         self.evaluation_metrics = [
             EvaluationMetric.TOTAL_RETURN,
             EvaluationMetric.WIN_RATE,
@@ -533,7 +523,6 @@ class TimingParametersSearchSpace(SearchSpace):
             "high_impact_cooldown": {"type": "int", "min": 60, "max": 180, "step": 15},
         }
 
-
 class HyperparameterOptimizationConfig:
     """Main configuration class for hyperparameter optimization."""
 
@@ -549,7 +538,7 @@ class HyperparameterOptimizationConfig:
         }
 
         self.global_config: dict[str, Any] = {
-            "storage_url": "sqlite:///data/optimization_storage/optuna_studies.db",
+            "storage_url": "sqlite:///data / optimization_storage / optuna_studies.db",
             "study_name_prefix": "hyperparameter_optimization",
             "sampler": "tpe",  # "tpe", "random", "cmaes", "nsgaii"
             "pruner": "hyperband",  # "hyperband", "median", "percentile"
@@ -599,21 +588,21 @@ class HyperparameterOptimizationConfig:
 
         # Check parameter definitions
         for param_name, param_config in search_space.parameters.items():
-            if "type" not in param_config:
+        if "type" not in param_config:
                 errors.append(f"Parameter {param_name} missing type definition")
                 continue
 
-            param_type = param_config.get("type")
-            if param_type == "float":
-                if "min" not in param_config or "max" not in param_config:
+            param_type, param_config.get("type")
+        if param_type == "float":
+        if "min" not in param_config or "max" not in param_config:
                     errors.append(
-                        f"Float parameter {param_name} missing min/max values",
+                        f"Float parameter {param_name} missing min / max values",
                     )
             elif param_type == "int":
-                if "min" not in param_config or "max" not in param_config:
-                    errors.append(f"Int parameter {param_name} missing min/max values")
+        if "min" not in param_config or "max" not in param_config:
+                    errors.append(f"Int parameter {param_name} missing min / max values")
             elif param_type == "categorical":
-                if "choices" not in param_config:
+        if "choices" not in param_config:
                     errors.append(f"Categorical parameter {param_name} missing choices")
 
         return errors
@@ -644,24 +633,21 @@ class HyperparameterOptimizationConfig:
 
         return summary
 
-
 # Global configuration instance
-HYPERPARAMETER_CONFIG = HyperparameterOptimizationConfig()
-
+HYPERPARAMETER_CONFIG, HyperparameterOptimizationConfig()
 
 def get_hyperparameter_config() -> HyperparameterOptimizationConfig:
     """Get the global hyperparameter optimization configuration."""
     return HYPERPARAMETER_CONFIG
 
-
 def validate_hyperparameter_config() -> list[str]:
     """Validate the entire hyperparameter optimization configuration."""
-    config = get_hyperparameter_config()
+    config, get_hyperparameter_config()
     errors: list[str] = []
 
     # Validate each search space
     for name, search_space in config.search_spaces.items():
-        space_errors = config.validate_search_space(search_space)
+        space_errors, config.validate_search_space(search_space)
         for err in space_errors:
             errors.append(f"{name}: {err}")
 
@@ -674,11 +660,10 @@ def validate_hyperparameter_config() -> list[str]:
 
     return errors
 
-
 def get_optimization_plan() -> dict[str, Any]:
     """Get a detailed optimization plan."""
-    config = get_hyperparameter_config()
-    summary = config.get_optimization_summary()
+    config, get_hyperparameter_config()
+    summary, config.get_optimization_summary()
 
     return {
         "optimization_plan": {
@@ -700,13 +685,12 @@ def get_optimization_plan() -> dict[str, Any]:
         "summary": summary,
     }
 
-
 if __name__ == "__main__":
     # Test the configuration
-    config = get_hyperparameter_config()
+    config, get_hyperparameter_config()
 
     # Validate configuration
-    errors = validate_hyperparameter_config()
+    errors, validate_hyperparameter_config()
     if errors:
         print("❌ Configuration validation errors:")
         for _error in errors:
@@ -715,7 +699,7 @@ if __name__ == "__main__":
         print("✅ Configuration validated successfully")
 
     # Print optimization plan
-    plan = get_optimization_plan()
+    plan, get_optimization_plan()
     print("\nOptimization plan summary:")
     print(
         f" - Total trials: {plan['summary']['total_trials']} | "

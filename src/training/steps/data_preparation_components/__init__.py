@@ -1,11 +1,10 @@
-# src/training/steps/data_preparation_components/__init__.py
+# src / training / steps / data_preparation_components / __init__.py
 
 """Data Preparation Components Package.
 
 This package contains components for data preparation and formatting during training.
 """
 
-from src.utils.warning_symbols import (
     connection_error,
     critical,
     error,

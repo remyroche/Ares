@@ -9,7 +9,7 @@ Available categories:
 - Type Checking (Python: mypy; Optional JS/TS: tsc if present)
 - Dead Code Detection (Python: vulture)
 - Dependency Mapping (Python: pydeps; tree via pipdeptree)
-- Security Scanning (Python: bandit; secrets: detect-secrets)
+
 - Complexity Analysis (Python: radon)
 - Test Coverage (pytest + coverage if tests configured)
 - Dependency Audit (Python: pip-audit)

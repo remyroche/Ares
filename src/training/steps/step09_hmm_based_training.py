@@ -1,4 +1,4 @@
-# src/training/steps/step9_hmm_based_training.py
+# src/training/steps/step09_hmm_based_training.py
 
 """Step 9: HMM-Based Model Training with Standardized Data Quality Management.
 
@@ -434,7 +434,7 @@ class HMMBasedTrainingStep:
             msg = f"Enhanced optimization failed for {timeframe} {architecture}: {e}"
             raise RuntimeError(msg)
 
-    @with_enhanced_mlflow_logging("step9_hmm_based_training")
+    @with_enhanced_mlflow_logging("step09_hmm_based_training")
     @handle_errors(
         exceptions=(Exception,),
         default_return={"status": "FAILED", "error": "Execution failed"},
@@ -1580,9 +1580,9 @@ class HMMBasedTrainingStep:
                     "❌ Regime-specific models are required for the system to function properly",
                 )
                 self.logger.error(
-                    "💡 Please run step3_hmm_regime_discovery first to create regime splits",
+                    "💡 Please run step03_hmm_regime_discovery first to create regime splits",
                 )
-                msg = f"Missing regime splits for {timeframe}. Run step3_hmm_regime_discovery first.",
+                msg = f"Missing regime splits for {timeframe}. Run step03_hmm_regime_discovery first.",
                 raise ValueError(
                     msg,
                 )
@@ -2468,7 +2468,7 @@ class HMMBasedTrainingStep:
                 if result.get("best_model"):
                     log_step_model(
                         config=self.config,
-                        step_name="step9_hmm_based_training",
+                        step_name="step09_hmm_based_training",
                         model=result["best_model"],
                         model_name=f"{timeframe}_hmm_model",
                         model_type="hmm_based",
@@ -2526,7 +2526,7 @@ class HMMBasedTrainingStep:
             try:
                 summary_artifact_name = log_step_artifact_with_standardized_name(
                     config=self.config,
-                    step_name="step9_hmm_based_training",
+                    step_name="step09_hmm_based_training",
                     artifact_path=summary_path,
                     artifact_type="training_summary",
                     additional_metadata={
@@ -2549,7 +2549,7 @@ class HMMBasedTrainingStep:
                 
                 report_name = log_step_report(
                     config=self.config,
-                    step_name="step9_hmm_based_training",
+                    step_name="step09_hmm_based_training",
                     report_data=report_data,
                     report_type="hmm_training_report",
                     additional_metadata={
@@ -2564,18 +2564,18 @@ class HMMBasedTrainingStep:
                 all_metrics = {}
                 for timeframe, result in training_results.items():
                     if "avg_accuracy" in result:
-                        all_metrics[f"step9_{timeframe}_avg_accuracy"] = result["avg_accuracy"]
+                        all_metrics[f"step09_{timeframe}_avg_accuracy"] = result["avg_accuracy"]
                     if "avg_f1_score" in result:
-                        all_metrics[f"step9_{timeframe}_avg_f1_score"] = result["avg_f1_score"]
+                        all_metrics[f"step09_{timeframe}_avg_f1_score"] = result["avg_f1_score"]
                     if "avg_precision" in result:
-                        all_metrics[f"step9_{timeframe}_avg_precision"] = result["avg_precision"]
+                        all_metrics[f"step09_{timeframe}_avg_precision"] = result["avg_precision"]
                     if "avg_recall" in result:
-                        all_metrics[f"step9_{timeframe}_avg_recall"] = result["avg_recall"]
+                        all_metrics[f"step09_{timeframe}_avg_recall"] = result["avg_recall"]
                 
                 if all_metrics:
                     log_step_metrics(
                         config=self.config,
-                        step_name="step9_hmm_based_training",
+                        step_name="step09_hmm_based_training",
                         metrics=all_metrics,
                         additional_metadata={
                             "metrics_type": "hmm_training_performance",
@@ -5131,7 +5131,7 @@ from src.utils.training_pipeline_decorators import (
 
 
 @deterministic_seed(42)
-@idempotent_step(step_key="step6_hmm_based_training")
+@idempotent_step(step_key="step06_hmm_based_training")
 @artifact_write_lock()
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")

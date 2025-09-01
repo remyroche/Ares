@@ -292,12 +292,12 @@ class StepDependencyValidator:
                                 "step2_5_sr_optimization": "sr_optimization",
                                 "step3_hmm_regime_discovery": "hmm_regime_discovery",
                                 "step4_processing_labeling": "processing_labeling",
-                                "step5_regime_data_splitting": "regime_data_splitting",
-                                "step6_hmm_based_training": "hmm_based_training",
+                                "step05_regime_data_splitting": "regime_data_splitting",
+                                "step06_hmm_based_training": "hmm_based_training",
                                 "step6_5_unified_regime_intelligence": "unified_regime_intelligence",
                                 "step7_analyst_enhancement": "analyst_enhancement",
-                                "step8_tactician_labeling": "tactician_labeling",
-                                "step9_tactician_specialist_training": "tactician_specialist_training",
+                                "step08_tactician_labeling": "tactician_labeling",
+                                "step09_tactician_specialist_training": "tactician_specialist_training",
                                 "step10_confidence_calibration": "confidence_calibration",
                                 "step11_final_parameters_optimization": "final_parameters_optimization",
                                 "step12_walk_forward_validation": "walk_forward_validation",
@@ -349,12 +349,12 @@ class StepDependencyValidator:
                                 "step2_5_sr_optimization": "sr_optimization",
                                 "step3_hmm_regime_discovery": "hmm_regime_discovery",
                                 "step4_processing_labeling": "processing_labeling",
-                                "step5_regime_data_splitting": "regime_data_splitting",
-                                "step6_hmm_based_training": "hmm_based_training",
+                                "step05_regime_data_splitting": "regime_data_splitting",
+                                "step06_hmm_based_training": "hmm_based_training",
                                 "step6_5_unified_regime_intelligence": "unified_regime_intelligence",
                                 "step7_analyst_enhancement": "analyst_enhancement",
-                                "step8_tactician_labeling": "tactician_labeling",
-                                "step9_tactician_specialist_training": "tactician_specialist_training",
+                                "step08_tactician_labeling": "tactician_labeling",
+                                "step09_tactician_specialist_training": "tactician_specialist_training",
                                 "step10_confidence_calibration": "confidence_calibration",
                                 "step11_final_parameters_optimization": "final_parameters_optimization",
                                 "step12_walk_forward_validation": "walk_forward_validation",
@@ -676,11 +676,11 @@ class StepDependencyValidator:
                 "step4_processing_labeling": [
                     f"{artifact_dir}/{exchange}_{symbol}_{timeframe}_labeled_validation.parquet",
                 ],
-                            "step5_regime_data_splitting": [
+                            "step05_regime_data_splitting": [
                 f"{artifact_dir}/{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet",
                 f"{artifact_dir}/{exchange}_{symbol}_{timeframe}_regime_labels.json",
             ],
-                "step6_hmm_based_training": [
+                "step06_hmm_based_training": [
                     f"{artifact_dir}/{exchange}_{symbol}_{timeframe}_hmm_models.pkl",
                 ],
                 "step6_5_unified_regime_intelligence": [
@@ -689,10 +689,10 @@ class StepDependencyValidator:
                 "step7_analyst_enhancement": [
                     f"{artifact_dir}/{exchange}_{symbol}_{timeframe}_analyst_models.pkl",
                 ],
-                "step8_tactician_labeling": [
+                "step08_tactician_labeling": [
                     f"{artifact_dir}/{exchange}_{symbol}_{timeframe}_tactician_labels.parquet",
                 ],
-                "step9_tactician_specialist_training": [
+                "step09_tactician_specialist_training": [
                     f"{artifact_dir}/{exchange}_{symbol}_{timeframe}_specialist_models.pkl",
                 ],
                 "step10_confidence_calibration": [

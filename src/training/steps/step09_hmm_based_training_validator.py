@@ -68,7 +68,7 @@ async def run_validator(
         if not hmm_models_path.exists():
             logger.error(f"❌ HMM models file not found: {hmm_models_path}")
             return {
-                "step_name": "step8_hmm_based_training",
+                "step_name": "step08_hmm_based_training",
                 "validation_passed": False,
                 "error": f"HMM models file not found: {hmm_models_path}",
             }
@@ -78,7 +78,7 @@ async def run_validator(
         if file_size == 0:
             logger.error(f"❌ HMM models file is empty: {hmm_models_path}")
             return {
-                "step_name": "step8_hmm_based_training",
+                "step_name": "step08_hmm_based_training",
                 "validation_passed": False,
                 "error": "HMM models file is empty",
             }
@@ -96,7 +96,7 @@ async def run_validator(
             if not isinstance(models_data, dict):
                 logger.error("❌ HMM models data is not a dictionary")
                 return {
-                    "step_name": "step8_hmm_based_training",
+                    "step_name": "step08_hmm_based_training",
                     "validation_passed": False,
                     "error": "HMM models data is not a dictionary",
                 }
@@ -108,7 +108,7 @@ async def run_validator(
             if missing_keys:
                 logger.error(f"❌ Missing required keys in models data: {missing_keys}")
                 return {
-                    "step_name": "step8_hmm_based_training",
+                    "step_name": "step08_hmm_based_training",
                     "validation_passed": False,
                     "error": f"Missing required keys: {missing_keys}",
                 }
@@ -118,7 +118,7 @@ async def run_validator(
             if not models:
                 logger.error("❌ No models found in models data")
                 return {
-                    "step_name": "step8_hmm_based_training",
+                    "step_name": "step08_hmm_based_training",
                     "validation_passed": False,
                     "error": "No models found in models data",
                 }
@@ -189,7 +189,7 @@ async def run_validator(
             if invalid_models:
                 logger.warning(f"⚠️ Found {len(invalid_models)} invalid models: {invalid_models}")
                 return {
-                    "step_name": "step8_hmm_based_training",
+                    "step_name": "step08_hmm_based_training",
                     "validation_passed": True,  # Still pass but warn
                     "warning": f"Found {len(invalid_models)} invalid models",
                     "model_validation_results": model_validation_results,
@@ -201,7 +201,7 @@ async def run_validator(
             
             logger.info("✅ Step 8: HMM-Based Training validation passed")
             return {
-                "step_name": "step8_hmm_based_training",
+                "step_name": "step08_hmm_based_training",
                 "validation_passed": True,
                 "file_path": str(hmm_models_path),
                 "file_size": file_size,
@@ -215,7 +215,7 @@ async def run_validator(
         except Exception as e:
             logger.error(f"❌ Error loading HMM models: {e}")
             return {
-                "step_name": "step8_hmm_based_training",
+                "step_name": "step08_hmm_based_training",
                 "validation_passed": False,
                 "error": f"Error loading models: {e}",
             }
@@ -223,7 +223,7 @@ async def run_validator(
     except Exception as e:
         logger.exception(f"❌ Error in Step 8 validation: {e}")
         return {
-            "step_name": "step8_hmm_based_training",
+            "step_name": "step08_hmm_based_training",
             "validation_passed": False,
             "error": f"Validation error: {e}",
         }

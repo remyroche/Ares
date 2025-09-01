@@ -1,6 +1,6 @@
 # Unified Regime Intelligence Configuration
 # This configuration consolidates regime detection, transition prediction, and S/R level detection
-# into a single, efficient multi-timeframe model that replaces step9_5 and step10
+# into a single, efficient multi-timeframe model that replaces step09_5 and step10
 
 # Model Architecture Configuration
 model_architecture:
@@ -254,8 +254,8 @@ artifacts:
 integration:
   # Pipeline integration
   pipeline:
-    replaces_steps: ["step9_5", "step10"]
-    input_steps: ["step1_7", "step5"]
+    replaces_steps: ["step09_5", "step10"]
+    input_steps: ["step01_7", "step5"]
     output_format: "unified_prediction"
   
   # Expert ensemble integration

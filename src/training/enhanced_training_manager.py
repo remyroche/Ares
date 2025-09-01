@@ -2400,7 +2400,7 @@ class EnhancedTrainingManager:
                     self.logger.info("➡️ Proceeding to Step 7: Analyst Enhancement")
 
                 # Step 7: Analyst Enhancement
-                should_run_step7 = _should_run("step7_analyst_enhancement")
+                should_run_step7 = _should_run("step07_analyst_enhancement")
                 if not should_run_step7:
                     self.logger.info(
                         f"⏭️ Skipping Step 7: Analyst Enhancement (starting from '{start_step_key}')",
@@ -2436,7 +2436,7 @@ class EnhancedTrainingManager:
 
                     # Run validator for Step 7 (per timeframe)
                     step7_validation = await self._run_step_validator(
-                        "step7_analyst_enhancement",
+                        "step07_analyst_enhancement",
                         {**training_input, "timeframe": tf},
                         pipeline_state,
                     )
@@ -3381,7 +3381,7 @@ class EnhancedTrainingManager:
             "step2_feature_engineering", 
             "step3_hmm_regime_discovery",
             "step6_hmm_based_training",
-            "step7_analyst_enhancement",
+            "step07_analyst_enhancement",
             "step9_tactician_specialist_training",
             "step12_walk_forward_validation",
             "step13_monte_carlo_validation",

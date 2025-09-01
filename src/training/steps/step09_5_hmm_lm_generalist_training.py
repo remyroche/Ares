@@ -1,4 +1,4 @@
-# src/training/steps/step9_5_hmm_lm_generalist_training.py
+# src/training/steps/step09_5_hmm_lm_generalist_training.py
 
 import asyncio
 import concurrent.futures
@@ -121,9 +121,9 @@ class HMMLMGeneralistTrainingStep:
         self.logger.info("HMM-LM Generalist Training Step initialized successfully")
         return True
 
-    @with_tracing_span("step9_5.execute", log_args=False)
+    @with_tracing_span("step09_5.execute", log_args=False)
     @validate_data_quality(validation_level="WARNING")
-    @with_enhanced_mlflow_logging("step9_5_hmm_lm_generalist_training")
+    @with_enhanced_mlflow_logging("step09_5_hmm_lm_generalist_training")
     @handle_errors(
         exceptions=(Exception,),
         default_return={"status": "FAILED", "error": "Execution failed"},
@@ -243,7 +243,7 @@ class HMMLMGeneralistTrainingStep:
             
             # Create detailed report
             report_data = create_detailed_step_report(
-                step_name="step9_5_hmm_lm_generalist_training",
+                step_name="step09_5_hmm_lm_generalist_training",
                 step_data=step_data,
                 training_input=training_input,
                 execution_metadata=execution_metadata,
@@ -255,7 +255,7 @@ class HMMLMGeneralistTrainingStep:
             # Log the report
             report_name = log_step_report(
                 config=self.config,
-                step_name="step9_5_hmm_lm_generalist_training",
+                step_name="step09_5_hmm_lm_generalist_training",
                 report_data=report_data,
                 report_type="hmm_lm_generalist_training_report",
                 additional_metadata={
@@ -274,7 +274,7 @@ class HMMLMGeneralistTrainingStep:
             if model_result:
                 model_report_name = log_step_report(
                     config=self.config,
-                    step_name="step9_5_hmm_lm_generalist_training",
+                    step_name="step09_5_hmm_lm_generalist_training",
                     report_data=model_result,
                     report_type="hmm_lm_model_result",
                     additional_metadata={
@@ -291,7 +291,7 @@ class HMMLMGeneralistTrainingStep:
             # Log metrics
             log_step_metrics(
                 config=self.config,
-                step_name="step9_5_hmm_lm_generalist_training",
+                step_name="step09_5_hmm_lm_generalist_training",
                 metrics=metrics_calculated,
                 additional_metadata={
                     "metrics_type": "hmm_lm_generalist_training_performance",
@@ -308,7 +308,7 @@ class HMMLMGeneralistTrainingStep:
             self.logger.error(f"❌ Failed to log step 9.5 artifacts and reports: {e}")
             # Don't fail the step if MLflow logging fails
 
-    @with_tracing_span("step9_5._load_multi_timeframe_hmm_data", log_args=False)
+    @with_tracing_span("step09_5._load_multi_timeframe_hmm_data", log_args=False)
     @guard_dataframe_nulls(mode="warn", arg_index=0)
     async def _load_multi_timeframe_hmm_data(
         self, exchange: str, symbol: str, data_dir: str
@@ -1264,7 +1264,7 @@ class EfficientRegimeTrainer:
 
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
-@idempotent_step(step_key="step9_5_hmm_lm_generalist_training")
+@idempotent_step(step_key="step09_5_hmm_lm_generalist_training")
 @artifact_write_lock()
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")
@@ -1317,7 +1317,7 @@ class EfficientRegimeTrainer:
     model_performance_thresholds={"min_accuracy": 0.6},
     data_quality_metrics={"completeness_threshold": 0.95},
 )
-@handle_errors(exceptions=(Exception,), default_return=False, context="step9_5_hmm_lm_generalist_training")
+@handle_errors(exceptions=(Exception,), default_return=False, context="step09_5_hmm_lm_generalist_training")
 async def run_step(
     symbol: str,
     exchange: str = "BINANCE",

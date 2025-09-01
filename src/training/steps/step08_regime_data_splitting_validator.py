@@ -69,7 +69,7 @@ async def run_validator(
         if not train_path.exists():
             logger.error(f"❌ Regime splits train file not found: {train_path}")
             return {
-                "step_name": "step7_regime_data_splitting",
+                "step_name": "step07_regime_data_splitting",
                 "validation_passed": False,
                 "error": f"Regime splits train file not found: {train_path}",
             }
@@ -77,7 +77,7 @@ async def run_validator(
         if not validation_path.exists():
             logger.error(f"❌ Regime splits validation file not found: {validation_path}")
             return {
-                "step_name": "step7_regime_data_splitting",
+                "step_name": "step07_regime_data_splitting",
                 "validation_passed": False,
                 "error": f"Regime splits validation file not found: {validation_path}",
             }
@@ -89,7 +89,7 @@ async def run_validator(
         if train_file_size == 0:
             logger.error(f"❌ Regime splits train file is empty: {train_path}")
             return {
-                "step_name": "step7_regime_data_splitting",
+                "step_name": "step07_regime_data_splitting",
                 "validation_passed": False,
                 "error": "Regime splits train file is empty",
             }
@@ -97,7 +97,7 @@ async def run_validator(
         if validation_file_size == 0:
             logger.error(f"❌ Regime splits validation file is empty: {validation_path}")
             return {
-                "step_name": "step7_regime_data_splitting",
+                "step_name": "step07_regime_data_splitting",
                 "validation_passed": False,
                 "error": "Regime splits validation file is empty",
             }
@@ -116,7 +116,7 @@ async def run_validator(
             if len(train_data) == 0:
                 logger.error("❌ No data rows found in train split")
                 return {
-                    "step_name": "step7_regime_data_splitting",
+                    "step_name": "step07_regime_data_splitting",
                     "validation_passed": False,
                     "error": "No data rows found in train split",
                 }
@@ -124,7 +124,7 @@ async def run_validator(
             if len(validation_data) == 0:
                 logger.error("❌ No data rows found in validation split")
                 return {
-                    "step_name": "step7_regime_data_splitting",
+                    "step_name": "step07_regime_data_splitting",
                     "validation_passed": False,
                     "error": "No data rows found in validation split",
                 }
@@ -137,7 +137,7 @@ async def run_validator(
             if missing_train_columns:
                 logger.error(f"❌ Missing required columns in train data: {missing_train_columns}")
                 return {
-                    "step_name": "step7_regime_data_splitting",
+                    "step_name": "step07_regime_data_splitting",
                     "validation_passed": False,
                     "error": f"Missing required columns in train data: {missing_train_columns}",
                 }
@@ -145,7 +145,7 @@ async def run_validator(
             if missing_validation_columns:
                 logger.error(f"❌ Missing required columns in validation data: {missing_validation_columns}")
                 return {
-                    "step_name": "step7_regime_data_splitting",
+                    "step_name": "step07_regime_data_splitting",
                     "validation_passed": False,
                     "error": f"Missing required columns in validation data: {missing_validation_columns}",
                 }
@@ -192,7 +192,7 @@ async def run_validator(
             
             logger.info("✅ Step 7: Regime Data Splitting validation passed")
             return {
-                "step_name": "step7_regime_data_splitting",
+                "step_name": "step07_regime_data_splitting",
                 "validation_passed": True,
                 "train_file_path": str(train_path),
                 "validation_file_path": str(validation_path),
@@ -207,7 +207,7 @@ async def run_validator(
         except Exception as e:
             logger.error(f"❌ Error reading regime data splitting files: {e}")
             return {
-                "step_name": "step7_regime_data_splitting",
+                "step_name": "step07_regime_data_splitting",
                 "validation_passed": False,
                 "error": f"Error reading files: {e}",
             }
@@ -215,7 +215,7 @@ async def run_validator(
     except Exception as e:
         logger.exception(f"❌ Error in Step 7 validation: {e}")
         return {
-            "step_name": "step7_regime_data_splitting",
+            "step_name": "step07_regime_data_splitting",
             "validation_passed": False,
             "error": f"Validation error: {e}",
         }

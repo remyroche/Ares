@@ -10,10 +10,6 @@ with_tracing_span,
 )
 
 class LiquidationRiskModel:
-    # Implementation placeholder - add specific implementation as needed
-class LiquidationRiskModel:
-    pass  # TODO: Add implementation
-class LiquidationRiskModel:
     """
 Simplified Liquidation Risk Model that takes ML confidence predictions
 and determines safe leverage levels based on adverse price change risk.

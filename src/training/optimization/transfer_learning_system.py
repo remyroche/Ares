@@ -121,21 +121,16 @@ class ProblemSimilarityDetector:
     ) -> float:
         """Calculate similarity based on feature vectors."""
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             # Cosine similarity
             cosine_sim = cosine_similarity(
-                features1.reshape(1, -1) = features2.reshape(1, -1)
-            )[0 = 0]
+                features1.reshape(1, -1), features2.reshape(1, -1)
+            )[0, 0]
 
             # Euclidean distance (normalized)
             euclidean_dist = euclidean_distances(
-                features1.reshape(1 = -1),
-                features2.reshape(1 = -1)
-            )[0 = 0]
+                features1.reshape(1, -1),
+                features2.reshape(1, -1)
+            )[0, 0]
 
             # Normalize Euclidean distance
             max_possible_dist = np.sqrt(len(features1))
@@ -145,7 +140,7 @@ class ProblemSimilarityDetector:
             return 0.7 * cosine_sim + 0.3 * normalized_euclidean
 
         except Exception as e:
-    self.logger.warning(f"Error calculating feature similarity: {e}")
+            self.logger.warning(f"Error calculating feature similarity: {e}")
             return 0.0
 
     def _calculate_structural_similarity(
@@ -219,23 +214,18 @@ class KnowledgeTransferManager:
     def _load_history(self) -> None:
         """Load optimization history from disk."""
         try:
-            # TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-            # TODO: Implement based on requirements proper exception handling
-            pass
             if os.path.exists(self.history_file):
-                with open(self.history_file = 'rb') as f:
+                with open(self.history_file, 'rb') as f:
                     self.optimization_history = pickle.load(f)
                 self.logger.info(f"Loaded {len(self.optimization_history)} optimization histories")
 
             if os.path.exists(self.transfer_file):
-                with open(self.transfer_file = 'rb') as f:
+                with open(self.transfer_file, 'rb') as f:
                     self.transfer_knowledge = pickle.load(f)
                 self.logger.info(f"Loaded {len(self.transfer_knowledge)} transfer knowledge records")
 
         except Exception as e:
-    self.logger.warning(f"Error loading history: {e}")
+            self.logger.warning(f"Error loading history: {e}")
 
     def _save_history(self) -> None:
         """Save optimization history to disk."""

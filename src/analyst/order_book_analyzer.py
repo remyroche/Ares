@@ -9,10 +9,6 @@ with_tracing_span,
 
 
 class OrderBookAnalyzer:
-    # Implementation placeholder - add specific implementation as needed
-class OrderBookAnalyzer:
-    pass  # TODO: Add implementation
-class OrderBookAnalyzer:
     """Analyze order book snapshots for walls and compute features.
 
 Assumptions:

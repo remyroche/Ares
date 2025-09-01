@@ -19,7 +19,7 @@ import torch.nn.functional as F
 
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
-from src.training.steps.step5_5_unified_regime_intelligence import (
+from src.training.steps.step05_5_unified_regime_intelligence import (
     UnifiedRegimeIntelligenceStep,
 )
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
@@ -695,7 +695,7 @@ class UnifiedRegimeIntelligenceRuntime:
                         "direction", "hold"
                     )
 
-            # Add expert activation logic based on step1_7 regimes and step5-10 models
+            # Add expert activation logic based on step01_7 regimes and step5-10 models
             enhanced["expert_activation"] = await self._determine_expert_activation(
                 enhanced
             )
@@ -765,7 +765,7 @@ class UnifiedRegimeIntelligenceRuntime:
             else:
                 # Single dominant regime
                 if regime_conf >= self.regime_confidence_threshold:
-                    # Map regime to expert based on step1_7 archetype descriptions
+                    # Map regime to expert based on step01_7 archetype descriptions
                     if "BULL" in regime_name or "TREND" in regime_name:
                         activation["primary_expert"] = "BULL_TREND_EXPERT"
                         activation["activation_reason"] = (

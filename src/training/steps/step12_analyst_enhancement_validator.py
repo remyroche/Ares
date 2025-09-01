@@ -29,7 +29,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
     """Validator for Step 6: HMM-Based Enhancement."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        super().__init__("step6_hmm_based_enhancement", config)
+        super().__init__("step06_hmm_based_enhancement", config)
 
     async def validate(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
@@ -499,7 +499,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
 async def run_validator(
     training_input: dict[str, Any], pipeline_state: dict[str, Any]
 ) -> dict[str, Any]:
-    """Run the step6_hmm_based_enhancement validator.
+    """Run the step06_hmm_based_enhancement validator.
 
     Args:
         training_input: Training input parameters
@@ -513,7 +513,7 @@ async def run_validator(
     validation_passed = await validator.validate(training_input, pipeline_state)
 
     return {
-        "step_name": "step6_hmm_based_enhancement",
+        "step_name": "step06_hmm_based_enhancement",
         "validation_passed": validation_passed,
         "validation_results": validator.validation_results,
         "duration": 0,  # Could be enhanced to track actual duration

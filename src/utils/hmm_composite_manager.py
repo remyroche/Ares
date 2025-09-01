@@ -3,7 +3,7 @@
 HMM Composite Cluster Manager
 
 Centralized manager for HMM composite cluster files that can be used by:
-- step3_hmm_regime_discovery (to create files)
+- step03_hmm_regime_discovery (to create files)
 - VectorizedAdvancedFeatureEngineering (to check if files exist)
 - CompositeHMMRegimeSystem (to load files)
 
@@ -19,7 +19,7 @@ from typing import Any
 
 import pandas as pd
 
-from src.training.steps.step3_hmm_regime_discovery import run_step as run_step3
+from src.training.steps.step03_hmm_regime_discovery import run_step as run_step3
 from src.utils.error_handler import handle_errors
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.logger import system_logger

@@ -1,11 +1,11 @@
 """Data Preparation for Step1_5.
 
-Prepares data for step1_5_data_converter.py processing. This module focuses on:
+Prepares data for step01_5_data_converter.py processing. This module focuses on:
 1. Loading and validating klines data
-2. Ensuring data is properly formatted for step1_5 processing
+2. Ensuring data is properly formatted for step01_5 processing
 3. Optimizing data storage and access patterns
 
-Note: Actual resampling is handled by step1_5_data_converter.py
+Note: Actual resampling is handled by step01_5_data_converter.py
 """
 
 import sys
@@ -35,9 +35,9 @@ logger = system_logger.getChild("DataPreparation")
 
 
 class DataPreparation:
-    """Prepares data for step1_5_data_converter.py processing."""
+    """Prepares data for step01_5_data_converter.py processing."""
 
-    # Expected data formats for step1_5 processing
+    # Expected data formats for step01_5 processing
     EXPECTED_KLINES_COLUMNS = ["timestamp", "open", "high", "low", "close", "volume"]
     EXPECTED_AGGTRADES_COLUMNS = [
         "agg_trade_id",
@@ -164,7 +164,7 @@ class DataPreparation:
         return combined_df
 
     @validate_data_structure
-    @with_tracing_span("prepare_for_step1_5")
+    @with_tracing_span("prepare_for_step01_5")
     @handle_errors(
         exceptions=(
             OSError,
@@ -183,10 +183,10 @@ class DataPreparation:
             "issues": ["Data preparation failed"],
             "data_summary": {},
         },
-        context="data_resampler.prepare_for_step1_5"
+        context="data_resampler.prepare_for_step01_5"
     )
-    def prepare_for_step1_5(self, symbol: str, exchange: str) -> dict:
-        """Prepare data for step1_5_data_converter.py processing.
+    def prepare_for_step01_5(self, symbol: str, exchange: str) -> dict:
+        """Prepare data for step01_5_data_converter.py processing.
 
         Args:
             symbol: Trading symbol
@@ -196,7 +196,7 @@ class DataPreparation:
             Dictionary with preparation results
 
         """
-        logger.info(f"🔧 Preparing data for step1_5 processing: {exchange}_{symbol}")
+        logger.info(f"🔧 Preparing data for step01_5 processing: {exchange}_{symbol}")
 
         preparation_result = {
             "symbol": symbol,
@@ -240,9 +240,9 @@ class DataPreparation:
                 )
 
         if preparation_result["ready"]:
-            logger.info("✅ Data preparation for step1_5 completed successfully")
+            logger.info("✅ Data preparation for step01_5 completed successfully")
         else:
-            logger.warning("⚠️ Data preparation for step1_5 found issues")
+            logger.warning("⚠️ Data preparation for step01_5 found issues")
         for issue in preparation_result["issues"]:
             logger.warning(f"  - {issue}")
 
@@ -282,7 +282,7 @@ class DataPreparation:
             logger.warning("⚠️ Empty DataFrame provided for saving")
             return None
 
-        # Create output directory (save directly to data_cache for step1_5 compatibility)
+        # Create output directory (save directly to data_cache for step01_5 compatibility)
         output_dir = self.data_cache_path
         output_dir.mkdir(parents=True, exist_ok=True)
 

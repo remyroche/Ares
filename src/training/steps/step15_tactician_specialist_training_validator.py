@@ -27,7 +27,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
     """Validator for Step 9: Tactician Specialist Training."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        super().__init__("step9_tactician_specialist_training", config)
+        super().__init__("step09_tactician_specialist_training", config)
 
     async def validate(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
@@ -503,7 +503,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
 async def run_validator(
     training_input: dict[str, Any], pipeline_state: dict[str, Any]
 ) -> dict[str, Any]:
-    """Run the step9_tactician_specialist_training validator.
+    """Run the step09_tactician_specialist_training validator.
 
     Args:
         training_input: Training input parameters
@@ -516,7 +516,7 @@ async def run_validator(
     validation_passed = await validator.validate(training_input, pipeline_state)
 
     return {
-        "step_name": "step9_tactician_specialist_training",
+        "step_name": "step09_tactician_specialist_training",
         "validation_passed": validation_passed,
         "validation_results": validator.validation_results,
         "duration": 0,  # Could be enhanced to track actual duration

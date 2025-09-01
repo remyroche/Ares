@@ -103,7 +103,7 @@ class RegimePredictiveEnsembles:
                 "🚨 HMM composite_cluster_id column is missing from prepared data. Halting training.",
             )
             self.logger.error("   HMM composite clusters are paramount - no fallbacks allowed")
-            self.logger.error("   Please ensure step3_hmm_regime_discovery completed successfully")
+            self.logger.error("   Please ensure step03_hmm_regime_discovery completed successfully")
             return
 
         if "target" not in prepared_data.columns:

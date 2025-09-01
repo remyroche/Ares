@@ -33,24 +33,24 @@ from src.utils.enhanced_mlflow_integration import (
 )
 
 # Import all step classes
-from src.training.steps.step1_data_collection import DataCollectionStep
-from src.training.steps.step1_5_data_converter import DataConverterStep
-from src.training.steps.step2_data_reading import DataReadingStep
-from src.training.steps.step3_hmm_regime_discovery import HMMRegimeDiscoveryStep
-from src.training.steps.step4_regime_data_splitting import RegimeDataSplittingStep
-from src.training.steps.step5_labeling import LabelingStep
-from src.training.steps.step6_feature_engineering import FeatureEngineeringStep
-from src.training.steps.step7_enhanced_matrix_operations import Step7EnhancedMatrixOperations
+from src.training.steps.step01_data_collection import DataCollectionStep
+from src.training.steps.step01_5_data_converter import DataConverterStep
+from src.training.steps.step02_data_reading import DataReadingStep
+from src.training.steps.step03_hmm_regime_discovery import HMMRegimeDiscoveryStep
+from src.training.steps.step04_regime_data_splitting import RegimeDataSplittingStep
+from src.training.steps.step05_labeling import LabelingStep
+from src.training.steps.step06_feature_engineering import FeatureEngineeringStep
+from src.training.steps.step07_enhanced_matrix_operations import Step7EnhancedMatrixOperations
 
 # Import validators
-from src.training.steps.step1_data_collection_validator import run_validator as validate_step1
-from src.training.steps.step1_5_data_converter_validator import run_validator as validate_step1_5
-from src.training.steps.step2_data_reading_validator import run_validator as validate_step2
-from src.training.steps.step3_hmm_regime_discovery_validator import run_validator as validate_step3
-from src.training.steps.step4_regime_data_splitting_validator import run_validator as validate_step4
-from src.training.steps.step5_labeling_validator import run_validator as validate_step5
-from src.training.steps.step6_feature_engineering_validator import run_validator as validate_step6
-from src.training.steps.step7_enhanced_matrix_operations_validator import run_validator as validate_step7
+from src.training.steps.step01_data_collection_validator import run_validator as validate_step1
+from src.training.steps.step01_5_data_converter_validator import run_validator as validate_step1_5
+from src.training.steps.step02_data_reading_validator import run_validator as validate_step2
+from src.training.steps.step03_hmm_regime_discovery_validator import run_validator as validate_step3
+from src.training.steps.step04_regime_data_splitting_validator import run_validator as validate_step4
+from src.training.steps.step05_labeling_validator import run_validator as validate_step5
+from src.training.steps.step06_feature_engineering_validator import run_validator as validate_step6
+from src.training.steps.step07_enhanced_matrix_operations_validator import run_validator as validate_step7
 
 
 class Steps1To7ComprehensiveExecutor:
@@ -77,7 +77,7 @@ class Steps1To7ComprehensiveExecutor:
         # Initialize step instances
         self.steps = {
             "step1": DataCollectionStep(config),
-            "step1_5": DataConverterStep(config),
+            "step01_5": DataConverterStep(config),
             "step2": DataReadingStep(config),
             "step3": HMMRegimeDiscoveryStep(config),
             "step4": RegimeDataSplittingStep(config),
@@ -89,7 +89,7 @@ class Steps1To7ComprehensiveExecutor:
         # Initialize validators
         self.validators = {
             "step1": validate_step1,
-            "step1_5": validate_step1_5,
+            "step01_5": validate_step1_5,
             "step2": validate_step2,
             "step3": validate_step3,
             "step4": validate_step4,
@@ -178,7 +178,7 @@ class Steps1To7ComprehensiveExecutor:
         """Get required columns for a specific step."""
         column_requirements = {
             "step1": ["timestamp", "open", "high", "low", "close", "volume"],
-            "step1_5": ["timestamp", "open", "high", "low", "close", "volume"],
+            "step01_5": ["timestamp", "open", "high", "low", "close", "volume"],
             "step2": ["timestamp", "open", "high", "low", "close", "volume"],
             "step3": ["timestamp", "open", "high", "low", "close", "volume"],
             "step4": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"],
@@ -192,7 +192,7 @@ class Steps1To7ComprehensiveExecutor:
         """Get required keys for a specific step."""
         key_requirements = {
             "step1": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step1_5": ["symbol", "exchange", "timeframe", "data_dir"],
+            "step01_5": ["symbol", "exchange", "timeframe", "data_dir"],
             "step2": ["symbol", "exchange", "timeframe", "data_dir"],
             "step3": ["symbol", "exchange", "timeframe", "data_dir"],
             "step4": ["symbol", "exchange", "timeframe", "data_dir"],
@@ -528,7 +528,7 @@ class Steps1To7ComprehensiveExecutor:
             return {"success": False, "error": "Failed to initialize steps"}
         
         # Execute steps in order
-        step_order = ["step1", "step1_5", "step2", "step3", "step4", "step5", "step6", "step7"]
+        step_order = ["step1", "step01_5", "step2", "step3", "step4", "step5", "step6", "step7"]
         step_results = {}
         
         for step_name in step_order:

@@ -416,7 +416,7 @@ def _validate_step_output(step_name: str, result: Any) -> dict[str, Any]:
     """Validate step output based on step type."""
     validation_result: dict[str, Any] = {"valid": True, "warnings": []}
 
-    if step_name.startswith("step1_7"):
+    if step_name.startswith("step01_7"):
         # Validate HMM regime discovery output
         if isinstance(result, bool):
             if not result:
@@ -462,7 +462,7 @@ async def _attempt_recovery(
     handler.get_context(step_name)
 
     # Simple recovery strategies based on step type
-    if step_name.startswith("step1_7"):
+    if step_name.startswith("step01_7"):
         # For HMM regime discovery, try with different parameters
         handler.log_step_progress(
             step_name,
@@ -497,7 +497,7 @@ def _attempt_sync_recovery(
     handler.get_context(step_name)
 
     # Similar recovery strategies for sync functions
-    if step_name.startswith("step1_7"):
+    if step_name.startswith("step01_7"):
         handler.log_step_progress(
             step_name,
             "Attempting recovery with reduced complexity",

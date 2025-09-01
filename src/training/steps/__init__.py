@@ -6,60 +6,60 @@ with explicit imports to avoid namespace pollution.
 
 # Import specific classes from each step module
 try:
-    from .step1_data_collection import DataCollectionStep
+    from .step01_data_collection import DataCollectionStep
 except ImportError:
     DataCollectionStep = None
 
 # Temporarily comment out to avoid syntax errors
 # try:
-#     from .step2_feature_engineering import FeatureEngineeringStep
+#     from .step02_feature_engineering import FeatureEngineeringStep
 # except ImportError:
 #     FeatureEngineeringStep, None
 FeatureEngineeringStep = None
 
 # Temporarily comment out all step imports to avoid syntax errors
 # try:
-#     from .step3_hmm_regime_discovery import HMMRegimeDiscoveryStep
+#     from .step03_hmm_regime_discovery import HMMRegimeDiscoveryStep
 # except ImportError:
 #     HMMRegimeDiscoveryStep, None
 
 # try:
-#     from .step4_processing_labeling import ProcessingLabelingStep
+#     from .step04_processing_labeling import ProcessingLabelingStep
 # except ImportError:
 #     ProcessingLabelingStep, None
 
 # try:
-#     from .step4_market_regime_classification import MarketRegimeClassificationStep
+#     from .step04_market_regime_classification import MarketRegimeClassificationStep
 # except ImportError:
 #     MarketRegimeClassificationStep, None
 
 # try:
-#     from .step5_regime_data_splitting import RegimeDataSplittingStep
+#     from .step05_regime_data_splitting import RegimeDataSplittingStep
 # except ImportError:
 #     RegimeDataSplittingStep, None
 
 # try:
-#     from .step5_5_unified_regime_intelligence import UnifiedRegimeIntelligenceStep
+#     from .step05_5_unified_regime_intelligence import UnifiedRegimeIntelligenceStep
 # except ImportError:
 #     UnifiedRegimeIntelligenceStep, None
 
 # try:
-#     from .step9_hmm_based_training import HMMBasedTrainingStep
+#     from .step09_hmm_based_training import HMMBasedTrainingStep
 # except ImportError:
 #     HMMBasedTrainingStep, None
 
 # try:
-#     from .step7_analyst_enhancement import AnalystEnhancementStep
+#     from .step07_analyst_enhancement import AnalystEnhancementStep
 # except ImportError:
 #     AnalystEnhancementStep, None
 
 # try:
-#     from .step8_tactician_labeling import TacticianLabelingStep
+#     from .step08_tactician_labeling import TacticianLabelingStep
 # except ImportError:
 #     TacticianLabelingStep, None
 
 # try:
-#     from .step9_tactician_specialist_training import TacticianSpecialistTrainingStep
+#     from .step09_tactician_specialist_training import TacticianSpecialistTrainingStep
 # except ImportError:
 #     TacticianSpecialistTrainingStep, None
 

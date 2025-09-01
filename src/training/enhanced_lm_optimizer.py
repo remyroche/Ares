@@ -122,7 +122,7 @@ class EnhancedLMOptimizer:
                 "methods": ["mutual_info", "lasso", "random_forest", "shap"],
                 "target_features": {
                     "step6": 80,
-                    "step6_5": 100,
+                    "step06_5": 100,
                     "step9": 90,
                 },
                 "vif_threshold": 10.0,
@@ -463,7 +463,7 @@ class EnhancedLMOptimizer:
         """Comprehensive optimization for LM models. No fallbacks - it has to work.
 
         Args:
-            step_name: Step name (step6, step6_5, step9)
+            step_name: Step name (step6, step06_5, step9)
             features_df: Input features DataFrame
             target: Target variable series
             model_type: Model type (classification, regression)

@@ -11,7 +11,7 @@ from src.utils.logger import system_logger
 
 
 class MonteCarloValidationStep:
-    """Step 14: Monte Carlo Validation using existing step7_monte_carlo_validation."""
+    """Step 14: Monte Carlo Validation using existing step07_monte_carlo_validation."""
 
     
 

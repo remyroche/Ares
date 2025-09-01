@@ -14,7 +14,7 @@ from src.utils.warning_symbols import (
 
 
 class WalkForwardValidationStep:
-    """Step 13: Walk-Forward Validation using existing step6_walk_forward_validation."""
+    """Step 13: Walk-Forward Validation using existing step06_walk_forward_validation."""
 
     
 

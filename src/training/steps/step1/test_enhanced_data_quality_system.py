@@ -5,7 +5,7 @@ This module provides comprehensive tests for all enhanced data quality component
 - Enhanced Data Quality Manager
 - Data Quality Monitor
 - Data Quality Dashboard
-- Integration with step1/step1_5/step3/step4
+- Integration with step1/step01_5/step3/step4
 """
 
 import asyncio
@@ -460,7 +460,7 @@ class TestIntegration:
 
     @pytest.mark.asyncio
     async def test_step_integration(self, temp_data_dir, sample_data):
-        """Test integration with step1/step1_5/step3/step4."""
+        """Test integration with step1/step01_5/step3/step4."""
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
             
@@ -488,7 +488,7 @@ class TestIntegration:
             
             # Test automatic data recovery (mock)
             with patch.object(manager, '_fix_missing_data_for_steps') as mock_fix:
-                mock_fix.return_value = {"success": True, "step1_success": True, "step1_5_success": True}
+                mock_fix.return_value = {"success": True, "step1_success": True, "step01_5_success": True}
                 
                 # This would normally be called when data is missing
                 fix_results = await manager._fix_missing_data_for_steps(
@@ -499,7 +499,7 @@ class TestIntegration:
                 
                 assert fix_results["success"] == True
                 assert fix_results["step1_success"] == True
-                assert fix_results["step1_5_success"] == True
+                assert fix_results["step01_5_success"] == True
             
             logger.info("✅ Step integration test passed")
             

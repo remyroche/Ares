@@ -332,7 +332,7 @@ tactician_triple_barrier:
       volatility_periods: [5, 10, 20]      # Multiple volatility periods
     
     # Step6 Feature Interaction Engineering Configuration
-    step6_feature_interaction_engineering:
+    step06_feature_interaction_engineering:
       # Optimal, non-correlated lookback periods for each indicator
       optimal_lookback_periods:
         RSI:

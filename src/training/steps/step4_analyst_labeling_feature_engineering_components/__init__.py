@@ -1,4 +1,4 @@
-# src/training/steps/step4_analyst_labeling_feature_engineering_components/__init__.py
+# src/training/steps/step04_analyst_labeling_feature_engineering_components/__init__.py
 
 """Step 4 Analyst Labeling and Feature Engineering Components.
 

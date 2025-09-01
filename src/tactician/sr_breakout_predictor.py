@@ -1391,7 +1391,7 @@ class SRBreakoutPredictor:
                 "sr_multi_timeframe": features.get("sr_clusters_detected", 0),  # Proxy for multi-timeframe analysis
             })
             
-            # Optimization features (default values, will be updated by step2_5)
+            # Optimization features (default values, will be updated by step02_5)
             features.update({
                 "sr_optimized_method_weights": 0.5,
                 "sr_optimized_strength_weights": 0.5,

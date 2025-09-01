@@ -685,11 +685,11 @@ class FinalParametersOptimizationStepNew:
                 score += 0.1
         
         # Model blending during transitions
-        if "step9_5_weight" in params and "step10_weight" in params and "regime_expert_weight" in params:
-            step9_5_w = params["step9_5_weight"]
+        if "step09_5_weight" in params and "step10_weight" in params and "regime_expert_weight" in params:
+            step09_5_w = params["step09_5_weight"]
             step10_w = params["step10_weight"]
             regime_w = params["regime_expert_weight"]
-            total_weight = step9_5_w + step10_w + regime_w
+            total_weight = step09_5_w + step10_w + regime_w
             if 0.9 <= total_weight <= 1.1:  # Weights should sum to approximately 1
                 score += 0.2
             else:

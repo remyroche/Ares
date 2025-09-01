@@ -246,6 +246,6 @@ logging.getLogger("HMMRegimeOptimizer").setLevel(logging.DEBUG)
 ## 📚 Related Files
 
 - `optimize_hmm_regime_parameters.py` - Main optimization engine
-- `step3_optimization_config.json` - Configuration file
+- `step03_optimization_config.json` - Configuration file
 - `test_hmm_cluster_relevance.py` - Cluster validation tools
 - `HMM_OPTIMIZATION_README.md` - Detailed optimization documentation

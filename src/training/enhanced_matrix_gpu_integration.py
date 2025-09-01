@@ -16,7 +16,7 @@ import pandas as pd
 from sklearn.linear_model import LinearRegression
 
 from src.training.gpu_acceleration_m1 import M1GPUAcceleration
-from src.training.steps.step7_enhanced_matrix_operations import (
+from src.training.steps.step07_enhanced_matrix_operations import (
     EnhancedMatrixOperations,
 )
 from src.utils.error_handler import handle_errors

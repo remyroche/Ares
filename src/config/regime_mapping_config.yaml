@@ -85,7 +85,7 @@ integration:
   use_step10: true                # Enable Step 10 (Event Transition Modeling) integration
   
   # Step 9.5 integration weights
-  step9_5_weights:
+  step09_5_weights:
     regime_transition_weight: 0.4  # Weight for regime transition predictions
     expert_prediction_weight: 0.6  # Weight for regime expert predictions
   
@@ -151,6 +151,6 @@ transition_config:
   transition_intensity_threshold: 0.3
   min_combined_intensity: 0.6
   max_regimes_to_consider: 3
-  step9_5_weight: 0.4
+  step09_5_weight: 0.4
   step10_weight: 0.3
   regime_expert_weight: 0.3

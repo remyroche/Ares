@@ -632,7 +632,7 @@ def __init__(self, config: dict[str, Any]) -> None:
 
     def _get_market_regime(self, data: pd.DataFrame) -> pd.Series:
         """Placeholder for your market regime detection logic.
-        This should be consistent with the logic from step4_regime_specific_training.
+        This should be consistent with the logic from step04_regime_specific_training.
         """
         # Example: Simple regime based on volatility percentile
         # NOTE: Volatility is calculated here because the Analyst models need it for regime detection.
@@ -776,7 +776,7 @@ from src.utils.enhanced_mlflow_integration import (
 
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
-@idempotent_step(step_key="step8_tactician_labeling")
+@idempotent_step(step_key="step08_tactician_labeling")
 @artifact_write_lock()
 @nan_inf_and_constant_guard()
 @artifact_versioning("1.0")

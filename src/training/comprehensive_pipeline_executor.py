@@ -417,7 +417,7 @@ class ComprehensivePipelineExecutor:
         
         # Step-by-step results
         print(f"\nStep-by-Step Results:")
-        step_order = ["step1", "step1_5", "step2", "step3", "step4", "step5", "step6", "step7"]
+        step_order = ["step1", "step01_5", "step2", "step3", "step4", "step5", "step6", "step7"]
         
         for step_name in step_order:
             if step_name in execution_summary["completed_steps"]:

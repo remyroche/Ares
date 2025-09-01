@@ -519,7 +519,7 @@ def validate_step1_operation(func: Callable) -> Callable:
 
 def validate_step1_5_operation(func: Callable) -> Callable:
     """Decorator for step 1.5 operations."""
-    return validate_step_operation("step1_5", validate_files=True, validate_dataframes=True)(func)
+    return validate_step_operation("step01_5", validate_files=True, validate_dataframes=True)(func)
 
 
 def validate_step2_operation(func: Callable) -> Callable:

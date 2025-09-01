@@ -3,7 +3,7 @@
 Early Stage Optimization Module
 
 This module handles optimization that should happen BEFORE ML trading begins:
-1. SR (Stationarity and Randomness) optimization (step2_5)
+1. SR (Stationarity and Randomness) optimization (step02_5)
 2. Regime-specific triple barrier optimization (step4)
 
 These optimizations happen early in the pipeline to ensure:
@@ -41,7 +41,7 @@ except ImportError:
 
 # Import regime-specific triple barrier optimizer from step4 components
 try:
-    from .steps.step4_analyst_labeling_feature_engineering_components.regime_specific_triple_barrier_optimizer import (
+    from .steps.step04_analyst_labeling_feature_engineering_components.regime_specific_triple_barrier_optimizer import (
         RegimeSpecificTripleBarrierOptimizer,
         create_regime_specific_triple_barrier_optimizer
     )
@@ -68,7 +68,7 @@ class EarlyStageOptimizer:
     Early stage optimizer for parameters that must be set before ML trading begins.
     
     This includes:
-    - SR optimization (step2_5) - data preprocessing parameters
+    - SR optimization (step02_5) - data preprocessing parameters
     - Regime-specific triple barrier optimization (step4) - trading parameters
     """
     

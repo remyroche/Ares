@@ -15,7 +15,7 @@ from src.utils.warning_symbols import (
 
 
 class ABTestingStep:
-    """Step 15: A/B Testing using existing step8_ab_testing_setup."""
+    """Step 15: A/B Testing using existing step08_ab_testing_setup."""
 
     
 

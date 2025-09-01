@@ -168,7 +168,7 @@ class PipelineConfig:
     
     # Step configurations
     step1: Step1Config = field(default_factory=Step1Config)
-    step1_5: Step1_5Config = field(default_factory=Step1_5Config)
+    step01_5: Step1_5Config = field(default_factory=Step1_5Config)
     
     # Global settings
     environment: str = "development"
@@ -186,11 +186,11 @@ class PipelineConfig:
         issues = []
         
         # Validate individual step configurations
-        step1_issues = self.step1.validate()
-        issues.extend([f"step1.{issue}" for issue in step1_issues])
+        step01_issues = self.step1.validate()
+        issues.extend([f"step1.{issue}" for issue in step01_issues])
         
-        step1_5_issues = self.step1_5.validate()
-        issues.extend([f"step1_5.{issue}" for issue in step1_5_issues])
+        step01_5_issues = self.step01_5.validate()
+        issues.extend([f"step01_5.{issue}" for issue in step01_5_issues])
         
         # Validate global settings
         if self.environment not in ["development", "staging", "production"]:
@@ -205,7 +205,7 @@ class PipelineConfig:
         """Convert configuration to dictionary."""
         return {
             "step1": self.step1.to_dict(),
-            "step1_5": self.step1_5.to_dict(),
+            "step01_5": self.step01_5.to_dict(),
             "environment": self.environment,
             "log_level": self.log_level,
             "enable_metrics": self.enable_metrics,
@@ -218,12 +218,12 @@ class PipelineConfig:
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> 'PipelineConfig':
         """Create configuration from dictionary."""
-        step1_config = Step1Config.from_dict(config_dict.get("step1", {}))
-        step1_5_config = Step1_5Config.from_dict(config_dict.get("step1_5", {}))
+        step01_config = Step1Config.from_dict(config_dict.get("step1", {}))
+        step01_5_config = Step1_5Config.from_dict(config_dict.get("step01_5", {}))
         
         return cls(
-            step1=step1_config,
-            step1_5=step1_5_config,
+            step1=step01_config,
+            step01_5=step01_5_config,
             environment=config_dict.get("environment", "development"),
             log_level=config_dict.get("log_level", "INFO"),
             enable_metrics=config_dict.get("enable_metrics", True),
@@ -296,25 +296,25 @@ class ConfigManager:
             base_config.log_level = "DEBUG"
             base_config.enable_profiling = True
             base_config.step1.max_memory_mb = 512
-            base_config.step1_5.max_memory_mb = 512
+            base_config.step01_5.max_memory_mb = 512
             base_config.step1.chunk_size = 5000
-            base_config.step1_5.chunk_size = 5000
+            base_config.step01_5.chunk_size = 5000
         
         elif environment == "staging":
             base_config.environment = "staging"
             base_config.log_level = "INFO"
             base_config.enable_profiling = False
             base_config.step1.max_memory_mb = 2048
-            base_config.step1_5.max_memory_mb = 2048
+            base_config.step01_5.max_memory_mb = 2048
         
         elif environment == "production":
             base_config.environment = "production"
             base_config.log_level = "WARNING"
             base_config.enable_profiling = False
             base_config.step1.max_memory_mb = 4096
-            base_config.step1_5.max_memory_mb = 4096
+            base_config.step01_5.max_memory_mb = 4096
             base_config.step1.max_retries = 5
-            base_config.step1_5.max_retries = 5
+            base_config.step01_5.max_retries = 5
         
         return base_config
     
@@ -372,7 +372,7 @@ DEVELOPMENT_CONFIG = {
         "max_retries": 2,
         "log_level": "DEBUG"
     },
-    "step1_5": {
+    "step01_5": {
         "max_memory_mb": 512,
         "chunk_size": 5000,
         "max_retries": 2,
@@ -389,7 +389,7 @@ STAGING_CONFIG = {
         "chunk_size": 10000,
         "max_retries": 3
     },
-    "step1_5": {
+    "step01_5": {
         "max_memory_mb": 2048,
         "chunk_size": 10000,
         "max_retries": 3,
@@ -407,7 +407,7 @@ PRODUCTION_CONFIG = {
         "max_retries": 5,
         "circuit_breaker_failure_threshold": 3
     },
-    "step1_5": {
+    "step01_5": {
         "max_memory_mb": 4096,
         "chunk_size": 20000,
         "max_retries": 5,

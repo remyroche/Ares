@@ -80,7 +80,7 @@ def get_training_config() -> dict[str, Any]:
             "enable_validators": True,  # Enable step validators
         },
         # --- Step 6 Feature Engineering Configuration ---
-        "step6_feature_engineering": {
+        "step06_feature_engineering": {
             "enable_basic_features": True,
             "enable_advanced_features": True,
             "enable_regime_aware_features": True,
@@ -93,7 +93,7 @@ def get_training_config() -> dict[str, Any]:
             "output_dir": "data/training",
         },
         # --- Step 7 Enhanced Matrix Operations Configuration ---
-        "step7_enhanced_matrix_operations": {
+        "step07_enhanced_matrix_operations": {
             "enable_gpu_acceleration": False,
             "enable_sparse_optimizations": True,
             "enable_memory_optimization": True,

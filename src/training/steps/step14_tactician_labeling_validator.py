@@ -30,7 +30,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
     """Validator for Step 8: Tactician Labeling."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        super().__init__("step8_tactician_labeling", config)
+        super().__init__("step08_tactician_labeling", config)
 
     async def validate(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any],
@@ -652,7 +652,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
 async def run_validator(
     training_input: dict[str, Any], pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
-    """Run the step8_tactician_labeling validator.
+    """Run the step08_tactician_labeling validator.
 
     Args:
         training_input: Training input parameters
@@ -666,7 +666,7 @@ async def run_validator(
     validation_passed = await validator.validate(training_input, pipeline_state)
 
     return {
-        "step_name": "step8_tactician_labeling",
+        "step_name": "step08_tactician_labeling",
         "validation_passed": validation_passed,
         "validation_results": validator.validation_results,
         "duration": 0,  # Could be enhanced to track actual duration

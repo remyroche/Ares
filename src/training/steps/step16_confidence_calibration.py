@@ -214,24 +214,24 @@ def __init__(self, config: dict[str, Any]) -> None:
             generic_val = self._load_validation_frame(data_dir, exchange, symbol)
             # Try to augment with 1m meta-labels if present
             try:
-                step4_train = f"{data_dir}/{exchange}_{symbol}_labeled_train.pkl"
-                if os.path.exists(step4_train) and isinstance(
+                step04_train = f"{data_dir}/{exchange}_{symbol}_labeled_train.pkl"
+                if os.path.exists(step04_train) and isinstance(
                     generic_val, pd.DataFrame,
                 ):
-                    with open(step4_train, "rb") as f:
-                        step4_df = pickle.load(f)
+                    with open(step04_train, "rb") as f:
+                        step04_df = pickle.load(f)
                     one_m_cols = [
                         c
-                        for c in getattr(step4_df, "columns", [])
+                        for c in getattr(step04_df, "columns", [])
                         if isinstance(c, str) and c.startswith("1m_")
                     ]
                     if (
                         one_m_cols
-                        and "timestamp" in step4_df.columns
+                        and "timestamp" in step04_df.columns
                         and "timestamp" in generic_val.columns
                     ):
                         generic_val = generic_val.merge(
-                            step4_df[["timestamp", *one_m_cols]],
+                            step04_df[["timestamp", *one_m_cols]],
                             on="timestamp",
                             how="left",
                         )

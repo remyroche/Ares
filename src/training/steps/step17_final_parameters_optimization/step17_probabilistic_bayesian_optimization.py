@@ -875,10 +875,10 @@ class Step17ProbabilisticBayesianOptimization:
             "step_name": self.step_name,
             "step_type": "optimization",
             "dependencies": [
-                "step1_data_collection",
-                "step2_feature_engineering",
-                "step8_tactician_labeling",
-                "step9_tactician_specialist_training",
+                "step01_data_collection",
+                "step02_feature_engineering",
+                "step08_tactician_labeling",
+                "step09_tactician_specialist_training",
                 "step10_confidence_calibration"
             ],
             "outputs": [

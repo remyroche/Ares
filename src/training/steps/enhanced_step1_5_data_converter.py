@@ -485,8 +485,8 @@ async def run_enhanced_step1_5(
     Returns:
         Updated pipeline state
     """
-    step1_5 = EnhancedStep1_5DataConverter(config)
-    return await step1_5.execute(training_input, pipeline_state)
+    step01_5 = EnhancedStep1_5DataConverter(config)
+    return await step01_5.execute(training_input, pipeline_state)
 
 
 # Example usage
@@ -512,7 +512,7 @@ if __name__ == "__main__":
         )
         
         # Create enhanced Step1_5 instance
-        step1_5 = EnhancedStep1_5DataConverter(config)
+        step01_5 = EnhancedStep1_5DataConverter(config)
         
         # Prepare training input
         training_input = {
@@ -530,7 +530,7 @@ if __name__ == "__main__":
         
         # Execute enhanced data conversion
         try:
-            result = await step1_5.execute(training_input, pipeline_state)
+            result = await step01_5.execute(training_input, pipeline_state)
             
             print("=" * 60)
             print("ENHANCED STEP1_5 EXECUTION RESULTS")

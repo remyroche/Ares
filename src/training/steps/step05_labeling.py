@@ -166,7 +166,7 @@ class LabelingStep:
         max_correlation=0.95,
         required_grade="C"
     )
-    @with_enhanced_mlflow_logging("step5_labeling")
+    @with_enhanced_mlflow_logging("step05_labeling")
     @comprehensive_data_validation
     @handle_errors
     @memory_efficient
@@ -197,89 +197,16 @@ class LabelingStep:
         self.logger.info(f"🚀 Executing Labeling for {symbol} on {exchange}")
 
         try:
-            # Configuration toggles
-            labeling_cfg = self.config.get("vectorized_labelling_orchestrator", {})
-            auto_calc = bool(labeling_cfg.get("auto_recalculate_hmm_barriers", True))
-            regime_col = str(labeling_cfg.get("hmm_barrier_regime_column", "hmm_regime"))
-            time_barrier_minutes = int(labeling_cfg.get("time_barrier_minutes", 30))
-            max_lookahead = int(labeling_cfg.get("max_lookahead", 100))
-
-            # Preferred: apply labels now from unified data
-            # Fallback: use step4 output if present
+            # Load triple barrier labels from previous step
             triple_barrier_path = Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet"
+            if not triple_barrier_path.exists():
+                self.logger.error(f"❌ Triple barrier labels not found at {triple_barrier_path}")
+                return False
 
-            labeled_input_df: Optional[pd.DataFrame] = None
+            self.logger.info(f"📁 Loading triple barrier labels from {triple_barrier_path}")
+            data = pd.read_parquet(triple_barrier_path)
+            self.logger.info(f"✅ Loaded data with shape: {data.shape}")
 
-            # If we auto-apply labels in step5 or step4 output missing, compute labels here
-            do_in_step5 = auto_calc or not triple_barrier_path.exists()
-            if do_in_step5:
-                self.logger.info("🔁 Applying triple barrier labels within step5 (regime-aware if possible)...")
-                # Load unified data
-                unified_path = Path(data_dir) / "unified" / exchange / symbol / timeframe
-                if not unified_path.exists():
-                    self.logger.error(f"❌ Unified data not found at {unified_path}")
-                    return False
-                data_files = list(unified_path.glob("*.parquet"))
-                if not data_files:
-                    self.logger.error(f"❌ No parquet files found in {unified_path}")
-                    return False
-                latest_file = max(data_files, key=lambda x: x.stat().st_mtime)
-                self.logger.info(f"📁 Loading unified data from {latest_file}")
-                base_df = pd.read_parquet(latest_file)
-                self.logger.info(f"✅ Loaded unified data shape: {base_df.shape}")
-
-                # Try regime-aware labeling via HMM barrier optimizer
-                try:
-                    if auto_calc and regime_col in base_df.columns:
-                        hmm_optimizer = HMMRegimeBarrierOptimizer(
-                            self.config.get("hmm_regime_barrier_optimizer", {})
-                        )
-                        _ = await hmm_optimizer.optimize_regime_barriers(
-                            base_df, regime_column=regime_col
-                        )
-                        barriers_path = hmm_optimizer.export_barrier_map()
-                        labeled_input_df = apply_regime_aware_triple_barrier_labeling_with_barriers(
-                            data=base_df.copy(),
-                            barrier_map_or_path=barriers_path,
-                            regime_column=regime_col,
-                            binary_classification=True,
-                            default_time_barrier_minutes=time_barrier_minutes,
-                            default_max_lookahead=max_lookahead,
-                        )
-                        self.logger.info("✅ Regime-aware labels applied in step5")
-                    else:
-                        self.logger.warning(
-                            f"⚠️ Regime-aware labeling not available (auto={auto_calc}, column_present={regime_col in base_df.columns}); using default labeler."
-                        )
-                        default_labeler = OptimizedTripleBarrierLabeling(
-                            profit_take_multiplier=self.config.get("profit_take_multiplier", 0.002),
-                            stop_loss_multiplier=self.config.get("stop_loss_multiplier", 0.001),
-                            time_barrier_minutes=time_barrier_minutes,
-                            max_lookahead=max_lookahead,
-                            binary_classification=True,
-                        )
-                        labeled_input_df = default_labeler.apply_triple_barrier_labeling_vectorized(base_df.copy())
-                except Exception as e:
-                    self.logger.warning(f"⚠️ In-step regime-aware/default labeling failed: {e}")
-                    labeled_input_df = None
-
-                if labeled_input_df is None or labeled_input_df.empty:
-                    self.logger.error("❌ Failed to compute labels in step5")
-                    return False
-
-                # Prepare data for comprehensive labeling: expect 'triple_barrier_label' present
-                data = base_df.copy()
-                data["triple_barrier_label"] = labeled_input_df["label"].astype(int)
-                if "potential_profit_pct" in labeled_input_df.columns:
-                    data["potential_profit_pct"] = labeled_input_df["potential_profit_pct"].astype(float)
-                else:
-                    data["potential_profit_pct"] = 0.0
-                self.logger.info("✅ Prepared base data with triple_barrier_label for comprehensive labeling")
-            else:
-                # Fallback to step4 result
-                self.logger.info(f"📁 Loading triple barrier labels from {triple_barrier_path}")
-                data = pd.read_parquet(triple_barrier_path)
-                self.logger.info(f"✅ Loaded data with shape: {data.shape}")
 
             # Generate comprehensive labels
             labeled_data = await self._generate_comprehensive_labels(data, symbol, exchange, timeframe)
@@ -301,24 +228,26 @@ class LabelingStep:
                 "exchange": exchange,
                 "timeframe": timeframe,
                 "total_samples": len(labeled_data),
-                "label_distribution": labeled_data['label'].value_counts().to_dict() if 'label' in labeled_data.columns else {},
-                "triple_barrier_distribution": labeled_data['triple_barrier_label'].value_counts().to_dict() if 'triple_barrier_label' in labeled_data.columns else {},
+                "label_distribution": labeled_data['label'].value_counts().to_dict(),
+                "triple_barrier_distribution": labeled_data['triple_barrier_label'].value_counts().to_dict(),
                 "created_at": pd.Timestamp.now().isoformat(),
-                "labeling_config": self.config.get("labeling", {}),
-                "regime_column": regime_col if do_in_step5 else None,
-                "auto_recalculated_barriers": bool(do_in_step5 and auto_calc),
+                "labeling_config": self.config.get("labeling", {})
             }
+            
             import json
             with open(metadata_path, 'w') as f:
                 json.dump(metadata, f, indent=2)
+            
             self.logger.info(f"✅ Labeling metadata saved to {metadata_path}")
 
             self._log_step_timing("Labeling", step_start)
-
+            
             # Log artifacts and create detailed report
             await self._log_step5_artifacts_and_report(
+            # Standardized naming pattern: {exchange}_{symbol}_{timestamp}_{step_num}_{artifact_type}
                 symbol, exchange, timeframe, data_dir, labeled_data, output_path, metadata_path
             )
+            
 
             return True
 
@@ -387,7 +316,7 @@ class LabelingStep:
             
             # Create detailed report
             report_data = create_detailed_step_report(
-                step_name="step5_labeling",
+                step_name="step05_labeling",
                 step_data=step_data,
                 training_input=training_input,
                 execution_metadata=execution_metadata,
@@ -399,7 +328,7 @@ class LabelingStep:
             # Log the report
             report_name = log_step_report(
                 config=self.config,
-                step_name="step5_labeling",
+                step_name="step05_labeling",
                 report_data=report_data,
                 report_type="labeling_report",
                 additional_metadata={
@@ -417,7 +346,7 @@ class LabelingStep:
             if labeled_data is not None:
                 artifact_name = log_step_dataframe_with_standardized_name(
                     config=self.config,
-                    step_name="step5_labeling",
+                    step_name="step05_labeling",
                     df=labeled_data,
                     artifact_type="labeled_data",
                     additional_metadata={
@@ -437,7 +366,7 @@ class LabelingStep:
             if metadata_path.exists():
                 metadata_artifact_name = log_step_artifact_with_standardized_name(
                     config=self.config,
-                    step_name="step5_labeling",
+                    step_name="step05_labeling",
                     artifact_path=str(metadata_path),
                     artifact_type="labeling_metadata",
                     additional_metadata={
@@ -454,7 +383,7 @@ class LabelingStep:
             # Log metrics
             log_step_metrics(
                 config=self.config,
-                step_name="step5_labeling",
+                step_name="step05_labeling",
                 metrics=metrics_calculated,
                 additional_metadata={
                     "metrics_type": "labeling_performance",

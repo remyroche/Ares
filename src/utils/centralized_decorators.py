@@ -619,7 +619,7 @@ def step_specific_ml_validation(step_name: str, **kwargs):
             "required_grade": "C",
             "validation_level": "basic"
         },
-        "step1_5": {
+        "step01_5": {
             "min_quality_score": 0.75,
             "required_grade": "C",
             "validation_level": "basic"

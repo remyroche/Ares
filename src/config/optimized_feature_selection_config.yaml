@@ -7,10 +7,10 @@ feature_selection:
     neural_networks: 80      # CNN, TCN, Transformer models
     linear_models: 60        # Logistic Regression, Ridge, Lasso
     ensemble_models: 90      # LightGBM, XGBoost, Random Forest
-    step2_general: 100       # General Step 2 feature engineering
-    step6_hmm: 75           # HMM-based models
-    step7_ensemble: 85      # Analyst ensemble creation
-    step9_tactician: 70     # Tactician specialist training
+    step02_general: 100       # General Step 2 feature engineering
+    step06_hmm: 75           # HMM-based models
+    step07_ensemble: 85      # Analyst ensemble creation
+    step09_tactician: 70     # Tactician specialist training
   
   # VIF (Variance Inflation Factor) settings
   vif_threshold: 10.0        # Maximum VIF allowed

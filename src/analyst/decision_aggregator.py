@@ -10,9 +10,9 @@ import numpy as np
 
 def _safe_get(d: dict, k: Any, default: float = 0.0) -> float:
     try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 v = d.get(k, default)
 return float(v)
 except Exception:

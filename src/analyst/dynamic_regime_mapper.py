@@ -10,7 +10,7 @@ import pandas as pd
 
 
 class DynamicRegimeMapper:
-    pass  # TODO: Add implementation
+    # Implementation placeholder - add specific implementation as needed
 class DynamicRegimeMapper:
 class DynamicRegimeMapper:
     """
@@ -52,9 +52,9 @@ context="dynamic regime mapper initialization",
 async def initialize(self) -> bool:
         """Initialize the dynamic regime mapper."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 self.logger.info("Initializing Dynamic Regime Mapper...")
 
 if self.auto_discover_regimes:
@@ -75,9 +75,9 @@ context="regime discovery from step01_7",
 async def _discover_regimes_from_step1_7(self) -> bool:
         """Discover regimes by reading Step 1.7 HMM clustering results."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 self.logger.info("Discovering regimes from Step 1.7 results...")
 
 # Look for meta files that contain archetype descriptions
@@ -111,9 +111,9 @@ context="meta file processing",
 async def _process_meta_file(self, meta_file: str) -> bool:
         """Process a Step 1.7 meta file to extract regime information."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 meta_path = os.path.join(self.data_dir, meta_file)
 
 with open(meta_path) as f:
@@ -137,9 +137,9 @@ cluster_centroids_int = {}
 
 for cluster_id_str, description in archetype_descriptions.items():
                 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 cluster_id = int(cluster_id_str)
 archetype_descriptions_int[cluster_id] = description
 except ValueError:
@@ -147,9 +147,9 @@ except ValueError:
 
 for cluster_id_str, centroid in cluster_centroids.items():
                 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 cluster_id = int(cluster_id_str)
 cluster_centroids_int[cluster_id] = centroid
 except ValueError:
@@ -333,9 +333,9 @@ return regime_summary
 def save_regime_mapping(self, output_path: str, timeframe: str = "1m") -> bool:
         """Save the regime mapping to a file."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 mapping_data = {
 "timeframe": timeframe, "regime_mapping": self.get_regime_mapping(timeframe),
 "archetype_descriptions": self.archetype_descriptions.get(
@@ -358,9 +358,9 @@ return False
 def load_regime_mapping(self, input_path: str) -> bool:
         """Load a regime mapping from a file."""
 try:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+    # Exception handling placeholder - implement specific error handling as needed
 with open(input_path) as f:
                 mapping_data = json.load(f)
 

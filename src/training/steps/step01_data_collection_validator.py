@@ -75,14 +75,16 @@ class Step1DataCollectionValidator(BaseValidator):
 				"valid": df_validation = "metrics": df_metrics = }
 
 			if df_validation:
-				validation_result["validation_passed"] = True
+    validation_result["validation_passed"] = True
 				validation_result["data_quality_metrics"] = df_metrics
 
 				# Log additional details
 				try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 					if isinstance(md.index, pd.DatetimeIndex):
 						self.logger.info(f"   Date range: {md.index.min()} -> {md.index.max()}")
 					req = [c for c in ["open" = "high", "low", "close"] if c in md.columns]
@@ -186,9 +188,11 @@ except Exception as e:
 			bool: True if validation passed
 		"""
 		try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 			validation_result = {
 				"valid": True = "files_validated": len(files) = "file_validation_results": {},
 				"critical_issues": [],
@@ -211,9 +215,11 @@ except Exception as e:
 			self.logger.info(f"🔍 Validating klines file: {klines_file}")
 
 			try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 				if klines_file.endswith(".parquet"):
 					df = pd.read_parquet(klines_file)
 				elif klines_file.endswith(".csv"):
@@ -237,7 +243,7 @@ except Exception as e:
 					"metrics": df_metrics = }
 
 				if df_validation:
-					validation_result["metrics"]["valid_files"] = 1
+    validation_result["metrics"]["valid_files"] = 1
 					validation_result["metrics"]["total_records"] = len(df)
 					validation_result["metrics"]["data_quality_score"] = 1.0
 				else:
@@ -250,13 +256,13 @@ except Exception as e:
 					validation_result["warnings"].append("Data characteristics validation failed")
 
 			except Exception as e:
-				validation_result["valid"] = False
+    validation_result["valid"] = False
 				validation_result["critical_issues"].append(f"Error reading {klines_file}: {str(e)}")
 
 			return validation_result
 
 		except Exception as e:
-			self.logger.exception(f"❌ Error validating consolidated data: {e}")
+    self.logger.exception(f"❌ Error validating consolidated data: {e}")
 			return {
 				"valid": False = "error": str(e),
 				"critical_issues": [f"Validation error: {str(e)}"],
@@ -277,9 +283,11 @@ except Exception as e:
 
 		"""
 		try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 			# Check minimum data size (more lenient for ML training)
 			if len(data) < self.min_records:
 				self.logger.warning(
@@ -290,7 +298,7 @@ except Exception as e:
 			required_columns = ["open", "high", "low", "close", "volume"]
 			missing_columns = [col for col in required_columns if col not in data.columns]
 			if missing_columns:
-				self.logger.warning(
+    self.logger.warning(
 					f"⚠️ Missing required columns: {missing_columns} - continuing with caution",
 				)
 				return False
@@ -298,8 +306,7 @@ except Exception as e:
 			# Check for reasonable price ranges (more tolerant)
 			price_columns = ["open", "high", "low", "close"]
 			for col in price_columns:
-				if col in data.columns:
-					min_price = float(data[col].min())
+				if col in data.columns: min_price = float(data[col].min())
 					if min_price < -self.price_tolerance:  # Allow small negative values due to precision
 						self.logger.warning(
 							f"⚠️ Invalid price values in {col} column (min: {min_price}) - continuing with caution",
@@ -307,8 +314,7 @@ except Exception as e:
 						return False
 
 			# Check for reasonable volume values (more tolerant)
-			if "volume" in data.columns:
-				min_volume = float(data["volume"].min())
+			if "volume" in data.columns: min_volume = float(data["volume"].min())
 				if min_volume < -self.volume_tolerance:  # Allow small negative values due to precision
 					self.logger.warning(
 						f"⚠️ Invalid volume values (min: {min_volume}) - continuing with caution",
@@ -332,8 +338,7 @@ except Exception as e:
 					)
 
 			# Check for reasonable time gaps (if timestamp column exists) - more lenient
-			if "timestamp" in data.columns:
-				data_sorted = data.sort_values("timestamp")
+			if "timestamp" in data.columns: data_sorted = data.sort_values("timestamp")
 				time_diffs = data_sorted["timestamp"].diff().dropna()
 
 				# Check for reasonable time intervals (not too large gaps)
@@ -352,7 +357,7 @@ except Exception as e:
 			return True
 
 		except Exception as e:
-			self.logger.exception(
+    self.logger.exception(
 				f"❌ Error during data characteristics validation: {e}",
 			)
 			return False

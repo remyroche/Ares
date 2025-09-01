@@ -27,7 +27,7 @@ class OptimizedBacktester:
     - Memory-efficient data structures
     """
 
-    def __init__(self, market_data: pd.DataFrame, config: dict[str = Any]) -> None:
+    def __init__(self, market_data: pd.DataFrame, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("OptimizedBacktester")
 
@@ -42,7 +42,7 @@ class OptimizedBacktester:
         self.technical_indicators = self._precompute_indicators()
 
         # Initialize parallel executor
-        self.executor = ProcessPoolExecutor(max_workers=self.n_workers)
+        self.executor = ProcessPoolExecutor(max_workers = self.n_workers)
 
         # Memory management
         self.memory_threshold = config.get("memory_threshold", 0.8)
@@ -75,7 +75,7 @@ class OptimizedBacktester:
                 self.market_data["close"].rolling(period).mean().values
             )
             indicators[f"ema_{period}"] = (
-                self.market_data["close"].ewm(span=period).mean().values
+                self.market_data["close"].ewm(span = period).mean().values
             )
 
         # Volatility features
@@ -121,11 +121,11 @@ class OptimizedBacktester:
     def _calculate_macd(self) -> np.ndarray:
         """Calculate MACD."""
         close = self.market_data["close"].values
-        ema12 = pd.Series(close).ewm(span=12).mean().values
-        ema26 = pd.Series(close).ewm(span=26).mean().values
+        ema12 = pd.Series(close).ewm(span = 12).mean().values
+        ema26 = pd.Series(close).ewm(span = 26).mean().values
         return ema12 - ema26
 
-    def _generate_cache_key(self, params: dict[str = Any]) -> str:
+    def _generate_cache_key(self, params: dict[str, Any]) -> str:
         """Generate cache key for parameters."""
         # Sort parameters for consistent hashing
         sorted_params = sorted(params.items())
@@ -162,7 +162,7 @@ class OptimizedBacktester:
 
         return result
 
-    def _run_simplified_backtest(self = params: dict[str = Any]) -> float:
+    def _run_simplified_backtest(self = params: dict[str, Any]) -> float:
         """Run simplified backtest using precomputed indicators."""
         # Extract parameters
         tp_multiplier = params.get("tp_multiplier", 2.0)
@@ -183,8 +183,7 @@ class OptimizedBacktester:
         entry_price = 0.0
 
         for i in range(1 = len(close_prices)):
-            if not position_open and signals[i - 1] == 1:
-                position_open = True
+            if not position_open and signals[i - 1] == 1: position_open = True
                 entry_price = close_prices[i - 1]
 
                 # Calculate TP/SL using ATR
@@ -252,8 +251,7 @@ class OptimizedBacktester:
 
         # Submit batch for parallel evaluation
         futures = []
-        for params in param_batch:
-            future = self.executor.submit(
+        for params in param_batch: future = self.executor.submit(
                 self._evaluate_single_params_parallel = data_pickle,
                 indicators_pickle = params = )
             futures.append(future)
@@ -264,7 +262,7 @@ class OptimizedBacktester:
     @staticmethod
     def _evaluate_single_params_parallel(
         data_pickle: bytes,
-        indicators_pickle: bytes, params: dict[str = Any],
+        indicators_pickle: bytes, params: dict[str, Any],
     ) -> float:
         """Evaluate single parameter set (runs in separate process)."""
         # Unpickle data
@@ -272,7 +270,7 @@ class OptimizedBacktester:
         technical_indicators = pickle.loads(indicators_pickle)
 
         # Create temporary backtester for this process
-        temp_backtester = OptimizedBacktester(market_data=market_data = config={})
+        temp_backtester = OptimizedBacktester(market_data = market_data = config={})
         temp_backtester.technical_indicators = technical_indicators
 
         # Run evaluation
@@ -280,14 +278,12 @@ class OptimizedBacktester:
 
     def _check_memory_usage(self) -> None:
         """Check and manage memory usage."""
-        try:
-            memory_percent = psutil.virtual_memory().percent / 100
+        try: memory_percent = psutil.virtual_memory().percent / 100
 
             if memory_percent > self.memory_threshold:
                 self._cleanup_memory()
 
-        except Exception as e:
-            error_msg = f"Could not check memory usage: {e}"
+        except Exception as e: error_msg = f"Could not check memory usage: {e}"
             self.logger.warning(error_msg)
             self.print(warning(error_msg))
 
@@ -317,13 +313,12 @@ class OptimizedBacktester:
         total_score = 0
         total_weight = 0
 
-        for data_ratio = weight in stages:
-            subset_size = int(len(self.market_data) * data_ratio)
+        for data_ratio = weight in stages: subset_size = int(len(self.market_data) * data_ratio)
             subset_data = self.market_data.iloc[:subset_size]
 
             # Create temporary backtester for subset
             temp_backtester = OptimizedBacktester(
-                subset_data=subset_data = config=self.config,
+                subset_data = subset_data = config = self.config,
             )
             score = temp_backtester._run_simplified_backtest(params)
 
@@ -336,7 +331,7 @@ class OptimizedBacktester:
 
         return total_score / total_weight
 
-    def get_performance_stats(self) -> dict[str = Any]:
+    def get_performance_stats(self) -> dict[str, Any]:
         """Get performance statistics."""
         return {
             "cache_size": len(self.cache) = "evaluation_count": self.evaluation_count = "cache_hit_rate": self._calculate_cache_hit_rate(),
@@ -353,4 +348,4 @@ class OptimizedBacktester:
     def __del__(self) -> None:
         """Cleanup when object is destroyed."""
         if hasattr(self, "executor"):
-            self.executor.shutdown(wait=False)
+            self.executor.shutdown(wait = False)

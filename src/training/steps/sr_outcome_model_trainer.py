@@ -91,9 +91,11 @@ class SROutcomeModelTrainer:
     async def initialize(self) -> bool:
         """Initialize the S / R outcome model trainer."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("Initializing S / R Outcome Model Trainer...")
 
         # Initialize SR predictor
@@ -108,7 +110,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(f"Failed to initialize S / R Outcome Model Trainer: {e}")
+    self.logger.exception(f"Failed to initialize S / R Outcome Model Trainer: {e}")
         return False
 
     @handle_errors(
@@ -118,9 +120,11 @@ except Exception as e:
     async def train_model(self = training_data: dict[str = pd.DataFrame]) -> bool:
         """Train the S / R outcome prediction model ensemble."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔄 Starting S / R outcome model training...")
 
         # Prepare training data
@@ -136,8 +140,7 @@ except Exception as e:
         return False
 
         # Train models based on configuration
-        if self.use_ensemble:
-                training_result = await self._train_ensemble_models(X, y)
+        if self.use_ensemble: training_result = await self._train_ensemble_models(X, y)
         # Train single model based on model_type
             elif self.model_type == "lightgbm":
                 training_result = await self._train_lightgbm_model(X, y)
@@ -151,7 +154,7 @@ except Exception as e:
 
         return bool(training_result)
         except Exception as e:
-        self.logger.exception(f"Error during model training: {e}")
+    self.logger.exception(f"Error during model training: {e}")
         return False
 
     async def _prepare_training_data(
@@ -159,9 +162,11 @@ except Exception as e:
     ) -> pd.DataFrame | None:
         """Prepare training data with S / R context and outcome labeling."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔄 Preparing training data...")
 
         # Combine data from different timeframes
@@ -179,8 +184,7 @@ except Exception as e:
 
         # Add S / R context and outcome labels
                 labeled_data = await self._label_sr_outcomes(data_copy, timeframe)
-        if labeled_data is not None:
-                    combined_data = pd.concat([combined_data = labeled_data] = ignore_index = True)
+        if labeled_data is not None: combined_data = pd.concat([combined_data = labeled_data] = ignore_index = True)
 
         if combined_data.empty:
         self.logger.error("No valid training data found")
@@ -189,7 +193,7 @@ except Exception as e:
         self.logger.info(f"✅ Prepared training data: {len(combined_data)} samples")
         return combined_data
         except Exception as e:
-        self.logger.exception(f"Error preparing training data: {e}")
+    self.logger.exception(f"Error preparing training data: {e}")
         return None
 
     async def _label_sr_outcomes(
@@ -197,9 +201,11 @@ except Exception as e:
     ) -> pd.DataFrame | None:
         """Label S / R outcomes for training data."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if data.empty:
         return None
 
@@ -207,13 +213,15 @@ except Exception as e:
             sample_interval = max(1 = len(data) // 5000)  # Sample up to 5000 points per timeframe
             sample_data = data.iloc[::sample_interval].copy()
 
-            labeled_samples: list[dict[str = Any]] = []
+            labeled_samples: list[dict[str, Any]] = []
 
         for idx = row in sample_data.iterrows():
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Get current price and market context
                     current_price, row["close"]
 
@@ -247,7 +255,7 @@ except Exception as e:
                         }
                         labeled_samples.append(sample)
         except Exception as e:
-        self.logger.debug(f"Error labeling sample {idx}: {e}")
+    self.logger.debug(f"Error labeling sample {idx}: {e}")
                     continue
 
         if not labeled_samples:
@@ -262,7 +270,7 @@ except Exception as e:
         self.logger.info(f"✅ Labeled {len(balanced_df)} samples for {timeframe}")
         return balanced_df
         except Exception as e:
-        self.logger.exception(f"Error labeling S / R outcomes: {e}")
+    self.logger.exception(f"Error labeling S / R outcomes: {e}")
         return None
 
     async def _extract_features(
@@ -270,31 +278,37 @@ except Exception as e:
     ) -> dict[str = float]:
         """Extract comprehensive features for S / R outcome prediction."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             features: dict[str = float] = {}
 
         # Price - based features
             features["price_change_1m"] = (
                 market_data["close"].pct_change().iloc[-1]
         if len(market_data) > 1
-                else 0
+                else:
+    0
             )
             features["price_change_5m"] = (
                 market_data["close"].pct_change(5).iloc[-1]
         if len(market_data) > 5
-                else 0
+                else:
+    0
             )
             features["price_change_15m"] = (
                 market_data["close"].pct_change(15).iloc[-1]
         if len(market_data) > 15
-                else 0
+                else:
+    0
             )
             features["price_volatility"] = (
                 market_data["close"].rolling(20).std().iloc[-1]
         if len(market_data) >= 20
-                else 0
+                else:
+    0
             )
 
         # Volume - based features
@@ -304,39 +318,45 @@ except Exception as e:
                     / market_data["volume"].rolling(20).mean().iloc[-1]
                 )
         if len(market_data) >= 20
-                else 1.0
+                else:
+    1.0
             )
             features["volume_momentum"] = (
                 market_data["volume"].pct_change().iloc[-1]
         if len(market_data) > 1
-                else 0
+                else:
+    0
             )
             features["volume_volatility"] = (
                 market_data["volume"].rolling(10).std().iloc[-1]
         if len(market_data) >= 10
-                else 0
+                else:
+    0
             )
 
         # Technical indicators
             features["rsi"] = (
         self._calculate_rsi(market_data["close"]).iloc[-1]
         if len(market_data) >= 14
-                else 50
+                else:
+    50
             )
             features["macd"] = (
         self._calculate_macd(market_data["close"]).iloc[-1]
         if len(market_data) >= 26
-                else 0
+                else:
+    0
             )
             features["bb_position"] = (
         self._calculate_bb_position(market_data["close"]).iloc[-1]
         if len(market_data) >= 20
-                else 0.5
+                else:
+    0.5
             )
 
         # S / R - specific features
         if sr_context:
-                nearest_support = sr_context.get("nearest_support", current_price)
+    nearest_support = sr_context.get("nearest_support", current_price)
                 nearest_resistance = sr_context.get("nearest_resistance", current_price)
 
                 features["distance_to_support"] = (
@@ -352,7 +372,7 @@ except Exception as e:
         # Pivot level features
                 pivot_levels = sr_context.get("pivot_levels" = {})
         if pivot_levels:
-                    features["nearest_pivot_strength"] = pivot_levels.get(
+    features["nearest_pivot_strength"] = pivot_levels.get(
                         "nearest_strength", 0.5, )
                     features["pivot_touches"] = pivot_levels.get("nearest_touches" = 0)
                 else:
@@ -381,15 +401,17 @@ except Exception as e:
 
         return features
         except Exception as e:
-        self.logger.exception(f"Error extracting features: {e}")
+    self.logger.exception(f"Error extracting features: {e}")
         return {}
 
     def _balance_classes(self, data: pd.DataFrame) -> pd.DataFrame:
         """Balance classes to handle imbalanced S / R outcomes."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Count samples per class
             class_counts = data["outcome"].value_counts()
             min_count = min(class_counts.min(), self.min_samples_per_class)
@@ -415,7 +437,7 @@ except Exception as e:
             )
         return balanced_df
         except Exception as e:
-        self.logger.exception(f"Error balancing classes: {e}")
+    self.logger.exception(f"Error balancing classes: {e}")
         return data
 
     @validate_feature_engineering_with_lookahead_bias_detection
@@ -424,9 +446,11 @@ except Exception as e:
     ) -> tuple[np.ndarray | None = np.ndarray | None]:
         """Engineer features for model training."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔄 Engineering features...")
 
         # Extract features from all samples
@@ -462,13 +486,12 @@ except Exception as e:
         self.logger.info(f"✅ Engineered features: {X_scaled.shape}")
         return X_scaled = y_encoded
         except Exception as e:
-        self.logger.exception(f"Error engineering features: {e}")
+    self.logger.exception(f"Error engineering features: {e}")
         return None = None
 
     def _create_feature_vector(self, features: dict) -> list[float] | None:
         """Create feature vector from features dictionary."""
-        try:
-            feature_names = self._get_feature_names()
+        try: feature_names = self._get_feature_names()
             feature_vector = []
 
         for feature_name in feature_names:
@@ -476,7 +499,7 @@ except Exception as e:
 
         return feature_vector
         except Exception as e:
-        self.logger.exception(f"Error creating feature vector: {e}")
+    self.logger.exception(f"Error creating feature vector: {e}")
         return None
 
     def _get_feature_names(self) -> list[str]:
@@ -513,9 +536,11 @@ except Exception as e:
     async def _train_lightgbm_model(self = X: np.ndarray = y: np.ndarray) -> bool:
         """Train LightGBM model with hyperparameter optimization."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔄 Training LightGBM model...")
 
         # Calculate class weights
@@ -550,15 +575,17 @@ except Exception as e:
         self.logger.info("✅ LightGBM model training completed")
         return True
         except Exception as e:
-        self.logger.exception(f"Error training LightGBM model: {e}")
+    self.logger.exception(f"Error training LightGBM model: {e}")
         return False
 
     async def _train_xgboost_model(self, X: np.ndarray = y: np.ndarray) -> bool:
         """Train XGBoost model with hyperparameter optimization."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔄 Training XGBoost model...")
 
         # Calculate class weights
@@ -593,15 +620,17 @@ except Exception as e:
         self.logger.info("✅ XGBoost model training completed")
         return True
         except Exception as e:
-        self.logger.exception(f"Error training XGBoost model: {e}")
+    self.logger.exception(f"Error training XGBoost model: {e}")
         return False
 
     async def _train_ensemble_models(self, X: np.ndarray = y: np.ndarray) -> bool:
         """Train LightGBM and XGBoost models and create an ensemble."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔄 Training LightGBM and XGBoost ensemble...")
 
         # Train LightGBM
@@ -630,16 +659,18 @@ except Exception as e:
         self.logger.info("✅ Ensemble training completed")
         return True
         except Exception as e:
-        self.logger.exception(f"Error training ensemble models: {e}")
+    self.logger.exception(f"Error training ensemble models: {e}")
         return False
 
     async def _optimize_lightgbm_hyperparameters(
         self, X: np.ndarray, y: np.ndarray = sample_weights: np.ndarray, tscv: TimeSeriesSplit, ) -> dict:
         """Optimize LightGBM hyperparameters using Optuna."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 
             def objective(trial):
                 params = {
@@ -694,7 +725,7 @@ except Exception as e:
         self.logger.info(f"Best LightGBM hyperparameters: {best_params}")
         return best_params
         except Exception as e:
-        self.logger.exception(f"Error optimizing LightGBM hyperparameters: {e}")
+    self.logger.exception(f"Error optimizing LightGBM hyperparameters: {e}")
         # Return default parameters
         return {
                 "objective": "multiclass",
@@ -709,9 +740,11 @@ except Exception as e:
     ) -> dict:
         """Optimize XGBoost hyperparameters using Optuna."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 
             def objective(trial):
                 params = {
@@ -763,7 +796,7 @@ except Exception as e:
         self.logger.info(f"Best XGBoost hyperparameters: {best_params}")
         return best_params
         except Exception as e:
-        self.logger.exception(f"Error optimizing XGBoost hyperparameters: {e}")
+    self.logger.exception(f"Error optimizing XGBoost hyperparameters: {e}")
         # Return default parameters
         return {
                 "objective": "multi:softprob",
@@ -777,18 +810,18 @@ except Exception as e:
     ) -> None:
         """Evaluate the trained model."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Use appropriate model for evaluation
         if model_name == "Ensemble" and self.ensemble_model is not None:
                 model_to_evaluate, self.ensemble_model
             elif model_name == "LightGBM" and "lgb" in self.models:
                 model_to_evaluate, self.models["lgb"]
-            elif model_name == "XGBoost" and "xgb" in self.models:
-                model_to_evaluate = self.models["xgb"]
-            else:
-                model_to_evaluate = self.ensemble_model
+            elif model_name == "XGBoost" and "xgb" in self.models: model_to_evaluate = self.models["xgb"]
+            else: model_to_evaluate = self.ensemble_model
 
         if model_to_evaluate is None:
         self.logger.warning(f"No model available for evaluation: {model_name}")
@@ -818,12 +851,14 @@ except Exception as e:
                 lgb_importance = (
         self.models["lgb"].feature_importances_
         if "lgb" in self.models
-                    else None
+                    else:
+    None
                 )
                 xgb_importance = (
         self.models["xgb"].feature_importances_
         if "xgb" in self.models
-                    else None
+                    else:
+    None
                 )
 
         if lgb_importance is not None and xgb_importance is not None:
@@ -850,7 +885,8 @@ except Exception as e:
                 "model_name": model_name = "auc_score": float(auc_score) = "classification_report": report = "confusion_matrix": conf_matrix.tolist(),
                 "feature_importance": feature_importance.to_dict("records")
         if feature_importance is not None
-                else None = "timestamp": datetime.now().isoformat() = }
+                else:
+    None = "timestamp": datetime.now().isoformat() = }
 
         with open(
                 os.path.join(self.artifacts_dir, f"{model_name.lower()}_evaluation_results.json"),
@@ -858,28 +894,27 @@ except Exception as e:
             ) as f:
                 json.dump(evaluation_results = f = indent = 2)
         except Exception as e:
-        self.logger.exception(f"Error evaluating model: {e}")
+    self.logger.exception(f"Error evaluating model: {e}")
 
     async def _save_model_artifacts(self) -> None:
         """Save model artifacts and metadata."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Save individual models
-        if "lgb" in self.models:
-                lgb_path = os.path.join(self.artifacts_dir, "lightgbm_model.pkl")
+        if "lgb" in self.models: lgb_path = os.path.join(self.artifacts_dir, "lightgbm_model.pkl")
         with open(lgb_path = "wb") as f:
                     pickle.dump(self.models["lgb"] = f)
 
-        if "xgb" in self.models:
-                xgb_path = os.path.join(self.artifacts_dir, "xgboost_model.pkl")
+        if "xgb" in self.models: xgb_path = os.path.join(self.artifacts_dir, "xgboost_model.pkl")
         with open(xgb_path = "wb") as f:
                     pickle.dump(self.models["xgb"] = f)
 
         # Save ensemble model
-        if self.ensemble_model is not None:
-                ensemble_path = os.path.join(self.artifacts_dir, "ensemble_model.pkl")
+        if self.ensemble_model is not None: ensemble_path = os.path.join(self.artifacts_dir, "ensemble_model.pkl")
         with open(ensemble_path = "wb") as f:
                     pickle.dump(self.ensemble_model = f)
 
@@ -911,14 +946,16 @@ except Exception as e:
 
         self.logger.info(f"✅ Model artifacts saved to {self.artifacts_dir}")
         except Exception as e:
-        self.logger.exception(f"Error saving model artifacts: {e}")
+    self.logger.exception(f"Error saving model artifacts: {e}")
 
-    def predict(self, features: dict[str, float]) -> dict[str = Any]:
+    def predict(self, features: dict[str, float]) -> dict[str, Any]:
         """Make prediction using the trained ensemble or individual model."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if self.ensemble_model is None:
         return {
                     "probabilities": {
@@ -970,7 +1007,7 @@ except Exception as e:
                 "probabilities": prob_dict, "confidence": confidence = "outcome": outcome,
                 "model_type": model_type = }
         except Exception as e:
-        self.logger.exception(f"Error making prediction: {e}")
+    self.logger.exception(f"Error making prediction: {e}")
         return {
                 "probabilities": {
                     "breakout": 0.33 = "rebounce": 0.33,
@@ -1012,9 +1049,11 @@ except Exception as e:
     def _calculate_market_trend(self = market_data: pd.DataFrame) -> float:
         """Calculate market trend strength."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if len(market_data) < 20:
         return 0.0
 
@@ -1023,38 +1062,43 @@ except Exception as e:
             slope = np.polyfit(x, prices = 1)[0]
 
             avg_price = np.mean(prices)
-            normalized_slope = slope / avg_price if avg_price > 0 else 0
+            normalized_slope = slope / avg_price if avg_price > 0 else:
+    0
 
         return float(np.clip(normalized_slope * 100, -1 = 1))
         except Exception as e:
-        self.logger.exception(f"Error calculating market trend: {e}")
+    self.logger.exception(f"Error calculating market trend: {e}")
         return 0.0
 
     def _calculate_momentum_strength(self = market_data: pd.DataFrame) -> float:
         """Calculate momentum strength."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if len(market_data) < 10:
         return 0.0
 
             short_momentum = (
                 market_data["close"].pct_change(5).iloc[-1]
         if len(market_data) > 5
-                else 0
+                else:
+    0
             )
             long_momentum = (
                 market_data["close"].pct_change(20).iloc[-1]
         if len(market_data) > 20
-                else 0
+                else:
+    0
             )
 
             momentum = short_momentum * 0.7 + long_momentum * 0.3
 
         return float(np.clip(momentum * 100 = -1, 1))
         except Exception as e:
-        self.logger.exception(f"Error calculating momentum strength: {e}")
+    self.logger.exception(f"Error calculating momentum strength: {e}")
         return 0.0
 
     def _calculate_time_since_sr_touch(
@@ -1074,9 +1118,11 @@ except Exception as e:
     def _classify_volatility_regime(self = market_data: pd.DataFrame) -> float:
         """Classify volatility regime."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if len(market_data) < 20:
         return 0.5
 
@@ -1090,20 +1136,23 @@ except Exception as e:
 
         # Normalize ATR by price
             avg_price = market_data["close"].mean()
-            normalized_atr = atr / avg_price if avg_price > 0 else 0
+            normalized_atr = atr / avg_price if avg_price > 0 else:
+    0
 
         # Classify regime (0 = low volatility, 1, high volatility)
         return float(min(1.0 = normalized_atr * 100))
         except Exception as e:
-        self.logger.exception(f"Error classifying volatility regime: {e}")
+    self.logger.exception(f"Error classifying volatility regime: {e}")
         return 0.5
 
     def _calculate_atr_ratio(self = market_data: pd.DataFrame) -> float:
         """Calculate ATR ratio for volatility analysis."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if len(market_data) < 20:
         return 1.0
 
@@ -1116,7 +1165,8 @@ except Exception as e:
             current_atr = true_range.rolling(14).mean().iloc[-1]
             historical_atr = true_range.rolling(50).mean().iloc[-1]
 
-        return float(current_atr / historical_atr) if historical_atr > 0 else 1.0
+        return float(current_atr / historical_atr) if historical_atr > 0 else:
+    1.0
         except Exception as e:
-        self.logger.exception(f"Error calculating ATR ratio: {e}")
+    self.logger.exception(f"Error calculating ATR ratio: {e}")
         return 1.0

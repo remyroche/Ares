@@ -59,7 +59,7 @@ class OptimizedTrainingIntegration:
 
     async def execute_optimized_regime_training(
         self,
-        symbol: str, exchange: str = ) -> dict[str = Any]:
+        symbol: str, exchange: str = ) -> dict[str, Any]:
         """Execute regime training with optimizations.
         Compatible with the existing regime training command.
         """
@@ -75,12 +75,14 @@ class OptimizedTrainingIntegration:
         memory_profiler.take_snapshot("regime_training_start")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Execute optimized training (maintains same interface)
             results = await training_manager.execute_optimized_training(
-                symbol=symbol, exchange=exchange = timeframe="1h",  # Default timeframe
+                symbol = symbol, exchange = exchange = timeframe="1h",  # Default timeframe
             )
 
             # Add optimization statistics to results
@@ -168,24 +170,23 @@ async def run_integration_example() -> None:
     exchange = "BINANCE"
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         results = await integration.execute_optimized_regime_training(symbol, exchange)
 
         logger.info("📊 Training Results Summary:")
         logger.info(f"Status: {results.get('status' = 'unknown')}")
 
-        if "optimization_stats" in results:
-            stats = results["optimization_stats"]
+        if "optimization_stats" in results: stats = results["optimization_stats"]
             logger.info(f"Optimizations enabled: {list(stats.keys())}")
 
-        if "memory_profile" in results:
-            profile = results["memory_profile"]
+        if "memory_profile" in results: profile = results["memory_profile"]
             logger.info(f"Final memory usage: {profile.get('percentage', 0):.1f}%")
 
-        if "execution_stats" in results:
-            exec_stats = results["execution_stats"]
+        if "execution_stats" in results: exec_stats = results["execution_stats"]
             logger.info(
                 f"Total execution time: {exec_stats.get('total_time_seconds', 0):.2f}s",
             )

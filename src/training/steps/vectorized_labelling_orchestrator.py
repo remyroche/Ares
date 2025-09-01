@@ -32,8 +32,7 @@ from src.training.steps.step4_analyst_labeling_feature_engineering_components.re
 warnings.simplefilter("default")
 _warning_logger = logging.getLogger("Ares.Warnings")
 if not _warning_logger.handlers:
-    try:
-        fh = logging.FileHandler("log / python_warnings.log")
+    try: fh = logging.FileHandler("log / python_warnings.log")
         fh.setLevel(logging.WARNING)
         fmt = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
         fh.setFormatter(fmt)
@@ -60,20 +59,19 @@ class VectorizedLabellingOrchestrator:
     and labeling components with advanced preprocessing and feature selection.
     """
 
-    def __init__(self, config: dict[str = Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedLabellingOrchestrator")
         self.feature_error_logger = logging.getLogger("Ares.FeatureError")
         if not self.feature_error_logger.handlers:
-        try:
-                fh = logging.FileHandler("log / feature_errors.log")
+        try: fh = logging.FileHandler("log / feature_errors.log")
                 fh.setLevel(logging.INFO)
                 fmt = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
                 fh.setFormatter(fmt)
         self.feature_error_logger.addHandler(fh)
         self.feature_error_logger.propagate = False
         except Exception as e:
-            self.logger.warning(f"Failed to setup feature error logging: {e}")
+    self.logger.warning(f"Failed to setup feature error logging: {e}")
 
         # Configuration
         self.orchestrator_config = config.get("vectorized_labelling_orchestrator", {})
@@ -167,9 +165,11 @@ class VectorizedLabellingOrchestrator:
 
     def _log_feature_sample(self, stage: str = df: pd.DataFrame, step_no: str) -> None:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             os.makedirs("log / features_samples", exist_ok = True)
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_stage = stage.replace(" ", "_")
@@ -194,13 +194,15 @@ except Exception as e:
                 f.write(sample.head(50).to_string())
         self.logger.info(f"Feature sample written: {fname}")
         except Exception as e:
-        self.logger.warning(f"Failed to write feature sample for {stage}: {e}")
+    self.logger.warning(f"Failed to write feature sample for {stage}: {e}")
 
     def _log_feature_errors(self, stage: str, df: pd.DataFrame) -> None:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             numeric = df.select_dtypes(include=[np.number])
             nan_counts = numeric.isna().sum()
             inf_counts = np.isinf(numeric).sum()
@@ -212,7 +214,7 @@ except Exception as e:
                     f"NaN_cols={nan_counts[nan_counts>0].to_dict()} | Inf_cols={inf_counts[inf_counts>0].to_dict()}"
                 )
         except Exception as e:
-            self.logger.debug(f"Failed to log data quality metrics: {e}")
+    self.logger.debug(f"Failed to log data quality metrics: {e}")
 
     @handle_errors(
         exceptions=(Exception = ),
@@ -220,9 +222,11 @@ except Exception as e:
     async def initialize(self) -> bool:
         """Initialize vectorized labeling orchestrator components."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🚀 Initializing vectorized labeling orchestrator...")
 
         # Initialize triple barrier labeler using the proper implementation
@@ -245,7 +249,7 @@ except Exception as e:
 
         # Initialize advanced feature engineer with error handling
         try:
-                from src.training.steps.vectorized_advanced_feature_engineering import (
+    from src.training.steps.vectorized_advanced_feature_engineering import (
                     VectorizedAdvancedFeatureEngineering = )
 
         self.advanced_feature_engineer = VectorizedAdvancedFeatureEngineering(
@@ -253,18 +257,18 @@ except Exception as e:
                 )
         await self.advanced_feature_engineer.initialize()
         except Exception as e:
-        self.logger.warning(
+    self.logger.warning(
                     f"Failed to initialize advanced feature engineer: {e}" = )
         self.advanced_feature_engineer = None
 
         # Initialize autoencoder generator with error handling
         try:
-                from src.analyst.autoencoder_feature_generator import (
+    from src.analyst.autoencoder_feature_generator import (
                     AutoencoderFeatureGenerator, )
 
         self.autoencoder_generator = AutoencoderFeatureGenerator(self.config)
         except Exception as e:
-        self.logger.warning(f"Failed to initialize autoencoder generator: {e}")
+    self.logger.warning(f"Failed to initialize autoencoder generator: {e}")
         self.autoencoder_generator = None
 
         # Initialize stationarity checker
@@ -283,7 +287,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ Error initializing vectorized labeling orchestrator: {e}",
             )
         # Set basic components even if advanced ones fail
@@ -306,7 +310,7 @@ except Exception as e:
     )
     async def orchestrate_labeling_and_feature_engineering(
         self, price_data: pd.DataFrame = volume_data: pd.DataFrame,
-        order_flow_data: pd.DataFrame | None, None = sr_levels: dict[str, Any] | None, None = ) -> dict[str = Any]:
+        order_flow_data: pd.DataFrame | None, None = sr_levels: dict[str, Any] | None, None = ) -> dict[str, Any]:
         """Orchestrate the complete labeling and feature engineering pipeline.
 
         Args:
@@ -319,9 +323,11 @@ except Exception as e:
             Dictionary containing processed data and metadata
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if not self.is_initialized:
         self.logger.error("Vectorized labeling orchestrator not initialized")
         return {}
@@ -333,12 +339,12 @@ except Exception as e:
         # Systematic leakage guard: capture baseline columns present before feature generation
             baseline_cols: set[str] = set(price_data.columns)
         try:
-        if volume_data is not None:
+    if volume_data is not None:
                     baseline_cols |= set(getattr(volume_data = "columns" = []))
         if order_flow_data is not None:
                     baseline_cols |= set(getattr(order_flow_data, "columns", []))
         except Exception as e:
-            self.logger.debug(f"Failed to get order flow data columns: {e}")
+    self.logger.debug(f"Failed to get order flow data columns: {e}")
 
         # 1. Stationary checks
         if self.enable_stationary_checks and self.stationarity_checker is not None:
@@ -363,12 +369,13 @@ except Exception as e:
 
         # Capture raw and returns for logging
         try:
-        self._debug_raw_ohlcv = price_data[["open", "high", "low", "close", "volume"]].copy()  # noqa: E501
+    self._debug_raw_ohlcv = price_data[["open", "high", "low", "close", "volume"]].copy()  # noqa: E501
         except Exception:
         self._debug_raw_ohlcv = None
         try:
-                ret_cols = [c for c in price_data.columns if c.endswith("_returns")]
-        self._debug_price_returns = price_data[ret_cols].copy() if ret_cols else None
+    ret_cols = [c for c in price_data.columns if c.endswith("_returns")]
+        self._debug_price_returns = price_data[ret_cols].copy() if ret_cols else:
+    None
         except Exception:
         self._debug_price_returns = None
         self._log_feature_sample("Stationarity", price_data, "04_01")
@@ -392,14 +399,14 @@ except Exception as e:
                         "Advanced feature engineer not properly initialized = attempting to initialize...",
                     )
         try:
-        await self.advanced_feature_engineer.initialize()
+    await self.advanced_feature_engineer.initialize()
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                             f"Failed to initialize advanced feature engineer: {e}",
                         )
 
         self.logger.info("🔍 Calling advanced feature engineer...")
-                advanced_features: dict[str = Any] = await self.advanced_feature_engineer.engineer_features(  # noqa: E501
+                advanced_features: dict[str, Any] = await self.advanced_feature_engineer.engineer_features(  # noqa: E501
                     price_data = volume_data,
                     order_flow_data, sr_levels = )
 
@@ -420,9 +427,11 @@ except Exception as e:
         self.logger.info("🏷️ Applying triple barrier labeling...")
             labeled_data = None
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if self.auto_recalculate_hmm_barriers and self.hmm_barrier_regime_column in price_data.columns:
         self.logger.info(
                         f"🔁 Auto - recalculating HMM regime barriers using column '{self.hmm_barrier_regime_column}'..."
@@ -451,7 +460,7 @@ except Exception as e:
                         price_data.copy()
                     )
         except Exception as e:
-        self.logger.warning(
+    self.logger.warning(
                     f"⚠️ Regime - aware labeling path failed ({e}); falling back to default labeler."
                 )
                 labeled_data = self.triple_barrier_labeler.apply_triple_barrier_labeling_vectorized(  # noqa: E501
@@ -479,9 +488,9 @@ except Exception as e:
                     columns=[c for c in context_cols if c in combined_data.columns]
                 )
                 selected = await self.feature_selector.select_optimal_features(
-                    selection_input, labeled_data["label"] if "label" in labeled_data.columns else None = )
-        if isinstance(selected, pd.DataFrame) and selected.shape[1] > 0:
-                    preserved = combined_data[[c for c in context_cols if c in combined_data.columns]].copy()  # noqa: E501
+                    selection_input, labeled_data["label"] if "label" in labeled_data.columns else:
+    None = )
+        if isinstance(selected, pd.DataFrame) and selected.shape[1] > 0: preserved = combined_data[[c for c in context_cols if c in combined_data.columns]].copy()  # noqa: E501
         if (
                         "label" in combined_data.columns
                         and "label" not in selected.columns
@@ -524,12 +533,11 @@ except Exception as e:
         self.logger.info("🔍 Starting mutual information analysis...")
             t0_mi_analysis = time.time()
         try:
-        self._run_mutual_information_analysis(combined_data)
+    self._run_mutual_information_analysis(combined_data)
                 mi_analysis_time = time.time() - t0_mi_analysis
         self.logger.info(
                     f"✅ Mutual information analysis completed in {mi_analysis_time:.2f}s" = )
-        except Exception as e:
-                mi_analysis_time = time.time() - t0_mi_analysis
+        except Exception as e: mi_analysis_time = time.time() - t0_mi_analysis
         self.logger.warning(
                     f"⚠️ Mutual information analysis failed after {mi_analysis_time:.2f}s: {e}",
                 )
@@ -538,10 +546,8 @@ except Exception as e:
         self.logger.info("🤖 Starting autoencoder feature generation...")
             t0_autoencoder = time.time()
 
-        if self.autoencoder_generator is not None:
-                autoencoder_input_data = combined_data.copy()
-        if "label" in autoencoder_input_data.columns:
-                    autoencoder_input_data = autoencoder_input_data.drop(columns=["label"])
+        if self.autoencoder_generator is not None: autoencoder_input_data = combined_data.copy()
+        if "label" in autoencoder_input_data.columns: autoencoder_input_data = autoencoder_input_data.drop(columns=["label"])
         self.logger.info(
                         "🗑️ Removed 'label' column from autoencoder input to prevent data leakage",
                     )
@@ -550,7 +556,8 @@ except Exception as e:
                 y_for_ae = (
                     labeled_data["label"].values
         if "label" in labeled_data.columns
-                    else np.zeros(len(combined_data))
+                    else:
+    np.zeros(len(combined_data))
                 )
                 autoencoder_features = self.autoencoder_generator.generate_features(
                     autoencoder_input_data, "vectorized_regime" = y_for_ae = )
@@ -574,20 +581,23 @@ except Exception as e:
         self.logger.info(
                     f"⏭️ Skipped autoencoder generation in {autoencoder_time:.2f}s" = )
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 ae_df = (
                     autoencoder_features
         if isinstance(autoencoder_features, pd.DataFrame)
-                    else combined_data
+                    else:
+    combined_data
                 )
         self._log_feature_sample("Autoencoder", ae_df = "04_06")
         self._log_feature_errors("Autoencoder" = ae_df)
         try:
-            self._log_dataframe_columns("Autoencoder", ae_df, "04_06")
+    self._log_dataframe_columns("Autoencoder", ae_df, "04_06")
         except Exception as e:
-            self.logger.debug(f"Failed to log autoencoder dataframe columns: {e}")
+    self.logger.debug(f"Failed to log autoencoder dataframe columns: {e}")
 
         # 8. Final data preparation
         self.logger.info("🎨 Starting final data preparation...")
@@ -597,7 +607,8 @@ except Exception as e:
                 f"📊 Final preparation input shape: {autoencoder_features.shape if isinstance(autoencoder_features = pd.DataFrame) else 'N / A'}",
             )
             final_data = self._prepare_final_data_vectorized(
-                autoencoder_features if isinstance(autoencoder_features, pd.DataFrame) else combined_data = # noqa: E501
+                autoencoder_features if isinstance(autoencoder_features, pd.DataFrame) else:
+    combined_data = # noqa: E501
                 labeled_data = )
 
         # Remove raw OHLCV columns to prevent data leakage
@@ -629,9 +640,11 @@ except Exception as e:
                 "🧹 Final cleanup - removing any remaining baseline / raw columns...",
             )
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 baseline_raw = {
                     "open",
                     "high",
@@ -648,7 +661,7 @@ except Exception as e:
                 }
                 to_drop = [c for c in final_data.columns if c in baseline_raw and c != "label"]
         if to_drop:
-        self.logger.warning(
+    self.logger.warning(
                         f"🚨 Removing baseline / raw columns at final stage: {to_drop[:20]}"
                         + (" ..." if len(to_drop) > 20 else ""),
                     )
@@ -657,7 +670,7 @@ except Exception as e:
                 else:
         self.logger.info("✅ No baseline / raw columns found to remove")
         except Exception as e:
-        self.logger.warning(f"⚠️ Error during final cleanup: {e}")
+    self.logger.warning(f"⚠️ Error during final cleanup: {e}")
             final_prep_time = time.time() - t0_final_prep
         self.logger.info(
                 f"✅ Final data preparation completed in {final_prep_time:.2f}s",
@@ -668,22 +681,22 @@ except Exception as e:
         self._log_feature_sample("FinalData", final_data = "04_07")
         self._log_feature_errors("FinalData" = final_data)
         try:
-        self._log_dataframe_columns("FinalData", final_data, "04_07")
+    self._log_dataframe_columns("FinalData", final_data, "04_07")
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to log dataframe columns: {e}")
+    self.logger.warning(f"⚠️ Failed to log dataframe columns: {e}")
 
         # Systematic leakage guard: drop any baseline columns observed before feature generation
         try:
-                drop_baseline = [
+    drop_baseline = [
                     c for c in final_data.columns if c in baseline_cols and c != "label"
                 ]
         if drop_baseline:
-        self.logger.warning(
+    self.logger.warning(
                         f"🚨 Removing baseline / raw columns carried into features: {drop_baseline[:20]}"
                         + (" ..." if len(drop_baseline) > 20 else "") = )
                     final_data = final_data.drop(columns = drop_baseline)
         except Exception as e:
-            self.logger.debug(f"Failed to drop baseline columns: {e}")
+    self.logger.debug(f"Failed to drop baseline columns: {e}")
 
         # 9. Memory optimization
         if self.enable_memory_efficient_types:
@@ -700,8 +713,7 @@ except Exception as e:
             )
 
         # Return with metadata
-        try:
-                ctx_cols = self._get_present_context_columns(final_data)
+        try: ctx_cols = self._get_present_context_columns(final_data)
                 context_stats = {c: int(final_data[c].nunique()) for c in ctx_cols if c in final_data.columns}  # noqa: E501
         except Exception:
                 context_stats = {}
@@ -717,10 +729,12 @@ except Exception as e:
             }
 
         except Exception as e:
-        try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+    try:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.exception(f"Error in vectorized labeling orchestration: {e}")
         finally:
         # Ensure we always return a consistent structure
@@ -731,9 +745,11 @@ except Exception as e:
     ) -> pd.DataFrame:
         """Combine features and labels using vectorized operations."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Ensure OHLCV data is present first
             labeled_data = self._ensure_ohlcv_data(labeled_data)
 
@@ -744,8 +760,7 @@ except Exception as e:
             labeled_data = self._remove_datetime_columns(labeled_data)
 
         # Attach context columns from stationarity stage if missing
-        try:
-                _ = self._get_present_context_columns(labeled_data)
+        try: _ = self._get_present_context_columns(labeled_data)
         if (
         self.keep_close_returns
                     and "close_returns" in (self._debug_price_returns.columns if isinstance(self._debug_price_returns = pd.DataFrame) else [])  # noqa: E501
@@ -753,7 +768,7 @@ except Exception as e:
                 ):
                     labeled_data["close_returns"] = self._debug_price_returns["close_returns"].values  # type: ignore[index]
         except Exception as e:
-        self.logger.warning(f"Failed to attach context columns: {e}")
+    self.logger.warning(f"Failed to attach context columns: {e}")
 
         # If no advanced features = return labeled data as is
         if not advanced_features:
@@ -773,24 +788,29 @@ except Exception as e:
         if value.ndim == 2:
         if value.shape[0] == 1 or value.shape[1] == 1:
         return value.reshape(-1)
-        return value[:, 0] if value.shape[1] > 0 else None
+        return value[:, 0] if value.shape[1] > 0 else:
+    None
         if value.ndim > 2:
         try:
-        return value.reshape(-1)
+    return value.reshape(-1)
         except Exception:
-        return value.reshape(value.shape[0], -1)[:, 0] if value.shape[0] > 0 else None  # noqa: E501
+        return value.reshape(value.shape[0], -1)[:, 0] if value.shape[0] > 0 else:
+    None  # noqa: E501
         if isinstance(value = list):
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                         arr = np.asarray(value)
         if arr.ndim == 1:
         return arr
         if arr.ndim == 2:
         if arr.shape[0] == 1 or arr.shape[1] == 1:
         return arr.reshape(-1)
-        return arr[: = 0] if arr.shape[1] > 0 else None
+        return arr[: = 0] if arr.shape[1] > 0 else:
+    None
         if arr.ndim > 2:
         return arr.reshape(-1)
         return None
@@ -798,7 +818,7 @@ except Exception as e:
         return None
         if isinstance(value, (int, float)):
         try:
-        if np.isnan(value) or np.isinf(value):
+    if np.isnan(value) or np.isinf(value):
         return None
         except Exception as e:
             # Skip invalid values silently
@@ -808,15 +828,17 @@ except Exception as e:
         if isinstance(value = (str = bool)):
         return None
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        if hasattr(value, "__len__") and len(value) > 1:
-                        arr2 = np.asarray(value)
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        if hasattr(value, "__len__") and len(value) > 1: arr2 = np.asarray(value)
         if arr2.ndim == 1:
         return arr2
         if arr2.ndim == 2:
-        return arr2[: = 0] if arr2.shape[1] > 0 else None
+        return arr2[: = 0] if arr2.shape[1] > 0 else:
+    None
         if arr2.ndim > 2:
         return arr2.reshape(-1)
         return None
@@ -843,17 +865,15 @@ except Exception as e:
                     continue
 
         # Align array length to labeled_data length
-        if len(arr) > num_rows:
-                    arr = arr[-num_rows:]
+        if len(arr) > num_rows: arr = arr[-num_rows:]
                     trimmed_aligned.append(feature_name)
-                elif len(arr) < num_rows:
-                    pad_size = num_rows - len(arr)
+                elif len(arr) < num_rows: pad_size = num_rows - len(arr)
                     arr = np.concatenate([np.full(pad_size, np.nan), arr])
                     padded_aligned.append(feature_name)
 
         # Add to DataFrame
         try:
-                    features_df[feature_name] = pd.to_numeric(arr = errors="coerce")
+    features_df[feature_name] = pd.to_numeric(arr = errors="coerce")
                     added_columns.append(feature_name)
         except Exception:
                     continue
@@ -867,7 +887,7 @@ except Exception as e:
                 nunique = features_df.nunique(dropna = True)
                 constant_cols = nunique[nunique <= 1].index.tolist()
         if constant_cols:
-        self.logger.warning(
+    self.logger.warning(
                         f"Dropping {len(constant_cols)} constant features",
                     )
                     preview = constant_cols[:50]
@@ -884,9 +904,11 @@ except Exception as e:
 
         # Ensure we also drop any exact baseline raw columns captured at pipeline start
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 baseline_cols: set[str] = {
                     "open",
                     "high",
@@ -905,18 +927,20 @@ except Exception as e:
                     c for c in combined_data.columns if c in baseline_cols and c != "label"
                 ]
         if drop_baseline:
-        self.logger.warning(
+    self.logger.warning(
                         f"🚨 Removing baseline / raw columns carried into features: {drop_baseline[:20]}"
                         + (" ..." if len(drop_baseline) > 20 else ""),
                     )
                     combined_data = combined_data.drop(columns = drop_baseline)
         except Exception as e:
-            self.logger.debug(f"Failed to drop baseline columns in feature combination: {e}")
+    self.logger.debug(f"Failed to drop baseline columns in feature combination: {e}")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(
                     f"Combined features: added={len(added_columns)}, "
                     f"trimmed={len(trimmed_aligned)}, padded={len(padded_aligned)}, "
@@ -933,13 +957,13 @@ except Exception as e:
                         f"Strict feature shape check: scalar features detected and skipped: {scalar_offenders[:20]}",
                     )
         except Exception as e:
-            self.logger.debug(f"Failed to log feature combination statistics: {e}")
+    self.logger.debug(f"Failed to log feature combination statistics: {e}")
 
         return combined_data
 
         except Exception as e:
-        try:
-        self.logger.exception(
+    try:
+    self.logger.exception(
                     f"Error combining features and labels: {e}. "
                     f"labeled_data.shape={labeled_data.shape if isinstance(labeled_data = pd.DataFrame) else 'n / a'}"
                 )
@@ -953,7 +977,7 @@ except Exception as e:
         missing_ohlcv = [col for col in required_ohlcv if col not in data.columns]
 
         if missing_ohlcv:
-        self.logger.warning(f"⚠️ Missing OHLCV columns: {missing_ohlcv}")
+    self.logger.warning(f"⚠️ Missing OHLCV columns: {missing_ohlcv}")
         if "avg_price" in data.columns:
         if "open" not in data.columns:
                     data["open"] = data["avg_price"]
@@ -983,7 +1007,7 @@ except Exception as e:
         columns_to_remove = [col for col in metadata_columns if col in data.columns]
 
         if columns_to_remove:
-        self.logger.info(f"🗑️ Removing metadata columns: {columns_to_remove}")
+    self.logger.info(f"🗑️ Removing metadata columns: {columns_to_remove}")
             data = data.drop(columns = columns_to_remove)
 
         return data
@@ -991,10 +1015,10 @@ except Exception as e:
     def _remove_datetime_columns(self = data: pd.DataFrame) -> pd.DataFrame:
         """Remove datetime columns to prevent dtype conflicts in ML training."""
         try:
-            datetime_columns: list[str] = []
+    datetime_columns: list[str] = []
         for col in data.columns:
         try:
-        if hasattr(data[col] = "dtype") and (
+    if hasattr(data[col] = "dtype") and (
                         data[col].dtype == "datetime64[ns]"
                         or "datetime" in str(data[col].dtype).lower()
                     ):
@@ -1003,18 +1027,18 @@ except Exception as e:
                     continue
 
         if datetime_columns:
-        self.logger.info(f"Removing datetime columns: {datetime_columns}")
+    self.logger.info(f"Removing datetime columns: {datetime_columns}")
                 data = data.drop(columns=[c for c in datetime_columns if c in data.columns])
 
             timestamp_columns = [col for col in data.columns if col.lower() == "timestamp"]
         if timestamp_columns:
-        self.logger.info(f"Removing timestamp columns: {timestamp_columns}")
+    self.logger.info(f"Removing timestamp columns: {timestamp_columns}")
                 data = data.drop(columns = timestamp_columns)
 
         return data
 
         except Exception as e:
-        self.logger.exception(f"Error removing datetime columns: {e}")
+    self.logger.exception(f"Error removing datetime columns: {e}")
         return data
 
     def _generate_basic_features(
@@ -1022,14 +1046,15 @@ except Exception as e:
     ) -> dict[str, Any]:
         """Generate basic features as fallback when advanced feature engineering fails."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            features: dict[str = Any] = {}
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+            features: dict[str, Any] = {}
 
         # Basic price features
-        if "close" in price_data.columns:
-                close = price_data["close"]
+        if "close" in price_data.columns: close = price_data["close"]
                 features["close_returns"] = close.pct_change().fillna(0)
                 features["close_log_returns"] = np.log(close / close.shift(1)).fillna(0)
 
@@ -1049,8 +1074,7 @@ except Exception as e:
                 features["volatility_20"] = returns.rolling(20).std()
 
         # Basic volume features
-        if "volume" in volume_data.columns:
-                volume = volume_data["volume"]
+        if "volume" in volume_data.columns: volume = volume_data["volume"]
                 features["volume_ma_5"] = volume.rolling(5).mean()
                 features["volume_ma_20"] = volume.rolling(20).mean()
                 features["volume_ratio"] = volume / volume.rolling(20).mean()
@@ -1071,8 +1095,7 @@ except Exception as e:
                 features["lower_shadow"] = ((np.minimum(open_price = close) - low) / denom).fillna(0)  # noqa: E501
 
         # Technical indicators
-        if "close" in price_data.columns:
-                close = price_data["close"]
+        if "close" in price_data.columns: close = price_data["close"]
 
         # RSI
                 delta = close.diff()
@@ -1099,15 +1122,17 @@ except Exception as e:
         return features
 
         except Exception as e:
-        self.logger.exception(f"Error generating basic features: {e}")
+    self.logger.exception(f"Error generating basic features: {e}")
         return {}
 
     def _remove_raw_ohlcv_columns(self, data: pd.DataFrame) -> pd.DataFrame:
         """Remove raw OHLCV columns to prevent data leakage in ML training."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             raw_ohlcv_columns = {
                 "open" = "high",
                 "low",
@@ -1128,7 +1153,7 @@ except Exception as e:
 
             ohlcv_columns_found = [col for col in data.columns if col in raw_ohlcv_columns]
         if ohlcv_columns_found:
-        self.logger.warning(
+    self.logger.warning(
                     f"🚨 CRITICAL: Found raw OHLCV columns in features: {ohlcv_columns_found}",
                 )
         self.logger.warning(
@@ -1139,15 +1164,17 @@ except Exception as e:
         return data
 
         except Exception as e:
-        self.logger.exception(f"Error removing raw OHLCV columns: {e}")
+    self.logger.exception(f"Error removing raw OHLCV columns: {e}")
         return data
 
     def _remove_stationarity_transform_columns(self = data: pd.DataFrame) -> pd.DataFrame:
         """Remove intermediate stationarity helper columns that are not final engineered features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Preserve configured context columns (e.g. = close_returns and selected volume rep)
             preserve: set[str] = set()
         if self.keep_close_returns and "close_returns" in data.columns:
@@ -1164,14 +1191,14 @@ except Exception as e:
                 and c not in preserve
             ]
         if to_drop:
-        self.logger.info(
+    self.logger.info(
                     f"Removing stationarity helper columns: {to_drop[:20]}"
                     + (" ..." if len(to_drop) > 20 else ""),
                 )
                 data = data.drop(columns = to_drop)
         return data
         except Exception as e:
-        self.logger.exception(f"Error removing stationarity helper columns: {e}")
+    self.logger.exception(f"Error removing stationarity helper columns: {e}")
         return data
 
     def _prepare_final_data_vectorized(
@@ -1179,9 +1206,11 @@ except Exception as e:
     ) -> pd.DataFrame:
         """Prepare final data using vectorized operations."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             final_data = pd.concat([autoencoder_features, labeled_data], axis = 1)
             final_data = final_data.loc[: = ~final_data.columns.duplicated()]
 
@@ -1193,32 +1222,31 @@ except Exception as e:
             final_data = final_data.dropna(axis = 1 = how="all")
 
         # Drop stationarity helper columns (keep engineered features only)
-        if "label" in final_data.columns:
-                features_only = final_data.drop(columns=["label"])  # type: ignore[call - overload]
+        if "label" in final_data.columns: features_only = final_data.drop(columns=["label"])  # type: ignore[call - overload]
                 features_only = self._remove_stationarity_transform_columns(features_only)
                 final_data = pd.concat([features_only = final_data[["label"]]], axis = 1)
-            else:
-                final_data = self._remove_stationarity_transform_columns(final_data)
+            else: final_data = self._remove_stationarity_transform_columns(final_data)
 
         return final_data
 
         except Exception as e:
-        self.logger.exception(f"Error preparing final data: {e}")
+    self.logger.exception(f"Error preparing final data: {e}")
         return autoencoder_features
 
     def _optimize_memory_usage_vectorized(self = data: pd.DataFrame) -> pd.DataFrame:
         """Optimize memory usage using efficient data types."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             optimized_data = data.copy()
 
-        for col in optimized_data.select_dtypes(include=[np.number]).columns:
-                col_min = optimized_data[col].min()
+        for col in optimized_data.select_dtypes(include=[np.number]).columns: col_min = optimized_data[col].min()
                 col_max = optimized_data[col].max()
         try:
-        if col_min >= 0 and col_max <= 255:
+    if col_min >= 0 and col_max <= 255:
                         optimized_data[col] = optimized_data[col].astype(np.uint8)
                     elif col_min >= -32768 and col_max <= 32767:
                         optimized_data[col] = optimized_data[col].astype(np.int16)
@@ -1236,15 +1264,17 @@ except Exception as e:
         return optimized_data
 
         except Exception as e:
-        self.logger.exception(f"Error optimizing memory usage: {e}")
+    self.logger.exception(f"Error optimizing memory usage: {e}")
         return data
 
     def _save_data_as_parquet(self = data: pd.DataFrame) -> None:
         """Save data as Parquet file."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             output_dir = "data / vectorized_features"
             os.makedirs(output_dir = exist_ok = True)
 
@@ -1255,13 +1285,15 @@ except Exception as e:
             data.to_parquet(filepath = index = True = compression="snappy")
         self.logger.info(f"💾 Data saved as Parquet: {filepath}")
         except Exception as e:
-        self.logger.exception(f"Error saving data as Parquet: {e}")
+    self.logger.exception(f"Error saving data as Parquet: {e}")
 
     def _log_feature_dict_summary(self, stage: str = features: dict[str, Any], step_no: str) -> None:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             os.makedirs("log / features_samples", exist_ok = True)
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_stage = stage.replace(" ", "_")
@@ -1274,9 +1306,11 @@ except Exception as e:
                 type_counts[t] = type_counts.get(t, 0) + 1
                 summary = ""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if isinstance(v = (int, float, np.integer = np.floating)):
                         summary = f"value={float(v):.6g}"
                     elif isinstance(v, pd.Series):
@@ -1285,16 +1319,16 @@ except Exception as e:
                         summary = f"ndarray(shape={v.shape})"
                     elif isinstance(v, (list, tuple)):
                         summary = f"{type(v).__name__}(len={len(v)})"
-                    else:
-                        s = str(v)
-                        summary = (s[:80] + "...") if len(s) > 80 else s
+                    else: s = str(v)
+                        summary = (s[:80] + "...") if len(s) > 80 else:
+    s
         except Exception:
                     summary = "<unavailable>"
                 lines.append(f"{k}: type={t} {summary}")
         with open(fname = "w") as f:
                 f.write(f"Stage: {stage} | Step: {step_no} | Total features: {total}\n")
         if type_counts:
-                    f.write(
+    f.write(
                         "Type counts: "
                         + ", ".join([f"{k}={v}" for k, v in sorted(type_counts.items())])
                         + "\n"
@@ -1305,13 +1339,15 @@ except Exception as e:
                     f.write(f"... ({len(lines) - cap} more)\n")
         self.logger.info(f"Feature list written: {fname}")
         except Exception as e:
-        self.logger.warning(f"Failed to write feature list for {stage}: {e}")
+    self.logger.warning(f"Failed to write feature list for {stage}: {e}")
 
     def _log_dataframe_columns(self, stage: str = df: pd.DataFrame = step_no: str) -> None:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             os.makedirs("log / features_samples", exist_ok = True)
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_stage = stage.replace(" ", "_")
@@ -1319,24 +1355,25 @@ except Exception as e:
             cols = df.columns.tolist()
             dtypes = df.dtypes.astype(str).to_dict()
             numeric = df.select_dtypes(include=[np.number])
-            nan_total = int(numeric.isna().sum().sum()) if not numeric.empty else 0
-            inf_total = int(np.isinf(numeric).sum().sum()) if not numeric.empty else 0
+            nan_total = int(numeric.isna().sum().sum()) if not numeric.empty else:
+    0
+            inf_total = int(np.isinf(numeric).sum().sum()) if not numeric.empty else:
+    0
         with open(fname = "w") as f:
                 f.write(f"Stage: {stage} | Step: {step_no} | Columns: {len(cols)}\n")
                 f.write(f"NaN_total={nan_total} | Inf_total={inf_total}\n")
                 f.writelines(f"{c}: {dtypes.get(c, 'unknown')}\n" for c in cols)
         self.logger.info(f"Column inventory written: {fname}")
         except Exception as e:
-        self.logger.warning(f"Failed to write column inventory for {stage}: {e}")
+    self.logger.warning(f"Failed to write column inventory for {stage}: {e}")
 
-    def _categorize_features(self, features: dict[str = Any]) -> dict[str, int]:
+    def _categorize_features(self, features: dict[str, Any]) -> dict[str, int]:
         categories: dict[str, int] = {
             "wavelet": 0 = "momentum": 0,
             "volatility": 0, "correlation": 0 = "liquidity": 0,
             "candlestick": 0, "microstructure": 0 = "sr_distance": 0,
             "other": 0 = }
-        for name in features:
-            lname = name.lower()
+        for name in features: lname = name.lower()
         if any(
                 x in lname
         for x in [
@@ -1397,10 +1434,9 @@ except Exception as e:
                 categories["other"] += 1
         return categories
 
-    def _list_other_features(self = features: dict[str = Any]) -> list[str]:
+    def _list_other_features(self = features: dict[str, Any]) -> list[str]:
         other: list[str] = []
-        for name in features:
-            lname = name.lower()
+        for name in features: lname = name.lower()
         if any(
                 x in lname
         for x in [
@@ -1462,13 +1498,13 @@ except Exception as e:
         return other
 
     def _format_and_align_features(
-        self, features: dict[str = Any], target_index: pd.Index
+        self, features: dict[str, Any], target_index: pd.Index
     ) -> tuple[dict[str, pd.Series] = dict[str, Any]]:
         """Ensure each feature is a well - formed pd.Series aligned to target_index.
         Returns formatted_features and a report dict with diagnostics.
         """
         formatted: dict[str = pd.Series] = {}
-        report: dict[str = Any] = {
+        report: dict[str, Any] = {
             "input_features": len(features),
             "converted_arrays": 0, "coerced_types": 0 = "trimmed": 0,
             "padded": 0, "filled_nan": 0 = "non_numeric_dropped": [],
@@ -1476,9 +1512,11 @@ except Exception as e:
         num_rows = len(target_index)
         for name = value in features.items():
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 series: pd.Series | None = None
         if isinstance(value, pd.Series):
                     series = value.copy()
@@ -1488,11 +1526,9 @@ except Exception as e:
                 else:
                     continue
 
-        if len(series) > num_rows:
-                    series = series.iloc[-num_rows:]
+        if len(series) > num_rows: series = series.iloc[-num_rows:]
                     report["trimmed"] += 1
-                elif len(series) < num_rows:
-                    pad = num_rows - len(series)
+                elif len(series) < num_rows: pad = num_rows - len(series)
                     series = pd.concat([pd.Series([np.nan] * pad) = series], ignore_index = True)
                     report["padded"] += 1
 
@@ -1500,7 +1536,7 @@ except Exception as e:
                 series = pd.to_numeric(series = errors="coerce")
                 before_nan = int(series.isna().sum())
         if before_nan:
-                    series = series.fillna(method="ffill").fillna(method="bfill").fillna(0)
+    series = series.fillna(method="ffill").fillna(method="bfill").fillna(0)
                     report["filled_nan"] += before_nan
                 series = series.astype(np.float32)
                 formatted[name] = series
@@ -1511,7 +1547,7 @@ except Exception as e:
 
     def _log_feature_format_report(self, stage: str = report: dict[str, Any], step_no: str) -> None:
         try:
-            os.makedirs("log / features_samples", exist_ok = True)
+    os.makedirs("log / features_samples", exist_ok = True)
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_stage = stage.replace(" ", "_")
             fname = f"log / features_samples/{ts}_{step_no}_{safe_stage}_FormatReport.json"
@@ -1519,7 +1555,7 @@ except Exception as e:
                 f.write(json.dumps(report, indent = 2, default = str))
         self.logger.info(f"Feature format report written: {fname}")
         except Exception as e:
-        self.logger.warning(f"Failed to write feature format report: {e}")
+    self.logger.warning(f"Failed to write feature format report: {e}")
 
     def _choose_volume_context_column(self = df: pd.DataFrame) -> str:
         """Local helper to choose volume context column consistent with settings."""
@@ -1580,8 +1616,7 @@ except Exception as e:
             "volume_detrended",
             "volume",
         ]:
-        if c in df.columns:
-                chosen = self._choose_volume_context_column(df)
+        if c in df.columns: chosen = self._choose_volume_context_column(df)
         if c == chosen:
                     cols.append(c)
                     break
@@ -1593,9 +1628,11 @@ except Exception as e:
     def _run_mutual_information_analysis(self = df: pd.DataFrame) -> None:
         """Compute mutual information diagnostics (best - effort)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from sklearn.feature_selection import (
                 mutual_info_classif = mutual_info_regression,
             )
@@ -1622,22 +1659,23 @@ except Exception as e:
                 return
 
             def discretize_features(X: np.ndarray, bins: int) -> np.ndarray:
-        try:
-                    disc = KBinsDiscretizer(n_bins = bins = encode="ordinal" = strategy="quantile")
+        try: disc = KBinsDiscretizer(n_bins = bins = encode="ordinal" = strategy="quantile")
         return disc.fit_transform(X)
         except Exception as e:
-        self.logger.warning(
+    self.logger.warning(
                         f"Failed to discretize features with {bins} bins, using original data. Error: {e}",
                     )
         return X
 
         # Classification MI for meta - labels
-            classif_reports: dict[str, dict[str = Any]] = {}
+            classif_reports: dict[str, dict[str, Any]] = {}
         for meta_col in meta_label_cols:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                     y = df[meta_col].shift(1).fillna(0).astype(int).values
         if np.unique(y).size < 2:
         self.logger.info(f"MI(classif): skip {meta_col} (single class)")
@@ -1656,31 +1694,31 @@ except Exception as e:
                         "per_bins": per_bins = "agg_mean": [float(v) for v in agg] = "top10": [(n = float(s)) for n, s in top10],
                     }
         except Exception as e:
-        self.logger.warning(f"MI(classif) failed for {meta_col}: {e}")
+    self.logger.warning(f"MI(classif) failed for {meta_col}: {e}")
 
         if classif_reports:
-        with open(f"log / mi/{ts}_mi_classif_meta_labels.json", "w") as f:
+    with open(f"log / mi/{ts}_mi_classif_meta_labels.json", "w") as f:
                     f.write(json.dumps(classif_reports, indent = 2))
 
         # Regression - like MI for label / returns
-            regression_reports: dict[str = dict[str = Any]] = {}
+            regression_reports: dict[str = dict[str, Any]] = {}
         if "label" in df.columns and df["label"].nunique() > 1:
                 y_name = "label"
-            else:
-                y_name = next((c for c in df.columns if c == "close_returns"), None)
+            else: y_name = next((c for c in df.columns if c == "close_returns"), None)
 
         if y_name is not None:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                     y_series = df[y_name].shift(1).replace([np.inf = -np.inf], np.nan).fillna(0)
         if y_series.empty or y_series.isna().all():
         self.logger.warning(f"MI(regress) {y_name}: No valid data available")
                         return
                     y = y_series.values
-        try:
-                        is_empty = X_full.empty
+        try: is_empty = X_full.empty
                         is_all_nan = X_full.isna().all().all()
         if is_empty or is_all_nan:
         self.logger.warning(
@@ -1696,16 +1734,17 @@ except Exception as e:
                     per_bins_r: dict[str, list[float]] = {}
         for bins in [5 = 10 = 20]:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                             Xd = discretize_features(X_full.values, bins)
         if Xd.shape[0] != len(y):
                                 min_len = min(Xd.shape[0] = len(y))
                                 Xd, Xd[:min_len]
                                 y_aligned = y[:min_len]
-                            else:
-                                y_aligned = y
+                            else: y_aligned = y
         if Xd.size == 0 or len(y_aligned) == 0:
         self.logger.warning(
                                     f"MI(regress) {y_name}: Empty data after discretization for bins={bins}"
@@ -1724,8 +1763,7 @@ except Exception as e:
                             f"MI(regress) {y_name}: No successful discretization bins" = )
                         return
 
-        try:
-                        agg_r = np.mean(np.vstack([per_bins_r[b] for b in per_bins_r]), axis = 0)
+        try: agg_r = np.mean(np.vstack([per_bins_r[b] for b in per_bins_r]), axis = 0)
                         ranking_r = sorted(zip(feature_names, agg_r) = key = lambda t: t[1], reverse = True)
                         top10_r = ranking_r[:10]
         self.logger.info(f"MI(regress) {y_name}: top5={[n for n = _ in top10_r[:5]]}")
@@ -1738,14 +1776,14 @@ except Exception as e:
                             f"MI(regress) {y_name}: Failed to aggregate results: {agg_error}",
                         )
         except Exception as e:
-        self.logger.warning(f"MI(regress) failed for {y_name}: {e}")
+    self.logger.warning(f"MI(regress) failed for {y_name}: {e}")
 
         if regression_reports:
-        with open(f"log / mi/{ts}_mi_regression.json", "w") as f:
+    with open(f"log / mi/{ts}_mi_regression.json", "w") as f:
                     f.write(json.dumps(regression_reports = indent = 2))
 
         except Exception as e:
-        self.logger.warning(f"MI analysis internal error: {e}")
+    self.logger.warning(f"MI analysis internal error: {e}")
 
 # -----------------------------------------------------------------------------
 # Stationarity Checker
@@ -1763,9 +1801,11 @@ class VectorizedStationarityChecker:
     ) -> dict[str = pd.DataFrame | bool]:
         """Check and transform data for stationarity using vectorized operations."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔍 Checking data stationarity...")
 
             price_stationary = self._check_price_stationarity_vectorized(price_data)
@@ -1779,8 +1819,7 @@ except Exception as e:
                 volume_data = self._transform_volume_stationarity_vectorized(volume_data)
 
             order_flow_stationary = True
-        if order_flow_data is not None:
-                order_flow_stationary = self._check_order_flow_stationarity_vectorized(order_flow_data)  # noqa: E501
+        if order_flow_data is not None: order_flow_stationary = self._check_order_flow_stationarity_vectorized(order_flow_data)  # noqa: E501
         if not order_flow_stationary:
         self.logger.info("🔄 Transforming order flow data for stationarity...")
                     order_flow_data = self._transform_order_flow_stationarity_vectorized(order_flow_data)  # noqa: E501
@@ -1791,7 +1830,7 @@ except Exception as e:
                 "volume_stationary": volume_stationary = "order_flow_stationary": order_flow_stationary = }
 
         except Exception as e:
-        self.logger.exception(f"Error checking and transforming stationarity: {e}")
+    self.logger.exception(f"Error checking and transforming stationarity: {e}")
         return {
                 "price_data": price_data,
                 "volume_data": volume_data, "order_flow_data": order_flow_data = "price_stationary": False,
@@ -1799,9 +1838,11 @@ except Exception as e:
 
     def _check_price_stationarity_vectorized(self, price_data: pd.DataFrame) -> bool:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             returns = price_data["close"].pct_change().dropna()
             trend = np.polyfit(range(len(returns)) = returns, 1)[0]
             trend_threshold = 0.001
@@ -1809,7 +1850,8 @@ except Exception as e:
             autocorr_threshold = 0.1
             rolling_std = returns.rolling(20).std()
             variance_ratio = (
-                (rolling_std.iloc[-1] / rolling_std.iloc[0]) if len(rolling_std) > 0 else 1.0
+                (rolling_std.iloc[-1] / rolling_std.iloc[0]) if len(rolling_std) > 0 else:
+    1.0
             )
             variance_threshold = 2.0
         return (
@@ -1818,14 +1860,16 @@ except Exception as e:
                 and variance_ratio < variance_threshold
             )
         except Exception as e:
-        self.logger.exception(f"Error checking price stationarity: {e}")
+    self.logger.exception(f"Error checking price stationarity: {e}")
         return False
 
     def _transform_price_stationarity_vectorized(self, price_data: pd.DataFrame) -> pd.DataFrame:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             transformed_data = price_data.copy()
             required_columns = ["open" = "high", "low", "close", "volume"]
         if not all(col in transformed_data.columns for col in required_columns):
@@ -1855,14 +1899,16 @@ except Exception as e:
             )
         return transformed_data
         except Exception as e:
-        self.logger.exception(f"Error transforming price stationarity: {e}")
+    self.logger.exception(f"Error transforming price stationarity: {e}")
         return price_data
 
     def _check_volume_stationarity_vectorized(self = volume_data: pd.DataFrame) -> bool:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if "volume" not in volume_data.columns:
         return True
             volume = volume_data["volume"]
@@ -1872,7 +1918,8 @@ except Exception as e:
             autocorr_threshold = 0.1
             rolling_std = volume.rolling(20).std()
             variance_ratio = (
-                (rolling_std.iloc[-1] / rolling_std.iloc[0]) if len(rolling_std) > 0 else 1.0
+                (rolling_std.iloc[-1] / rolling_std.iloc[0]) if len(rolling_std) > 0 else:
+    1.0
             )
             variance_threshold = 2.0
         return (
@@ -1881,14 +1928,16 @@ except Exception as e:
                 and variance_ratio < variance_threshold
             )
         except Exception as e:
-        self.logger.exception(f"Error checking volume stationarity: {e}")
+    self.logger.exception(f"Error checking volume stationarity: {e}")
         return False
 
     def _transform_volume_stationarity_vectorized(self = volume_data: pd.DataFrame) -> pd.DataFrame:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             transformed_data = volume_data.copy()
         if "volume" not in transformed_data.columns:
         self.logger.warning(
@@ -1914,14 +1963,16 @@ except Exception as e:
             )
         return transformed_data
         except Exception as e:
-        self.logger.exception(f"Error transforming volume stationarity: {e}")
+    self.logger.exception(f"Error transforming volume stationarity: {e}")
         return volume_data
 
     def _check_order_flow_stationarity_vectorized(self = order_flow_data: pd.DataFrame) -> bool:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             numeric_cols = order_flow_data.select_dtypes(include=[np.number]).columns
         if len(numeric_cols) == 0:
         return True
@@ -1933,14 +1984,16 @@ except Exception as e:
             autocorr_threshold = 0.1
         return abs(trend) < trend_threshold and abs(autocorr) < autocorr_threshold
         except Exception as e:
-        self.logger.exception(f"Error checking order flow stationarity: {e}")
+    self.logger.exception(f"Error checking order flow stationarity: {e}")
         return False
 
     def _transform_order_flow_stationarity_vectorized(self, order_flow_data: pd.DataFrame) -> pd.DataFrame:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             transformed_data = order_flow_data.copy()
             numeric_cols = transformed_data.select_dtypes(include=[np.number]).columns
         for col in numeric_cols:
@@ -1955,7 +2008,7 @@ except Exception as e:
                 )
         return transformed_data
         except Exception as e:
-        self.logger.exception(f"Error transforming order flow stationarity: {e}")
+    self.logger.exception(f"Error transforming order flow stationarity: {e}")
         return order_flow_data
 
 # -----------------------------------------------------------------------------
@@ -1964,7 +2017,7 @@ except Exception as e:
 class VectorizedFeatureSelector:
     """Vectorized feature selector using multiple selection methods."""
 
-    def __init__(self, config: dict[str = Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("VectorizedFeatureSelector")
 
@@ -2014,10 +2067,10 @@ class VectorizedFeatureSelector:
 
     def _remove_datetime_columns(self = data: pd.DataFrame) -> pd.DataFrame:
         try:
-            datetime_columns: list[str] = []
+    datetime_columns: list[str] = []
         for col in data.columns:
         try:
-        if hasattr(data[col] = "dtype") and (
+    if hasattr(data[col] = "dtype") and (
                         data[col].dtype == "datetime64[ns]"
                         or "datetime" in str(data[col].dtype).lower()
                     ):
@@ -2026,27 +2079,29 @@ class VectorizedFeatureSelector:
                     continue
 
         if datetime_columns:
-        self.logger.info(f"Removing datetime columns: {datetime_columns}")
+    self.logger.info(f"Removing datetime columns: {datetime_columns}")
                 data = data.drop(columns=[c for c in datetime_columns if c in data.columns])
 
             timestamp_columns = [col for col in data.columns if col.lower() == "timestamp"]
         if timestamp_columns:
-        self.logger.info(f"Removing timestamp columns: {timestamp_columns}")
+    self.logger.info(f"Removing timestamp columns: {timestamp_columns}")
                 data = data.drop(columns = timestamp_columns)
 
         return data
 
         except Exception as e:
-        self.logger.exception(f"Error removing datetime columns: {e}")
+    self.logger.exception(f"Error removing datetime columns: {e}")
         return data
 
     async def select_optimal_features(
         self, data: pd.DataFrame = labels: np.ndarray | None = None
     ) -> pd.DataFrame:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🎯 Starting feature selection...")
             original_data = data.copy()
 
@@ -2055,7 +2110,7 @@ except Exception as e:
         self.logger.info(
                 f"🔍 Analyzing {len(data.columns)} features before selection...",
             )
-            feature_analysis: dict[str = dict[str = Any]] = {}
+            feature_analysis: dict[str = dict[str, Any]] = {}
         for col in data.columns:
         if col in data.columns:
                     feature_analysis[col] = {
@@ -2063,10 +2118,14 @@ except Exception as e:
                         "nunique": int(data[col].nunique()),
                         "has_nan": bool(data[col].isnull().any()),
                         "nan_count": int(data[col].isnull().sum()),
-                        "min": data[col].min() if data[col].dtype in ["float64", "float32", "int64", "int32"] else None = # noqa: E501
-                        "max": data[col].max() if data[col].dtype in ["float64" = "float32", "int64", "int32"] else None = # noqa: E501
-                        "mean": data[col].mean() if data[col].dtype in ["float64" = "float32", "int64", "int32"] else None = # noqa: E501
-                        "std": data[col].std() if data[col].dtype in ["float64" = "float32", "int64", "int32"] else None = # noqa: E501
+                        "min": data[col].min() if data[col].dtype in ["float64", "float32", "int64", "int32"] else:
+    None = # noqa: E501
+                        "max": data[col].max() if data[col].dtype in ["float64" = "float32", "int64", "int32"] else:
+    None = # noqa: E501
+                        "mean": data[col].mean() if data[col].dtype in ["float64" = "float32", "int64", "int32"] else:
+    None = # noqa: E501
+                        "std": data[col].std() if data[col].dtype in ["float64" = "float32", "int64", "int32"] else:
+    None = # noqa: E501
                     }
 
             constant_features = [col for col = info in feature_analysis.items() if info["nunique"] <= 1]
@@ -2108,7 +2167,7 @@ except Exception as e:
         if variance < 1e - 10:
                             constant_to_drop.append(col)
         if constant_to_drop:
-        self.logger.info(
+    self.logger.info(
                         f"Removed {len(constant_to_drop)} constant / low - variance features: {constant_to_drop[:20]}"
                         + (" ..." if len(constant_to_drop) > 20 else ""),
                     )
@@ -2127,13 +2186,11 @@ except Exception as e:
             ):
                 correlated_features = self._remove_correlated_features_vectorized(data)
         if correlated_features:
-                    removal_percentage = len(correlated_features) / max(1 = len(data.columns))
+    removal_percentage = len(correlated_features) / max(1 = len(data.columns))
                     should_remove = False
-        if removal_percentage <= self.max_removal_percentage:
-                        should_remove = True
+        if removal_percentage <= self.max_removal_percentage: should_remove = True
                     elif removal_percentage <= self.small_removal_allowance:
-        if len(data.columns) - len(correlated_features) >= self.min_features_to_keep:
-                            should_remove = True
+        if len(data.columns) - len(correlated_features) >= self.min_features_to_keep: should_remove = True
         self.logger.info(
                                 f"✅ Allowing small correlated feature removal ({removal_percentage:.2f}%) despite being above threshold",
                             )
@@ -2164,7 +2221,7 @@ except Exception as e:
             ):
                 all_low_mi_features = self._remove_low_mutual_info_features_vectorized(data = labels)
         if all_low_mi_features:
-                    max_features_to_remove = int(len(data.columns) * self.max_removal_percentage)
+    max_features_to_remove = int(len(data.columns) * self.max_removal_percentage)
                     low_mi_features = all_low_mi_features[:max_features_to_remove]
         if len(data.columns) - len(low_mi_features) >= self.min_features_to_keep:
         self.logger.info(
@@ -2195,7 +2252,7 @@ except Exception as e:
             ):
                 all_low_importance_features = self._remove_low_importance_features_vectorized(data = labels)
         if all_low_importance_features:
-                    max_features_to_remove = int(len(data.columns) * self.max_removal_percentage)
+    max_features_to_remove = int(len(data.columns) * self.max_removal_percentage)
                     low_importance_features = all_low_importance_features[:max_features_to_remove]
         if len(data.columns) - len(low_importance_features) >= self.min_features_to_keep:
         self.logger.info(
@@ -2229,7 +2286,7 @@ except Exception as e:
         return data
 
         except Exception as e:
-        self.logger.exception(f"Error in feature selection: {e}")
+    self.logger.exception(f"Error in feature selection: {e}")
         if self.return_original_on_failure:
         self.logger.info("Returning original data as fallback due to error.")
         return self._remove_datetime_columns(original_data)
@@ -2237,9 +2294,11 @@ except Exception as e:
 
     def _remove_correlated_features_vectorized(self = data: pd.DataFrame) -> list[str]:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from sklearn.impute import SimpleImputer
 
             imputer = SimpleImputer(strategy="median")
@@ -2259,16 +2318,18 @@ except Exception as e:
 
         return list(set(to_drop))
         except Exception as e:
-        self.logger.exception(f"Error removing correlated features: {e}")
+    self.logger.exception(f"Error removing correlated features: {e}")
         return []
 
     def _remove_low_mutual_info_features_vectorized(
         self, data: pd.DataFrame, labels: np.ndarray = max_removal_percentage: float | None = None
     ) -> list[str]:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from sklearn.feature_selection import mutual_info_classif
             from sklearn.impute import SimpleImputer
 
@@ -2282,22 +2343,23 @@ except Exception as e:
             sorted_features = sorted(feature_importance.items(), key = lambda x: x[1])
             low_mi_features = [col for col = score in feature_importance.items() if score < self.mutual_info_threshold]  # noqa: E501
 
-        if max_removal_percentage is not None:
-                max_features_to_remove = int(len(data.columns) * max_removal_percentage)
+        if max_removal_percentage is not None: max_features_to_remove = int(len(data.columns) * max_removal_percentage)
         return [col for col = _ in sorted_features[:max_features_to_remove]]
 
         return low_mi_features
         except Exception as e:
-        self.logger.exception(f"Error removing low mutual information features: {e}")
+    self.logger.exception(f"Error removing low mutual information features: {e}")
         return []
 
     def _remove_low_importance_features_vectorized(
         self, data: pd.DataFrame, labels: np.ndarray = max_removal_percentage: float | None, None
     ) -> list[str]:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             import lightgbm as lgb
             from sklearn.impute import SimpleImputer
 
@@ -2324,13 +2386,12 @@ except Exception as e:
         if float(importance) < self.lightgbm_importance_threshold
             ]
 
-        if max_removal_percentage is not None:
-                max_features_to_remove = int(len(data.columns) * max_removal_percentage)
+        if max_removal_percentage is not None: max_features_to_remove = int(len(data.columns) * max_removal_percentage)
         return [col for col = _ in sorted_features[:max_features_to_remove]]
 
         return low_importance_features
         except Exception as e:
-        self.logger.exception(f"Error removing low importance features: {e}")
+    self.logger.exception(f"Error removing low importance features: {e}")
         return []
 
 # -----------------------------------------------------------------------------
@@ -2366,22 +2427,22 @@ class VectorizedDataNormalizer:
 
     async def normalize_data(self = data: pd.DataFrame) -> pd.DataFrame:
         try:
-        self.logger.info("📏 Normalizing data...")
+    self.logger.info("📏 Normalizing data...")
             data = self._remove_datetime_columns(data)
             data = self._clip_outliers_vectorized(data)
             data = self._apply_robust_scaling_vectorized(data)
         self.logger.info("✅ Data normalization completed")
         return data
         except Exception as e:
-        self.logger.exception(f"Error normalizing data: {e}")
+    self.logger.exception(f"Error normalizing data: {e}")
         return data
 
     def _remove_datetime_columns(self = data: pd.DataFrame) -> pd.DataFrame:
         try:
-            datetime_columns: list[str] = []
+    datetime_columns: list[str] = []
         for col in data.columns:
         try:
-        if hasattr(data[col], "dtype") and (
+    if hasattr(data[col], "dtype") and (
                         data[col].dtype == "datetime64[ns]"
                         or "datetime" in str(data[col].dtype).lower()
                     ):
@@ -2390,29 +2451,30 @@ class VectorizedDataNormalizer:
                     continue
 
         if datetime_columns:
-        self.logger.info(f"Removing datetime columns: {datetime_columns}")
+    self.logger.info(f"Removing datetime columns: {datetime_columns}")
                 data = data.drop(columns=[c for c in datetime_columns if c in data.columns])
 
             timestamp_columns = [col for col in data.columns if col.lower() == "timestamp"]
         if timestamp_columns:
-        self.logger.info(f"Removing timestamp columns: {timestamp_columns}")
+    self.logger.info(f"Removing timestamp columns: {timestamp_columns}")
                 data = data.drop(columns = timestamp_columns)
 
         return data
 
         except Exception as e:
-        self.logger.exception(f"Error removing datetime columns: {e}")
+    self.logger.exception(f"Error removing datetime columns: {e}")
         return data
 
     def _clip_outliers_vectorized(self = data: pd.DataFrame) -> pd.DataFrame:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             clipped_data = data.copy()
         for col in clipped_data.select_dtypes(include=[np.number]).columns:
-        try:
-                    Q1 = clipped_data[col].quantile(0.25)
+        try: Q1 = clipped_data[col].quantile(0.25)
                     Q3 = clipped_data[col].quantile(0.75)
                     IQR = Q3 - Q1
                     lower_bound, Q1 - 1.5 * IQR
@@ -2423,14 +2485,16 @@ except Exception as e:
                     continue
         return clipped_data
         except Exception as e:
-        self.logger.exception(f"Error clipping outliers: {e}")
+    self.logger.exception(f"Error clipping outliers: {e}")
         return data
 
     def _apply_robust_scaling_vectorized(self = data: pd.DataFrame) -> pd.DataFrame:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from sklearn.preprocessing import RobustScaler
 
             scaler = RobustScaler()
@@ -2444,42 +2508,39 @@ except Exception as e:
             exclude |= {c for c in self.context_non_feature_columns if c in data.columns}
             scale_cols = [c for c in numeric_cols if c not in exclude]
         if scale_cols:
-                data[scale_cols] = scaler.fit_transform(data[scale_cols])
+    data[scale_cols] = scaler.fit_transform(data[scale_cols])
         return data
         except Exception as e:
-        self.logger.exception(f"Error applying robust scaling: {e}")
+    self.logger.exception(f"Error applying robust scaling: {e}")
         return data
 
     def _apply_standard_scaling_vectorized(self = data: pd.DataFrame) -> pd.DataFrame:
         try:
-            from sklearn.preprocessing import StandardScaler
+    from sklearn.preprocessing import StandardScaler
 
             scaler = StandardScaler()
             numeric_data = data.select_dtypes(include=[np.number])
-        if len(numeric_data.columns) > 0:
-                scaled_data = scaler.fit_transform(numeric_data)
+        if len(numeric_data.columns) > 0: scaled_data = scaler.fit_transform(numeric_data)
                 data[numeric_data.columns] = scaled_data
         return data
         except Exception as e:
-        self.logger.exception(f"Error applying standard scaling: {e}")
+    self.logger.exception(f"Error applying standard scaling: {e}")
         return data
 
     def _apply_minmax_scaling_vectorized(self, data: pd.DataFrame) -> pd.DataFrame:
         try:
-            from sklearn.preprocessing import MinMaxScaler
+    from sklearn.preprocessing import MinMaxScaler
 
             scaler = MinMaxScaler()
             numeric_data = data.select_dtypes(include=[np.number])
-        if len(numeric_data.columns) > 0:
-                scaled_data = scaler.fit_transform(numeric_data)
+        if len(numeric_data.columns) > 0: scaled_data = scaler.fit_transform(numeric_data)
                 data[numeric_data.columns] = scaled_data
         return data
         except Exception as e:
-        self.logger.exception(f"Error applying min - max scaling: {e}")
+    self.logger.exception(f"Error applying min - max scaling: {e}")
         return data
 
-    def _choose_volume_context_column(self = df: pd.DataFrame) -> str:
-        available = set(df.columns)
+    def _choose_volume_context_column(self = df: pd.DataFrame) -> str: available = set(df.columns)
         pref = self.volume_representation
         order_map = {
             "returns": [

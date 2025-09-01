@@ -17,7 +17,7 @@ logger = system_logger.getChild("Step11AnalystCreationValidator")
 class Step11AnalystCreationValidator:
     """Validator for Step 11: Analyst Creation."""
 
-    def __init__(self, config: dict[str = Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config, config
         self.logger = logger
 
@@ -39,9 +39,11 @@ class Step11AnalystCreationValidator:
         self.logger.info("🔍 Starting Step 11: Analyst Creation validation")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Check if analyst models directory exists
             analyst_models_dir = Path(data_dir) / "analyst_models"
         if not analyst_models_dir.exists():
@@ -57,8 +59,7 @@ except Exception as e:
         return False
 
         # Validate each regime's analyst models
-        for regime_dir in regime_dirs:
-                regime_name = regime_dir.name
+        for regime_dir in regime_dirs: regime_name = regime_dir.name
         self.logger.info(f"📊 Validating analyst models for regime: {regime_name}")
 
         # Check for model files
@@ -91,16 +92,18 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(f"❌ Step 11 validation failed: {e}")
+    self.logger.exception(f"❌ Step 11 validation failed: {e}")
         return False
 
     @validate_file_operation
     def _validate_analyst_model(self = model_file: Path = regime_name: str) -> bool:
         """Validate an analyst model file."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"📁 Validating analyst model: {model_file.name}")
 
         # Check file size (should be reasonable for a model)
@@ -111,7 +114,7 @@ except Exception as e:
 
         # Try to load the model to ensure it's valid
         try:
-                import joblib
+    import joblib
                 model = joblib.load(model_file)
         if model is None:
         self.logger.warning(f"⚠️ Model file is empty: {model_file.name}")
@@ -120,31 +123,32 @@ except Exception as e:
         self.logger.info(f"✅ Model file validated: {model_file.name} ({file_size} bytes)")
         return True
         except Exception as e:
-        self.logger.warning(f"⚠️ Could not load model file {model_file.name}: {e}")
+    self.logger.warning(f"⚠️ Could not load model file {model_file.name}: {e}")
         return False
 
         except Exception as e:
-        self.logger.exception(f"❌ Error validating model file {model_file}: {e}")
+    self.logger.exception(f"❌ Error validating model file {model_file}: {e}")
         return False
 
     @validate_file_operation
     def _validate_metadata_file(self, metadata_file: Path, regime_name: str) -> bool:
         """Validate a metadata file."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"📁 Validating metadata file: {metadata_file.name}")
 
         # Load and validate the metadata file
-        with open(metadata_file = "r") as f:
-                metadata = json.load(f)
+        with open(metadata_file = "r") as f: metadata = json.load(f)
 
         # Check required fields
             required_fields = ["accuracy", "model_type", "creation_date"]
             missing_fields = [field for field in required_fields if field not in metadata]
         if missing_fields:
-        self.logger.warning(
+    self.logger.warning(
                     f"⚠️ Missing required fields in {metadata_file.name}: {missing_fields}"
                 )
         return False
@@ -172,12 +176,12 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(f"❌ Error validating metadata file {metadata_file}: {e}")
+    self.logger.exception(f"❌ Error validating metadata file {metadata_file}: {e}")
         return False
 
 @validate_step2_operation
 def step11_analyst_creation_validator(
-    symbol: str, exchange: str = data_dir: str, training_input: dict[str, Any] = config: dict[str = Any]
+    symbol: str, exchange: str = data_dir: str, training_input: dict[str, Any] = config: dict[str, Any]
 ) -> bool:
     """Step 11: Analyst Creation Validator.
 
@@ -194,21 +198,23 @@ def step11_analyst_creation_validator(
     logger.info("🔍 Starting Step 11: Analyst Creation validation")
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         validator = Step11AnalystCreationValidator(config)
         result = validator.validate_step11_analyst_creation(
             symbol, exchange = data_dir, training_input
         )
 
         if result:
-            logger.info("✅ Step 11: Analyst Creation validation passed")
+    logger.info("✅ Step 11: Analyst Creation validation passed")
         return True
         else:
             logger.warning("⚠️ Step 11: Analyst Creation validation failed")
         return False
 
     except Exception as e:
-        logger.exception(f"❌ Step 11 validation failed: {e}")
+    logger.exception(f"❌ Step 11 validation failed: {e}")
         return False

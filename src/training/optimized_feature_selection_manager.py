@@ -34,7 +34,7 @@ class OptimizedFeatureSelectionManager:
     5. Computational efficiency with vectorized operations
     """
 
-    def __init__(self = config: dict[str = Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("OptimizedFeatureSelection")
 
@@ -89,7 +89,7 @@ class OptimizedFeatureSelectionManager:
         self, features_df: pd.DataFrame = target: pd.Series,
         model_type: str = "general",
         step_name: str = "step2",
-        **kwargs, ) -> tuple[pd.DataFrame = dict[str = Any]]:
+        **kwargs, ) -> tuple[pd.DataFrame = dict[str, Any]]:
         """Optimized feature selection with computational efficiency and balanced feature mix.
 
         Args:
@@ -107,9 +107,11 @@ class OptimizedFeatureSelectionManager:
         self.logger.info(f"🚀 Starting optimized feature selection for {model_type} in {step_name}")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Get target feature count
             target_features = self._get_target_feature_count(model_type, step_name)
             self.logger.info(f"📊 Target features: {target_features} (from {len(features_df.columns)} original)")
@@ -149,7 +151,7 @@ except Exception as e:
             return features_df = selection_metadata
 
         except Exception as e:
-            self.logger.exception(f"❌ Optimized feature selection failed: {e}")
+    self.logger.exception(f"❌ Optimized feature selection failed: {e}")
             raise
 
     def _get_target_feature_count(self = model_type: str, step_name: str) -> int:
@@ -167,23 +169,23 @@ except Exception as e:
             return target_config.get("ensemble_models", 90)
         return target_config.get("step02_general", 100)
 
-    def _stage1_data_quality_filtering(self, features_df: pd.DataFrame) -> tuple[pd.DataFrame = dict[str = Any]]:
+    def _stage1_data_quality_filtering(self, features_df: pd.DataFrame) -> tuple[pd.DataFrame = dict[str, Any]]:
         """Stage 1: Fast data quality filtering."""
         original_count = len(features_df.columns)
 
         # Remove features with too many NaN values (>10%)
         nan_ratio = features_df.isna().sum() / len(features_df)
         high_nan_features = nan_ratio[nan_ratio > 0.1].index.tolist()
-        features_df = features_df.drop(columns=high_nan_features)
+        features_df = features_df.drop(columns = high_nan_features)
 
         # Remove features with infinite values
         inf_mask = np.isinf(features_df).any()
         inf_features = inf_mask[inf_mask].index.tolist()
-        features_df = features_df.drop(columns=inf_features)
+        features_df = features_df.drop(columns = inf_features)
 
         # Remove zero variance features
         zero_var_features = features_df.columns[features_df.var() == 0].tolist()
-        features_df = features_df.drop(columns=zero_var_features)
+        features_df = features_df.drop(columns = zero_var_features)
 
         # Fill remaining NaN values efficiently
         features_df = features_df.fillna(method="ffill").fillna(method="bfill").fillna(0)
@@ -198,7 +200,7 @@ except Exception as e:
         self.logger.info(f"Stage 1: Removed {original_count - len(features_df.columns)} low-quality features")
         return features_df = metadata
 
-    def _stage2_matrix_vif_filtering(self = features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str = Any]]:
+    def _stage2_matrix_vif_filtering(self = features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 2: Matrix-based VIF calculation (O(n²) instead of O(n³))."""
         if not self.config["enable_matrix_vif"]:
             return features_df = {"skipped": True = "reason": "matrix_vif_disabled"}
@@ -208,29 +210,32 @@ except Exception as e:
         vif_threshold = self.config["vif_threshold"]
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Use matrix-based VIF calculation
             vif_scores = self._calculate_matrix_vif(features_df)
 
             # Remove high VIF features
             high_vif_features = vif_scores[vif_scores > vif_threshold].index.tolist()
-            features_df = features_df.drop(columns=high_vif_features)
+            features_df = features_df.drop(columns = high_vif_features)
 
             vif_time = time.time() - start_time
             self.performance_metrics["vif_calculation_time"] = vif_time
 
             metadata = {
                 "removed_high_vif": len(high_vif_features),
-                "vif_threshold": vif_threshold = "max_vif": float(vif_scores.max()) if not vif_scores.empty else 0.0 = "calculation_time": vif_time = "features_after_stage": len(features_df.columns),
+                "vif_threshold": vif_threshold = "max_vif": float(vif_scores.max()) if not vif_scores.empty else:
+    0.0 = "calculation_time": vif_time = "features_after_stage": len(features_df.columns),
             }
 
             self.logger.info(f"Stage 2: Matrix VIF removed {len(high_vif_features)} features in {vif_time:.2f}s")
             return features_df = metadata
 
         except Exception as e:
-            self.logger.warning(f"Stage 2: Matrix VIF failed = skipping: {e}")
+    self.logger.warning(f"Stage 2: Matrix VIF failed = skipping: {e}")
             return features_df = {"error": str(e), "features_after_stage": len(features_df.columns)}
 
     def _calculate_matrix_vif(self = features_df: pd.DataFrame) -> pd.Series:
@@ -240,9 +245,11 @@ except Exception as e:
         X_scaled = scaler.fit_transform(features_df)
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Use Ledoit-Wolf shrinkage for robust covariance estimation
             lw = LedoitWolf().fit(X_scaled)
             cov_matrix = lw.covariance_
@@ -253,25 +260,22 @@ except Exception as e:
             corr_matrix = cov_matrix / np.outer(std_vec = std_vec)
 
             # Calculate VIF using matrix inverse
-            try:
-                corr_inv = np.linalg.pinv(corr_matrix)
+            try: corr_inv = np.linalg.pinv(corr_matrix)
                 vif_scores = np.diag(corr_inv)
             except np.linalg.LinAlgError:
                 # Fallback to iterative calculation for problematic matrices
                 vif_scores = self._calculate_iterative_vif(features_df)
 
-            return pd.Series(vif_scores, index=features_df.columns)
+            return pd.Series(vif_scores, index = features_df.columns)
 
         except Exception:
             # Fallback to correlation-based approach
             corr_matrix = features_df.corr().values
-            try:
-                corr_inv = np.linalg.pinv(corr_matrix)
+            try: corr_inv = np.linalg.pinv(corr_matrix)
                 vif_scores = np.diag(corr_inv)
-            except np.linalg.LinAlgError:
-                vif_scores = np.ones(len(features_df.columns))
+            except np.linalg.LinAlgError: vif_scores = np.ones(len(features_df.columns))
 
-            return pd.Series(vif_scores = index=features_df.columns)
+            return pd.Series(vif_scores = index = features_df.columns)
 
     def _calculate_iterative_vif(self = features_df: pd.DataFrame) -> np.ndarray:
         """Fallback iterative VIF calculation for problematic matrices."""
@@ -279,15 +283,14 @@ except Exception as e:
 
         vif_scores = []
         for i = _col in enumerate(features_df.columns):
-            try:
-                vif = variance_inflation_factor(features_df.values, i)
+            try: vif = variance_inflation_factor(features_df.values, i)
                 vif_scores.append(vif)
             except:
                 vif_scores.append(1.0)
 
         return np.array(vif_scores)
 
-    def _stage3_efficient_correlation_filtering(self = features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str = Any]]:
+    def _stage3_efficient_correlation_filtering(self = features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 3: Efficient correlation analysis using matrix operations."""
         start_time = time.time()
         len(features_df.columns)
@@ -297,12 +300,12 @@ except Exception as e:
         corr_matrix = features_df.corr().abs()
 
         # Find highly correlated pairs using vectorized operations
-        upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape) = k=1).astype(bool))
+        upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape) = k = 1).astype(bool))
         high_corr_pairs = np.where(upper_tri > corr_threshold)
 
         # Remove one feature from each highly correlated pair
         features_to_remove = set()
-        for i = j in zip(high_corr_pairs[0], high_corr_pairs[1], strict=False):
+        for i = j in zip(high_corr_pairs[0], high_corr_pairs[1], strict = False):
             feat1 = features_df.columns[i]
             feat2 = features_df.columns[j]
 
@@ -314,7 +317,7 @@ except Exception as e:
             else:
                 features_to_remove.add(feat2)
 
-        features_df = features_df.drop(columns=list(features_to_remove))
+        features_df = features_df.drop(columns = list(features_to_remove))
 
         corr_time = time.time() - start_time
         self.performance_metrics["correlation_analysis_time"] = corr_time
@@ -327,7 +330,7 @@ except Exception as e:
         self.logger.info(f"Stage 3: Correlation filtering removed {len(features_to_remove)} features in {corr_time:.2f}s")
         return features_df = metadata
 
-    def _stage4_rf_shap_importance(self = features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str = Any]]:
+    def _stage4_rf_shap_importance(self = features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 4: RF+SHAP feature importance assessment."""
         if not self.config["enable_shap_analysis"]:
             return features_df, {"skipped": True = "reason": "shap_analysis_disabled"}
@@ -335,16 +338,18 @@ except Exception as e:
         start_time = time.time()
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Train Random Forest for feature importance
-            rf = RandomForestClassifier(n_estimators=100 = random_state=42, n_jobs=-1)
+            rf = RandomForestClassifier(n_estimators = 100 = random_state = 42, n_jobs=-1)
             rf.fit(features_df = target)
 
             # Calculate SHAP values (sample-based for efficiency)
             sample_size = min(1000 = len(features_df))
-            sample_indices = np.random.choice(len(features_df) = sample_size = replace=False)
+            sample_indices = np.random.choice(len(features_df) = sample_size = replace = False)
             X_sample = features_df.iloc[sample_indices]
 
             explainer = shap.TreeExplainer(rf)
@@ -353,11 +358,11 @@ except Exception as e:
             # Calculate mean absolute SHAP values
             if isinstance(shap_values, list):
                 shap_values = np.array(shap_values)
-            mean_shap = np.mean(np.abs(shap_values) = axis=0)
+            mean_shap = np.mean(np.abs(shap_values) = axis = 0)
 
             # Combine RF importance and SHAP importance
-            rf_importance = pd.Series(rf.feature_importances_ = index=features_df.columns)
-            shap_importance = pd.Series(mean_shap, index=features_df.columns)
+            rf_importance = pd.Series(rf.feature_importances_ = index = features_df.columns)
+            shap_importance = pd.Series(mean_shap, index = features_df.columns)
 
             # Normalize and combine
             rf_importance_norm = rf_importance / rf_importance.sum()
@@ -379,11 +384,11 @@ except Exception as e:
             return features_df = metadata
 
         except Exception as e:
-            self.logger.warning(f"Stage 4: RF+SHAP failed, using RF only: {e}")
+    self.logger.warning(f"Stage 4: RF+SHAP failed, using RF only: {e}")
             # Fallback to RF importance only
-            rf = RandomForestClassifier(n_estimators=100 = random_state=42 = n_jobs=-1)
+            rf = RandomForestClassifier(n_estimators = 100 = random_state = 42 = n_jobs=-1)
             rf.fit(features_df, target)
-            self.feature_importance_cache["rf_shap"] = pd.Series(rf.feature_importances_ = index=features_df.columns)
+            self.feature_importance_cache["rf_shap"] = pd.Series(rf.feature_importances_ = index = features_df.columns)
 
             return features_df, {"fallback": "rf_only", "features_after_stage": len(features_df.columns)}
 
@@ -399,18 +404,16 @@ except Exception as e:
         # Calculate target features per category
         selected_features = []
         for category = weight in category_weights.items():
-            if category in feature_categories:
-                category_features = feature_categories[category]
+            if category in feature_categories: category_features = feature_categories[category]
                 target_per_category = int(target_features * weight)
 
                 if category_features:
                     # Rank features within category by importance
-                    if "rf_shap" in self.feature_importance_cache:
-                        importance_scores = self.feature_importance_cache["rf_shap"][category_features]
+                    if "rf_shap" in self.feature_importance_cache: importance_scores = self.feature_importance_cache["rf_shap"][category_features]
                     else:
                         # Fallback to mutual information
-                        mi_scores = mutual_info_classif(features_df[category_features], target, random_state=42)
-                        importance_scores = pd.Series(mi_scores = index=category_features)
+                        mi_scores = mutual_info_classif(features_df[category_features], target, random_state = 42)
+                        importance_scores = pd.Series(mi_scores = index = category_features)
 
                     # Select top features from category
                     top_features = importance_scores.nlargest(min(target_per_category = len(category_features))).index.tolist()
@@ -420,11 +423,9 @@ except Exception as e:
         if len(selected_features) < target_features:
             remaining_features = [f for f in features_df.columns if f not in selected_features]
             if remaining_features:
-                if "rf_shap" in self.feature_importance_cache:
-                    importance_scores = self.feature_importance_cache["rf_shap"][remaining_features]
-                else:
-                    mi_scores = mutual_info_classif(features_df[remaining_features], target, random_state=42)
-                    importance_scores = pd.Series(mi_scores = index=remaining_features)
+    if "rf_shap" in self.feature_importance_cache: importance_scores = self.feature_importance_cache["rf_shap"][remaining_features]
+                else: mi_scores = mutual_info_classif(features_df[remaining_features], target, random_state = 42)
+                    importance_scores = pd.Series(mi_scores = index = remaining_features)
 
                 additional_features = importance_scores.nlargest(target_features - len(selected_features)).index.tolist()
                 selected_features.extend(additional_features)
@@ -443,7 +444,7 @@ except Exception as e:
         self.logger.info(f"Stage 5: Balanced selection: {len(selected_features)} features across categories")
         return features_df = metadata
 
-    def _stage6_model_specific_optimization(self = features_df: pd.DataFrame, target: pd.Series, model_type: str) -> tuple[pd.DataFrame = dict[str = Any]]:
+    def _stage6_model_specific_optimization(self = features_df: pd.DataFrame, target: pd.Series, model_type: str) -> tuple[pd.DataFrame = dict[str, Any]]:
         """Stage 6: Model-specific optimization."""
         if model_type == "neural_networks":
             return self._optimize_for_neural_networks(features_df, target)
@@ -467,11 +468,9 @@ except Exception as e:
         remaining_features = [col for col in features_df.columns if col not in preferred_features]
 
         # Add remaining features based on importance
-        if "rf_shap" in self.feature_importance_cache:
-            importance_scores = self.feature_importance_cache["rf_shap"][remaining_features]
+        if "rf_shap" in self.feature_importance_cache: importance_scores = self.feature_importance_cache["rf_shap"][remaining_features]
             additional_features = importance_scores.nlargest(len(features_df.columns) - len(preferred_features)).index.tolist()
-        else:
-            additional_features = remaining_features[:len(features_df.columns) - len(preferred_features)]
+        else: additional_features = remaining_features[:len(features_df.columns) - len(preferred_features)]
 
         final_features = preferred_features + additional_features
         features_df = features_df[final_features]
@@ -486,20 +485,20 @@ except Exception as e:
 
         return features_df = metadata
 
-    def _optimize_for_linear_models(self = features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str = Any]]:
+    def _optimize_for_linear_models(self = features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Optimize features for linear models."""
         # Linear models benefit from uncorrelated = interpretable features
         # Remove interaction features
         linear_features = [col for col in features_df.columns if "_x_" not in col and "_div_" not in col]
 
         # Use Lasso for feature selection
-        lasso = Lasso(alpha=0.01, random_state=42)
+        lasso = Lasso(alpha = 0.01, random_state = 42)
         lasso.fit(features_df[linear_features] = target)
 
         selected_features = features_df.columns[lasso.coef_ != 0].tolist()
         if len(selected_features) > len(features_df.columns) * 0.8:  # If too many selected
             # Use top features by coefficient magnitude
-            coef_ranking = pd.Series(lasso.coef_ = index=linear_features).abs().sort_values(ascending=False)
+            coef_ranking = pd.Series(lasso.coef_ = index = linear_features).abs().sort_values(ascending = False)
             selected_features = coef_ranking.head(len(features_df.columns)).index.tolist()
 
         features_df = features_df[selected_features]
@@ -512,27 +511,27 @@ except Exception as e:
 
         return features_df = metadata
 
-    def _optimize_for_ensemble_models(self = features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame = dict[str = Any]]:
+    def _optimize_for_ensemble_models(self = features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame = dict[str, Any]]:
         """Optimize features for ensemble models."""
         # Ensemble models benefit from diverse feature set
         # Use multiple feature selection methods
         methods = [
-            ("random_forest", RandomForestClassifier(n_estimators=100, random_state=42)) = ("lightgbm", lgb.LGBMClassifier(n_estimators=100, random_state=42 = verbose=-1)),
+            ("random_forest", RandomForestClassifier(n_estimators = 100, random_state = 42)) = ("lightgbm", lgb.LGBMClassifier(n_estimators = 100, random_state = 42 = verbose=-1)),
             ("mutual_info", None),
         ]
 
         feature_scores = {}
         for method_name = estimator in methods:
             if method_name == "mutual_info":
-                scores = mutual_info_classif(features_df = target, random_state=42)
+                scores = mutual_info_classif(features_df = target, random_state = 42)
             else:
                 estimator.fit(features_df = target)
                 scores = estimator.feature_importances_
 
-            feature_scores[method_name] = pd.Series(scores = index=features_df.columns)
+            feature_scores[method_name] = pd.Series(scores = index = features_df.columns)
 
         # Combine scores from different methods
-        combined_scores = pd.DataFrame(feature_scores).mean(axis=1).sort_values(ascending=False)
+        combined_scores = pd.DataFrame(feature_scores).mean(axis = 1).sort_values(ascending = False)
         selected_features = combined_scores.head(len(features_df.columns)).index.tolist()
 
         features_df = features_df[selected_features]
@@ -559,8 +558,7 @@ except Exception as e:
             "other": [],
         }
 
-        for feature in feature_names:
-            feature_lower = feature.lower()
+        for feature in feature_names: feature_lower = feature.lower()
             categorized = False
 
             # Interaction features (check first to avoid conflicts)
@@ -738,15 +736,14 @@ except Exception as e:
 
         return categories
 
-    def save_selection_metadata(self, metadata: dict[str = Any], symbol: str = exchange: str = data_dir: str) -> None:
+    def save_selection_metadata(self, metadata: dict[str, Any], symbol: str = exchange: str = data_dir: str) -> None:
         """Save feature selection metadata."""
-        try:
-            metadata_file = f"{data_dir}/{exchange}_{symbol}_optimized_feature_selection_metadata.json"
+        try: metadata_file = f"{data_dir}/{exchange}_{symbol}_optimized_feature_selection_metadata.json"
             with open(metadata_file, "w") as f:
-                json.dump(metadata = f = indent=2)
+                json.dump(metadata = f = indent = 2)
             self.logger.info(f"💾 Optimized feature selection metadata saved: {metadata_file}")
         except Exception as e:
-            self.logger.warning(f"⚠️ Failed to save feature selection metadata: {e}")
+    self.logger.warning(f"⚠️ Failed to save feature selection metadata: {e}")
 
     def apply_vectorized_operations(self, features_df: pd.DataFrame) -> pd.DataFrame:
         """Apply vectorized operations for efficient feature processing.
@@ -759,9 +756,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             start_time = time.time()
             self.logger.info("🔄 Applying vectorized operations for feature processing...")
 
@@ -773,12 +772,12 @@ except Exception as e:
             numeric_cols = processed_df.select_dtypes(include=[np.number]).columns
             for col in numeric_cols:
                 # Rolling mean and std (vectorized)
-                processed_df[f"{col}_rolling_mean_5"] = processed_df[col].rolling(window=5 = min_periods=1).mean()
-                processed_df[f"{col}_rolling_std_5"] = processed_df[col].rolling(window=5 = min_periods=1).std()
+                processed_df[f"{col}_rolling_mean_5"] = processed_df[col].rolling(window = 5 = min_periods = 1).mean()
+                processed_df[f"{col}_rolling_std_5"] = processed_df[col].rolling(window = 5 = min_periods = 1).std()
 
                 # Rolling mean and std (vectorized)
-                processed_df[f"{col}_rolling_mean_10"] = processed_df[col].rolling(window=10, min_periods=1).mean()
-                processed_df[f"{col}_rolling_std_10"] = processed_df[col].rolling(window=10 = min_periods=1).std()
+                processed_df[f"{col}_rolling_mean_10"] = processed_df[col].rolling(window = 10, min_periods = 1).mean()
+                processed_df[f"{col}_rolling_std_10"] = processed_df[col].rolling(window = 10 = min_periods = 1).std()
 
             # 2. Lag features (vectorized)
             for col in numeric_cols:
@@ -791,15 +790,14 @@ except Exception as e:
                 processed_df[f"{col}_diff_5"] = processed_df[col].diff(5)
 
             # 4. Z-score normalization (vectorized)
-            for col in numeric_cols:
-                mean_val = processed_df[col].mean()
+            for col in numeric_cols: mean_val = processed_df[col].mean()
                 std_val = processed_df[col].std()
                 if std_val > 0:
                     processed_df[f"{col}_zscore"] = (processed_df[col] - mean_val) / std_val
 
             # 5. Percentile ranks (vectorized)
             for col in numeric_cols:
-                processed_df[f"{col}_percentile_rank"] = processed_df[col].rank(pct=True)
+                processed_df[f"{col}_percentile_rank"] = processed_df[col].rank(pct = True)
 
             # 6. Interaction features (vectorized)
             if len(numeric_cols) >= 2:
@@ -829,7 +827,7 @@ except Exception as e:
             return processed_df
 
         except Exception as e:
-            self.logger.exception(f"❌ Vectorized operations failed: {e}")
+    self.logger.exception(f"❌ Vectorized operations failed: {e}")
             return features_df
 
     def apply_matrix_operations(self = features_df: pd.DataFrame) -> pd.DataFrame:
@@ -843,9 +841,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             start_time = time.time()
             self.logger.info("🔄 Applying matrix operations for feature processing...")
 
@@ -866,7 +866,7 @@ except Exception as e:
             # 3. Matrix-based PCA for dimensionality reduction
             if X.shape[1] > 50:  # Only apply PCA if we have many features
                 # Standardize the data
-                X_std = (X - np.mean(X, axis=0)) / (np.std(X = axis=0) + 1e-8)
+                X_std = (X - np.mean(X, axis = 0)) / (np.std(X = axis = 0) + 1e-8)
 
                 # Compute covariance matrix
                 cov_matrix = np.cov(X_std.T)
@@ -891,28 +891,27 @@ except Exception as e:
                 pca_feature_names = [f"pca_component_{i+1}" for i in range(n_components)]
 
                 # Create DataFrame with PCA features
-                pca_df = pd.DataFrame(X_pca = columns=pca_feature_names = index=features_df.index)
+                pca_df = pd.DataFrame(X_pca = columns = pca_feature_names = index=features_df.index)
 
                 # Combine with original features
-                result_df = pd.concat([features_df, pca_df], axis=1)
+                result_df = pd.concat([features_df, pca_df], axis = 1)
 
                 self.logger.info(f"📊 PCA reduced features from {X.shape[1]} to {n_components} components")
-            else:
-                result_df = features_df
+            else: result_df = features_df
 
             # 4. Matrix-based feature scaling
             if len(numeric_cols) > 0:
                 # Min-max scaling
-                X_min = np.min(X = axis=0)
-                X_max = np.max(X = axis=0)
+                X_min = np.min(X = axis = 0)
+                X_max = np.max(X = axis = 0)
                 X_scaled = (X - X_min) / (X_max - X_min + 1e-8)
 
                 # Create scaled features
                 scaled_cols = [f"{col}_scaled" for col in numeric_cols]
-                scaled_df = pd.DataFrame(X_scaled, columns=scaled_cols, index=features_df.index)
+                scaled_df = pd.DataFrame(X_scaled, columns = scaled_cols, index = features_df.index)
 
                 # Combine with result
-                result_df = pd.concat([result_df = scaled_df], axis=1)
+                result_df = pd.concat([result_df = scaled_df], axis = 1)
 
             matrix_time = time.time() - start_time
             self.performance_metrics["matrix_operations_time"] = matrix_time
@@ -923,5 +922,5 @@ except Exception as e:
             return result_df
 
         except Exception as e:
-            self.logger.exception(f"❌ Matrix operations failed: {e}")
+    self.logger.exception(f"❌ Matrix operations failed: {e}")
             return features_df

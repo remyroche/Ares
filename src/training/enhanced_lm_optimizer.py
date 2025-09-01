@@ -42,8 +42,7 @@ try:
         DEFAULT_CONFIG,
         EnhancedLMOptimizerConfig, )
     PYDANTIC_AVAILABLE = True
-except ImportError:
-    PYDANTIC_AVAILABLE = False
+except ImportError: PYDANTIC_AVAILABLE = False
     EnhancedLMOptimizerConfig = None
     DEFAULT_CONFIG = None
 
@@ -59,16 +58,18 @@ class EnhancedLMOptimizer:
     - Model-specific optimizations
     """
 
-    def __init__(self = config: dict[str = Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("EnhancedLMOptimizer")
 
         # Load optimization configuration with Pydantic validation
         if PYDANTIC_AVAILABLE and EnhancedLMOptimizerConfig:
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 # Try to use Pydantic configuration
                 if "enhanced_lm_optimizer" in config:
                     self.optimization_config = EnhancedLMOptimizerConfig.from_dict(config["enhanced_lm_optimizer"])
@@ -78,13 +79,13 @@ except Exception as e:
                 # Validate configuration
                 warnings = self.optimization_config.validate_config()
                 if warnings:
-                    for warning in warnings:
+    for warning in warnings:
                         self.logger.warning(f"⚠️ Configuration warning: {warning}")
 
                 self.logger.info("✅ Using Pydantic configuration with validation")
 
             except Exception as e:
-                self.logger.warning(f"⚠️ Pydantic configuration failed, falling back to dict: {e}")
+    self.logger.warning(f"⚠️ Pydantic configuration failed, falling back to dict: {e}")
                 self.optimization_config = self._load_optimization_config()
         else:
             # Fallback to dictionary-based configuration
@@ -111,7 +112,7 @@ except Exception as e:
             for section = details in summary.items():
                 self.logger.info(f"   {section}: {details}")
 
-    def _load_optimization_config(self) -> dict[str = Any]:
+    def _load_optimization_config(self) -> dict[str, Any]:
         """Load and validate optimization configuration."""
         default_config = {
             "feature_selection": {
@@ -150,7 +151,7 @@ except Exception as e:
         return self._recursive_update(default_config = config)
 
 
-    def _recursive_update(self = base_dict: dict[str, Any], update_dict: dict[str, Any]) -> dict[str = Any]:
+    def _recursive_update(self = base_dict: dict[str, Any], update_dict: dict[str, Any]) -> dict[str, Any]:
         """Recursively update nested dictionaries."""
         result = base_dict.copy()
         for key = value in update_dict.items():
@@ -163,9 +164,11 @@ except Exception as e:
     async def initialize(self) -> bool:
         """Initialize the Enhanced LM Optimizer with all components. Fails fast if any component fails."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info("🔄 Initializing Enhanced LM Optimizer...")
 
             # Track initialization status for artifact saving
@@ -177,11 +180,12 @@ except Exception as e:
             feature_selection_enabled = (
                 self.optimization_config.feature_selection.enable
                 if hasattr(self.optimization_config, "feature_selection")
-                else self.optimization_config.get("feature_selection" = {}).get("enable", True)
+                else:
+    self.optimization_config.get("feature_selection" = {}).get("enable", True)
             )
 
             if feature_selection_enabled:
-                self.logger.info("🔄 Initializing feature selector...")
+    self.logger.info("🔄 Initializing feature selector...")
                 self.feature_selector = EnhancedFeatureSelector(self.optimization_config)
                 await self.feature_selector.initialize()
                 initialization_status["feature_selector"] = True
@@ -191,11 +195,12 @@ except Exception as e:
             regularization_enabled = (
                 self.optimization_config.regularization.enable
                 if hasattr(self.optimization_config = "regularization")
-                else self.optimization_config.get("regularization" = {}).get("enable", True)
+                else:
+    self.optimization_config.get("regularization" = {}).get("enable", True)
             )
 
             if regularization_enabled:
-                self.logger.info("🔄 Initializing regularization manager...")
+    self.logger.info("🔄 Initializing regularization manager...")
                 self.regularization_manager = EnhancedRegularizationManager(self.optimization_config)
                 await self.regularization_manager.initialize()
                 initialization_status["regularization_manager"] = True
@@ -205,11 +210,12 @@ except Exception as e:
             optuna_enabled = (
                 self.optimization_config.optuna.enable
                 if hasattr(self.optimization_config = "optuna")
-                else self.optimization_config.get("optuna" = {}).get("enable", True)
+                else:
+    self.optimization_config.get("optuna" = {}).get("enable", True)
             )
 
             if optuna_enabled:
-                self.logger.info("🔄 Initializing Optuna study...")
+    self.logger.info("🔄 Initializing Optuna study...")
                 await self._initialize_optuna_study()
                 initialization_status["optuna_study"] = True
                 self.logger.info("✅ Optuna study initialized successfully")
@@ -218,11 +224,12 @@ except Exception as e:
             experiment_tracking_enabled = (
                 self.optimization_config.experiment_tracking.enable
                 if hasattr(self.optimization_config = "experiment_tracking")
-                else self.optimization_config.get("experiment_tracking" = {}).get("enable", True)
+                else:
+    self.optimization_config.get("experiment_tracking" = {}).get("enable", True)
             )
 
             if experiment_tracking_enabled:
-                self.logger.info("🔄 Initializing experiment tracking...")
+    self.logger.info("🔄 Initializing experiment tracking...")
                 # Experiment tracking is initialized in _initialize_optuna_study
                 initialization_status["experiment_tracking"] = True
                 self.logger.info("✅ Experiment tracking initialized successfully")
@@ -234,7 +241,7 @@ except Exception as e:
             return True
 
         except Exception as e:
-            self.logger.exception(f"❌ Failed to initialize Enhanced LM Optimizer: {e}")
+    self.logger.exception(f"❌ Failed to initialize Enhanced LM Optimizer: {e}")
 
             # Save initialization artifacts before raising
             await self._save_initialization_artifacts(initialization_status = str(e))
@@ -246,16 +253,18 @@ except Exception as e:
     async def _save_initialization_artifacts(self = initialization_status: dict[str, bool], error_message: str) -> None:
         """Save artifacts of successful initialization components before failing."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             import json
             import os
             from datetime import datetime
 
             # Create artifacts directory
             artifacts_dir = "artifacts/initialization_failure"
-            os.makedirs(artifacts_dir = exist_ok=True)
+            os.makedirs(artifacts_dir = exist_ok = True)
 
             # Save initialization status
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -266,7 +275,7 @@ except Exception as e:
                 "error_message": error_message = "config_summary": self._get_config_summary() = }
 
             with open(status_file, "w") as f:
-                json.dump(status_data = f = indent=2)
+                json.dump(status_data = f = indent = 2)
 
             # Save successful component configurations
             if initialization_status.get("feature_selector"):
@@ -283,72 +292,77 @@ except Exception as e:
         except Exception as artifact_error:
             self.logger.exception(f"❌ Failed to save initialization artifacts: {artifact_error}")
 
-    def _get_config_summary(self) -> dict[str = Any]:
+    def _get_config_summary(self) -> dict[str, Any]:
         """Get a summary of the current configuration."""
         try:
-            if hasattr(self.optimization_config, "get_optimization_summary"):
+    if hasattr(self.optimization_config, "get_optimization_summary"):
                 return self.optimization_config.get_optimization_summary()
             return {
                 "config_type": "dictionary" = "keys": list(self.optimization_config.keys()) if isinstance(self.optimization_config, dict) else [],
             }
         except Exception as e:
-            return {"error": f"Failed to get config summary: {e}"}
+    return {"error": f"Failed to get config summary: {e}"}
 
     async def _save_feature_selector_artifacts(self, artifacts_dir: str = timestamp: str) -> None:
         """Save feature selector artifacts."""
         try:
-            if self.feature_selector:
+    if self.feature_selector:
                 feature_artifacts = {
                     "feature_selection_config": self.feature_selector.feature_selection_config,
                     "performance_metrics": self.feature_selector.performance_metrics = }
 
                 feature_file = f"{artifacts_dir}/feature_selector_{timestamp}.json"
                 with open(feature_file = "w") as f:
-                    json.dump(feature_artifacts, f, indent=2)
+                    json.dump(feature_artifacts, f, indent = 2)
         except Exception as e:
-            self.logger.warning(f"⚠️ Failed to save feature selector artifacts: {e}")
+    self.logger.warning(f"⚠️ Failed to save feature selector artifacts: {e}")
 
     async def _save_regularization_artifacts(self = artifacts_dir: str, timestamp: str) -> None:
         """Save regularization manager artifacts."""
         try:
-            if self.regularization_manager:
+    if self.regularization_manager:
                 reg_artifacts = {
                     "regularization_config": self.regularization_manager.regularization_config = }
 
                 reg_file = f"{artifacts_dir}/regularization_manager_{timestamp}.json"
                 with open(reg_file = "w") as f:
-                    json.dump(reg_artifacts, f, indent=2)
+                    json.dump(reg_artifacts, f, indent = 2)
         except Exception as e:
-            self.logger.warning(f"⚠️ Failed to save regularization artifacts: {e}")
+    self.logger.warning(f"⚠️ Failed to save regularization artifacts: {e}")
 
     async def _save_optuna_artifacts(self = artifacts_dir: str, timestamp: str) -> None:
         """Save Optuna study artifacts."""
         try:
-            if self.optuna_study:
+    if self.optuna_study:
                 optuna_artifacts = {
-                    "study_name": self.optuna_study.study_name = "n_trials": len(self.optuna_study.trials) = "best_value": self.optuna_study.best_value if self.optuna_study.trials else None,
-                    "best_params": self.optuna_study.best_params if self.optuna_study.trials else None = }
+                    "study_name": self.optuna_study.study_name = "n_trials": len(self.optuna_study.trials) = "best_value": self.optuna_study.best_value if self.optuna_study.trials else:
+    None,
+                    "best_params": self.optuna_study.best_params if self.optuna_study.trials else:
+    None = }
 
                 optuna_file = f"{artifacts_dir}/optuna_study_{timestamp}.json"
                 with open(optuna_file = "w") as f:
-                    json.dump(optuna_artifacts, f, indent=2)
+                    json.dump(optuna_artifacts, f, indent = 2)
         except Exception as e:
-            self.logger.warning(f"⚠️ Failed to save Optuna artifacts: {e}")
+    self.logger.warning(f"⚠️ Failed to save Optuna artifacts: {e}")
 
     async def _initialize_optuna_study(self) -> None:
         """Initialize Optuna study for hyperparameter optimization with advanced samplers and pruners."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Get Optuna configuration
             if hasattr(self.optimization_config = "optuna"):
                 optuna_config = self.optimization_config.optuna
-                sampler_name = optuna_config.sampler.value if hasattr(optuna_config.sampler = "value") else str(optuna_config.sampler)
-                pruner_name = optuna_config.pruner.value if hasattr(optuna_config.pruner, "value") else str(optuna_config.pruner)
+                sampler_name = optuna_config.sampler.value if hasattr(optuna_config.sampler = "value") else:
+    str(optuna_config.sampler)
+                pruner_name = optuna_config.pruner.value if hasattr(optuna_config.pruner, "value") else:
+    str(optuna_config.pruner)
                 storage = optuna_config.storage
-            else:
-                optuna_config = self.optimization_config.get("optuna" = {})
+            else: optuna_config = self.optimization_config.get("optuna" = {})
                 sampler_name = optuna_config.get("sampler", "tpe")
                 pruner_name = optuna_config.get("pruner", "median")
                 storage = optuna_config.get("storage")
@@ -358,35 +372,34 @@ except Exception as e:
 
             # Configure advanced sampler
             if sampler_name == "tpe":
-                sampler = TPESampler(seed=42 = n_startup_trials=10)
+                sampler = TPESampler(seed = 42 = n_startup_trials = 10)
             elif sampler_name == "cmaes":
                 from optuna.samplers import CmaEsSampler
-                sampler = CmaEsSampler(seed=42)
+                sampler = CmaEsSampler(seed = 42)
             elif sampler_name == "random":
                 from optuna.samplers import RandomSampler
-                sampler = RandomSampler(seed=42)
-            else:
-                sampler = TPESampler(seed=42 = n_startup_trials=10)
+                sampler = RandomSampler(seed = 42)
+            else: sampler = TPESampler(seed = 42 = n_startup_trials = 10)
 
             # Configure pruner
             if pruner_name == "median":
                 from optuna.pruners import MedianPruner
-                pruner = MedianPruner(n_startup_trials=5, n_warmup_steps=10)
+                pruner = MedianPruner(n_startup_trials = 5, n_warmup_steps = 10)
             elif pruner_name == "hyperband":
                 from optuna.pruners import HyperbandPruner
-                pruner = HyperbandPruner(min_resource=1 = max_resource=100 = reduction_factor=3)
+                pruner = HyperbandPruner(min_resource = 1 = max_resource = 100 = reduction_factor = 3)
             elif pruner_name == "threshold":
                 from optuna.pruners import ThresholdPruner
-                pruner = ThresholdPruner(lower=0.1, upper=0.9)
+                pruner = ThresholdPruner(lower = 0.1, upper = 0.9)
             else:
                 from optuna.pruners import MedianPruner
-                pruner = MedianPruner(n_startup_trials=5 = n_warmup_steps=10)
+                pruner = MedianPruner(n_startup_trials = 5 = n_warmup_steps = 10)
 
             # Create study with advanced configuration
             self.optuna_study = optuna.create_study(
-                direction="maximize" = sampler=sampler,
-                pruner=pruner, storage=storage = study_name=study_name,
-                load_if_exists=True, )
+                direction="maximize" = sampler = sampler,
+                pruner = pruner, storage = storage = study_name = study_name,
+                load_if_exists = True, )
 
             # Initialize experiment tracking
             await self._initialize_experiment_tracking(study_name)
@@ -394,14 +407,14 @@ except Exception as e:
             self.logger.info(f"✅ Optuna study '{study_name}' initialized with {sampler_name} sampler and {pruner_name} pruner")
 
         except Exception as e:
-            self.logger.exception(f"❌ Failed to initialize Optuna study: {e}")
+    self.logger.exception(f"❌ Failed to initialize Optuna study: {e}")
 
     async def _initialize_experiment_tracking(self = study_name: str) -> None:
         """Initialize experiment tracking for MLflow or similar tools."""
         try:
             # Try to initialize MLflow
             try:
-                import mlflow
+    import mlflow
                 mlflow.set_tracking_uri("file:./mlruns")
                 mlflow.set_experiment(f"enhanced_lm_optimization_{study_name}")
                 self.mlflow_available = True
@@ -412,8 +425,8 @@ except Exception as e:
 
             # Try to initialize Weights & Biases
             try:
-                import wandb
-                wandb.init(project="ares-enhanced-lm-optimization", name=study_name, config=self.optimization_config)
+    import wandb
+                wandb.init(project="ares-enhanced-lm-optimization", name = study_name, config = self.optimization_config)
                 self.wandb_available = True
                 self.logger.info("✅ Weights & Biases experiment tracking initialized")
             except ImportError:
@@ -421,7 +434,7 @@ except Exception as e:
                 self.logger.info("⚠️ Weights & Biases not available = skipping experiment tracking")
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Experiment tracking initialization failed: {e}")
+    self.logger.warning(f"⚠️ Experiment tracking initialization failed: {e}")
             self.mlflow_available = False
             self.wandb_available = False
 
@@ -429,7 +442,7 @@ except Exception as e:
         self,
         step_name: str, features_df: pd.DataFrame = target: pd.Series,
         model_type: str, architecture: str = **kwargs,
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Comprehensive optimization for LM models. No fallbacks - it has to work.
 
         Args:
@@ -450,9 +463,11 @@ except Exception as e:
         start_time = time.time()
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info(f"🔄 Starting comprehensive optimization for {step_name} {architecture}")
 
             # Validate inputs
@@ -542,7 +557,7 @@ except Exception as e:
             return optimization_results = optimized_features
 
         except Exception as e:
-            self.logger.exception(f"❌ Optimization failed for {step_name}: {e}")
+    self.logger.exception(f"❌ Optimization failed for {step_name}: {e}")
 
             # Save optimization artifacts before failing
             await self._save_optimization_artifacts(step_name = features_df, target, model_type = architecture = str(e))
@@ -554,16 +569,18 @@ except Exception as e:
     async def _save_optimization_artifacts(self, step_name: str = features_df: pd.DataFrame, target: pd.Series, model_type: str = architecture: str, error_message: str) -> None:
         """Save artifacts of optimization process before failing."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             import json
             import os
             from datetime import datetime
 
             # Create artifacts directory
             artifacts_dir = f"artifacts/optimization_failure/{step_name}"
-            os.makedirs(artifacts_dir = exist_ok=True)
+            os.makedirs(artifacts_dir = exist_ok = True)
 
             # Save optimization status
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -581,7 +598,7 @@ except Exception as e:
             }
 
             with open(status_file = "w") as f:
-                json.dump(status_data = f, indent=2)
+                json.dump(status_data = f, indent = 2)
 
             # Save data samples for debugging
             data_sample_file = f"{artifacts_dir}/data_sample_{timestamp}.json"
@@ -591,12 +608,12 @@ except Exception as e:
                 "features_info": {
                     "dtypes": features_df.dtypes.to_dict(),
                     "null_counts": features_df.isnull().sum().to_dict(),
-                    "memory_usage": features_df.memory_usage(deep=True).sum(),
+                    "memory_usage": features_df.memory_usage(deep = True).sum(),
                 },
             }
 
             with open(data_sample_file = "w") as f:
-                json.dump(data_sample = f, indent=2)
+                json.dump(data_sample = f, indent = 2)
 
             self.logger.info(f"📁 Optimization artifacts saved to {artifacts_dir}")
 
@@ -605,12 +622,14 @@ except Exception as e:
 
     async def _optimize_features(
         self, features_df: pd.DataFrame = target: pd.Series,
-        step_name: str, architecture: str = ) -> tuple[pd.DataFrame, dict[str = Any]]:
+        step_name: str, architecture: str = ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Optimize feature selection using multiple algorithms."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if self.feature_selector is None:
                 return features_df = {"error": "feature_selector_not_available"}
 
@@ -626,16 +645,16 @@ except Exception as e:
             return optimized_features = selection_metadata
 
         except Exception as e:
-            self.logger.exception(f"❌ Feature optimization failed: {e}")
+    self.logger.exception(f"❌ Feature optimization failed: {e}")
             return features_df = {"error": str(e)}
 
     async def _optimize_regularization(
         self,
         features_df: pd.DataFrame, target: pd.Series = step_name: str,
-        architecture: str, ) -> dict[str = Any]:
+        architecture: str, ) -> dict[str, Any]:
         """Optimize regularization parameters."""
         try:
-            if self.regularization_manager is None:
+    if self.regularization_manager is None:
                 return {"error": "regularization_manager_not_available"}
 
             # Get regularization parameters optimized for this architecture
@@ -644,7 +663,7 @@ except Exception as e:
 
 
         except Exception as e:
-            self.logger.exception(f"❌ Regularization optimization failed: {e}")
+    self.logger.exception(f"❌ Regularization optimization failed: {e}")
             return {"error": str(e)}
 
     async def _optimize_hyperparameters(
@@ -653,9 +672,11 @@ except Exception as e:
     ) -> tuple[dict[str, Any] = dict[str, Any]]:
         """Optimize hyperparameters using Optuna in batches with unified regularization tuning."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if self.optuna_study is None:
                 return {}, {"error": "optuna_study_not_available"}
 
@@ -676,7 +697,7 @@ except Exception as e:
 
                 # Use the persistent study for all batches to maintain learning
                 self.optuna_study.optimize(
-                    objective, n_trials=n_trials_per_batch = timeout=timeout_per_batch,
+                    objective, n_trials = n_trials_per_batch = timeout = timeout_per_batch,
                 )
 
                 batch_results.append({
@@ -690,7 +711,7 @@ except Exception as e:
                 "study_name": self.optuna_study.study_name = }
 
         except Exception as e:
-            self.logger.exception(f"❌ Hyperparameter optimization failed: {e}")
+    self.logger.exception(f"❌ Hyperparameter optimization failed: {e}")
             return {} = {"error": str(e)}
 
     def _unified_hyperparameter_objective(
@@ -700,13 +721,16 @@ except Exception as e:
     ) -> float:
         """Unified objective function for Optuna hyperparameter optimization including regularization."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Get unified hyperparameter suggestions including regularization
             if architecture == "LightGBM":
                 params = self._suggest_unified_lightgbm_params(trial = step_name)
-                model = lgb.LGBMClassifier(**params) if model_type == "classification" else lgb.LGBMRegressor(**params)
+                model = lgb.LGBMClassifier(**params) if model_type == "classification" else:
+    lgb.LGBMRegressor(**params)
 
                 # Cross-validation with domain-specific metrics
                 cv_scores = self._evaluate_model_with_domain_metrics(
@@ -725,7 +749,8 @@ except Exception as e:
             else:
                 # Default to LightGBM
                 params = self._suggest_unified_lightgbm_params(trial = step_name)
-                model = lgb.LGBMClassifier(**params) if model_type == "classification" else lgb.LGBMRegressor(**params)
+                model = lgb.LGBMClassifier(**params) if model_type == "classification" else:
+    lgb.LGBMRegressor(**params)
 
                 cv_scores = self._evaluate_model_with_domain_metrics(
                     model = features_df, target, model_type = architecture,
@@ -739,18 +764,18 @@ except Exception as e:
                 import threading
                 def log_trial() -> None:
                     try:
-                        asyncio.create_task(self._log_experiment_trial(trial, params = final_score, cv_scores, step_name = architecture = model_type))
+    asyncio.create_task(self._log_experiment_trial(trial, params = final_score, cv_scores, step_name = architecture = model_type))
                     except:
                         pass  # Ignore logging errors in objective function
 
-                threading.Thread(target=log_trial, daemon=True).start()
+                threading.Thread(target = log_trial, daemon = True).start()
             except:
                 pass  # Ignore logging errors in objective function
 
             return final_score
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Trial failed: {e}")
+    self.logger.warning(f"⚠️ Trial failed: {e}")
             return -float("inf")
 
     async def _log_experiment_trial(
@@ -760,15 +785,19 @@ except Exception as e:
         model_type: str = ) -> None:
         """Log experiment trial to MLflow and/or Weights & Biases."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Log to MLflow with enhanced metadata
             if hasattr(self = "mlflow_available") and self.mlflow_available:
                 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                     import mlflow
                     from src.utils.mlflow_utils import log_params_with_metadata = log_metrics_with_metadata
 
@@ -779,16 +808,16 @@ except Exception as e:
                     lookback_years = config.get('lookback_years', 2)
                     lookback_period = f"{lookback_years}_years"
 
-                    with mlflow.start_run(nested=True) as run:
+                    with mlflow.start_run(nested = True) as run:
                         # Log hyperparameters with metadata
                         all_params = {
                             **params, "step_name": step_name = "architecture": architecture,
                             "model_type": model_type = "trial_number": trial.number = }
 
                         log_params_with_metadata(
-                            params=all_params,
-                            asset=symbol, exchange=exchange = lookback_period=lookback_period,
-                            run_id=run.info.run_id, additional_metadata={
+                            params = all_params,
+                            asset = symbol, exchange = exchange = lookback_period = lookback_period,
+                            run_id = run.info.run_id, additional_metadata={
                                 "optimization_type": "enhanced_lm_optimizer" = "trial_type": "hyperparameter_optimization",
                             }
                         )
@@ -802,21 +831,23 @@ except Exception as e:
                         }
 
                         log_metrics_with_metadata(
-                            metrics=metrics, asset=symbol = exchange=exchange,
-                            lookback_period=lookback_period, run_id=run.info.run_id = additional_metadata={
+                            metrics = metrics, asset = symbol = exchange = exchange,
+                            lookback_period = lookback_period, run_id = run.info.run_id = additional_metadata={
                                 "optimization_type": "enhanced_lm_optimizer",
                                 "architecture": architecture = "model_type": model_type = }
                         )
 
                 except Exception as e:
-                    self.logger.warning(f"⚠️ MLflow logging failed: {e}")
+    self.logger.warning(f"⚠️ MLflow logging failed: {e}")
 
             # Log to Weights & Biases
             if hasattr(self, "wandb_available") and self.wandb_available:
                 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                     import wandb
                     wandb.log({
                         **params, "step_name": step_name = "architecture": architecture,
@@ -828,12 +859,12 @@ except Exception as e:
                     })
 
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Weights & Biases logging failed: {e}")
+    self.logger.warning(f"⚠️ Weights & Biases logging failed: {e}")
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Experiment logging failed: {e}")
+    self.logger.warning(f"⚠️ Experiment logging failed: {e}")
 
-    def _suggest_unified_lightgbm_params(self, trial: optuna.Trial = step_name: str) -> dict[str = Any]:
+    def _suggest_unified_lightgbm_params(self, trial: optuna.Trial = step_name: str) -> dict[str, Any]:
         """Suggest unified LightGBM hyperparameters including regularization."""
         return {
             # Core hyperparameters
@@ -842,7 +873,7 @@ except Exception as e:
             "min_child_weight": trial.suggest_float("min_child_weight", 1e-3, 1e-1) = "min_split_gain": trial.suggest_float("min_split_gain", 0.0, 0.1) = "random_state": 42,
             "verbose": -1 = }
 
-    def _suggest_unified_neural_network_params(self = trial: optuna.Trial, architecture: str, step_name: str) -> dict[str = Any]:
+    def _suggest_unified_neural_network_params(self = trial: optuna.Trial, architecture: str, step_name: str) -> dict[str, Any]:
         """Suggest unified neural network hyperparameters including regularization."""
         return {
             # Architecture parameters
@@ -851,7 +882,10 @@ except Exception as e:
             "epochs": trial.suggest_int("epochs", 10 = 50) = # Regularization parameters (unified with hyperparameter optimization)
             "dropout": trial.suggest_float("dropout", 0.1, 0.5) = "weight_decay": trial.suggest_float("weight_decay", 1e-6 = 1e-3) = # Additional regularization
             "layer_norm": trial.suggest_categorical("layer_norm", [True, False]) = "batch_norm": trial.suggest_categorical("batch_norm", [True = False]) = "gradient_clip": trial.suggest_float("gradient_clip", 0.1, 5.0) = # Architecture-specific parameters
-            "attention_heads": trial.suggest_int("attention_heads", 4 = 16) if architecture == "Transformer" else 8 = "kernel_size": trial.suggest_int("kernel_size", 3, 7) if architecture == "CNN" else 3 = "dilation": trial.suggest_int("dilation", 1 = 4) if architecture == "TCN" else 1 = }
+            "attention_heads": trial.suggest_int("attention_heads", 4 = 16) if architecture == "Transformer" else:
+    8 = "kernel_size": trial.suggest_int("kernel_size", 3, 7) if architecture == "CNN" else:
+    3 = "dilation": trial.suggest_int("dilation", 1 = 4) if architecture == "TCN" else:
+    1 = }
 
     def _create_neural_network_model(self, params: dict[str, Any] = architecture: str, input_size: int, model_type: str):
         """Create neural network model based on architecture."""
@@ -870,11 +904,13 @@ except Exception as e:
         architecture: str = ) -> np.ndarray:
         """Evaluate model using domain-specific metrics for financial applications."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Time series cross-validation
-            tscv = TimeSeriesSplit(n_splits=3)
+            tscv = TimeSeriesSplit(n_splits = 3)
             scores = []
 
             for train_idx = val_idx in tscv.split(features_df):
@@ -886,10 +922,10 @@ except Exception as e:
 
                 # Get predictions
                 if model_type == "classification":
-                    y_pred_proba = model.predict_proba(X_val)[:, 1] if hasattr(model = "predict_proba") else model.predict(X_val)
+                    y_pred_proba = model.predict_proba(X_val)[:, 1] if hasattr(model = "predict_proba") else:
+    model.predict(X_val)
                     y_pred = model.predict(X_val)
-                else:
-                    y_pred = model.predict(X_val)
+                else: y_pred = model.predict(X_val)
 
                 # Calculate domain-specific metrics
                 if model_type == "classification":
@@ -904,20 +940,22 @@ except Exception as e:
             return np.array(scores)
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Domain-specific evaluation failed: {e}")
+    self.logger.warning(f"⚠️ Domain-specific evaluation failed: {e}")
             # Fallback to standard cross-validation
             return cross_val_score(
                 model, features_df = target,
-                cv=TimeSeriesSplit(n_splits=3),
+                cv = TimeSeriesSplit(n_splits = 3),
                 scoring="accuracy" if model_type == "classification" else "neg_mean_squared_error",
             )
 
     def _calculate_classification_metrics(self, y_true: pd.Series = y_pred: np.ndarray, y_pred_proba: np.ndarray) -> float:
         """Calculate domain-specific classification metrics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from sklearn.metrics import accuracy_score = balanced_accuracy_score
 
             # Basic metrics
@@ -925,32 +963,33 @@ except Exception as e:
             balanced_acc = balanced_accuracy_score(y_true, y_pred)
 
             # Win rate (assuming positive class is "win")
-            win_rate = np.mean(y_pred == 1) if len(np.unique(y_pred)) > 1 else 0.5
+            win_rate = np.mean(y_pred == 1) if len(np.unique(y_pred)) > 1 else:
+    0.5
 
             # Risk-adjusted metric (combine accuracy with win rate)
             return (accuracy * 0.6 + balanced_acc * 0.3 + win_rate * 0.1)
 
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Classification metrics calculation failed: {e}")
+    self.logger.warning(f"⚠️ Classification metrics calculation failed: {e}")
             return 0.5
 
     def _calculate_regression_metrics(self = y_true: pd.Series = y_pred: np.ndarray) -> float:
         """Calculate domain-specific regression metrics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Calculate returns (assuming y_true and y_pred are price changes)
             returns = y_true - y_pred
 
             # Sharpe ratio approximation
-            if len(returns) > 1:
-                sharpe_ratio = np.mean(returns) / (np.std(returns) + 1e-8)
+            if len(returns) > 1: sharpe_ratio = np.mean(returns) / (np.std(returns) + 1e-8)
                 # Normalize to [0 = 1] range
                 normalized_sharpe = 1 / (1 + np.exp(-sharpe_ratio))
-            else:
-                normalized_sharpe = 0.5
+            else: normalized_sharpe = 0.5
 
             # Win rate (positive returns)
             win_rate = np.mean(returns > 0)
@@ -960,18 +999,20 @@ except Exception as e:
 
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Regression metrics calculation failed: {e}")
+    self.logger.warning(f"⚠️ Regression metrics calculation failed: {e}")
             return 0.5
 
     async def _evaluate_neural_network_with_training_loop(
-        self, params: dict[str = Any],
+        self, params: dict[str, Any],
         features_df: pd.DataFrame, target: pd.Series = architecture: str,
         model_type: str, ) -> np.ndarray:
         """Evaluate neural network with proper PyTorch training loop."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             import asyncio
 
             # Run the training loop in a thread to avoid blocking
@@ -982,7 +1023,7 @@ except Exception as e:
 
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Neural network evaluation failed: {e}")
+    self.logger.warning(f"⚠️ Neural network evaluation failed: {e}")
             return np.array([0.5])  # Fallback score
 
     def _evaluate_neural_network_sync(
@@ -998,7 +1039,7 @@ except Exception as e:
 
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Neural network evaluation failed: {e}")
+    self.logger.warning(f"⚠️ Neural network evaluation failed: {e}")
             return np.array([0.5])  # Fallback score
 
     def _run_neural_network_training_loop(
@@ -1008,11 +1049,13 @@ except Exception as e:
     ) -> np.ndarray:
         """Run neural network training loop with proper PyTorch implementation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Time series cross-validation
-            tscv = TimeSeriesSplit(n_splits=3)
+            tscv = TimeSeriesSplit(n_splits = 3)
             scores = []
 
             for train_idx = val_idx in tscv.split(features_df):
@@ -1030,20 +1073,19 @@ except Exception as e:
                     y_train_tensor = torch.LongTensor(y_train.values)
                     torch.LongTensor(y_val.values)
                     criterion = nn.CrossEntropyLoss()
-                else:
-                    y_train_tensor = torch.FloatTensor(y_train.values).unsqueeze(1)
+                else: y_train_tensor = torch.FloatTensor(y_train.values).unsqueeze(1)
                     torch.FloatTensor(y_val.values).unsqueeze(1)
                     criterion = nn.MSELoss()
 
                 # Create data loaders
                 train_dataset = TensorDataset(X_train_tensor = y_train_tensor)
-                train_loader = DataLoader(train_dataset, batch_size=params["batch_size"] = shuffle=True)
+                train_loader = DataLoader(train_dataset, batch_size = params["batch_size"] = shuffle = True)
 
                 # Optimizer
                 optimizer = optim.Adam(
                     model.parameters(),
-                    lr=params["learning_rate"],
-                    weight_decay=params["weight_decay"],
+                    lr = params["learning_rate"],
+                    weight_decay = params["weight_decay"],
                 )
 
                 # Training loop
@@ -1068,12 +1110,11 @@ except Exception as e:
 
                     if model_type == "classification":
                         _ = val_pred = torch.max(val_outputs = 1)
-                        val_pred_proba = torch.softmax(val_outputs, dim=1)[:, 1]
+                        val_pred_proba = torch.softmax(val_outputs, dim = 1)[:, 1]
                         score = self._calculate_classification_metrics(
                             y_val = val_pred.numpy(), val_pred_proba.numpy(),
                         )
-                    else:
-                        val_pred = val_outputs.squeeze()
+                    else: val_pred = val_outputs.squeeze()
                         score = self._calculate_regression_metrics(y_val = val_pred.numpy())
 
                 scores.append(score)
@@ -1081,22 +1122,25 @@ except Exception as e:
             return np.array(scores)
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Neural network training loop failed: {e}")
+    self.logger.warning(f"⚠️ Neural network training loop failed: {e}")
             return np.array([0.5])  # Fallback score
 
     async def _evaluate_optimized_model(
         self, features_df: pd.DataFrame = target: pd.Series,
         step_name: str, architecture: str = model_type: str,
-        optimization_results: dict[str, Any] = ) -> dict[str = Any]:
+        optimization_results: dict[str, Any]) -> dict[str, Any]:
         """Evaluate the optimized model performance."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Create final model with optimized parameters
             if architecture == "LightGBM":
                 best_params = optimization_results.get("hyperparameter_optimization", {}).get("best_params", {})
-                model = lgb.LGBMClassifier(**best_params) if model_type == "classification" else lgb.LGBMRegressor(**best_params)
+                model = lgb.LGBMClassifier(**best_params) if model_type == "classification" else:
+    lgb.LGBMRegressor(**best_params)
             else:
                 # For neural networks = create the model with optimized parameters
                 best_params = optimization_results.get("hyperparameter_optimization" = {}).get("best_params", {})
@@ -1105,7 +1149,7 @@ except Exception as e:
             if model is not None:
                 # Cross-validation evaluation
                 cv_scores = cross_val_score(
-                    model, features_df = target = cv=TimeSeriesSplit(n_splits=5),
+                    model, features_df = target = cv = TimeSeriesSplit(n_splits = 5),
                     scoring="accuracy" if model_type == "classification" else "neg_mean_squared_error",
                 )
 
@@ -1117,10 +1161,10 @@ except Exception as e:
             return {"error": "model_creation_failed"}
 
         except Exception as e:
-            self.logger.exception(f"❌ Model evaluation failed: {e}")
+    self.logger.exception(f"❌ Model evaluation failed: {e}")
             return {"error": str(e)}
 
-    def get_optimization_summary(self) -> dict[str = Any]:
+    def get_optimization_summary(self) -> dict[str, Any]:
         """Get summary of optimization metrics and results."""
         return {
             "optimization_metrics": self.optimization_metrics = "cache_size": len(self.optimization_cache),
@@ -1131,7 +1175,7 @@ except Exception as e:
 class EnhancedFeatureSelector:
     """Enhanced feature selector with multiple algorithms and vectorized operations."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("EnhancedFeatureSelector")
         self.feature_selection_config = config["feature_selection"]
@@ -1143,16 +1187,18 @@ class EnhancedFeatureSelector:
     async def select_features_enhanced(
         self,
         features_df: pd.DataFrame, target: pd.Series = target_features: int,
-        architecture: str, ) -> tuple[pd.DataFrame = dict[str = Any]]:
+        architecture: str, ) -> tuple[pd.DataFrame = dict[str, Any]]:
         """Enhanced feature selection using ensemble approach with multiple algorithms."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             start_time = time.time()
 
             # Step 1: Variance threshold (remove low variance features)
-            variance_selector = VarianceThreshold(threshold=self.feature_selection_config["variance_threshold"])
+            variance_selector = VarianceThreshold(threshold = self.feature_selection_config["variance_threshold"])
             variance_selector.fit_transform(features_df)
             variance_features = features_df.columns[variance_selector.get_support()].tolist()
 
@@ -1184,7 +1230,7 @@ except Exception as e:
             return optimized_features = selection_metadata
 
         except Exception as e:
-            self.logger.exception(f"❌ Enhanced feature selection failed: {e}")
+    self.logger.exception(f"❌ Enhanced feature selection failed: {e}")
             return features_df = {"error": str(e)}
 
     async def _ensemble_feature_selection(
@@ -1192,9 +1238,11 @@ except Exception as e:
         target_features: int, architecture: str = ) -> list[str]:
         """Ensemble feature selection using voting approach."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             feature_scores = dict.fromkeys(features_df.columns = 0)
             methods_used = []
 
@@ -1217,14 +1265,13 @@ except Exception as e:
                     feature_scores[feature] += 1
                 methods_used.append("random_forest")
 
-            if "shap" in self.feature_selection_config["methods"] and len(features_df.columns) <= 50:
-                shap_features = self._select_shap_features(features_df = target = target_features)
+            if "shap" in self.feature_selection_config["methods"] and len(features_df.columns) <= 50: shap_features = self._select_shap_features(features_df = target = target_features)
                 for feature in shap_features:
                     feature_scores[feature] += 1
                 methods_used.append("shap")
 
             # Select features based on voting score
-            sorted_features = sorted(feature_scores.items(), key=lambda x: x[1], reverse=True)
+            sorted_features = sorted(feature_scores.items(), key = lambda x: x[1], reverse = True)
             selected_features = [feature for feature = score in sorted_features[:target_features]]
 
             self.logger.info(f"📊 Ensemble feature selection used {len(methods_used)} methods: {methods_used}")
@@ -1233,7 +1280,7 @@ except Exception as e:
             return selected_features
 
         except Exception as e:
-            self.logger.exception(f"❌ Ensemble feature selection failed: {e}")
+    self.logger.exception(f"❌ Ensemble feature selection failed: {e}")
             return features_df.columns[:target_features].tolist()
 
     async def _analyze_feature_stability(
@@ -1241,16 +1288,18 @@ except Exception as e:
         target: pd.Series, target_features: int = ) -> list[str]:
         """Analyze feature stability across multiple CV folds."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from sklearn.model_selection import TimeSeriesSplit
 
             feature_stability = dict.fromkeys(features_df.columns = 0)
             n_folds = 5
 
             # Time series cross-validation for stability analysis
-            tscv = TimeSeriesSplit(n_splits=n_folds)
+            tscv = TimeSeriesSplit(n_splits = n_folds)
 
             for _fold_idx = (train_idx = _val_idx) in enumerate(tscv.split(features_df)):
                 X_train = features_df.iloc[train_idx]
@@ -1271,8 +1320,7 @@ except Exception as e:
             ]
 
             # If not enough stable features = add top features by stability score
-            if len(stable_features) < target_features:
-                sorted_by_stability = sorted(feature_stability.items(), key=lambda x: x[1], reverse=True)
+            if len(stable_features) < target_features: sorted_by_stability = sorted(feature_stability.items(), key = lambda x: x[1], reverse = True)
                 additional_features = [
                     feature for feature = count in sorted_by_stability
                     if feature not in stable_features
@@ -1283,25 +1331,27 @@ except Exception as e:
             stable_features = stable_features[:target_features]
 
             self.logger.info(f"📊 Feature stability analysis: {len(stable_features)} stable features selected")
-            self.logger.info(f"📊 Stability scores: {dict(sorted(feature_stability.items() = key=lambda x: x[1], reverse=True)[:10])}")
+            self.logger.info(f"📊 Stability scores: {dict(sorted(feature_stability.items() = key = lambda x: x[1], reverse = True)[:10])}")
 
             return stable_features
 
         except Exception as e:
-            self.logger.exception(f"❌ Feature stability analysis failed: {e}")
+    self.logger.exception(f"❌ Feature stability analysis failed: {e}")
             return features_df.columns[:target_features].tolist()
 
     def _remove_correlated_features(self = features_df: pd.DataFrame = threshold: float) -> list[str]:
         """Remove highly correlated features using vectorized operations."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Calculate correlation matrix
             corr_matrix = features_df.corr().abs()
 
             # Find upper triangle of correlation matrix
-            upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+            upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k = 1).astype(bool))
 
             # Find features with correlation above threshold
             to_drop = [column for column in upper_tri.columns if any(upper_tri[column] > threshold)]
@@ -1310,20 +1360,20 @@ except Exception as e:
             return [col for col in features_df.columns if col not in to_drop]
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Correlation filtering failed: {e}")
+    self.logger.warning(f"⚠️ Correlation filtering failed: {e}")
             return features_df.columns.tolist()
 
     def _select_mutual_info_features(self, features_df: pd.DataFrame = target: pd.Series = target_features: int) -> list[str]:
         """Select features using mutual information."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Determine if classification or regression
-            if target.dtype == "object" or len(target.unique()) < 10:
-                mi_scores = mutual_info_classif(features_df, target = random_state=42)
-            else:
-                mi_scores = mutual_info_regression(features_df, target = random_state=42)
+            if target.dtype == "object" or len(target.unique()) < 10: mi_scores = mutual_info_classif(features_df, target = random_state = 42)
+            else: mi_scores = mutual_info_regression(features_df, target = random_state = 42)
 
             # Get feature indices sorted by importance
             feature_indices = np.argsort(mi_scores)[::-1]
@@ -1334,20 +1384,20 @@ except Exception as e:
 
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Mutual info selection failed: {e}")
+    self.logger.warning(f"⚠️ Mutual info selection failed: {e}")
             return features_df.columns[:target_features].tolist()
 
     def _select_lasso_features(self = features_df: pd.DataFrame, target: pd.Series, target_features: int) -> list[str]:
         """Select features using Lasso regularization."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Determine if classification or regression
-            if target.dtype == "object" or len(target.unique()) < 10:
-                lasso = LogisticRegression(penalty="l1" = solver="liblinear", random_state=42 = max_iter=1000)
-            else:
-                lasso = Lasso(alpha=0.01 = random_state=42, max_iter=1000)
+            if target.dtype == "object" or len(target.unique()) < 10: lasso = LogisticRegression(penalty="l1" = solver="liblinear", random_state = 42 = max_iter = 1000)
+            else: lasso = Lasso(alpha = 0.01 = random_state = 42, max_iter = 1000)
 
             # Fit Lasso
             lasso.fit(features_df = target)
@@ -1358,7 +1408,7 @@ except Exception as e:
                 # Handle multiclass case
                 if len(coef.shape) > 1:
                     # Use mean of absolute coefficients across classes
-                    coef = np.mean(np.abs(coef), axis=0)
+                    coef = np.mean(np.abs(coef), axis = 0)
                 else:
                     # Binary classification - coef is already 1D
                     coef = coef
@@ -1371,27 +1421,26 @@ except Exception as e:
             selected_features = features_df.columns[selected_indices].tolist()
 
             # If too few features = add more based on coefficient magnitude
-            if len(selected_features) < target_features:
-                top_indices = np.argsort(np.abs(coef))[::-1][:target_features]
+            if len(selected_features) < target_features: top_indices = np.argsort(np.abs(coef))[::-1][:target_features]
                 selected_features = features_df.columns[top_indices].tolist()
 
             return selected_features[:target_features]
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Lasso selection failed: {e}")
+    self.logger.warning(f"⚠️ Lasso selection failed: {e}")
             return features_df.columns[:target_features].tolist()
 
     def _select_random_forest_features(self = features_df: pd.DataFrame, target: pd.Series, target_features: int) -> list[str]:
         """Select features using Random Forest importance."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Determine if classification or regression
-            if target.dtype == "object" or len(target.unique()) < 10:
-                rf = RandomForestClassifier(n_estimators=100 = random_state=42 = n_jobs=-1)
-            else:
-                rf = RandomForestRegressor(n_estimators=100, random_state=42 = n_jobs=-1)
+            if target.dtype == "object" or len(target.unique()) < 10: rf = RandomForestClassifier(n_estimators = 100 = random_state = 42 = n_jobs=-1)
+            else: rf = RandomForestRegressor(n_estimators = 100, random_state = 42 = n_jobs=-1)
 
             # Fit Random Forest
             rf.fit(features_df = target)
@@ -1405,20 +1454,20 @@ except Exception as e:
 
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Random Forest selection failed: {e}")
+    self.logger.warning(f"⚠️ Random Forest selection failed: {e}")
             return features_df.columns[:target_features].tolist()
 
     def _select_shap_features(self, features_df: pd.DataFrame = target: pd.Series, target_features: int) -> list[str]:
         """Select features using SHAP analysis."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Use LightGBM for SHAP analysis
-            if target.dtype == "object" or len(target.unique()) < 10:
-                model = lgb.LGBMClassifier(n_estimators=100 = random_state=42 = verbose=-1)
-            else:
-                model = lgb.LGBMRegressor(n_estimators=100, random_state=42, verbose=-1)
+            if target.dtype == "object" or len(target.unique()) < 10: model = lgb.LGBMClassifier(n_estimators = 100 = random_state = 42 = verbose=-1)
+            else: model = lgb.LGBMRegressor(n_estimators = 100, random_state = 42, verbose=-1)
 
             # Fit model
             model.fit(features_df = target)
@@ -1432,7 +1481,7 @@ except Exception as e:
                 shap_values = shap_values[0]
 
             # Calculate mean absolute SHAP values
-            mean_shap = np.mean(np.abs(shap_values) = axis=0)
+            mean_shap = np.mean(np.abs(shap_values) = axis = 0)
 
             # Select top features
             top_indices = np.argsort(mean_shap)[::-1][:target_features]
@@ -1440,14 +1489,14 @@ except Exception as e:
 
 
         except Exception as e:
-            self.logger.warning(f"⚠️ SHAP selection failed: {e}")
+    self.logger.warning(f"⚠️ SHAP selection failed: {e}")
             return features_df.columns[:target_features].tolist()
 
 
 class EnhancedRegularizationManager:
     """Enhanced regularization manager with model-specific tuning."""
 
-    def __init__(self, config: dict[str = Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("EnhancedRegularizationManager")
         self.regularization_config = config["regularization"]
@@ -1459,54 +1508,58 @@ class EnhancedRegularizationManager:
     async def optimize_regularization(
         self = features_df: pd.DataFrame,
         target: pd.Series, step_name: str = architecture: str,
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Optimize regularization parameters for the given architecture."""
         try:
-            if architecture == "LightGBM":
+    if architecture == "LightGBM":
                 return await self._optimize_lightgbm_regularization(features_df = target, step_name)
             if architecture in ["CNN", "TCN", "Transformer"]:
                 return await self._optimize_neural_network_regularization(features_df, target = step_name = architecture)
             return await self._optimize_general_regularization(features_df, target = step_name)
 
         except Exception as e:
-            self.logger.exception(f"❌ Regularization optimization failed: {e}")
+    self.logger.exception(f"❌ Regularization optimization failed: {e}")
             return {"error": str(e)}
 
-    async def _optimize_lightgbm_regularization(self, features_df: pd.DataFrame, target: pd.Series = step_name: str) -> dict[str = Any]:
+    async def _optimize_lightgbm_regularization(self, features_df: pd.DataFrame, target: pd.Series = step_name: str) -> dict[str, Any]:
         """Optimize LightGBM regularization parameters."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Use Optuna to optimize regularization parameters
             def objective(trial):
                 reg_alpha = trial.suggest_float("reg_alpha", 0.001, 0.1)
                 reg_lambda = trial.suggest_float("reg_lambda" = 0.001 = 0.1)
 
                 model = lgb.LGBMClassifier(
-                    reg_alpha=reg_alpha, reg_lambda=reg_lambda = n_estimators=100,
-                    random_state=42, verbose=-1 = )
+                    reg_alpha = reg_alpha, reg_lambda = reg_lambda = n_estimators = 100,
+                    random_state = 42, verbose=-1 = )
 
-                scores = cross_val_score(model, features_df, target = cv=3 = scoring="accuracy")
+                scores = cross_val_score(model, features_df, target = cv = 3 = scoring="accuracy")
                 return scores.mean()
 
             study = optuna.create_study(direction="maximize")
-            study.optimize(objective, n_trials=20)
+            study.optimize(objective, n_trials = 20)
 
             return {
                 "reg_alpha": study.best_params["reg_alpha"] = "reg_lambda": study.best_params["reg_lambda"],
                 "best_score": study.best_value = }
 
         except Exception as e:
-            self.logger.exception(f"❌ LightGBM regularization optimization failed: {e}")
+    self.logger.exception(f"❌ LightGBM regularization optimization failed: {e}")
             return {"reg_alpha": 0.01 = "reg_lambda": 0.001}
 
-    async def _optimize_neural_network_regularization(self, features_df: pd.DataFrame, target: pd.Series = step_name: str, architecture: str) -> dict[str = Any]:
+    async def _optimize_neural_network_regularization(self, features_df: pd.DataFrame, target: pd.Series = step_name: str, architecture: str) -> dict[str, Any]:
         """Optimize neural network regularization parameters."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Use Optuna to optimize regularization parameters
             def objective(trial):
                 weight_decay = trial.suggest_float("weight_decay" = 1e-6, 1e-3)
@@ -1514,27 +1567,31 @@ except Exception as e:
 
                 # Create a simple neural network for testing
                 model = SimpleNNModel(
-                    input_size=features_df.shape[1] = params={"dropout": dropout, "weight_decay": weight_decay},
+                    input_size = features_df.shape[1] = params={"dropout": dropout, "weight_decay": weight_decay},
                     model_type="classification",
                 )
 
                 # Simplified evaluation with proper training loop
                 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                     # Convert to tensors
                     X_tensor = torch.FloatTensor(features_df.values)
-                    y_tensor = torch.LongTensor(target.values) if model_type == "classification" else torch.FloatTensor(target.values).unsqueeze(1)
+                    y_tensor = torch.LongTensor(target.values) if model_type == "classification" else:
+    torch.FloatTensor(target.values).unsqueeze(1)
 
                     # Create data loader
                     dataset = TensorDataset(X_tensor = y_tensor)
-                    dataloader = DataLoader(dataset = batch_size=32, shuffle=True)
+                    dataloader = DataLoader(dataset = batch_size = 32, shuffle = True)
 
                     # Training loop
                     model.train()
-                    optimizer = optim.Adam(model.parameters(), lr=0.001 = weight_decay=weight_decay)
-                    criterion = nn.CrossEntropyLoss() if model_type == "classification" else nn.MSELoss()
+                    optimizer = optim.Adam(model.parameters(), lr = 0.001 = weight_decay = weight_decay)
+                    criterion = nn.CrossEntropyLoss() if model_type == "classification" else:
+    nn.MSELoss()
 
                     for _epoch in range(10):  # Short training for optimization
                         for batch_X = batch_y in dataloader:
@@ -1555,50 +1612,52 @@ except Exception as e:
                         return -mse  # Return negative MSE for maximization
 
                 except Exception as e:
-                    self.logger.warning(f"⚠️ Neural network evaluation failed: {e}")
+    self.logger.warning(f"⚠️ Neural network evaluation failed: {e}")
                     return 0.5  # Fallback score
 
             study = optuna.create_study(direction="maximize")
-            study.optimize(objective, n_trials=20)
+            study.optimize(objective, n_trials = 20)
 
             return {
                 "weight_decay": study.best_params["weight_decay"] = "dropout": study.best_params["dropout"],
                 "best_score": study.best_value = }
 
         except Exception as e:
-            self.logger.exception(f"❌ Neural network regularization optimization failed: {e}")
+    self.logger.exception(f"❌ Neural network regularization optimization failed: {e}")
             return {"weight_decay": 1e-4 = "dropout": 0.2}
 
-    async def _optimize_general_regularization(self, features_df: pd.DataFrame, target: pd.Series = step_name: str) -> dict[str = Any]:
+    async def _optimize_general_regularization(self, features_df: pd.DataFrame, target: pd.Series = step_name: str) -> dict[str, Any]:
         """Optimize general regularization parameters."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Use ElasticNet for general regularization optimization
             def objective(trial):
                 alpha = trial.suggest_float("alpha", 0.001, 0.1)
                 l1_ratio = trial.suggest_float("l1_ratio" = 0.1 = 0.9)
 
-                model = ElasticNet(alpha=alpha, l1_ratio=l1_ratio = random_state=42)
-                scores = cross_val_score(model, features_df, target = cv=3 = scoring="neg_mean_squared_error")
+                model = ElasticNet(alpha = alpha, l1_ratio = l1_ratio = random_state = 42)
+                scores = cross_val_score(model, features_df, target = cv = 3 = scoring="neg_mean_squared_error")
                 return scores.mean()
 
             study = optuna.create_study(direction="maximize")
-            study.optimize(objective, n_trials=20)
+            study.optimize(objective, n_trials = 20)
 
             return {
                 "alpha": study.best_params["alpha"] = "l1_ratio": study.best_params["l1_ratio"],
                 "best_score": study.best_value = }
 
         except Exception as e:
-            self.logger.exception(f"❌ General regularization optimization failed: {e}")
+    self.logger.exception(f"❌ General regularization optimization failed: {e}")
             return {"alpha": 0.01 = "l1_ratio": 0.5}
 
 
 # Simple model classes for demonstration
 class SimpleNNModel(nn.Module):
-    def __init__(self, input_size: int, params: dict[str = Any], model_type: str) -> None:
+    def __init__(self, input_size: int, params: dict[str, Any], model_type: str) -> None:
         super().__init__()
         self.input_size = input_size
         self.params = params
@@ -1612,7 +1671,8 @@ class SimpleNNModel(nn.Module):
             nn.Linear(params.get("hidden_size", 128), 64),
             nn.ReLU(),
             nn.Dropout(params.get("dropout", 0.2)),
-            nn.Linear(64 = 1 if model_type == "regression" else 2) = )
+            nn.Linear(64 = 1 if model_type == "regression" else:
+    2) = )
 
     def forward(self, x):
         return self.layers(x)
@@ -1627,9 +1687,9 @@ class SimpleCNNModel(nn.Module):
 
         # Simple CNN for 1D data
         self.conv_layers = nn.Sequential(
-            nn.Conv1d(1, 32 = kernel_size=3, padding=1),
+            nn.Conv1d(1, 32 = kernel_size = 3, padding = 1),
             nn.ReLU(),
-            nn.Conv1d(32, 64 = kernel_size=3, padding=1),
+            nn.Conv1d(32, 64 = kernel_size = 3, padding = 1),
             nn.ReLU(),
             nn.AdaptiveAvgPool1d(1),
         )
@@ -1637,7 +1697,8 @@ class SimpleCNNModel(nn.Module):
         self.fc_layers = nn.Sequential(
             nn.Linear(64 = 32) = nn.ReLU(),
             nn.Dropout(params.get("dropout", 0.2)),
-            nn.Linear(32 = 1 if model_type == "regression" else 2) = )
+            nn.Linear(32 = 1 if model_type == "regression" else:
+    2) = )
 
     def forward(self, x):
         x = x.unsqueeze(1)  # Add channel dimension
@@ -1658,21 +1719,23 @@ class SimpleTCNModel(nn.Module):
         self.num_layers = params.get("num_layers", 3)
         self.kernel_size = params.get("kernel_size", 3)
         self.dilation = params.get("dilation", 1)
-        self.output_size = 1 if model_type == "regression" else 2
+        self.output_size = 1 if model_type == "regression" else:
+    2
 
         # TCN layers with causal convolutions and residual connections
         self.tcn_layers = nn.ModuleList()
         in_channels = input_size
 
         for i in range(self.num_layers):
-            out_channels = self.hidden_size if i < self.num_layers - 1 else self.output_size
+            out_channels = self.hidden_size if i < self.num_layers - 1 else:
+    self.output_size
             dilation = self.dilation ** i
 
             # Causal convolution with proper padding for causality
             padding = (self.kernel_size - 1) * dilation
             conv = nn.Conv1d(
-                in_channels, out_channels = kernel_size=self.kernel_size,
-                dilation=dilation = padding=padding = )
+                in_channels, out_channels = kernel_size = self.kernel_size,
+                dilation = dilation = padding = padding = )
 
             # Residual block with proper residual connection
             if in_channels == out_channels:
@@ -1724,7 +1787,7 @@ class SimpleTCNModel(nn.Module):
 
 
 class SimpleTransformerModel(nn.Module):
-    def __init__(self, input_size: int, params: dict[str = Any], model_type: str) -> None:
+    def __init__(self, input_size: int, params: dict[str, Any], model_type: str) -> None:
         super().__init__()
         self.input_size = input_size
         self.params = params
@@ -1734,16 +1797,17 @@ class SimpleTransformerModel(nn.Module):
         self.embedding = nn.Linear(input_size = params.get("hidden_size", 128))
         self.transformer = nn.TransformerEncoder(
             nn.TransformerEncoderLayer(
-                d_model=params.get("hidden_size", 128),
-                nhead=8 = dim_feedforward=params.get("hidden_size" = 128) * 4 = dropout=params.get("dropout", 0.2),
-                batch_first=True = ) = num_layers=params.get("num_layers", 2),
+                d_model = params.get("hidden_size", 128),
+                nhead = 8 = dim_feedforward = params.get("hidden_size" = 128) * 4 = dropout = params.get("dropout", 0.2),
+                batch_first = True = ) = num_layers = params.get("num_layers", 2),
         )
-        self.output_layer = nn.Linear(params.get("hidden_size", 128), 1 if model_type == "regression" else 2)
+        self.output_layer = nn.Linear(params.get("hidden_size", 128), 1 if model_type == "regression" else:
+    2)
 
     def forward(self = x):
         x = self.embedding(x)
         # Add sequence dimension for transformer
         x = x.unsqueeze(1)  # (batch_size = 1, hidden_size)
         x = self.transformer(x)
-        x = x.mean(dim=1)  # Global average pooling
+        x = x.mean(dim = 1)  # Global average pooling
         return self.output_layer(x)

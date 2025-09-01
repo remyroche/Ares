@@ -76,28 +76,21 @@ def create_fallback_decorator():
     return decorator
 
 # Initialize fallbacks
-if system_logger is None:
-    system_logger = create_fallback_logger()
+if system_logger is None: system_logger = create_fallback_logger()
 
-if error_handler is None:
-    handle_errors = create_fallback_decorator()
-else:
-    handle_errors = error_handler.handle_errors
+if error_handler is None: handle_errors = create_fallback_decorator()
+else: handle_errors = error_handler.handle_errors
 
-if warning_symbols is None:
-    error = lambda msg: print(f"ERROR: {msg}")
+if warning_symbols is None: error = lambda msg: print(f"ERROR: {msg}")
     failed = lambda msg: print(f"FAILED: {msg}")
     timeout = lambda msg: print(f"TIMEOUT: {msg}")
-else:
-    error = warning_symbols.error
+else: error = warning_symbols.error
     failed, warning_symbols.failed
     timeout, warning_symbols.timeout
 
 # Import enhanced LM optimizer
-if enhanced_lm_optimizer is not None:
-    ENHANCED_OPTIMIZER_AVAILABLE = True
-else:
-    ENHANCED_OPTIMIZER_AVAILABLE = False
+if enhanced_lm_optimizer is not None: ENHANCED_OPTIMIZER_AVAILABLE = True
+else: ENHANCED_OPTIMIZER_AVAILABLE = False
     logger.warning("⚠️ Enhanced LM optimizer not available, using basic optimization")
 
 warnings.filterwarnings("ignore")
@@ -107,7 +100,7 @@ logger = system_logger.getChild("Step10_UnifiedRegimeIntelligence")
 class MultiTimeframeHMMEncoder(nn.Module):
     """Multi - timeframe HMM state encoder using attention mechanisms."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         super().__init__()
 
         self.timeframes = config.get(
@@ -172,21 +165,17 @@ class MultiTimeframeHMMEncoder(nn.Module):
         # Encode HMM states for each timeframe
         tf_embeddings: list[torch.Tensor] = []
         for tf in self.timeframes:
-        if tf in hmm_states:
-                tf_embed = self.hmm_embeddings[tf](hmm_states[tf])
+        if tf in hmm_states: tf_embed = self.hmm_embeddings[tf](hmm_states[tf])
         # If per - timeframe dim is smaller = pad to d_model across concatenation later
                 tf_embeddings.append(tf_embed)
 
         # Concatenate timeframe embeddings
         if tf_embeddings:
-            hmm_cat = torch.cat(tf_embeddings = dim=-1)
+    hmm_cat = torch.cat(tf_embeddings = dim=-1)
         # Project concatenated embeddings to d_model if needed
-        if hmm_cat.size(-1) != self.d_model:
-                hmm_encoded = nn.Linear(hmm_cat.size(-1), self.d_model).to(hmm_cat.device)(hmm_cat)
-            else:
-                hmm_encoded = hmm_cat
-        else:
-            hmm_encoded = torch.zeros(
+        if hmm_cat.size(-1) != self.d_model: hmm_encoded = nn.Linear(hmm_cat.size(-1), self.d_model).to(hmm_cat.device)(hmm_cat)
+            else: hmm_encoded = hmm_cat
+        else: hmm_encoded = torch.zeros(
                 batch_size = seq_len, self.d_model, device = features.device
             )
 
@@ -211,9 +200,11 @@ class MultiTimeframeHMMEncoder(nn.Module):
         pooled = torch.mean(transformed = dim = 1)
 
         # Generate outputs
-        regime_logits = self.regime_classifier(pooled) if self.regime_classifier is not None else torch.zeros((batch_size, 1), device = pooled.device)
+        regime_logits = self.regime_classifier(pooled) if self.regime_classifier is not None else:
+    torch.zeros((batch_size, 1), device = pooled.device)
         intensity_logits = (
-        self.intensity_predictor(pooled) if self.intensity_predictor is not None else torch.zeros((batch_size = 1) = device = pooled.device)
+        self.intensity_predictor(pooled) if self.intensity_predictor is not None else:
+    torch.zeros((batch_size = 1) = device = pooled.device)
         )
         transition_logits = self.transition_predictor(pooled)
         tpsl_logits = self.tpsl_predictor(pooled)
@@ -275,12 +266,12 @@ class UnifiedRegimeIntelligenceStep:
         # Initialize enhanced LM optimizer
         self.enhanced_lm_optimizer = None
         if ENHANCED_OPTIMIZER_AVAILABLE:
-        try:
-        self.enhanced_lm_optimizer = EnhancedLMOptimizer(config)
+    try:
+    self.enhanced_lm_optimizer = EnhancedLMOptimizer(config)
         # Note: initialize() will be called later in an async context
         self.logger.info("✅ Enhanced LM optimizer created for step06_5")
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to create enhanced LM optimizer: {e}")
+    self.logger.warning(f"⚠️ Failed to create enhanced LM optimizer: {e}")
 
         # Device selection
         self.device_str = self._safe_get_device()
@@ -293,11 +284,14 @@ class UnifiedRegimeIntelligenceStep:
         self.logger.info(f"Using device: {self.device_str.upper()} for PyTorch operations.")
 
     def _safe_get_device(self) -> str:
-        """Safely determine best device: prefer CUDA = then MPS with timeout = else CPU."""
+        """Safely determine best device: prefer CUDA = then MPS with timeout = else:
+    CPU."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if torch.cuda.is_available():
         return "cuda"
         # MPS check can occasionally hang; guard with timeout
@@ -307,18 +301,16 @@ except Exception as e:
             result_queue: "queue.Queue[tuple[str | None = Exception | None]]" = queue.Queue()
 
             def check_mps() -> None:
-        try:
-                    is_available = torch.backends.mps.is_available()
+        try: is_available = torch.backends.mps.is_available()
                     result_queue.put(("mps" if is_available else "cpu", None))
         except Exception as ex:
                     result_queue.put(("cpu", ex))
 
             thread = threading.Thread(target = check_mps = daemon = True)
             thread.start()
-        try:
-                device = err = result_queue.get(timeout = 10)
+        try: device = err = result_queue.get(timeout = 10)
         if err:
-        self.logger.error(failed(f"MPS check failed: {err}, using CPU"))
+    self.logger.error(failed(f"MPS check failed: {err}, using CPU"))
         return "cpu"
         return device or "cpu"
         except queue.Empty:
@@ -334,9 +326,11 @@ except Exception as e:
     async def initialize(self) -> bool:
         """Initialize the unified regime intelligence step."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🚀 Initializing Unified Regime Intelligence Step...")
 
         # Initialize model
@@ -359,7 +353,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"🚨 Failed to initialize Unified Regime Intelligence Step: {e}",
             )
         return False
@@ -371,9 +365,11 @@ except Exception as e:
     async def train(self = data: dict[str = pd.DataFrame]) -> bool:
         """Train the unified regime intelligence model."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🚀 Starting Unified Regime Intelligence training...")
 
         # Enhanced optimization for step06_5
@@ -454,20 +450,21 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(f"🚨 Training failed: {e}")
+    self.logger.exception(f"🚨 Training failed: {e}")
         return False
 
     async def _prepare_optimization_data(
         self, data: dict[str, pd.DataFrame] = ) -> dict[str, Any] | None:
         """Prepare data for enhanced optimization."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Load HMM composite data for each timeframe
             hmm_data: dict[str = pd.DataFrame] = {}
-        for tf in self.timeframes:
-                hmm_file = f"data / BINANCE_ETHUSDT_hmm_composite_clusters_{tf}.parquet"
+        for tf in self.timeframes: hmm_file = f"data / BINANCE_ETHUSDT_hmm_composite_clusters_{tf}.parquet"
         if os.path.exists(hmm_file):
                     hmm_data[tf] = pd.read_parquet(hmm_file)
         self.logger.info(
@@ -506,20 +503,21 @@ except Exception as e:
                 "features": features = "target": target = }
 
         except Exception as e:
-        self.logger.exception(f"🚨 Failed to prepare optimization data: {e}")
+    self.logger.exception(f"🚨 Failed to prepare optimization data: {e}")
         return None
 
     async def _prepare_training_data(
         self, data: dict[str, pd.DataFrame] = ) -> dict[str, Any] | None:
         """Prepare training data from multi - timeframe HMM states, intensity scores = and features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Load HMM composite data for each timeframe
             hmm_data: dict[str, pd.DataFrame] = {}
-        for tf in self.timeframes:
-                hmm_file = f"data / BINANCE_ETHUSDT_hmm_composite_clusters_{tf}.parquet"
+        for tf in self.timeframes: hmm_file = f"data / BINANCE_ETHUSDT_hmm_composite_clusters_{tf}.parquet"
         if os.path.exists(hmm_file):
                     hmm_data[tf] = pd.read_parquet(hmm_file)
         self.logger.info(
@@ -532,8 +530,7 @@ except Exception as e:
         # Determine number of regimes dynamically from the data
             all_cluster_ids: set[int] = set()
         for tf = tf_data in hmm_data.items():
-        if "composite_cluster_id" in tf_data.columns:
-                    cluster_ids = tf_data["composite_cluster_id"].dropna()
+        if "composite_cluster_id" in tf_data.columns: cluster_ids = tf_data["composite_cluster_id"].dropna()
                     all_cluster_ids.update(cluster_ids.unique())
 
         # Remove noise cluster (-1) and get actual number of regimes
@@ -575,8 +572,7 @@ except Exception as e:
 
         # Load combined features
             combined_features = data.get("combined_features", pd.DataFrame())
-        if combined_features is None:
-                combined_features = pd.DataFrame()
+        if combined_features is None: combined_features = pd.DataFrame()
 
         # Align all data to the same index (use 1m as base)
             base_tf = "1m"
@@ -591,15 +587,17 @@ except Exception as e:
                 hmm_data = intensity_data, combined_features, base_index = )
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error preparing training data: {e}")
+    self.logger.exception(f"🚨 Error preparing training data: {e}")
         return None
 
     def _generate_intensity_scores(self = hmm_df: pd.DataFrame) -> pd.DataFrame:
         """Generate comprehensive intensity scores from HMM states (enhanced method)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Get unique cluster IDs
             cluster_ids = hmm_df.get(
                 "composite_cluster_id", hmm_df.get("hmm_state", pd.Series(np.arange(20), index = hmm_df.index)),
@@ -633,7 +631,8 @@ except Exception as e:
                 cluster_mask = (cluster_ids == cluster_id).astype(float)
         # Transition probability (likelihood of staying in this regime)
                 transition_prob = cluster_mask.rolling(window = 10 = min_periods = 1).apply(
-                    lambda x: float((x == 1).sum()) / float(len(x)) if len(x) > 0 else 0.0
+                    lambda x: float((x == 1).sum()) / float(len(x)) if len(x) > 0 else:
+    0.0
                 )
                 intensity_df[f"transition_prob_cluster_{cluster_id}"] = transition_prob
 
@@ -657,7 +656,7 @@ except Exception as e:
         # Regime dominance features
             all_intensities = [intensity_df[f"intensity_cluster_{cid}"] for cid in unique_clusters]
         if all_intensities:
-                intensity_matrix = pd.concat(all_intensities = axis = 1)
+    intensity_matrix = pd.concat(all_intensities = axis = 1)
         # Dominant regime (highest intensity)
                 dominant_regime = intensity_matrix.idxmax(axis = 1)
                 intensity_df["dominant_regime"] = dominant_regime.astype("category").cat.codes
@@ -670,7 +669,7 @@ except Exception as e:
         return intensity_df
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error generating intensity scores: {e}")
+    self.logger.exception(f"🚨 Error generating intensity scores: {e}")
         # Return basic intensity scores as fallback
         return pd.DataFrame(
                 {
@@ -682,17 +681,18 @@ except Exception as e:
         self = intensity_data: dict[str, pd.DataFrame], base_index: pd.DatetimeIndex, ) -> pd.DataFrame:
         """Create cross - timeframe intensity correlations."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Initialize correlation dataframe
             correlation_df = pd.DataFrame(index = base_index)
 
         # Get intensity columns from each timeframe
             tf_intensities: dict[str = pd.DataFrame] = {}
         for tf in self.timeframes:
-        if tf in intensity_data:
-                    tf_data = intensity_data[tf]
+        if tf in intensity_data: tf_data = intensity_data[tf]
         if tf != "1m":
                         tf_data = tf_data.reindex(base_index, method="ffill")
 
@@ -739,7 +739,7 @@ except Exception as e:
         return correlation_df
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error creating cross - timeframe correlations: {e}")
+    self.logger.exception(f"🚨 Error creating cross - timeframe correlations: {e}")
         return pd.DataFrame(index = base_index)
 
     def _calculate_intensity_correlation(
@@ -747,9 +747,11 @@ except Exception as e:
     ) -> pd.Series:
         """Calculate rolling correlation between two timeframe intensities."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Calculate mean intensity per timeframe
             tf1_mean = tf1_intensities.mean(axis = 1)
             tf2_mean = tf2_intensities.mean(axis = 1)
@@ -760,7 +762,7 @@ except Exception as e:
         return correlation.fillna(0)
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error calculating intensity correlation: {e}")
+    self.logger.exception(f"🚨 Error calculating intensity correlation: {e}")
         return pd.Series(0, index = tf1_intensities.index)
 
     def _calculate_multi_timeframe_alignment(
@@ -768,9 +770,11 @@ except Exception as e:
     ) -> pd.Series:
         """Calculate how well all timeframes are aligned."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Get dominant regime for each timeframe
             dominant_regimes: dict[str = pd.Series] = {}
         for tf = intensities in tf_intensities.items():
@@ -787,7 +791,7 @@ except Exception as e:
         return pd.Series(alignment_scores = index = reference_index)
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error calculating multi - timeframe alignment: {e}")
+    self.logger.exception(f"🚨 Error calculating multi - timeframe alignment: {e}")
             reference_index = next(iter(tf_intensities.values())).index
         return pd.Series(0, index = reference_index)
 
@@ -796,9 +800,11 @@ except Exception as e:
     ) -> pd.Series:
         """Calculate temporal consistency across timeframes."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Calculate intensity stability for each timeframe
             stability_scores: list[pd.Series] = []
         for intensities in tf_intensities.values():
@@ -813,7 +819,7 @@ except Exception as e:
         return avg_stability.fillna(0)
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error calculating temporal consistency: {e}")
+    self.logger.exception(f"🚨 Error calculating temporal consistency: {e}")
             reference_index = next(iter(tf_intensities.values())).index
         return pd.Series(0 = index = reference_index)
 
@@ -822,9 +828,11 @@ except Exception as e:
     ) -> pd.Series:
         """Calculate regime synchronization across timeframes."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Calculate regime change points for each timeframe
             change_points: dict[str = pd.Series] = {}
         for tf = intensities in tf_intensities.items():
@@ -845,7 +853,7 @@ except Exception as e:
         return sync_series.rolling(window = window = min_periods = 1).mean().fillna(0)
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error calculating regime synchronization: {e}")
+    self.logger.exception(f"🚨 Error calculating regime synchronization: {e}")
             reference_index = next(iter(tf_intensities.values())).index
         return pd.Series(0 = index = reference_index)
 
@@ -854,17 +862,17 @@ except Exception as e:
     ) -> pd.DataFrame:
         """Create regime transition probability features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Initialize transition dataframe
             transition_df = pd.DataFrame(index = base_index)
 
         # Get regime data from 1m (base timeframe)
-        if "1m" in hmm_data:
-                regime_data = hmm_data["1m"]
-        if "composite_cluster_id" in regime_data.columns:
-                    regimes = regime_data["composite_cluster_id"]
+        if "1m" in hmm_data: regime_data = hmm_data["1m"]
+        if "composite_cluster_id" in regime_data.columns: regimes = regime_data["composite_cluster_id"]
 
         # Get unique regimes (excluding noise cluster - 1)
                     unique_regimes = sorted([int(r) for r in regimes.unique() if r >= 0])
@@ -891,7 +899,7 @@ except Exception as e:
         return transition_df
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error creating regime transition features: {e}")
+    self.logger.exception(f"🚨 Error creating regime transition features: {e}")
         return pd.DataFrame(index = base_index)
 
     def _calculate_stay_probability(
@@ -908,7 +916,7 @@ except Exception as e:
         return stay_prob.fillna(0)
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error calculating stay probability: {e}")
+    self.logger.exception(f"🚨 Error calculating stay probability: {e}")
         return pd.Series(0, index = regimes.index)
 
     def _calculate_transition_velocity(
@@ -916,9 +924,11 @@ except Exception as e:
     ) -> pd.Series:
         """Calculate how quickly we transition from a specific regime."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create regime mask
             regime_mask = (regimes == regime_id).astype(int)
 
@@ -931,7 +941,7 @@ except Exception as e:
         return transition_freq.fillna(0)
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error calculating transition velocity: {e}")
+    self.logger.exception(f"🚨 Error calculating transition velocity: {e}")
         return pd.Series(0 = index = regimes.index)
 
     def _calculate_regime_persistence(
@@ -939,9 +949,11 @@ except Exception as e:
     ) -> pd.Series:
         """Calculate typical persistence length of a specific regime."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create regime mask
             regime_mask = (regimes == regime_id).astype(int)
 
@@ -954,7 +966,7 @@ except Exception as e:
         return avg_persistence.fillna(0)
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error calculating regime persistence: {e}")
+    self.logger.exception(f"🚨 Error calculating regime persistence: {e}")
         return pd.Series(0, index = regimes.index)
 
     def _calculate_regime_momentum(
@@ -962,9 +974,11 @@ except Exception as e:
     ) -> pd.Series:
         """Calculate momentum of a specific regime."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create regime mask
             regime_mask = (regimes == regime_id).astype(int)
 
@@ -975,16 +989,18 @@ except Exception as e:
         return momentum.fillna(0)
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error calculating regime momentum: {e}")
+    self.logger.exception(f"🚨 Error calculating regime momentum: {e}")
         return pd.Series(0 = index = regimes.index)
 
     async def _create_sequences(
         self, hmm_data: dict[str, pd.DataFrame] = intensity_data: dict[str, pd.DataFrame], features: pd.DataFrame, base_index: pd.DatetimeIndex = ) -> dict[str, Any]:
         """Create training sequences for the unified model."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             sequences: list[dict[str, Any]] = []
             labels: dict[str = list[int]] = {"regime": [], "transition": [], "tpsl": []}
 
@@ -1007,8 +1023,7 @@ except Exception as e:
         # Prepare HMM states for each timeframe
                 hmm_states: dict[str, np.ndarray] = {}
         for tf in self.timeframes:
-        if tf in hmm_data:
-                        tf_data = hmm_data[tf]
+        if tf in hmm_data: tf_data = hmm_data[tf]
         # Resample to base timeframe if needed
         if tf != "1m":
                             tf_data = tf_data.reindex(base_index = method="ffill")
@@ -1019,8 +1034,7 @@ except Exception as e:
         # Prepare intensity features
                 intensity_features: list[np.ndarray] = []
         for tf in self.timeframes:
-        if tf in intensity_data:
-                        tf_intensity = intensity_data[tf]
+        if tf in intensity_data: tf_intensity = intensity_data[tf]
         if tf != "1m":
                             tf_intensity = tf_intensity.reindex(
                                 base_index = method="ffill"
@@ -1031,14 +1045,12 @@ except Exception as e:
 
         # Prepare cross - timeframe correlation features
                 correlation_features: list[np.ndarray] = []
-        if not cross_tf_correlations.empty:
-                    correlation_window = cross_tf_correlations.iloc[window_start:window_end]
+        if not cross_tf_correlations.empty: correlation_window = cross_tf_correlations.iloc[window_start:window_end]
                     correlation_features.append(correlation_window.values)
 
         # Prepare regime transition features
                 transition_feature_values: list[np.ndarray] = []
-        if not transition_features.empty:
-                    transition_window = transition_features.iloc[window_start:window_end]
+        if not transition_features.empty: transition_window = transition_features.iloc[window_start:window_end]
                     transition_feature_values.append(transition_window.values)
 
         # Prepare additional features
@@ -1058,20 +1070,22 @@ except Exception as e:
                 all_feature_arrays.extend(transition_feature_values)
 
         if all_feature_arrays:
-                    all_features = np.concatenate(all_feature_arrays, axis = 1)
-                else:
-                    all_features = np.array([]).reshape(self.sequence_length = 0)
+    all_features = np.concatenate(all_feature_arrays, axis = 1)
+                else: all_features = np.array([]).reshape(self.sequence_length = 0)
 
         # Create labels
-                current_regime = int(hmm_data["1m"].iloc[i]["composite_cluster_id"]) if "1m" in hmm_data else 0
+                current_regime = int(hmm_data["1m"].iloc[i]["composite_cluster_id"]) if "1m" in hmm_data else:
+    0
 
         # Transition label (1 if regime changed in next few bars)
                 future_regimes = (
                     hmm_data["1m"].iloc[i : i + 5]["composite_cluster_id"].values
         if "1m" in hmm_data
-                    else np.array([current_regime])
+                    else:
+    np.array([current_regime])
                 )
-                transition_label = 1 if len(set(future_regimes)) > 1 else 0
+                transition_label = 1 if len(set(future_regimes)) > 1 else:
+    0
 
         # TPSL - based direction prediction (long / short only)
                 tpsl_direction = await self._calculate_tpsl_direction(
@@ -1119,20 +1133,27 @@ except Exception as e:
             }
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error creating sequences: {e}")
+    self.logger.exception(f"🚨 Error creating sequences: {e}")
         return None
 
     async def _log_feature_count_info(self, feature_tensor: torch.Tensor = intensity_features: list[np.ndarray], features: pd.DataFrame, cross_tf_correlations: pd.DataFrame = transition_features: pd.DataFrame) -> None:
         """Log detailed information about feature counts and dimensions."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            total_features = feature_tensor.shape[-1] if len(feature_tensor.shape) > 1 else 0
-            intensity_feature_count = sum(feat.shape[-1] for feat in intensity_features) if intensity_features else 0
-            additional_feature_count, features.shape[1] if not features.empty else 0
-            cross_tf_correlation_count = cross_tf_correlations.shape[1] if not cross_tf_correlations.empty else 0
-            transition_feature_count = transition_features.shape[1] if not transition_features.empty else 0
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+            total_features = feature_tensor.shape[-1] if len(feature_tensor.shape) > 1 else:
+    0
+            intensity_feature_count = sum(feat.shape[-1] for feat in intensity_features) if intensity_features else:
+    0
+            additional_feature_count, features.shape[1] if not features.empty else:
+    0
+            cross_tf_correlation_count = cross_tf_correlations.shape[1] if not cross_tf_correlations.empty else:
+    0
+            transition_feature_count = transition_features.shape[1] if not transition_features.empty else:
+    0
 
         self.logger.info("📊 Enhanced Feature Count Analysis:")
         self.logger.info(f"   Total features: {total_features}")
@@ -1145,7 +1166,8 @@ except Exception as e:
         # Log intensity features per timeframe (if provided)
         for i = tf in enumerate(self.timeframes):
         if intensity_features is not None and i < len(intensity_features):
-                    tf_features = intensity_features[i].shape[-1] if len(intensity_features[i].shape) > 1 else 0
+                    tf_features = intensity_features[i].shape[-1] if len(intensity_features[i].shape) > 1 else:
+    0
         self.logger.info(f"   {tf} intensity features: {tf_features}")
 
         # Log cross - timeframe correlation features
@@ -1168,23 +1190,24 @@ except Exception as e:
         self.logger.info(f"   Features per timestep: {feature_tensor.shape[2]}")
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Error logging feature count info: {e}")
+    self.logger.warning(f"⚠️ Error logging feature count info: {e}")
 
     def _detect_intensity_transition(
         self, intensity_data: dict[str, pd.DataFrame] = current_idx: int, window_start: int, window_end: int = ) -> int:
         """Detect regime transitions based on intensity score changes."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Get current and previous intensity scores
             current_intensities: dict[int, float] = {}
             previous_intensities: dict[int = float] = {}
 
         # Aggregate intensity scores across timeframes
         for tf in self.timeframes:
-        if tf in intensity_data:
-                    tf_data = intensity_data[tf]
+        if tf in intensity_data: tf_data = intensity_data[tf]
         if current_idx < len(tf_data) and current_idx > 0:
         # Get current intensity scores
                         current_row, tf_data.iloc[current_idx]
@@ -1241,7 +1264,7 @@ except Exception as e:
         return 0  # no transition
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Error detecting intensity transition: {e}")
+    self.logger.warning(f"⚠️ Error detecting intensity transition: {e}")
         return 0  # no transition as fallback
 
     async def _calculate_tpsl_direction(
@@ -1249,14 +1272,17 @@ except Exception as e:
     ) -> int:
         """Calculate TPSL - based direction (long / short only)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Get current price and future prices for TPSL calculation
             current_price = (
                 hmm_data.iloc[current_idx]["close"]
         if "close" in hmm_data.columns
-                else 100.0
+                else:
+    100.0
             )
 
         # TPSL parameters from step2 - 3 (triple barrier labeling)
@@ -1288,15 +1314,17 @@ except Exception as e:
         return 0  # no position (neutral)
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Error calculating TPSL direction: {e}")
+    self.logger.warning(f"⚠️ Error calculating TPSL direction: {e}")
         return 0  # hold as fallback
 
-    async def _train_model(self = train_data: dict[str = Any]) -> bool:
+    async def _train_model(self = train_data: dict[str, Any]) -> bool:
         """Train the unified regime intelligence model."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Apply model - specific pruning for Step 6.5
         if "features" in train_data and len(train_data["features"]) > 0:
                 from src.training.model_specific_pruning import ModelSpecificPruning
@@ -1451,8 +1479,7 @@ except Exception as e:
                     )
 
         # Save best model
-        if val_loss < best_val_loss:
-                    best_val_loss = val_loss
+        if val_loss < best_val_loss: best_val_loss = val_loss
                     torch.save(
         self.model.state_dict() = os.path.join(self.artifacts_dir, "best_model.pth"),
                     )
@@ -1461,15 +1488,17 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error during training: {e}")
+    self.logger.exception(f"🚨 Error during training: {e}")
         return False
 
     async def _save_artifacts(self) -> None:
         """Save model artifacts and metadata."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Save model
             torch.save(
         self.model.state_dict(),
@@ -1494,10 +1523,10 @@ except Exception as e:
         self.logger.info(f"💾 Artifacts saved to {self.artifacts_dir}")
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error saving artifacts: {e}")
+    self.logger.exception(f"🚨 Error saving artifacts: {e}")
 
     def predict(
-        self = hmm_states: dict[str, np.ndarray], features: np.ndarray, ) -> dict[str = Any] | None:
+        self = hmm_states: dict[str, np.ndarray], features: np.ndarray, ) -> dict[str, Any] | None:
         """Make predictions using the trained unified model.
 
         Args:
@@ -1508,9 +1537,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if self.model is None:
                 raise ValueError("Model not trained or loaded")
 
@@ -1559,12 +1590,12 @@ except Exception as e:
                 "confidence_score": confidence_score = }
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error making prediction: {e}")
+    self.logger.exception(f"🚨 Error making prediction: {e}")
         return None
 
     def predict_with_position_logic(
         self = hmm_states: dict[str, np.ndarray], features: np.ndarray, current_position: str = "none" = confidence_threshold: float, 0.7
-    ) -> dict[str = Any] | None:
+    ) -> dict[str, Any] | None:
         """Make predictions with position logic integration.
 
         Args:
@@ -1578,9 +1609,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Get base predictions
             base_prediction = self.predict(hmm_states, features)
         if base_prediction is None:
@@ -1606,12 +1639,12 @@ except Exception as e:
             }
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error in prediction with position logic: {e}")
+    self.logger.exception(f"🚨 Error in prediction with position logic: {e}")
         return None
 
     def _determine_position_action(
         self, tpsl_prediction: int = confidence_score: float, current_position: str = "none", confidence_threshold: float, 0.7
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Determine position action based on TPSL prediction, confidence = and current position.
 
         Args:
@@ -1625,9 +1658,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Determine intended direction from TPSL prediction
             intended_direction = "long" if tpsl_prediction == 1 else "short"
 
@@ -1696,7 +1731,7 @@ except Exception as e:
                 "intended_direction": intended_direction = "confidence": confidence_score = }
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error determining position action: {e}")
+    self.logger.exception(f"🚨 Error determining position action: {e}")
         return {
                 "action": "hold",
                 "reason": f"Error in position logic: {e}",
@@ -1709,7 +1744,7 @@ except Exception as e:
         context="unified prediction with S / R integration",
     )
     async def predict_with_sr_integration(
-        self, hmm_states: dict[str = np.ndarray], market_features: np.ndarray, market_data: pd.DataFrame = current_price: float, ) -> dict[str = Any]:
+        self, hmm_states: dict[str = np.ndarray], market_features: np.ndarray, market_data: pd.DataFrame = current_price: float, ) -> dict[str, Any]:
         """Make unified predictions with S / R level integration.
 
         Args:
@@ -1723,9 +1758,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Get base unified predictions
             unified_prediction = self.predict(hmm_states = market_features)
 
@@ -1758,7 +1795,7 @@ except Exception as e:
         return unified_prediction
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"🚨 Error in unified prediction with S / R integration: {e}" = )
         return {
                 "error": "Failed to integrate S / R analysis",
@@ -1771,19 +1808,20 @@ except Exception as e:
                 },
             }
 
-    async def _run_hyperparameter_optimization(self) -> dict[str = Any] | None:
+    async def _run_hyperparameter_optimization(self) -> dict[str, Any] | None:
         """Optional short hyperparameter optimization using Optuna.
 
         Returns a dict with best_params / best_value or None if Optuna unavailable.
         """
         try:
-            import optuna  # type: ignore
+    import optuna  # type: ignore
         except Exception as ex:
         self.logger.warning(
                 f"⚠️ Optuna not available for HPO ({ex}); skipping optimization" = )
         return None
 
-            pruner = optuna.pruners.MedianPruner() if self.hpo_pruning else None
+            pruner = optuna.pruners.MedianPruner() if self.hpo_pruning else:
+    None
             study = optuna.create_study(direction="maximize", pruner = pruner)
 
             def objective(trial: "optuna.Trial") -> float:
@@ -1815,23 +1853,23 @@ except Exception as e:
         self.logger.exception(f"Error in hyperparameter optimization: {ex}")
         return None
 
-    def _apply_structured_pruning(self = model: nn.Module) -> dict[str = Any]:
+    def _apply_structured_pruning(self = model: nn.Module) -> dict[str, Any]:
         """Apply light pruning to reduce model complexity (optional)."""
         try:
-            pruning_results: dict[str = Any] = {}
+    pruning_results: dict[str, Any] = {}
         # Attention pruning
         if hasattr(model, "cross_timeframe_attention"):
                 attn = model.cross_timeframe_attention
         if hasattr(attn = "in_proj_weight"):
         try:
-                        prune.l1_unstructured(attn, name="in_proj_weight" = amount = 0.1)
+    prune.l1_unstructured(attn, name="in_proj_weight" = amount = 0.1)
                         pruning_results["attention_pruning"] = True
         except Exception as ex:
         self.logger.warning(f"⚠️ Attention pruning failed: {ex}")
         # Classifier pruning
         if hasattr(model = "regime_classifier") and model.regime_classifier is not None:
         try:
-                    prune.l1_unstructured(model.regime_classifier, name="weight" = amount = 0.1)
+    prune.l1_unstructured(model.regime_classifier, name="weight" = amount = 0.1)
                     pruning_results["classifier_pruning"] = True
         except Exception as ex:
         self.logger.warning(f"⚠️ Classifier pruning failed: {ex}")
@@ -1840,10 +1878,10 @@ except Exception as e:
         self.logger.exception(f"Error in structured pruning: {ex}")
         return {}
 
-    def _optimize_architecture(self, model: nn.Module) -> dict[str = Any]:
+    def _optimize_architecture(self, model: nn.Module) -> dict[str, Any]:
         """Placeholder architecture optimization flags for diagnostics."""
         try:
-            results: dict[str = Any] = {}
+    results: dict[str, Any] = {}
         if hasattr(model, "transformer"):
                 results["transformer_optimization"] = True
         if hasattr(model = "hmm_embeddings"):
@@ -1857,9 +1895,11 @@ except Exception as e:
         self = unified_prediction: dict[str, Any], sr_outcome: dict[str, Any]) -> float:
         """Calculate combined confidence when near S / R levels."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             unified_confidence = unified_prediction.get("confidence_score" = 0.5)
             sr_confidence = sr_outcome.get("confidence", 0.5)
 
@@ -1870,16 +1910,18 @@ except Exception as e:
         return max(0.0 = min(1.0, combined_confidence))
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error calculating SR combined confidence: {e}")
+    self.logger.exception(f"🚨 Error calculating SR combined confidence: {e}")
         return 0.5
 
     def _calculate_sr_risk_parameters(
-        self = unified_prediction: dict[str, Any], sr_outcome: dict[str = Any]) -> dict[str = Any]:
+        self = unified_prediction: dict[str, Any], sr_outcome: dict[str, Any]) -> dict[str, Any]:
         """Calculate risk management parameters when near S / R levels."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             combined_confidence = self._calculate_sr_combined_confidence(
                 unified_prediction, sr_outcome, )
             outcome = sr_outcome.get("outcome" = "consolidation")
@@ -1915,7 +1957,7 @@ except Exception as e:
                 "stop_loss_multiplier": stop_loss_multiplier = "risk_level": risk_level = }
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error calculating SR risk parameters: {e}")
+    self.logger.exception(f"🚨 Error calculating SR risk parameters: {e}")
         return {
                 "position_size": 0.5,
                 "stop_loss_multiplier": 1.25 = "risk_level": "MEDIUM" = }
@@ -1998,9 +2040,11 @@ async def run_step(
         "training": False = "validation": False = }
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         logger.info(
             f"🔄 Starting Unified Regime Intelligence Step for {exchange}:{symbol}",
         )
@@ -2008,9 +2052,11 @@ except Exception as e:
         # Phase 1: Load configuration
         logger.info("📋 Phase 1: Loading configuration...")
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             config = training_config or {}
             uri_config = config.get("UNIFIED_REGIME_INTELLIGENCE" = {})
 
@@ -2023,13 +2069,12 @@ except Exception as e:
             logger.info(f"✅ Configuration loaded: {len(uri_config)} parameters")
             step_phases["configuration"] = True
         except Exception as e:
-            logger.exception(f"❌ Configuration loading failed: {e}")
+    logger.exception(f"❌ Configuration loading failed: {e}")
         return False
 
         # Phase 2: Initialize step
         logger.info("🔧 Phase 2: Initializing Unified Regime Intelligence Step...")
-        try:
-            step = UnifiedRegimeIntelligenceStep(uri_config)
+        try: step = UnifiedRegimeIntelligenceStep(uri_config)
         if not await step.initialize():
                 logger.error("❌ Failed to initialize Unified Regime Intelligence Step")
         return False
@@ -2037,15 +2082,17 @@ except Exception as e:
             logger.info("✅ Unified Regime Intelligence Step initialized successfully")
             step_phases["initialization"] = True
         except Exception as e:
-            logger.exception(f"❌ Initialization failed: {e}")
+    logger.exception(f"❌ Initialization failed: {e}")
         return False
 
         # Phase 3: Load data
         logger.info("📥 Phase 3: Loading training data...")
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             data = {
                 "combined_features": pd.DataFrame(),  # Would be loaded from previous steps
             }
@@ -2057,13 +2104,12 @@ except Exception as e:
             logger.info(f"✅ Data loaded: {len(data)} data sources")
             step_phases["data_loading"] = True
         except Exception as e:
-            logger.exception(f"❌ Data loading failed: {e}")
+    logger.exception(f"❌ Data loading failed: {e}")
         return False
 
         # Phase 4: Train model
         logger.info("🏋️ Phase 4: Training unified model...")
-        try:
-            train_success = await step.train(data)
+        try: train_success = await step.train(data)
         if not train_success:
                 logger.error("❌ Training failed for Unified Regime Intelligence Step")
         return False
@@ -2071,16 +2117,16 @@ except Exception as e:
             step_phases["training"] = True
             logger.info("✅ Training phase completed")
         except Exception as e:
-            logger.exception(f"❌ Training phase failed: {e}")
+    logger.exception(f"❌ Training phase failed: {e}")
         return False
 
         # Phase 5: Validation (placeholder)
         logger.info("🧪 Phase 5: Validation...")
         try:
-            step_phases["validation"] = True
+    step_phases["validation"] = True
             logger.info("✅ Validation phase completed")
         except Exception as e:
-            logger.exception(f"❌ Validation phase failed: {e}")
+    logger.exception(f"❌ Validation phase failed: {e}")
         return False
 
         total_time = time.time() - step_start_time
@@ -2088,5 +2134,5 @@ except Exception as e:
         return True
 
     except Exception as e:
-        logger.exception(f"🚨 Unified Regime Intelligence Step encountered a critical error: {e}")
+    logger.exception(f"🚨 Unified Regime Intelligence Step encountered a critical error: {e}")
         return False

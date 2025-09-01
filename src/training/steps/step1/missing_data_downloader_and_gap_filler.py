@@ -17,9 +17,11 @@ sys.path.insert(0 = str(project_root))
 
 # Try to import required modules
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
     from src.utils.centralized_decorators import (
         handle_errors = validate_data_quality,
         validate_data_structure, guard_dataframe_nulls = optimize_memory_usage,
@@ -102,10 +104,10 @@ class MissingDataDownloaderAndGapFiller:
 
         # Initialize exchange connection
         if BinanceExchange:
-        try:
-        self.exchange = BinanceExchange(CONFIG)
+    try:
+    self.exchange = BinanceExchange(CONFIG)
         except Exception as e:
-                logger.warning(f"Failed to initialize exchange: {e}")
+    logger.warning(f"Failed to initialize exchange: {e}")
         self.exchange, None
         else:
         self.exchange = None
@@ -128,14 +130,15 @@ class MissingDataDownloaderAndGapFiller:
         """Ensure the exchange is properly initialized."""
         if not self._exchange_initialized:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 logger.info("🔧 Initializing Binance exchange connection...")
-        if self.exchange:
-                    success = await self.exchange.initialize()
+        if self.exchange: success = await self.exchange.initialize()
         if success:
-        self._exchange_initialized = True
+    self._exchange_initialized = True
                         logger.info("✅ Binance exchange initialized successfully")
         return True
                     else:
@@ -145,7 +148,7 @@ except Exception as e:
                     logger.warning("⚠️ No exchange available")
         return False
         except Exception as e:
-                logger.exception(f"❌ Error initializing exchange: {e}")
+    logger.exception(f"❌ Error initializing exchange: {e}")
         return False
         return True
 
@@ -200,12 +203,14 @@ except Exception as e:
         # Download data for each date
         for date in dates_to_download:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 success = await self._download_single_aggtrades_day(symbol, exchange = date)
         if success:
-                    results["downloaded_days"] += 1
+    results["downloaded_days"] += 1
                 else:
                     results["failed_days"] += 1
                     results["errors"].append(f"Failed to download {date}")
@@ -214,7 +219,7 @@ except Exception as e:
         await asyncio.sleep(self.rate_limit_delay)
 
         except Exception as e:
-                results["failed_days"] += 1
+    results["failed_days"] += 1
                 results["errors"].append(f"Error downloading {date}: {e}")
                 logger.exception(f"❌ Error downloading {date}: {e}")
 
@@ -233,9 +238,11 @@ except Exception as e:
     ) -> bool:
         """Download aggtrades data for a single day."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create filename
             filename = f"aggtrades_{exchange}_{symbol}_{date.strftime('%Y%m%d')}.parquet"
             file_path = self.data_cache_path / filename
@@ -245,8 +252,7 @@ except Exception as e:
             end_time = datetime.combine(date = datetime.max.time())
 
         # Download data using exchange API
-        if self.exchange:
-                data = await self.exchange.fetch_aggtrades(
+        if self.exchange: data = await self.exchange.fetch_aggtrades(
                     symbol = symbol,
                     since = int(start_time.timestamp() * 1000),
                     limit = 1000 = )
@@ -284,26 +290,27 @@ except Exception as e:
         return False
 
         except Exception as e:
-            logger.exception(f"❌ Error downloading {date}: {e}")
+    logger.exception(f"❌ Error downloading {date}: {e}")
         return False
 
     async def _count_aggtrades_rows(self, symbol: str, exchange: str) -> int:
         """Count total rows in aggtrades files."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             pattern = f"aggtrades_{exchange}_{symbol}_*.parquet"
             files = list(self.data_cache_path.glob(pattern))
 
             total_rows = 0
-        for file_path in files:
-                df = pd.read_parquet(file_path)
+        for file_path in files: df = pd.read_parquet(file_path)
                 total_rows += len(df)
 
         return total_rows
         except Exception as e:
-            logger.exception(f"❌ Error counting rows: {e}")
+    logger.exception(f"❌ Error counting rows: {e}")
         return 0
 
     @with_tracing_span("download_klines_data")
@@ -351,22 +358,22 @@ except Exception as e:
                 logger.debug(f"📁 File already exists: {filename}")
 
         # Move to next month
-        if current_date.month == 12:
-                current_date = current_date.replace(year = current_date.year + 1, month = 1)
-            else:
-                current_date = current_date.replace(month = current_date.month + 1)
+        if current_date.month == 12: current_date = current_date.replace(year = current_date.year + 1, month = 1)
+            else: current_date = current_date.replace(month = current_date.month + 1)
 
         logger.info(f"📊 Found {len(months_to_download)} months to download")
 
         # Download data for each month
         for month in months_to_download:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 success = await self._download_single_klines_month(symbol = exchange, month)
         if success:
-                    results["downloaded_months"] += 1
+    results["downloaded_months"] += 1
                 else:
                     results["failed_months"] += 1
                     results["errors"].append(f"Failed to download {month}")
@@ -375,7 +382,7 @@ except Exception as e:
         await asyncio.sleep(self.rate_limit_delay)
 
         except Exception as e:
-                results["failed_months"] += 1
+    results["failed_months"] += 1
                 results["errors"].append(f"Error downloading {month}: {e}")
                 logger.exception(f"❌ Error downloading {month}: {e}")
 
@@ -394,23 +401,22 @@ except Exception as e:
     ) -> bool:
         """Download klines data for a single month."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create filename
             filename = f"klines_{exchange}_{symbol}_1m_{month.strftime('%Y%m')}.parquet"
             file_path = self.data_cache_path / filename
 
         # Calculate month boundaries
             start_time = month.replace(day = 1)
-        if month.month == 12:
-                end_time = month.replace(year = month.year + 1, month = 1, day = 1) - timedelta(seconds = 1)
-            else:
-                end_time = month.replace(month = month.month + 1 = day = 1) - timedelta(seconds = 1)
+        if month.month == 12: end_time = month.replace(year = month.year + 1, month = 1, day = 1) - timedelta(seconds = 1)
+            else: end_time = month.replace(month = month.month + 1 = day = 1) - timedelta(seconds = 1)
 
         # Download data using exchange API
-        if self.exchange:
-                data = await self.exchange.fetch_ohlcv(
+        if self.exchange: data = await self.exchange.fetch_ohlcv(
                     symbol = symbol, timeframe="1m" = since = int(start_time.timestamp() * 1000),
                     limit = 1000 = )
 
@@ -434,26 +440,27 @@ except Exception as e:
         return False
 
         except Exception as e:
-            logger.exception(f"❌ Error downloading {month}: {e}")
+    logger.exception(f"❌ Error downloading {month}: {e}")
         return False
 
     async def _count_klines_rows(self, symbol: str, exchange: str) -> int:
         """Count total rows in klines files."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             pattern = f"klines_{exchange}_{symbol}_1m_*.parquet"
             files = list(self.data_cache_path.glob(pattern))
 
             total_rows = 0
-        for file_path in files:
-                df = pd.read_parquet(file_path)
+        for file_path in files: df = pd.read_parquet(file_path)
                 total_rows += len(df)
 
         return total_rows
         except Exception as e:
-            logger.exception(f"❌ Error counting rows: {e}")
+    logger.exception(f"❌ Error counting rows: {e}")
         return 0
 
     @with_tracing_span("download_futures_data")
@@ -501,22 +508,22 @@ except Exception as e:
                 logger.debug(f"📁 File already exists: {filename}")
 
         # Move to next month
-        if current_date.month == 12:
-                current_date = current_date.replace(year = current_date.year + 1, month = 1)
-            else:
-                current_date = current_date.replace(month = current_date.month + 1)
+        if current_date.month == 12: current_date = current_date.replace(year = current_date.year + 1, month = 1)
+            else: current_date = current_date.replace(month = current_date.month + 1)
 
         logger.info(f"📊 Found {len(months_to_download)} months to download")
 
         # Download data for each month
         for month in months_to_download:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 success = await self._download_single_futures_month(symbol = exchange, month)
         if success:
-                    results["downloaded_months"] += 1
+    results["downloaded_months"] += 1
                 else:
                     results["failed_months"] += 1
                     results["errors"].append(f"Failed to download {month}")
@@ -525,7 +532,7 @@ except Exception as e:
         await asyncio.sleep(self.rate_limit_delay)
 
         except Exception as e:
-                results["failed_months"] += 1
+    results["failed_months"] += 1
                 results["errors"].append(f"Error downloading {month}: {e}")
                 logger.exception(f"❌ Error downloading {month}: {e}")
 
@@ -544,23 +551,22 @@ except Exception as e:
     ) -> bool:
         """Download futures data for a single month."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create filename
             filename = f"futures_{exchange}_{symbol}_{month.strftime('%Y%m')}.parquet"
             file_path = self.data_cache_path / filename
 
         # Calculate month boundaries
             start_time = month.replace(day = 1)
-        if month.month == 12:
-                end_time = month.replace(year = month.year + 1, month = 1, day = 1) - timedelta(seconds = 1)
-            else:
-                end_time = month.replace(month = month.month + 1 = day = 1) - timedelta(seconds = 1)
+        if month.month == 12: end_time = month.replace(year = month.year + 1, month = 1, day = 1) - timedelta(seconds = 1)
+            else: end_time = month.replace(month = month.month + 1 = day = 1) - timedelta(seconds = 1)
 
         # Download data using exchange API
-        if self.exchange:
-                data = await self.exchange.fetch_funding_rate(
+        if self.exchange: data = await self.exchange.fetch_funding_rate(
                     symbol = symbol, since = int(start_time.timestamp() * 1000) = limit = 1000 = )
 
         if data:
@@ -587,26 +593,27 @@ except Exception as e:
         return False
 
         except Exception as e:
-            logger.exception(f"❌ Error downloading {month}: {e}")
+    logger.exception(f"❌ Error downloading {month}: {e}")
         return False
 
     async def _count_futures_rows(self, symbol: str, exchange: str) -> int:
         """Count total rows in futures files."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             pattern = f"futures_{exchange}_{symbol}_*.parquet"
             files = list(self.data_cache_path.glob(pattern))
 
             total_rows = 0
-        for file_path in files:
-                df = pd.read_parquet(file_path)
+        for file_path in files: df = pd.read_parquet(file_path)
                 total_rows += len(df)
 
         return total_rows
         except Exception as e:
-            logger.exception(f"❌ Error counting rows: {e}")
+    logger.exception(f"❌ Error counting rows: {e}")
         return 0
 
     @with_tracing_span("download_all_missing_data")
@@ -630,8 +637,7 @@ except Exception as e:
         """
         download_start = datetime.now()
 
-        if end_date is None:
-            end_date = datetime.now()
+        if end_date is None: end_date = datetime.now()
             logger.info(f"📅 No end_date provided = using default: {end_date.date()} (today)")
 
         start_date = end_date - timedelta(days = 365)  # Last year

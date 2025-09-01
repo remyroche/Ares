@@ -41,24 +41,24 @@ class EvaluationMetric(Enum):
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+# TODO: Add implementation
 class SearchSpace:
     """Defines the search space for a parameter category."""
 
     name: str = ""
-    parameters: dict[str = dict[str = Any]] = field(default_factory = dict)
+    parameters: dict[str = dict[str, Any]] = field(default_factory = dict)
     optimization_strategy: OptimizationStrategy, OptimizationStrategy.SINGLE_OBJECTIVE
     n_trials: int, 50
     timeout_seconds: int = 1800
     early_stopping_patience: int = 10
     evaluation_metrics: list[EvaluationMetric] = field(default_factory = list)
-    constraints: dict[str = Any] = field(default_factory = dict)
+    constraints: dict[str, Any] = field(default_factory = dict)
     warm_start: bool = True
     parallel_trials: int = 1
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+# TODO: Add implementation
 class ConfidenceThresholdsSearchSpace(SearchSpace):
     """Search space for confidence thresholds optimization."""
 
@@ -106,7 +106,7 @@ class ConfidenceThresholdsSearchSpace(SearchSpace):
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+# TODO: Add implementation
 class VolatilityParametersSearchSpace(SearchSpace):
     """Search space for volatility parameters optimization."""
 
@@ -149,7 +149,7 @@ class VolatilityParametersSearchSpace(SearchSpace):
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+# TODO: Add implementation
 class PositionSizingSearchSpace(SearchSpace):
     """Search space for position sizing parameters optimization."""
 
@@ -199,7 +199,7 @@ class PositionSizingSearchSpace(SearchSpace):
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+# TODO: Add implementation
 class RiskManagementSearchSpace(SearchSpace):
     """Search space for risk management parameters optimization."""
 
@@ -240,7 +240,7 @@ class RiskManagementSearchSpace(SearchSpace):
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+# TODO: Add implementation
 class EnsembleParametersSearchSpace(SearchSpace):
     """Search space for ensemble parameters optimization."""
 
@@ -282,7 +282,7 @@ class EnsembleParametersSearchSpace(SearchSpace):
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+# TODO: Add implementation
 class RegimeSpecificSearchSpace(SearchSpace):
     """Search space for regime - specific parameters optimization."""
 
@@ -327,7 +327,7 @@ class RegimeSpecificSearchSpace(SearchSpace):
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+# TODO: Add implementation
 class TimingParametersSearchSpace(SearchSpace):
     """Search space for timing parameters optimization."""
 
@@ -428,7 +428,7 @@ class HyperparameterOptimizationConfig:
 
         return errors
 
-    def get_optimization_summary(self) -> dict[str = Any]:
+    def get_optimization_summary(self) -> dict[str, Any]:
         """Get a summary of all optimization configurations."""
         summary = {
             "total_search_spaces": len(self.search_spaces),
@@ -478,7 +478,7 @@ def validate_hyperparameter_config() -> list[str]:
 
     return errors
 
-def get_optimization_plan() -> dict[str = Any]:
+def get_optimization_plan() -> dict[str, Any]:
     """Get a detailed optimization plan."""
     config = get_hyperparameter_config()
     summary = config.get_optimization_summary()
@@ -508,7 +508,7 @@ if __name__ == "__main__":
     # Validate configuration
     errors = validate_hyperparameter_config()
     if errors:
-        print("❌ Configuration validation errors:")
+    print("❌ Configuration validation errors:")
         for _error in errors:
             print(f" - {_error}")
     else:

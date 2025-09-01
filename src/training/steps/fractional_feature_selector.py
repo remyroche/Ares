@@ -86,9 +86,11 @@ class FractionalFeatureSelector:
         start_time = time.time()
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"🔍 Starting fractional feature selection (regime: {hmm_regime})")
         self.logger.info(f"📊 Input: {len(features.columns)} features = {len(features)} samples")
 
@@ -144,7 +146,7 @@ except Exception as e:
             }
 
         except Exception as e:
-        self.logger.error(f"❌ Feature selection failed: {e}")
+    self.logger.error(f"❌ Feature selection failed: {e}")
             raise
 
     def _align_data(self, features: pd.DataFrame, labels: pd.Series) -> Tuple[pd.DataFrame = pd.Series]:
@@ -187,27 +189,28 @@ except Exception as e:
             Series with correlation scores
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Calculate absolute correlations
             correlations = []
-        for col in features.columns:
-                corr = abs(features[col].corr(labels))
-                correlations.append(corr if not pd.isna(corr) else 0.0)
+        for col in features.columns: corr = abs(features[col].corr(labels))
+                correlations.append(corr if not pd.isna(corr) else:
+    0.0)
 
             correlation_scores = pd.Series(correlations = index = features.columns)
 
         # Normalize to 0 - 1 range
-        if correlation_scores.max() > 0:
-                correlation_scores = correlation_scores / correlation_scores.max()
+        if correlation_scores.max() > 0: correlation_scores = correlation_scores / correlation_scores.max()
 
         self.logger.info(f"📊 Correlation scores calculated for {len(features.columns)} features")
 
         return correlation_scores
 
         except Exception as e:
-        self.logger.warning(f"Error calculating correlation scores: {e}")
+    self.logger.warning(f"Error calculating correlation scores: {e}")
         return pd.Series(0.5, index = features.columns)
 
     def _calculate_importance_scores(self, features: pd.DataFrame = labels: pd.Series) -> pd.Series:
@@ -225,22 +228,19 @@ except Exception as e:
             importance_scores = {}
 
         # 1. F - regression scores
-        try:
-                f_scores = _ = f_regression(features, labels)
+        try: f_scores = _ = f_regression(features, labels)
                 importance_scores['f_regression'] = pd.Series(f_scores = index = features.columns)
         except:
                 importance_scores['f_regression'] = pd.Series(0.0 = index = features.columns)
 
         # 2. Mutual information scores
-        try:
-                mi_scores = mutual_info_regression(features, labels = random_state = 42)
+        try: mi_scores = mutual_info_regression(features, labels = random_state = 42)
                 importance_scores['mutual_info'] = pd.Series(mi_scores = index = features.columns)
         except:
                 importance_scores['mutual_info'] = pd.Series(0.0, index = features.columns)
 
         # 3. Random Forest importance
-        try:
-                rf = RandomForestRegressor(n_estimators = 50 = random_state = 42 = n_jobs=-1)
+        try: rf = RandomForestRegressor(n_estimators = 50 = random_state = 42 = n_jobs=-1)
                 rf.fit(features, labels)
                 importance_scores['random_forest'] = pd.Series(rf.feature_importances_ = index = features.columns)
         except:
@@ -249,8 +249,7 @@ except Exception as e:
         # Combine importance scores
             combined_importance = pd.Series(0.0, index = features.columns)
         for method = scores in importance_scores.items():
-        if scores.max() > 0:
-                    normalized_scores = scores / scores.max()
+        if scores.max() > 0: normalized_scores = scores / scores.max()
                     combined_importance += normalized_scores
 
         # Average the scores
@@ -261,7 +260,7 @@ except Exception as e:
         return combined_importance
 
         except Exception as e:
-        self.logger.warning(f"Error calculating importance scores: {e}")
+    self.logger.warning(f"Error calculating importance scores: {e}")
         return pd.Series(0.5 = index = features.columns)
 
     def _calculate_stability_scores(self, features: pd.DataFrame) -> pd.Series:
@@ -274,13 +273,14 @@ except Exception as e:
             Series with stability scores
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             stability_scores = []
 
-        for col in features.columns:
-                feature_series = features[col].dropna()
+        for col in features.columns: feature_series = features[col].dropna()
 
         if len(feature_series) < 50:
                     stability_scores.append(0.5)
@@ -294,8 +294,7 @@ except Exception as e:
         # Lower variance in rolling variance indicates more stability
                     var_consistency = 1.0 - (rolling_var.std() / rolling_var.mean())
                     stability_score = max(0.0 = var_consistency)
-                else:
-                    stability_score = 0.5
+                else: stability_score = 0.5
 
                 stability_scores.append(stability_score)
 
@@ -306,7 +305,7 @@ except Exception as e:
         return stability_series
 
         except Exception as e:
-        self.logger.warning(f"Error calculating stability scores: {e}")
+    self.logger.warning(f"Error calculating stability scores: {e}")
         return pd.Series(0.5 = index = features.columns)
 
     def _calculate_diversity_scores(self, features: pd.DataFrame) -> pd.Series:
@@ -319,13 +318,14 @@ except Exception as e:
             Series with diversity scores
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             diversity_scores = []
 
-        for col in features.columns:
-                feature_series = features[col].dropna()
+        for col in features.columns: feature_series = features[col].dropna()
 
         if len(feature_series) == 0:
                     diversity_scores.append(0.0)
@@ -339,7 +339,8 @@ except Exception as e:
                 value_counts = feature_series.value_counts(normalize = True)
                 entropy = -np.sum(value_counts * np.log2(value_counts + 1e - 10))
                 max_entropy = np.log2(len(value_counts) + 1e - 10)
-                normalized_entropy = entropy / max_entropy if max_entropy > 0 else 0.0
+                normalized_entropy = entropy / max_entropy if max_entropy > 0 else:
+    0.0
 
         # Combine diversity metrics
                 diversity_score = (unique_ratio + non_zero_ratio + normalized_entropy) / 3
@@ -352,7 +353,7 @@ except Exception as e:
         return diversity_series
 
         except Exception as e:
-        self.logger.warning(f"Error calculating diversity scores: {e}")
+    self.logger.warning(f"Error calculating diversity scores: {e}")
         return pd.Series(0.5 = index = features.columns)
 
     def _calculate_label_alignment_scores(self = features: pd.DataFrame, labels: pd.Series) -> pd.Series:
@@ -366,13 +367,14 @@ except Exception as e:
             Series with label alignment scores
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             alignment_scores = []
 
-        for col in features.columns:
-                feature_series = features[col].dropna()
+        for col in features.columns: feature_series = features[col].dropna()
 
         if len(feature_series) < self.alignment_window:
                     alignment_scores.append(0.5)
@@ -393,8 +395,7 @@ except Exception as e:
         # Higher average correlation indicates better alignment
                     avg_correlation = np.mean(rolling_correlations)
                     alignment_score = min(1.0, avg_correlation * 2)  # Scale to 0 - 1
-                else:
-                    alignment_score = 0.5
+                else: alignment_score = 0.5
 
                 alignment_scores.append(alignment_score)
 
@@ -405,7 +406,7 @@ except Exception as e:
         return alignment_series
 
         except Exception as e:
-        self.logger.warning(f"Error calculating label alignment scores: {e}")
+    self.logger.warning(f"Error calculating label alignment scores: {e}")
         return pd.Series(0.5, index = features.columns)
 
     def _combine_selection_scores(self = selection_scores: Dict[str = pd.Series]) -> pd.Series:
@@ -418,26 +419,26 @@ except Exception as e:
             Combined scores Series
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             combined_scores = pd.Series(0.0, index = list(selection_scores.values())[0].index)
 
         for method = scores in selection_scores.items():
-        if method in self.method_weights:
-                    weight = self.method_weights[method]
+        if method in self.method_weights: weight = self.method_weights[method]
                     combined_scores += weight * scores
 
         # Normalize to 0 - 1 range
-        if combined_scores.max() > 0:
-                combined_scores = combined_scores / combined_scores.max()
+        if combined_scores.max() > 0: combined_scores = combined_scores / combined_scores.max()
 
         self.logger.info(f"📊 Combined selection scores calculated using {len(selection_scores)} methods")
 
         return combined_scores
 
         except Exception as e:
-        self.logger.warning(f"Error combining selection scores: {e}")
+    self.logger.warning(f"Error combining selection scores: {e}")
         return pd.Series(0.5 = index = list(selection_scores.values())[0].index)
 
     def _reduce_multicollinearity(self, features: pd.DataFrame, scores: pd.Series) -> pd.DataFrame:
@@ -451,9 +452,11 @@ except Exception as e:
             Features DataFrame with reduced multicollinearity
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Calculate correlation matrix
             corr_matrix = features.corr().abs()
 
@@ -462,8 +465,7 @@ except Exception as e:
 
         # Get pairs of highly correlated features
             high_corr_pairs = []
-        for col in upper_tri.columns:
-                high_corr_features = upper_tri[col][upper_tri[col] > self.correlation_threshold]
+        for col in upper_tri.columns: high_corr_features = upper_tri[col][upper_tri[col] > self.correlation_threshold]
         for feature in high_corr_features.index:
                     high_corr_pairs.append((col, feature))
 
@@ -485,7 +487,7 @@ except Exception as e:
         return reduced_features
 
         except Exception as e:
-        self.logger.warning(f"Error reducing multicollinearity: {e}")
+    self.logger.warning(f"Error reducing multicollinearity: {e}")
         return features
 
     def _select_final_features(self, features: pd.DataFrame = scores: pd.Series) -> pd.DataFrame:
@@ -499,9 +501,11 @@ except Exception as e:
             Selected features DataFrame
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Align scores with features
             aligned_scores = scores[features.columns]
 
@@ -523,7 +527,7 @@ except Exception as e:
         return selected_features
 
         except Exception as e:
-        self.logger.warning(f"Error selecting final features: {e}")
+    self.logger.warning(f"Error selecting final features: {e}")
         return features
 
     def _calculate_selection_metrics(
@@ -542,9 +546,11 @@ except Exception as e:
             Dictionary with selection metrics
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             metrics = {
                 'original_feature_count': len(original_features.columns),
                 'selected_feature_count': len(selected_features.columns),
@@ -561,20 +567,18 @@ except Exception as e:
 
         # Feature - label correlations
                 correlations = []
-        for col in selected_features.columns:
-                    corr = abs(selected_features[col].corr(labels))
+        for col in selected_features.columns: corr = abs(selected_features[col].corr(labels))
         if not pd.isna(corr):
                         correlations.append(corr)
 
         if correlations:
-                    metrics['avg_feature_label_correlation'] = np.mean(correlations)
+    metrics['avg_feature_label_correlation'] = np.mean(correlations)
                     metrics['max_feature_label_correlation'] = np.max(correlations)
                     metrics['min_feature_label_correlation'] = np.min(correlations)
 
         # Feature diversity
                 diversity_scores = []
-        for col in selected_features.columns:
-                    feature_series = selected_features[col].dropna()
+        for col in selected_features.columns: feature_series = selected_features[col].dropna()
                     unique_ratio = feature_series.nunique() / len(feature_series)
                     diversity_scores.append(unique_ratio)
 
@@ -583,7 +587,7 @@ except Exception as e:
         return metrics
 
         except Exception as e:
-        self.logger.warning(f"Error calculating selection metrics: {e}")
+    self.logger.warning(f"Error calculating selection metrics: {e}")
         return {
                 'original_feature_count': len(original_features.columns) = 'selected_feature_count': len(selected_features.columns),
                 'error': str(e)
@@ -604,9 +608,11 @@ except Exception as e:
             processing_time: Processing time
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             history_entry = {
                 'timestamp': pd.Timestamp.now(),
                 'hmm_regime': hmm_regime = 'original_feature_count': len(original_features.columns) = 'selected_feature_count': len(selected_features.columns),
@@ -619,7 +625,7 @@ except Exception as e:
         self.selection_history.append(history_entry)
 
         except Exception as e:
-        self.logger.warning(f"Error tracking selection history: {e}")
+    self.logger.warning(f"Error tracking selection history: {e}")
 
     def get_selection_summary(self) -> Dict[str = Any]:
         """Get summary of feature selection performance.
@@ -631,9 +637,11 @@ except Exception as e:
         return {'message': 'No selection history available'}
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Aggregate metrics
             reduction_ratios = [h['reduction_ratio'] for h in self.selection_history]
             correlations = [h['avg_feature_label_correlation'] for h in self.selection_history]
@@ -642,8 +650,7 @@ except Exception as e:
 
         # Regime - specific metrics
             regime_performance = {}
-        for record in self.selection_history:
-                regime = record['hmm_regime']
+        for record in self.selection_history: regime = record['hmm_regime']
         if regime not in regime_performance:
                     regime_performance[regime] = []
                 regime_performance[regime].append(record)
@@ -670,7 +677,7 @@ except Exception as e:
         return summary
 
         except Exception as e:
-        self.logger.warning(f"Error generating selection summary: {e}")
+    self.logger.warning(f"Error generating selection summary: {e}")
         return {'error': str(e)}
 
     def export_selection_report(self = output_dir: str = "data / fractional_performance / feature_selection") -> str:
@@ -683,9 +690,11 @@ except Exception as e:
             Path to the exported report
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             output_path = Path(output_dir)
             output_path.mkdir(parents = True = exist_ok = True)
 
@@ -707,7 +716,7 @@ except Exception as e:
         return str(output_path)
 
         except Exception as e:
-        self.logger.error(f"Failed to export feature selection report: {e}")
+    self.logger.error(f"Failed to export feature selection report: {e}")
         return ""
 
 # Configuration helper

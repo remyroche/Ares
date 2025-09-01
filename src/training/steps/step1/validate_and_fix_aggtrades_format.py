@@ -124,9 +124,11 @@ class AggtradesFormatValidator:
             "step04_compatible": False = }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Check file size
             result['file_size'] = file_path.stat().st_size
 
@@ -200,7 +202,7 @@ except Exception as e:
             result['valid'] = len(result['issues']) == 0
 
         except Exception as e:
-            result['issues'].append(f"Error reading file: {e}")
+    result['issues'].append(f"Error reading file: {e}")
 
         return result
 
@@ -236,8 +238,7 @@ except Exception as e:
         """Validate step2 feature engineering compatibility"""
         issues = []
 
-        if 'price' in df.columns:
-            min_price = df['price'].min()
+        if 'price' in df.columns: min_price = df['price'].min()
             max_price = df['price'].max()
 
         if min_price < self.STEP2_REQUIREMENTS['min_price']:
@@ -246,8 +247,7 @@ except Exception as e:
         if max_price > self.STEP2_REQUIREMENTS['max_price']:
                 issues.append(f"step2: Price too high ({max_price} > {self.STEP2_REQUIREMENTS['max_price']})")
 
-        if 'quantity' in df.columns:
-            min_quantity = df['quantity'].min()
+        if 'quantity' in df.columns: min_quantity = df['quantity'].min()
             max_quantity = df['quantity'].max()
 
         if min_quantity < self.STEP2_REQUIREMENTS['min_quantity']:
@@ -309,8 +309,7 @@ except Exception as e:
                 issues.append(f"Data quality: {null_count} null values in {col}")
 
         # Check for duplicate timestamps
-        if 'timestamp' in df.columns:
-            duplicate_timestamps = df['timestamp'].duplicated().sum()
+        if 'timestamp' in df.columns: duplicate_timestamps = df['timestamp'].duplicated().sum()
         if duplicate_timestamps > 0:
                 issues.append(f"Data quality: {duplicate_timestamps} duplicate timestamps")
 
@@ -334,8 +333,7 @@ except Exception as e:
 
         # Check for inefficient data types
         for col = expected_dtype in self.EXPECTED_DTYPES.items():
-        if col in df.columns:
-                actual_dtype = str(df[col].dtype)
+        if col in df.columns: actual_dtype = str(df[col].dtype)
         if actual_dtype != expected_dtype:
                     warnings.append(f"Memory optimization: {col} has inefficient dtype {actual_dtype} (expected {expected_dtype})")
 
@@ -359,9 +357,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             logger.info(f"🔧 Fixing format for {file_path.name}")
 
         # Read the file
@@ -424,7 +424,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-            logger.exception(f"❌ Error fixing {file_path.name}: {e}")
+    logger.exception(f"❌ Error fixing {file_path.name}: {e}")
         return False
 
     @with_tracing_span("validate_all_aggtrades")
@@ -465,9 +465,11 @@ except Exception as e:
 
         for file_path in aggtrades_files:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Validate file format
                 validation = self.validate_file_format(file_path)
 
@@ -480,12 +482,12 @@ except Exception as e:
 
         # Auto - fix if enabled
         if auto_fix:
-        if self.fix_file_format(file_path):
+    if self.fix_file_format(file_path):
                             validation_result["fixed_files"] += 1
                             logger.info(f"🔧 Fixed {file_path.name}")
 
         except Exception as e:
-                validation_result["errors"].append(f"Error processing {file_path.name}: {e}")
+    validation_result["errors"].append(f"Error processing {file_path.name}: {e}")
                 logger.exception(f"❌ Error processing {file_path.name}: {e}")
 
         logger.info(
@@ -529,9 +531,11 @@ except Exception as e:
 
         for file_path in aggtrades_files:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 validation = self.validate_file_format(file_path)
                 file_size = file_path.stat().st_size
                 total_size += file_size
@@ -554,7 +558,7 @@ except Exception as e:
                     step04_compatible += 1
 
         except Exception as e:
-                report += f"• {file_path.name}: ❌ ERROR ({e})\n"
+    report += f"• {file_path.name}: ❌ ERROR ({e})\n"
 
         report += f"""
 📈 SUMMARY:

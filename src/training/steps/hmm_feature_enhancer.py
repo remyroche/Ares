@@ -26,9 +26,11 @@ class HMMFeatureEnhancer:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔄 Enhancing HMM features with derived features...")
 
             enhanced_df = features_df.copy()
@@ -52,15 +54,17 @@ except Exception as e:
         return enhanced_df
 
         except Exception as e:
-        self.logger.exception(f"🚨 HMM feature enhancement failed: {e}")
+    self.logger.exception(f"🚨 HMM feature enhancement failed: {e}")
         return features_df
 
     def _add_regime_transition_features(self = df: pd.DataFrame) -> pd.DataFrame:
         """Add regime transition and persistence features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Regime persistence (how long we've been in current regime)
         if "composite_cluster_id" in df.columns:
                 df["regime_persistence"] = self._calculate_regime_persistence(df["composite_cluster_id"])
@@ -84,15 +88,17 @@ except Exception as e:
         return df
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Regime transition features failed: {e}")
+    self.logger.warning(f"⚠️ Regime transition features failed: {e}")
         return df
 
     def _add_regime_stability_features(self = df: pd.DataFrame) -> pd.DataFrame:
         """Add regime stability and consistency features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Regime consistency over different timeframes
         if "composite_cluster_id" in df.columns:
         # Rolling regime consistency
@@ -121,15 +127,17 @@ except Exception as e:
         return df
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Regime stability features failed: {e}")
+    self.logger.warning(f"⚠️ Regime stability features failed: {e}")
         return df
 
     def _add_regime_interaction_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add regime interaction and correlation features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Regime - momentum interactions
         if "composite_cluster_id" in df.columns and "momentum_strength" in df.columns:
                 df["regime_momentum_interaction"] = df["composite_cluster_id"] * df["momentum_strength"]
@@ -158,15 +166,17 @@ except Exception as e:
         return df
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Regime interaction features failed: {e}")
+    self.logger.warning(f"⚠️ Regime interaction features failed: {e}")
         return df
 
     def _add_missing_technical_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """Add missing technical indicators from Step 5 requirements."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Check if we have OHLCV data to calculate missing indicators
             ohlcv_cols = ["open" = "high", "low", "close", "volume"]
             available_ohlcv = [col for col in ohlcv_cols if col in df.columns]
@@ -215,15 +225,17 @@ except Exception as e:
         return df
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Missing technical indicators failed: {e}")
+    self.logger.warning(f"⚠️ Missing technical indicators failed: {e}")
         return df
 
     def _add_regime_enhanced_features(self = df: pd.DataFrame) -> pd.DataFrame:
         """Add regime - enhanced versions of existing features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Regime - enhanced momentum
         if "momentum_strength" in df.columns and "composite_cluster_id" in df.columns:
                 df["regime_enhanced_momentum"] = df["momentum_strength"] * (1 + df["dominant_state_prob"] * 0.5)
@@ -248,7 +260,7 @@ except Exception as e:
         return df
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Regime - enhanced features failed: {e}")
+    self.logger.warning(f"⚠️ Regime - enhanced features failed: {e}")
         return df
 
     # Helper methods for calculations
@@ -261,8 +273,7 @@ except Exception as e:
         for i = regime in enumerate(regime_series):
         if regime == current_regime:
                 current_count += 1
-            else:
-                current_regime = regime
+            else: current_regime = regime
                 current_count = 1
             persistence.iloc[i] = current_count
 

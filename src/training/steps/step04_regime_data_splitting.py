@@ -51,11 +51,9 @@ def create_fallback_decorator():
     return decorator
 
 # Initialize fallbacks
-if system_logger is None:
-    system_logger = create_fallback_logger()
+if system_logger is None: system_logger = create_fallback_logger()
 
-if centralized_decorators is None:
-    comprehensive_data_validation = create_fallback_decorator()
+if centralized_decorators is None: comprehensive_data_validation = create_fallback_decorator()
     handle_errors = create_fallback_decorator()
     memory_efficient = create_fallback_decorator()
     resource_monitor = create_fallback_decorator()
@@ -75,15 +73,13 @@ else:
     quality_gate = centralized_decorators.quality_gate
     monitor_feature_engineering = centralized_decorators.monitor_feature_engineering
 
-if enhanced_mlflow is None:
-    with_enhanced_mlflow_logging = create_fallback_decorator()
+if enhanced_mlflow is None: with_enhanced_mlflow_logging = create_fallback_decorator()
     log_step_report, lambda * args = **kwargs: "fallback_report"
-    create_detailed_step_report, lambda * args, **kwargs: {}
-    log_step_metrics = lambda * args, **kwargs: None
+    create_detailed_step_report, lambda *args, **kwargs: {}
+    log_step_metrics = lambda *args, **kwargs: None
     log_step_dataframe_with_standardized_name, lambda * args = **kwargs: "fallback_dataframe"
-    log_step_artifact_with_standardized_name, lambda * args, **kwargs: "fallback_artifact"
-else:
-    with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
+    log_step_artifact_with_standardized_name, lambda *args, **kwargs: "fallback_artifact"
+else: with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
     log_step_report, enhanced_mlflow.log_step_report
     create_detailed_step_report, enhanced_mlflow.create_detailed_step_report
     log_step_metrics = enhanced_mlflow.log_step_metrics
@@ -111,7 +107,7 @@ class RegimeDataSplittingStep:
 
         missing_modules = [module for module = available in dependency_status.items() if not available]
         if missing_modules:
-        self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+    self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
         self.logger.info("📝 Pipeline will continue with fallback implementations")
         else:
         self.logger.info("✅ All required dependencies available")
@@ -148,9 +144,11 @@ class RegimeDataSplittingStep:
         self.logger.info(f"🔀 Creating unified dataset with regime labels for {symbol} on {exchange} ({timeframe})")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Load HMM regime data
             regime_data = await self._load_regime_data(symbol = exchange, timeframe, data_dir)
         if regime_data is None:
@@ -177,7 +175,7 @@ except Exception as e:
             )
 
         if success:
-        self._log_step_timing("Regime Data Splitting", step_start)
+    self._log_step_timing("Regime Data Splitting", step_start)
         self.logger.info(f"✅ Successfully created unified dataset with {num_regimes} regime labels")
 
         # Save regime metadata
@@ -189,7 +187,7 @@ except Exception as e:
         return False
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in regime data splitting: {e}")
+    self.logger.exception(f"❌ Error in regime data splitting: {e}")
         return False
 
     async def _load_regime_data(
@@ -198,9 +196,11 @@ except Exception as e:
     ) -> Optional[pd.DataFrame]:
         """Load HMM regime data with standardized validation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Use standardized path construction
             unified_data_path = Path(self.standards.build_path("unified_data", exchange = symbol)) / timeframe
         if not unified_data_path.exists():
@@ -248,7 +248,7 @@ except Exception as e:
         return merged_data
 
         except Exception as e:
-        self.logger.exception(f"❌ Error loading regime data: {e}")
+    self.logger.exception(f"❌ Error loading regime data: {e}")
         return None
 
     async def _create_unified_regime_dataset(
@@ -257,9 +257,11 @@ except Exception as e:
     ) -> bool:
         """Create unified dataset with regime labels."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Ensure data is sorted by timestamp for proper lookback
             data = data.sort_values('timestamp').reset_index(drop = True)
 
@@ -303,7 +305,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(f"❌ Error creating unified regime dataset: {e}")
+    self.logger.exception(f"❌ Error creating unified regime dataset: {e}")
         return False
 
     def _calculate_regime_statistics(
@@ -311,9 +313,11 @@ except Exception as e:
     ) -> Dict[str = Any]:
         """Calculate statistics for each regime."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             stats = {
                 "total_regimes": len(regime_ids),
                 "total_data_points": len(data),
@@ -324,14 +328,17 @@ except Exception as e:
                         "end": data['timestamp'].max().isoformat()
                     },
                     "price_stats": {
-                        "mean": float(data['close'].mean()) if 'close' in data.columns else None = "std": float(data['close'].std()) if 'close' in data.columns else None = "min": float(data['close'].min()) if 'close' in data.columns else None = "max": float(data['close'].max()) if 'close' in data.columns else None
+                        "mean": float(data['close'].mean()) if 'close' in data.columns else:
+    None = "std": float(data['close'].std()) if 'close' in data.columns else:
+    None = "min": float(data['close'].min()) if 'close' in data.columns else:
+    None = "max": float(data['close'].max()) if 'close' in data.columns else:
+    None
                     }
                 }
             }
 
         # Calculate statistics for each regime
-        for regime_id in regime_ids:
-                regime_data = data[data['composite_cluster_id'] == regime_id]
+        for regime_id in regime_ids: regime_data = data[data['composite_cluster_id'] == regime_id]
 
         if len(regime_data) > 0:
                     regime_stats = {
@@ -355,15 +362,17 @@ except Exception as e:
         return stats
 
         except Exception as e:
-        self.logger.exception(f"❌ Error calculating regime statistics: {e}")
+    self.logger.exception(f"❌ Error calculating regime statistics: {e}")
         return {}
 
     async def _save_regime_metadata(self, regime_ids: List[int] = data_dir: str, symbol: str, exchange: str = timeframe: str) -> None:
         """Save metadata about the unified regime dataset."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             metadata = {
                 "approach": "unified_dataset_with_labels",
                 "total_regimes": len(regime_ids),
@@ -394,7 +403,7 @@ except Exception as e:
         self.logger.info(f"✅ Regime metadata saved: {metadata_file}")
 
         except Exception as e:
-        self.logger.exception(f"❌ Error saving regime metadata: {e}")
+    self.logger.exception(f"❌ Error saving regime metadata: {e}")
 
 @with_tracing_span("execute_regime_data_splitting")
 @quality_gate(
@@ -427,13 +436,14 @@ async def run_step(
     logger.info("🚀 Starting Step 4: Regime Data Splitting with Standardized Data Quality Management")
 
     # Use standardized path construction
-    if data_dir is None:
-        data_dir = pipeline_standards.build_path("processed_data", exchange = symbol)
+    if data_dir is None: data_dir = pipeline_standards.build_path("processed_data", exchange = symbol)
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Initialize step
         step = RegimeDataSplittingStep(config or {})
         await step.initialize()
@@ -442,14 +452,14 @@ except Exception as e:
         success = await step.split_data_by_regimes(symbol, exchange, timeframe = data_dir)
 
         if success:
-            logger.info("✅ Step 4: Regime Data Splitting completed successfully")
+    logger.info("✅ Step 4: Regime Data Splitting completed successfully")
         else:
             logger.error("❌ Step 4: Regime Data Splitting failed")
 
         return success
 
     except Exception as e:
-        logger.exception(f"❌ Error in Step 4: {e}")
+    logger.exception(f"❌ Error in Step 4: {e}")
         return False
 
 if __name__ == "__main__":

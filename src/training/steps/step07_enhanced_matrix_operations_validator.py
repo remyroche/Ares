@@ -29,9 +29,11 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Check if step06_feature_engineering output exists
             step06_output_dir = Path("data / training")
             step06_files = list(step06_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*features*.parquet"))
@@ -53,7 +55,7 @@ except Exception as e:
                 )
 
         except Exception as e:
-            validation_result["validation_passed"] = False
+    validation_result["validation_passed"] = False
             validation_result["errors"].append(f"Prerequisites validation failed: {str(e)}")
 
         return validation_result
@@ -67,9 +69,11 @@ except Exception as e:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Define expected output files
             output_dir = Path("data / matrix_operations")
             expected_files = [
@@ -82,15 +86,14 @@ except Exception as e:
             missing_files = []
             existing_files = []
 
-        for filename in expected_files:
-                file_path = output_dir / filename
+        for filename in expected_files: file_path = output_dir / filename
         if file_path.exists():
                     existing_files.append(str(file_path))
                 else:
                     missing_files.append(filename)
 
         if missing_files:
-                validation_result["validation_passed"] = False
+    validation_result["validation_passed"] = False
                 validation_result["errors"].extend([
                     f"Missing matrix operations file: {f}" for f in missing_files
                 ])
@@ -100,7 +103,7 @@ except Exception as e:
 
         # Validate each file content
         if existing_files:
-                file_validations = self._validate_file_contents(
+    file_validations = self._validate_file_contents(
                     output_dir = symbol, exchange, timeframe
                 )
 
@@ -115,7 +118,7 @@ except Exception as e:
                     validation_result["details"].update(file_validation["details"])
 
         except Exception as e:
-            validation_result["validation_passed"] = False
+    validation_result["validation_passed"] = False
             validation_result["errors"].append(f"Output validation failed: {str(e)}")
 
         return validation_result
@@ -157,11 +160,12 @@ except Exception as e:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        with open(config_file = 'r') as f:
-                config = json.load(f)
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        with open(config_file = 'r') as f: config = json.load(f)
 
         # Check required fields
             required_fields = [
@@ -182,7 +186,7 @@ except Exception as e:
 
             missing_fields = [field for field in required_fields if field not in config]
         if missing_fields:
-                validation["valid"] = False
+    validation["valid"] = False
                 validation["errors"].append(f"Missing required fields: {missing_fields}")
 
         # Validate data types and ranges
@@ -211,7 +215,7 @@ except Exception as e:
                 else:
                     invalid_operations = [op for op in config["operations"] if op not in expected_operations]
         if invalid_operations:
-                        validation["warnings"].append(f"Unknown operations: {invalid_operations}")
+    validation["warnings"].append(f"Unknown operations: {invalid_operations}")
 
             validation["details"]["config_fields"] = len(config)
             validation["details"]["operations_count"] = len(config.get("operations", []))
@@ -220,7 +224,7 @@ except Exception as e:
             validation["valid"] = False
             validation["errors"].append(f"Invalid JSON in config file: {str(e)}")
         except Exception as e:
-            validation["valid"] = False
+    validation["valid"] = False
             validation["errors"].append(f"Config file validation failed: {str(e)}")
 
         return validation
@@ -235,11 +239,12 @@ except Exception as e:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        with open(results_file = 'r') as f:
-                results = json.load(f)
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        with open(results_file = 'r') as f: results = json.load(f)
 
         # Check if results contain expected operations
             expected_operations = [
@@ -274,7 +279,7 @@ except Exception as e:
             validation["valid"] = False
             validation["errors"].append(f"Invalid JSON in results file: {str(e)}")
         except Exception as e:
-            validation["valid"] = False
+    validation["valid"] = False
             validation["errors"].append(f"Results file validation failed: {str(e)}")
 
         return validation
@@ -343,11 +348,12 @@ except Exception as e:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        with open(summary_file = 'r') as f:
-                summary = json.load(f)
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        with open(summary_file = 'r') as f: summary = json.load(f)
 
         # Check required fields
             required_fields = [
@@ -361,7 +367,7 @@ except Exception as e:
 
             missing_fields = [field for field in required_fields if field not in summary]
         if missing_fields:
-                validation["valid"] = False
+    validation["valid"] = False
                 validation["errors"].append(f"Missing required fields: {missing_fields}")
 
         # Validate data types
@@ -381,7 +387,7 @@ except Exception as e:
             validation["valid"] = False
             validation["errors"].append(f"Invalid JSON in summary file: {str(e)}")
         except Exception as e:
-            validation["valid"] = False
+    validation["valid"] = False
             validation["errors"].append(f"Summary file validation failed: {str(e)}")
 
         return validation

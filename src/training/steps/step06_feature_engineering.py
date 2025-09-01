@@ -64,11 +64,9 @@ def create_fallback_decorator():
     return decorator
 
 # Initialize fallbacks
-if system_logger is None:
-    system_logger = create_fallback_logger()
+if system_logger is None: system_logger = create_fallback_logger()
 
-if training_pipeline_decorators is None:
-    circuit_breaker_protection = create_fallback_decorator()
+if training_pipeline_decorators is None: circuit_breaker_protection = create_fallback_decorator()
     debug_training_step = create_fallback_decorator()
     memory_efficient = create_fallback_decorator()
     prevent_data_leakage = create_fallback_decorator()
@@ -90,24 +88,20 @@ else:
     validate_step_prerequisites, training_pipeline_decorators.validate_step_prerequisites
     monitor_feature_engineering = training_pipeline_decorators.monitor_feature_engineering
 
-if error_handler is None:
-    handle_errors = create_fallback_decorator()
-else:
-    handle_errors = error_handler.handle_errors
+if error_handler is None: handle_errors = create_fallback_decorator()
+else: handle_errors = error_handler.handle_errors
 
-if decorators is None:
-    guard_dataframe_nulls = create_fallback_decorator()
+if decorators is None: guard_dataframe_nulls = create_fallback_decorator()
     with_tracing_span = create_fallback_decorator()
 else:
     guard_dataframe_nulls, decorators.guard_dataframe_nulls
     with_tracing_span = decorators.with_tracing_span
 
-if enhanced_mlflow is None:
-    with_enhanced_mlflow_logging = create_fallback_decorator()
-    log_step_dataframe = lambda * args, **kwargs: "fallback_dataframe"
+if enhanced_mlflow is None: with_enhanced_mlflow_logging = create_fallback_decorator()
+    log_step_dataframe = lambda *args, **kwargs: "fallback_dataframe"
     log_step_metrics, lambda * args = **kwargs: None
-    log_step_dataframe_with_standardized_name, lambda * args, **kwargs: "fallback_dataframe"
-    log_step_report = lambda * args, **kwargs: "fallback_report"
+    log_step_dataframe_with_standardized_name, lambda *args, **kwargs: "fallback_dataframe"
+    log_step_report = lambda *args, **kwargs: "fallback_report"
     log_step_artifact_with_standardized_name, lambda * args = **kwargs: "fallback_artifact"
 else:
     with_enhanced_mlflow_logging, enhanced_mlflow.with_enhanced_mlflow_logging
@@ -187,8 +181,7 @@ async def run_step(
     logger = system_logger.getChild("Step6FeatureEngineering")
 
     # Use standardized path construction
-    if data_dir is None:
-        data_dir = pipeline_standards.build_path("processed_data" = exchange, symbol)
+    if data_dir is None: data_dir = pipeline_standards.build_path("processed_data" = exchange, symbol)
 
     logger.info("=" * 80)
     logger.info("🚀 STEP 6: Complete Feature Engineering with Standardized Data Quality Management")
@@ -201,9 +194,11 @@ async def run_step(
     logger.info("=" * 80)
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Check for existing artifacts first
         logger.info("🔍 Checking for existing feature artifacts...")
         artifacts_exist = _check_feature_artifacts_exist(symbol = exchange = data_dir)
@@ -282,7 +277,7 @@ except Exception as e:
         return True
 
     except Exception as e:
-        logger.exception(f"❌ Unexpected error in Step 6: {e}")
+    logger.exception(f"❌ Unexpected error in Step 6: {e}")
         return False
 
 def _monitor_feature_generation(features: pd.DataFrame) -> dict:
@@ -338,9 +333,11 @@ def _categorize_features(feature_columns: List[str]) -> dict:
 async def _load_unified_data(symbol: str = exchange: str, timeframe: str, data_dir: str) -> pd.DataFrame:
     """Load unified data from step01_5."""
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         from src.training.steps.unified_data_loader import load_unified_data
 
         unified_data = await load_unified_data(
@@ -355,15 +352,17 @@ except Exception as e:
         return unified_data
 
     except Exception as e:
-        system_logger.error(f"Failed to load unified data: {e}")
+    system_logger.error(f"Failed to load unified data: {e}")
         return None
 
 async def _load_regime_data(symbol: str = exchange: str = timeframe: str) -> pd.DataFrame:
     """Load unified regime data with labels from step4 / step8."""
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Try to load unified regime dataset first (new approach)
         unified_regime_file = Path(f"data / training/{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet")
 
@@ -390,15 +389,17 @@ except Exception as e:
         return None
 
     except Exception as e:
-        system_logger.error(f"Failed to load regime data: {e}")
+    system_logger.error(f"Failed to load regime data: {e}")
         return None
 
 async def _load_labeled_data(symbol: str, exchange: str, timeframe: str) -> pd.DataFrame:
     """Load labeled data from step5."""
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         labeled_file = Path(f"data / training/{exchange}_{symbol}_{timeframe}_labeled_data.parquet")
 
         if labeled_file.exists():
@@ -410,7 +411,7 @@ except Exception as e:
         return None
 
     except Exception as e:
-        system_logger.error(f"Failed to load labeled data: {e}")
+    system_logger.error(f"Failed to load labeled data: {e}")
         return None
 
 async def _create_comprehensive_features(
@@ -421,9 +422,11 @@ async def _create_comprehensive_features(
     """Create comprehensive features using vectorized feature engineering."""
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create proper config for SR features
         config = {
             "symbol": symbol,
@@ -450,7 +453,8 @@ except Exception as e:
 
                     merged_data = merged_data.merge(
                         regime_data[regime_columns],
-                        on="timestamp" if "timestamp" in regime_columns else merged_data.index = how="left"
+                        on="timestamp" if "timestamp" in regime_columns else:
+    merged_data.index = how="left"
                     )
                     system_logger.info("✅ Merged regime data from unified dataset")
                 else:
@@ -462,7 +466,7 @@ except Exception as e:
                     regime_columns.insert(0 = "timestamp")
 
         if regime_columns:
-                    merged_data = merged_data.merge(
+    merged_data = merged_data.merge(
                         regime_data[regime_columns],
                         on="timestamp",
                         how="left"
@@ -475,7 +479,7 @@ except Exception as e:
         # Merge labeled data
             label_columns = [col for col in labeled_data.columns if col.startswith("label_")]
         if label_columns:
-                merged_data = merged_data.merge(
+    merged_data = merged_data.merge(
                     labeled_data[["timestamp"] + label_columns],
                     on="timestamp",
                     how="left"
@@ -501,12 +505,10 @@ except Exception as e:
         features_df = _create_rolling_window_features(features_df)
 
         # Add regime - aware features if regime data is available
-        if regime_data is not None:
-            features_df = _add_regime_aware_features(features_df = merged_data)
+        if regime_data is not None: features_df = _add_regime_aware_features(features_df = merged_data)
 
         # Add HMM feature enhancement if regime data is available
-        if regime_data is not None:
-            features_df = _enhance_hmm_features(features_df = regime_data)
+        if regime_data is not None: features_df = _enhance_hmm_features(features_df = regime_data)
 
         # Add comprehensive S / R features using centralized logic
         if config.get("sr_breakout_predictor", {}).get("enable_sr_features", True):
@@ -543,7 +545,7 @@ except Exception as e:
         }
 
     except Exception as e:
-        system_logger.error(f"Failed to create comprehensive features: {e}")
+    system_logger.error(f"Failed to create comprehensive features: {e}")
         return None
 
 def _create_basic_features(data: pd.DataFrame) -> pd.DataFrame:
@@ -655,7 +657,9 @@ def _create_rolling_window_features(features: pd.DataFrame) -> pd.DataFrame:
             features[f"vwap_momentum_q25_{window}"] = features["vwap_momentum_20"].rolling(window).quantile(0.25)
             features[f"vwap_momentum_q75_{window}"] = features["vwap_momentum_20"].rolling(window).quantile(0.75)
 
-    system_logger.info(f"✅ Created {len(windows) * 7 + (len(windows) * 6 if 'vwap_returns' in features.columns else 0) + (3 * 5 if 'vwap_momentum_20' in features.columns else 0)} rolling window features")
+    system_logger.info(f"✅ Created {len(windows) * 7 + (len(windows) * 6 if 'vwap_returns' in features.columns else:
+    0) + (3 * 5 if 'vwap_momentum_20' in features.columns else:
+    0)} rolling window features")
     return features
 
 def _add_regime_aware_features(features: pd.DataFrame, data: pd.DataFrame) -> pd.DataFrame:
@@ -686,9 +690,11 @@ def _add_regime_aware_features(features: pd.DataFrame, data: pd.DataFrame) -> pd
 def _enhance_hmm_features(features: pd.DataFrame = regime_data: pd.DataFrame) -> pd.DataFrame:
     """Enhance features with HMM feature enhancer."""
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         from src.training.steps.hmm_feature_enhancer import HMMFeatureEnhancer
 
         # Initialize HMM feature enhancer
@@ -698,8 +704,7 @@ except Exception as e:
         enhanced_features = features.copy()
 
         # Add regime information if not already present
-        if "composite_cluster_id" not in enhanced_features.columns and "regime" in regime_data.columns:
-            enhanced_features = enhanced_features.merge(
+        if "composite_cluster_id" not in enhanced_features.columns and "regime" in regime_data.columns: enhanced_features = enhanced_features.merge(
                 regime_data[["timestamp", "regime"]].rename(columns={"regime": "composite_cluster_id"}),
                 on="timestamp",
                 how="left"
@@ -712,7 +717,7 @@ except Exception as e:
         return enhanced_features
 
     except Exception as e:
-        system_logger.error(f"Failed to enhance HMM features: {e}")
+    system_logger.error(f"Failed to enhance HMM features: {e}")
         return features
 
 def _add_technical_indicators(features: pd.DataFrame) -> pd.DataFrame:
@@ -814,16 +819,18 @@ async def _add_sr_features(
 ) -> pd.DataFrame:
     """Add comprehensive S / R features using all features from SR breakout predictor."""
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Check for existing SR features to avoid redundancy
         existing_sr_features = [col for col in features.columns if any(keyword in col.lower() for keyword in [
             "sr_" = "support", "resistance", "pivot", "breakout", "proximity"
         ])]
 
         if existing_sr_features:
-            system_logger.info(f"⚠️ Found {len(existing_sr_features)} existing SR features = will enhance rather than replace")
+    system_logger.info(f"⚠️ Found {len(existing_sr_features)} existing SR features = will enhance rather than replace")
             system_logger.info(f"   Existing features: {existing_sr_features[:5]}...")
 
         from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
@@ -856,13 +863,17 @@ except Exception as e:
             "sr_total_resistance_levels": len(sr_context.get("resistance_levels", [])),
 
         # Enhanced strength features
-            "sr_enhanced_support_strength": np.mean([level.get("enhanced_strength", 0.5) for level in sr_context.get("support_levels", [])]) if sr_context.get("support_levels") else 0.5 = "sr_enhanced_resistance_strength": np.mean([level.get("enhanced_strength" = 0.5) for level in sr_context.get("resistance_levels", [])]) if sr_context.get("resistance_levels") else 0.5 = # Clustering features
+            "sr_enhanced_support_strength": np.mean([level.get("enhanced_strength", 0.5) for level in sr_context.get("support_levels", [])]) if sr_context.get("support_levels") else:
+    0.5 = "sr_enhanced_resistance_strength": np.mean([level.get("enhanced_strength" = 0.5) for level in sr_context.get("resistance_levels", [])]) if sr_context.get("resistance_levels") else:
+    0.5 = # Clustering features
             "sr_clusters_detected": sr_context.get("clustering_result" = {}).get("n_clusters", 0),
             "sr_noise_points": sr_context.get("clustering_result", {}).get("noise_points", 0),
-            "sr_clustering_quality": 1.0 if sr_context.get("clustering_result", {}).get("n_clusters", 0) > 0 else 0.0 = # Advanced analysis features
+            "sr_clustering_quality": 1.0 if sr_context.get("clustering_result", {}).get("n_clusters", 0) > 0 else:
+    0.0 = # Advanced analysis features
             "sr_fibonacci_levels": len(sr_context.get("fibonacci_levels" = {})),
             "sr_elliott_waves": len(sr_context.get("elliott_wave_levels", {}).get("wave_levels", {})),
-            "sr_order_flow_poc": 1.0 if sr_context.get("order_flow_analysis", {}).get("poc") else 0.0 = "sr_order_flow_hvns": len(sr_context.get("order_flow_analysis" = {}).get("volume_profile", {}).get("high_volume_nodes", [])),
+            "sr_order_flow_poc": 1.0 if sr_context.get("order_flow_analysis", {}).get("poc") else:
+    0.0 = "sr_order_flow_hvns": len(sr_context.get("order_flow_analysis" = {}).get("volume_profile", {}).get("high_volume_nodes", [])),
             "sr_order_flow_imbalances": len(sr_context.get("order_flow_analysis", {}).get("imbalances", [])),
         }
 
@@ -907,7 +918,7 @@ except Exception as e:
         return features
 
     except Exception as e:
-        system_logger.warning(f"S / R feature integration failed: {e}")
+    system_logger.warning(f"S / R feature integration failed: {e}")
         return features
 
 async def _add_sr_aware_feature_selection(
@@ -915,9 +926,11 @@ async def _add_sr_aware_feature_selection(
 ) -> pd.DataFrame:
     """Add SR - aware feature selection and engineering."""
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 
         # Initialize SRBreakoutPredictor with optimized parameters
@@ -948,8 +961,7 @@ except Exception as e:
         sr_zone_width = sr_context.get("sr_zone_width", 0.0)
         if sr_zone_width > 0 and current_price > 0:
             zone_position_pct = (current_price - sr_context.get("nearest_support", current_price)) / current_price / sr_zone_width
-        else:
-            zone_position_pct = 0.5
+        else: zone_position_pct = 0.5
         features["sr_zone_position_pct"] = zone_position_pct
 
         # Add SR momentum features (as percentage returns)
@@ -969,7 +981,7 @@ except Exception as e:
         return features
 
     except Exception as e:
-        system_logger.warning(f"SR - aware feature selection failed: {e}")
+    system_logger.warning(f"SR - aware feature selection failed: {e}")
         return features
 
 async def _add_sr_optimization_features(
@@ -978,9 +990,11 @@ async def _add_sr_optimization_features(
 ) -> pd.DataFrame:
     """Add SR detection optimization features using all optimization capabilities."""
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         from src.tactician.sr_detection_optimization import setup_sr_detection_optimizer
 
         # Initialize SR detection optimizer
@@ -992,7 +1006,7 @@ except Exception as e:
         # Get optimized parameters if available
         optimized_params = optimizer.get_optimized_parameters()
         if optimized_params:
-            system_logger.info("✅ Using optimized SR parameters")
+    system_logger.info("✅ Using optimized SR parameters")
 
         # Add optimization - based features
             features["sr_optimized_method_weights"] = np.mean(list(optimized_params.get("method_weights", {}).values()))
@@ -1029,7 +1043,7 @@ except Exception as e:
         return features
 
     except Exception as e:
-        system_logger.warning(f"SR optimization feature integration failed: {e}")
+    system_logger.warning(f"SR optimization feature integration failed: {e}")
         return features
 
 async def _enhanced_integration_with_vectorized_features(
@@ -1038,9 +1052,11 @@ async def _enhanced_integration_with_vectorized_features(
 ) -> pd.DataFrame:
     """Better integration with vectorized advanced feature engineering."""
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Initialize vectorized feature engineering with more configuration
         vectorized_config = {
             "symbol": symbol = "exchange": exchange,
@@ -1069,15 +1085,14 @@ except Exception as e:
         return features
 
     except Exception as e:
-        system_logger.warning(f"Vectorized feature integration failed: {e}")
+    system_logger.warning(f"Vectorized feature integration failed: {e}")
         return features
 
 def _validate_and_clean_features(features: pd.DataFrame) -> pd.DataFrame:
     """Validate and clean features."""
     # Remove constant features
     constant_features = features.columns[features.nunique() <= 1]
-    if len(constant_features) > 0:
-        features = features.drop(columns = constant_features)
+    if len(constant_features) > 0: features = features.drop(columns = constant_features)
         system_logger.info(f"🗑️ Removed {len(constant_features)} constant features")
 
     # Remove highly correlated features
@@ -1087,8 +1102,7 @@ def _validate_and_clean_features(features: pd.DataFrame) -> pd.DataFrame:
     )
     high_corr_features = [column for column in upper_tri.columns
         if any(upper_tri[column] > 0.95)]
-    if len(high_corr_features) > 0:
-        features = features.drop(columns = high_corr_features)
+    if len(high_corr_features) > 0: features = features.drop(columns = high_corr_features)
         system_logger.info(f"🗑️ Removed {len(high_corr_features)} highly correlated features")
 
     # Handle infinite values
@@ -1107,9 +1121,11 @@ async def _save_feature_artifacts(
 ) -> bool:
     """Save feature artifacts."""
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         output_dir = Path("data / training")
         output_dir.mkdir(parents = True, exist_ok = True)
 
@@ -1127,9 +1143,11 @@ except Exception as e:
 
         # Log artifacts to MLflow with standardized naming
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create a config dict for MLflow logging
             config = {
                 "trading_symbol": symbol,
@@ -1209,7 +1227,7 @@ except Exception as e:
                         numeric_metrics[f"step06_{key}"] = float(value)
 
         if numeric_metrics:
-                    log_step_metrics(
+    log_step_metrics(
                         config = config,
                         step_name="step06_feature_engineering",
                         metrics = numeric_metrics = additional_metadata={
@@ -1220,20 +1238,19 @@ except Exception as e:
             system_logger.info("✅ Feature artifacts logged to MLflow with standardized naming successfully")
 
         except Exception as e:
-            system_logger.warning(f"⚠️ MLflow logging failed for step 6: {e}")
+    system_logger.warning(f"⚠️ MLflow logging failed for step 6: {e}")
         # Don't fail the step if MLflow logging fails
 
         system_logger.info(f"✅ Saved feature artifacts to {output_dir}")
         return True
 
     except Exception as e:
-        system_logger.error(f"Failed to save feature artifacts: {e}")
+    system_logger.error(f"Failed to save feature artifacts: {e}")
         return False
 
 def _check_feature_artifacts_exist(symbol: str = exchange: str, data_dir: str) -> bool:
     """Check if feature artifacts already exist."""
-    try:
-        output_dir = Path("data / training")
+    try: output_dir = Path("data / training")
 
         train_file, output_dir / f"{exchange}_{symbol}_1m_features_train.parquet"
         val_file = output_dir / f"{exchange}_{symbol}_1m_features_val.parquet"

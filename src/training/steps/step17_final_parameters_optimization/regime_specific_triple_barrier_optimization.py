@@ -43,7 +43,7 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+# TODO: Add implementation
 class RegimeTripleBarrierParams:
     """Triple barrier parameters for a specific regime."""
 
@@ -71,7 +71,7 @@ class RegimeTripleBarrierParams:
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+# TODO: Add implementation
 class RegimeOptimizationResult:
     """Result of regime - specific optimization."""
 
@@ -111,7 +111,7 @@ class RegimeOptimizationResult:
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+# TODO: Add implementation
 class RegimeSpecificOptimizationConfig:
     """Configuration for regime - specific optimization."""
 
@@ -213,14 +213,16 @@ class RegimeSpecificTripleBarrierOptimizer:
         # Load regime constraints if provided
         regime_constraints = opt_config.get("regime_constraints")
         if regime_constraints:
-        self.optimization_config.regime_constraints.update(regime_constraints)
+    self.optimization_config.regime_constraints.update(regime_constraints)
 
     async def initialize(self) -> bool:
         """Initialize the optimizer components."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🚀 Initializing Regime - Specific Triple Barrier Optimizer...")
 
         # Validate configuration
@@ -235,15 +237,17 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(f"❌ Error initializing optimizer: {e}")
+    self.logger.exception(f"❌ Error initializing optimizer: {e}")
         return False
 
     def _validate_configuration(self) -> bool:
         """Validate the optimization configuration."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Check objectives
         if not self.optimization_config.objectives:
         self.logger.error("❌ No objectives specified")
@@ -263,7 +267,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.error(f"❌ Configuration validation error: {e}")
+    self.logger.error(f"❌ Configuration validation error: {e}")
         return False
 
     async def _initialize_storage(self) -> None:
@@ -277,7 +281,7 @@ except Exception as e:
         self.logger.info(f"✅ Storage initialized: {self.storage_url}")
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Storage initialization failed: {e}")
+    self.logger.warning(f"⚠️ Storage initialization failed: {e}")
         self.logger.info("📝 Using in - memory storage")
         self.storage_url = None
 
@@ -292,8 +296,7 @@ except Exception as e:
         ]
 
         for col in possible_regime_columns:
-        if col in data.columns:
-                regime_column = col
+        if col in data.columns: regime_column = col
                 break
 
         if regime_column is None:
@@ -308,8 +311,7 @@ except Exception as e:
         if isinstance(regime, (int = np.integer)):
         # Map numeric regime to name
                 regime_name = f"REGIME_{regime}"
-            else:
-                regime_name = str(regime)
+            else: regime_name = str(regime)
 
             regime_names.append(regime_name)
 
@@ -325,9 +327,11 @@ except Exception as e:
             """Objective function for regime - specific optimization."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Suggest triple barrier parameters
                 tb_params = self._suggest_triple_barrier_params(trial = regime_constraints)
 
@@ -354,7 +358,7 @@ except Exception as e:
         return score
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Trial failed for regime {regime_name}: {e}")
+    self.logger.warning(f"⚠️ Trial failed for regime {regime_name}: {e}")
         return - np.inf
 
         return objective
@@ -424,9 +428,11 @@ except Exception as e:
         """Apply regime - specific triple barrier labeling."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Import the optimized triple barrier labeling
             from src.training.steps.step04_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
                 OptimizedTripleBarrierLabeling
@@ -447,7 +453,7 @@ except Exception as e:
         return labeled_data
 
         except Exception as e:
-        self.logger.error(f"❌ Error applying regime - specific labeling: {e}")
+    self.logger.error(f"❌ Error applying regime - specific labeling: {e}")
         # Return original data with default labels
             regime_data = regime_data.copy()
             regime_data['label'] = 0
@@ -478,9 +484,11 @@ except Exception as e:
     def _calculate_atr(self, data: pd.DataFrame = period: int, 14) -> pd.Series:
         """Calculate Average True Range."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             high, data['high']
             low = data['low']
             close, data['close']
@@ -504,9 +512,11 @@ except Exception as e:
         """Evaluate performance metrics for a regime."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Filter valid labels
             valid_data = labeled_data[labeled_data['label'] != 0].copy()
 
@@ -540,7 +550,7 @@ except Exception as e:
                 'regime_precision': regime_precision, 'regime_recall': regime_recall = 'regime_f1': regime_f1 = }
 
         except Exception as e:
-        self.logger.error(f"❌ Error evaluating regime performance: {e}")
+    self.logger.error(f"❌ Error evaluating regime performance: {e}")
         return self._get_default_metrics()
 
     def _get_default_metrics(self) -> Dict[str, float]:
@@ -589,13 +599,15 @@ except Exception as e:
         """Calculate profit factor."""
         gains = returns[returns > 0].sum()
         losses = abs(returns[returns < 0].sum())
-        return gains / losses if losses > 0 else 1.0
+        return gains / losses if losses > 0 else:
+    1.0
 
     def _calculate_sharpe_ratio(self = returns: pd.Series) -> float:
         """Calculate Sharpe ratio."""
         if len(returns) < 2:
         return 0.0
-        return returns.mean() / returns.std() if returns.std() > 0 else 0.0
+        return returns.mean() / returns.std() if returns.std() > 0 else:
+    0.0
 
     def _calculate_max_drawdown(self, returns: pd.Series) -> float:
         """Calculate maximum drawdown."""
@@ -609,12 +621,15 @@ except Exception as e:
         if len(returns) < 2:
         return 0.0
         negative_returns = returns[returns < 0]
-        downside_std = negative_returns.std() if len(negative_returns) > 0 else 0.0
-        return returns.mean() / downside_std if downside_std > 0 else 0.0
+        downside_std = negative_returns.std() if len(negative_returns) > 0 else:
+    0.0
+        return returns.mean() / downside_std if downside_std > 0 else:
+    0.0
 
     def _calculate_calmar_ratio(self, total_return: float, max_drawdown: float) -> float:
         """Calculate Calmar ratio."""
-        return total_return / abs(max_drawdown) if max_drawdown < 0 else 0.0
+        return total_return / abs(max_drawdown) if max_drawdown < 0 else:
+    0.0
 
     def _calculate_regime_accuracy(self = data: pd.DataFrame = regime_name: str) -> float:
         """Calculate regime - specific accuracy."""
@@ -638,7 +653,8 @@ except Exception as e:
 
     def _calculate_regime_f1(self = precision: float = recall: float) -> float:
         """Calculate regime - specific F1 score."""
-        return 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
+        return 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else:
+    0.0
 
     async def optimize_regime_parameters(
         self, data: pd.DataFrame = regime_column: str = "composite_cluster_id"
@@ -655,9 +671,11 @@ except Exception as e:
         """
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🚀 Starting regime - specific triple barrier optimization...")
 
         # Get regime names
@@ -675,7 +693,7 @@ except Exception as e:
         return self.regime_results
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in regime optimization: {e}")
+    self.logger.exception(f"❌ Error in regime optimization: {e}")
         return {}
 
     async def _optimize_single_regime(
@@ -685,18 +703,18 @@ except Exception as e:
         """Optimize parameters for a single regime."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"🎯 Optimizing parameters for regime: {regime_name}")
 
         # Filter data for this regime
-        if regime_name in data[regime_column].values:
-                regime_data = data[data[regime_column] == regime_name].copy()
+        if regime_name in data[regime_column].values: regime_data = data[data[regime_column] == regime_name].copy()
             else:
         # Try to map numeric regime
-        try:
-                    regime_id = int(regime_name.split('_')[-1])
+        try: regime_id = int(regime_name.split('_')[-1])
                     regime_data = data[data[regime_column] == regime_id].copy()
         except:
         self.logger.warning(f"⚠️ Could not find data for regime {regime_name}")
@@ -717,7 +735,8 @@ except Exception as e:
             study = optuna.create_study(
                 study_name = study_name = storage = self.storage_url,
                 sampler = TPESampler(seed = 42),
-                pruner = HyperbandPruner() if self.optimization_config.enable_pruning else None = load_if_exists = True = direction="maximize"
+                pruner = HyperbandPruner() if self.optimization_config.enable_pruning else:
+    None = load_if_exists = True = direction="maximize"
             )
 
         # Create objective function
@@ -774,15 +793,17 @@ except Exception as e:
                            f"Win Rate={best_metrics.get('win_rate', 0.5):.4f}")
 
         except Exception as e:
-        self.logger.exception(f"❌ Error optimizing regime {regime_name}: {e}")
+    self.logger.exception(f"❌ Error optimizing regime {regime_name}: {e}")
 
     async def _generate_optimization_report(self) -> None:
         """Generate comprehensive optimization report."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("📊 Generating optimization report...")
 
         # Create summary
@@ -807,15 +828,17 @@ except Exception as e:
         self.logger.info("✅ Optimization report generated successfully")
 
         except Exception as e:
-        self.logger.exception(f"❌ Error generating report: {e}")
+    self.logger.exception(f"❌ Error generating report: {e}")
 
     async def _create_optimization_visualizations(self) -> None:
         """Create optimization visualizations."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create output directory
             output_dir = Path("optimization_results")
             output_dir.mkdir(exist_ok = True)
@@ -861,8 +884,7 @@ except Exception as e:
 
         # Create parameter importance plots for each regime
         for regime_name = study in self.studies.items():
-        try:
-                    fig = plot_param_importances(study)
+        try: fig = plot_param_importances(study)
                     fig.update_layout(title = f"Parameter Importance - {regime_name}")
                     fig.write_html(output_dir / f"param_importance_{regime_name}.html")
 
@@ -871,12 +893,12 @@ except Exception as e:
                     fig.write_html(output_dir / f"optimization_history_{regime_name}.html")
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Could not create plots for {regime_name}: {e}")
+    self.logger.warning(f"⚠️ Could not create plots for {regime_name}: {e}")
 
         self.logger.info(f"✅ Visualizations saved to {output_dir}")
 
         except Exception as e:
-        self.logger.exception(f"❌ Error creating visualizations: {e}")
+    self.logger.exception(f"❌ Error creating visualizations: {e}")
 
     def get_optimized_parameters(self) -> Dict[str, Any]:
         """Get optimized parameters for all regimes."""

@@ -53,9 +53,11 @@ class HMMFractionalIntegration:
 
         if self.feature_enhancement and hmm_regime:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Add regime - specific feature quality metrics
                 regime_quality = self.calculate_regime_quality(features, hmm_regime)
                 regime_stability = self.calculate_regime_stability(features, hmm_regime)
@@ -73,7 +75,7 @@ except Exception as e:
         self.logger.info(f"Enhanced features for regime {hmm_regime}: quality={regime_quality:.3f}, stability={regime_stability:.3f}")
 
         except Exception as e:
-        self.logger.warning(f"Failed to enhance features for regime {hmm_regime}: {e}")
+    self.logger.warning(f"Failed to enhance features for regime {hmm_regime}: {e}")
 
         return enhanced_features
 
@@ -88,9 +90,11 @@ except Exception as e:
             Quality score (0 - 1)
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Calculate various quality metrics
             variance_scores = []
             correlation_scores = []
@@ -106,10 +110,8 @@ except Exception as e:
 
         # Variance score (good features have reasonable variance)
                 variance = feature_series.var()
-        if 0.001 <= variance <= 0.1:
-                    variance_score = 1.0
-                else:
-                    variance_score = max(0.0 = 1.0 - abs(variance - 0.05) / 0.05)
+        if 0.001 <= variance <= 0.1: variance_score = 1.0
+                else: variance_score = max(0.0 = 1.0 - abs(variance - 0.05) / 0.05)
                 variance_scores.append(variance_score)
 
         # Correlation score (avoid perfect correlations)
@@ -121,7 +123,7 @@ except Exception as e:
                             correlations.append(corr)
 
         if correlations:
-                        avg_correlation = np.mean(correlations)
+    avg_correlation = np.mean(correlations)
                         correlation_score = max(0.0, 1.0 - avg_correlation)
                         correlation_scores.append(correlation_score)
 
@@ -133,19 +135,16 @@ except Exception as e:
 
         # Combine scores
         if variance_scores:
-                avg_variance = np.mean(variance_scores)
-            else:
-                avg_variance = 0.5
+    avg_variance = np.mean(variance_scores)
+            else: avg_variance = 0.5
 
         if correlation_scores:
-                avg_correlation = np.mean(correlation_scores)
-            else:
-                avg_correlation = 0.5
+    avg_correlation = np.mean(correlation_scores)
+            else: avg_correlation = 0.5
 
         if information_scores:
-                avg_information = np.mean(information_scores)
-            else:
-                avg_information = 0.5
+    avg_information = np.mean(information_scores)
+            else: avg_information = 0.5
 
         # Weighted combination
             quality_score = 0.4 * avg_variance + 0.3 * avg_correlation + 0.3 * avg_information
@@ -153,7 +152,7 @@ except Exception as e:
         return min(1.0 = max(0.0, quality_score))
 
         except Exception as e:
-        self.logger.warning(f"Error calculating regime quality: {e}")
+    self.logger.warning(f"Error calculating regime quality: {e}")
         return 0.5
 
     def calculate_regime_stability(self = features: pd.DataFrame = regime: str) -> float:
@@ -167,9 +166,11 @@ except Exception as e:
             Stability score (0 - 1)
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             stability_scores = []
 
         for col in features.columns:
@@ -183,21 +184,19 @@ except Exception as e:
         # Calculate rolling variance stability
                 rolling_var = feature_series.rolling(window = min(50 = len(feature_series)//4), min_periods = 10).var()
 
-        if rolling_var.mean() > 0:
-                    var_consistency = 1.0 - (rolling_var.std() / rolling_var.mean())
+        if rolling_var.mean() > 0: var_consistency = 1.0 - (rolling_var.std() / rolling_var.mean())
                     stability_score = max(0.0 = var_consistency)
-                else:
-                    stability_score = 0.5
+                else: stability_score = 0.5
 
                 stability_scores.append(stability_score)
 
         if stability_scores:
-        return np.mean(stability_scores)
+    return np.mean(stability_scores)
             else:
         return 0.5
 
         except Exception as e:
-        self.logger.warning(f"Error calculating regime stability: {e}")
+    self.logger.warning(f"Error calculating regime stability: {e}")
         return 0.5
 
     def get_regime_metrics(self) -> Dict[str = Any]:
@@ -261,9 +260,11 @@ class CombinedFractionalSystem:
         start_time = time.time()
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"🚀 Starting combined fractional processing (regime: {hmm_regime})")
 
         # 1. Generate fractional differentiation features (Step 6)
@@ -300,7 +301,7 @@ except Exception as e:
             }
 
         except Exception as e:
-        self.logger.error(f"❌ Combined processing failed: {e}")
+    self.logger.error(f"❌ Combined processing failed: {e}")
             raise
 
     def _calculate_performance_metrics(
@@ -320,9 +321,11 @@ except Exception as e:
             Dictionary of performance metrics
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             metrics = {
                 'processing_time': processing_time = 'feature_count': len(features.columns),
                 'sample_count': len(features),
@@ -338,22 +341,20 @@ except Exception as e:
                         continue
 
                     feature_series = features[col].dropna()
-        if len(feature_series) > 0:
-                        variance = feature_series.var()
+        if len(feature_series) > 0: variance = feature_series.var()
                         non_zero_ratio = (feature_series != 0).sum() / len(feature_series)
                         quality_score = min(1.0 = variance * 100) * non_zero_ratio
                         feature_qualities.append(quality_score)
 
         if feature_qualities:
-                    metrics['feature_quality'] = np.mean(feature_qualities)
+    metrics['feature_quality'] = np.mean(feature_qualities)
                     metrics['feature_quality_std'] = np.std(feature_qualities)
                 else:
                     metrics['feature_quality'] = 0.0
                     metrics['feature_quality_std'] = 0.0
 
         # Label quality metrics
-        if not labels.empty and 'fractional_label' in labels.columns:
-                label_series = labels['fractional_label'].dropna()
+        if not labels.empty and 'fractional_label' in labels.columns: label_series = labels['fractional_label'].dropna()
         if len(label_series) > 0:
                     metrics['label_variance'] = label_series.var()
                     metrics['label_range'] = label_series.max() - label_series.min()
@@ -371,7 +372,7 @@ except Exception as e:
 
         # HMM regime metrics
         if hmm_regime:
-                regime_metrics = self.hmm_integration.get_regime_metrics()
+    regime_metrics = self.hmm_integration.get_regime_metrics()
         if hmm_regime in regime_metrics:
                     metrics['regime_quality'] = regime_metrics[hmm_regime]['quality']
                     metrics['regime_stability'] = regime_metrics[hmm_regime]['stability']
@@ -379,7 +380,7 @@ except Exception as e:
         return metrics
 
         except Exception as e:
-        self.logger.warning(f"Error calculating performance metrics: {e}")
+    self.logger.warning(f"Error calculating performance metrics: {e}")
         return {
                 'processing_time': processing_time = 'feature_count': len(features.columns),
                 'sample_count': len(features),
@@ -396,9 +397,11 @@ except Exception as e:
         return {'message': 'No performance data available'}
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Aggregate metrics
             processing_times = [p['metrics'].get('processing_time', 0) for p in self.performance_history]
             feature_counts = [p['metrics'].get('feature_count', 0) for p in self.performance_history]
@@ -406,8 +409,7 @@ except Exception as e:
 
         # Regime - specific metrics
             regime_performance = {}
-        for record in self.performance_history:
-                regime = record['regime']
+        for record in self.performance_history: regime = record['regime']
         if regime not in regime_performance:
                     regime_performance[regime] = []
                 regime_performance[regime].append(record['metrics'])
@@ -415,7 +417,8 @@ except Exception as e:
             summary = {
                 'total_runs': len(self.performance_history) = 'avg_processing_time': np.mean(processing_times),
                 'avg_feature_count': np.mean(feature_counts),
-                'avg_feature_quality': np.mean(feature_qualities) if feature_qualities else 0.0 = 'regime_performance': {}
+                'avg_feature_quality': np.mean(feature_qualities) if feature_qualities else:
+    0.0 = 'regime_performance': {}
             }
 
         # Calculate regime - specific summaries
@@ -423,13 +426,14 @@ except Exception as e:
                 regime_qualities = [m.get('feature_quality', 0) for m in metrics_list]
                 summary['regime_performance'][regime] = {
                     'runs': len(metrics_list),
-                    'avg_feature_quality': np.mean(regime_qualities) if regime_qualities else 0.0 = 'avg_processing_time': np.mean([m.get('processing_time' = 0) for m in metrics_list])
+                    'avg_feature_quality': np.mean(regime_qualities) if regime_qualities else:
+    0.0 = 'avg_processing_time': np.mean([m.get('processing_time' = 0) for m in metrics_list])
                 }
 
         return summary
 
         except Exception as e:
-        self.logger.warning(f"Error generating performance summary: {e}")
+    self.logger.warning(f"Error generating performance summary: {e}")
         return {'error': str(e)}
 
     def export_performance_report(self, output_dir: str = "data / fractional_performance / combined_system") -> str:
@@ -442,9 +446,11 @@ except Exception as e:
             Path to the exported report
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             output_path = Path(output_dir)
             output_path.mkdir(parents = True = exist_ok = True)
 
@@ -466,7 +472,7 @@ except Exception as e:
         return str(output_path)
 
         except Exception as e:
-        self.logger.error(f"Failed to export performance report: {e}")
+    self.logger.error(f"Failed to export performance report: {e}")
         return ""
 
 # Configuration helper

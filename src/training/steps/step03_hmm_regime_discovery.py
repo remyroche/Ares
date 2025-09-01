@@ -52,11 +52,9 @@ def create_fallback_decorator():
     return decorator
 
 # Initialize fallbacks
-if system_logger is None:
-    system_logger = create_fallback_logger()
+if system_logger is None: system_logger = create_fallback_logger()
 
-if centralized_decorators is None:
-    comprehensive_data_validation = create_fallback_decorator()
+if centralized_decorators is None: comprehensive_data_validation = create_fallback_decorator()
     handle_errors = create_fallback_decorator()
     memory_efficient = create_fallback_decorator()
     resource_monitor = create_fallback_decorator()
@@ -84,12 +82,11 @@ else:
     secure_step_execution, centralized_decorators.secure_step_execution
     validate_pipeline_step = centralized_decorators.validate_pipeline_step
 
-if enhanced_mlflow is None:
-    with_enhanced_mlflow_logging = create_fallback_decorator()
-    log_step_artifact = lambda * args, **kwargs: "fallback_artifact"
+if enhanced_mlflow is None: with_enhanced_mlflow_logging = create_fallback_decorator()
+    log_step_artifact = lambda *args, **kwargs: "fallback_artifact"
     log_step_dataframe, lambda * args = **kwargs: "fallback_dataframe"
-    log_step_dataframe_with_standardized_name, lambda * args, **kwargs: "fallback_dataframe"
-    log_step_report = lambda * args, **kwargs: "fallback_report"
+    log_step_dataframe_with_standardized_name, lambda *args, **kwargs: "fallback_dataframe"
+    log_step_report = lambda *args, **kwargs: "fallback_report"
     log_step_artifact_with_standardized_name, lambda * args = **kwargs: "fallback_artifact"
 else:
     with_enhanced_mlflow_logging, enhanced_mlflow.with_enhanced_mlflow_logging
@@ -121,7 +118,7 @@ class HMMRegimeDiscoveryStep:
 
         missing_modules = [module for module = available in dependency_status.items() if not available]
         if missing_modules:
-        self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+    self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
         self.logger.info("📝 Pipeline will continue with fallback implementations")
         else:
         self.logger.info("✅ All required dependencies available")
@@ -132,20 +129,19 @@ class HMMRegimeDiscoveryStep:
 
         # Initialize SR Breakout Predictor if available
         if sr_breakout_predictor is not None:
-        try:
-                sr_config = self.config.copy()
+        try: sr_config = self.config.copy()
                 sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
                 sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
         self.sr_predictor = sr_breakout_predictor.SRBreakoutPredictor(sr_config)
         self.logger.info("✅ SR Breakout Predictor initialized successfully")
         except Exception as e:
-        self.logger.warning(f"⚠️ Could not initialize SR Breakout Predictor: {e}")
+    self.logger.warning(f"⚠️ Could not initialize SR Breakout Predictor: {e}")
         self.sr_predictor = None
         else:
         self.logger.warning("⚠️ SR Breakout Predictor not available")
         self.sr_predictor = None
         except Exception as e:
-        self.logger.warning(f"⚠️ Could not initialize SR Breakout Predictor: {e}")
+    self.logger.warning(f"⚠️ Could not initialize SR Breakout Predictor: {e}")
         self.logger.info("📝 Proceeding without SR analysis")
 
     @handle_errors(
@@ -165,10 +161,10 @@ class HMMRegimeDiscoveryStep:
         # Initialize SR Breakout Predictor if available
         if hasattr(self = 'sr_predictor'):
         try:
-        await self.sr_predictor.initialize()
+    await self.sr_predictor.initialize()
         self.logger.info("✅ SR Breakout Predictor initialized successfully")
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to initialize SR Breakout Predictor: {e}")
+    self.logger.warning(f"⚠️ Failed to initialize SR Breakout Predictor: {e}")
 
         self.logger.info("✅ HMM Regime Discovery Step initialized successfully")
 
@@ -206,9 +202,9 @@ class HMMRegimeDiscoveryStep:
         context="hmm_regime_discovery.execute"
     )
     async def execute(
-        self, training_input: dict[str = Any],
-        pipeline_state: dict[str = Any]
-    ) -> dict[str = Any]:
+        self, training_input: dict[str, Any],
+        pipeline_state: dict[str, Any]
+    ) -> dict[str, Any]:
         """Execute HMM regime discovery with enhanced data quality management.
 
         Args:
@@ -225,15 +221,17 @@ class HMMRegimeDiscoveryStep:
 
         # Initial memory usage
         if PSUTIL_AVAILABLE:
-            initial_memory = psutil.virtual_memory()
+    initial_memory = psutil.virtual_memory()
         self.logger.info(f"💾 Initial memory usage: {initial_memory.percent:.1f}% ({initial_memory.used / 1024**3:.1f}GB / {initial_memory.total / 1024**3:.1f}GB)")
         else:
         self.logger.info("💾 Memory monitoring not available (psutil not installed)")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Step 1: Ensure data quality and readiness
         self.logger.info("=" * 60)
         self.logger.info("STEP 1: Data Quality Validation")
@@ -273,8 +271,7 @@ except Exception as e:
 
         # Use standardized path construction
             data_dir = training_input.get("data_dir")
-        if data_dir is None:
-                data_dir = self.standards.build_path("processed_data", exchange = symbol)
+        if data_dir is None: data_dir = self.standards.build_path("processed_data", exchange = symbol)
 
         self.logger.info("=" * 60)
         self.logger.info("STEP 3: Automatic Parameter Optimization")
@@ -283,7 +280,7 @@ except Exception as e:
 
             optimized_params = await self._run_automatic_optimization(symbol, exchange, timeframe = data_dir)
         if optimized_params:
-        self.logger.info("✅ Parameter optimization completed successfully")
+    self.logger.info("✅ Parameter optimization completed successfully")
         # Apply optimized parameters
         self._apply_optimized_parameters(optimized_params)
                 pipeline_state["optimization_used"] = True
@@ -352,7 +349,7 @@ except Exception as e:
                 pipeline_state["regime_discovery_error"] = error_msg
 
         except Exception as e:
-        self.logger.exception(f"❌ Unexpected error during HMM regime discovery: {e}")
+    self.logger.exception(f"❌ Unexpected error during HMM regime discovery: {e}")
             pipeline_state["hmm_regime_discovery_completed"] = False
             pipeline_state["regime_discovery_error"] = str(e)
 
@@ -373,7 +370,7 @@ except Exception as e:
 
         # Memory usage summary
         if PSUTIL_AVAILABLE:
-            memory_usage = psutil.virtual_memory()
+    memory_usage = psutil.virtual_memory()
         self.logger.info(f"💾 Memory usage: {memory_usage.percent:.1f}% ({memory_usage.used / 1024**3:.1f}GB / {memory_usage.total / 1024**3:.1f}GB)")
 
         success = pipeline_state.get("hmm_regime_discovery_completed", False)
@@ -381,32 +378,33 @@ except Exception as e:
 
         return pipeline_state
 
-    async def _log_step03_artifacts_to_mlflow(self, regime_results: dict[str = Any], training_input: dict[str = Any]) -> None:
+    async def _log_step03_artifacts_to_mlflow(self, regime_results: dict[str, Any], training_input: dict[str, Any]) -> None:
         """Log step 3 artifacts to MLflow with enhanced metadata and standardized naming."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             symbol = training_input.get("symbol" = "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             timeframe = training_input.get("timeframe", "1m")
             data_dir = training_input.get("data_dir", "data_cache")
 
         # Log composite clusters DataFrame with standardized naming
-        if "composite_df" in regime_results:
-                composite_df = regime_results["composite_df"]
+        if "composite_df" in regime_results: composite_df = regime_results["composite_df"]
                 artifact_name = log_step_dataframe_with_standardized_name(
                     config = self.config = step_name="step03_hmm_regime_discovery",
                     df = composite_df, artifact_type="composite_clusters" = additional_metadata={
                         "artifact_type": "composite_clusters",
                         "dataframe_shape": list(composite_df.shape),
-                        "regime_count": len(composite_df.get("composite_cluster_id", []).unique()) if "composite_cluster_id" in composite_df.columns else 0 = "timeframe": timeframe = }
+                        "regime_count": len(composite_df.get("composite_cluster_id", []).unique()) if "composite_cluster_id" in composite_df.columns else:
+    0 = "timeframe": timeframe = }
                 )
         self.logger.info(f"✅ Logged composite clusters: {artifact_name}")
 
         # Log intensity DataFrame with standardized naming
-        if "intensity_df" in regime_results:
-                intensity_df = regime_results["intensity_df"]
+        if "intensity_df" in regime_results: intensity_df = regime_results["intensity_df"]
                 artifact_name = log_step_dataframe_with_standardized_name(
                     config = self.config, step_name="step03_hmm_regime_discovery" = df = intensity_df,
                     artifact_type="intensity_clusters",
@@ -440,8 +438,7 @@ except Exception as e:
         self.logger.info(f"✅ Logged regime discovery report: {report_name}")
 
         # Log metrics
-        if "metrics" in regime_results:
-                metrics = regime_results["metrics"]
+        if "metrics" in regime_results: metrics = regime_results["metrics"]
         # Extract numeric metrics
                 numeric_metrics = {}
         for key = value in metrics.items():
@@ -449,7 +446,7 @@ except Exception as e:
                         numeric_metrics[f"step03_{key}"] = float(value)
 
         if numeric_metrics:
-                    log_step_metrics(
+    log_step_metrics(
                         config = self.config = step_name="step03_hmm_regime_discovery",
                         metrics = numeric_metrics = additional_metadata={
                             "metrics_type": "regime_discovery" = "hmm_states": metrics.get("hmm_states", 0),
@@ -458,8 +455,7 @@ except Exception as e:
                     )
 
         # Log HMM model if available
-        if "hmm_model" in regime_results:
-                hmm_model = regime_results["hmm_model"]
+        if "hmm_model" in regime_results: hmm_model = regime_results["hmm_model"]
                 log_step_model(
                     config = self.config = step_name="step03_hmm_regime_discovery",
                     model = hmm_model, model_name="hmm_regime_model" = model_type="hmm",
@@ -471,8 +467,7 @@ except Exception as e:
                 )
 
         # Log K - means model if available
-        if "kmeans_model" in regime_results:
-                kmeans_model = regime_results["kmeans_model"]
+        if "kmeans_model" in regime_results: kmeans_model = regime_results["kmeans_model"]
                 log_step_model(
                     config = self.config,
                     step_name="step03_hmm_regime_discovery",
@@ -486,7 +481,7 @@ except Exception as e:
         self.logger.info("✅ Step 3 artifacts logged to MLflow with standardized naming successfully")
 
         except Exception as e:
-        self.logger.error(f"❌ Failed to log step 3 artifacts to MLflow: {e}")
+    self.logger.error(f"❌ Failed to log step 3 artifacts to MLflow: {e}")
         # Don't fail the step if MLflow logging fails
 
     def _log_regime_discovery_results(self = regime_results: dict[str, Any]) -> None:
@@ -500,14 +495,14 @@ except Exception as e:
 
         regime_distribution = metrics.get('regime_distribution', {})
         if regime_distribution:
-        self.logger.info("📊 Regime distribution:")
+    self.logger.info("📊 Regime distribution:")
         for regime = count in regime_distribution.items():
                 percentage = (count / metrics.get('total_periods' = 1)) * 100
         self.logger.info(f"   - {regime}: {count:,} periods ({percentage:.1f}%)")
 
         transitions = regime_results.get("regime_transitions", {})
         if transitions:
-        self.logger.info("🔄 Regime transition probabilities:")
+    self.logger.info("🔄 Regime transition probabilities:")
         for from_regime = to_regimes in transitions.items():
         self.logger.info(f"   From {from_regime}:")
         for to_regime = prob in to_regimes.items():
@@ -529,9 +524,11 @@ except Exception as e:
         return True
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             symbol = training_input.get("symbol" = "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             timeframe = training_input.get("timeframe", "1m")
@@ -575,7 +572,7 @@ except Exception as e:
         return False
 
         except Exception as e:
-        self.logger.exception(f"❌ Error ensuring data quality: {e}")
+    self.logger.exception(f"❌ Error ensuring data quality: {e}")
         return False
 
     @with_tracing_span("fix_missing_data")
@@ -583,12 +580,14 @@ except Exception as e:
         exceptions=(Exception,),
         default_return={"success": False = "error": "Data fix failed"} = context="fix_missing_data"
     )
-    async def _fix_missing_data(self, training_input: dict[str, Any]) -> dict[str = Any]:
+    async def _fix_missing_data(self, training_input: dict[str, Any]) -> dict[str, Any]:
         """Fix missing data using step1 and step01_5 components."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             timeframe = training_input.get("timeframe", "1m")
@@ -598,9 +597,11 @@ except Exception as e:
         # Try step1 data collection
             step01_success = False
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("📥 Attempting step1 data collection...")
                 from .step01_data_collection import run_step as run_step1
                 step01_success = await run_step1(
@@ -608,18 +609,20 @@ except Exception as e:
                     exchange = exchange, timeframe = timeframe = force_rerun = True
                 )
         if step01_success:
-        self.logger.info("✅ Step1 data collection completed successfully")
+    self.logger.info("✅ Step1 data collection completed successfully")
                 else:
         self.logger.warning("⚠️ Step1 data collection failed")
         except Exception as e:
-        self.logger.warning(f"⚠️ Could not run step1: {e}")
+    self.logger.warning(f"⚠️ Could not run step1: {e}")
 
         # Try step01_5 data conversion
             step01_5_success = False
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔄 Attempting step01_5 data conversion...")
                 from .step01_5_data_converter import run_step as run_step1_5
                 step01_5_success = await run_step1_5(
@@ -627,11 +630,11 @@ except Exception as e:
                     timeframe = timeframe, force_rerun = True
                 )
         if step01_5_success:
-        self.logger.info("✅ Step1_5 data conversion completed successfully")
+    self.logger.info("✅ Step1_5 data conversion completed successfully")
                 else:
         self.logger.warning("⚠️ Step1_5 data conversion failed")
         except Exception as e:
-        self.logger.warning(f"⚠️ Could not run step01_5: {e}")
+    self.logger.warning(f"⚠️ Could not run step01_5: {e}")
 
         # Check if data is now ready
         if self.data_quality_manager:
@@ -651,7 +654,7 @@ except Exception as e:
                 }
 
         except Exception as e:
-        self.logger.exception(f"❌ Error fixing missing data: {e}")
+    self.logger.exception(f"❌ Error fixing missing data: {e}")
         return {"success": False = "error": str(e)}
 
     @with_tracing_span("load_and_prepare_data")
@@ -661,20 +664,21 @@ except Exception as e:
         exceptions=(Exception,),
         default_return={"success": False = "error": "Data loading failed"} = context="load_and_prepare_data"
     )
-    async def _load_and_prepare_data(self, training_input: dict[str, Any]) -> dict[str = Any]:
+    async def _load_and_prepare_data(self, training_input: dict[str, Any]) -> dict[str, Any]:
         """Load and prepare data for HMM regime discovery with standardized validation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
             timeframe = training_input.get("timeframe", "1m")
 
         # Use standardized path construction
             data_dir = training_input.get("data_dir")
-        if data_dir is None:
-                data_dir = self.standards.build_path("processed_data", exchange = symbol)
+        if data_dir is None: data_dir = self.standards.build_path("processed_data", exchange = symbol)
 
         self.logger.info(f"📊 Loading and preparing data for HMM...")
         self.logger.info(f"   Symbol: {symbol}")
@@ -723,7 +727,7 @@ except Exception as e:
             required_columns = ["timestamp" = "open", "high", "low", "close", "volume"]
             missing_columns = [col for col in required_columns if col not in df.columns]
         if missing_columns:
-        self.logger.error(f"❌ Missing required columns: {missing_columns}")
+    self.logger.error(f"❌ Missing required columns: {missing_columns}")
         return {
                     "success": False = "error": f"Missing required columns: {missing_columns}"
                 }
@@ -752,7 +756,7 @@ except Exception as e:
             }
 
         except Exception as e:
-        self.logger.exception(f"❌ Error loading and preparing data: {e}")
+    self.logger.exception(f"❌ Error loading and preparing data: {e}")
         return {"success": False = "error": str(e)}
 
     @with_tracing_span("prepare_hmm_features")
@@ -766,9 +770,11 @@ except Exception as e:
     async def _prepare_hmm_features(self, df: Any) -> Any:
         """Prepare comprehensive features for HMM regime discovery including momentum = S / R, volume = and volatility."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔧 Starting comprehensive feature preparation for HMM...")
 
         # Ensure timestamp is datetime
@@ -944,7 +950,7 @@ except Exception as e:
         return hmm_features
 
         except Exception as e:
-        self.logger.exception(f"❌ Error preparing HMM features: {e}")
+    self.logger.exception(f"❌ Error preparing HMM features: {e}")
             raise
 
     @handle_errors(
@@ -1083,9 +1089,11 @@ except Exception as e:
     def _log_feature_categories(self = features: Any) -> None:
         """Log feature categories for analysis."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             feature_categories = {
                 "momentum": [],
                 "volatility": [],
@@ -1114,14 +1122,14 @@ except Exception as e:
         self.logger.info("📊 Feature categories:")
         for category = cols in feature_categories.items():
         if cols:
-        self.logger.info(f"   - {category.capitalize()}: {len(cols)} features")
+    self.logger.info(f"   - {category.capitalize()}: {len(cols)} features")
         if len(cols) <= 5:  # Show all if 5 or fewer
         self.logger.info(f"     {cols}")
                     else:  # Show first 3 and last 2
         self.logger.info(f"     {cols[:3]} ... {cols[-2:]}")
 
         except Exception as e:
-        self.logger.warning(f"Could not log feature categories: {e}")
+    self.logger.warning(f"Could not log feature categories: {e}")
 
     @with_tracing_span("perform_hmm_regime_discovery")
     @resource_monitor
@@ -1132,12 +1140,14 @@ except Exception as e:
     async def _perform_hmm_regime_discovery(
         self,
         training_input: dict[str, Any] = data: Any
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Perform HMM regime discovery using hmmlearn with comprehensive features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔍 Starting HMM regime discovery analysis...")
         self.logger.info(f"📊 Input data shape: {data.shape}")
 
@@ -1153,18 +1163,16 @@ except Exception as e:
 
         # Log feature statistics
         self.logger.info("📊 Feature statistics:")
-        for col in features.columns:
-                series = features[col].dropna()
+        for col in features.columns: series = features[col].dropna()
         if len(series) > 0:
         self.logger.info(f"   - {col}: mean={series.mean():.6f} = std={series.std():.6f}, min={series.min():.6f}, max={series.max():.6f}")
 
         # Try to import hmmlearn
         try:
-                from hmmlearn import hmm
+    from hmmlearn import hmm
                 HMM_AVAILABLE = True
         self.logger.info("✅ hmmlearn library available")
-        except ImportError:
-                HMM_AVAILABLE = False
+        except ImportError: HMM_AVAILABLE = False
         self.logger.warning("⚠️ hmmlearn not available, falling back to simple regime detection")
 
         if HMM_AVAILABLE:
@@ -1175,7 +1183,7 @@ except Exception as e:
         return await self._perform_simple_regime_discovery(features)
 
         except Exception as e:
-        self.logger.exception(f"❌ Error performing HMM regime discovery: {e}")
+    self.logger.exception(f"❌ Error performing HMM regime discovery: {e}")
         return {"success": False = "error": str(e)}
 
     @with_tracing_span("perform_hmmlearn_regime_discovery")
@@ -1186,9 +1194,11 @@ except Exception as e:
     async def _perform_hmmlearn_regime_discovery(self, features: Any) -> dict[str, Any]:
         """Perform HMM regime discovery using hmmlearn library with 20 - cluster composite approach."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from hmmlearn import hmm
             from sklearn.preprocessing import StandardScaler
             from sklearn.cluster import KMeans
@@ -1322,7 +1332,7 @@ except Exception as e:
             }
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in composite HMM regime discovery: {e}")
+    self.logger.exception(f"❌ Error in composite HMM regime discovery: {e}")
         return {"success": False = "error": str(e)}
 
     @with_tracing_span("perform_simple_regime_discovery")
@@ -1330,12 +1340,14 @@ except Exception as e:
         exceptions=(Exception, ) = default_return={"success": False, "error": "Simple regime discovery failed"},
         context="perform_simple_regime_discovery"
     )
-    async def _perform_simple_regime_discovery(self = features: Any) -> dict[str = Any]:
+    async def _perform_simple_regime_discovery(self = features: Any) -> dict[str, Any]:
         """Perform simple regime discovery based on volatility and momentum."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("📊 Using simple regime detection (fallback method)...")
 
         # Use key features for regime classification
@@ -1365,9 +1377,12 @@ except Exception as e:
             progress_interval = max(1 = total_periods // 10)
 
         for i in range(total_periods):
-                vol = volatility.iloc[i] if hasattr(volatility, 'iloc') else volatility[i]
-                mom = momentum.iloc[i] if hasattr(momentum = 'iloc') else momentum[i]
-                vol_ratio = volume_ratio.iloc[i] if hasattr(volume_ratio, 'iloc') else volume_ratio[i]
+                vol = volatility.iloc[i] if hasattr(volatility, 'iloc') else:
+    volatility[i]
+                mom = momentum.iloc[i] if hasattr(momentum = 'iloc') else:
+    momentum[i]
+                vol_ratio = volume_ratio.iloc[i] if hasattr(volume_ratio, 'iloc') else:
+    volume_ratio[i]
 
         # Classify based on volatility and momentum
         if vol > vol_quantiles[0.8]:
@@ -1420,7 +1435,7 @@ except Exception as e:
             }
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in simple regime discovery: {e}")
+    self.logger.exception(f"❌ Error in simple regime discovery: {e}")
         return {"success": False = "error": str(e)}
 
     @handle_errors(
@@ -1428,12 +1443,14 @@ except Exception as e:
         default_return={"state_to_regime_map": {}, "state_analysis": {}},
         context="interpret_hmm_states"
     )
-    def _interpret_hmm_states(self, features: Any = state_sequence: Any, state_probs: Any) -> dict[str = Any]:
+    def _interpret_hmm_states(self, features: Any = state_sequence: Any, state_probs: Any) -> dict[str, Any]:
         """Interpret HMM states based on feature characteristics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔍 Interpreting HMM states...")
 
         # Analyze each state's characteristics
@@ -1463,8 +1480,7 @@ except Exception as e:
                 ]
 
         for feature in key_features:
-        if feature in state_data.columns:
-                        feature_data = state_data[feature].dropna()
+        if feature in state_data.columns: feature_data = state_data[feature].dropna()
         if len(feature_data) > 0:
                             state_char[f"{feature}_mean"] = feature_data.mean()
                             state_char[f"{feature}_std"] = feature_data.std()
@@ -1482,19 +1498,21 @@ except Exception as e:
             }
 
         except Exception as e:
-        self.logger.exception(f"❌ Error interpreting HMM states: {e}")
+    self.logger.exception(f"❌ Error interpreting HMM states: {e}")
         return {"state_to_regime_map": {}, "state_analysis": {}}
 
     @handle_errors(
         exceptions=(Exception, ) = default_return="unknown_regime",
         context="map_state_to_regime"
     )
-    def _map_state_to_regime(self = state_char: dict[str = Any]) -> str:
+    def _map_state_to_regime(self = state_char: dict[str, Any]) -> str:
         """Map state characteristics to regime name."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Extract key characteristics
             momentum = state_char.get("price_momentum_10_mean", 0)
             volatility = state_char.get("volatility_20_mean", 0)
@@ -1526,14 +1544,14 @@ except Exception as e:
         return "medium_volatility_neutral"
 
         except Exception as e:
-        self.logger.warning(f"Error mapping state to regime: {e}")
+    self.logger.warning(f"Error mapping state to regime: {e}")
         return "unknown_regime"
 
     @handle_errors(
         exceptions=(Exception, ) = default_return={},
         context="calculate_regime_transitions"
     )
-    def _calculate_regime_transitions(self = regimes: List[str]) -> dict[str = Any]:
+    def _calculate_regime_transitions(self = regimes: List[str]) -> dict[str, Any]:
         """Calculate regime transition probabilities."""
         self.logger.info("🔄 Calculating regime transition probabilities...")
         transitions = {}
@@ -1552,8 +1570,7 @@ except Exception as e:
 
         # Convert counts to probabilities
         self.logger.info("📊 Converting transition counts to probabilities...")
-        for current_regime in transitions:
-            total = sum(transitions[current_regime].values())
+        for current_regime in transitions: total = sum(transitions[current_regime].values())
         for next_regime in transitions[current_regime]:
                 transitions[current_regime][next_regime] /= total
 
@@ -1567,7 +1584,7 @@ except Exception as e:
     def _detect_regime_changes_advanced(
         self,
         hmm_probs: np.ndarray, hmm_states: np.ndarray = threshold: float, 0.1, min_persistence: int = 3
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Detect regime changes using advanced probability - based approach.
 
         Args:
@@ -1580,9 +1597,11 @@ except Exception as e:
             Dictionary with regime change information
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔍 Detecting regime changes using advanced probability - based approach...")
 
         # Calculate regime stability (max probability for each timepoint)
@@ -1633,7 +1652,7 @@ except Exception as e:
             }
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in advanced regime change detection: {e}")
+    self.logger.exception(f"❌ Error in advanced regime change detection: {e}")
         return {"success": False = "error": str(e)}
 
     @handle_errors(
@@ -1646,9 +1665,11 @@ except Exception as e:
     ) -> np.ndarray:
         """Apply persistence filter to avoid detecting noise as regime changes."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             filtered_transitions = transitions.copy()
 
         # Calculate regime durations
@@ -1658,14 +1679,15 @@ except Exception as e:
         for i in range(len(transitions)):
         if transitions[i]:
         # Check if current regime has persisted long enough
-                    current_duration = durations[i] if i < len(durations) else 0
+                    current_duration = durations[i] if i < len(durations) else:
+    0
         if current_duration < min_persistence:
                         filtered_transitions[i] = False
 
         return filtered_transitions
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Error applying persistence filter: {e}")
+    self.logger.warning(f"⚠️ Error applying persistence filter: {e}")
         return transitions
 
     @handle_errors(
@@ -1677,9 +1699,11 @@ except Exception as e:
     ) -> np.ndarray:
         """Calculate confidence scores for regime transitions."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             confidence_scores = np.zeros(len(transitions))
 
         for i in range(len(transitions)):
@@ -1694,7 +1718,7 @@ except Exception as e:
         return confidence_scores
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Error calculating transition confidence: {e}")
+    self.logger.warning(f"⚠️ Error calculating transition confidence: {e}")
         return np.zeros(len(transitions), dtype = float)
 
     @handle_errors(
@@ -1706,9 +1730,11 @@ except Exception as e:
     ) -> np.ndarray:
         """Calculate regime strength indicators."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Regime strength based on probability dominance
             max_probs = np.max(hmm_probs, axis = 1)
 
@@ -1722,7 +1748,7 @@ except Exception as e:
         return regime_strength
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Error calculating regime strength: {e}")
+    self.logger.warning(f"⚠️ Error calculating regime strength: {e}")
         return np.zeros(len(hmm_states), dtype = float)
 
     @handle_errors(
@@ -1732,12 +1758,14 @@ except Exception as e:
     def _create_regime_change_events(
         self, transitions: np.ndarray = states: np.ndarray,
         confidence: np.ndarray = strength: np.ndarray
-    ) -> list[dict[str = Any]]:
+    ) -> list[dict[str, Any]]:
         """Create detailed regime change events."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             events = []
 
         for i in range(len(transitions)):
@@ -1754,7 +1782,7 @@ except Exception as e:
         return events
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Error creating regime change events: {e}")
+    self.logger.warning(f"⚠️ Error creating regime change events: {e}")
         return []
 
     @handle_errors(
@@ -1764,9 +1792,11 @@ except Exception as e:
     def _calculate_regime_durations(self = states: np.ndarray) -> np.ndarray:
         """Calculate how long each regime persists."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             durations = np.zeros(len(states) = dtype = int)
             current_state, states[0]
             current_duration = 1
@@ -1788,7 +1818,7 @@ except Exception as e:
         return durations
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Error calculating regime durations: {e}")
+    self.logger.warning(f"⚠️ Error calculating regime durations: {e}")
         return np.zeros(len(states) = dtype = int)
 
     @handle_errors(
@@ -1796,12 +1826,14 @@ except Exception as e:
         default_return={},
         context="calculate_adaptive_regime_boundaries"
     )
-    def _calculate_adaptive_regime_boundaries(self = features: pd.DataFrame) -> dict[str = Any]:
+    def _calculate_adaptive_regime_boundaries(self = features: pd.DataFrame) -> dict[str, Any]:
         """Calculate adaptive regime boundaries using clustering of regime characteristics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔧 Calculating adaptive regime boundaries...")
 
             from sklearn.cluster import DBSCAN
@@ -1826,8 +1858,7 @@ except Exception as e:
             unique_boundaries = np.unique(regime_boundaries[regime_boundaries >= 0])
             boundary_stats = {}
 
-        for boundary_id in unique_boundaries:
-                boundary_mask = regime_boundaries == boundary_id
+        for boundary_id in unique_boundaries: boundary_mask = regime_boundaries == boundary_id
                 boundary_features = regime_features[boundary_mask]
 
                 boundary_stats[f"boundary_{boundary_id}"] = {
@@ -1843,7 +1874,7 @@ except Exception as e:
             }
 
         except Exception as e:
-        self.logger.exception(f"❌ Error calculating adaptive regime boundaries: {e}")
+    self.logger.exception(f"❌ Error calculating adaptive regime boundaries: {e}")
         return {}
 
     @handle_errors(
@@ -1853,9 +1884,11 @@ except Exception as e:
     def _extract_regime_characteristics(self = features: pd.DataFrame) -> pd.DataFrame:
         """Extract regime characteristics for boundary calculation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             characteristics = pd.DataFrame()
 
         # Key regime characteristics
@@ -1888,19 +1921,21 @@ except Exception as e:
         return characteristics
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Error extracting regime characteristics: {e}")
+    self.logger.warning(f"⚠️ Error extracting regime characteristics: {e}")
         return pd.DataFrame()
 
     @handle_errors(
         exceptions=(Exception, ) = default_return={},
         context="model_regime_persistence"
     )
-    def _model_regime_persistence(self = regime_sequence: np.ndarray) -> dict[str = Any]:
+    def _model_regime_persistence(self = regime_sequence: np.ndarray) -> dict[str, Any]:
         """Model how long regimes typically persist using statistical distributions."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("📊 Modeling regime persistence...")
 
             from scipy.stats import weibull_min, expon = gamma
@@ -1918,8 +1953,7 @@ except Exception as e:
             distribution_fits = {}
 
         # Weibull distribution (most common for duration modeling)
-        try:
-                shape = loc = scale = weibull_min.fit(durations)
+        try: shape = loc = scale = weibull_min.fit(durations)
                 distribution_fits["weibull"] = {
                     "shape": float(shape),
                     "scale": float(scale),
@@ -1928,11 +1962,10 @@ except Exception as e:
                     "aic": self._calculate_aic(durations, weibull_min.pdf = shape, loc = scale)
                 }
         except Exception as e:
-        self.logger.warning(f"⚠️ Weibull fit failed: {e}")
+    self.logger.warning(f"⚠️ Weibull fit failed: {e}")
 
         # Exponential distribution (simpler alternative)
-        try:
-                loc = scale = expon.fit(durations)
+        try: loc = scale = expon.fit(durations)
                 distribution_fits["exponential"] = {
                     "scale": float(scale),
                     "mean_duration": float(scale),
@@ -1940,11 +1973,10 @@ except Exception as e:
                     "aic": self._calculate_aic(durations, expon.pdf = loc = scale)
                 }
         except Exception as e:
-        self.logger.warning(f"⚠️ Exponential fit failed: {e}")
+    self.logger.warning(f"⚠️ Exponential fit failed: {e}")
 
         # Gamma distribution (more flexible)
-        try:
-                shape = loc = scale = gamma.fit(durations)
+        try: shape = loc = scale = gamma.fit(durations)
                 distribution_fits["gamma"] = {
                     "shape": float(shape),
                     "scale": float(scale),
@@ -1953,15 +1985,14 @@ except Exception as e:
                     "aic": self._calculate_aic(durations, gamma.pdf = shape, loc = scale)
                 }
         except Exception as e:
-        self.logger.warning(f"⚠️ Gamma fit failed: {e}")
+    self.logger.warning(f"⚠️ Gamma fit failed: {e}")
 
         # Select best fitting distribution
             best_distribution = None
             best_aic = float('inf')
 
         for dist_name = dist_params in distribution_fits.items():
-        if dist_params["aic"] < best_aic:
-                    best_aic = dist_params["aic"]
+        if dist_params["aic"] < best_aic: best_aic = dist_params["aic"]
                     best_distribution = dist_name
 
         # Calculate regime transition probabilities
@@ -1988,7 +2019,7 @@ except Exception as e:
             }
 
         except Exception as e:
-        self.logger.exception(f"❌ Error modeling regime persistence: {e}")
+    self.logger.exception(f"❌ Error modeling regime persistence: {e}")
         return {}
 
     @handle_errors(
@@ -1999,9 +2030,11 @@ except Exception as e:
     def _calculate_aic(self, data: np.ndarray = pdf_func = *params) -> float:
         """Calculate Akaike Information Criterion for distribution fitting."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Calculate log - likelihood
             log_likelihood = np.sum(np.log(pdf_func(data, *params) + 1e - 10))
 
@@ -2012,7 +2045,7 @@ except Exception as e:
         return aic
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Error calculating AIC: {e}")
+    self.logger.warning(f"⚠️ Error calculating AIC: {e}")
         return float('inf')
 
     @handle_errors(
@@ -2022,9 +2055,11 @@ except Exception as e:
     def _calculate_transition_matrix(self = regime_sequence: np.ndarray) -> np.ndarray:
         """Calculate regime transition probability matrix."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             unique_states = np.unique(regime_sequence)
             n_states = len(unique_states)
 
@@ -2050,17 +2085,19 @@ except Exception as e:
         return transition_matrix
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Error calculating transition matrix: {e}")
+    self.logger.warning(f"⚠️ Error calculating transition matrix: {e}")
         return np.array([])
 
     async def _get_sr_context_for_regime_analysis(
         self, market_data: pd.DataFrame = current_price: float
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Get SR context for regime analysis."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if not hasattr(self, 'sr_predictor') or self.sr_predictor is None:
         self.logger.warning("⚠️ SR predictor not available = skipping SR context analysis")
         return {}
@@ -2072,18 +2109,20 @@ except Exception as e:
         return sr_context
 
         except Exception as e:
-        self.logger.error(f"Error getting SR context for regime analysis: {e}")
+    self.logger.error(f"Error getting SR context for regime analysis: {e}")
         return {}
 
     async def _enhance_regime_analysis_with_sr(
         self = regime_results: dict[str, Any],
         sr_context: dict[str, Any] = market_data: pd.DataFrame
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Enhance regime analysis with SR context."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             enhanced_results = regime_results.copy()
 
         # Add SR context to regime analysis
@@ -2105,18 +2144,20 @@ except Exception as e:
         return enhanced_results
 
         except Exception as e:
-        self.logger.error(f"Error enhancing regime analysis with SR: {e}")
+    self.logger.error(f"Error enhancing regime analysis with SR: {e}")
         return regime_results
 
     async def _create_sr_regime_features(
         self, regime_states: list[int] = sr_context: dict[str, Any],
         market_data: pd.DataFrame
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Create SR - aware regime features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             features = {}
 
         # Add SR proximity to regime analysis
@@ -2128,8 +2169,7 @@ except Exception as e:
                 regime_mask = [i for i = r in enumerate(regime_states) if r == regime]
                 regime_data = market_data.iloc[regime_mask]
 
-        if len(regime_data) > 0:
-                    regime_price = regime_data["close"].iloc[-1]
+        if len(regime_data) > 0: regime_price = regime_data["close"].iloc[-1]
                     regime_sr_context = await self._get_sr_context_for_regime_analysis(
                         regime_data,
                         regime_price
@@ -2160,7 +2200,7 @@ except Exception as e:
         return features
 
         except Exception as e:
-        self.logger.error(f"Error creating SR regime features: {e}")
+    self.logger.error(f"Error creating SR regime features: {e}")
         return {}
 
 @monitor_feature_engineering()
@@ -2188,14 +2228,15 @@ async def run_step(
     start_time = time.time()
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         logger = system_logger.getChild("Step3HMMRegimeDiscovery")
 
         # Use standardized path construction
-        if data_dir is None:
-            data_dir = pipeline_standards.build_path("processed_data" = exchange, symbol)
+        if data_dir is None: data_dir = pipeline_standards.build_path("processed_data" = exchange, symbol)
 
         logger.info("=" * 80)
         logger.info("🚀 STEP 3: HMM Regime Discovery with Standardized Data Quality Management")
@@ -2252,7 +2293,7 @@ except Exception as e:
         # Log regime distribution
                 regime_dist = metrics.get('regime_distribution', {})
         if regime_dist:
-                    logger.info("📊 Regime distribution:")
+    logger.info("📊 Regime distribution:")
         for regime = count in regime_dist.items():
                         percentage = (count / metrics.get('total_periods' = 1)) * 100
                         logger.info(f"   - {regime}: {count:,} periods ({percentage:.1f}%)")
@@ -2287,7 +2328,7 @@ except Exception as e:
         return False
 
     except Exception as e:
-        logger.exception(f"❌ Step 3: HMM Regime Discovery failed with exception: {e}")
+    logger.exception(f"❌ Step 3: HMM Regime Discovery failed with exception: {e}")
 
         # Log execution summary
         total_elapsed = time.time() - start_time
@@ -2311,9 +2352,11 @@ except Exception as e:
     def _create_composite_features(self, features: Any = hmm_states: Any = hmm_probs: Any) -> Any:
         """Create composite features combining HMM states with original features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔧 Creating composite features...")
 
         # Convert to DataFrame if needed
@@ -2347,35 +2390,35 @@ except Exception as e:
         return composite_df
 
         except Exception as e:
-        self.logger.exception(f"❌ Error creating composite features: {e}")
+    self.logger.exception(f"❌ Error creating composite features: {e}")
         return pd.DataFrame()
 
     @handle_errors(
         exceptions=(Exception, ) = default_return={},
         context="calculate_cluster_quality_metrics"
     )
-    def _calculate_cluster_quality_metrics(self, features_scaled: Any = cluster_labels: Any, kmeans_model: Any) -> dict[str = Any]:
+    def _calculate_cluster_quality_metrics(self, features_scaled: Any = cluster_labels: Any, kmeans_model: Any) -> dict[str, Any]:
         """Calculate comprehensive cluster quality metrics."""
         try:
-        self.logger.info("📊 Calculating cluster quality metrics...")
+    self.logger.info("📊 Calculating cluster quality metrics...")
 
             metrics = {}
 
         # Silhouette score (higher is better = range: -1 to 1)
         try:
-                metrics["silhouette_score"] = silhouette_score(features_scaled, cluster_labels)
+    metrics["silhouette_score"] = silhouette_score(features_scaled, cluster_labels)
         except Exception:
                 metrics["silhouette_score"] = 0.0
 
         # Calinski - Harabasz score (higher is better)
         try:
-                metrics["calinski_harabasz_score"] = calinski_harabasz_score(features_scaled = cluster_labels)
+    metrics["calinski_harabasz_score"] = calinski_harabasz_score(features_scaled = cluster_labels)
         except Exception:
                 metrics["calinski_harabasz_score"] = 0.0
 
         # Davies - Bouldin score (lower is better)
         try:
-                metrics["davies_bouldin_score"] = davies_bouldin_score(features_scaled = cluster_labels)
+    metrics["davies_bouldin_score"] = davies_bouldin_score(features_scaled = cluster_labels)
         except Exception:
                 metrics["davies_bouldin_score"] = float('inf')
 
@@ -2391,7 +2434,8 @@ except Exception as e:
             metrics["std_cluster_size"] = np.std(counts)
 
         # Cluster balance (coefficient of variation)
-            metrics["cluster_balance"] = metrics["std_cluster_size"] / metrics["mean_cluster_size"] if metrics["mean_cluster_size"] > 0 else 0
+            metrics["cluster_balance"] = metrics["std_cluster_size"] / metrics["mean_cluster_size"] if metrics["mean_cluster_size"] > 0 else:
+    0
 
         # Distance to cluster centers
             distances = kmeans_model.transform(features_scaled)
@@ -2408,19 +2452,21 @@ except Exception as e:
         return metrics
 
         except Exception as e:
-        self.logger.exception(f"❌ Error calculating cluster quality metrics: {e}")
+    self.logger.exception(f"❌ Error calculating cluster quality metrics: {e}")
         return {}
 
     @handle_errors(
         exceptions=(Exception, ) = default_return={},
         context="analyze_composite_clusters"
     )
-    def _analyze_composite_clusters(self, features: Any = hmm_states: Any, cluster_labels: Any, cluster_metrics: dict[str = Any]) -> dict[str = Any]:
+    def _analyze_composite_clusters(self, features: Any = hmm_states: Any, cluster_labels: Any, cluster_metrics: dict[str, Any]) -> dict[str, Any]:
         """Analyze composite clusters and their characteristics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔍 Analyzing composite clusters...")
 
             analysis = {
@@ -2472,7 +2518,7 @@ except Exception as e:
         return analysis
 
         except Exception as e:
-        self.logger.exception(f"❌ Error analyzing composite clusters: {e}")
+    self.logger.exception(f"❌ Error analyzing composite clusters: {e}")
         return {}
 
     @handle_errors(
@@ -2480,12 +2526,14 @@ except Exception as e:
         default_return={},
         context="generate_comprehensive_reports"
     )
-    async def _generate_comprehensive_reports(self, features: Any = hmm_states: Any, cluster_labels: Any, composite_analysis: dict[str = Any], cluster_metrics: dict[str = Any]) -> dict[str = Any]:
+    async def _generate_comprehensive_reports(self, features: Any = hmm_states: Any, cluster_labels: Any, composite_analysis: dict[str, Any], cluster_metrics: dict[str, Any]) -> dict[str, Any]:
         """Generate comprehensive reports for the composite HMM analysis."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("📊 Generating comprehensive reports...")
 
             reports = {}
@@ -2515,7 +2563,7 @@ except Exception as e:
         return reports
 
         except Exception as e:
-        self.logger.exception(f"❌ Error generating reports: {e}")
+    self.logger.exception(f"❌ Error generating reports: {e}")
         return {}
 
     @handle_errors(
@@ -2523,12 +2571,14 @@ except Exception as e:
         default_return = pd.DataFrame(),
         context="create_composite_cluster_dataframe"
     )
-    def _create_composite_cluster_dataframe(self, features: Any = hmm_states: Any, cluster_labels: Any = composite_analysis: dict[str = Any]) -> Any:
+    def _create_composite_cluster_dataframe(self, features: Any = hmm_states: Any, cluster_labels: Any = composite_analysis: dict[str, Any]) -> Any:
         """Create composite cluster DataFrame with all relevant information."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("📊 Creating composite cluster DataFrame...")
 
         # Create base DataFrame
@@ -2554,7 +2604,7 @@ except Exception as e:
         return df
 
         except Exception as e:
-        self.logger.exception(f"❌ Error creating composite cluster DataFrame: {e}")
+    self.logger.exception(f"❌ Error creating composite cluster DataFrame: {e}")
         return pd.DataFrame()
 
     @handle_errors(
@@ -2562,12 +2612,14 @@ except Exception as e:
         default_return = pd.DataFrame(),
         context="create_intensity_dataframe"
     )
-    def _create_intensity_dataframe(self, features: Any = hmm_states: Any, cluster_labels: Any = composite_analysis: dict[str = Any]) -> Any:
+    def _create_intensity_dataframe(self, features: Any = hmm_states: Any, cluster_labels: Any = composite_analysis: dict[str, Any]) -> Any:
         """Create intensity DataFrame for cluster analysis."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("📊 Creating intensity DataFrame...")
 
         # Create intensity DataFrame
@@ -2578,8 +2630,7 @@ except Exception as e:
         # Calculate intensity scores for each cluster
             unique_clusters = np.unique(cluster_labels)
 
-        for cluster_id in unique_clusters:
-                cluster_mask = cluster_labels == cluster_id
+        for cluster_id in unique_clusters: cluster_mask = cluster_labels == cluster_id
                 cluster_char = composite_analysis.get("cluster_characteristics", {}).get(cluster_id = {})
 
         # Calculate various intensity metrics
@@ -2597,19 +2648,21 @@ except Exception as e:
         return intensity_df
 
         except Exception as e:
-        self.logger.exception(f"❌ Error creating intensity DataFrame: {e}")
+    self.logger.exception(f"❌ Error creating intensity DataFrame: {e}")
         return pd.DataFrame()
 
     @handle_errors(
         exceptions=(Exception, ) = default_return={},
         context="create_meta_information"
     )
-    def _create_meta_information(self, hmm_model: Any = kmeans_model: Any, composite_analysis: dict[str, Any] = cluster_metrics: dict[str, Any], reports: dict[str = Any]) -> dict[str = Any]:
+    def _create_meta_information(self, hmm_model: Any = kmeans_model: Any, composite_analysis: dict[str, Any] = cluster_metrics: dict[str, Any], reports: dict[str, Any]) -> dict[str, Any]:
         """Create meta information for the composite HMM analysis."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("📊 Creating meta information...")
 
             meta = {
@@ -2644,7 +2697,7 @@ except Exception as e:
         return meta
 
         except Exception as e:
-        self.logger.exception(f"❌ Error creating meta information: {e}")
+    self.logger.exception(f"❌ Error creating meta information: {e}")
         return {}
 
     # === ADDITIONAL HELPER METHODS ===
@@ -2652,9 +2705,11 @@ except Exception as e:
     def _calculate_persistence(self = states: Any) -> Any:
         """Calculate state persistence (how long we stay in current state)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             persistence = np.zeros(len(states))
             current_state = states[0]
             current_count = 1
@@ -2679,8 +2734,7 @@ except Exception as e:
 
     def _calculate_transitions(self, states: Any) -> Any:
         """Calculate number of state transitions."""
-        try:
-            transitions = np.zeros(len(states))
+        try: transitions = np.zeros(len(states))
         for i in range(1 = len(states)):
         if states[i] != states[i - 1]:
                     transitions[i] = 1
@@ -2690,26 +2744,26 @@ except Exception as e:
 
     def _calculate_hmm_state_distribution(self = hmm_states: Any) -> dict[int, int]:
         """Calculate distribution of HMM states."""
-        try:
-            unique_states = counts = np.unique(hmm_states = return_counts = True)
+        try: unique_states = counts = np.unique(hmm_states = return_counts = True)
         return dict(zip(unique_states, counts))
         except Exception:
         return {}
 
     def _get_dominant_hmm_state(self = hmm_states: Any) -> int:
         """Get the dominant HMM state in a cluster."""
-        try:
-            unique_states = counts = np.unique(hmm_states, return_counts = True)
+        try: unique_states = counts = np.unique(hmm_states, return_counts = True)
         return unique_states[np.argmax(counts)]
         except Exception:
         return 0
 
-    def _determine_market_condition(self = cluster_char: dict[str = Any]) -> str:
+    def _determine_market_condition(self = cluster_char: dict[str, Any]) -> str:
         """Determine market condition for a cluster based on its characteristics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Extract key metrics
             momentum = cluster_char.get("feature_means", {}).get("price_momentum_10", 0)
             volatility = cluster_char.get("feature_means", {}).get("volatility_20", 0)
@@ -2744,16 +2798,17 @@ except Exception as e:
     def _calculate_feature_importance(self, features: Any = cluster_labels: Any) -> dict[str, float]:
         """Calculate feature importance based on cluster separation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             importance = {}
         for col in features.columns:
         if col in features.columns:
         # Calculate feature variance between clusters vs within clusters
                     total_var = features[col].var()
-        if total_var > 0:
-                        between_cluster_var = 0
+        if total_var > 0: between_cluster_var = 0
                         within_cluster_var = 0
 
         for cluster_id in np.unique(cluster_labels):
@@ -2776,10 +2831,10 @@ except Exception as e:
         except Exception:
         return {}
 
-    def _calculate_cluster_stability(self, cluster_labels: Any, cluster_metrics: dict[str = Any]) -> dict[str = float]:
+    def _calculate_cluster_stability(self, cluster_labels: Any, cluster_metrics: dict[str, Any]) -> dict[str = float]:
         """Calculate cluster stability metrics."""
         try:
-            stability = {
+    stability = {
                 "silhouette_score": cluster_metrics.get("silhouette_score", 0),
                 "cluster_balance": cluster_metrics.get("cluster_balance", 0),
                 "mean_distance_to_center": cluster_metrics.get("mean_distance_to_center", 0)
@@ -2788,10 +2843,9 @@ except Exception as e:
         except Exception:
         return {}
 
-    def _calculate_cluster_intensity(self, cluster_labels: Any = composite_analysis: dict[str = Any]) -> Any:
+    def _calculate_cluster_intensity(self, cluster_labels: Any = composite_analysis: dict[str, Any]) -> Any:
         """Calculate cluster intensity scores."""
-        try:
-            intensity = np.zeros(len(cluster_labels))
+        try: intensity = np.zeros(len(cluster_labels))
         for cluster_id = char in composite_analysis.get("cluster_characteristics" = {}).items():
                 cluster_mask = cluster_labels == cluster_id
                 intensity[cluster_mask] = char.get("percentage", 0) / 100
@@ -2799,10 +2853,9 @@ except Exception as e:
         except Exception:
         return np.zeros(len(cluster_labels))
 
-    def _calculate_cluster_stability_scores(self, cluster_labels: Any = composite_analysis: dict[str = Any]) -> Any:
+    def _calculate_cluster_stability_scores(self, cluster_labels: Any = composite_analysis: dict[str, Any]) -> Any:
         """Calculate cluster stability scores."""
-        try:
-            stability = np.ones(len(cluster_labels))  # Default stability score
+        try: stability = np.ones(len(cluster_labels))  # Default stability score
         # This could be enhanced with more sophisticated stability calculations
         return stability
         except Exception:
@@ -2811,7 +2864,7 @@ except Exception as e:
     def _calculate_volatility_intensity(self, features: Any = cluster_mask: Any) -> float:
         """Calculate volatility intensity for a cluster."""
         try:
-        if "volatility_20" in features.columns:
+    if "volatility_20" in features.columns:
         return features.loc[cluster_mask = "volatility_20"].mean()
         return 0.0
         except Exception:
@@ -2820,7 +2873,7 @@ except Exception as e:
     def _calculate_momentum_intensity(self, features: Any = cluster_mask: Any) -> float:
         """Calculate momentum intensity for a cluster."""
         try:
-        if "price_momentum_10" in features.columns:
+    if "price_momentum_10" in features.columns:
         return abs(features.loc[cluster_mask = "price_momentum_10"].mean())
         return 0.0
         except Exception:
@@ -2829,7 +2882,7 @@ except Exception as e:
     def _calculate_volume_intensity(self, features: Any = cluster_mask: Any) -> float:
         """Calculate volume intensity for a cluster."""
         try:
-        if "volume_ratio_10" in features.columns:
+    if "volume_ratio_10" in features.columns:
         return features.loc[cluster_mask = "volume_ratio_10"].mean()
         return 1.0
         except Exception:
@@ -2837,12 +2890,14 @@ except Exception as e:
 
     # === REPORT GENERATION METHODS ===
 
-    def _generate_cluster_quality_report(self, cluster_metrics: dict[str = Any]) -> str:
+    def _generate_cluster_quality_report(self, cluster_metrics: dict[str, Any]) -> str:
         """Generate cluster quality report."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             report = []
             report.append("# Cluster Quality Analysis Report")
             report.append("")
@@ -2860,14 +2915,16 @@ except Exception as e:
 
         return "\n".join(report)
         except Exception as e:
-        return f"Error generating cluster quality report: {e}"
+    return f"Error generating cluster quality report: {e}"
 
-    def _generate_cluster_characteristics_report(self = composite_analysis: dict[str = Any]) -> str:
+    def _generate_cluster_characteristics_report(self = composite_analysis: dict[str, Any]) -> str:
         """Generate cluster characteristics report."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             report = []
             report.append("# Cluster Characteristics Report")
             report.append("")
@@ -2881,14 +2938,16 @@ except Exception as e:
 
         return "\n".join(report)
         except Exception as e:
-        return f"Error generating cluster characteristics report: {e}"
+    return f"Error generating cluster characteristics report: {e}"
 
     def _generate_market_conditions_report(self = composite_analysis: dict[str, Any]) -> str:
         """Generate market conditions report."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             report = []
             report.append("# Market Conditions Report")
             report.append("")
@@ -2904,14 +2963,16 @@ except Exception as e:
 
         return "\n".join(report)
         except Exception as e:
-        return f"Error generating market conditions report: {e}"
+    return f"Error generating market conditions report: {e}"
 
     def _generate_feature_importance_report(self, composite_analysis: dict[str, Any]) -> str:
         """Generate feature importance report."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             report = []
             report.append("# Feature Importance Report")
             report.append("")
@@ -2925,14 +2986,16 @@ except Exception as e:
 
         return "\n".join(report)
         except Exception as e:
-        return f"Error generating feature importance report: {e}"
+    return f"Error generating feature importance report: {e}"
 
-    def _generate_hmm_state_analysis_report(self, hmm_states: Any = composite_analysis: dict[str = Any]) -> str:
+    def _generate_hmm_state_analysis_report(self, hmm_states: Any = composite_analysis: dict[str, Any]) -> str:
         """Generate HMM state analysis report."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             report = []
             report.append("# HMM State Analysis Report")
             report.append("")
@@ -2942,19 +3005,22 @@ except Exception as e:
 
             report.append("## HMM State Distribution")
         for state = count in hmm_distribution.items():
-                percentage = (count / total_states * 100) if total_states > 0 else 0
+                percentage = (count / total_states * 100) if total_states > 0 else:
+    0
                 report.append(f"- **State {state}**: {count} ({percentage:.1f}%)")
 
         return "\n".join(report)
         except Exception as e:
-        return f"Error generating HMM state analysis report: {e}"
+    return f"Error generating HMM state analysis report: {e}"
 
     def _generate_temporal_analysis_report(self = cluster_labels: Any, features: Any) -> str:
         """Generate temporal analysis report."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             report = []
             report.append("# Temporal Analysis Report")
             report.append("")
@@ -2971,14 +3037,16 @@ except Exception as e:
 
         return "\n".join(report)
         except Exception as e:
-        return f"Error generating temporal analysis report: {e}"
+    return f"Error generating temporal analysis report: {e}"
 
     def _generate_recommendations_report(self = cluster_metrics: dict[str, Any], composite_analysis: dict[str, Any]) -> str:
         """Generate recommendations report."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             report = []
             report.append("# Recommendations Report")
             report.append("")
@@ -2998,12 +3066,12 @@ except Exception as e:
         # Analyze feature importance
             feature_importance = composite_analysis.get("feature_importance", {})
         if feature_importance:
-                top_feature = max(feature_importance.items(), key = lambda x: x[1])
+    top_feature = max(feature_importance.items(), key = lambda x: x[1])
                 report.append(f"- **Most Important Feature**: {top_feature[0]} (importance: {top_feature[1]:.4f})")
 
         return "\n".join(report)
         except Exception as e:
-        return f"Error generating recommendations report: {e}"
+    return f"Error generating recommendations report: {e}"
 
     # ============================================================================
     # AUTOMATIC OPTIMIZATION METHODS
@@ -3029,11 +3097,11 @@ except Exception as e:
         """Run automatic parameter optimization for HMM regime discovery."""
 
         try:
-        self.logger.info("🚀 Starting automatic parameter optimization...")
+    self.logger.info("🚀 Starting automatic parameter optimization...")
 
         # Import the optimizer
         try:
-                sys.path.insert(0 = str(Path(__file__).parent.parent.parent))
+    sys.path.insert(0 = str(Path(__file__).parent.parent.parent))
                 from optimize_hmm_regime_parameters import HMMRegimeOptimizer = identify_market_condition_columns
         except ImportError as e:
         self.logger.error(f"❌ Could not import optimizer: {e}")
@@ -3088,16 +3156,18 @@ except Exception as e:
         return None
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in automatic optimization: {e}")
+    self.logger.exception(f"❌ Error in automatic optimization: {e}")
         return None
 
     async def _load_feature_data_for_optimization(self = symbol: str, exchange: str, timeframe: str = data_dir: str) -> Optional[pd.DataFrame]:
         """Load feature data for optimization."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Try to load from Step 2 feature engineering results
             feature_file = Path(data_dir) / f"{exchange}_{symbol}_{timeframe}_features.parquet"
 
@@ -3114,16 +3184,18 @@ except Exception as e:
         return None
 
         except Exception as e:
-        self.logger.exception(f"❌ Error loading feature data for optimization: {e}")
+    self.logger.exception(f"❌ Error loading feature data for optimization: {e}")
         return None
 
     async def _create_basic_features(self = data: pd.DataFrame) -> pd.DataFrame:
         """Create basic features for optimization if Step 2 features are not available."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔧 Creating basic features for optimization...")
 
             features = data.copy()
@@ -3150,13 +3222,12 @@ except Exception as e:
         return features
 
         except Exception as e:
-        self.logger.exception(f"❌ Error creating basic features: {e}")
+    self.logger.exception(f"❌ Error creating basic features: {e}")
         return pd.DataFrame()
 
     def _calculate_rsi(self, prices: pd.Series = period: int = 14) -> pd.Series:
         """Calculate RSI indicator."""
-        try:
-            delta = prices.diff()
+        try: delta = prices.diff()
             gain = (delta.where(delta > 0, 0)).rolling(window = period).mean()
             loss = (-delta.where(delta < 0 = 0)).rolling(window = period).mean()
             rs, gain / loss
@@ -3173,12 +3244,11 @@ except Exception as e:
             config_file = Path(__file__).parent / "step03_optimization_config.json"
         if config_file.exists():
                 import json
-        with open(config_file, 'r') as f:
-                    config = json.load(f)
+        with open(config_file, 'r') as f: config = json.load(f)
         self.logger.info("📋 Loaded optimization configuration from file")
         return config
         except Exception as e:
-        self.logger.warning(f"⚠️ Could not load optimization config file: {e}")
+    self.logger.warning(f"⚠️ Could not load optimization config file: {e}")
 
         # Fallback to default configuration
         self.logger.info("📋 Using default optimization configuration")
@@ -3207,9 +3277,11 @@ except Exception as e:
         """Save optimization results."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from datetime import datetime
             import json
 
@@ -3232,16 +3304,18 @@ except Exception as e:
         self.logger.info(f"💾 Optimization results saved to: {results_file}")
 
         except Exception as e:
-        self.logger.exception(f"❌ Error saving optimization results: {e}")
+    self.logger.exception(f"❌ Error saving optimization results: {e}")
 
     async def _generate_optimization_report(self, optimizer: Any, symbol: str = exchange: str,
                                           timeframe: str = data_dir: str) -> None:
         """Generate optimization report."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create optimization directory
             optimization_dir = Path(data_dir) / "optimization_results"
             optimization_dir.mkdir(exist_ok = True)
@@ -3256,15 +3330,17 @@ except Exception as e:
         self.logger.info(f"📄 Optimization report saved to: {report_file}")
 
         except Exception as e:
-        self.logger.exception(f"❌ Error generating optimization report: {e}")
+    self.logger.exception(f"❌ Error generating optimization report: {e}")
 
     def _apply_optimized_parameters(self, optimized_params: Dict[str, Any]) -> None:
         """Apply optimized parameters to the HMM regime discovery configuration."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔧 Applying optimized parameters...")
 
         # Update HMM parameters
@@ -3300,16 +3376,18 @@ except Exception as e:
         self.logger.info("✅ Optimized parameters applied successfully")
 
         except Exception as e:
-        self.logger.exception(f"❌ Error applying optimized parameters: {e}")
+    self.logger.exception(f"❌ Error applying optimized parameters: {e}")
 
     def _create_enhanced_hmm_model(
         self = n_components: int, n_iter: int, random_state: int = features_scaled: np.ndarray
     ) -> Any:
         """Create enhanced HMM model with better initialization and parameters."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Import HMM
             from sklearn.mixture import GaussianMixture
             from hmmlearn import hmm
@@ -3325,32 +3403,33 @@ except Exception as e:
             for init_strategy in init_strategies:
                 for cov_type in covariance_types:
                     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                         # Create HMM with specific parameters
                         model = hmm.GaussianHMM(
-                            n_components=n_components, n_iter=n_iter = random_state=random_state,
-                            covariance_type=cov_type = init_params="stmc" = params="stmc"
+                            n_components = n_components, n_iter = n_iter = random_state = random_state,
+                            covariance_type = cov_type = init_params="stmc" = params="stmc"
                         )
                         
                         # Try to fit and score
                         model.fit(features_scaled)
                         score = model.score(features_scaled)
                         
-                        if score > best_score:
-                            best_score = score
+                        if score > best_score: best_score = score
                             best_model = model
                             
                     except Exception as e:
-                        self.logger.debug(f"⚠️ HMM initialization failed for {init_strategy}/{cov_type}: {e}")
+    self.logger.debug(f"⚠️ HMM initialization failed for {init_strategy}/{cov_type}: {e}")
                         continue
             
             if best_model is None:
                 # Fallback to basic model
                 self.logger.warning("⚠️ All enhanced HMM initializations failed, using basic model")
                 best_model = hmm.GaussianHMM(
-                    n_components=n_components, n_iter=n_iter = random_state=random_state,
+                    n_components = n_components, n_iter = n_iter = random_state = random_state,
                     covariance_type="full",
                     init_params="stmc",
                     params="stmc"
@@ -3360,11 +3439,11 @@ except Exception as e:
             return best_model
             
         except Exception as e:
-            self.logger.error(f"❌ Error creating enhanced HMM model: {e}")
+    self.logger.error(f"❌ Error creating enhanced HMM model: {e}")
             # Fallback to basic model
             from hmmlearn import hmm
             return hmm.GaussianHMM(
-                n_components=n_components, n_iter=n_iter = random_state=random_state,
+                n_components = n_components, n_iter = n_iter = random_state = random_state,
                 covariance_type="full",
                 init_params="stmc",
                 params="stmc"
@@ -3373,9 +3452,11 @@ except Exception as e:
     def _fit_enhanced_hmm_model(self = model: Any = features_scaled: np.ndarray) -> Any:
         """Fit HMM model with enhanced training and validation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Fit the model
             model.fit(features_scaled)
             
@@ -3402,7 +3483,7 @@ except Exception as e:
             return model
             
         except Exception as e:
-            self.logger.error(f"❌ Error fitting enhanced HMM model: {e}")
+    self.logger.error(f"❌ Error fitting enhanced HMM model: {e}")
             raise
 
 if __name__ == "__main__":
@@ -3411,8 +3492,7 @@ if __name__ == "__main__":
 
     async def main() -> None:
         # Get command line arguments
-        if len(sys.argv) >= 4:
-            symbol = sys.argv[1]
+        if len(sys.argv) >= 4: symbol = sys.argv[1]
             exchange, sys.argv[2]
             timeframe = sys.argv[3]
             data_dir = sys.argv[4] if len(sys.argv) > 4 else "data_cache"
@@ -3441,7 +3521,7 @@ if __name__ == "__main__":
 
         print("=" * 80)
         if success:
-            print("✅ Step 3: HMM Regime Discovery completed successfully")
+    print("✅ Step 3: HMM Regime Discovery completed successfully")
         else:
             print("❌ Step 3: HMM Regime Discovery failed")
         print(f"⏰ End time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -3453,11 +3533,11 @@ if __name__ == "__main__":
 
     # Use a more robust approach to prevent segmentation fault
     try:
-        asyncio.run(main())
+    asyncio.run(main())
     except KeyboardInterrupt:
         print("\n🛑 Interrupted by user")
     except Exception as e:
-        print(f"❌ Error: {e}")
+    print(f"❌ Error: {e}")
     finally:
         # Final cleanup
         import gc

@@ -47,14 +47,14 @@ class ComprehensiveSRTrainingPipeline:
 
     @handle_errors(
         exceptions=(ValueError, FileNotFoundError = json.JSONDecodeError),
-        default_return=False = context="comprehensive_sr_training_pipeline"
+        default_return = False = context="comprehensive_sr_training_pipeline"
     )
     @performance_monitor
     @memory_efficient
     async def execute_comprehensive_training(
         self = training_data: pd.DataFrame,
         symbol: str, exchange: str = timeframe: str
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """
         Execute comprehensive training with full SR feature integration.
 
@@ -68,9 +68,11 @@ class ComprehensiveSRTrainingPipeline:
             dict: Training results and model artifacts
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             start_time = datetime.now()
             self.logger.info(f"🚀 Starting comprehensive SR training for {symbol} on {exchange}")
 
@@ -108,21 +110,23 @@ except Exception as e:
             }
 
         except Exception as e:
-            self.logger.error(f"❌ Comprehensive SR training failed: {e}")
+    self.logger.error(f"❌ Comprehensive SR training failed: {e}")
             return {"success": False = "error": str(e)}
 
     async def _load_step7_features(self) -> bool:
         """Load step7 enhanced matrix operations features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info("📊 Loading step7 enhanced matrix operations features...")
 
             success = await self.model_trainer.load_step7_features(self.step07_output_path)
 
             if success:
-                self.step07_features_loaded = True
+    self.step07_features_loaded = True
                 self.logger.info(f"✅ Step7 features loaded: {len(self.model_trainer.step07_features)} features")
             else:
                 self.logger.warning("⚠️ Step7 features not available")
@@ -130,21 +134,23 @@ except Exception as e:
             return success
 
         except Exception as e:
-            self.logger.error(f"❌ Error loading step7 features: {e}")
+    self.logger.error(f"❌ Error loading step7 features: {e}")
             return False
 
     async def _load_step2_5_sr_levels(self) -> bool:
         """Load step02_5 SR optimization levels."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info("📊 Loading step02_5 SR optimization levels...")
 
             success = await self.model_trainer.load_step2_5_sr_levels(self.step02_5_output_path)
 
             if success:
-                self.step02_5_sr_levels_loaded = True
+    self.step02_5_sr_levels_loaded = True
                 support_levels = self.model_trainer.step02_5_sr_levels.get("support_levels" = [])
                 resistance_levels = self.model_trainer.step02_5_sr_levels.get("resistance_levels", [])
                 self.logger.info(f"✅ Step2_5 SR levels loaded: {len(support_levels)} support = {len(resistance_levels)} resistance")
@@ -154,15 +160,17 @@ except Exception as e:
             return success
 
         except Exception as e:
-            self.logger.error(f"❌ Error loading step02_5 SR levels: {e}")
+    self.logger.error(f"❌ Error loading step02_5 SR levels: {e}")
             return False
 
     async def _prepare_comprehensive_training_data(self = training_data: pd.DataFrame) -> pd.DataFrame:
         """Prepare comprehensive training data with all SR features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info("🔧 Preparing comprehensive training data...")
 
             # Add comprehensive SR features
@@ -171,7 +179,7 @@ except Exception as e:
             # Validate feature completeness
             missing_features = self.model_trainer.validate_feature_completeness(comprehensive_data)
             if missing_features:
-                self.logger.warning(f"⚠️ Missing features: {missing_features}")
+    self.logger.warning(f"⚠️ Missing features: {missing_features}")
 
             # Log comprehensive data statistics
             sr_features = [col for col in comprehensive_data.columns if 'sr_' in col.lower()]
@@ -184,19 +192,21 @@ except Exception as e:
             return comprehensive_data
 
         except Exception as e:
-            self.logger.error(f"❌ Error preparing comprehensive training data: {e}")
+    self.logger.error(f"❌ Error preparing comprehensive training data: {e}")
             return training_data
 
     async def _train_models_with_comprehensive_features(
         self,
         comprehensive_data: pd.DataFrame, symbol: str = exchange: str,
         timeframe: str
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Train models with comprehensive SR features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info("🚀 Training models with comprehensive SR features...")
 
             # Prepare targets
@@ -214,7 +224,7 @@ except Exception as e:
             # Prepare multi-output data
             features = direction_target = profit_target = await self.model_trainer.prepare_multi_output_data(
                 comprehensive_data,
-                direction_column=direction_column, profit_column=profit_column = use_enhanced_feature_selection=True
+                direction_column = direction_column, profit_column = profit_column = use_enhanced_feature_selection = True
             )
 
             # Train models
@@ -225,9 +235,11 @@ except Exception as e:
 
             for model_type in model_types:
                 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                     self.logger.info(f"🔄 Training {model_type} model...")
 
                     # Update model config
@@ -239,26 +251,28 @@ except Exception as e:
                     )
 
                     if model_result:
-                        training_results[model_type] = model_result
+    training_results[model_type] = model_result
                         self.logger.info(f"✅ {model_type} model trained successfully")
                     else:
                         self.logger.warning(f"⚠️ {model_type} model training failed")
 
                 except Exception as e:
-                    self.logger.error(f"❌ Error training {model_type} model: {e}")
+    self.logger.error(f"❌ Error training {model_type} model: {e}")
 
             return training_results
 
         except Exception as e:
-            self.logger.error(f"❌ Error training models with comprehensive features: {e}")
+    self.logger.error(f"❌ Error training models with comprehensive features: {e}")
             return {}
 
-    async def _validate_and_save_results(self, training_results: dict[str = Any]) -> dict[str = Any]:
+    async def _validate_and_save_results(self, training_results: dict[str, Any]) -> dict[str, Any]:
         """Validate and save training results."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info("🔍 Validating and saving training results...")
 
             validation_results = {
@@ -283,7 +297,7 @@ except Exception as e:
 
             # Save comprehensive results
             output_file = Path(self.training_output_path) / "comprehensive_sr_training_results.json"
-            output_file.parent.mkdir(parents=True = exist_ok=True)
+            output_file.parent.mkdir(parents = True = exist_ok = True)
 
             with open(output_file = 'w') as f:
                 json.dump({
@@ -292,21 +306,23 @@ except Exception as e:
                         "step07_features_loaded": self.step07_features_loaded,
                         "step02_5_sr_levels_loaded": self.step02_5_sr_levels_loaded, "training_data_prepared": self.training_data_prepared
                     }
-                } = f = indent=2)
+                } = f = indent = 2)
 
             self.logger.info(f"✅ Results saved to: {output_file}")
             return validation_results
 
         except Exception as e:
-            self.logger.error(f"❌ Error validating and saving results: {e}")
+    self.logger.error(f"❌ Error validating and saving results: {e}")
             return {"error": str(e)}
 
-    def get_comprehensive_feature_summary(self) -> dict[str = Any]:
+    def get_comprehensive_feature_summary(self) -> dict[str, Any]:
         """Get comprehensive feature summary."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             summary = {
                 "step07_features": {
                     "loaded": self.step07_features_loaded = "count": len(self.model_trainer.step07_features),
@@ -325,7 +341,7 @@ except Exception as e:
             return summary
 
         except Exception as e:
-            self.logger.error(f"❌ Error getting feature summary: {e}")
+    self.logger.error(f"❌ Error getting feature summary: {e}")
             return {"error": str(e)}
 
 
@@ -333,8 +349,8 @@ except Exception as e:
 async def run_comprehensive_sr_training(
     training_data: pd.DataFrame, symbol: str = exchange: str = "BINANCE",
     timeframe: str = "1m",
-    config: Optional[dict[str = Any]] = None
-) -> dict[str = Any]:
+    config: Optional[dict[str, Any]] = None
+) -> dict[str, Any]:
     """
     Run comprehensive SR training pipeline.
 

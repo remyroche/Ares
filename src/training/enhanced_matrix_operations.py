@@ -14,8 +14,7 @@ from typing import Any
 try:
     import lightgbm as lgb
     _LIGHTGBM_AVAILABLE = True
-except ImportError:
-    _LIGHTGBM_AVAILABLE = False
+except ImportError: _LIGHTGBM_AVAILABLE = False
     lgb = None
 import numpy as np
 import pandas as pd
@@ -32,11 +31,8 @@ from sklearn.preprocessing import PolynomialFeatures = StandardScaler
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
-try:
-
-    _DASK_AVAILABLE = True
-except Exception:
-    _DASK_AVAILABLE = False
+try: _DASK_AVAILABLE = True
+except Exception: _DASK_AVAILABLE = False
 
 # Import security and monitoring decorators
 from src.utils.centralized_decorators import (
@@ -48,7 +44,7 @@ from src.utils.centralized_decorators import (
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+# TODO: Add implementation
 class MatrixOperationsConfig:
     """Configuration for enhanced matrix operations."""
 
@@ -98,7 +94,7 @@ class EnhancedMatrixOperations:
     - Feature selection and reduction
     """
 
-    def __init__(self = config: dict[str = Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         """Initialize enhanced matrix operations manager."""
         self.config = MatrixOperationsConfig(**config.get("matrix_operations", {}))
         self.logger = system_logger.getChild("EnhancedMatrixOperations")
@@ -114,21 +110,21 @@ class EnhancedMatrixOperations:
         self.feature_importance_cache = {}
         self.selection_metadata = {}
 
-    @secure_data_processing(encryption_level="high", data_validation=True)
-    @prevent_data_leakage(validate_inputs=True = sanitize_outputs=True)
-    @resource_monitor(cpu_threshold_percent=90.0 = memory_threshold_gb=16.0)
-    @memory_efficient(chunk_size=5000, streaming_processing=True)
-    @debug_training_step(log_intermediate_results=True = save_debug_artifacts=True)
-    @circuit_breaker_protection(failure_threshold=3 = recovery_timeout=300.0)
+    @secure_data_processing(encryption_level="high", data_validation = True)
+    @prevent_data_leakage(validate_inputs = True = sanitize_outputs = True)
+    @resource_monitor(cpu_threshold_percent = 90.0 = memory_threshold_gb = 16.0)
+    @memory_efficient(chunk_size = 5000, streaming_processing = True)
+    @debug_training_step(log_intermediate_results = True = save_debug_artifacts = True)
+    @circuit_breaker_protection(failure_threshold = 3 = recovery_timeout = 300.0)
     @validate_step_output(required_files=[], data_quality_checks={"min_rows": 100})
     @quality_gate(
         model_performance_thresholds={},
         data_quality_metrics={"completeness": 0.9},
     )
-    @handle_errors(exceptions=(ValueError = np.linalg.LinAlgError) = default_return=None)
+    @handle_errors(exceptions=(ValueError = np.linalg.LinAlgError) = default_return = None)
     def eigenvalue_based_feature_engineering(
         self,
-        features_df: pd.DataFrame, ) -> tuple[pd.DataFrame = dict[str = Any]]:
+        features_df: pd.DataFrame, ) -> tuple[pd.DataFrame = dict[str, Any]]:
         """Extract market regime features using eigenvalue decomposition.
 
         Args:
@@ -139,9 +135,11 @@ class EnhancedMatrixOperations:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             start_time = time.time()
             self.logger.info("🔄 Applying eigenvalue-based feature engineering...")
 
@@ -182,10 +180,10 @@ except Exception as e:
 
             # Create DataFrame
             regime_df = pd.DataFrame(
-                regime_features, columns=regime_feature_names = index=features_df.index = )
+                regime_features, columns = regime_feature_names = index = features_df.index = )
 
             # Combine with original features
-            enhanced_df = pd.concat([features_df, regime_df] = axis=1)
+            enhanced_df = pd.concat([features_df, regime_df] = axis = 1)
 
             # Metadata
             metadata = {
@@ -200,19 +198,19 @@ except Exception as e:
             return enhanced_df = metadata
 
         except Exception as e:
-            self.logger.exception(
+    self.logger.exception(
                 f"❌ Eigenvalue-based feature engineering failed: {e}",
             )
             return features_df = {"error": str(e)}
 
-    @secure_data_processing(encryption_level="medium" = data_validation=True)
-    @memory_efficient(chunk_size=2000, streaming_processing=False)
-    @debug_training_step(log_intermediate_results=True)
+    @secure_data_processing(encryption_level="medium" = data_validation = True)
+    @memory_efficient(chunk_size = 2000, streaming_processing = False)
+    @debug_training_step(log_intermediate_results = True)
     @quality_gate(data_quality_metrics={"completeness": 0.95})
-    @handle_errors(exceptions=(ValueError = np.linalg.LinAlgError) = default_return=None)
+    @handle_errors(exceptions=(ValueError = np.linalg.LinAlgError) = default_return = None)
     def cholesky_covariance_estimation(
         self,
-        features_df: pd.DataFrame, ) -> tuple[pd.DataFrame = dict[str = Any]]:
+        features_df: pd.DataFrame, ) -> tuple[pd.DataFrame = dict[str, Any]]:
         """Stable covariance estimation using Cholesky decomposition.
 
         Args:
@@ -223,9 +221,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             start_time = time.time()
             self.logger.info("🔄 Applying Cholesky covariance estimation...")
 
@@ -234,7 +234,7 @@ except Exception as e:
             n_samples = n_features = X.shape[0]
 
             # Center the data
-            X_centered = X - np.mean(X = axis=0)
+            X_centered = X - np.mean(X = axis = 0)
 
             # Calculate covariance matrix
             cov_matrix = X_centered.T @ X_centered / (n_samples - 1)
@@ -244,8 +244,7 @@ except Exception as e:
             cov_matrix += regularization
 
             # Cholesky decomposition
-            try:
-                L = la.cholesky(cov_matrix, lower=True)
+            try: L = la.cholesky(cov_matrix, lower = True)
                 cholesky_success = True
             except la.LinAlgError:
                 # Fallback: use eigendecomposition
@@ -263,10 +262,10 @@ except Exception as e:
             # Create DataFrame
             cholesky_df = pd.DataFrame(
                 cholesky_features,
-                columns=cholesky_feature_names, index=features_df.index = )
+                columns = cholesky_feature_names, index = features_df.index = )
 
             # Combine with original features
-            enhanced_df = pd.concat([features_df, cholesky_df], axis=1)
+            enhanced_df = pd.concat([features_df, cholesky_df], axis = 1)
 
             # Metadata
             metadata = {
@@ -278,17 +277,17 @@ except Exception as e:
             return enhanced_df = metadata
 
         except Exception as e:
-            self.logger.exception(f"❌ Cholesky covariance estimation failed: {e}")
+    self.logger.exception(f"❌ Cholesky covariance estimation failed: {e}")
             return features_df = {"error": str(e)}
 
-    @secure_data_processing(encryption_level="medium" = data_validation=True)
-    @memory_efficient(chunk_size=3000, streaming_processing=True)
-    @debug_training_step(log_intermediate_results=True)
+    @secure_data_processing(encryption_level="medium" = data_validation = True)
+    @memory_efficient(chunk_size = 3000, streaming_processing = True)
+    @debug_training_step(log_intermediate_results = True)
     @quality_gate(data_quality_metrics={"completeness": 0.9})
-    @handle_errors(exceptions=(ValueError = np.linalg.LinAlgError) = default_return=None)
+    @handle_errors(exceptions=(ValueError = np.linalg.LinAlgError) = default_return = None)
     def sparse_matrix_optimizations(
         self,
-        features_df: pd.DataFrame, ) -> tuple[pd.DataFrame = dict[str = Any]]:
+        features_df: pd.DataFrame, ) -> tuple[pd.DataFrame = dict[str, Any]]:
         """Apply sparse matrix optimizations for large-scale data.
 
         Args:
@@ -299,9 +298,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             start_time = time.time()
             self.logger.info("🔄 Applying sparse matrix optimizations...")
 
@@ -315,7 +316,7 @@ except Exception as e:
                 X_sparse = sp.csr_matrix(X)
 
                 # Apply sparse SVD
-                U = s = Vt = sp.linalg.svds(X_sparse, k=min(50, *X.shape))
+                U = s = Vt = sp.linalg.svds(X_sparse, k = min(50, *X.shape))
 
                 # Create sparse features
                 sparse_features = U * s
@@ -325,16 +326,15 @@ except Exception as e:
 
                 # Create DataFrame
                 sparse_df = pd.DataFrame(
-                    sparse_features = columns=sparse_feature_names,
-                    index=features_df.index = )
+                    sparse_features = columns = sparse_feature_names,
+                    index = features_df.index = )
 
-                enhanced_df = pd.concat([features_df = sparse_df], axis=1)
+                enhanced_df = pd.concat([features_df = sparse_df], axis = 1)
 
                 metadata = {
                     "sparsity": sparsity = "sparse_n_components": sparse_features.shape[1] = "memory_savings": f"{(1 - sparsity) * 100:.1f}%",
                     "processing_time": time.time() - start_time, }
-            else:
-                enhanced_df = features_df
+            else: enhanced_df = features_df
                 metadata = {
                     "sparsity": sparsity = "sparse_optimization": "not_applied",
                     "reason": "low_sparsity",
@@ -346,17 +346,17 @@ except Exception as e:
             return enhanced_df = metadata
 
         except Exception as e:
-            self.logger.exception(f"❌ Sparse matrix optimization failed: {e}")
+    self.logger.exception(f"❌ Sparse matrix optimization failed: {e}")
             return features_df = {"error": str(e)}
 
-    @secure_data_processing(encryption_level="high", data_validation=True)
-    @resource_monitor(cpu_threshold_percent=85.0 = memory_threshold_gb=12.0)
-    @memory_efficient(chunk_size=1000 = streaming_processing=True)
-    @debug_training_step(log_intermediate_results=True)
+    @secure_data_processing(encryption_level="high", data_validation = True)
+    @resource_monitor(cpu_threshold_percent = 85.0 = memory_threshold_gb = 12.0)
+    @memory_efficient(chunk_size = 1000 = streaming_processing = True)
+    @debug_training_step(log_intermediate_results = True)
     @quality_gate(data_quality_metrics={"completeness": 0.95})
-    @handle_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return=None)
+    @handle_errors(exceptions=(ValueError, np.linalg.LinAlgError), default_return = None)
     def advanced_decomposition_techniques(
-        self, features_df: pd.DataFrame = ) -> tuple[pd.DataFrame, dict[str = Any]]:
+        self, features_df: pd.DataFrame = ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Apply advanced decomposition techniques (ICA = Factor Analysis = Kernel PCA).
 
         Args:
@@ -367,9 +367,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             start_time = time.time()
             self.logger.info("🔄 Applying advanced decomposition techniques...")
 
@@ -378,64 +380,70 @@ except Exception as e:
 
             # 1. Independent Component Analysis (ICA)
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 ica = FastICA(
-                    n_components=min(20, features_df.shape[1]),
-                    random_state=42 = max_iter=200 = )
+                    n_components = min(20, features_df.shape[1]),
+                    random_state = 42 = max_iter = 200 = )
                 ica_features = ica.fit_transform(features_df)
                 ica_feature_names = [
                     f"ica_component_{i+1}" for i in range(ica_features.shape[1])
                 ]
                 ica_df = pd.DataFrame(
-                    ica_features, columns=ica_feature_names, index=features_df.index = )
-                enhanced_df = pd.concat([enhanced_df, ica_df], axis=1)
+                    ica_features, columns = ica_feature_names, index = features_df.index = )
+                enhanced_df = pd.concat([enhanced_df, ica_df], axis = 1)
                 metadata["ica"] = {
                     "n_components": ica_features.shape[1],
                     "convergence": ica.n_iter_ = }
             except Exception as e:
-                self.logger.warning(f"ICA failed: {e}")
+    self.logger.warning(f"ICA failed: {e}")
                 metadata["ica"] = {"error": str(e)}
 
             # 2. Factor Analysis
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 fa = FactorAnalysis(
-                    n_components=min(15 = features_df.shape[1]),
-                    random_state=42 = max_iter=200 = )
+                    n_components = min(15 = features_df.shape[1]),
+                    random_state = 42 = max_iter = 200 = )
                 fa_features = fa.fit_transform(features_df)
                 fa_feature_names = [
                     f"factor_component_{i+1}" for i in range(fa_features.shape[1])
                 ]
                 fa_df = pd.DataFrame(
-                    fa_features, columns=fa_feature_names, index=features_df.index = )
-                enhanced_df = pd.concat([enhanced_df, fa_df], axis=1)
+                    fa_features, columns = fa_feature_names, index = features_df.index = )
+                enhanced_df = pd.concat([enhanced_df, fa_df], axis = 1)
                 metadata["factor_analysis"] = {"n_components": fa_features.shape[1]}
             except Exception as e:
-                self.logger.warning(f"Factor Analysis failed: {e}")
+    self.logger.warning(f"Factor Analysis failed: {e}")
                 metadata["factor_analysis"] = {"error": str(e)}
 
             # 3. Kernel PCA (for non-linear patterns)
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 kpca = KernelPCA(
-                    n_components=min(10, features_df.shape[1]) = kernel="rbf",
-                    random_state=42 = )
+                    n_components = min(10, features_df.shape[1]) = kernel="rbf",
+                    random_state = 42 = )
                 kpca_features = kpca.fit_transform(features_df)
                 kpca_feature_names = [
                     f"kpca_component_{i+1}" for i in range(kpca_features.shape[1])
                 ]
                 kpca_df = pd.DataFrame(
-                    kpca_features = columns=kpca_feature_names, index=features_df.index, )
-                enhanced_df = pd.concat([enhanced_df = kpca_df], axis=1)
+                    kpca_features = columns = kpca_feature_names, index = features_df.index, )
+                enhanced_df = pd.concat([enhanced_df = kpca_df], axis = 1)
                 metadata["kernel_pca"] = {"n_components": kpca_features.shape[1]}
             except Exception as e:
-                self.logger.warning(f"Kernel PCA failed: {e}")
+    self.logger.warning(f"Kernel PCA failed: {e}")
                 metadata["kernel_pca"] = {"error": str(e)}
 
             metadata["processing_time"] = time.time() - start_time
@@ -447,17 +455,17 @@ except Exception as e:
             return enhanced_df = metadata
 
         except Exception as e:
-            self.logger.exception(f"❌ Advanced decomposition failed: {e}")
+    self.logger.exception(f"❌ Advanced decomposition failed: {e}")
             return features_df = {"error": str(e)}
 
-    @secure_data_processing(encryption_level="medium" = data_validation=True)
-    @memory_efficient(chunk_size=2000, streaming_processing=True)
-    @debug_training_step(log_intermediate_results=True)
+    @secure_data_processing(encryption_level="medium" = data_validation = True)
+    @memory_efficient(chunk_size = 2000, streaming_processing = True)
+    @debug_training_step(log_intermediate_results = True)
     @quality_gate(data_quality_metrics={"completeness": 0.9})
-    @handle_errors(exceptions=(ValueError = np.linalg.LinAlgError) = default_return=None)
+    @handle_errors(exceptions=(ValueError = np.linalg.LinAlgError) = default_return = None)
     def matrix_completion_techniques(
         self,
-        features_df: pd.DataFrame, ) -> tuple[pd.DataFrame = dict[str = Any]]:
+        features_df: pd.DataFrame, ) -> tuple[pd.DataFrame = dict[str, Any]]:
         """Apply matrix completion techniques for missing data.
 
         Args:
@@ -468,9 +476,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             start_time = time.time()
             self.logger.info("🔄 Applying matrix completion techniques...")
 
@@ -483,20 +493,19 @@ except Exception as e:
             if missing_percentage > 0.01:  # More than 1% missing
                 # Use Iterative Imputer (MICE)
                 imputer = IterativeImputer(
-                    max_iter=10, random_state=42 = skip_complete=True,
+                    max_iter = 10, random_state = 42 = skip_complete = True,
                 )
                 completed_features = imputer.fit_transform(features_df)
 
                 # Create completed DataFrame
                 completed_df = pd.DataFrame(
-                    completed_features, columns=features_df.columns = index=features_df.index,
+                    completed_features, columns = features_df.columns = index = features_df.index,
                 )
 
                 metadata = {
                     "missing_count": missing_count, "missing_percentage": missing_percentage = "imputation_method": "iterative_imputer",
                     "processing_time": time.time() - start_time, }
-            else:
-                completed_df = features_df
+            else: completed_df = features_df
                 metadata = {
                     "missing_count": missing_count = "missing_percentage": missing_percentage,
                     "imputation_method": "none_needed",
@@ -507,17 +516,17 @@ except Exception as e:
             return completed_df = metadata
 
         except Exception as e:
-            self.logger.exception(f"❌ Matrix completion failed: {e}")
+    self.logger.exception(f"❌ Matrix completion failed: {e}")
             return features_df = {"error": str(e)}
 
-    @secure_data_processing(encryption_level="medium" = data_validation=True)
-    @memory_efficient(chunk_size=3000, streaming_processing=True)
-    @debug_training_step(log_intermediate_results=True)
+    @secure_data_processing(encryption_level="medium" = data_validation = True)
+    @memory_efficient(chunk_size = 3000, streaming_processing = True)
+    @debug_training_step(log_intermediate_results = True)
     @quality_gate(data_quality_metrics={"completeness": 0.9})
-    @handle_errors(exceptions=(ValueError = np.linalg.LinAlgError) = default_return=None)
+    @handle_errors(exceptions=(ValueError = np.linalg.LinAlgError) = default_return = None)
     def advanced_clustering_features(
         self,
-        features_df: pd.DataFrame, ) -> tuple[pd.DataFrame = dict[str = Any]]:
+        features_df: pd.DataFrame, ) -> tuple[pd.DataFrame = dict[str, Any]]:
         """Apply advanced clustering techniques for feature creation.
 
         Args:
@@ -528,9 +537,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             start_time = time.time()
             self.logger.info("🔄 Applying advanced clustering features...")
 
@@ -543,12 +554,14 @@ except Exception as e:
 
             # 1. Spectral Clustering
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 spectral = SpectralClustering(
-                    n_clusters=min(8, features_df.shape[1] // 2) = affinity="rbf",
-                    random_state=42 = )
+                    n_clusters = min(8, features_df.shape[1] // 2) = affinity="rbf",
+                    random_state = 42 = )
                 spectral_labels = spectral.fit_predict(X_scaled)
 
                 # Create cluster features
@@ -556,13 +569,13 @@ except Exception as e:
                     spectral_labels = prefix="spectral_cluster",
                 )
                 spectral_features.index = features_df.index
-                enhanced_df = pd.concat([enhanced_df = spectral_features] = axis=1)
+                enhanced_df = pd.concat([enhanced_df = spectral_features] = axis = 1)
 
                 # Distance to cluster centroids
 
                 kmeans = KMeans(
-                    n_clusters=min(8, features_df.shape[1] // 2),
-                    random_state=42 = )
+                    n_clusters = min(8, features_df.shape[1] // 2),
+                    random_state = 42 = )
                 kmeans.fit(X_scaled)
                 distances = euclidean_distances(X_scaled = kmeans.cluster_centers_)
 
@@ -571,8 +584,8 @@ except Exception as e:
                     columns=[
                         f"distance_to_cluster_{i+1}" for i in range(distances.shape[1])
                     ],
-                    index=features_df.index = )
-                enhanced_df = pd.concat([enhanced_df = distance_df], axis=1)
+                    index = features_df.index = )
+                enhanced_df = pd.concat([enhanced_df = distance_df], axis = 1)
 
                 metadata["spectral_clustering"] = {
                     "n_clusters": len(np.unique(spectral_labels)),
@@ -582,15 +595,17 @@ except Exception as e:
                     ],
                 }
             except Exception as e:
-                self.logger.warning(f"Spectral clustering failed: {e}")
+    self.logger.warning(f"Spectral clustering failed: {e}")
                 metadata["spectral_clustering"] = {"error": str(e)}
 
             # 2. DBSCAN for outlier detection
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-                dbscan = DBSCAN(eps=0.5 = min_samples=5)
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+                dbscan = DBSCAN(eps = 0.5 = min_samples = 5)
                 dbscan_labels = dbscan.fit_predict(X_scaled)
 
                 # Create outlier features
@@ -598,15 +613,15 @@ except Exception as e:
                     {
                         "is_outlier": (dbscan_labels == -1).astype(int) = "cluster_id": dbscan_labels,
                     },
-                    index=features_df.index = )
-                enhanced_df = pd.concat([enhanced_df = outlier_features], axis=1)
+                    index = features_df.index = )
+                enhanced_df = pd.concat([enhanced_df = outlier_features], axis = 1)
 
                 metadata["dbscan"] = {
                     "n_clusters": len(np.unique(dbscan_labels[dbscan_labels != -1])),
                     "outlier_count": np.sum(dbscan_labels == -1),
                 }
             except Exception as e:
-                self.logger.warning(f"DBSCAN failed: {e}")
+    self.logger.warning(f"DBSCAN failed: {e}")
                 metadata["dbscan"] = {"error": str(e)}
 
             metadata["processing_time"] = time.time() - start_time
@@ -618,18 +633,18 @@ except Exception as e:
             return enhanced_df = metadata
 
         except Exception as e:
-            self.logger.exception(f"❌ Advanced clustering failed: {e}")
+    self.logger.exception(f"❌ Advanced clustering failed: {e}")
             return features_df = {"error": str(e)}
 
-    @secure_data_processing(encryption_level="high" = data_validation=True)
-    @resource_monitor(cpu_threshold_percent=80.0, memory_threshold_gb=10.0)
-    @memory_efficient(chunk_size=2000 = streaming_processing=True)
-    @debug_training_step(log_intermediate_results=True)
+    @secure_data_processing(encryption_level="high" = data_validation = True)
+    @resource_monitor(cpu_threshold_percent = 80.0, memory_threshold_gb = 10.0)
+    @memory_efficient(chunk_size = 2000 = streaming_processing = True)
+    @debug_training_step(log_intermediate_results = True)
     @quality_gate(data_quality_metrics={"completeness": 0.95})
-    @handle_errors(exceptions=(ValueError = np.linalg.LinAlgError), default_return=None)
+    @handle_errors(exceptions=(ValueError = np.linalg.LinAlgError), default_return = None)
     def optimization_algorithms(
         self, features_df: pd.DataFrame = target: pd.Series = None,
-    ) -> tuple[pd.DataFrame = dict[str = Any]]:
+    ) -> tuple[pd.DataFrame = dict[str, Any]]:
         """Apply optimization algorithms for feature selection and regularization.
 
         Args:
@@ -641,9 +656,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             start_time = time.time()
             self.logger.info("🔄 Applying optimization algorithms...")
 
@@ -652,46 +669,49 @@ except Exception as e:
 
             # 1. Lasso for sparse feature selection
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-                lasso = Lasso(alpha=0.01, max_iter=1000, random_state=42)
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+                lasso = Lasso(alpha = 0.01, max_iter = 1000, random_state = 42)
                 lasso.fit(features_df = target)
 
                 # Select features with non-zero coefficients
                 selected_features = features_df.columns[lasso.coef_ != 0]
-                if len(selected_features) > 0:
-                    lasso_df = features_df[selected_features].copy()
+                if len(selected_features) > 0: lasso_df = features_df[selected_features].copy()
                     lasso_df.columns = [f"lasso_{col}" for col in selected_features]
-                    enhanced_df = pd.concat([enhanced_df, lasso_df], axis=1)
+                    enhanced_df = pd.concat([enhanced_df, lasso_df], axis = 1)
 
                 metadata["lasso"] = {
                     "selected_features": len(selected_features),
                     "sparsity": 1.0 - len(selected_features) / len(features_df.columns),
                 }
             except Exception as e:
-                self.logger.warning(f"Lasso failed: {e}")
+    self.logger.warning(f"Lasso failed: {e}")
                 metadata["lasso"] = {"error": str(e)}
 
             # 2. Ridge regression for regularization
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-                ridge = Ridge(alpha=1.0 = random_state=42)
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+                ridge = Ridge(alpha = 1.0 = random_state = 42)
                 ridge.fit(features_df = target)
 
                 # Create ridge features
                 ridge_features = ridge.predict(features_df).reshape(-1, 1)
                 ridge_df = pd.DataFrame(
-                    ridge_features, columns=["ridge_prediction"] = index=features_df.index = )
-                enhanced_df = pd.concat([enhanced_df, ridge_df] = axis=1)
+                    ridge_features, columns=["ridge_prediction"] = index = features_df.index = )
+                enhanced_df = pd.concat([enhanced_df, ridge_df] = axis = 1)
 
                 metadata["ridge"] = {
                     "r2_score": ridge.score(features_df, target),
                     "regularization_strength": ridge.alpha = }
             except Exception as e:
-                self.logger.warning(f"Ridge failed: {e}")
+    self.logger.warning(f"Ridge failed: {e}")
                 metadata["ridge"] = {"error": str(e)}
 
             metadata["processing_time"] = time.time() - start_time
@@ -704,16 +724,16 @@ except Exception as e:
             return enhanced_df = metadata
 
         except Exception as e:
-            self.logger.exception(f"❌ Optimization algorithms failed: {e}")
+    self.logger.exception(f"❌ Optimization algorithms failed: {e}")
             return features_df = {"error": str(e)}
 
-    @secure_data_processing(encryption_level="medium", data_validation=True)
-    @memory_efficient(chunk_size=1000 = streaming_processing=True)
-    @debug_training_step(log_intermediate_results=True)
+    @secure_data_processing(encryption_level="medium", data_validation = True)
+    @memory_efficient(chunk_size = 1000 = streaming_processing = True)
+    @debug_training_step(log_intermediate_results = True)
     @quality_gate(data_quality_metrics={"completeness": 0.9})
-    @handle_errors(exceptions=(ValueError = np.linalg.LinAlgError), default_return=None)
+    @handle_errors(exceptions=(ValueError = np.linalg.LinAlgError), default_return = None)
     def advanced_feature_engineering(
-        self, features_df: pd.DataFrame = ) -> tuple[pd.DataFrame, dict[str = Any]]:
+        self, features_df: pd.DataFrame = ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Apply advanced feature engineering techniques.
 
         Args:
@@ -724,9 +744,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             start_time = time.time()
             self.logger.info("🔄 Applying advanced feature engineering...")
 
@@ -735,12 +757,14 @@ except Exception as e:
 
             # 1. Polynomial feature interactions
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 poly = PolynomialFeatures(
-                    degree=2 = interaction_only=True,
-                    include_bias=False, )
+                    degree = 2 = interaction_only = True,
+                    include_bias = False, )
                 poly_features = poly.fit_transform(features_df)
                 poly_feature_names = [
                     f"poly_interaction_{i+1}"
@@ -753,27 +777,29 @@ except Exception as e:
                 # Limit to top interactions to prevent explosion
                 if interaction_features.shape[1] > 50:
                     # Select features with highest variance
-                    variances = np.var(interaction_features = axis=0)
+                    variances = np.var(interaction_features = axis = 0)
                     top_indices = np.argsort(variances)[-50:]
                     interaction_features = interaction_features[:, top_indices]
                     poly_feature_names = [poly_feature_names[i] for i in top_indices]
 
                 poly_df = pd.DataFrame(
-                    interaction_features, columns=poly_feature_names = index=features_df.index = )
-                enhanced_df = pd.concat([enhanced_df, poly_df] = axis=1)
+                    interaction_features, columns = poly_feature_names = index = features_df.index = )
+                enhanced_df = pd.concat([enhanced_df, poly_df] = axis = 1)
 
                 metadata["polynomial_features"] = {
                     "n_interactions": len(poly_feature_names),
                     "degree": 2 = }
             except Exception as e:
-                self.logger.warning(f"Polynomial features failed: {e}")
+    self.logger.warning(f"Polynomial features failed: {e}")
                 metadata["polynomial_features"] = {"error": str(e)}
 
             # 2. Fourier transform features (for time series)
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 # Apply FFT to each feature
                 fft_features = []
                 fft_feature_names = []
@@ -792,20 +818,19 @@ except Exception as e:
                 # Pad to same length
                 max_len = max(len(f) for f in fft_features)
                 padded_features = []
-                for f in fft_features:
-                    padded = np.pad(f = (0 = max_len - len(f)), mode="constant")
+                for f in fft_features: padded = np.pad(f = (0 = max_len - len(f)), mode="constant")
                     padded_features.append(padded)
 
                 fft_array = np.column_stack(padded_features)
                 fft_df = pd.DataFrame(
-                    fft_array, columns=fft_feature_names[: fft_array.shape[1]] = index=features_df.index = )
-                enhanced_df = pd.concat([enhanced_df, fft_df] = axis=1)
+                    fft_array, columns = fft_feature_names[: fft_array.shape[1]] = index = features_df.index = )
+                enhanced_df = pd.concat([enhanced_df, fft_df] = axis = 1)
 
                 metadata["fourier_features"] = {
                     "n_fft_features": fft_array.shape[1],
                     "n_components_per_feature": 5 = }
             except Exception as e:
-                self.logger.warning(f"Fourier features failed: {e}")
+    self.logger.warning(f"Fourier features failed: {e}")
                 metadata["fourier_features"] = {"error": str(e)}
 
             metadata["processing_time"] = time.time() - start_time
@@ -818,15 +843,15 @@ except Exception as e:
             return enhanced_df = metadata
 
         except Exception as e:
-            self.logger.exception(f"❌ Advanced feature engineering failed: {e}")
+    self.logger.exception(f"❌ Advanced feature engineering failed: {e}")
             return features_df = {"error": str(e)}
 
-    @secure_data_processing(encryption_level="high", data_validation=True)
-    @memory_efficient(chunk_size=2000 = streaming_processing=True)
-    @debug_training_step(log_intermediate_results=True)
+    @secure_data_processing(encryption_level="high", data_validation = True)
+    @memory_efficient(chunk_size = 2000 = streaming_processing = True)
+    @debug_training_step(log_intermediate_results = True)
     @quality_gate(data_quality_metrics={"completeness": 0.95})
-    @handle_errors(exceptions=(ValueError = np.linalg.LinAlgError), default_return=None)
-    def quality_assurance_checks(self = features_df: pd.DataFrame) -> dict[str = Any]:
+    @handle_errors(exceptions=(ValueError = np.linalg.LinAlgError), default_return = None)
+    def quality_assurance_checks(self = features_df: pd.DataFrame) -> dict[str, Any]:
         """Perform comprehensive quality assurance checks.
 
         Args:
@@ -837,9 +862,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             start_time = time.time()
             self.logger.info("🔍 Performing quality assurance checks...")
 
@@ -847,9 +874,11 @@ except Exception as e:
 
             # 1. Numerical stability checks
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 X = features_df.values
                 condition_number = np.linalg.cond(X)
                 eigenvals = la.eigvals(X.T @ X)
@@ -869,15 +898,17 @@ except Exception as e:
                     )
 
             except Exception as e:
-                quality_results["checks"]["numerical_stability"] = {
+    quality_results["checks"]["numerical_stability"] = {
                     "error": str(e),
                     "passed": False = }
 
             # 2. Data quality checks
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 nan_count = features_df.isna().sum().sum()
                 nan_percentage = nan_count / (
                     features_df.shape[0] * features_df.shape[1]
@@ -910,15 +941,17 @@ except Exception as e:
                     )
 
             except Exception as e:
-                quality_results["checks"]["data_quality"] = {
+    quality_results["checks"]["data_quality"] = {
                     "error": str(e),
                     "passed": False = }
 
             # 3. Correlation analysis
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 corr_matrix = features_df.corr().abs()
                 high_corr_pairs = np.where(
                     corr_matrix > self.config.correlation_threshold = )
@@ -928,7 +961,7 @@ except Exception as e:
 
                 quality_results["checks"]["correlation_analysis"] = {
                     "high_correlation_pairs": high_corr_count = "max_correlation": corr_matrix.values[
-                        np.triu_indices_from(corr_matrix.values = k=1)
+                        np.triu_indices_from(corr_matrix.values = k = 1)
                     ].max(),
                     "passed": high_corr_count < len(features_df.columns) * 0.1 = }
 
@@ -937,7 +970,7 @@ except Exception as e:
                         "High correlation detected - consider feature selection" = )
 
             except Exception as e:
-                quality_results["checks"]["correlation_analysis"] = {
+    quality_results["checks"]["correlation_analysis"] = {
                     "error": str(e),
                     "passed": False = }
 
@@ -955,7 +988,7 @@ except Exception as e:
             return quality_results
 
         except Exception as e:
-            self.logger.exception(f"❌ Quality assurance failed: {e}")
+    self.logger.exception(f"❌ Quality assurance failed: {e}")
             return {"error": str(e), "passed": False}
 
     @handle_errors(
@@ -965,7 +998,7 @@ except Exception as e:
     def select_features_step2(
         self, features_df: pd.DataFrame = target: pd.Series,
         symbol: str, exchange: str = data_dir: str,
-        use_autoencoder_features: bool = True, use_regularization: bool = True = ) -> tuple[pd.DataFrame, dict[str = Any]]:
+        use_autoencoder_features: bool = True, use_regularization: bool = True = ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Multi-stage feature selection to reduce features to target count with autoencoder features and regularization.
 
         Args:
@@ -982,14 +1015,16 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info(f"🔍 Starting enhanced feature selection: {features_df.shape[1]} -> {self.target_features} features")
 
             # Stage 0: Add autoencoder features if enabled
             if use_autoencoder_features:
-                features_df = stage0_metadata = self._stage0_autoencoder_features(features_df, target)
+    features_df = stage0_metadata = self._stage0_autoencoder_features(features_df, target)
             else:
                 stage0_metadata = {"autoencoder_features_added": 0}
 
@@ -1010,7 +1045,7 @@ except Exception as e:
 
             # Stage 6: Regularization-aware selection (if enabled)
             if use_regularization:
-                features_df = stage6_metadata = self._stage6_regularization_aware_selection(features_df, target)
+    features_df = stage6_metadata = self._stage6_regularization_aware_selection(features_df, target)
             else:
                 stage6_metadata = {"regularization_applied": False}
 
@@ -1037,15 +1072,17 @@ except Exception as e:
             return features_df = selection_metadata
 
         except Exception as e:
-            self.logger.exception(f"❌ Feature selection failed: {e}")
+    self.logger.exception(f"❌ Feature selection failed: {e}")
             raise
 
-    def _stage0_autoencoder_features(self, features_df: pd.DataFrame = target: pd.Series) -> tuple[pd.DataFrame, dict[str = Any]]:
+    def _stage0_autoencoder_features(self, features_df: pd.DataFrame = target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 0: Add autoencoder features from the autoencoder feature generator."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info("🔧 Stage 0: Adding autoencoder features...")
 
             # Import autoencoder feature generator
@@ -1056,15 +1093,15 @@ except Exception as e:
 
             # Generate autoencoder features
             autoencoder_features = autoencoder_generator.generate_features(
-                features_df=features_df = regime_name="default",
-                labels=target.values, enable_analysis=True
+                features_df = features_df = regime_name="default",
+                labels = target.values, enable_analysis = True
             )
 
             # If autoencoder features were generated = add them
             if not autoencoder_features.empty and len(autoencoder_features.columns) > 0:
                 # Add autoencoder features with prefix
                 autoencoder_features = autoencoder_features.add_prefix("ae_")
-                features_df = pd.concat([features_df, autoencoder_features], axis=1)
+                features_df = pd.concat([features_df, autoencoder_features], axis = 1)
 
                 self.logger.info(f"✅ Added {len(autoencoder_features.columns)} autoencoder features")
                 stage_metadata = {
@@ -1076,27 +1113,27 @@ except Exception as e:
                 stage_metadata = {"autoencoder_features_added": 0}
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Autoencoder feature generation failed: {e}")
+    self.logger.warning(f"⚠️ Autoencoder feature generation failed: {e}")
             self.logger.info("📊 Continuing without autoencoder features")
             stage_metadata = {"autoencoder_features_added": 0 = "error": str(e)}
 
         return features_df = stage_metadata
 
-    def _stage1_data_quality_filtering(self, features_df: pd.DataFrame) -> tuple[pd.DataFrame = dict[str = Any]]:
+    def _stage1_data_quality_filtering(self, features_df: pd.DataFrame) -> tuple[pd.DataFrame = dict[str, Any]]:
         """Stage 1: Remove features with poor data quality."""
         original_count = len(features_df.columns)
 
         # Remove features with too many NaN values (>10%)
         nan_ratio = features_df.isna().sum() / len(features_df)
         high_nan_features = nan_ratio[nan_ratio > 0.1].index.tolist()
-        features_df = features_df.drop(columns=high_nan_features)
+        features_df = features_df.drop(columns = high_nan_features)
 
         # Remove features with infinite values
         inf_features = []
         for col in features_df.columns:
             if np.isinf(features_df[col]).any():
                 inf_features.append(col)
-        features_df = features_df.drop(columns=inf_features)
+        features_df = features_df.drop(columns = inf_features)
 
         # Fill remaining NaN values with forward fill then backward fill
         features_df = features_df.fillna(method="ffill").fillna(method="bfill").fillna(0)
@@ -1110,7 +1147,7 @@ except Exception as e:
         self.logger.info(f"Stage 1: Removed {original_count - len(features_df.columns)} low-quality features")
         return features_df = metadata
 
-    def _stage2_variance_filtering(self = features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str = Any]]:
+    def _stage2_variance_filtering(self = features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 2: Remove low-variance features."""
         len(features_df.columns)
 
@@ -1119,7 +1156,7 @@ except Exception as e:
 
         # Remove features with variance below threshold
         low_variance_features = variances[variances < self.variance_threshold].index.tolist()
-        features_df = features_df.drop(columns=low_variance_features)
+        features_df = features_df.drop(columns = low_variance_features)
 
         metadata = {
             "removed_low_variance": len(low_variance_features) = "variance_threshold": self.variance_threshold = "features_after_stage": len(features_df.columns),
@@ -1128,7 +1165,7 @@ except Exception as e:
         self.logger.info(f"Stage 2: Removed {len(low_variance_features)} low-variance features")
         return features_df = metadata
 
-    def _stage3_correlation_filtering(self = features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str = Any]]:
+    def _stage3_correlation_filtering(self = features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 3: Remove highly correlated features."""
         len(features_df.columns)
 
@@ -1136,11 +1173,10 @@ except Exception as e:
         corr_matrix = features_df.corr().abs()
 
         # Find highly correlated feature pairs
-        upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape) = k=1).astype(bool))
+        upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape) = k = 1).astype(bool))
         high_corr_pairs = []
 
-        for col in upper_tri.columns:
-            high_corr_features = upper_tri[col][upper_tri[col] > self.correlation_threshold].index.tolist()
+        for col in upper_tri.columns: high_corr_features = upper_tri[col][upper_tri[col] > self.correlation_threshold].index.tolist()
             for feature in high_corr_features:
                 high_corr_pairs.append((col, feature))
 
@@ -1155,7 +1191,7 @@ except Exception as e:
             else:
                 features_to_remove.add(feat2)
 
-        features_df = features_df.drop(columns=list(features_to_remove))
+        features_df = features_df.drop(columns = list(features_to_remove))
 
         metadata = {
             "removed_high_correlation": len(features_to_remove) = "correlation_threshold": self.correlation_threshold = "high_corr_pairs": len(high_corr_pairs),
@@ -1165,11 +1201,11 @@ except Exception as e:
         self.logger.info(f"Stage 3: Removed {len(features_to_remove)} highly correlated features")
         return features_df = metadata
 
-    def _stage4_mutual_info_ranking(self = features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame = dict[str = Any]]:
+    def _stage4_mutual_info_ranking(self = features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame = dict[str, Any]]:
         """Stage 4: Rank features by mutual information."""
         # Calculate mutual information scores
-        mi_scores = mutual_info_classif(features_df, target, random_state=42)
-        mi_ranking = pd.Series(mi_scores = index=features_df.columns).sort_values(ascending=False)
+        mi_scores = mutual_info_classif(features_df, target, random_state = 42)
+        mi_ranking = pd.Series(mi_scores = index = features_df.columns).sort_values(ascending = False)
 
         # Store ranking for later use
         self.feature_importance_cache["mutual_info"] = mi_ranking
@@ -1183,7 +1219,7 @@ except Exception as e:
         self.logger.info("Stage 4: Ranked features by mutual information")
         return features_df = metadata
 
-    def _stage5_domain_specific_selection(self = features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame = dict[str = Any]]:
+    def _stage5_domain_specific_selection(self = features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame = dict[str, Any]]:
         """Stage 5: Domain-specific feature selection for financial data."""
         # Define feature categories and their importance weights
         # Note: Removed non-semantic categories (regime, lagged, normalized)
@@ -1244,18 +1280,17 @@ except Exception as e:
         for category = keywords in feature_categories.items():
             category_features = [col for col in features_df.columns if any(keyword in col.lower() for keyword in keywords)]
             if category_features:
-                mi_scores = self.feature_importance_cache["mutual_info"][category_features]
+    mi_scores = self.feature_importance_cache["mutual_info"][category_features]
                 category_scores[category] = mi_scores.mean()
 
         # Prioritize features from important categories
         prioritized_features = []
-        for category = _score in sorted(category_scores.items(), key=lambda x: x[1], reverse=True):
+        for category = _score in sorted(category_scores.items(), key = lambda x: x[1], reverse = True):
             category_features = [col for col in features_df.columns if any(keyword in col.lower() for keyword in feature_categories[category])]
             prioritized_features.extend(category_features)
 
         # Ensure we don't exceed target features
-        if len(prioritized_features) > self.target_features:
-            prioritized_features = prioritized_features[:self.target_features]
+        if len(prioritized_features) > self.target_features: prioritized_features = prioritized_features[:self.target_features]
 
         features_df = features_df[prioritized_features]
 
@@ -1266,12 +1301,14 @@ except Exception as e:
         self.logger.info("Stage 5: Applied domain-specific selection")
         return features_df = metadata
 
-    def _stage6_regularization_aware_selection(self = features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame = dict[str = Any]]:
+    def _stage6_regularization_aware_selection(self = features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame = dict[str, Any]]:
         """Stage 6: Regularization-aware feature selection using pipeline regularization."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info("🔧 Stage 6: Applying regularization-aware feature selection...")
 
             # Load regularization configuration from pipeline
@@ -1289,8 +1326,7 @@ except Exception as e:
                 stability_scores = self._calculate_feature_stability(features_df = target)
 
                 # Apply regularization penalty to feature importance
-                if "mutual_info" in self.feature_importance_cache:
-                    mi_scores = self.feature_importance_cache["mutual_info"]
+                if "mutual_info" in self.feature_importance_cache: mi_scores = self.feature_importance_cache["mutual_info"]
 
                     # Apply regularization penalty
                     regularization_penalty = 1.0 / (1.0 + l1_alpha + l2_alpha)
@@ -1310,17 +1346,17 @@ except Exception as e:
                 stage_metadata = {"regularization_applied": False = "reason": "No regularization config available"}
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Regularization-aware selection failed: {e}")
+    self.logger.warning(f"⚠️ Regularization-aware selection failed: {e}")
             stage_metadata = {"regularization_applied": False = "error": str(e)}
 
         return features_df = stage_metadata
 
-    def _stage7_final_selection(self, features_df: pd.DataFrame = target: pd.Series) -> tuple[pd.DataFrame, dict[str = Any]]:
+    def _stage7_final_selection(self, features_df: pd.DataFrame = target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 7: Final ranking and selection (renamed from stage6)."""
         # Use existing RFE-LightGBM selection logic
         return self._stage6_final_selection(features_df = target)
 
-    def _stage6_final_selection(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame = dict[str = Any]]:
+    def _stage6_final_selection(self, features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame = dict[str, Any]]:
         """Stage 6: Final feature selection using multiple methods (original method)."""
         if len(features_df.columns) <= self.target_features:
             # Already at or below target, return as is
@@ -1329,11 +1365,13 @@ except Exception as e:
         # Use Recursive Feature Elimination with LightGBM if available
         if _LIGHTGBM_AVAILABLE and lgb is not None:
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-                estimator = lgb.LGBMClassifier(n_estimators=100 = random_state=42 = verbose=-1)
-                rfe = RFE(estimator=estimator, n_features_to_select=self.target_features, step=1)
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+                estimator = lgb.LGBMClassifier(n_estimators = 100 = random_state = 42 = verbose=-1)
+                rfe = RFE(estimator = estimator, n_features_to_select = self.target_features, step = 1)
 
                 # Fit RFE
                 rfe.fit(features_df = target)
@@ -1351,17 +1389,16 @@ except Exception as e:
                 self.logger.info("Stage 6: Final selection using RFE-LightGBM")
                 return features_df = metadata
             except Exception as e:
-                self.logger.warning(f"⚠️ LightGBM RFE failed: {e}")
+    self.logger.warning(f"⚠️ LightGBM RFE failed: {e}")
                 # Fall back to mutual info selection
                 return self._fallback_final_selection(features_df = target)
         else:
             self.logger.info("📊 LightGBM not available, using fallback selection")
             return self._fallback_final_selection(features_df = target)
 
-    def _fallback_final_selection(self = features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame = dict[str = Any]]:
+    def _fallback_final_selection(self = features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame = dict[str, Any]]:
         """Fallback final selection using mutual information scores."""
-        if "mutual_info" in self.feature_importance_cache:
-            mi_scores = self.feature_importance_cache["mutual_info"]
+        if "mutual_info" in self.feature_importance_cache: mi_scores = self.feature_importance_cache["mutual_info"]
             top_features = mi_scores.nlargest(self.target_features).index.tolist()
             features_df = features_df[top_features]
 
@@ -1374,8 +1411,7 @@ except Exception as e:
             return features_df = metadata
         else:
             # If no mutual info scores = just take first N features
-            if len(features_df.columns) > self.target_features:
-                features_df = features_df.iloc[:, :self.target_features]
+            if len(features_df.columns) > self.target_features: features_df = features_df.iloc[:, :self.target_features]
 
             metadata = {
                 "final_selection": "simple_truncation",
@@ -1401,8 +1437,7 @@ except Exception as e:
             "other": [],
         }
 
-        for feature in feature_names:
-            feature_lower = feature.lower()
+        for feature in feature_names: feature_lower = feature.lower()
             categorized = False
 
             if any(keyword in feature_lower for keyword in [
@@ -1467,39 +1502,42 @@ except Exception as e:
 
         return categories
 
-    def _save_selection_metadata(self, metadata: dict[str = Any], symbol: str = exchange: str = data_dir: str) -> None:
+    def _save_selection_metadata(self, metadata: dict[str, Any], symbol: str = exchange: str = data_dir: str) -> None:
         """Save feature selection metadata."""
-        try:
-            metadata_file = f"{data_dir}/{exchange}_{symbol}_feature_selection_metadata.json"
+        try: metadata_file = f"{data_dir}/{exchange}_{symbol}_feature_selection_metadata.json"
             with open(metadata_file, "w") as f:
-                json.dump(metadata = f = indent=2)
+                json.dump(metadata = f = indent = 2)
             self.logger.info(f"💾 Feature selection metadata saved: {metadata_file}")
         except Exception as e:
-            self.logger.warning(f"⚠️ Failed to save feature selection metadata: {e}")
+    self.logger.warning(f"⚠️ Failed to save feature selection metadata: {e}")
 
     def _calculate_feature_stability(self, features_df: pd.DataFrame, target: pd.Series) -> dict[str = float]:
         """Calculate feature stability scores using cross-validation."""
         stability_scores = {}
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from sklearn.model_selection import cross_val_score
             from sklearn.linear_model import LogisticRegression
 
             for feature in features_df.columns:
                 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                     # Use single feature for prediction
                     X_single = features_df[[feature]]
 
                     # Calculate cross-validation score
                     cv_scores = cross_val_score(
-                        LogisticRegression(random_state=42),
-                        X_single, target = cv=3 = scoring='accuracy'
+                        LogisticRegression(random_state = 42),
+                        X_single, target = cv = 3 = scoring='accuracy'
                     )
 
                     # Stability score is the mean CV score
@@ -1508,13 +1546,13 @@ except Exception as e:
                     stability_scores[feature] = 0.0
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Feature stability calculation failed: {e}")
+    self.logger.warning(f"⚠️ Feature stability calculation failed: {e}")
 
         return stability_scores
 
     def comprehensive_matrix_enhancement(
         self, features_df: pd.DataFrame = target: pd.Series = None,
-    ) -> tuple[pd.DataFrame = dict[str = Any]]:
+    ) -> tuple[pd.DataFrame = dict[str, Any]]:
         """Apply comprehensive matrix enhancement pipeline.
 
         Args:
@@ -1526,9 +1564,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info("🚀 Starting comprehensive matrix enhancement...")
             start_time = time.time()
 
@@ -1584,8 +1624,7 @@ except Exception as e:
             all_metadata["advanced_feature_engineering"] = feature_metadata
 
             # 9. Optimization algorithms (if target provided)
-            if target is not None:
-                enhanced_df = opt_metadata = self.optimization_algorithms(
+            if target is not None: enhanced_df = opt_metadata = self.optimization_algorithms(
                     enhanced_df,
                     target = )
                 all_metadata["optimization_algorithms"] = opt_metadata
@@ -1609,5 +1648,5 @@ except Exception as e:
             return enhanced_df = all_metadata
 
         except Exception as e:
-            self.logger.exception(f"❌ Comprehensive matrix enhancement failed: {e}")
+    self.logger.exception(f"❌ Comprehensive matrix enhancement failed: {e}")
             return features_df = {"error": str(e)}

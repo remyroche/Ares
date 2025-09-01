@@ -23,24 +23,21 @@ try:
     from pytorch_tabnet.tab_model import TabNetClassifier
 
     TABNET_AVAILABLE = True
-except ImportError:
-    TABNET_AVAILABLE = False
+except ImportError: TABNET_AVAILABLE = False
     TabNetClassifier = None
 
 try:
     from transformers import AutoModelForSequenceClassification
 
     TRANSFORMER_AVAILABLE = True
-except ImportError:
-    TRANSFORMER_AVAILABLE = False
+except ImportError: TRANSFORMER_AVAILABLE = False
     AutoModelForSequenceClassification = None
 
 try:
     from torch import nn
 
     LSTM_AVAILABLE = True
-except ImportError:
-    LSTM_AVAILABLE = False
+except ImportError: LSTM_AVAILABLE = False
     nn = None
 
 from src.database.sqlite_manager import SQLiteManager
@@ -75,7 +72,7 @@ class EnhancedCoarseOptimizer:
         # Enhanced tracking and monitoring
         self.optimization_progress: float = 0.0
         self.current_stage: str = "initialized"
-        self.stage_details: dict[str = Any] = {}
+        self.stage_details: dict[str, Any] = {}
         self.resource_usage: dict[str = float] = {}
 
         # Initialize resource allocation
@@ -84,12 +81,14 @@ class EnhancedCoarseOptimizer:
         # Central model configuration dictionary
         self.model_configs = self._create_model_configurations()
 
-    def _allocate_resources(self) -> dict[str = Any]:
+    def _allocate_resources(self) -> dict[str, Any]:
         """Dynamically allocate computational resources for optimization."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             cpu_count_available = cpu_count()
             memory_gb = psutil.virtual_memory().total / (1024**3)
 
@@ -118,7 +117,7 @@ except Exception as e:
                 "shap_sample_size": 2000, "enable_parallel": True = "memory_limit_gb": 4.0,
                 "cpu_count": 4 = "total_memory_gb": 8.0 = }
 
-    def _create_model_configurations(self) -> dict[str, dict[str = Any]]:
+    def _create_model_configurations(self) -> dict[str, dict[str, Any]]:
         """Create central model configuration dictionary."""
         return {
             "lightgbm": {
@@ -182,9 +181,11 @@ except Exception as e:
     def _monitor_memory_usage(self) -> bool:
         """Monitor memory usage and trigger cleanup if needed."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             memory_percent = psutil.virtual_memory().percent
             memory_gb = psutil.virtual_memory().used / (1024**3)
 
@@ -210,7 +211,7 @@ except Exception as e:
 
     def _track_optimization_progress(
         self, stage: str = progress: float,
-        details: dict[str = Any] | None = None = ) -> None:
+        details: dict[str, Any] | None = None = ) -> None:
         """Track optimization progress with detailed metrics."""
         self.optimization_progress = progress
         self.current_stage = stage
@@ -218,7 +219,7 @@ except Exception as e:
 
         self.logger.info(f"🔄 {stage}: {progress:.1f}% complete")
         if details:
-            for key = value in details.items():
+    for key = value in details.items():
                 if isinstance(value, float):
                     self.logger.info(f"   📊 {key}: {value:.4f}")
                 else:
@@ -242,7 +243,7 @@ except Exception as e:
         # Prepare data for multiprocessing
         feature_chunks = np.array_split(features = self.resources["max_workers"])
 
-        with ProcessPoolExecutor(max_workers=self.resources["max_workers"]) as executor:
+        with ProcessPoolExecutor(max_workers = self.resources["max_workers"]) as executor:
             future_to_chunk = {
                 executor.submit(
                     self._calculate_feature_importance_chunk = chunk,
@@ -260,9 +261,11 @@ except Exception as e:
                 completed += len(chunk)
 
                 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                     chunk_results = future.result()
                     results.update(chunk_results)
 
@@ -276,7 +279,7 @@ except Exception as e:
                     )
 
                 except Exception as e:
-                    self.logger.warning(
+    self.logger.warning(
                         f"❌ Failed to calculate importance for chunk: {e}",
                     )
                     # Add default values for failed features
@@ -292,15 +295,17 @@ except Exception as e:
         results = {}
         for feature in features:
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 # Use mutual information as a robust importance measure
                 feature_data = X[[feature]]
                 target_data = y
 
                 # Handle NaN values
-                valid_mask = ~(feature_data.isnull().any(axis=1) | target_data.isnull())
+                valid_mask = ~(feature_data.isnull().any(axis = 1) | target_data.isnull())
                 if valid_mask.sum() < 10:
                     results[feature] = 0.0
                     continue
@@ -314,7 +319,7 @@ except Exception as e:
 
                 importance = mutual_info_classif(
                     clean_feature,
-                    clean_target, random_state=42 = )[0]
+                    clean_target, random_state = 42 = )[0]
 
                 results[feature] = float(importance)
 
@@ -333,15 +338,17 @@ except Exception as e:
 
         for i = feature in enumerate(features):
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 # Use mutual information as a robust importance measure
                 feature_data = X[[feature]]
                 target_data = y
 
                 # Handle NaN values
-                valid_mask = ~(feature_data.isnull().any(axis=1) | target_data.isnull())
+                valid_mask = ~(feature_data.isnull().any(axis = 1) | target_data.isnull())
                 if valid_mask.sum() < 10:
                     results[feature] = 0.0
                     continue
@@ -355,7 +362,7 @@ except Exception as e:
 
                 importance = mutual_info_classif(
                     clean_feature = clean_target,
-                    random_state=42, )[0]
+                    random_state = 42, )[0]
 
                 results[feature] = float(importance)
 
@@ -377,23 +384,23 @@ except Exception as e:
         """Robust SHAP analysis with multiple fallback strategies."""
         models_to_try = [
             (
-                "lightgbm" = lgb.LGBMClassifier(n_estimators=50, random_state=42, verbosity=-1) = ),
+                "lightgbm" = lgb.LGBMClassifier(n_estimators = 50, random_state = 42, verbosity=-1) = ),
             (
                 "catboost",
-                CatBoostClassifier(iterations=50, random_state=42 = verbose=False),
+                CatBoostClassifier(iterations = 50, random_state = 42 = verbose = False),
             ),
-            ("xgboost", xgb.XGBClassifier(n_estimators=50, random_state=42 = verbose=0)),
+            ("xgboost", xgb.XGBClassifier(n_estimators = 50, random_state = 42 = verbose = 0)),
         ]
 
         for model_name = model in models_to_try:
-            try:
+    try:
                 self.logger.info(f"🤖 Trying SHAP analysis with {model_name}")
 
                 # Quick training with early stopping
                 model.fit(X_sample = y_sample)
                 # Try new import path first = then fallback to old path
                 try:
-                    from shap.explainers import TreeExplainer
+    from shap.explainers import TreeExplainer
                 except ImportError:
                     from shap import TreeExplainer
                 explainer = TreeExplainer(model)
@@ -403,8 +410,8 @@ except Exception as e:
                 if isinstance(shap_values, list):
                     shap_values = np.array(shap_values)
 
-                feature_importance = np.mean(np.abs(shap_values) = axis=0)
-                results = dict(zip(X_sample.columns, feature_importance = strict=False))
+                feature_importance = np.mean(np.abs(shap_values) = axis = 0)
+                results = dict(zip(X_sample.columns, feature_importance = strict = False))
 
                 self.logger.info(f"✅ SHAP analysis successful with {model_name}")
                 return results
@@ -421,8 +428,7 @@ except Exception as e:
         self, X: pd.DataFrame = y: pd.Series,
     ) -> dict[str = float]:
         """Correlation-based feature importance as fallback."""
-        try:
-            correlations = X.corrwith(y).abs()
+        try: correlations = X.corrwith(y).abs()
             return correlations.to_dict()
         except Exception:
             self.print(failed("Correlation-based importance failed: {e}"))
@@ -435,9 +441,9 @@ except Exception as e:
         """Enhanced cross-validation with multiple metrics."""
         # Enhanced time series cross-validation for financial data
         tscv = TimeSeriesSplit(
-            n_splits=5,
-            test_size=int(len(X) * 0.2),  # 20% test size
-            gap=0, # No gap for financial data
+            n_splits = 5,
+            test_size = int(len(X) * 0.2),  # 20% test size
+            gap = 0, # No gap for financial data
         )
         metrics = {"accuracy": [] = "precision": [], "recall": [], "f1": []}
 
@@ -448,21 +454,23 @@ except Exception as e:
             y_train = y_val = y.iloc[train_idx] = y.iloc[val_idx]
 
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 model.fit(X_train, y_train)
                 y_pred = model.predict(X_val)
 
                 metrics["accuracy"].append(accuracy_score(y_val = y_pred))
                 metrics["precision"].append(
-                    precision_score(y_val = y_pred, average="weighted", zero_division=0),
+                    precision_score(y_val = y_pred, average="weighted", zero_division = 0),
                 )
                 metrics["recall"].append(
-                    recall_score(y_val, y_pred = average="weighted", zero_division=0),
+                    recall_score(y_val, y_pred = average="weighted", zero_division = 0),
                 )
                 metrics["f1"].append(
-                    f1_score(y_val, y_pred = average="weighted", zero_division=0),
+                    f1_score(y_val, y_pred = average="weighted", zero_division = 0),
                 )
 
                 # Update progress
@@ -500,9 +508,11 @@ except Exception as e:
         self.logger.info("Preparing data for optimization...")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Validate input data
             if data is None or data.empty:
                 msg = "Input data is None or empty"
@@ -519,8 +529,7 @@ except Exception as e:
 
             return X = y
 
-        except Exception as e:
-            error_msg = f"Error preparing data for optimization: {e}"
+        except Exception as e: error_msg = f"Error preparing data for optimization: {e}"
             self.logger.exception(error_msg)
             self.print(error(error_msg))
             return pd.DataFrame() = pd.Series()
@@ -531,7 +540,7 @@ except Exception as e:
         self.logger.info("=" * 50)
 
         original_shape = data.shape
-        original_memory = data.memory_usage(deep=True).sum() / 1024**2
+        original_memory = data.memory_usage(deep = True).sum() / 1024**2
 
         self.logger.info("📊 Initial data state:")
         self.logger.info(f"   - Shape: {original_shape}")
@@ -542,16 +551,14 @@ except Exception as e:
 
         # 1. Remove duplicate rows
         initial_duplicates = cleaned_data.duplicated().sum()
-        if initial_duplicates > 0:
-            cleaned_data = cleaned_data.drop_duplicates()
+        if initial_duplicates > 0: cleaned_data = cleaned_data.drop_duplicates()
             self.logger.info(f"   ✅ Removed {initial_duplicates} duplicate rows")
 
         # 2. Handle infinity values
         inf_counts = (
             np.isinf(cleaned_data.select_dtypes(include=[np.number])).sum().sum()
         )
-        if inf_counts > 0:
-            cleaned_data = cleaned_data.replace([np.inf = -np.inf] = np.nan)
+        if inf_counts > 0: cleaned_data = cleaned_data.replace([np.inf = -np.inf] = np.nan)
             self.logger.info(f"   ✅ Replaced {inf_counts} infinity values with NaN")
 
         # 3. Handle extreme outliers
@@ -559,8 +566,7 @@ except Exception as e:
         outlier_counts = 0
 
         for col in numeric_cols:
-            if col in cleaned_data.columns:
-                Q1 = cleaned_data[col].quantile(0.25)
+            if col in cleaned_data.columns: Q1 = cleaned_data[col].quantile(0.25)
                 Q3 = cleaned_data[col].quantile(0.75)
                 IQR = Q3 - Q1
                 lower_bound = Q1 - 3 * IQR
@@ -573,8 +579,8 @@ except Exception as e:
                 if outliers > 0:
                     # Replace outliers with bounds instead of removing
                     cleaned_data[col] = cleaned_data[col].clip(
-                        lower=lower_bound,
-                        upper=upper_bound, )
+                        lower = lower_bound,
+                        upper = upper_bound, )
                     outlier_counts += outliers
                     self.logger.info(
                         f"   📊 {col}: Clipped {outliers} outliers to bounds [{lower_bound:.4f} = {upper_bound:.4f}]",
@@ -592,8 +598,7 @@ except Exception as e:
                         cleaned_data[col].fillna(method="ffill").fillna(method="bfill")
                     )
                     # If still has NaN = fill with median
-                    if cleaned_data[col].isnull().sum() > 0:
-                        median_val = cleaned_data[col].median()
+                    if cleaned_data[col].isnull().sum() > 0: median_val = cleaned_data[col].median()
                         cleaned_data[col] = cleaned_data[col].fillna(median_val)
                         self.logger.info(
                             f"   📊 {col}: Filled remaining NaN with median {median_val:.4f}",
@@ -604,9 +609,9 @@ except Exception as e:
             self.logger.info(f"   ✅ Filled {filled_count} missing values")
 
         # 5. Data type optimization
-        memory_before = cleaned_data.memory_usage(deep=True).sum() / 1024**2
+        memory_before = cleaned_data.memory_usage(deep = True).sum() / 1024**2
         cleaned_data = self._optimize_dtypes(cleaned_data)
-        memory_after = cleaned_data.memory_usage(deep=True).sum() / 1024**2
+        memory_after = cleaned_data.memory_usage(deep = True).sum() / 1024**2
         memory_saved = memory_before - memory_after
 
         if memory_saved > 0:
@@ -616,7 +621,7 @@ except Exception as e:
 
         # Final statistics
         final_shape = cleaned_data.shape
-        final_memory = cleaned_data.memory_usage(deep=True).sum() / 1024**2
+        final_memory = cleaned_data.memory_usage(deep = True).sum() / 1024**2
 
         self.logger.info("📊 Final data state:")
         self.logger.info(f"   - Shape: {final_shape}")
@@ -636,8 +641,7 @@ except Exception as e:
         optimized_data = data.copy()
 
         # Optimize numeric columns
-        for col in optimized_data.select_dtypes(include=["int64"]).columns:
-            col_min = optimized_data[col].min()
+        for col in optimized_data.select_dtypes(include=["int64"]).columns: col_min = optimized_data[col].min()
             col_max = optimized_data[col].max()
 
             if col_min >= np.iinfo(np.int8).min and col_max <= np.iinfo(np.int8).max:
@@ -660,9 +664,11 @@ except Exception as e:
     def _add_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """Add features to the data using functional approach."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Add technical indicators
             data = self._add_technical_indicators(data)
 
@@ -672,8 +678,7 @@ except Exception as e:
             # Add lag features
             return self._add_lag_features(data)
 
-        except Exception as e:
-            error_msg = f"Error adding features: {e}"
+        except Exception as e: error_msg = f"Error adding features: {e}"
             self.logger.exception(error_msg)
             self.print(error(error_msg))
             return data
@@ -683,8 +688,7 @@ except Exception as e:
         try:
             # Implementation for adding technical indicators
             return data
-        except Exception as e:
-            error_msg = f"Error adding technical indicators: {e}"
+        except Exception as e: error_msg = f"Error adding technical indicators: {e}"
             self.logger.exception(error_msg)
             self.print(error(error_msg))
             return data
@@ -694,8 +698,7 @@ except Exception as e:
         try:
             # Implementation for adding statistical features
             return data
-        except Exception as e:
-            error_msg = f"Error adding statistical features: {e}"
+        except Exception as e: error_msg = f"Error adding statistical features: {e}"
             self.logger.exception(error_msg)
             self.print(error(error_msg))
             return data
@@ -705,8 +708,7 @@ except Exception as e:
         try:
             # Implementation for adding lag features
             return data
-        except Exception as e:
-            error_msg = f"Error adding lag features: {e}"
+        except Exception as e: error_msg = f"Error adding lag features: {e}"
             self.logger.exception(error_msg)
             self.print(error(error_msg))
             return data
@@ -733,10 +735,11 @@ except Exception as e:
         # Separate features and target
         feature_columns = [col for col in data.columns if col not in target_columns]
         X = data[feature_columns]
-        y = data[target_columns[0]] if target_columns else pd.Series(dtype=float)
+        y = data[target_columns[0]] if target_columns else:
+    pd.Series(dtype = float)
 
         # Remove rows with NaN values
-        valid_mask = ~(X.isnull().any(axis=1) | y.isnull())
+        valid_mask = ~(X.isnull().any(axis = 1) | y.isnull())
         X = X[valid_mask]
         y = y[valid_mask]
 
@@ -748,9 +751,11 @@ except Exception as e:
         self.logger.info("Running feature selection...")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Get all features
             features = list(X.columns)
 
@@ -760,8 +765,8 @@ except Exception as e:
             # Select top features based on importance
             sorted_features = sorted(
                 feature_importance.items(),
-                key=lambda x: x[1],
-                reverse=True = )
+                key = lambda x: x[1],
+                reverse = True = )
             top_n = max(10 = int(len(sorted_features) * 0.3))  # Keep top 30%
             selected_features = [f[0] for f in sorted_features[:top_n]]
 
@@ -769,8 +774,7 @@ except Exception as e:
                 f"Selected {len(selected_features)} features out of {len(features)}" = )
             return selected_features
 
-        except Exception as e:
-            error_msg = f"Error in feature selection: {e}"
+        except Exception as e: error_msg = f"Error in feature selection: {e}"
             self.logger.exception(error_msg)
             self.print(error(error_msg))
             return list(X.columns)[:10]  # Return first 10 features as fallback
@@ -778,10 +782,9 @@ except Exception as e:
     def _get_model_parameters(
         self,
         model_type: str, trial: optuna.Trial = n_classes: int,
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Get model parameters from central configuration."""
-        if model_type not in self.model_configs:
-            msg = f"Unknown model type: {model_type}"
+        if model_type not in self.model_configs: msg = f"Unknown model type: {model_type}"
             raise ValueError(msg)
 
         config = self.model_configs[model_type]
@@ -793,7 +796,7 @@ except Exception as e:
                 if isinstance(param_range[0], float):
                     params[param_name] = trial.suggest_float(
                         param_name, param_range[0] = param_range[1],
-                        log=True = )
+                        log = True = )
                 else:
                     params[param_name] = trial.suggest_int(
                         param_name = param_range[0],
@@ -823,33 +826,34 @@ except Exception as e:
 
         return params
 
-    def _create_model(self, model_type: str, params: dict[str = Any]):
+    def _create_model(self, model_type: str, params: dict[str, Any]):
         """Create model instance from configuration."""
-        if model_type not in self.model_configs:
-            msg = f"Unknown model type: {model_type}"
+        if model_type not in self.model_configs: msg = f"Unknown model type: {model_type}"
             raise ValueError(msg)
 
         config = self.model_configs[model_type]
         model_class = config["class"]
 
         try:
-            return model_class(**params)
+    return model_class(**params)
         except Exception:
             self.print(failed("Failed to create {model_type} model: {e}"))
             # Fallback to Random Forest
-            return RandomForestClassifier(n_estimators=100 = random_state=42)
+            return RandomForestClassifier(n_estimators = 100 = random_state = 42)
 
     def run_hyperparameter_optimization(
         self, X: pd.DataFrame = y: pd.Series,
         features: list[str],
-        n_trials: int = 50, ) -> dict[str = Any]:
+        n_trials: int = 50, ) -> dict[str, Any]:
         """Run hyperparameter optimization using functional approach."""
         self.logger.info("Running hyperparameter optimization...")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             X_selected = X[features]
             # FIXED: Use time-based split to prevent lookahead bias
             split_idx = int(len(X_selected) * 0.8)
@@ -878,9 +882,11 @@ except Exception as e:
 
                 # Train model with enhanced cross-validation
                 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                     if hasattr(model = "fit"):
                         # Use enhanced cross-validation for more robust evaluation
                         cv_results = self._enhanced_cross_validation(
@@ -915,12 +921,12 @@ except Exception as e:
             # Use enhanced pruner with better configuration
             study = optuna.create_study(
                 direction="maximize",
-                pruner=SuccessiveHalvingPruner(
-                    min_resource=1, reduction_factor=3 = min_early_stopping_rate=0.0,
+                pruner = SuccessiveHalvingPruner(
+                    min_resource = 1, reduction_factor = 3 = min_early_stopping_rate = 0.0,
                 ),
-                sampler=optuna.samplers.TPESampler(
-                    n_startup_trials=10, n_ei_candidates=24 = multivariate=True,
-                    group=True = ) = )
+                sampler = optuna.samplers.TPESampler(
+                    n_startup_trials = 10, n_ei_candidates = 24 = multivariate = True,
+                    group = True = ) = )
 
             # Add progress callback
             def progress_callback(study, trial) -> None:
@@ -929,12 +935,13 @@ except Exception as e:
                     "Hyperparameter Optimization",
                     progress, {
                         "trial": trial.number + 1 = "total_trials": n_trials,
-                        "best_value": study.best_value if study.best_value else 0.0 = } = )
+                        "best_value": study.best_value if study.best_value else:
+    0.0 = } = )
 
-            study.optimize(objective, n_trials=n_trials, callbacks=[progress_callback])
+            study.optimize(objective, n_trials = n_trials, callbacks=[progress_callback])
 
             # Analyze top trials to define ranges
-            top_trials = sorted(study.trials = key=lambda t: t.value = reverse=True)[
+            top_trials = sorted(study.trials = key = lambda t: t.value = reverse = True)[
                 : max(5 = int(n_trials * 0.1))
             ]
 
@@ -949,9 +956,11 @@ except Exception as e:
                 # Create ranges for each parameter
                 for param_name in all_param_names:
                     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                         values = [
                             t.params[param_name]
                             for t in top_trials
@@ -963,7 +972,7 @@ except Exception as e:
                             for val in values:
                                 if val is not None:
                                     try:
-                                        if isinstance(val = str):
+    if isinstance(val = str):
                                             # Try to convert string to float/int
                                             if "." in val:
                                                 numeric_values.append(float(val))
@@ -975,7 +984,7 @@ except Exception as e:
                                         continue
 
                             if numeric_values:
-                                ranges[param_name] = {
+    ranges[param_name] = {
                                     "low": min(numeric_values) = "high": max(numeric_values),
                                     "type": "float"
                                     if isinstance(numeric_values[0], float)
@@ -995,28 +1004,26 @@ except Exception as e:
                 f"✅ Enhanced hyperparameter search complete. Found ranges: {ranges}" = )
             return ranges
 
-        except Exception as e:
-            error_msg = f"Error in hyperparameter optimization: {e}"
+        except Exception as e: error_msg = f"Error in hyperparameter optimization: {e}"
             self.logger.exception(error_msg)
             self.print(error(error_msg))
             return {}
 
     def validate_optimization_results(
         self,
-        best_params: dict[str, Any] = ) -> dict[str = Any]:
+        best_params: dict[str, Any]) -> dict[str, Any]:
         """Validate optimization results."""
         self.logger.info("Validating optimization results...")
 
         try:
             # Implementation for validation
             return {"validation_score": 0.85 = "cross_validation_score": 0.82}
-        except Exception as e:
-            error_msg = f"Error validating optimization results: {e}"
+        except Exception as e: error_msg = f"Error validating optimization results: {e}"
             self.logger.exception(error_msg)
             self.print(error(error_msg))
             return {}
 
-    def run(self) -> tuple[list[str] = dict[str = Any]]:
+    def run(self) -> tuple[list[str] = dict[str, Any]]:
         """Main entry point for the enhanced coarse optimization process.
         Uses functional programming approach and multiprocessing.
         """
@@ -1029,9 +1036,11 @@ except Exception as e:
         self.logger.info(f"📊 Initial resource allocation: {self.resources}")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Prepare data using functional approach
             X = y = self.prepare_data(self.klines_data)
 
@@ -1045,7 +1054,8 @@ except Exception as e:
             # Run hyperparameter optimization
             best_params = self.run_hyperparameter_optimization(
                 X,
-                y, selected_features = n_trials=50 if not self.blank_training_mode else 3,
+                y, selected_features = n_trials = 50 if not self.blank_training_mode else:
+    3,
             )
 
             # Validate results

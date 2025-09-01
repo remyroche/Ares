@@ -94,23 +94,24 @@ class Step1Orchestrator:
         logger.info("📊 STEP 1.1: COMPREHENSIVE GAP DETECTION AND FILLING")
         logger.info("-" * 60)
 
-        try:
-            gap_filling_results = await self.comprehensive_gap_filler.process_all_data_types(symbol, exchange)
+        try: gap_filling_results = await self.comprehensive_gap_filler.process_all_data_types(symbol, exchange)
         if gap_filling_results:
-                results["gap_filling"] = gap_filling_results
+    results["gap_filling"] = gap_filling_results
                 logger.info(f"✅ Gap filling completed: {gap_filling_results.get('gaps_filled', 0)} gaps filled")
             else:
                 logger.warning("⚠️ Gap filling returned no results")
                 results["warnings"].append("Gap filling returned no results")
         except Exception as e:
-            logger.exception(f"❌ Gap filling failed: {e}")
+    logger.exception(f"❌ Gap filling failed: {e}")
             results["errors"].append(f"Gap filling failed: {e}")
             results["success"] = False
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Step 1: Detect missing data gaps
             logger.info("📊 STEP 1.1: DETECTING MISSING DATA GAPS")
             logger.info("-" * 60)
@@ -155,7 +156,7 @@ except Exception as e:
             results["aggtrades_gaps"] = aggtrades_gaps
 
         if aggtrades_gaps:
-                results["warnings"].append(
+    results["warnings"].append(
                     f"Found {len(aggtrades_gaps)} gaps in aggtrades data",
                 )
                 logger.warning(f"⚠️ Found {len(aggtrades_gaps)} gaps in aggtrades data")
@@ -171,7 +172,7 @@ except Exception as e:
 
         if aggtrades_validation["invalid_files"] > 0:
         if auto_fix:
-                    logger.info(
+    logger.info(
                         f"🔧 Auto - fixed {aggtrades_validation['fixed_files']} aggtrades files",
                     )
                 else:
@@ -291,8 +292,7 @@ except Exception as e:
 
         return results
 
-        except Exception as e:
-            end_time = datetime.now()
+        except Exception as e: end_time = datetime.now()
             execution_time = end_time - start_time
             logger.exception(f"❌ CRITICAL ERROR in step1 process after {execution_time}: {e}")
             results["success"] = False
@@ -352,8 +352,7 @@ except Exception as e:
 
         # Check for basic data quality (step01_5 will handle resampling)
         # We only need to ensure raw data is available and properly formatted
-        for file_path in aggtrades_files:
-            validation_result = self.aggtrades_validator.validate_file_format(file_path)
+        for file_path in aggtrades_files: validation_result = self.aggtrades_validator.validate_file_format(file_path)
         if not validation_result["valid"]:
                 readiness_result["ready"] = False
                 readiness_result["issues"].append(f"Invalid format: {file_path.name}")
@@ -450,8 +449,7 @@ except Exception as e:
   - Total Rows: {futures['total_rows']}
 """
 
-        if "gap_filling_results" in download_data:
-                gaps = download_data["gap_filling_results"]
+        if "gap_filling_results" in download_data: gaps = download_data["gap_filling_results"]
                 report += f"""
 • Gap Filling:
     pass - Filled Gaps: {gaps['filled_gaps']}

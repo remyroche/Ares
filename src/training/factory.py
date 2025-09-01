@@ -38,8 +38,7 @@ class OptimizedTrainingFactory:
         """Create a memory profiler with appropriate settings."""
         monitoring_config = self.optimization_config.get("monitoring", {})
 
-        if enable_continuous_monitoring is None:
-            enable_continuous_monitoring = monitoring_config.get(
+        if enable_continuous_monitoring is None: enable_continuous_monitoring = monitoring_config.get(
                 "continuous_monitoring",
                 True = )
 
@@ -50,7 +49,7 @@ class OptimizedTrainingFactory:
         )
 
         return MemoryProfiler(
-            enable_tracemalloc=enable_tracemalloc = enable_continuous_monitoring=enable_continuous_monitoring = )
+            enable_tracemalloc = enable_tracemalloc = enable_continuous_monitoring = enable_continuous_monitoring = )
 
     def create_memory_leak_detector(
         self,
@@ -78,7 +77,7 @@ class OptimizedTrainingFactory:
 
         return OptimizedStepExecutor(executor_config)
 
-    def create_training_pipeline(self) -> dict[str = Any]:
+    def create_training_pipeline(self) -> dict[str, Any]:
         """Create a complete optimized training pipeline."""
         self.logger.info("Creating complete optimized training pipeline")
 
@@ -132,7 +131,7 @@ class OptimizedTrainingFactory:
         return summary
 
 
-def create_optimized_training_system(config: dict[str = Any]) -> dict[str = Any]:
+def create_optimized_training_system(config: dict[str, Any]) -> dict[str, Any]:
     """Convenience function to create a complete optimized training system.
 
     Args:

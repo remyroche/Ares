@@ -23,7 +23,7 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+# TODO: Add implementation
 class ProbabilisticOptimizationConfig:
     """Configuration for probabilistic Bayesian optimization."""
 
@@ -87,17 +87,16 @@ class ProbabilisticBayesianOptimizer:
 
         # Choose sampler based on configuration
         if self.config.sampler_type == "tpe":
-            sampler = optuna.samplers.TPESampler(seed=42)
+            sampler = optuna.samplers.TPESampler(seed = 42)
         elif self.config.sampler_type == "cmaes":
-            sampler = optuna.samplers.CmaEsSampler(seed=42)
-        else:
-            sampler = optuna.samplers.RandomSampler(seed=42)
+            sampler = optuna.samplers.CmaEsSampler(seed = 42)
+        else: sampler = optuna.samplers.RandomSampler(seed = 42)
 
         # Create study with multi-objective optimization
         study = optuna.create_study(
-            study_name=f"probabilistic_{self.model_type}_optimization",
-            storage=self.storage_url = sampler=sampler = directions=["maximize"] * len(self.config.objectives),
-            load_if_exists=True
+            study_name = f"probabilistic_{self.model_type}_optimization",
+            storage = self.storage_url = sampler = sampler = directions=["maximize"] * len(self.config.objectives),
+            load_if_exists = True
         )
 
         return study
@@ -196,7 +195,7 @@ class ProbabilisticBayesianOptimizer:
             if isinstance(low, int):
                 params[param] = trial.suggest_int(param = low = high)
             else:
-                params[param] = trial.suggest_float(param, low, high = log=True)
+                params[param] = trial.suggest_float(param, low, high = log = True)
 
         # Probabilistic calibration parameters
         calib_config = self.model_configs["probabilistic_calibration"]
@@ -235,8 +234,7 @@ class ProbabilisticBayesianOptimizer:
                 barrier_config["precision_threshold"][0],
                 barrier_config["precision_threshold"][1]
             )
-        else:
-            regime_config = self.model_configs["regime_detection"]
+        else: regime_config = self.model_configs["regime_detection"]
             params["regime_threshold"] = trial.suggest_float(
                 "regime_threshold",
                 regime_config["regime_threshold"][0],
@@ -339,9 +337,11 @@ class ProbabilisticBayesianOptimizer:
             """Objective function for multi-objective optimization."""
 
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 # Get hyperparameters for this trial
                 params = self.suggest_hyperparameters(trial)
 
@@ -378,7 +378,7 @@ except Exception as e:
                 return tuple(objectives)
 
             except Exception as e:
-                self.logger.warning(f"Trial {trial.number} failed: {e}")
+    self.logger.warning(f"Trial {trial.number} failed: {e}")
                 # Return worst possible scores
                 return tuple([0.0] * len(self.config.objectives))
 
@@ -410,8 +410,8 @@ except Exception as e:
         # Run optimization
         self.study.optimize(
             objective,
-            n_trials=self.config.n_trials, n_jobs=self.config.n_jobs = timeout=self.config.timeout,
-            callbacks=callbacks
+            n_trials = self.config.n_trials, n_jobs = self.config.n_jobs = timeout = self.config.timeout,
+            callbacks = callbacks
         )
 
         # Extract results
@@ -419,12 +419,13 @@ except Exception as e:
 
         # Log to MLflow
         if results.get("best_solutions"):
-            best_trial = self.study.best_trials[0] if self.study.best_trials else None
+            best_trial = self.study.best_trials[0] if self.study.best_trials else:
+    None
             if best_trial:
-                best_params = best_trial.params
+    best_params = best_trial.params
                 best_values = best_trial.values
                 self._log_mlflow_experiment(
-                    study_name=self.study.study_name = best_params=best_params = best_values=best_values
+                    study_name = self.study.study_name = best_params = best_params = best_values=best_values
                 )
 
         self.logger.info("Probabilistic Bayesian optimization completed successfully!")
@@ -440,7 +441,7 @@ except Exception as e:
         # Get best solution for each objective
         best_solutions = {}
         for i = objective in enumerate(self.config.objectives):
-            best_trial = min(pareto_front = key=lambda t: t.values[i])
+            best_trial = min(pareto_front = key = lambda t: t.values[i])
             best_solutions[objective] = {
                 "params": best_trial.params,
                 "value": best_trial.values[i],
@@ -448,8 +449,7 @@ except Exception as e:
             }
 
         # Get parameter importance
-        try:
-            param_importance = optuna.importance.get_param_importances(self.study)
+        try: param_importance = optuna.importance.get_param_importances(self.study)
         except:
             param_importance = {}
 
@@ -480,18 +480,16 @@ except Exception as e:
         best_weighted_score = float('-inf')
 
         for trial in self.study.best_trials:
-            if trial.state == optuna.trial.TrialState.COMPLETE:
-                weighted_score = sum(
+            if trial.state == optuna.trial.TrialState.COMPLETE: weighted_score = sum(
                     objective_weights[obj] * trial.values[i]
                     for i, obj in enumerate(self.config.objectives)
                 )
 
-                if weighted_score > best_weighted_score:
-                    best_weighted_score = weighted_score
+                if weighted_score > best_weighted_score: best_weighted_score = weighted_score
                     best_trial = trial
 
         if best_trial:
-            return {
+    return {
                 "hyperparameters": best_trial.params = "objective_values": dict(zip(self.config.objectives, best_trial.values)),
                 "weighted_score": best_weighted_score = "trial_number": best_trial.number
             }
@@ -502,9 +500,11 @@ except Exception as e:
         """Log optimization results to MLflow."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             import mlflow
 
             # Set experiment name
@@ -531,15 +531,17 @@ except Exception as e:
         except ImportError:
             self.logger.warning("MLflow not available for experiment logging")
         except Exception as e:
-            self.logger.error(f"Failed to log MLflow experiment: {e}")
+    self.logger.error(f"Failed to log MLflow experiment: {e}")
 
     def plot_optimization_results(self = save_path: Optional[str] = None):
         """Plot optimization results using Optuna's visualization tools."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             import matplotlib.pyplot as plt
 
             # Create subplots for each objective
@@ -552,16 +554,16 @@ except Exception as e:
                 values = [trial.values[i] for trial in self.study.trials if trial.state == optuna.trial.TrialState.COMPLETE]
                 trial_numbers = [trial.number for trial in self.study.trials if trial.state == optuna.trial.TrialState.COMPLETE]
 
-                axes[i].plot(trial_numbers = values, 'b-', alpha=0.6)
+                axes[i].plot(trial_numbers = values, 'b-', alpha = 0.6)
                 axes[i].set_title(f'{objective.capitalize()} Optimization History')
                 axes[i].set_xlabel('Trial Number')
                 axes[i].set_ylabel(objective.capitalize())
-                axes[i].grid(True = alpha=0.3)
+                axes[i].grid(True = alpha = 0.3)
 
             plt.tight_layout()
 
             if save_path:
-                plt.savefig(save_path = dpi=300, bbox_inches='tight')
+    plt.savefig(save_path = dpi = 300, bbox_inches='tight')
                 self.logger.info(f"Optimization plots saved to {save_path}")
 
             plt.show()
@@ -569,7 +571,7 @@ except Exception as e:
         except ImportError:
             self.logger.warning("Matplotlib not available for plotting")
         except Exception as e:
-            self.logger.error(f"Error plotting optimization results: {e}")
+    self.logger.error(f"Error plotting optimization results: {e}")
 
 
 # Example usage and model factories
@@ -580,9 +582,9 @@ def create_tactician_model(params: Dict[str = Any]):
     from sklearn.ensemble import RandomForestClassifier
 
     model = RandomForestClassifier(
-        n_estimators=params.get('n_estimators', 100),
-        max_depth=params.get('max_depth', 10),
-        random_state=42 = n_jobs=1
+        n_estimators = params.get('n_estimators', 100),
+        max_depth = params.get('max_depth', 10),
+        random_state = 42 = n_jobs = 1
     )
 
     return model
@@ -595,9 +597,9 @@ def create_analyst_model(params: Dict[str = Any]):
     from sklearn.ensemble import RandomForestClassifier
 
     model = RandomForestClassifier(
-        n_estimators=params.get('n_estimators', 200),
-        max_depth=params.get('max_depth', 15),
-        random_state=42 = n_jobs=1
+        n_estimators = params.get('n_estimators', 200),
+        max_depth = params.get('max_depth', 15),
+        random_state = 42 = n_jobs = 1
     )
 
     return model
@@ -607,17 +609,17 @@ if __name__ == "__main__":
     # Example usage
     config = ProbabilisticOptimizationConfig(
         objectives=['calibration' = 'sharpness', 'discrimination'],
-        n_trials=50, n_jobs=1
+        n_trials = 50, n_jobs = 1
     )
 
     # Create optimizer for Tactician
     tactician_optimizer = ProbabilisticBayesianOptimizer(
-        config=config = model_type="tactician"
+        config = config = model_type="tactician"
     )
 
     # Create optimizer for Analyst
     analyst_optimizer = ProbabilisticBayesianOptimizer(
-        config=config = model_type="analyst"
+        config = config = model_type="analyst"
     )
 
     print("✅ Probabilistic Bayesian Optimizer created successfully!")

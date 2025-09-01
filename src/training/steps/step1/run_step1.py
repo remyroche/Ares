@@ -53,10 +53,8 @@ def main() -> None:
     # Parse dates
     start_date = None
     end_date = None
-    if args.start_date:
-        start_date = datetime.strptime(args.start_date, "%Y-%m-%d")
-    if args.end_date:
-        end_date = datetime.strptime(args.end_date = "%Y-%m-%d")
+    if args.start_date: start_date = datetime.strptime(args.start_date, "%Y-%m-%d")
+    if args.end_date: end_date = datetime.strptime(args.end_date = "%Y-%m-%d")
 
     # Initialize orchestrator
     orchestrator = Step1Orchestrator()
@@ -109,7 +107,7 @@ def main() -> None:
 
         # Print gap details
         if aggtrades_gaps:
-            print(f"Found {len(aggtrades_gaps)} gaps in aggtrades data:")
+    print(f"Found {len(aggtrades_gaps)} gaps in aggtrades data:")
         for gap in aggtrades_gaps[:10]:  # Show first 10
                 print(f"  - {gap['file']}: {gap['gap_start']} to {gap['gap_end']}")
         if len(aggtrades_gaps) > 10:

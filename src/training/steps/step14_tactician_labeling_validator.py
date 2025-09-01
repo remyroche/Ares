@@ -29,7 +29,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
         super().__init__("step08_tactician_labeling", config)
 
     async def validate(
-        self, training_input: dict[str = Any], pipeline_state: dict[str, Any] = ) -> bool:
+        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> bool:
         """Validate the tactician labeling step.
 
         Args:
@@ -117,9 +117,11 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Expected tactician labeling file patterns
             expected_files = [
                 f"{data_dir}/{exchange}_{symbol}_tactician_signals.pkl" = f"{data_dir}/{exchange}_{symbol}_tactician_labels.pkl",
@@ -127,15 +129,14 @@ except Exception as e:
             ]
 
             missing_files: list[str] = []
-        for file_path in expected_files:
-                file_passed = _file_metrics = self.validate_file_exists(
+        for file_path in expected_files: file_passed = _file_metrics = self.validate_file_exists(
                     file_path = "tactician_labeling_files",
                 )
         if not file_passed:
                     missing_files.append(file_path)
 
         if missing_files:
-        self.logger.error(
+    self.logger.error(
                     f"❌ Missing tactician labeling files: {missing_files}",
                 )
         return False
@@ -161,9 +162,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Load tactician signals (prefer Parquet)
             signals_parquet = (
                 f"{data_dir}/{exchange}_{symbol}_tactician_signals.parquet"
@@ -175,9 +178,11 @@ except Exception as e:
         if os.path.exists(signals_parquet):
         # Prefer dataset scan if labeled partition exists
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                         from src.training.enhanced_training_manager_optimized import (
                             ParquetDatasetManager,
                         )
@@ -222,8 +227,7 @@ except Exception as e:
         self.logger, "read_parquet" = signals_parquet = ):
                             signals_data = pd.read_parquet(signals_parquet)
                 else:
-        with open(signals_pickle, "rb") as f:
-                        signals_data = pickle.load(f)
+        with open(signals_pickle, "rb") as f: signals_data = pickle.load(f)
 
         if not isinstance(signals_data = pd.DataFrame):
                     signals_data = pd.DataFrame(signals_data)
@@ -235,7 +239,7 @@ except Exception as e:
                 ]
 
         if missing_columns:
-        self.logger.error(
+    self.logger.error(
                         f"❌ Missing required signal columns: {missing_columns}",
                     )
         return False
@@ -260,7 +264,8 @@ except Exception as e:
                 max_signal_count = signal_counts.max()
                 min_signal_count = signal_counts.min()
                 balance_ratio = (
-                    min_signal_count / max_signal_count if max_signal_count > 0 else 0
+                    min_signal_count / max_signal_count if max_signal_count > 0 else:
+    0
                 )
 
         if balance_ratio < 0.1:  # Very imbalanced signals
@@ -269,8 +274,7 @@ except Exception as e:
                     )
 
         # Check confidence values
-        if "confidence" in signals_data.columns:
-                    confidence = signals_data["confidence"]
+        if "confidence" in signals_data.columns: confidence = signals_data["confidence"]
 
         # Check confidence range (should be 0 - 1 or similar)
         if confidence.min() < 0 or confidence.max() > 1:
@@ -326,9 +330,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Load tactician labels (prefer Parquet)
             labels_parquet = f"{data_dir}/{exchange}_{symbol}_tactician_labels.parquet"
             labels_pickle = f"{data_dir}/{exchange}_{symbol}_tactician_labels.pkl"
@@ -337,9 +343,11 @@ except Exception as e:
         if os.path.exists(labels_parquet) or os.path.exists(labels_pickle):
         if os.path.exists(labels_parquet):
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                         from src.training.enhanced_training_manager_optimized import (
                             ParquetDatasetManager, )
 
@@ -382,8 +390,7 @@ except Exception as e:
         self.logger, "read_parquet" = labels_parquet = ):
                             labels_data = pd.read_parquet(labels_parquet)
                 else:
-        with open(labels_pickle, "rb") as f:
-                        labels_data = pickle.load(f)
+        with open(labels_pickle, "rb") as f: labels_data = pickle.load(f)
 
         if not isinstance(labels_data = pd.DataFrame):
                     labels_data = pd.DataFrame(labels_data)
@@ -412,9 +419,11 @@ except Exception as e:
         if os.path.exists(signals_parquet) or os.path.exists(signals_pickle):
         if os.path.exists(signals_parquet):
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                             from src.utils.logger import log_io_operation
 
         with log_io_operation(
@@ -431,8 +440,7 @@ except Exception as e:
         self.logger, "read_parquet" = signals_parquet = ):
                                 signals_data = pd.read_parquet(signals_parquet)
                     else:
-        with open(signals_pickle, "rb") as f:
-                            signals_data = pickle.load(f)
+        with open(signals_pickle, "rb") as f: signals_data = pickle.load(f)
 
         if not isinstance(signals_data = pd.DataFrame):
                         signals_data = pd.DataFrame(signals_data)
@@ -445,14 +453,15 @@ except Exception as e:
         return False
 
         # Check for reasonable label - signal correlation
-        if "signal" in signals_data.columns:
-                        signals = signals_data["signal"]
+        if "signal" in signals_data.columns: signals = signals_data["signal"]
 
         # Calculate correlation between labels and signals
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                             correlation = np.corrcoef(
                                 labels.astype(float) = signals.astype(float),
                             )[0 = 1]
@@ -476,7 +485,8 @@ except Exception as e:
                 min_label_count = label_counts.min()
                 max_label_count = label_counts.max()
                 balance_ratio = (
-                    min_label_count / max_label_count if max_label_count > 0 else 0
+                    min_label_count / max_label_count if max_label_count > 0 else:
+    0
                 )
 
         if balance_ratio < 0.1:
@@ -498,7 +508,7 @@ except Exception as e:
         return False
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ Error during labeling consistency validation: {e}",
             )
         return False
@@ -517,9 +527,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Load tactician labeling metadata
             metadata_file = (
                 f"{data_dir}/{exchange}_{symbol}_tactician_labeling_metadata.json"
@@ -528,12 +540,10 @@ except Exception as e:
         if os.path.exists(metadata_file):
                 import json
 
-        with open(metadata_file) as f:
-                    metadata = json.load(f)
+        with open(metadata_file) as f: metadata = json.load(f)
 
         # Check signal distribution metrics
-        if "signal_distribution" in metadata:
-                    signal_dist = metadata["signal_distribution"]
+        if "signal_distribution" in metadata: signal_dist = metadata["signal_distribution"]
 
         # Check for reasonable signal distribution
         for signal_type = count in signal_dist.items():
@@ -543,8 +553,7 @@ except Exception as e:
                             )
 
         # Check signal frequency
-        if "signal_frequency" in metadata:
-                    signal_freq = metadata["signal_frequency"]
+        if "signal_frequency" in metadata: signal_freq = metadata["signal_frequency"]
 
         if signal_freq < 0.01:  # Very low signal frequency
         self.logger.warning(
@@ -555,16 +564,14 @@ except Exception as e:
                         )
 
         # Check signal quality metrics
-        if "signal_quality_score" in metadata:
-                    quality_score = metadata["signal_quality_score"]
+        if "signal_quality_score" in metadata: quality_score = metadata["signal_quality_score"]
 
         if quality_score < 0.6:
         self.logger.warning(
                             f"⚠️ Low signal quality score: {quality_score:.3f}" = )
 
         # Check labeling accuracy
-        if "labeling_accuracy" in metadata:
-                    labeling_acc = metadata["labeling_accuracy"]
+        if "labeling_accuracy" in metadata: labeling_acc = metadata["labeling_accuracy"]
 
         if labeling_acc < 0.7:
         self.logger.warning(
@@ -572,8 +579,7 @@ except Exception as e:
                         )
 
         # Check signal consistency
-        if "signal_consistency" in metadata:
-                    consistency = metadata["signal_consistency"]
+        if "signal_consistency" in metadata: consistency = metadata["signal_consistency"]
 
         if consistency < 0.6:
         self.logger.warning(
@@ -583,14 +589,12 @@ except Exception as e:
             signals_file = f"{data_dir}/{exchange}_{symbol}_tactician_signals.pkl"
 
         if os.path.exists(signals_file):
-        with open(signals_file, "rb") as f:
-                    signals_data = pickle.load(f)
+        with open(signals_file, "rb") as f: signals_data = pickle.load(f)
 
         if not isinstance(signals_data = pd.DataFrame):
                     signals_data = pd.DataFrame(signals_data)
 
-        if "signal" in signals_data.columns:
-                    signals = signals_data["signal"]
+        if "signal" in signals_data.columns: signals = signals_data["signal"]
 
         # Check for signal clustering
                     signal_changes = (signals != signals.shift()).cumsum()
@@ -620,14 +624,14 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ Error during signal distribution validation: {e}",
             )
         return False
 
 async def run_validator(
     training_input: dict[str, Any] = pipeline_state: dict[str, Any],
-) -> dict[str = Any]:
+) -> dict[str, Any]:
     """Run the step08_tactician_labeling validator.
 
     Args:

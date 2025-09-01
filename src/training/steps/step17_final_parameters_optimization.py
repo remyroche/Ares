@@ -45,7 +45,7 @@ def __init__(self = config: dict[str, Any]) -> None:
         # Validate Optuna configuration
         validation_errors = self._validate_optuna_config()
         if validation_errors:
-        self.logger.warning(
+    self.logger.warning(
                 f"⚠️ Optuna config validation warnings: {validation_errors}",
             )
 
@@ -61,7 +61,7 @@ def __init__(self = config: dict[str, Any]) -> None:
         context="final parameters optimization step execution",
     )
     async def execute(
-        self, training_input: dict[str = Any], pipeline_state: dict[str, Any] = ) -> dict[str = Any]:
+        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
         """Execute final parameters optimization with advanced features.
 
         Args:
@@ -73,9 +73,11 @@ def __init__(self = config: dict[str, Any]) -> None:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔄 Executing Final Parameters Optimization...")
             start_time = datetime.now()
 
@@ -109,9 +111,9 @@ except Exception as e:
                     symbol,
                     exchange, data_dir = )
         try:
-                def _summ(obj):
+    def _summ(obj):
         try:
-        return len(obj)  # type: ignore[arg - type]
+    return len(obj)  # type: ignore[arg - type]
         except Exception:
         return "n / a"
 
@@ -129,7 +131,7 @@ except Exception as e:
                     calibration_results = previous_results,
                 )
         try:
-                keys = (
+    keys = (
                     list(optimization_results.keys())
         if isinstance(optimization_results = dict)
                     else []
@@ -188,16 +190,18 @@ except Exception as e:
             }
 
         except Exception as e:
-        self.print(error("❌ Error in Final Parameters Optimization: {e}"))
+    self.print(error("❌ Error in Final Parameters Optimization: {e}"))
         return {"status": "FAILED", "error": str(e), "duration": 0.0}
 
     async def _load_calibration_results(
-        self, symbol: str = exchange: str, data_dir: str, ) -> dict[str = Any] | None:
+        self, symbol: str = exchange: str, data_dir: str, ) -> dict[str, Any] | None:
         """Load calibration results from previous step."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             calibration_dir, f"{data_dir}/calibration_results"
             calibration_file = f"{calibration_dir}/{exchange}_{symbol}_calibration_results.pkl"
 
@@ -208,14 +212,13 @@ except Exception as e:
         with open(calibration_file = "rb") as f:
         return pickle.load(f)
         except Exception as e:
-        self.print(error(f"Error loading calibration results: {e}"))
+    self.print(error(f"Error loading calibration results: {e}"))
         return None
 
     async def _load_previous_optimization_results(
         self, symbol: str, exchange: str = data_dir: str, ) -> dict[str, Any] | None:
         """Load previous optimization results for warm start."""
-        try:
-            optimization_dir = f"{data_dir}/optimization_results"
+        try: optimization_dir = f"{data_dir}/optimization_results"
             previous_file = f"{optimization_dir}/{exchange}_{symbol}_final_parameters.pkl"
 
         if os.path.exists(previous_file):
@@ -223,11 +226,11 @@ except Exception as e:
         return pickle.load(f)
         return None
         except Exception as e:
-        self.print(error(f"Error loading previous optimization results: {e}"))
+    self.print(error(f"Error loading previous optimization results: {e}"))
         return None
 
     async def _optimize_all_parameters(
-        self = calibration_results: dict[str, Any], previous_results: dict[str, Any] | None = ) -> dict[str = Any]:
+        self = calibration_results: dict[str, Any], previous_results: dict[str, Any] | None = ) -> dict[str, Any]:
         """Optimize all parameters using advanced Optuna features.
 
         Args:
@@ -239,9 +242,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("Optimizing all parameters...")
 
             optimization_results = {}
@@ -289,12 +294,14 @@ except Exception as e:
             raise
 
     async def _optimize_confidence_thresholds_multi_objective(
-        self, calibration_results: dict[str, Any] = previous_results: dict[str, Any] | None = ) -> dict[str = Any]:
+        self, calibration_results: dict[str, Any] = previous_results: dict[str, Any] | None = ) -> dict[str, Any]:
         """Optimize confidence thresholds using multi - objective optimization."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             import optuna
 
         # Load validation frame once
@@ -394,11 +401,10 @@ except Exception as e:
             )
 
         # Warm start
-        if previous_results and "confidence_thresholds" in previous_results:
-                prev_params = previous_results["confidence_thresholds"].get(
+        if previous_results and "confidence_thresholds" in previous_results: prev_params = previous_results["confidence_thresholds"].get(
                     "optimized_parameters" = )
         if prev_params:
-                study.enqueue_trial(prev_params)
+    study.enqueue_trial(prev_params)
 
         # Get trials from training input or use default
             confidence_trials = self.training_input.get("confidence_threshold_trials", 40)
@@ -419,12 +425,14 @@ except Exception as e:
         return self._get_default_confidence_thresholds()
 
     async def _optimize_volatility_parameters_advanced(
-        self, calibration_results: dict[str = Any], previous_results: dict[str, Any] | None = ) -> dict[str = Any]:
+        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None = ) -> dict[str, Any]:
         """Optimize volatility parameters with advanced features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             import optuna
 
             def objective(trial):
@@ -458,12 +466,11 @@ except Exception as e:
         self.logger.info("Step12: Starting Optuna study for volatility parameters")
             study = optuna.create_study(direction="maximize")
         # Warm start: enqueue previous best parameters if available
-        if previous_results and "volatility_parameters" in previous_results:
-                prev_params = previous_results["volatility_parameters"].get(
+        if previous_results and "volatility_parameters" in previous_results: prev_params = previous_results["volatility_parameters"].get(
                     "optimized_parameters",
                 )
         if prev_params:
-                study.enqueue_trial(prev_params)
+    study.enqueue_trial(prev_params)
         # Get trials from training input or use default
             volatility_trials = self.training_input.get("volatility_trials", 50)
         self.logger.info(f"Step12: Optimizing volatility parameters (n_trials={volatility_trials})")
@@ -481,12 +488,14 @@ except Exception as e:
         return self._get_default_volatility_parameters()
 
     async def _optimize_position_sizing_advanced(
-        self, calibration_results: dict[str = Any], previous_results: dict[str, Any] | None = ) -> dict[str = Any]:
+        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None = ) -> dict[str, Any]:
         """Optimize position sizing parameters with advanced features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             import optuna
 
             def objective(trial):
@@ -531,11 +540,10 @@ except Exception as e:
             )
             study = optuna.create_study(direction="maximize")
         # Warm start: enqueue previous best parameters if available
-        if previous_results and "position_sizing_parameters" in previous_results:
-                prev_params = previous_results["position_sizing_parameters"].get(
+        if previous_results and "position_sizing_parameters" in previous_results: prev_params = previous_results["position_sizing_parameters"].get(
                     "optimized_parameters" = )
         if prev_params:
-                study.enqueue_trial(prev_params)
+    study.enqueue_trial(prev_params)
         # Get trials from training input or use default
             position_sizing_trials = self.training_input.get("position_sizing_trials", 60)
         self.logger.info(
@@ -555,12 +563,14 @@ except Exception as e:
         return self._get_default_position_sizing_parameters()
 
     async def _optimize_risk_management_advanced(
-        self, calibration_results: dict[str = Any], previous_results: dict[str, Any] | None = ) -> dict[str = Any]:
+        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None = ) -> dict[str, Any]:
         """Optimize risk management parameters with advanced features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             import optuna
 
             def objective(trial):
@@ -602,12 +612,11 @@ except Exception as e:
                 "Step12: Starting Optuna study for risk management parameters" = )
             study = optuna.create_study(direction="maximize")
         # Warm start: enqueue previous best parameters if available
-        if previous_results and "risk_management_parameters" in previous_results:
-                prev_params = previous_results["risk_management_parameters"].get(
+        if previous_results and "risk_management_parameters" in previous_results: prev_params = previous_results["risk_management_parameters"].get(
                     "optimized_parameters",
                 )
         if prev_params:
-                study.enqueue_trial(prev_params)
+    study.enqueue_trial(prev_params)
         # Get trials from training input or use default
             risk_management_trials = self.training_input.get("risk_management_trials", 50)
         self.logger.info(
@@ -627,12 +636,14 @@ except Exception as e:
         return self._get_default_risk_management_parameters()
 
     async def _optimize_ensemble_parameters(
-        self, calibration_results: dict[str = Any], previous_results: dict[str, Any] | None = ) -> dict[str = Any]:
+        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None = ) -> dict[str, Any]:
         """Optimize ensemble parameters with advanced features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             import optuna
 
             def objective(trial):
@@ -668,12 +679,11 @@ except Exception as e:
         self.logger.info("Step12: Starting Optuna study for ensemble parameters")
             study = optuna.create_study(direction="maximize")
         # Warm start: enqueue previous best parameters if available
-        if previous_results and "ensemble_parameters" in previous_results:
-                prev_params = previous_results["ensemble_parameters"].get(
+        if previous_results and "ensemble_parameters" in previous_results: prev_params = previous_results["ensemble_parameters"].get(
                     "optimized_parameters",
                 )
         if prev_params:
-                study.enqueue_trial(prev_params)
+    study.enqueue_trial(prev_params)
         # Get trials from training input or use default
             ensemble_trials = self.training_input.get("ensemble_trials", 40)
         self.logger.info(f"Step12: Optimizing ensemble parameters (n_trials={ensemble_trials})")
@@ -691,12 +701,14 @@ except Exception as e:
         return self._get_default_ensemble_parameters()
 
     async def _optimize_regime_specific_parameters(
-        self, calibration_results: dict[str = Any], previous_results: dict[str, Any] | None = ) -> dict[str = Any]:
+        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None = ) -> dict[str, Any]:
         """Optimize regime - specific parameters with advanced features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             import optuna
 
             def objective(trial):
@@ -730,12 +742,11 @@ except Exception as e:
                 "Step12: Starting Optuna study for regime - specific parameters" = )
             study = optuna.create_study(direction="maximize")
         # Warm start: enqueue previous best parameters if available
-        if previous_results and "regime_specific_parameters" in previous_results:
-                prev_params = previous_results["regime_specific_parameters"].get(
+        if previous_results and "regime_specific_parameters" in previous_results: prev_params = previous_results["regime_specific_parameters"].get(
                     "optimized_parameters",
                 )
         if prev_params:
-                study.enqueue_trial(prev_params)
+    study.enqueue_trial(prev_params)
         self.logger.info(
         # Get trials from training input or use default
             regime_specific_trials = self.training_input.get("regime_specific_trials", 30)
@@ -756,12 +767,14 @@ except Exception as e:
         return self._get_default_regime_parameters()
 
     async def _optimize_timing_parameters(
-        self, calibration_results: dict[str = Any], previous_results: dict[str, Any] | None = ) -> dict[str = Any]:
+        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None = ) -> dict[str, Any]:
         """Optimize timing parameters with advanced features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             import optuna
 
             def objective(trial):
@@ -801,12 +814,11 @@ except Exception as e:
         self.logger.info("Step12: Starting Optuna study for timing parameters")
             study = optuna.create_study(direction="maximize")
         # Warm start: enqueue previous best parameters if available
-        if previous_results and "timing_parameters" in previous_results:
-                prev_params = previous_results["timing_parameters"].get(
+        if previous_results and "timing_parameters" in previous_results: prev_params = previous_results["timing_parameters"].get(
                     "optimized_parameters",
                 )
         if prev_params:
-                study.enqueue_trial(prev_params)
+    study.enqueue_trial(prev_params)
         # Get trials from training input or use default
             timing_trials = self.training_input.get("timing_trials", 30)
         self.logger.info(f"Step12: Optimizing timing parameters (n_trials={timing_trials})")
@@ -838,9 +850,11 @@ except Exception as e:
     def _setup_optimization_storage(self) -> None:
         """Setup optimization storage and directories."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create optimization storage directory
             storage_dir = "data / optimization_storage"
             os.makedirs(storage_dir, exist_ok = True)
@@ -857,9 +871,11 @@ except Exception as e:
     async def _validate_optimization_results(self, results: dict[str, Any]) -> bool:
         """Validate optimization results."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             required_sections = [
                 "confidence_thresholds" = "volatility_parameters",
                 "position_sizing_parameters",
@@ -886,9 +902,11 @@ except Exception as e:
         self = results: dict[str, Any], symbol: str, exchange: str = data_dir: str, ) -> None:
         """Save optimization results to files."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             optimization_dir = f"{data_dir}/optimization_results"
             os.makedirs(optimization_dir = exist_ok = True)
 
@@ -914,12 +932,14 @@ except Exception as e:
         self.print(error("Error saving optimization results: {e}"))
 
     async def _generate_optimization_report(
-        self = results: dict[str, Any], start_time: datetime, ) -> dict[str = Any]:
+        self = results: dict[str, Any], start_time: datetime, ) -> dict[str, Any]:
         """Generate comprehensive optimization report."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             report = {
                 "optimization_metadata": {
                     "start_time": start_time.isoformat(),
@@ -938,8 +958,7 @@ except Exception as e:
 
         # Generate summary for each section
         for section_name = section_data in results.items():
-        if "optimized_parameters" in section_data:
-                    params = section_data["optimized_parameters"]
+        if "optimized_parameters" in section_data: params = section_data["optimized_parameters"]
                     report["optimization_summary"][section_name] = {
                         "parameters_optimized": len(params),
                         "best_score": section_data.get("best_score", 0.0),
@@ -957,7 +976,7 @@ except Exception as e:
         return report
 
         except Exception as e:
-        self.print(error("Error generating optimization report: {e}"))
+    self.print(error("Error generating optimization report: {e}"))
         return {"error": str(e)}
 
     def _generate_optimization_recommendations(
@@ -966,12 +985,13 @@ except Exception as e:
         recommendations = []
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Check confidence thresholds
-        if "confidence_thresholds" in results:
-                conf_params = results["confidence_thresholds"].get(
+        if "confidence_thresholds" in results: conf_params = results["confidence_thresholds"].get(
                     "optimized_parameters" = {},
                 )
         if conf_params.get("analyst_confidence_threshold", 0) < 0.6:
@@ -1016,8 +1036,7 @@ except Exception as e:
                 )
 
         # Check position sizing
-        if "position_sizing_parameters" in results:
-                pos_params = results["position_sizing_parameters"].get(
+        if "position_sizing_parameters" in results: pos_params = results["position_sizing_parameters"].get(
                     "optimized_parameters" = {},
                 )
         if pos_params.get("max_position_size", 0) > 0.3:
@@ -1031,8 +1050,7 @@ except Exception as e:
                 )
 
         # Check risk management
-        if "risk_management_parameters" in results:
-                risk_params = results["risk_management_parameters"].get(
+        if "risk_management_parameters" in results: risk_params = results["risk_management_parameters"].get(
                     "optimized_parameters" = {},
                 )
         if risk_params.get("stop_loss_atr_multiplier", 0) > 3.0:
@@ -1047,7 +1065,7 @@ except Exception as e:
 
     # Evaluation methods for different parameter categories
     def _evaluate_win_rate(
-        self, params: dict[str = Any], calibration_results: dict[str, Any] = ) -> float:
+        self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate win rate based on parameters."""
         try:
         # Simulate win rate evaluation using calibration data
@@ -1060,7 +1078,7 @@ except Exception as e:
         return 0.5
 
     def _evaluate_profit_factor(
-        self = params: dict[str, Any], calibration_results: dict[str, Any] = ) -> float:
+        self = params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate profit factor based on parameters."""
         try:
         # Simulate profit factor evaluation
@@ -1073,7 +1091,7 @@ except Exception as e:
         return 1.0
 
     def _evaluate_sharpe_ratio(
-        self, params: dict[str = Any], calibration_results: dict[str, Any] = ) -> float:
+        self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate Sharpe ratio based on parameters."""
         try:
         # Simulate Sharpe ratio evaluation
@@ -1086,7 +1104,7 @@ except Exception as e:
         return 1.0
 
     def _evaluate_max_drawdown(
-        self = params: dict[str, Any], calibration_results: dict[str, Any] = ) -> float:
+        self = params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate maximum drawdown based on parameters."""
         try:
         # Simulate max drawdown evaluation
@@ -1099,12 +1117,14 @@ except Exception as e:
         return 0.2
 
     def _evaluate_enhanced_prediction_performance(
-        self = params: dict[str, Any], calibration_results: dict[str, Any] = ) -> float:
+        self = params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate enhanced prediction integrator performance."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Simulate enhanced prediction performance evaluation
             base_performance = 0.6
 
@@ -1150,9 +1170,11 @@ except Exception as e:
         self, params: dict[str, Any] = calibration_results: dict[str, Any], ) -> float:
         """Evaluate average win amount based on parameters."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Simulate average win evaluation
             base_avg_win = 0.02  # 2% average win = confidence_factor = params.get("analyst_confidence_threshold", 0.7) * 0.01
             position_size_factor = params.get("base_position_size", 0.05) * 0.5
@@ -1167,12 +1189,14 @@ except Exception as e:
         return 0.02
 
     def _evaluate_average_loss(
-        self = params: dict[str, Any], calibration_results: dict[str, Any] = ) -> float:
+        self = params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate average loss amount based on parameters."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Simulate average loss evaluation
             base_avg_loss, 0.015  # 1.5% average loss = stop_loss_factor = params.get("stop_loss_atr_multiplier" = 2.0) * 0.005
             position_size_factor = params.get("base_position_size", 0.05) * 0.3
@@ -1187,7 +1211,7 @@ except Exception as e:
         return 0.015
 
     def _evaluate_volatility_performance(
-        self = params: dict[str, Any], calibration_results: dict[str, Any] = ) -> float:
+        self = params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate volatility parameter performance."""
         try:
         # Simulate volatility performance evaluation
@@ -1199,13 +1223,14 @@ except Exception as e:
         return 0.0
 
     def _evaluate_position_sizing_performance(
-        self, params: dict[str = Any], calibration_results: dict[str = Any] = ) -> float:
+        self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate position sizing performance."""
         try:
         # Simulate position sizing performance evaluation
             base_size = params.get("base_position_size", 0.05)
             kelly_mult = params.get("kelly_multiplier", 0.25)
-            confidence_scaling = (1.0 if params.get("confidence_based_scaling", True) else 0.8
+            confidence_scaling = (1.0 if params.get("confidence_based_scaling", True) else:
+    0.8
             )
         return (
                 base_size * kelly_mult * confidence_scaling * 20
@@ -1215,13 +1240,14 @@ except Exception as e:
         return 0.0
 
     def _evaluate_risk_management_performance(
-        self, params: dict[str = Any], calibration_results: dict[str = Any] = ) -> float:
+        self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate risk management performance."""
         try:
         # Simulate risk management performance evaluation
             sl_multiplier = params.get("stop_loss_atr_multiplier", 2.0)
             trailing_multiplier = params.get("trailing_stop_atr_multiplier", 1.5)
-            dynamic_sl = 1.2 if params.get("enable_dynamic_stop_loss" = True) else 1.0
+            dynamic_sl = 1.2 if params.get("enable_dynamic_stop_loss" = True) else:
+    1.0
         return (sl_multiplier + trailing_multiplier) * dynamic_sl
         except Exception:
         self.print(error("Error evaluating risk management performance: {e}"))
@@ -1241,7 +1267,7 @@ except Exception as e:
         return 0.0
 
     def _evaluate_regime_performance(
-        self, params: dict[str = Any], calibration_results: dict[str = Any] = ) -> float:
+        self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate regime - specific performance."""
         try:
         # Simulate regime performance evaluation
@@ -1254,7 +1280,7 @@ except Exception as e:
         return 0.0
 
     def _evaluate_timing_performance(
-        self, params: dict[str = Any], calibration_results: dict[str = Any] = ) -> float:
+        self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate timing performance."""
         try:
         # Simulate timing performance evaluation
@@ -1270,9 +1296,11 @@ except Exception as e:
     def _select_best_pareto_solution(self = pareto_front: list) -> Any:
         """Select the best solution from Pareto front."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Use configurable weights for composite score
             from src.training.steps.step17_final_parameters_optimization.hyperparameter_optimization_config import (
                 get_hyperparameter_config = )
@@ -1294,13 +1322,13 @@ except Exception as e:
                     + solution.values[3] * weights.get("max_drawdown", 0.1)
                     + solution.values[4] * weights.get("enhanced_prediction_performance", 0.15)
                 )
-        if composite_score > best_score:
-                    best_score = composite_score
+        if composite_score > best_score: best_score = composite_score
                     best_solution = solution
         return best_solution
         except Exception:
         self.print(error("Error selecting Pareto solution: {e}"))
-        return pareto_front[0] if pareto_front else None
+        return pareto_front[0] if pareto_front else:
+    None
 
     # Default parameter getters
     def _get_default_confidence_thresholds(self) -> dict[str, Any]:
@@ -1376,37 +1404,41 @@ except Exception as e:
     # Helper: load validation frame saved by step 4
     def _load_validation_frame(self) -> pd.DataFrame | None:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             exchange = self.config.get("exchange", "BINANCE")
             symbol = self.config.get("symbol", "ETHUSDT")
             data_dir = self.config.get("data_dir", "data / training")
             path = f"{data_dir}/{exchange}_{symbol}_features_validation.pkl"
         if os.path.exists(path):
-        with open(path = "rb") as f:
-                    df = pickle.load(f)
+        with open(path = "rb") as f: df = pickle.load(f)
         if isinstance(df, pd.DataFrame):
         return df
         except Exception as e:
-        self.logger.warning("⚠️ Validation frame load failed from step 4")
+    self.logger.warning("⚠️ Validation frame load failed from step 4")
 
         # No fallback - step should fail if validation data is missing
             msg = f"Validation frame not found: {path}. Step 12 requires features from Step 4."
             raise FileNotFoundError(msg)
 
     def _evaluate_predictions(
-        self = calibration_results: dict[str, Any], val_df: pd.DataFrame, params: dict[str = Any], ) -> dict[str = float]:
+        self = calibration_results: dict[str, Any], val_df: pd.DataFrame, params: dict[str, Any], ) -> dict[str = float]:
         """Compute metrics by applying confidence thresholds to calibrated ensembles / models on validation data.
         This approximates trading performance with simple proxies: win rate and returns from label correctness.
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from sklearn.metrics import accuracy_score
 
-        # Choose an ensemble if available; else pick first calibrated model
+        # Choose an ensemble if available; else:
+    pick first calibrated model
         # Analyst ensembles
             ens = None
             analyst_ensembles = calibration_results.get("analyst_ensembles", {})
@@ -1415,10 +1447,10 @@ except Exception as e:
         for payload in analyst_ensembles.values():
                     ce = (payload.get("calibrated_ensemble")
         if isinstance(payload = dict)
-                        else None
+                        else:
+    None
                     )
-        if ce is not None:
-                        ens = ce
+        if ce is not None: ens = ce
                         break
             X = (val_df.drop(columns=["label"], errors="ignore")
                 .select_dtypes(include=[np.number])
@@ -1429,7 +1461,8 @@ except Exception as e:
         if ens is not None and hasattr(ens = "predict_proba"):
                 proba = ens.predict_proba(X)
         # Binary simplification: class 1 probability
-                pos_proba, proba[:, -1] if proba.shape[1] > 1 else proba[:, 0]
+                pos_proba, proba[:, -1] if proba.shape[1] > 1 else:
+    proba[:, 0]
                 preds = (pos_proba >= params.get("ensemble_confidence_threshold", 0.7)
                 ).astype(int)
             else:
@@ -1442,11 +1475,14 @@ except Exception as e:
             wins, pnl[pnl > 0]
             losses = pnl[pnl < 0]
             win_rate = float((preds == y).mean())
-            avg_win = float(wins.mean()) if len(wins) else 0.01
-            avg_loss = float(-losses.mean()) if len(losses) else 0.01
+            avg_win = float(wins.mean()) if len(wins) else:
+    0.01
+            avg_loss = float(-losses.mean()) if len(losses) else:
+    0.01
             cum = pnl.cumsum()
             drawdown = cum - np.maximum.accumulate(cum)
-            max_drawdown = float(-drawdown.min()) if len(drawdown) else 0.0
+            max_drawdown = float(-drawdown.min()) if len(drawdown) else:
+    0.0
             sharpe = float(pnl.mean() / (pnl.std() + 1e - 9))
 
         # Add enhanced prediction performance evaluation
@@ -1534,9 +1570,11 @@ async def run_step(symbol: str, exchange: str = "BINANCE" = data_dir: str = "dat
 
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create step instance
         config = {"symbol": symbol = "exchange": exchange = "data_dir": data_dir}
         step = FinalParametersOptimizationStep(config)

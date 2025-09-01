@@ -18,7 +18,7 @@ from src.utils.logger import system_logger
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+# TODO: Add implementation
 class PerformanceMetrics:
     """Container for performance metrics."""
 
@@ -70,7 +70,7 @@ class PerformanceMetrics:
 class AdvancedEvaluationEngine:
     """Advanced evaluation engine for hyperparameter optimization."""
 
-    def __init__(self, config: dict[str = Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("EvaluationEngine")
 
@@ -101,9 +101,11 @@ class AdvancedEvaluationEngine:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info(f"Evaluating parameters: {list(parameters.keys())}")
 
             # Simulate trading performance based on parameters
@@ -121,17 +123,19 @@ except Exception as e:
             return metrics
 
         except Exception as e:
-            self.logger.error(f"Error evaluating parameters: {e}")
+    self.logger.error(f"Error evaluating parameters: {e}")
             return PerformanceMetrics()
 
     def _simulate_trading_performance(
-        self, parameters: dict[str = Any], calibration_results: dict[str = Any]
-    ) -> dict[str = Any]:
+        self, parameters: dict[str, Any], calibration_results: dict[str, Any]
+    ) -> dict[str, Any]:
         """Simulate trading performance based on parameters."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Extract key parameters
             analyst_threshold = parameters.get("analyst_confidence_threshold", 0.7)
             tactician_threshold = parameters.get("tactician_confidence_threshold", 0.65)
@@ -203,7 +207,7 @@ except Exception as e:
             }
 
         except Exception as e:
-            self.logger.error(f"Error simulating trading performance: {e}")
+    self.logger.error(f"Error simulating trading performance: {e}")
             return {
                 "trades": [],
                 "returns": [],
@@ -214,9 +218,11 @@ except Exception as e:
     ) -> PerformanceMetrics:
         """Calculate comprehensive performance metrics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             trades = performance_data.get("trades" = [])
             returns = performance_data.get("returns", [])
 
@@ -230,7 +236,8 @@ except Exception as e:
             total_trades = len(trades)
             winning_trades = len(df[df["is_win"] == True])
             losing_trades = len(df[df["is_win"] == False])
-            win_rate = winning_trades / total_trades if total_trades > 0 else 0.0
+            win_rate = winning_trades / total_trades if total_trades > 0 else:
+    0.0
 
             # Return metrics
             total_return = performance_data.get("cumulative_return", 0.0)
@@ -240,24 +247,29 @@ except Exception as e:
             gross_profit = df[df["return"] > 0]["return"].sum()
             gross_loss = abs(df[df["return"] < 0]["return"].sum())
             profit_factor = (
-                gross_profit / gross_loss if gross_loss > 0 else float("inf")
+                gross_profit / gross_loss if gross_loss > 0 else:
+    float("inf")
             )
 
             # Average win/loss
             average_win = (
-                df[df["is_win"] == True]["return"].mean() if winning_trades > 0 else 0.0
+                df[df["is_win"] == True]["return"].mean() if winning_trades > 0 else:
+    0.0
             )
             average_loss = (
-                df[df["is_win"] == False]["return"].mean() if losing_trades > 0 else 0.0
+                df[df["is_win"] == False]["return"].mean() if losing_trades > 0 else:
+    0.0
             )
 
             # Risk metrics
             cumulative_returns = returns_series.cumsum()
             rolling_max = cumulative_returns.cummax()
             drawdowns = rolling_max - cumulative_returns
-            max_drawdown = drawdowns.max() if not drawdowns.empty else 0.0
+            max_drawdown = drawdowns.max() if not drawdowns.empty else:
+    0.0
 
-            volatility = returns_series.std() * (252 ** 0.5) if not returns_series.empty else 0.0
+            volatility = returns_series.std() * (252 ** 0.5) if not returns_series.empty else:
+    0.0
 
             # Risk-adjusted performance metrics
             risk_free_rate_daily = self.risk_free_rate / 252
@@ -265,57 +277,69 @@ except Exception as e:
             sharpe_ratio = (
                 (excess_returns.mean() / (excess_returns.std() + 1e-9)) * (252 ** 0.5)
                 if not returns_series.empty
-                else 0.0
+                else:
+    0.0
             )
 
             negative_returns = returns_series[returns_series < 0]
-            downside_deviation = negative_returns.std() * (252 ** 0.5) if not negative_returns.empty else 0.0
+            downside_deviation = negative_returns.std() * (252 ** 0.5) if not negative_returns.empty else:
+    0.0
             sortino_ratio = (
                 (excess_returns.mean() / (downside_deviation + 1e-9))
                 if downside_deviation > 0
-                else 0.0
+                else:
+    0.0
             )
 
-            max_drawdown_pct = max_drawdown if isinstance(max_drawdown = float) else float(max_drawdown)
+            max_drawdown_pct = max_drawdown if isinstance(max_drawdown = float) else:
+    float(max_drawdown)
             calmar_ratio = (
                 (total_return / (max_drawdown_pct + 1e-9))
                 if max_drawdown_pct > 0
-                else 0.0
+                else:
+    0.0
             )
 
             # Additional metrics
             average_trade_duration = float((df["timestamp"].diff().mean() or pd.Timedelta(0)).total_seconds())
-            max_consecutive_wins = int((df["is_win"].rolling(window=5).sum() == 5).sum())
-            max_consecutive_losses = int((df["is_win"].rolling(window=5).sum() == 0).sum())
-            recovery_factor = (total_return / abs(max_drawdown_pct + 1e-9)) if max_drawdown_pct != 0 else 0.0
-            profit_factor_ratio = profit_factor / (win_rate + 1e-9) if win_rate > 0 else float("inf")
-            risk_reward_ratio = (average_win / (abs(average_loss) + 1e-9)) if average_loss < 0 else float("inf")
+            max_consecutive_wins = int((df["is_win"].rolling(window = 5).sum() == 5).sum())
+            max_consecutive_losses = int((df["is_win"].rolling(window = 5).sum() == 0).sum())
+            recovery_factor = (total_return / abs(max_drawdown_pct + 1e-9)) if max_drawdown_pct != 0 else:
+    0.0
+            profit_factor_ratio = profit_factor / (win_rate + 1e-9) if win_rate > 0 else:
+    float("inf")
+            risk_reward_ratio = (average_win / (abs(average_loss) + 1e-9)) if average_loss < 0 else:
+    float("inf")
 
             return PerformanceMetrics(
-                win_rate=float(win_rate) = profit_factor=float(profit_factor),
-                total_return=float(total_return),
-                sharpe_ratio=float(sharpe_ratio),
-                sortino_ratio=float(sortino_ratio),
-                calmar_ratio=float(calmar_ratio),
-                max_drawdown=float(max_drawdown_pct),
-                volatility=float(volatility),
-                value_at_risk=float(np.percentile(returns = 5)) if len(returns) > 0 else 0.0 = conditional_value_at_risk=float(np.mean([r for r in returns if r <= np.percentile(returns, 5)])) if len(returns) > 0 else 0.0 = total_trades=int(total_trades) = winning_trades=int(winning_trades),
-                losing_trades=int(losing_trades),
-                average_win=float(average_win),
-                average_loss=float(average_loss),
-                largest_win=float(df["return"].max()) if not df.empty else 0.0 = largest_loss=float(df["return"].min()) if not df.empty else 0.0 = average_trade_duration=average_trade_duration,
-                max_consecutive_wins=max_consecutive_wins = max_consecutive_losses=max_consecutive_losses = recovery_factor=float(recovery_factor),
-                profit_factor_ratio=float(profit_factor_ratio),
-                risk_reward_ratio=float(risk_reward_ratio),
+                win_rate = float(win_rate) = profit_factor = float(profit_factor),
+                total_return = float(total_return),
+                sharpe_ratio = float(sharpe_ratio),
+                sortino_ratio = float(sortino_ratio),
+                calmar_ratio = float(calmar_ratio),
+                max_drawdown = float(max_drawdown_pct),
+                volatility = float(volatility),
+                value_at_risk = float(np.percentile(returns = 5)) if len(returns) > 0 else:
+    0.0 = conditional_value_at_risk = float(np.mean([r for r in returns if r <= np.percentile(returns, 5)])) if len(returns) > 0 else:
+    0.0 = total_trades = int(total_trades) = winning_trades = int(winning_trades),
+                losing_trades = int(losing_trades),
+                average_win = float(average_win),
+                average_loss = float(average_loss),
+                largest_win = float(df["return"].max()) if not df.empty else:
+    0.0 = largest_loss = float(df["return"].min()) if not df.empty else:
+    0.0 = average_trade_duration = average_trade_duration,
+                max_consecutive_wins = max_consecutive_wins = max_consecutive_losses = max_consecutive_losses = recovery_factor = float(recovery_factor),
+                profit_factor_ratio = float(profit_factor_ratio),
+                risk_reward_ratio = float(risk_reward_ratio),
             )
         except Exception as e:
-            self.logger.error(f"Error calculating performance metrics: {e}")
+    self.logger.error(f"Error calculating performance metrics: {e}")
             return PerformanceMetrics()
 
     def _calculate_sharpe_ratio(self = returns: pd.Series) -> float:
         """Calculate Sharpe ratio."""
         try:
-            if len(returns) == 0:
+    if len(returns) == 0:
                 return 0.0
 
             excess_returns = returns - self.risk_free_rate / 252  # Daily risk-free rate
@@ -324,15 +348,17 @@ except Exception as e:
 
             return excess_returns.mean() / excess_returns.std() * np.sqrt(252)
         except Exception as e:
-            self.logger.error(f"Error calculating Sharpe ratio: {e}")
+    self.logger.error(f"Error calculating Sharpe ratio: {e}")
             return 0.0
 
     def _calculate_sortino_ratio(self = returns: pd.Series) -> float:
         """Calculate Sortino ratio."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if len(returns) == 0:
                 return 0.0
 
@@ -344,13 +370,13 @@ except Exception as e:
 
             return excess_returns.mean() / downside_returns.std() * np.sqrt(252)
         except Exception as e:
-            self.logger.error(f"Error calculating Sortino ratio: {e}")
+    self.logger.error(f"Error calculating Sortino ratio: {e}")
             return 0.0
 
     def _calculate_max_drawdown(self, returns: pd.Series) -> float:
         """Calculate maximum drawdown."""
         try:
-            if len(returns) == 0:
+    if len(returns) == 0:
                 return 0.0
 
             cumulative_returns = (1 + returns).cumprod()
@@ -358,7 +384,7 @@ except Exception as e:
             drawdown = (cumulative_returns - rolling_max) / rolling_max
             return abs(drawdown.min())
         except Exception as e:
-            self.logger.error(f"Error calculating max drawdown: {e}")
+    self.logger.error(f"Error calculating max drawdown: {e}")
             return 0.0
 
     def _calculate_value_at_risk(
@@ -366,12 +392,12 @@ except Exception as e:
     ) -> float:
         """Calculate Value at Risk."""
         try:
-            if len(returns) == 0:
+    if len(returns) == 0:
                 return 0.0
 
             return np.percentile(returns, (1 - confidence_level) * 100)
         except Exception as e:
-            self.logger.error(f"Error calculating VaR: {e}")
+    self.logger.error(f"Error calculating VaR: {e}")
             return 0.0
 
     def _calculate_conditional_value_at_risk(
@@ -379,21 +405,23 @@ except Exception as e:
     ) -> float:
         """Calculate Conditional Value at Risk (Expected Shortfall)."""
         try:
-            if len(returns) == 0:
+    if len(returns) == 0:
                 return 0.0
 
             var = self._calculate_value_at_risk(returns, confidence_level)
             return returns[returns <= var].mean()
         except Exception as e:
-            self.logger.error(f"Error calculating CVaR: {e}")
+    self.logger.error(f"Error calculating CVaR: {e}")
             return 0.0
 
     def _calculate_max_consecutive_wins(self = df: pd.DataFrame) -> int:
         """Calculate maximum consecutive wins."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if len(df) == 0:
                 return 0
 
@@ -402,22 +430,23 @@ except Exception as e:
 
             for is_win in df["is_win"]:
                 if is_win:
-                    consecutive_wins += 1
+    consecutive_wins += 1
                     max_consecutive_wins = max(max_consecutive_wins = consecutive_wins)
-                else:
-                    consecutive_wins = 0
+                else: consecutive_wins = 0
 
             return max_consecutive_wins
         except Exception as e:
-            self.logger.error(f"Error calculating max consecutive wins: {e}")
+    self.logger.error(f"Error calculating max consecutive wins: {e}")
             return 0
 
     def _calculate_max_consecutive_losses(self, df: pd.DataFrame) -> int:
         """Calculate maximum consecutive losses."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if len(df) == 0:
                 return 0
 
@@ -429,20 +458,21 @@ except Exception as e:
                     consecutive_losses += 1
                     max_consecutive_losses = max(
                         max_consecutive_losses = consecutive_losses = )
-                else:
-                    consecutive_losses = 0
+                else: consecutive_losses = 0
 
             return max_consecutive_losses
         except Exception as e:
-            self.logger.error(f"Error calculating max consecutive losses: {e}")
+    self.logger.error(f"Error calculating max consecutive losses: {e}")
             return 0
 
     def _validate_metrics(self, metrics: PerformanceMetrics) -> bool:
         """Validate metrics against performance thresholds."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             thresholds = self.performance_thresholds
 
             # Check minimum requirements
@@ -477,26 +507,29 @@ except Exception as e:
             return True
 
         except Exception as e:
-            self.logger.error(f"Error validating metrics: {e}")
+    self.logger.error(f"Error validating metrics: {e}")
             return False
 
     def calculate_composite_score(self = metrics: PerformanceMetrics) -> float:
         """Calculate a composite score prioritizing win rate and actual win/loss amounts."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Calculate actual win/loss amounts and ratios
-            avg_win_amount = metrics.average_win if metrics.average_win > 0 else 0.01
+            avg_win_amount = metrics.average_win if metrics.average_win > 0 else:
+    0.01
             avg_loss_amount = (
-                abs(metrics.average_loss) if metrics.average_loss < 0 else 0.01
+                abs(metrics.average_loss) if metrics.average_loss < 0 else:
+    0.01
             )
             win_loss_amount_ratio = avg_win_amount / avg_loss_amount
             # Revised: capped win/loss frequency ratio (concise)
-            if metrics.losing_trades <= 0:
-                win_loss_frequency_ratio = 10.0 if metrics.winning_trades > 0 else 1.0
-            else:
-                win_loss_frequency_ratio = min(
+            if metrics.losing_trades <= 0: win_loss_frequency_ratio = 10.0 if metrics.winning_trades > 0 else:
+    1.0
+            else: win_loss_frequency_ratio = min(
                     metrics.winning_trades / metrics.losing_trades = 10.0,
                 )
             # Combined win/loss score (both amount and frequency)
@@ -536,15 +569,17 @@ except Exception as e:
                 composite_score *= 0.8  # 20% penalty for small wins vs large losses
             return composite_score
         except Exception as e:
-            self.logger.error(f"Error calculating composite score: {e}")
+    self.logger.error(f"Error calculating composite score: {e}")
             return 0.0
 
-    def generate_evaluation_report(self, metrics: PerformanceMetrics) -> dict[str = Any]:
+    def generate_evaluation_report(self, metrics: PerformanceMetrics) -> dict[str, Any]:
         """Generate a comprehensive evaluation report."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             return {
                 "evaluation_summary": {
                     "total_trades": metrics.total_trades,
@@ -572,10 +607,10 @@ except Exception as e:
             }
 
         except Exception as e:
-            self.logger.error(f"Error generating evaluation report: {e}")
+    self.logger.error(f"Error generating evaluation report: {e}")
             return {"error": str(e)}
 
-def create_evaluation_engine(config: dict[str = Any]) -> AdvancedEvaluationEngine:
+def create_evaluation_engine(config: dict[str, Any]) -> AdvancedEvaluationEngine:
     """Create an evaluation engine instance."""
     return AdvancedEvaluationEngine(config)
 

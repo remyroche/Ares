@@ -51,11 +51,9 @@ def create_fallback_decorator():
     return decorator
 
 # Initialize fallbacks
-if system_logger is None:
-    system_logger = create_fallback_logger()
+if system_logger is None: system_logger = create_fallback_logger()
 
-if centralized_decorators is None:
-    comprehensive_data_validation = create_fallback_decorator()
+if centralized_decorators is None: comprehensive_data_validation = create_fallback_decorator()
     handle_errors = create_fallback_decorator()
     memory_efficient = create_fallback_decorator()
     resource_monitor = create_fallback_decorator()
@@ -75,15 +73,13 @@ else:
     quality_gate = centralized_decorators.quality_gate
     monitor_feature_engineering = centralized_decorators.monitor_feature_engineering
 
-if enhanced_mlflow is None:
-    with_enhanced_mlflow_logging = create_fallback_decorator()
+if enhanced_mlflow is None: with_enhanced_mlflow_logging = create_fallback_decorator()
     log_step_report, lambda * args = **kwargs: "fallback_report"
-    create_detailed_step_report, lambda * args, **kwargs: {}
-    log_step_metrics = lambda * args, **kwargs: None
+    create_detailed_step_report, lambda *args, **kwargs: {}
+    log_step_metrics = lambda *args, **kwargs: None
     log_step_dataframe_with_standardized_name, lambda * args = **kwargs: "fallback_dataframe"
-    log_step_artifact_with_standardized_name, lambda * args, **kwargs: "fallback_artifact"
-else:
-    with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
+    log_step_artifact_with_standardized_name, lambda *args, **kwargs: "fallback_artifact"
+else: with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
     log_step_report, enhanced_mlflow.log_step_report
     create_detailed_step_report, enhanced_mlflow.create_detailed_step_report
     log_step_metrics = enhanced_mlflow.log_step_metrics
@@ -111,7 +107,7 @@ class DataReadingStep:
 
         missing_modules = [module for module = available in dependency_status.items() if not available]
         if missing_modules:
-        self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+    self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
         self.logger.info("📝 Pipeline will continue with fallback implementations")
         else:
         self.logger.info("✅ All required dependencies available")
@@ -146,9 +142,11 @@ class DataReadingStep:
         self.logger.info(f"📖 Reading unified data for {symbol} on {exchange} ({timeframe})")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Use standardized path construction
             unified_data_path = Path(self.standards.build_path("unified_data", exchange, symbol)) / timeframe
 
@@ -179,7 +177,7 @@ except Exception as e:
 
         # Concatenate all dataframes
         if dataframes:
-                unified_data = pd.concat(dataframes, ignore_index = True)
+    unified_data = pd.concat(dataframes, ignore_index = True)
                 unified_data = unified_data.sort_values('timestamp').reset_index(drop = True)
 
         # Validate unified data quality
@@ -199,7 +197,7 @@ except Exception as e:
         return None
 
         except Exception as e:
-        self.logger.exception(f"❌ Error reading unified data: {e}")
+    self.logger.exception(f"❌ Error reading unified data: {e}")
         return None
 
     @with_tracing_span("validate_data_quality")
@@ -210,9 +208,11 @@ except Exception as e:
         self.logger.info("🔍 Validating data quality...")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Use standardized validation
             validation_result = self.standards.validate_data_quality(data = "unified")
 
@@ -222,10 +222,14 @@ except Exception as e:
                 "issues": [issue.message for issue in validation_result.issues],
                 "warnings": [warning.message for warning in validation_result.warnings],
                 "data_info": {
-                    "rows": len(data) if data is not None else 0 = "columns": list(data.columns) if data is not None else [] = "date_range": {
-                        "start": data['timestamp'].min() if data is not None and 'timestamp' in data.columns else None = "end": data['timestamp'].max() if data is not None and 'timestamp' in data.columns else None
+                    "rows": len(data) if data is not None else:
+    0 = "columns": list(data.columns) if data is not None else [] = "date_range": {
+                        "start": data['timestamp'].min() if data is not None and 'timestamp' in data.columns else:
+    None = "end": data['timestamp'].max() if data is not None and 'timestamp' in data.columns else:
+    None
                     },
-                    "memory_usage": data.memory_usage(deep = True).sum() / 1024 / 1024 if data is not None else 0  # MB
+                    "memory_usage": data.memory_usage(deep = True).sum() / 1024 / 1024 if data is not None else:
+    0  # MB
                 },
                 "quality_score": validation_result.quality_score
             }
@@ -240,7 +244,7 @@ except Exception as e:
         self._log_step_timing("validate_data_quality", step_start)
 
         except Exception as e:
-        self.logger.exception(f"❌ Error during data quality validation: {e}")
+    self.logger.exception(f"❌ Error during data quality validation: {e}")
             validation_results = {
                 "passed": False = "issues": [f"Validation error: {str(e)}"] = "warnings": [],
                 "data_info": {},
@@ -256,9 +260,11 @@ except Exception as e:
         self.logger.info("💾 Saving validation report...")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             import json
             from datetime import datetime
 
@@ -288,7 +294,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(f"❌ Error saving validation report: {e}")
+    self.logger.exception(f"❌ Error saving validation report: {e}")
         return False
 
     @with_enhanced_mlflow_logging("step02_data_reading")
@@ -300,9 +306,11 @@ except Exception as e:
         self.logger.info("🚀 Starting Step 2: Data Reading and Validation")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Read unified data
             unified_data = await self.read_unified_data(symbol, exchange = timeframe, data_dir)
 
@@ -352,7 +360,7 @@ except Exception as e:
             }
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in Step 2: {e}")
+    self.logger.exception(f"❌ Error in Step 2: {e}")
         return {"success": False = "error": str(e)}
 
     async def _log_step2_artifacts_and_report(
@@ -363,17 +371,22 @@ except Exception as e:
     ) -> None:
         """Log step 2 artifacts and create detailed report."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Collect execution metadata
             execution_metadata = {
-                "start_time": datetime.fromtimestamp(self.start_time).isoformat() if self.start_time else datetime.now().isoformat(),
+                "start_time": datetime.fromtimestamp(self.start_time).isoformat() if self.start_time else:
+    datetime.now().isoformat(),
                 "end_time": datetime.now().isoformat(),
-                "duration_seconds": time.time() - self.start_time if self.start_time else 0.0, "memory_usage_mb": 0.0 = # Will be calculated if available
+                "duration_seconds": time.time() - self.start_time if self.start_time else:
+    0.0, "memory_usage_mb": 0.0 = # Will be calculated if available
                 "cpu_usage_percent": 0.0 = # Will be calculated if available
                 "data_quality_score": validation_results.get("quality_score", 0.0),
-                "processing_efficiency": 1.0 if validation_results.get("passed", False) else 0.5 = }
+                "processing_efficiency": 1.0 if validation_results.get("passed", False) else:
+    0.5 = }
 
         # Collect artifacts generated
             artifacts_generated = [
@@ -382,8 +395,11 @@ except Exception as e:
 
         # Collect metrics
             metrics_calculated = {
-                "data_reading_success": 1.0 = "validation_passed": 1.0 if validation_results.get("passed" = False) else 0.0 = "data_quality_score": validation_results.get("quality_score", 0.0),
-                "total_rows": len(unified_data) if unified_data is not None else 0 = "total_columns": len(unified_data.columns) if unified_data is not None else 0 = "validation_issues_count": len(validation_results.get("issues", [])),
+                "data_reading_success": 1.0 = "validation_passed": 1.0 if validation_results.get("passed" = False) else:
+    0.0 = "data_quality_score": validation_results.get("quality_score", 0.0),
+                "total_rows": len(unified_data) if unified_data is not None else:
+    0 = "total_columns": len(unified_data.columns) if unified_data is not None else:
+    0 = "validation_issues_count": len(validation_results.get("issues", [])),
             }
 
         # Create training input for report
@@ -403,7 +419,8 @@ except Exception as e:
             report_data = create_detailed_step_report(
                 step_name="step02_data_reading",
                 step_data = step_data, training_input = training_input = execution_metadata = execution_metadata,
-                artifacts_generated = artifacts_generated = metrics_calculated = metrics_calculated = errors_encountered=[] if validation_results.get("passed", False) else validation_results.get("issues", [])
+                artifacts_generated = artifacts_generated = metrics_calculated = metrics_calculated = errors_encountered=[] if validation_results.get("passed", False) else:
+    validation_results.get("issues", [])
             )
 
         # Log the report
@@ -420,8 +437,7 @@ except Exception as e:
         self.logger.info(f"✅ Logged data reading report: {report_name}")
 
         # Log validated data DataFrame
-        if unified_data is not None:
-                artifact_name = log_step_dataframe_with_standardized_name(
+        if unified_data is not None: artifact_name = log_step_dataframe_with_standardized_name(
                     config = self.config, step_name="step02_data_reading" = df = unified_data,
                     artifact_type="validated_data",
                     additional_metadata={
@@ -461,7 +477,7 @@ except Exception as e:
         self.logger.info("✅ Step 2 artifacts and reports logged successfully")
 
         except Exception as e:
-        self.logger.error(f"❌ Failed to log step 2 artifacts and reports: {e}")
+    self.logger.error(f"❌ Failed to log step 2 artifacts and reports: {e}")
         # Don't fail the step if MLflow logging fails
 
 async def run_step_enhanced(
@@ -472,8 +488,7 @@ async def run_step_enhanced(
     """Enhanced entry point for Step 2: Data Reading and Validation."""
 
     # Use standardized path construction
-    if data_dir is None:
-        data_dir = pipeline_standards.build_path("raw_data", exchange, symbol)
+    if data_dir is None: data_dir = pipeline_standards.build_path("raw_data", exchange, symbol)
 
     logger.info("🚀 Starting Step 2: Data Reading and Validation (Enhanced)")
 

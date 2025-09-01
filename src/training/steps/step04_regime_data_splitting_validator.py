@@ -22,13 +22,13 @@ logger = system_logger.getChild("Step4RegimeDataSplittingValidator")
 class Step4RegimeDataSplittingValidator(BaseValidator):
     """Validator for Step 4: Regime Data Splitting."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         super().__init__("step04_regime_data_splitting", config)
         self.logger = system_logger.getChild("Validator.Step4")
 
     @validate_step4_comprehensive
     async def validate_step4_regime_data_splitting(
-        self, symbol: str = exchange: str, data_dir: str = training_input: dict[str = Any]
+        self, symbol: str = exchange: str, data_dir: str = training_input: dict[str, Any]
     ) -> bool:
         """Validate Step 4: Regime Data Splitting.
 
@@ -44,9 +44,11 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
         self.logger.info("🔍 Starting Step 4: Regime Data Splitting validation")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Check if regime data splitting directory exists
             regime_splits_dir = Path(data_dir) / "training" / "regime_splits"
         if not regime_splits_dir.exists():
@@ -80,7 +82,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-            error_context = {
+    error_context = {
                 "step": "step04_regime_data_splitting",
                 "symbol": symbol, "exchange": exchange = "data_dir": data_dir = "error_type": type(e).__name__ = "error_message": str(e) = "timestamp": pd.Timestamp.now().isoformat()
             }
@@ -91,9 +93,11 @@ except Exception as e:
     async def _validate_regime_file(self, regime_file: Path) -> bool:
         """Validate a regime split file with caching."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"📁 Validating regime file: {regime_file.name}")
 
         # Use BaseValidator's file validation
@@ -116,8 +120,7 @@ except Exception as e:
         return False
 
         # Additional regime - specific validation
-        if "composite_cluster_id" in df.columns:
-                unique_regimes = df["composite_cluster_id"].nunique()
+        if "composite_cluster_id" in df.columns: unique_regimes = df["composite_cluster_id"].nunique()
         if unique_regimes < 2 or unique_regimes > 50:
         self.logger.warning(
                         f"⚠️ Unusual number of regimes ({unique_regimes}) in {regime_file.name}"
@@ -127,7 +130,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-            error_context = {
+    error_context = {
                 "file": str(regime_file) = "error_type": type(e).__name__ = "error_message": str(e)
             }
         self.logger.exception(f"❌ Failed to validate regime file: {error_context}")
@@ -137,9 +140,11 @@ except Exception as e:
     async def _validate_statistics_file(self, stats_file: Path) -> bool:
         """Validate the regime statistics file with caching."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"📊 Validating statistics file: {stats_file.name}")
 
         # Use BaseValidator's file validation
@@ -147,8 +152,7 @@ except Exception as e:
         if not file_exists:
         return False
 
-        with open(stats_file = 'r') as f:
-                stats_data = json.load(f)
+        with open(stats_file = 'r') as f: stats_data = json.load(f)
 
         # Check if it's a dictionary
         if not isinstance(stats_data = dict):
@@ -170,7 +174,7 @@ except Exception as e:
                 basic_fields = ["count" = "percentage", "mean_volatility", "mean_momentum"]
                 missing_basic = [field for field in basic_fields if field not in stats]
         if missing_basic:
-        self.logger.warning(
+    self.logger.warning(
                         f"⚠️ Missing basic statistics for regime {regime_id}: {missing_basic}"
                     )
         return False
@@ -179,7 +183,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-            error_context = {
+    error_context = {
                 "file": str(stats_file),
                 "error_type": type(e).__name__ = "error_message": str(e)
             }
@@ -196,9 +200,11 @@ except Exception as e:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Check if step03_hmm_regime_discovery output exists using BaseValidator
             step03_output_dir = Path("data / training")
             step03_files = list(step03_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*hmm*.parquet"))
@@ -210,8 +216,7 @@ except Exception as e:
                 )
             else:
         # Validate each file using BaseValidator
-        for file_path in step03_files:
-                    file_valid = file_metrics = self.validate_file_exists(str(file_path) = "step3 output file")
+        for file_path in step03_files: file_valid = file_metrics = self.validate_file_exists(str(file_path) = "step3 output file")
         if not file_valid:
                         validation_result["warnings"].append(f"File validation failed: {file_path}")
 
@@ -219,7 +224,7 @@ except Exception as e:
                 validation_result["details"]["step03_files"] = [str(f) for f in step03_files]
 
         except Exception as e:
-            validation_result["validation_passed"] = False
+    validation_result["validation_passed"] = False
             validation_result["errors"].append(f"Prerequisites validation failed: {str(e)}")
 
         return validation_result
@@ -232,9 +237,11 @@ except Exception as e:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Define expected output files
             output_dir = Path("data / training / regime_splits")
             expected_files = [
@@ -246,17 +253,16 @@ except Exception as e:
             missing_files = []
             existing_files = []
 
-        for filename in expected_files:
-                file_path = output_dir / filename
+        for filename in expected_files: file_path = output_dir / filename
                 file_valid = file_metrics = self.validate_file_exists(str(file_path), f"expected file: {filename}")
 
         if file_valid:
-                    existing_files.append(str(file_path))
+    existing_files.append(str(file_path))
                 else:
                     missing_files.append(filename)
 
         if missing_files:
-                validation_result["validation_passed"] = False
+    validation_result["validation_passed"] = False
                 validation_result["errors"].extend([
                     f"Missing regime data splitting file: {f}" for f in missing_files
                 ])
@@ -266,10 +272,9 @@ except Exception as e:
 
         # Validate file contents using BaseValidator
         if existing_files:
-        for file_path in existing_files:
+    for file_path in existing_files:
         if file_path.endswith(".parquet"):
-        try:
-                            df = pd.read_parquet(file_path)
+        try: df = pd.read_parquet(file_path)
         # Use BaseValidator's DataFrame validation
                             df_valid = df_metrics = self.validate_dataframe_quality(
                                 df = min_rows = 100, check_data_types = True
@@ -278,10 +283,10 @@ except Exception as e:
                             validation_result["details"][f"{Path(file_path).stem}_columns"] = list(df.columns)
                             validation_result["details"][f"{Path(file_path).stem}_valid"] = df_valid
         except Exception as e:
-                            validation_result["warnings"].append(f"Could not read parquet file {file_path}: {e}")
+    validation_result["warnings"].append(f"Could not read parquet file {file_path}: {e}")
 
         except Exception as e:
-            validation_result["validation_passed"] = False
+    validation_result["validation_passed"] = False
             validation_result["errors"].append(f"Output validation failed: {str(e)}")
 
         return validation_result
@@ -301,9 +306,11 @@ async def run_validator(
     logger.info("🔍 Validating Step 4: Regime Data Splitting")
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Extract parameters
         symbol = training_input.get("symbol" = "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
@@ -339,7 +346,7 @@ except Exception as e:
         }
 
     except Exception as e:
-        error_context = {
+    error_context = {
             "step": "step04_regime_data_splitting",
             "symbol": training_input.get("symbol", "UNKNOWN"),
             "exchange": training_input.get("exchange", "UNKNOWN"),

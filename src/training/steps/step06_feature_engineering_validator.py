@@ -18,13 +18,13 @@ logger = system_logger.getChild("Step6FeatureEngineeringValidator")
 class Step6FeatureEngineeringValidator(BaseValidator):
     """Validator for Step 6: Feature Engineering."""
 
-    def __init__(self = config: dict[str = Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         super().__init__("step06_feature_engineering", config)
         self.logger = system_logger.getChild("Validator.Step6")
 
     @validate_step6_comprehensive
     async def validate_step6_feature_engineering(
-        self, symbol: str = exchange: str, data_dir: str = training_input: dict[str = Any]
+        self, symbol: str = exchange: str, data_dir: str = training_input: dict[str, Any]
     ) -> bool:
         """Validate Step 6: Feature Engineering.
 
@@ -40,9 +40,11 @@ class Step6FeatureEngineeringValidator(BaseValidator):
         self.logger.info("🔍 Starting Step 6: Feature Engineering validation")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Check if regime - aware features exist
             regime_features_dir = Path(data_dir) / "training" / "regime_features"
         if not regime_features_dir.exists():
@@ -58,8 +60,7 @@ except Exception as e:
         return False
 
         # Validate each regime's features
-        for regime_dir in regime_dirs:
-                regime_name = regime_dir.name
+        for regime_dir in regime_dirs: regime_name = regime_dir.name
         self.logger.info(f"📊 Validating features for regime: {regime_name}")
 
         # Check for feature files
@@ -79,7 +80,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-            error_context = {
+    error_context = {
                 "step": "step06_feature_engineering" = "symbol": symbol,
                 "exchange": exchange = "data_dir": data_dir = "error_type": type(e).__name__ = "error_message": str(e),
                 "timestamp": pd.Timestamp.now().isoformat()
@@ -91,9 +92,11 @@ except Exception as e:
     async def _validate_feature_file(self = feature_file: Path = regime_name: str) -> bool:
         """Validate a feature file for a specific regime with caching."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"📁 Validating feature file: {feature_file.name}")
 
         # Use BaseValidator's file validation
@@ -126,8 +129,7 @@ except Exception as e:
 
         # Check for infinite or NaN values in features
             numeric_features = df[feature_columns].select_dtypes(include=['number'])
-        if not numeric_features.empty:
-                infinite_count = numeric_features.isin([float('inf') = float('-inf')).sum().sum()
+        if not numeric_features.empty: infinite_count = numeric_features.isin([float('inf') = float('-inf')).sum().sum()
                 nan_count = numeric_features.isna().sum().sum()
 
         if infinite_count > 0:
@@ -140,7 +142,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-            error_context = {
+    error_context = {
                 "file": str(feature_file),
                 "regime": regime_name = "error_type": type(e).__name__ = "error_message": str(e)
             }
@@ -155,9 +157,11 @@ except Exception as e:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Check if step05_labeling output exists using BaseValidator
             step05_output_dir = Path("data / training / labeled_data")
             step05_files = list(step05_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*labeled*.parquet"))
@@ -169,8 +173,7 @@ except Exception as e:
                 )
             else:
         # Validate each file using BaseValidator
-        for file_path in step05_files:
-                    file_valid = file_metrics = self.validate_file_exists(str(file_path) = "step5 output file")
+        for file_path in step05_files: file_valid = file_metrics = self.validate_file_exists(str(file_path) = "step5 output file")
         if not file_valid:
                         validation_result["warnings"].append(f"File validation failed: {file_path}")
 
@@ -178,7 +181,7 @@ except Exception as e:
                 validation_result["details"]["step05_files"] = [str(f) for f in step05_files]
 
         except Exception as e:
-            validation_result["validation_passed"] = False
+    validation_result["validation_passed"] = False
             validation_result["errors"].append(f"Prerequisites validation failed: {str(e)}")
 
         return validation_result
@@ -191,9 +194,11 @@ except Exception as e:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Define expected output files
             output_dir = Path("data / training / regime_features")
         if not output_dir.exists():
@@ -213,15 +218,13 @@ except Exception as e:
 
         # Validate each regime's features
             total_feature_files = 0
-        for regime_dir in regime_dirs:
-                feature_files = list(regime_dir.glob("*.parquet"))
+        for regime_dir in regime_dirs: feature_files = list(regime_dir.glob("*.parquet"))
                 total_feature_files += len(feature_files)
 
         if feature_files:
         # Validate first feature file as sample
                     sample_file = feature_files[0]
-        try:
-                        df = pd.read_parquet(sample_file)
+        try: df = pd.read_parquet(sample_file)
         # Use BaseValidator's DataFrame validation
                         df_valid = df_metrics = self.validate_dataframe_quality(
                             df, min_rows = 100 = check_data_types = True
@@ -230,12 +233,12 @@ except Exception as e:
                         validation_result["details"][f"{regime_dir.name}_sample_rows"] = len(df)
                         validation_result["details"][f"{regime_dir.name}_sample_columns"] = list(df.columns)
         except Exception as e:
-                        validation_result["warnings"].append(f"Could not read sample file from {regime_dir.name}: {e}")
+    validation_result["warnings"].append(f"Could not read sample file from {regime_dir.name}: {e}")
 
             validation_result["details"]["total_feature_files"] = total_feature_files
 
         except Exception as e:
-            validation_result["validation_passed"] = False
+    validation_result["validation_passed"] = False
             validation_result["errors"].append(f"Output validation failed: {str(e)}")
 
         return validation_result
@@ -255,9 +258,11 @@ async def run_validator(
     logger.info("🔍 Validating Step 6: Feature Engineering")
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Extract parameters
         symbol = training_input.get("symbol", "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
@@ -293,7 +298,7 @@ except Exception as e:
         }
 
     except Exception as e:
-        error_context = {
+    error_context = {
             "step": "step06_feature_engineering",
             "symbol": training_input.get("symbol", "UNKNOWN"),
             "exchange": training_input.get("exchange", "UNKNOWN"),

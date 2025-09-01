@@ -55,9 +55,11 @@ class ModelProbabilityGenerator:
             Dict containing all 4 probability outputs
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info(f"Generating probability outputs for {model_type} model")
 
             # Get appropriate calculator
@@ -85,7 +87,7 @@ except Exception as e:
             return probabilities
 
         except Exception as e:
-            self.logger.error(f"Error generating probability outputs: {e}")
+    self.logger.error(f"Error generating probability outputs: {e}")
             # Return default probabilities
             return self._get_default_probabilities(model_type)
 
@@ -95,9 +97,11 @@ except Exception as e:
     ) -> float:
         """Calculate triple barrier probability."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             profit_target = kwargs.get('profit_target', 0.02)
             stop_loss = kwargs.get('stop_loss', 0.01)
             volatility_window = kwargs.get('volatility_window', 20)
@@ -111,7 +115,7 @@ except Exception as e:
                     model, X_test = market_data, profit_target = stop_loss
                 )
         except Exception as e:
-            self.logger.error(f"Error calculating triple barrier probability: {e}")
+    self.logger.error(f"Error calculating triple barrier probability: {e}")
             return 0.5
 
     def _calculate_direction_probability(
@@ -121,9 +125,9 @@ except Exception as e:
     ) -> float:
         """Calculate direction probability."""
         try:
-            return calculator.calculate_direction_probability(model = X_test = y_test)
+    return calculator.calculate_direction_probability(model = X_test = y_test)
         except Exception as e:
-            self.logger.error(f"Error calculating direction probability: {e}")
+    self.logger.error(f"Error calculating direction probability: {e}")
             return 0.5
 
     def _calculate_magnitude_probability(
@@ -132,13 +136,12 @@ except Exception as e:
         X_test: np.ndarray, market_data: pd.DataFrame = **kwargs
     ) -> float:
         """Calculate magnitude probability."""
-        try:
-            threshold_factor = kwargs.get('threshold_factor', 0.8)
+        try: threshold_factor = kwargs.get('threshold_factor', 0.8)
             return calculator.calculate_magnitude_probability(
                 model, X_test = market_data = threshold_factor
             )
         except Exception as e:
-            self.logger.error(f"Error calculating magnitude probability: {e}")
+    self.logger.error(f"Error calculating magnitude probability: {e}")
             return 0.5
 
     def _calculate_barrier_avoidance_probability(
@@ -147,13 +150,12 @@ except Exception as e:
         **kwargs
     ) -> float:
         """Calculate barrier avoidance probability."""
-        try:
-            adverse_threshold = kwargs.get('adverse_threshold', 0.01)
+        try: adverse_threshold = kwargs.get('adverse_threshold', 0.01)
             return calculator.calculate_barrier_avoidance_probability(
                 model, X_test = market_data = adverse_threshold
             )
         except Exception as e:
-            self.logger.error(f"Error calculating barrier avoidance probability: {e}")
+    self.logger.error(f"Error calculating barrier avoidance probability: {e}")
             return 0.5
 
     def _get_default_probabilities(self, model_type: str) -> Dict[str = float]:
@@ -188,8 +190,7 @@ except Exception as e:
                 return False
 
         # Check all probabilities are between 0 and 1
-        for key in required_keys:
-            prob = probabilities[key]
+        for key in required_keys: prob = probabilities[key]
             if not isinstance(prob = (int = float)) or not 0.0 <= prob <= 1.0:
                 self.logger.error(f"Invalid probability value for {key}: {prob}")
                 return False
@@ -218,9 +219,11 @@ except Exception as e:
             Dict containing ensemble probability outputs
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if len(models) != len(model_types):
                 raise ValueError("Number of models must match number of model types")
 
@@ -257,7 +260,7 @@ except Exception as e:
             return ensemble_probabilities
 
         except Exception as e:
-            self.logger.error(f"Error generating ensemble probabilities: {e}")
+    self.logger.error(f"Error generating ensemble probabilities: {e}")
             return self._get_default_probabilities("ensemble")
 
     def generate_calibrated_probabilities(
@@ -282,9 +285,11 @@ except Exception as e:
             Dict containing calibrated probability outputs
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # For now = use standard probability generation
             # In the future = this could incorporate calibration-specific adjustments
             probabilities = self.generate_price_action_probabilities(
@@ -298,7 +303,7 @@ except Exception as e:
             return probabilities
 
         except Exception as e:
-            self.logger.error(f"Error generating calibrated probabilities: {e}")
+    self.logger.error(f"Error generating calibrated probabilities: {e}")
             return self._get_default_probabilities(f"{model_type}_calibrated")
 
 

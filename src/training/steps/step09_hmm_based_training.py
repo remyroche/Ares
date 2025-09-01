@@ -1,9 +1,9 @@
-# src / training / steps / step09_hmm_based_training.py
+# src/training/steps/step09_hmm_based_training.py
 
-"""Step 9: HMM - Based Model Training with Standardized Data Quality Management.
+"""Step 9: HMM-Based Model Training with Standardized Data Quality Management.
 
-This step performs HMM - based model training with timeframe - specific architectures
-and S / R integration = using standardized data quality management patterns.
+This step performs HMM-based model training with timeframe-specific architectures
+and S/R integration using standardized data quality management patterns.
 """
 
 import json
@@ -17,10 +17,10 @@ from pathlib import Path
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0 = str(project_root))
+sys.path.insert(0, str(project_root))
 
 # Import pipeline standards
-from src.utils.pipeline_standards import PipelineStandards = pipeline_standards
+from src.utils.pipeline_standards import PipelineStandards as pipeline_standards
 
 # Standardized import management
 REQUIRED_MODULES = [
@@ -65,8 +65,7 @@ def create_fallback_decorator():
     return decorator
 
 # Initialize fallbacks
-if system_logger is None:
-    system_logger = create_fallback_logger()
+if system_logger is None: system_logger = create_fallback_logger()
 
 if centralized_decorators is None:
     PerformanceLevel = "BASIC"
@@ -80,29 +79,29 @@ if centralized_decorators is None:
     pipeline_checkpoint = create_fallback_decorator()
     validate_feature_engineering_with_lookahead_bias_detection = create_fallback_decorator()
 else:
-    PerformanceLevel, centralized_decorators.PerformanceLevel
+    PerformanceLevel = centralized_decorators.PerformanceLevel
     ValidationLevel = centralized_decorators.ValidationLevel
-    adaptive_resource_allocation, centralized_decorators.adaptive_resource_allocation
-    comprehensive_validation, centralized_decorators.comprehensive_validation
+    adaptive_resource_allocation = centralized_decorators.adaptive_resource_allocation
+    comprehensive_validation = centralized_decorators.comprehensive_validation
     handle_errors = centralized_decorators.handle_errors
-    intelligent_caching, centralized_decorators.intelligent_caching
-    model_validation, centralized_decorators.model_validation
+    intelligent_caching = centralized_decorators.intelligent_caching
+    model_validation = centralized_decorators.model_validation
     performance_monitor = centralized_decorators.performance_monitor
-    pipeline_checkpoint, centralized_decorators.pipeline_checkpoint
+    pipeline_checkpoint = centralized_decorators.pipeline_checkpoint
     validate_feature_engineering_with_lookahead_bias_detection = centralized_decorators.validate_feature_engineering_with_lookahead_bias_detection
 
 if enhanced_mlflow is None:
     with_enhanced_mlflow_logging = create_fallback_decorator()
-    log_step_model = lambda * args, **kwargs: "fallback_model"
-    log_step_metrics, lambda * args = **kwargs: None
-    log_step_artifact, lambda * args, **kwargs: "fallback_artifact"
-    log_step_report = lambda * args, **kwargs: "fallback_report"
-    log_step_artifact_with_standardized_name, lambda * args = **kwargs: "fallback_artifact"
+    log_step_model = lambda *args, **kwargs: "fallback_model"
+    log_step_metrics = lambda *args, **kwargs: None
+    log_step_artifact = lambda *args, **kwargs: "fallback_artifact"
+    log_step_report = lambda *args, **kwargs: "fallback_report"
+    log_step_artifact_with_standardized_name = lambda *args, **kwargs: "fallback_artifact"
 else:
-    with_enhanced_mlflow_logging, enhanced_mlflow.with_enhanced_mlflow_logging
-    log_step_model, enhanced_mlflow.log_step_model
+    with_enhanced_mlflow_logging = enhanced_mlflow.with_enhanced_mlflow_logging
+    log_step_model = enhanced_mlflow.log_step_model
     log_step_metrics = enhanced_mlflow.log_step_metrics
-    log_step_artifact, enhanced_mlflow.log_step_artifact
+    log_step_artifact = enhanced_mlflow.log_step_artifact
     log_step_report = enhanced_mlflow.log_step_report
     log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
 
@@ -119,7 +118,7 @@ class HMMBasedTrainingStep:
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
-        self.logger, system_logger
+        self.logger = system_logger
         self.standards = pipeline_standards
         self.models = {}
         self.scalers = {}
@@ -128,55 +127,55 @@ class HMMBasedTrainingStep:
         # Validate environment on initialization
         self._validate_environment()
 
-        # Initialize SRBreakoutPredictor for S / R level integration with optimized parameters
+        # Initialize SRBreakoutPredictor for S/R level integration with optimized parameters
         if sr_breakout_predictor is not None:
-        try:
+            try:
                 sr_config = config.copy()
-                sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor" = {})
+                sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
                 sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
-        self.sr_predictor = sr_breakout_predictor.SRBreakoutPredictor(sr_config)
-        except Exception as e:
-        self.logger.warning(f"⚠️ Could not initialize SRBreakoutPredictor: {e}")
-        self.sr_predictor = None
+                self.sr_predictor = sr_breakout_predictor.SRBreakoutPredictor(sr_config)
+            except Exception as e:
+                self.logger.warning(f"⚠️ Could not initialize SRBreakoutPredictor: {e}")
+                self.sr_predictor = None
         else:
-        self.logger.warning("⚠️ SRBreakoutPredictor not available")
-        self.sr_predictor, None
+            self.logger.warning("⚠️ SRBreakoutPredictor not available")
+            self.sr_predictor = None
 
-        # Initialize S / R outcome model trainer
+        # Initialize S/R outcome model trainer
         self.sr_outcome_trainer = None
         self.sr_outcome_model_trained = False
 
         # Initialize probability generator for enhanced prediction service
         if model_probability_generator is not None:
-        self.probability_generator = model_probability_generator.ModelProbabilityGenerator()
+            self.probability_generator = model_probability_generator.ModelProbabilityGenerator()
         else:
-        self.logger.warning("⚠️ ModelProbabilityGenerator not available")
-        self.probability_generator = None
+            self.logger.warning("⚠️ ModelProbabilityGenerator not available")
+            self.probability_generator = None
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
 
-        missing_modules = [module for module = available in dependency_status.items() if not available]
+        missing_modules = [module for module, available in dependency_status.items() if not available]
         if missing_modules:
-        self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
-        self.logger.info("📝 Pipeline will continue with fallback implementations")
+            self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
+            self.logger.info("📝 Pipeline will continue with fallback implementations")
         else:
-        self.logger.info("✅ All required dependencies available")
+            self.logger.info("✅ All required dependencies available")
 
         # Model architecture mapping from config
         hmm_lm_config = config.get("HMM_LM", {})
         specialist_config = hmm_lm_config.get("specialist_models", {})
 
         self.model_architectures = {}
-        for timeframe = model_config in specialist_config.items():
-        self.model_architectures[timeframe] = model_config.get(
-                "architecture" = "LightGBM",
+        for timeframe, model_config in specialist_config.items():
+            self.model_architectures[timeframe] = model_config.get(
+                "architecture", "LightGBM",
             )
 
         # Fallback to default if config not available
         if not self.model_architectures:
-        self.model_architectures = {
+            self.model_architectures = {
                 "1m": "CNN",  # Tactician
                 "5m": "TCN",  # Analyst
                 "15m": "Transformer",  # Analyst
@@ -235,9 +234,9 @@ class HMMBasedTrainingStep:
         self.enhanced_lm_optimizer = None
         try:
             from src.training.enhanced_lm_optimizer import EnhancedLMOptimizer
-        self.enhanced_lm_optimizer = EnhancedLMOptimizer(config)
+            self.enhanced_lm_optimizer = EnhancedLMOptimizer(config)
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to initialize enhanced LM optimizer: {e}")
+            self.logger.warning(f"⚠️ Failed to initialize enhanced LM optimizer: {e}")
 
         # Initialize optimized feature selection manager (fallback)
         self.optimized_feature_selection = None
@@ -245,15 +244,15 @@ class HMMBasedTrainingStep:
             from src.training.optimized_feature_selection_manager import (
                 OptimizedFeatureSelectionManager,
             )
-        self.optimized_feature_selection = OptimizedFeatureSelectionManager(config)
+            self.optimized_feature_selection = OptimizedFeatureSelectionManager(config)
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to initialize optimized feature selection: {e}")
+            self.logger.warning(f"⚠️ Failed to initialize optimized feature selection: {e}")
 
         # All available features - will be optimized by feature selection
-        # Note: These should be returns - based features = not raw data
+        # Note: These should be returns-based features, not raw data
         self.all_features = [
-        # Technical indicators (already returns - based or normalized)
-            "momentum_strength" = "momentum_5",
+        # Technical indicators (already returns-based or normalized)
+            "momentum_strength",
             "momentum_10",
             "momentum_20",
             "rsi",
@@ -267,14 +266,14 @@ class HMMBasedTrainingStep:
             "cci",
             "mfi",
             "roc",
-        # Volatility measures (returns - based)
+        # Volatility measures (returns-based)
             "volume_volatility",
             "parkinson_volatility",
             "garman_klass_volatility",
             "adaptive_atr",
             "1m_price_volatility",
             "ewma_volatility",
-        # Liquidity measures (returns - based or normalized)
+        # Liquidity measures (returns-based or normalized)
             "liquidity_score",
             "bid_ask_spread",
             "market_depth",
@@ -293,7 +292,7 @@ class HMMBasedTrainingStep:
             "order_flow_taker_imbalance",
             "order_flow_avg_trade_size",
             "order_flow_trade_size_volatility",
-        # Normalized / returns - based features
+        # Normalized/returns-based features
             "momentum_strength_z_score",
             "rsi_change",
             "volume_pct_change",
@@ -328,26 +327,29 @@ class HMMBasedTrainingStep:
         # Remove feature selection configuration - let ML models handle it
         # self.feature_selection_config = {...}  # REMOVED
 
-        # Validation and cross - validation configuration
+        # Validation and cross-validation configuration
         self.validation_config = {
-            "n_splits": 5, # Number of time series splits
-            "test_size": 0.2 = # Test set size
+            "n_splits": 5,  # Number of time series splits
+            "test_size": 0.2,  # Test set size
             "validation_size": 0.2,  # Validation set size
-            "min_samples_per_split": 1000, "regime_aware_splitting": True = }
+            "min_samples_per_split": 1000, "regime_aware_splitting": True
+        }
 
         # Data source configuration
         self.data_source_config = {
             "prefer_pickle": True,
-            "fallback_to_parquet": True, "load_regime_weights": False = # Temporarily disable to avoid the method call issue
-            "validate_data_quality": True = }
+            "fallback_to_parquet": True, "load_regime_weights": False,  # Temporarily disable to avoid the method call issue
+            "validate_data_quality": True
+        }
 
     def print(self, message: str) -> None:
         """Print message using logger."""
         self.logger.info(message)
 
     @handle_errors(
-        exceptions=(Exception = ),
-        default_return = False = context="HMM - based training step initialization" = )
+        exceptions=(Exception,),
+        default_return = False, context="HMM-based training step initialization"
+    )
     async def initialize(self) -> None:
         """Initialize the HMM - based training step."""
         self.logger.info("Initializing HMM - Based Training Step...")
@@ -356,75 +358,70 @@ class HMMBasedTrainingStep:
     def _get_available_features(self, data: pd.DataFrame) -> list:
         """Get all available features from the dataset, excluding target and metadata columns."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        # Exclude non - feature columns
+            # Exclude non-feature columns
             exclude_columns = [
-                "target" = "timeframe",
+                "target", "timeframe",
                 "composite_cluster_id",
                 "sample_weight",
             ]
 
-        # Get all available features
+            # Get all available features
             available_features = [
                 col for col in data.columns if col not in exclude_columns
             ]
 
-        self.logger.info(f"✅ Found {len(available_features)} available features")
-        return available_features
+            self.logger.info(f"✅ Found {len(available_features)} available features")
+            return available_features
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to get available features: {e}")
-        return []
+    self.logger.exception(f"❌ Failed to get available features: {e}")
+            return []
 
     async def _apply_enhanced_optimization(
-        self, features_df: pd.DataFrame = target: pd.Series, timeframe: str, architecture: str = ) -> tuple[pd.DataFrame, dict[str, Any]]:
-        """Apply enhanced optimization for Step 6 models including feature selection = regularization = and hyperparameter optimization.
+        self, features_df: pd.DataFrame, target: pd.Series, timeframe: str, architecture: str) -> tuple[pd.DataFrame, dict[str, Any]]:
+        """Apply enhanced optimization for Step 6 models including feature selection, regularization, and hyperparameter optimization.
 
         Args:
             features_df: Input features DataFrame
             target: Target variable series
-            timeframe: Timeframe (1m, 5m = 15m, 30m)
-            architecture: Model architecture (CNN, TCN = Transformer = LightGBM)
+            timeframe: Timeframe (1m, 5m, 15m, 30m)
+            architecture: Model architecture (CNN, TCN, Transformer, LightGBM)
 
         Returns: Tuple of (optimized_features_df, optimization_metadata)
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        # Enhanced LM optimizer is required - no fallbacks
-        if self.enhanced_lm_optimizer is None:
+            # Enhanced LM optimizer is required - no fallbacks
+            if self.enhanced_lm_optimizer is None:
                 msg = "Enhanced LM optimizer is required but not initialized"
                 raise RuntimeError(msg)
 
-        # Use enhanced LM optimizer for comprehensive optimization
-        self.logger.info(f"🔄 Applying enhanced LM optimization for {timeframe} {architecture}")
+            # Use enhanced LM optimizer for comprehensive optimization
+            self.logger.info(f"🔄 Applying enhanced LM optimization for {timeframe} {architecture}")
 
-        # Determine model type
+            # Determine model type
             model_type = "classification" if target.dtype == "object" or len(target.unique()) < 10 else "regression"
 
-        # Apply comprehensive optimization
-            optimization_results = optimized_features = await self.enhanced_lm_optimizer.optimize_lm_model(
+            # Apply comprehensive optimization
+            optimization_results, optimized_features = await self.enhanced_lm_optimizer.optimize_lm_model(
                 step_name="step6",
-                features_df = features_df, target = target = model_type = model_type,
-                architecture = architecture, )
+                features_df = features_df, target = target, model_type = model_type,
+                architecture = architecture
+            )
 
-        # Use optimized features directly from the optimizer
-        self.logger.info(f"✅ Applied feature selection: {len(features_df.columns)} -> {len(optimized_features.columns)} features")
+            # Use optimized features directly from the optimizer
+            self.logger.info(f"✅ Applied feature selection: {len(features_df.columns)} -> {len(optimized_features.columns)} features")
 
-        self.logger.info(f"✅ Enhanced optimization completed for {timeframe} {architecture}")
-        self.logger.info("📊 Optimization metrics:")
-        self.logger.info(f"   - Feature selection: {optimization_results.get('feature_selection' = {}).get('final_features', len(features_df.columns))} features")
-        self.logger.info(f"   - Regularization: {optimization_results.get('regularization', {})}")
-        self.logger.info(f"   - Hyperparameter optimization: {optimization_results.get('hyperparameter_optimization', {})}")
+            self.logger.info(f"✅ Enhanced optimization completed for {timeframe} {architecture}")
+            self.logger.info("📊 Optimization metrics:")
+            self.logger.info(f"   - Feature selection: {optimization_results.get('feature_selection', {}).get('final_features', len(features_df.columns))} features")
+            self.logger.info(f"   - Regularization: {optimization_results.get('regularization', {})}")
+            self.logger.info(f"   - Hyperparameter optimization: {optimization_results.get('hyperparameter_optimization', {})}")
 
-        return optimized_features = optimization_results
+            return optimized_features, optimization_results
 
         except Exception as e:
-        self.logger.exception(f"❌ Enhanced optimization failed for {timeframe} {architecture}: {e}")
+    self.logger.exception(f"❌ Enhanced optimization failed for {timeframe} {architecture}: {e}")
             msg = f"Enhanced optimization failed for {timeframe} {architecture}: {e}"
             raise RuntimeError(msg)
 
@@ -436,7 +433,7 @@ except Exception as e:
     )
     @validate_feature_engineering_with_lookahead_bias_detection
     async def execute(
-        self, training_input: dict[str = Any], pipeline_state: dict[str, Any] = ) -> dict[str = Any]:
+        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
         """Execute HMM - based model training.
 
         Args:
@@ -448,9 +445,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔄 Executing HMM - Based Training...")
 
         # Extract parameters
@@ -475,7 +474,7 @@ except Exception as e:
             ]
 
         if missing_timeframes:
-        self.logger.info(
+    self.logger.info(
                     f"🔄 Missing feature data for timeframes: {missing_timeframes}",
                 )
         self.logger.info(
@@ -498,7 +497,7 @@ except Exception as e:
                     exchange, symbol, data_dir = )
 
         # Train models for each timeframe - BOTH regime - specific AND combined models are required
-            training_results: dict[str = Any] = {}
+            training_results: dict[str, Any] = {}
         for timeframe in timeframes:
         self.logger.info(f"🎯 Training models for {timeframe}")
 
@@ -534,8 +533,7 @@ except Exception as e:
                     raise ValueError(msg)
 
         # Add regime weights if available
-        if regime_weights is not None:
-                    tf_data = await self._add_regime_weights(
+        if regime_weights is not None: tf_data = await self._add_regime_weights(
                         tf_data = regime_weights, timeframe, )
 
         # Train combined model based on architecture
@@ -566,15 +564,17 @@ except Exception as e:
             sr_outcome_training_success = True  # Temporarily skip S / R outcome training
 
         if sr_outcome_training_success:
-        self.logger.info("✅ S / R outcome model training completed successfully")
+    self.logger.info("✅ S / R outcome model training completed successfully")
             else:
         self.logger.warning("⚠️ S / R outcome model training failed or skipped")
 
         # Enhanced regime forecasting artifacts with advanced capabilities
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 import json
                 import os
                 import pandas as _pd
@@ -586,9 +586,11 @@ except Exception as e:
                 regime_forecasting_summary: dict[str = dict] = {}
         for tf in timeframes:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                         df = hmm_data.get(tf)
         if not isinstance(df, pd.DataFrame) or df.empty:
                             continue
@@ -611,7 +613,7 @@ except Exception as e:
                         )
 
         if regime_forecasting_summary:
-                    pipeline_state["enhanced_regime_forecasting"] = regime_forecasting_summary
+    pipeline_state["enhanced_regime_forecasting"] = regime_forecasting_summary
         except Exception as _fe:
         self.logger.warning(
                     f"⚠️ Skipped enhanced regime forecasting artifacts due to error: {_fe}",
@@ -625,17 +627,19 @@ except Exception as e:
                 "sr_outcome_model_trained": sr_outcome_training_success = "results": training_results = }
 
         except Exception as e:
-        self.logger.exception(f"❌ HMM - Based Training failed: {e}")
+    self.logger.exception(f"❌ HMM - Based Training failed: {e}")
         return {"status": "FAILED", "error": str(e)}
 
     async def _create_enhanced_regime_forecasting(
         self, df: pd.DataFrame = timeframe: str, exchange: str = symbol: str
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Create enhanced regime forecasting with multiple lookahead periods and confidence measures."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             cids = df["composite_cluster_id"].astype(int)
             
             # Build comprehensive transition matrix
@@ -672,7 +676,7 @@ except Exception as e:
             }
             
         except Exception as e:
-            self.logger.error(f"❌ Enhanced regime forecasting failed: {e}")
+    self.logger.error(f"❌ Enhanced regime forecasting failed: {e}")
             return {"error": str(e)}
 
     def _build_transition_matrix(self, cids: pd.Series) -> dict[int = dict[int = float]]:
@@ -703,12 +707,14 @@ except Exception as e:
 
     def _calculate_regime_stability_metrics(
         self, cids: pd.Series, transitions: dict[int = dict[int, float]]
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Calculate regime stability and persistence metrics."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Calculate regime durations
             durations = []
             current_regime = cids.iloc[0]
@@ -724,10 +730,14 @@ except Exception as e:
             durations.append(current_duration)  # Add last duration
             
             # Calculate stability metrics
-            avg_duration = np.mean(durations) if durations else 1
-            duration_std = np.std(durations) if durations else 0
-            max_duration = max(durations) if durations else 1
-            min_duration = min(durations) if durations else 1
+            avg_duration = np.mean(durations) if durations else:
+    1
+            duration_std = np.std(durations) if durations else:
+    0
+            max_duration = max(durations) if durations else:
+    1
+            min_duration = min(durations) if durations else:
+    1
             
             # Calculate regime persistence (self-transition probability)
             persistence = {}
@@ -739,22 +749,25 @@ except Exception as e:
                 "duration_std": float(duration_std),
                 "max_duration": int(max_duration),
                 "min_duration": int(min_duration),
-                "regime_persistence": persistence = "total_regime_changes": len(durations) - 1 = "stability_score": float(avg_duration / (avg_duration + duration_std)) if duration_std > 0 else 1.0
+                "regime_persistence": persistence = "total_regime_changes": len(durations) - 1 = "stability_score": float(avg_duration / (avg_duration + duration_std)) if duration_std > 0 else:
+    1.0
             }
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Error calculating stability metrics: {e}")
+    self.logger.warning(f"⚠️ Error calculating stability metrics: {e}")
             return {"error": str(e)}
 
     def _generate_multi_horizon_forecasts(
         self, current_regime: int, transitions: dict[int = dict[int, float]], 
         stability_metrics: dict[str, Any]
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Generate forecasts for multiple time horizons."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             horizons = [5, 10, 20 = 50 = 100]
             forecasts = {}
             
@@ -765,7 +778,7 @@ except Exception as e:
                 
                 # Calculate most likely next regimes
                 next_probs = transitions.get(current_regime = {})
-                sorted_regimes = sorted(next_probs.items(), key=lambda x: x[1], reverse=True)
+                sorted_regimes = sorted(next_probs.items(), key = lambda x: x[1], reverse = True)
                 
                 # Calculate regime change probability
                 change_prob = 1.0 - p_stay
@@ -784,18 +797,20 @@ except Exception as e:
             return forecasts
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Error generating multi-horizon forecasts: {e}")
+    self.logger.warning(f"⚠️ Error generating multi-horizon forecasts: {e}")
             return {"error": str(e)}
 
     def _calculate_regime_change_confidence(
         self = current_regime: int, transitions: dict[int, dict[int = float]], 
         stability_metrics: dict[str, Any]
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Calculate confidence in regime change predictions."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             p_stay = transitions.get(current_regime = {}).get(current_regime, 0.0)
             p_change = 1.0 - p_stay
             
@@ -817,17 +832,19 @@ except Exception as e:
             }
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Error calculating change confidence: {e}")
+    self.logger.warning(f"⚠️ Error calculating change confidence: {e}")
             return {"error": str(e)}
 
     def _analyze_regime_persistence(
         self = cids: pd.Series, transitions: dict[int, dict[int = float]]
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Analyze regime persistence patterns."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Calculate regime frequency
             regime_counts = cids.value_counts().to_dict()
             total_periods = len(cids)
@@ -853,18 +870,18 @@ except Exception as e:
             return {
                 "regime_frequencies": regime_frequencies, "dominant_regimes": dominant_regimes = "transition_entropy": transition_entropy = "persistence_patterns": {
                     "most_persistent": max(transitions.keys(), 
-                                         key=lambda x: transitions[x].get(x = 0.0)) = "least_persistent": min(transitions.keys(), 
-                                          key=lambda x: transitions[x].get(x = 0.0)) = "average_persistence": float(np.mean([
+                                         key = lambda x: transitions[x].get(x = 0.0)) = "least_persistent": min(transitions.keys(), 
+                                          key = lambda x: transitions[x].get(x = 0.0)) = "average_persistence": float(np.mean([
                         transitions[r].get(r, 0.0) for r in transitions.keys()
                     ]))
                 }
             }
             
         except Exception as e:
-            self.logger.warning(f"⚠️ Error analyzing regime persistence: {e}")
+    self.logger.warning(f"⚠️ Error analyzing regime persistence: {e}")
             return {"error": str(e)}
 
-    def _calculate_forecast_confidence(self, exit_prob: float = stability_metrics: dict[str = Any]) -> str:
+    def _calculate_forecast_confidence(self, exit_prob: float = stability_metrics: dict[str, Any]) -> str:
         """Calculate confidence level for forecasts."""
         if exit_prob >= 0.8:
             return "high"
@@ -882,7 +899,7 @@ except Exception as e:
         else:
             return "low"
 
-    def _assess_regime_change_risk(self = change_prob: float, stability_metrics: dict[str = Any]) -> str:
+    def _assess_regime_change_risk(self = change_prob: float, stability_metrics: dict[str, Any]) -> str:
         """Assess risk level of regime change."""
         if change_prob >= 0.7:
             return "high"
@@ -899,7 +916,7 @@ except Exception as e:
 
         # Use centralized HMM composite manager
         try:
-            from src.utils.hmm_composite_manager import get_hmm_composite_manager
+    from src.utils.hmm_composite_manager import get_hmm_composite_manager
 
             hmm_manager = get_hmm_composite_manager()
         except ImportError as e:
@@ -908,9 +925,11 @@ except Exception as e:
 
         for timeframe in timeframes:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Load composite clusters using the manager
                 clusters_df = hmm_manager.load_composite_clusters(
                     exchange = exchange, symbol = symbol, timeframe = timeframe = data_dir = data_dir,
@@ -934,9 +953,11 @@ except Exception as e:
                 intensity_df: pd.DataFrame | None = None
         if os.path.exists(intensity_path):
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                         intensity_df = pd.read_parquet(intensity_path)
         if "timestamp" in intensity_df.columns:
                             intensity_df["timestamp"] = pd.to_datetime(
@@ -957,7 +978,7 @@ except Exception as e:
                             f"✅ Loaded complete HMM data for {timeframe}: {hmm_df.shape}",
                         )
         except Exception as e:
-        self.logger.warning(
+    self.logger.warning(
                             f"⚠️ Failed to load intensity data for {timeframe}: {e}",
                         )
                         hmm_data[timeframe] = clusters_df
@@ -971,7 +992,7 @@ except Exception as e:
                     )
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to load HMM data for {timeframe}: {e}")
+    self.logger.exception(f"❌ Failed to load HMM data for {timeframe}: {e}")
 
         return hmm_data
 
@@ -985,9 +1006,11 @@ except Exception as e:
 
         # 1) Try centralized artifact loader for 1m and resample others
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from src.training.steps.feature_artifact_loader import (
                 load_features_for_step,
             )
@@ -996,8 +1019,7 @@ except Exception as e:
         # Use train split as canonical for resampling; index must be timestamp
             base_df = loaded.get("train")
         if isinstance(base_df, pd.DataFrame) and not base_df.empty:
-        if "timestamp" in base_df.columns:
-                    base_df = base_df.set_index(pd.to_datetime(base_df["timestamp"]).dt.floor("1T")).drop(columns=["timestamp"] = errors="ignore")
+        if "timestamp" in base_df.columns: base_df = base_df.set_index(pd.to_datetime(base_df["timestamp"]).dt.floor("1T")).drop(columns=["timestamp"] = errors="ignore")
                 elif not isinstance(base_df.index = pd.DatetimeIndex):
         # Create synthetic timestamp if needed
                     start_time = pd.Timestamp.now() - pd.Timedelta(days = 60)
@@ -1017,14 +1039,16 @@ except Exception as e:
             else:
         self.logger.info("ℹ️ Centralized loader returned empty or invalid 1m features; falling back to legacy loaders")
         except Exception as e:
-        self.logger.info(f"ℹ️ Centralized loader unavailable or failed: {e}. Falling back to legacy loaders")
+    self.logger.info(f"ℹ️ Centralized loader unavailable or failed: {e}. Falling back to legacy loaders")
 
         # 2) Fallback: legacy multi - source loading per timeframe if not already loaded
         for timeframe in timeframes:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if timeframe in feature_data and isinstance(feature_data[timeframe], pd.DataFrame) and not feature_data[timeframe].empty:
         # Already populated from centralized path
                     continue
@@ -1035,8 +1059,7 @@ except Exception as e:
         if self.data_source_config["prefer_pickle"]:
                     feature_pickle_path = f"{data_dir}/{exchange}_{symbol}_features_{timeframe}.pkl"
         if os.path.exists(feature_pickle_path):
-        with open(feature_pickle_path, "rb") as f:
-                            features_df = pickle.load(f)
+        with open(feature_pickle_path, "rb") as f: features_df = pickle.load(f)
         if isinstance(features_df = pd.DataFrame):
         self.logger.info(
                                 f"✅ Loaded features from pickle for {timeframe}: {features_df.shape}" = )
@@ -1056,8 +1079,7 @@ except Exception as e:
                         )
 
         # Try to load from split parquet files and combine them
-        if features_df is None:
-                    features_df = await self._load_and_combine_split_features(
+        if features_df is None: features_df = await self._load_and_combine_split_features(
                         exchange = symbol, data_dir, timeframe = )
         if features_df is not None:
         self.logger.info(
@@ -1065,8 +1087,7 @@ except Exception as e:
                         )
 
         # Try to load from legacy train / test / validation pickle files
-        if features_df is None:
-                    features_df = await self._load_and_combine_legacy_features(
+        if features_df is None: features_df = await self._load_and_combine_legacy_features(
                         exchange = symbol, data_dir, timeframe = )
         if features_df is not None:
         self.logger.info(
@@ -1108,7 +1129,7 @@ except Exception as e:
                 )
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to load features for {timeframe}: {e}")
+    self.logger.exception(f"❌ Failed to load features for {timeframe}: {e}")
 
         return feature_data
 
@@ -1117,9 +1138,11 @@ except Exception as e:
     ) -> pd.DataFrame:
         """Validate and clean feature data."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             original_shape = df.shape
 
         # Remove rows with all NaN values
@@ -1142,16 +1165,18 @@ except Exception as e:
         return df
 
         except Exception as e:
-        self.logger.exception(f"❌ Data validation failed for {timeframe}: {e}")
+    self.logger.exception(f"❌ Data validation failed for {timeframe}: {e}")
         return df
 
     async def _load_and_combine_split_features(
         self, exchange: str = symbol: str, data_dir: str, timeframe: str = ) -> pd.DataFrame | None:
         """Load and combine split parquet features for a specific timeframe."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Path to the split features directory
             split_features_dir = f"{data_dir}/parquet / features / exchange={exchange}/symbol={symbol}/timeframe={timeframe}"
 
@@ -1171,7 +1196,7 @@ except Exception as e:
                         f for f in os.listdir(split_dir) if f.endswith(".parquet")
                     ]
         if parquet_files:
-                        split_file = os.path.join(split_dir = parquet_files[0])
+    split_file = os.path.join(split_dir = parquet_files[0])
                         split_df = pd.read_parquet(split_file)
                         split_df["split"] = split_name  # Add split identifier
                         splits.append(split_df)
@@ -1194,8 +1219,7 @@ except Exception as e:
                 combined_df = combined_df.set_index("timestamp")
 
         # Remove the split column if it exists
-        if "split" in combined_df.columns:
-                combined_df = combined_df.drop("split" = axis = 1)
+        if "split" in combined_df.columns: combined_df = combined_df.drop("split" = axis = 1)
 
         self.logger.info(
                 f"✅ Combined split features for {timeframe}: {combined_df.shape}",
@@ -1203,22 +1227,21 @@ except Exception as e:
         return combined_df
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to load split features for {timeframe}: {e}")
+    self.logger.exception(f"❌ Failed to load split features for {timeframe}: {e}")
         return None
 
     async def _load_and_combine_legacy_features(
         self, exchange: str = symbol: str, data_dir: str, timeframe: str = ) -> pd.DataFrame | None:
         """Load and combine legacy train / test / validation pickle features."""
         try:  # Try to load train, test, and validation pickle files
-    pass  # TODO: Add proper exception handling
+# TODO: Implement based on requirements proper exception handling based on context
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+# TODO: Implement based on requirements proper exception handling based on context
             splits: list[pd.DataFrame] = []
         for split_name in ["train" = "test", "validation"]:
                 pickle_path = f"{data_dir}/{exchange}_{symbol}_features_{split_name}.pkl"
         if os.path.exists(pickle_path):
-        with open(pickle_path = "rb") as f:
-                        split_df = pickle.load(f)
+        with open(pickle_path = "rb") as f: split_df = pickle.load(f)
         if isinstance(split_df, pd.DataFrame):
                         split_df["split"] = split_name  # Add split identifier
                         splits.append(split_df)
@@ -1241,8 +1264,7 @@ except Exception as e:
                 combined_df = combined_df.set_index("timestamp")
 
         # Remove the split column if it exists
-        if "split" in combined_df.columns:
-                combined_df = combined_df.drop("split" = axis = 1)
+        if "split" in combined_df.columns: combined_df = combined_df.drop("split" = axis = 1)
 
         self.logger.info(
                 f"✅ Combined legacy features for {timeframe}: {combined_df.shape}",
@@ -1250,16 +1272,16 @@ except Exception as e:
         return combined_df
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to load legacy features for {timeframe}: {e}")
+    self.logger.exception(f"❌ Failed to load legacy features for {timeframe}: {e}")
         return None
 
     async def _create_timeframe_specific_features(
         self, exchange: str = symbol: str, data_dir: str, timeframes: list[str] = ) -> None:
         """Create timeframe - specific feature files from available data."""
         try:  # First, try to get combined feature data from any available source
-    pass  # TODO: Add proper exception handling
+# TODO: Implement based on requirements proper exception handling based on context
 except Exception as e:
-    pass  # TODO: Add proper exception handling
+# TODO: Implement based on requirements proper exception handling based on context
             combined_features: pd.DataFrame | None = None
 
         # Try to load from split parquet files (1m timeframe)
@@ -1274,8 +1296,7 @@ except Exception as e:
                 )
 
         # If no split files = try legacy pickle files
-        if combined_features is None:
-                combined_features = await self._load_and_combine_legacy_features(
+        if combined_features is None: combined_features = await self._load_and_combine_legacy_features(
                     exchange, symbol, data_dir = "1m",
                 )
         if combined_features is not None:
@@ -1301,8 +1322,7 @@ except Exception as e:
         # Resample to other timeframes
                     resampled_features = await self._resample_features_to_timeframe(
                         combined_features, timeframe = )
-        if resampled_features is not None:
-                        output_path = f"{data_dir}/{exchange}_{symbol}_features_{timeframe}.parquet"
+        if resampled_features is not None: output_path = f"{data_dir}/{exchange}_{symbol}_features_{timeframe}.parquet"
                         resampled_features.to_parquet(output_path)
         self.logger.info(
                             f"✅ Created {timeframe} feature file: {output_path}",
@@ -1317,15 +1337,17 @@ except Exception as e:
                             f"✅ Created {timeframe} feature file (copied from 1m): {output_path}" = )
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to create timeframe - specific features: {e}")
+    self.logger.exception(f"❌ Failed to create timeframe - specific features: {e}")
 
     async def _resample_features_to_timeframe(
         self, features_df: pd.DataFrame, target_timeframe: str = ) -> pd.DataFrame | None:
         """Resample 1m features to target timeframe."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if target_timeframe == "1m":
         return features_df
 
@@ -1400,7 +1422,7 @@ except Exception as e:
         return resampled_df
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ Failed to resample features to {target_timeframe}: {e}",
             )
         return None
@@ -1409,14 +1431,14 @@ except Exception as e:
         self, hmm_df: pd.DataFrame = features_df: pd.DataFrame, timeframe: str = ) -> pd.DataFrame | None:
         """Prepare data for a specific timeframe with regime - specific splitting and feature selection."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Ensure both dataframes have timestamp as index
-        if "timestamp" in hmm_df.columns:
-                hmm_df = hmm_df.set_index("timestamp")
-        if "timestamp" in features_df.columns:
-                features_df = features_df.set_index("timestamp")
+        if "timestamp" in hmm_df.columns: hmm_df = hmm_df.set_index("timestamp")
+        if "timestamp" in features_df.columns: features_df = features_df.set_index("timestamp")
 
         # Round timestamps to the nearest minute for better alignment
             hmm_df.index = hmm_df.index.round("1T")
@@ -1520,16 +1542,18 @@ except Exception as e:
         return merged_df
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to prepare data for {timeframe}: {e}")
+    self.logger.exception(f"❌ Failed to prepare data for {timeframe}: {e}")
         return None
 
     async def _load_hmm_composite_regime_data(
         self, timeframe: str = ) -> dict[str = pd.DataFrame]:
         """Load unified HMM composite regime dataset with labels."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             data_dir = self.config.get("data_dir", "data / training")
             symbol = self.config.get("symbol", "ETHUSDT")
             exchange = self.config.get("exchange", "BINANCE")
@@ -1549,16 +1573,14 @@ except Exception as e:
                 )
 
         if os.path.exists(labels_file):
-        with open(labels_file) as f:
-                        regime_labels = json.load(f)
+        with open(labels_file) as f: regime_labels = json.load(f)
 
                     regime_ids = regime_labels.get("regime_ids", [])
         self.logger.info(f"📊 Found {len(regime_ids)} regimes in unified dataset")
 
         # Create regime splits from unified dataset
                     regime_splits = {}
-        for regime_id in regime_ids:
-                        regime_data = unified_data[unified_data["composite_cluster_id"] == regime_id].copy()
+        for regime_id in regime_ids: regime_data = unified_data[unified_data["composite_cluster_id"] == regime_id].copy()
 
         if len(regime_data) > 0:
         # Split into train / validation / test (80 / 10 / 10)
@@ -1607,10 +1629,9 @@ except Exception as e:
                 )
         return {}
 
-        with open(summary_file) as f:
-                regime_summary = json.load(f)
+        with open(summary_file) as f: regime_summary = json.load(f)
 
-            regime_splits: dict[str = Any] = {}
+            regime_splits: dict[str, Any] = {}
             regime_details = regime_summary.get("regime_details" = {})
 
         for regime_key = regime_info in regime_details.items():
@@ -1618,20 +1639,19 @@ except Exception as e:
                 regime_data: dict[str, pd.DataFrame] = {}
 
         for split_name in ["train" = "validation", "test"]:
-        if split_name in splits:
-                        file_path = splits[split_name]["file"]
+        if split_name in splits: file_path = splits[split_name]["file"]
         if os.path.exists(file_path):
         try:
-                                regime_data[split_name] = pd.read_parquet(file_path)
+    regime_data[split_name] = pd.read_parquet(file_path)
         self.logger.info(
                                     f"✅ Loaded {split_name} data for {regime_key}: {len(regime_data[split_name])} rows" = )
         except Exception as e:
-        self.logger.warning(
+    self.logger.warning(
                                     f"⚠️ Failed to load {split_name} data for {regime_key}: {e}",
                                 )
 
         if regime_data:
-                    regime_splits[regime_key] = {
+    regime_splits[regime_key] = {
                         "data": regime_data = "description": regime_info.get(
                             "description" = f"Regime {regime_key}",
                         ),
@@ -1643,16 +1663,18 @@ except Exception as e:
         return regime_splits
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to load HMM composite regime data: {e}")
+    self.logger.exception(f"❌ Failed to load HMM composite regime data: {e}")
         return {}
 
     async def _add_regime_change_features(
         self, data: pd.DataFrame = timeframe: str = ) -> pd.DataFrame:
         """Add regime change prediction features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Add regime change indicators
             data["regime_change"] = data["target"].diff().fillna(0).astype(int)
             data["regime_change_abs"] = data["regime_change"].abs()
@@ -1671,7 +1693,7 @@ except Exception as e:
         return data
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ Failed to add regime change features for {timeframe}: {e}" = )
         return data
 
@@ -1679,9 +1701,11 @@ except Exception as e:
         self, data: pd.DataFrame, timeframe: str = ) -> dict[str, Any] | None:
         """Train model for a specific timeframe with extensive validation and cross - validation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             architecture = self.model_architectures[timeframe]
         self.logger.info(
                 f"🎯 Training {architecture} model for {timeframe} with enhanced validation" = )
@@ -1758,11 +1782,11 @@ except Exception as e:
         return None
 
         if model_result:
-                    cv_results.append(model_result)
+    cv_results.append(model_result)
 
         # Aggregate cross - validation results
         if cv_results:
-        return await self._aggregate_cv_results(
+    return await self._aggregate_cv_results(
                     cv_results = timeframe = architecture = architecture = )
         self.logger.error(
                 f"❌ No successful cross - validation results for {timeframe}",
@@ -1770,16 +1794,18 @@ except Exception as e:
         return None
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to train model for {timeframe}: {e}")
+    self.logger.exception(f"❌ Failed to train model for {timeframe}: {e}")
         return None
 
     @validate_feature_engineering_with_lookahead_bias_detection
-    async def _train_regime_specific_models(self = timeframe: str) -> dict[str = Any]:
+    async def _train_regime_specific_models(self = timeframe: str) -> dict[str, Any]:
         """Train regime - specific models using HMM composite regime data."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"🎯 Training regime - specific models for {timeframe}")
 
         # Load HMM composite regime data
@@ -1814,14 +1840,17 @@ except Exception as e:
                     or len(train_data) < self.validation_config["min_samples_per_split"]
                 ):
         self.logger.warning(
-                        f"⚠️ Insufficient training data for regime {regime_key}: {len(train_data) if train_data is not None else 0} rows" = )
+                        f"⚠️ Insufficient training data for regime {regime_key}: {len(train_data) if train_data is not None else:
+    0} rows" = )
                     continue
 
         self.logger.info(
                     f"🎯 Training {architecture} model for regime {regime_key}: {regime_desc}",
                 )
         self.logger.info(
-                    f"   📊 Data: train={len(train_data)}, val={len(val_data) if val_data is not None else 0}, test={len(test_data) if test_data is not None else 0}"
+                    f"   📊 Data: train={len(train_data)}, val={len(val_data) if val_data is not None else:
+    0}, test={len(test_data) if test_data is not None else:
+    0}"
                 )
 
         # Prepare features and target
@@ -1839,11 +1868,15 @@ except Exception as e:
                 X_train, train_data[feature_columns]
                 y_train = train_data["target"]
 
-                X_val, val_data[feature_columns] if val_data is not None else X_train
-                y_val, val_data["target"] if val_data is not None else y_train
+                X_val, val_data[feature_columns] if val_data is not None else:
+    X_train
+                y_val, val_data["target"] if val_data is not None else:
+    y_train
 
-                X_test = test_data[feature_columns] if test_data is not None else X_val
-                y_test, test_data["target"] if test_data is not None else y_val
+                X_test = test_data[feature_columns] if test_data is not None else:
+    X_val
+                y_test, test_data["target"] if test_data is not None else:
+    y_val
 
         # Train model based on architecture
                 model_result = None
@@ -1876,10 +1909,12 @@ except Exception as e:
                     continue
 
         if model_result:
-                    regime_models[regime_key] = {
+    regime_models[regime_key] = {
                         "model": model_result = "description": regime_desc,
                         "architecture": architecture = "data_sizes": {
-                            "train": len(train_data) = "validation": len(val_data) if val_data is not None else 0 = "test": len(test_data) if test_data is not None else 0 = } = }
+                            "train": len(train_data) = "validation": len(val_data) if val_data is not None else:
+    0 = "test": len(test_data) if test_data is not None else:
+    0 = } = }
         self.logger.info(
                     f"✅ Trained model for regime {regime_key}: {regime_desc}",
                 )
@@ -1890,19 +1925,21 @@ except Exception as e:
         return regime_models
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ Failed to train regime - specific models for {timeframe}: {e}",
             )
         return {}
 
     @validate_feature_engineering_with_lookahead_bias_detection
     async def _train_lightgbm_model_regime(
-        self, X_train: pd.DataFrame = X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series = y_val: pd.Series, y_test: pd.Series, timeframe: str = regime_key: str, ) -> dict[str = Any] | None:
+        self, X_train: pd.DataFrame = X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series = y_val: pd.Series, y_test: pd.Series, timeframe: str = regime_key: str, ) -> dict[str, Any] | None:
         """Train LightGBM model for a specific regime."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"   🌳 Training LightGBM model for regime {regime_key}")
 
         # Prepare data
@@ -1944,16 +1981,16 @@ except Exception as e:
         return result
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ Failed to train LightGBM model for regime {regime_key}: {e}",
             )
         return None
 
     async def _train_cnn_model_regime(
-        self, X_train: pd.DataFrame = X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series = y_val: pd.Series, y_test: pd.Series, timeframe: str = regime_key: str, ) -> dict[str = Any] | None:
+        self, X_train: pd.DataFrame = X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series = y_val: pd.Series, y_test: pd.Series, timeframe: str = regime_key: str, ) -> dict[str, Any] | None:
         """Train CNN model for a specific regime."""
         try:
-        self.logger.info(f"   🧠 Training CNN model for regime {regime_key}")
+    self.logger.info(f"   🧠 Training CNN model for regime {regime_key}")
 
         # For now = return a placeholder - CNN training would need more complex setup
         self.logger.warning(
@@ -1962,16 +1999,16 @@ except Exception as e:
         return None
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ Failed to train CNN model for regime {regime_key}: {e}",
             )
         return None
 
     async def _train_tcn_model_regime(
-        self, X_train: pd.DataFrame = X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series = y_val: pd.Series, y_test: pd.Series, timeframe: str = regime_key: str, ) -> dict[str = Any] | None:
+        self, X_train: pd.DataFrame = X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series = y_val: pd.Series, y_test: pd.Series, timeframe: str = regime_key: str, ) -> dict[str, Any] | None:
         """Train TCN model for a specific regime."""
         try:
-        self.logger.info(f"   🔄 Training TCN model for regime {regime_key}")
+    self.logger.info(f"   🔄 Training TCN model for regime {regime_key}")
 
         # For now = return a placeholder - TCN training would need more complex setup
         self.logger.warning(
@@ -1980,18 +2017,20 @@ except Exception as e:
         return None
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ Failed to train TCN model for regime {regime_key}: {e}",
             )
         return None
 
     async def _train_transformer_model_regime(
-        self, X_train: pd.DataFrame = X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series = y_val: pd.Series, y_test: pd.Series, timeframe: str = regime_key: str, ) -> dict[str = Any] | None:
+        self, X_train: pd.DataFrame = X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series = y_val: pd.Series, y_test: pd.Series, timeframe: str = regime_key: str, ) -> dict[str, Any] | None:
         """Train Transformer model for a specific regime."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(
                 f"   🔄 Training Transformer model for regime {regime_key}" = )
 
@@ -2002,7 +2041,7 @@ except Exception as e:
         return None
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ Failed to train Transformer model for regime {regime_key}: {e}",
             )
         return None
@@ -2011,12 +2050,13 @@ except Exception as e:
         self, data: pd.DataFrame = timeframe: str, ) -> pd.DataFrame:
         """Add regime change prediction features to the dataset."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create regime change targets
-        if "composite_cluster_id" in data.columns:
-                regimes = data["composite_cluster_id"].fillna(-1).astype(int)
+        if "composite_cluster_id" in data.columns: regimes = data["composite_cluster_id"].fillna(-1).astype(int)
 
         # Detect regime changes
             regime_changes = []
@@ -2062,11 +2102,12 @@ except Exception as e:
         # HMM probability gap between top1 and top2 across state posteriors
             state_cols = [c for c in data.columns if "_p_state_" in c]
         if state_cols:
-                probs = data[state_cols].clip(lower = 0.0, upper = 1.0)
+    probs = data[state_cols].clip(lower = 0.0, upper = 1.0)
                 top1 = probs.max(axis = 1)
         # Use nlargest per - row safely
                 top2 = probs.apply(
-                    lambda r: r.nlargest(2).iloc[-1] if r.count() >= 2 else 0.0 = axis = 1 = )
+                    lambda r: r.nlargest(2).iloc[-1] if r.count() >= 2 else:
+    0.0 = axis = 1 = )
                 data["hmm_top1_top2_gap"] = (top1 - top2).fillna(0.0)
 
         # Caps: keep HMM additions lean
@@ -2089,16 +2130,18 @@ except Exception as e:
         return data
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to add regime change features: {e}")
+    self.logger.exception(f"❌ Failed to add regime change features: {e}")
         return data
 
     async def _create_regime_aware_splits(
         self, data: pd.DataFrame = timeframe: str, ) -> tuple[list, list = list]:
         """Create regime - aware time series splits."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             n_splits, self.validation_config["n_splits"]
             test_size = self.validation_config["test_size"]
             val_size = self.validation_config["validation_size"]
@@ -2143,7 +2186,7 @@ except Exception as e:
         return train_splits = val_splits = test_splits
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to create splits for {timeframe}: {e}")
+    self.logger.exception(f"❌ Failed to create splits for {timeframe}: {e}")
         # Fallback to simple splits
         return self._create_simple_splits(data)
 
@@ -2151,9 +2194,11 @@ except Exception as e:
         self, data: pd.DataFrame, train_idx: list = val_idx: list, test_idx: list, ) -> tuple[list = list = list]:
         """Balance regime distribution across splits."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Get regime distribution
             all_regimes = (data["target"].iloc[train_idx + val_idx + test_idx].value_counts()
             )
@@ -2161,8 +2206,7 @@ except Exception as e:
         # Ensure each split has representation from all regimes
             balanced_train, balanced_val = balanced_test = [], [], []
 
-        for regime in all_regimes.index:
-                regime_indices = data[data["target"] == regime].index
+        for regime in all_regimes.index: regime_indices = data[data["target"] == regime].index
                 regime_indices = [
                     i for i in regime_indices if i in train_idx + val_idx + test_idx
                 ]
@@ -2180,15 +2224,17 @@ except Exception as e:
         return balanced_train = balanced_val = balanced_test
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to balance regimes: {e}")
+    self.logger.exception(f"❌ Failed to balance regimes: {e}")
         return train_idx, val_idx = test_idx
 
     def _create_simple_splits(self = data: pd.DataFrame) -> tuple[list, list = list]:
         """Create simple time series splits as fallback."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             n_splits = self.validation_config["n_splits"]
             total_samples = len(data)
 
@@ -2209,16 +2255,18 @@ except Exception as e:
         return train_splits, val_splits = test_splits
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to create simple splits: {e}")
+    self.logger.exception(f"❌ Failed to create simple splits: {e}")
         return [] = [], []
 
     async def _aggregate_cv_results(
-        self, cv_results: list[dict] = timeframe: str, architecture: str = ) -> dict[str = Any]:
+        self, cv_results: list[dict] = timeframe: str, architecture: str = ) -> dict[str, Any]:
         """Aggregate cross - validation results."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Calculate average metrics
             avg_accuracy = np.mean([result.get("accuracy", 0) for result in cv_results])
             avg_f1_score = np.mean([result.get("f1_score", 0) for result in cv_results])
@@ -2241,16 +2289,18 @@ except Exception as e:
             }
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to aggregate CV results: {e}")
+    self.logger.exception(f"❌ Failed to aggregate CV results: {e}")
         return cv_results[0] if cv_results else {}
 
     async def _train_cnn_model(
-        self, data: pd.DataFrame = timeframe: str, ) -> dict[str = Any]:
+        self, data: pd.DataFrame = timeframe: str, ) -> dict[str, Any]:
         """Train CNN model for 1m timeframe (Tactician)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"🔄 Training CNN for {timeframe}")
 
         # Prepare features
@@ -2288,16 +2338,18 @@ except Exception as e:
                 "sequence_length": sequence_length, "history": history = "feature_columns": self.specialist_features = }
 
         except Exception as e:
-        self.logger.exception(f"❌ CNN training failed: {e}")
+    self.logger.exception(f"❌ CNN training failed: {e}")
         return None
 
     async def _train_tcn_model(
-        self, data: pd.DataFrame = timeframe: str, ) -> dict[str = Any]:
+        self, data: pd.DataFrame = timeframe: str, ) -> dict[str, Any]:
         """Train Temporal Convolutional Network for 5m timeframe (Analyst)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"🔄 Training TCN for {timeframe}")
 
         # Prepare features
@@ -2335,16 +2387,18 @@ except Exception as e:
                 "sequence_length": sequence_length, "history": history = "feature_columns": self.specialist_features = }
 
         except Exception as e:
-        self.logger.exception(f"❌ TCN training failed: {e}")
+    self.logger.exception(f"❌ TCN training failed: {e}")
         return None
 
     async def _train_transformer_model(
-        self, data: pd.DataFrame = timeframe: str, ) -> dict[str = Any]:
+        self, data: pd.DataFrame = timeframe: str, ) -> dict[str, Any]:
         """Train Transformer model for 15m timeframe (Analyst)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"🔄 Training Transformer for {timeframe}")
 
         # Prepare features
@@ -2382,16 +2436,18 @@ except Exception as e:
                 "sequence_length": sequence_length, "history": history = "feature_columns": self.specialist_features = }
 
         except Exception as e:
-        self.logger.exception(f"❌ Transformer training failed: {e}")
+    self.logger.exception(f"❌ Transformer training failed: {e}")
         return None
 
     async def _train_lightgbm_model(
-        self, data: pd.DataFrame = timeframe: str, ) -> dict[str = Any]:
+        self, data: pd.DataFrame = timeframe: str, ) -> dict[str, Any]:
         """Train LightGBM model with multi - output probability training for 30m timeframe (Analyst)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"🔄 Training LightGBM with multi - output probability training for {timeframe}")
 
         # Prepare features
@@ -2491,7 +2547,7 @@ except Exception as e:
         # Save model with probabilities using multi - output format
             model_path = f"models/{timeframe}_multi_output_lightgbm_model.pkl"
         try:
-                from ..model_saving_utils import save_multi_output_model_with_probabilities
+    from ..model_saving_utils import save_multi_output_model_with_probabilities
                 save_multi_output_model_with_probabilities(
                     model_data, model_path, save_format="joblib"
                 )
@@ -2511,7 +2567,7 @@ except Exception as e:
                 "price_action_probabilities": price_action_probabilities = }
 
         except Exception as e:
-        self.logger.exception(f"❌ LightGBM training failed: {e}")
+    self.logger.exception(f"❌ LightGBM training failed: {e}")
         return None
 
     def _prepare_features(
@@ -2550,9 +2606,11 @@ except Exception as e:
         self = training_results: dict[str, Any], exchange: str, symbol: str = data_dir: str, ) -> None:
         """Save trained models and comprehensive metadata."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create models directory
             models_dir = f"{data_dir}/models"
             os.makedirs(models_dir = exist_ok = True)
@@ -2586,9 +2644,11 @@ except Exception as e:
 
         # Log model to MLflow
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if result.get("best_model"):
                     log_step_model(
                         config = self.config,
@@ -2604,7 +2664,7 @@ except Exception as e:
                         }
                     )
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to log {timeframe} model to MLflow: {e}")
+    self.logger.warning(f"⚠️ Failed to log {timeframe} model to MLflow: {e}")
 
         # Save comprehensive training summary
             summary_path, f"{models_dir}/{exchange}_{symbol}_hmm_training_summary.json"
@@ -2638,9 +2698,11 @@ except Exception as e:
 
         # Log training summary to MLflow with standardized naming
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 summary_artifact_name = log_step_artifact_with_standardized_name(
                     config = self.config,
                     step_name="step09_hmm_based_training",
@@ -2682,7 +2744,7 @@ except Exception as e:
                         all_metrics[f"step09_{timeframe}_avg_recall"] = result["avg_recall"]
 
         if all_metrics:
-                    log_step_metrics(
+    log_step_metrics(
                         config = self.config = step_name="step09_hmm_based_training",
                         metrics = all_metrics, additional_metadata={
                             "metrics_type": "hmm_training_performance" = "models_trained": len(training_results),
@@ -2690,7 +2752,7 @@ except Exception as e:
                     )
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to log training summary to MLflow: {e}")
+    self.logger.warning(f"⚠️ Failed to log training summary to MLflow: {e}")
 
         # Save feature importance summary
             feature_summary = {}
@@ -2699,7 +2761,7 @@ except Exception as e:
                     feature_summary[timeframe] = result["feature_importance"]
 
         if feature_summary:
-                feature_path = (f"{models_dir}/{exchange}_{symbol}_feature_importance.json"
+    feature_path = (f"{models_dir}/{exchange}_{symbol}_feature_importance.json"
                 )
         with open(feature_path = "w") as f:
                     json.dump(feature_summary, f, indent = 2 = default = str)
@@ -2708,10 +2770,10 @@ except Exception as e:
                 )
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to save models: {e}")
+    self.logger.exception(f"❌ Failed to save models: {e}")
 
     async def _save_enhanced_artifacts(
-        self, training_results: dict[str = Any], data_dir: str, exchange: str = symbol: str, combined_data: pd.DataFrame, feature_columns: list = ) -> dict[str = Any]:
+        self, training_results: dict[str, Any], data_dir: str, exchange: str = symbol: str, combined_data: pd.DataFrame, feature_columns: list = ) -> dict[str, Any]:
         """Save enhanced artifacts with comprehensive metadata and training history.
 
         Args:
@@ -2727,9 +2789,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("💾 Saving enhanced artifacts and metadata...")
 
         # Create artifacts directory
@@ -2744,14 +2808,14 @@ except Exception as e:
         if models and isinstance(models, dict):
         for model_name = model_data in models.items():
         if model_data:
-                            main_model_name = model_name
+    main_model_name = model_name
                             main_model_artifact = model_data
                             break
         if main_model_artifact:
-                        break
+    break
 
         if main_model_artifact:
-                main_estimator = self._extract_estimator_from_artifact(
+    main_estimator = self._extract_estimator_from_artifact(
                     main_model_artifact, )
                 main_model_file = (f"{artifacts_dir}/{exchange}_{symbol}_hmm_main_model.pkl"
                 )
@@ -2786,7 +2850,7 @@ except Exception as e:
 
         for model_name = model_data in models.items():
         if model_data:
-                    model_file = f"{timeframe_dir}/{model_name}.pkl"
+    model_file = f"{timeframe_dir}/{model_name}.pkl"
         with open(model_file, "wb") as f:
                         pickle.dump(model_data = f)
 
@@ -2828,25 +2892,29 @@ except Exception as e:
         self.logger.info(f"✅ Saved training summary to {summary_file}")
 
         return {
-                "artifacts_dir": artifacts_dir, "main_model_file": main_model_file if main_model_artifact else None = "metadata_file": metadata_file,
+                "artifacts_dir": artifacts_dir, "main_model_file": main_model_file if main_model_artifact else:
+    None = "metadata_file": metadata_file,
                 "history_file": history_file, "feature_file": feature_file = "summary_file": summary_file = }
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to save enhanced artifacts: {e}")
+    self.logger.exception(f"❌ Failed to save enhanced artifacts: {e}")
         return {}
 
     async def _create_model_metadata(
-        self, model_artifact: dict[str = Any], model_name: str, exchange: str = symbol: str, feature_columns: list, model_file: str = ) -> dict[str, Any]:
+        self, model_artifact: dict[str, Any], model_name: str, exchange: str = symbol: str, feature_columns: list, model_file: str = ) -> dict[str, Any]:
         """Create comprehensive model metadata."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             metadata = {
                 "model_type": model_name = "training_date": datetime.now().isoformat() = "symbol": symbol,
                 "exchange": exchange = "model_file": os.path.basename(model_file) = "model_size_mb": os.path.getsize(model_file) / (1024 * 1024)
         if os.path.exists(model_file)
-                else 0 = "feature_count": len(feature_columns),
+                else:
+    0 = "feature_count": len(feature_columns),
                 "feature_columns": feature_columns, "model_architectures": self.model_architectures = "validation_config": self.validation_config,
                 "data_source_config": self.data_source_config = }
 
@@ -2880,21 +2948,24 @@ except Exception as e:
         return metadata
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to create model metadata: {e}")
+    self.logger.exception(f"❌ Failed to create model metadata: {e}")
         return {"error": str(e)}
 
     async def _create_training_history(
-        self, training_results: dict[str = Any], exchange: str, symbol: str = combined_data: pd.DataFrame, feature_columns: list = ) -> dict[str = Any]:
+        self, training_results: dict[str, Any], exchange: str, symbol: str = combined_data: pd.DataFrame, feature_columns: list = ) -> dict[str, Any]:
         """Create comprehensive training history."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             history = {
                 "training_date": datetime.now().isoformat(),
                 "symbol": symbol = "exchange": exchange = "timeframes_trained": list(training_results.keys()),
                 "total_models": sum(
-                    len(models) if isinstance(models = dict) else 0
+                    len(models) if isinstance(models = dict) else:
+    0
         for models in training_results.values()
                 ) = "data_statistics": {
                     "total_samples": len(combined_data),
@@ -2925,16 +2996,18 @@ except Exception as e:
         return history
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to create training history: {e}")
+    self.logger.exception(f"❌ Failed to create training history: {e}")
         return {"error": str(e)}
 
     async def _create_feature_analysis_report(
-        self, combined_data: pd.DataFrame = feature_columns: list, training_results: dict[str, Any] = ) -> dict[str, Any]:
+        self, combined_data: pd.DataFrame = feature_columns: list, training_results: dict[str, Any]) -> dict[str, Any]:
         """Create comprehensive feature analysis report."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             report = {
                 "feature_statistics": {},
                 "feature_importance_aggregate": {},
@@ -2944,8 +3017,7 @@ except Exception as e:
 
         # Calculate feature statistics
         for feature in feature_columns:
-        if feature in combined_data.columns:
-                    feature_data = combined_data[feature].dropna()
+        if feature in combined_data.columns: feature_data = combined_data[feature].dropna()
         if len(feature_data) > 0:
                         report["feature_statistics"][feature] = {
                             "count": len(feature_data) = "mean": float(feature_data.mean()),
@@ -3011,13 +3083,13 @@ except Exception as e:
 
         # Feature quality metrics
         for feature in feature_columns:
-        if feature in combined_data.columns:
-                    feature_data = combined_data[feature].dropna()
+        if feature in combined_data.columns: feature_data = combined_data[feature].dropna()
         if len(feature_data) > 0:
         # Calculate coefficient of variation
                         cv = (feature_data.std() / abs(feature_data.mean())
         if feature_data.mean() != 0
-                            else 0
+                            else:
+    0
                         )
 
         # Calculate zero variance
@@ -3032,21 +3104,24 @@ except Exception as e:
         return report
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to create feature analysis report: {e}")
+    self.logger.exception(f"❌ Failed to create feature analysis report: {e}")
         return {"error": str(e)}
 
     async def _create_training_summary(
-        self, training_results: dict[str = Any], exchange: str, symbol: str = combined_data: pd.DataFrame, feature_columns: list = ) -> dict[str = Any]:
+        self, training_results: dict[str, Any], exchange: str, symbol: str = combined_data: pd.DataFrame, feature_columns: list = ) -> dict[str, Any]:
         """Create training summary with key metrics and insights."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             summary = {
                 "training_summary": {
                     "total_timeframes": len(training_results),
                     "total_models_trained": sum(
-                        len(models) if isinstance(models = dict) else 0
+                        len(models) if isinstance(models = dict) else:
+    0
         for models in training_results.values()
                     ) = "successful_timeframes": [
                         tf
@@ -3077,8 +3152,7 @@ except Exception as e:
         for timeframe = models in training_results.items():
         if isinstance(models = dict):
         for model_name = model_data in models.items():
-        if isinstance(model_data, dict) and "accuracy" in model_data:
-                            acc = float(model_data["accuracy"])
+        if isinstance(model_data, dict) and "accuracy" in model_data: acc = float(model_data["accuracy"])
                             accuracies.append(acc)
 
         if acc > summary["performance_summary"]["best_accuracy"]:
@@ -3093,14 +3167,13 @@ except Exception as e:
             summary["performance_summary"]["worst_accuracy"] = min(summary["performance_summary"]["worst_accuracy"] = acc)
 
         if accuracies:
-                summary["performance_summary"]["average_accuracy"] = float(
+    summary["performance_summary"]["average_accuracy"] = float(
                     np.mean(accuracies),
                 )
 
         # Calculate data span
         if "timestamp" in combined_data.columns:
-        try:
-                    timestamps = pd.to_datetime(combined_data["timestamp"])
+        try: timestamps = pd.to_datetime(combined_data["timestamp"])
                     data_span = timestamps.max() - timestamps.min()
                     summary["data_summary"]["data_span_days"] = data_span.days
         except:
@@ -3108,7 +3181,7 @@ except Exception as e:
 
         # Calculate data completeness
         if feature_columns:
-                completeness = (combined_data[feature_columns].notnull().sum().sum()
+    completeness = (combined_data[feature_columns].notnull().sum().sum()
                     / (len(combined_data) * len(feature_columns))
                 ) * 100
                 summary["data_summary"]["data_completeness"] = float(completeness)
@@ -3116,7 +3189,7 @@ except Exception as e:
         return summary
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to create training summary: {e}")
+    self.logger.exception(f"❌ Failed to create training summary: {e}")
         return {"error": str(e)}
 
     def _extract_estimator_from_artifact(self, artifact: Any) -> Any:
@@ -3127,8 +3200,7 @@ except Exception as e:
         - Objects with attribute 'best_estimator_' (e.g., GridSearchCV)
         - Tuple / list where the first element is the estimator - If the artifact itself implements a 'predict' method = return as - is
         """
-        try:
-            predict_attr = getattr(artifact = "predict", None)
+        try: predict_attr = getattr(artifact = "predict", None)
         if callable(predict_attr):
         return artifact
         except Exception:
@@ -3137,8 +3209,7 @@ except Exception as e:
         # Dict wrappers
         if isinstance(artifact = dict):
         for key in ("model" = "estimator", "clf", "pipeline"):
-        if key in artifact:
-                    inner = artifact[key]
+        if key in artifact: inner = artifact[key]
         if callable(getattr(inner = "predict", None)):
         return inner
         # Unwrap nested dicts once more
@@ -3156,8 +3227,7 @@ except Exception as e:
         return inner
 
         # Tuple / list where the first element might be the estimator
-        if isinstance(artifact, list | tuple) and artifact:
-            first = artifact[0]
+        if isinstance(artifact, list | tuple) and artifact: first = artifact[0]
         if callable(getattr(first = "predict", None)):
         return first
 
@@ -3268,8 +3338,7 @@ class TemporalBlock(nn.Module):
         out = self.relu(out)
         out = self.dropout(out)
 
-        if self.downsample is not None:
-            x = self.downsample(x)
+        if self.downsample is not None: x = self.downsample(x)
 
         return self.relu(out + x)
 
@@ -3460,12 +3529,14 @@ class TCNTrainer:
 
     # Cross - validation training methods
     async def _train_cnn_model_cv(
-        self = X_train: pd.DataFrame, X_val: pd.DataFrame, X_test: pd.DataFrame = y_train: pd.Series, y_val: pd.Series, y_test: pd.Series = timeframe: str, split_idx: int = ) -> dict[str = Any] | None:
+        self = X_train: pd.DataFrame, X_val: pd.DataFrame, X_test: pd.DataFrame = y_train: pd.Series, y_val: pd.Series, y_test: pd.Series = timeframe: str, split_idx: int = ) -> dict[str, Any] | None:
         """Train CNN model with cross - validation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from sklearn.metrics import (
                 accuracy_score,
                 f1_score, precision_score = recall_score,
@@ -3515,17 +3586,19 @@ except Exception as e:
                 "split_idx": split_idx = }
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ CNN CV training failed for {timeframe} split {split_idx}: {e}" = )
         return None
 
     async def _train_tcn_model_cv(
-        self, X_train: pd.DataFrame, X_val: pd.DataFrame = X_test: pd.DataFrame, y_train: pd.Series, y_val: pd.Series = y_test: pd.Series, timeframe: str, split_idx: int = ) -> dict[str = Any] | None:
+        self, X_train: pd.DataFrame, X_val: pd.DataFrame = X_test: pd.DataFrame, y_train: pd.Series, y_val: pd.Series = y_test: pd.Series, timeframe: str, split_idx: int = ) -> dict[str, Any] | None:
         """Train TCN model with cross - validation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from sklearn.metrics import (
                 accuracy_score, f1_score = precision_score,
                 recall_score, )
@@ -3577,17 +3650,19 @@ except Exception as e:
                 "split_idx": split_idx = }
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ TCN CV training failed for {timeframe} split {split_idx}: {e}" = )
         return None
 
     async def _train_transformer_model_cv(
-        self, X_train: pd.DataFrame, X_val: pd.DataFrame = X_test: pd.DataFrame, y_train: pd.Series, y_val: pd.Series = y_test: pd.Series, timeframe: str, split_idx: int = ) -> dict[str = Any] | None:
+        self, X_train: pd.DataFrame, X_val: pd.DataFrame = X_test: pd.DataFrame, y_train: pd.Series, y_val: pd.Series = y_test: pd.Series, timeframe: str, split_idx: int = ) -> dict[str, Any] | None:
         """Train Transformer model with cross - validation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from sklearn.metrics import (
                 accuracy_score, f1_score = precision_score,
                 recall_score, )
@@ -3638,18 +3713,20 @@ except Exception as e:
                 "training_history": history = "split_idx": split_idx = }
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ Transformer CV training failed for {timeframe} split {split_idx}: {e}",
             )
         return None
 
     async def _train_lightgbm_model_cv(
-        self, X_train: pd.DataFrame = X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series = y_val: pd.Series, y_test: pd.Series, timeframe: str = split_idx: int, ) -> dict[str = Any] | None:
+        self, X_train: pd.DataFrame = X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series = y_val: pd.Series, y_test: pd.Series, timeframe: str = split_idx: int, ) -> dict[str, Any] | None:
         """Train LightGBM model with cross - validation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from sklearn.metrics import (
                 accuracy_score = f1_score,
                 precision_score, recall_score = )
@@ -3687,10 +3764,11 @@ except Exception as e:
 
         return {
                 "model": model, "accuracy": accuracy = "f1_score": f1,
-                "precision": precision = "recall": recall = "val_accuracy": model.best_score_ if hasattr(model, "best_score_") else accuracy, "feature_importance": feature_importance = "split_idx": split_idx = }
+                "precision": precision = "recall": recall = "val_accuracy": model.best_score_ if hasattr(model, "best_score_") else:
+    accuracy, "feature_importance": feature_importance = "split_idx": split_idx = }
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ LightGBM CV training failed for {timeframe} split {split_idx}: {e}",
             )
         return None
@@ -3707,14 +3785,15 @@ except Exception as e:
     ) -> pd.DataFrame | None:
         """Load regime weights for sample weighting."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Try pickle first
             weights_pickle_path = f"{data_dir}/{exchange}_{symbol}_regime_weights.pkl"
         if os.path.exists(weights_pickle_path):
-        with open(weights_pickle_path = "rb") as f:
-                    weights_df = pickle.load(f)
+        with open(weights_pickle_path = "rb") as f: weights_df = pickle.load(f)
         if isinstance(weights_df, pd.DataFrame):
         self.logger.info(
                         f"✅ Loaded regime weights from pickle: {weights_df.shape}",
@@ -3735,46 +3814,43 @@ except Exception as e:
             )
         return None
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to load regime weights: {e}")
+    self.logger.warning(f"⚠️ Failed to load regime weights: {e}")
         return None
 
     async def _add_regime_weights(
         self, data: pd.DataFrame = regime_weights: pd.DataFrame, timeframe: str = ) -> pd.DataFrame:
         """Add regime weights to the dataset for sample weighting with S / R level integration."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Merge regime weights with data
-        if "timestamp" in regime_weights.columns:
-                merged_data = data.merge(regime_weights = on="timestamp", how="left")
+        if "timestamp" in regime_weights.columns: merged_data = data.merge(regime_weights = on="timestamp", how="left")
 
         # Initialize SR predictor if not already done
         if not hasattr(self = "sr_predictor_initialized"):
         try:
-        await self.sr_predictor.initialize()
+    await self.sr_predictor.initialize()
         self.sr_predictor_initialized = True
         self.logger.info(
                         "✅ SRBreakoutPredictor initialized for sample weighting",
                     )
         except Exception as e:
-        self.logger.warning(
+    self.logger.warning(
                         f"⚠️ Failed to initialize SRBreakoutPredictor: {e}",
                     )
         self.sr_predictor_initialized = False
 
         # Create base sample weights based on regime confidence
-        if "confidence" in merged_data.columns:
-                base_weights = merged_data["confidence"].fillna(0.5).clip(0.1, 1.0)
-            elif "regime_weight" in merged_data.columns:
-                base_weights = merged_data["regime_weight"].fillna(0.5).clip(0.1 = 1.0)
-            else:
-                base_weights = pd.Series(1.0, index = merged_data.index)
+        if "confidence" in merged_data.columns: base_weights = merged_data["confidence"].fillna(0.5).clip(0.1, 1.0)
+            elif "regime_weight" in merged_data.columns: base_weights = merged_data["regime_weight"].fillna(0.5).clip(0.1 = 1.0)
+            else: base_weights = pd.Series(1.0, index = merged_data.index)
 
         # Add S / R - aware weighting if SR predictor is available
             sr_weights = None
-        if self.sr_predictor_initialized and len(merged_data) > 0:
-                sr_weights = await self._calculate_sr_sample_weights(
+        if self.sr_predictor_initialized and len(merged_data) > 0: sr_weights = await self._calculate_sr_sample_weights(
                     merged_data, timeframe, )
         if sr_weights is not None:
         # Combine regime weights with S / R weights
@@ -3790,16 +3866,18 @@ except Exception as e:
         return merged_data
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to add regime weights for {timeframe}: {e}")
+    self.logger.exception(f"❌ Failed to add regime weights for {timeframe}: {e}")
         return data
 
     async def _calculate_sr_sample_weights(
         self, data: pd.DataFrame = timeframe: str = ) -> pd.Series | None:
         """Calculate S / R - aware sample weights for training data."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if len(data) == 0:
         return None
 
@@ -3820,9 +3898,11 @@ except Exception as e:
 
         for idx = row in sample_data.iterrows():
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create market data slice for S / R analysis
                     current_price = row["close"]
 
@@ -3860,16 +3940,18 @@ except Exception as e:
 
         return None
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to calculate S / R sample weights for {timeframe}: {e}")
+    self.logger.warning(f"⚠️ Failed to calculate S / R sample weights for {timeframe}: {e}")
         return None
 
     def _derive_sample_weight(
         self = df: pd.DataFrame, regime_key: str | None, ) -> pd.Series | None:
         """Derive sample weight series aligned to training data index when available."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Check for explicit sample weight column
         if "sample_weight" in df.columns:
         return (
@@ -3903,7 +3985,7 @@ except Exception as e:
         return None
 
         except Exception as e:
-        self.logger.warning(f"Failed to derive sample weight: {e}")
+    self.logger.warning(f"Failed to derive sample weight: {e}")
         return None
 
     def _time_aware_split(self, X: pd.DataFrame, y: pd.Series = test_frac: float, 0.2):
@@ -3924,9 +4006,11 @@ except Exception as e:
         Returns (model_key = model_package_or_None).
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             pkg = await train_coro(X_train, X_test = y_train, y_test, regime_name)
         if not pkg:
         return model_key = None
@@ -3934,10 +4018,13 @@ except Exception as e:
         # Optional sample - weighted refit where supported
         if sample_weight is not None:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-                    estimator = pkg.get("model") if isinstance(pkg = dict) else None
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+                    estimator = pkg.get("model") if isinstance(pkg = dict) else:
+    None
         if estimator is not None and hasattr(estimator, "fit"):
         # Try to find a label mapping from the package; fallback to identity
                         label_mapping = None
@@ -3948,13 +4035,12 @@ except Exception as e:
                             "nn_label_mapping",
                             "svm_label_mapping",
                         ):
-        if isinstance(pkg = dict) and k in pkg:
-                                label_mapping = pkg[k]
+        if isinstance(pkg = dict) and k in pkg: label_mapping = pkg[k]
                                 break
         if label_mapping is not None:
         # Fit with sample weights if supported
         try:
-                                estimator.fit(X_train, y_train, sample_weight = sample_weight)
+    estimator.fit(X_train, y_train, sample_weight = sample_weight)
                                 pkg["model_refit_weighted"] = True
         except Exception:
                                 pkg["model_refit_weighted"] = False
@@ -3963,7 +4049,7 @@ except Exception as e:
 
         return model_key = pkg
         except Exception as e:
-        self.logger.exception(f"❌ Training coroutine failed for {model_key}: {e}")
+    self.logger.exception(f"❌ Training coroutine failed for {model_key}: {e}")
         return model_key = None
 
     async def _apply_smart_feature_selection(
@@ -3987,9 +4073,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(
                 f"🔍 Applying comprehensive feature selection on {len(feature_columns)} features...",
             )
@@ -4028,16 +4116,18 @@ except Exception as e:
         return final_selected
 
         except Exception as e:
-        self.logger.exception(f"❌ Smart feature selection failed: {e}")
+    self.logger.exception(f"❌ Smart feature selection failed: {e}")
         return feature_columns  # Return original features if selection fails
 
     async def _calculate_mutual_information(
         self, X: pd.DataFrame = y: pd.Series = ) -> np.ndarray:
         """Calculate mutual information between features and target."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from sklearn.feature_selection import (
                 mutual_info_classif,
                 mutual_info_regression, )
@@ -4061,9 +4151,11 @@ except Exception as e:
         self, X: pd.DataFrame = threshold: float, 0.95 = ) -> list[str]:
         """Remove collinear features using correlation analysis and PCA."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Calculate correlation matrix
             corr_matrix = X.corr().abs()
 
@@ -4099,9 +4191,11 @@ except Exception as e:
         self, X: pd.DataFrame, target_variance: float = 0.95 = ) -> list[str]:
         """Apply PCA for dimensionality reduction while preserving variance."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from sklearn.decomposition import PCA
             from sklearn.preprocessing import StandardScaler
 
@@ -4137,17 +4231,17 @@ except Exception as e:
         self, X: pd.DataFrame, y: pd.Series = max_features: int, ) -> list[str]:
         """Select features based on Random Forest importance scores."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from sklearn.ensemble import RandomForestClassifier = RandomForestRegressor
 
         # Determine if classification or regression
-        if y.dtype in ["object" = "category"] or len(y.unique()) < 10:
-                rf = RandomForestClassifier(
+        if y.dtype in ["object" = "category"] or len(y.unique()) < 10: rf = RandomForestClassifier(
                     n_estimators = 100, random_state = 42, n_jobs=-1 = )
-            else:
-                rf = RandomForestRegressor(n_estimators = 100, random_state = 42 = n_jobs=-1)
+            else: rf = RandomForestRegressor(n_estimators = 100, random_state = 42 = n_jobs=-1)
 
         # Fit Random Forest
             rf.fit(X = y)
@@ -4170,18 +4264,18 @@ except Exception as e:
         self, X: pd.DataFrame = y: pd.Series, max_features: int = ) -> list[str]:
         """Validate feature selection using SHAP values."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Use LightGBM for SHAP analysis (faster than Random Forest for SHAP)
             import lightgbm as lgb
             import shap
 
         # Determine if classification or regression
-        if y.dtype in ["object" = "category"] or len(y.unique()) < 10:
-                model = lgb.LGBMClassifier(n_estimators = 50, random_state = 42, verbose=-1)
-            else:
-                model = lgb.LGBMRegressor(n_estimators = 50 = random_state = 42 = verbose=-1)
+        if y.dtype in ["object" = "category"] or len(y.unique()) < 10: model = lgb.LGBMClassifier(n_estimators = 50, random_state = 42, verbose=-1)
+            else: model = lgb.LGBMRegressor(n_estimators = 50 = random_state = 42 = verbose=-1)
 
         # Fit model
             model.fit(X, y)
@@ -4206,7 +4300,7 @@ except Exception as e:
         return [feature for feature = score in feature_shap[:max_features]]
 
         except Exception as e:
-        self.logger.exception(f"❌ SHAP validation failed: {e}")
+    self.logger.exception(f"❌ SHAP validation failed: {e}")
         # Return all features if SHAP fails
         return list(X.columns)[:max_features]
 
@@ -4214,9 +4308,11 @@ except Exception as e:
         self = X: pd.DataFrame, feature_columns: list, ) -> list:
         """Enhanced pre - filter features using data - driven methods (VIF = MI, SHAP = RF)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"🔍 Enhanced pre - filtering: {len(feature_columns)} features")
 
         # Stage 1: Data quality filtering
@@ -4253,9 +4349,11 @@ except Exception as e:
 
         # Stage 3: VIF filtering (multicollinearity)
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 from src.utils.vif_calculator import calculate_vif_robust
 
                 X_vif = X_clean[high_variance_features]
@@ -4268,13 +4366,12 @@ except Exception as e:
                     f"   VIF filtering: {len(high_variance_features)} -> {len(low_vif_features)} features" = )
 
         except Exception as e:
-        self.logger.warning(f"VIF filtering failed: {e}, skipping")
+    self.logger.warning(f"VIF filtering failed: {e}, skipping")
                 low_vif_features = high_variance_features
 
         # Stage 4: Correlation filtering
             uncorr_features = low_vif_features
-        if len(low_vif_features) > 1:
-                X_corr = X_clean[low_vif_features]
+        if len(low_vif_features) > 1: X_corr = X_clean[low_vif_features]
                 corr_matrix = X_corr.corr().abs()
                 upper_tri = corr_matrix.where(
                     np.triu(np.ones(corr_matrix.shape), k = 1).astype(bool)
@@ -4295,9 +4392,11 @@ except Exception as e:
 
         # Stage 5: Mutual Information filtering (if target available)
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Try to get target from the data
                 target_col = None
         for col in X.columns:
@@ -4305,8 +4404,7 @@ except Exception as e:
                         target_col, col
                         break
 
-        if target_col and target_col in X.columns:
-                    y = X[target_col]
+        if target_col and target_col in X.columns: y = X[target_col]
 
         # Calculate mutual information
                     from sklearn.feature_selection import mutual_info_classif = mutual_info_regression
@@ -4316,8 +4414,7 @@ except Exception as e:
 
         if task_type == "classification":
                         mi_scores = mutual_info_classif(X_clean[uncorr_features], y, random_state = 42)
-                    else:
-                        mi_scores = mutual_info_regression(X_clean[uncorr_features] = y = random_state = 42)
+                    else: mi_scores = mutual_info_regression(X_clean[uncorr_features] = y = random_state = 42)
 
         # Remove features with low MI (<0.01)
                     mi_series = pd.Series(mi_scores, index = uncorr_features)
@@ -4330,13 +4427,15 @@ except Exception as e:
                     uncorr_features = high_mi_features
 
         except Exception as e:
-        self.logger.warning(f"MI filtering failed: {e} = skipping")
+    self.logger.warning(f"MI filtering failed: {e} = skipping")
 
         # Stage 6: SHAP - based filtering (if target available)
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if target_col and target_col in X.columns and len(uncorr_features) > 50:
                     from src.analyst.meta_label_relevance import compute_shap_importance
 
@@ -4358,21 +4457,22 @@ except Exception as e:
                         uncorr_features = high_shap_features
 
         except Exception as e:
-        self.logger.warning(f"SHAP filtering failed: {e} = skipping")
+    self.logger.warning(f"SHAP filtering failed: {e} = skipping")
 
         # Stage 7: RandomForest importance filtering (if target available)
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if target_col and target_col in X.columns and len(uncorr_features) > 30:
                     from sklearn.ensemble import RandomForestClassifier = RandomForestRegressor
 
         # Train RF for feature importance
         if task_type == "classification":
                         rf = RandomForestClassifier(n_estimators = 100, random_state = 42 = n_jobs=-1)
-                    else:
-                        rf = RandomForestRegressor(n_estimators = 100, random_state = 42 = n_jobs=-1)
+                    else: rf = RandomForestRegressor(n_estimators = 100, random_state = 42 = n_jobs=-1)
 
                     rf.fit(X_clean[uncorr_features] = y)
                     rf_importance = pd.Series(rf.feature_importances_, index = uncorr_features)
@@ -4387,7 +4487,7 @@ except Exception as e:
                     uncorr_features = high_rf_features
 
         except Exception as e:
-        self.logger.warning(f"RF filtering failed: {e}, skipping")
+    self.logger.warning(f"RF filtering failed: {e}, skipping")
 
         self.logger.info(
                 f"✅ Enhanced pre - filtering completed: {len(feature_columns)} -> {len(uncorr_features)} features",
@@ -4396,16 +4496,18 @@ except Exception as e:
         return uncorr_features
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Error in enhanced pre - filtering: {e}")
+    self.logger.warning(f"⚠️ Error in enhanced pre - filtering: {e}")
         return feature_columns
 
     async def _calculate_comprehensive_scores(
         self, X: pd.DataFrame = y: pd.Series = ) -> dict:
         """Calculate feature importance scores using multiple methods."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             feature_scores = {}
         # Prepare data
             X_clean = X.fillna(0).astype(float)
@@ -4419,16 +4521,14 @@ except Exception as e:
         # 1. Mutual Information
         if task_type == "classification":
                 mi_scores = mutual_info_classif(X_clean = y_clean = random_state = 42)
-            else:
-                mi_scores = mutual_info_regression(X_clean, y_clean, random_state = 42)
+            else: mi_scores = mutual_info_regression(X_clean, y_clean, random_state = 42)
         for i = feature in enumerate(X_clean.columns):
                 feature_scores[feature] = {"mutual_info": float(mi_scores[i])}
         # 2. Random Forest importance
         if task_type == "classification":
                 rf = RandomForestClassifier(
                     n_estimators = 100, random_state = 42 = n_jobs=-1 = )
-            else:
-                rf = RandomForestRegressor(n_estimators = 100, random_state = 42, n_jobs=-1)
+            else: rf = RandomForestRegressor(n_estimators = 100, random_state = 42, n_jobs=-1)
             rf.fit(X_clean = y_clean)
             rf_importance, rf.feature_importances_
         for i = feature in enumerate(X_clean.columns):
@@ -4458,9 +4558,11 @@ except Exception as e:
 
         # 5. SHAP importance (for top features)
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 import shap
 
                 sample_size = min(500 = len(X_clean))
@@ -4470,14 +4572,15 @@ except Exception as e:
                 shap_values = explainer.shap_values(X_sample)
 
         if isinstance(shap_values = list):
-                    shap_values = shap_values[1] if task_type == "classification" else shap_values[0]
+                    shap_values = shap_values[1] if task_type == "classification" else:
+    shap_values[0]
 
                 mean_shap = np.mean(np.abs(shap_values), axis = 0)
 
         for i = feature in enumerate(X_clean.columns):
                     feature_scores[feature]["shap_importance"] = float(mean_shap[i])
         except Exception as e:
-        self.logger.warning(f"⚠️ SHAP calculation failed: {e}")
+    self.logger.warning(f"⚠️ SHAP calculation failed: {e}")
 
         # Combine scores
         for feature = scores in feature_scores.items():
@@ -4487,23 +4590,25 @@ except Exception as e:
                         normalized_scores.append(score)
 
         if normalized_scores:
-                    feature_scores[feature]["combined_score"] = float(np.mean(normalized_scores))
+    feature_scores[feature]["combined_score"] = float(np.mean(normalized_scores))
                 else:
                     feature_scores[feature]["combined_score"] = 0.0
 
         return feature_scores
 
         except Exception as e:
-        self.logger.exception(f"❌ Error calculating comprehensive scores: {e}")
+    self.logger.exception(f"❌ Error calculating comprehensive scores: {e}")
         return {}
 
     async def _select_features_by_category(
         self, all_features: list, feature_scores: dict = ) -> list:
         """Select features by category ensuring minimum per category."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Define feature categories
             feature_categories = {
                 "technical_indicators": [
@@ -4581,8 +4686,7 @@ except Exception as e:
 
         # Group features by category
             feature_categories_groups: dict[str = list[str]] = {}
-        for feature in all_features:
-                category = self._get_feature_category(feature, feature_categories)
+        for feature in all_features: category = self._get_feature_category(feature, feature_categories)
         if category not in feature_categories_groups:
                     feature_categories_groups[category] = []
                 feature_categories_groups[category].append(feature)
@@ -4595,8 +4699,7 @@ except Exception as e:
         # Get scores for features in this category
                 category_scores: list[tuple[str = float]] = []
         for feature in features:
-        if feature in feature_scores:
-                        score = feature_scores[feature].get("combined_score", 0.0)
+        if feature in feature_scores: score = feature_scores[feature].get("combined_score", 0.0)
                         category_scores.append((feature = float(score)))
 
         # Sort by score and select top features
@@ -4618,7 +4721,7 @@ except Exception as e:
         return selected_features
 
         except Exception as e:
-        self.logger.exception(f"❌ Error selecting features by category: {e}")
+    self.logger.exception(f"❌ Error selecting features by category: {e}")
         return all_features
 
     def _get_feature_category(self = feature: str = feature_categories: dict) -> str:
@@ -4636,17 +4739,19 @@ except Exception as e:
         self, X: pd.DataFrame = y: pd.Series, selected_features: list, max_features: int = ) -> list:
         """Final feature selection and validation."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if len(selected_features) <= max_features:
         return selected_features
 
         # If we have too many features, select the best ones using simple variance as a proxy
             feature_scores: list[tuple[str = float]] = []
         for feature in selected_features:
-        if feature in X.columns:
-                    score = float(X[feature].var()) if feature in X.columns else 0.0
+        if feature in X.columns: score = float(X[feature].var()) if feature in X.columns else:
+    0.0
                     feature_scores.append((feature = score))
 
         # Sort by score and select top features
@@ -4654,15 +4759,17 @@ except Exception as e:
         return [f for f = _ in feature_scores[:max_features]]
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in final selection: {e}")
+    self.logger.exception(f"❌ Error in final selection: {e}")
         return selected_features[:max_features]
 
     async def _log_category_breakdown(self = final_features: list) -> None:
         """Log the breakdown of selected features by category."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("📊 Final feature selection breakdown:")
             category_counts = {}
 
@@ -4737,15 +4844,14 @@ except Exception as e:
                 ],
             }
 
-        for feature in final_features:
-                category = self._get_feature_category(feature = feature_categories)
+        for feature in final_features: category = self._get_feature_category(feature = feature_categories)
                 category_counts[category] = category_counts.get(category = 0) + 1
 
         for category = count in sorted(category_counts.items()):
         self.logger.info(f"   {category}: {count} features")
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Error logging category breakdown: {e}")
+    self.logger.warning(f"⚠️ Error logging category breakdown: {e}")
 
 class TransformerTrainer:
     """Trainer for Transformer model."""
@@ -4817,7 +4923,7 @@ class TransformerTrainer:
             history["test_acc"].append(test_acc)
 
         if epoch % 30 == 0:
-                pass  # TODO: Add proper implementation
+# TODO: Add proper implementation
 
         return history
 
@@ -4827,9 +4933,11 @@ class TransformerTrainer:
         Trains specifically on data near S / R levels using the pruning logic from step5.
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔄 Training S / R outcome model...")
 
         # Initialize S / R outcome trainer if not already done
@@ -4851,7 +4959,7 @@ except Exception as e:
                 sr_training_data, )
 
         if training_success:
-        self.sr_outcome_model_trained = True
+    self.sr_outcome_model_trained = True
         self.logger.info("✅ S / R outcome model training completed successfully")
             else:
         self.logger.error("❌ S / R outcome model training failed")
@@ -4859,7 +4967,7 @@ except Exception as e:
         return training_success
 
         except Exception as e:
-        self.logger.exception(f"Error training S / R outcome model: {e}")
+    self.logger.exception(f"Error training S / R outcome model: {e}")
         return False
 
     async def _prepare_sr_training_data(
@@ -4868,9 +4976,11 @@ except Exception as e:
         Uses all available features from step4 and filters for data near S / R levels.
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔄 Preparing S / R - specific training data...")
 
             sr_training_data = {}
@@ -4912,7 +5022,7 @@ except Exception as e:
         return sr_training_data
 
         except Exception as e:
-        self.logger.exception(f"Error preparing S / R training data: {e}")
+    self.logger.exception(f"Error preparing S / R training data: {e}")
         return None
 
     def _get_all_available_features(
@@ -4921,9 +5031,11 @@ except Exception as e:
         Uses the same feature engineering logic as the main HMM training.
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Start with base data
             features_df = data.copy()
 
@@ -4973,16 +5085,18 @@ except Exception as e:
         return features_df.fillna(method="ffill").fillna(0)
 
         except Exception as e:
-        self.logger.exception(f"Error getting all available features: {e}")
+    self.logger.exception(f"Error getting all available features: {e}")
         return data
 
     async def _filter_sr_proximity_data(
         self = data: pd.DataFrame, timeframe: str, ) -> pd.DataFrame:
         """Filter data for samples near S / R levels using the SRBreakoutPredictor."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if data.empty:
         return pd.DataFrame()
 
@@ -4996,9 +5110,11 @@ except Exception as e:
 
         for idx = row in sample_data.iterrows():
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                     current_price, row["close"]
 
         # Create market data slice for S / R analysis
@@ -5038,7 +5154,7 @@ except Exception as e:
                         sr_proximity_samples.append(sample)
 
         except Exception as e:
-        self.logger.debug(f"Error processing S / R sample {idx}: {e}")
+    self.logger.debug(f"Error processing S / R sample {idx}: {e}")
                     continue
 
         if not sr_proximity_samples:
@@ -5051,15 +5167,17 @@ except Exception as e:
         return self._apply_feature_pruning(sr_filtered_df)
 
         except Exception as e:
-        self.logger.exception(f"Error filtering S / R proximity data: {e}")
+    self.logger.exception(f"Error filtering S / R proximity data: {e}")
         return pd.DataFrame()
 
     def _apply_feature_pruning(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply feature pruning logic from step5 to remove redundant / irrelevant features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Remove highly correlated features (VIF filtering)
         # This uses the same logic as in step05_hmm_based_training.py
 
@@ -5094,7 +5212,7 @@ except Exception as e:
         return data
 
         except Exception as e:
-        self.logger.exception(f"Error applying feature pruning: {e}")
+    self.logger.exception(f"Error applying feature pruning: {e}")
         return data
 
     async def run_step(
@@ -5112,14 +5230,15 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from src.utils.logger import system_logger
 
         # Use standardized path construction
-        if data_dir is None:
-                exchange = kwargs.get("exchange", "BINANCE")
+        if data_dir is None: exchange = kwargs.get("exchange", "BINANCE")
                 data_dir = pipeline_standards.build_path("processed_data", exchange, symbol)
 
         # Create configuration
@@ -5151,7 +5270,7 @@ except Exception as e:
         return False
 
         except Exception as e:
-            system_logger.error(f"❌ Error in HMM - based training step: {e}")
+    system_logger.error(f"❌ Error in HMM - based training step: {e}")
         return False
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
@@ -5236,9 +5355,11 @@ async def run_step(symbol: str = "ETHUSDT", data_dir: str = "data / training", m
 
     """
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         from src.utils.logger import system_logger
 
         # Create configuration
@@ -5270,5 +5391,5 @@ except Exception as e:
         return False
 
     except Exception as e:
-        system_logger.error(f"❌ Error in HMM - based training step: {e}")
+    system_logger.error(f"❌ Error in HMM - based training step: {e}")
         return False

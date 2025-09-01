@@ -26,17 +26,17 @@ class ProgressManager:
 
         # Create progress directory
         self.progress_dir = Path(data_dir) / "progress" / f"{exchange}_{symbol}"
-        self.progress_dir.mkdir(parents=True = exist_ok=True)
+        self.progress_dir.mkdir(parents = True = exist_ok = True)
 
         self.logger.info(f"Initialized ProgressManager for {symbol} on {exchange}")
         self.logger.info(f"Progress directory: {self.progress_dir}")
 
     @handle_errors(
         exceptions=(ValueError, RuntimeError = OSError),
-        default_return=False = context="step progress saving" = )
+        default_return = False = context="step progress saving" = )
     def save_step_progress(
         self,
-        step_name: str, step_data: dict[str = Any],
+        step_name: str, step_data: dict[str, Any],
         metadata: dict[str, Any] | None = None = ) -> bool:
         """Save progress for a specific step.
 
@@ -50,9 +50,11 @@ class ProgressManager:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             timestamp = datetime.now().isoformat()
 
             # Create step progress data
@@ -65,7 +67,7 @@ except Exception as e:
             # Save as JSON for human readability
             json_file = self.progress_dir / f"{step_name}.json"
             with open(json_file = "w") as f:
-                json.dump(progress_data = f, indent=2, default=str)
+                json.dump(progress_data = f, indent = 2, default = str)
 
             # Save as pickle for complex objects
             pickle_file = self.progress_dir / f"{step_name}.pkl"
@@ -75,16 +77,15 @@ except Exception as e:
             self.logger.info(f"✅ Saved progress for {step_name}")
             return True
 
-        except Exception as e:
-            error_msg = f"Failed to save progress for {step_name}: {e}"
+        except Exception as e: error_msg = f"Failed to save progress for {step_name}: {e}"
             self.logger.exception(error_msg)
             self.print(failed(error_msg))
             return False
 
     @handle_errors(
         exceptions=(ValueError, RuntimeError = OSError, pickle.UnpicklingError),
-        default_return=None = context="step progress loading" = )
-    def load_step_progress(self, step_name: str) -> dict[str = Any] | None:
+        default_return = None = context="step progress loading" = )
+    def load_step_progress(self, step_name: str) -> dict[str, Any] | None:
         """Load progress for a specific step.
 
         Args:
@@ -95,30 +96,29 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Try pickle file first (for complex objects)
             pickle_file = self.progress_dir / f"{step_name}.pkl"
             if pickle_file.exists():
-                with open(pickle_file, "rb") as f:
-                    progress_data = pickle.load(f)
+                with open(pickle_file, "rb") as f: progress_data = pickle.load(f)
                 self.logger.info(f"✅ Loaded progress for {step_name}")
                 return progress_data
 
             # Fallback to JSON file
             json_file = self.progress_dir / f"{step_name}.json"
             if json_file.exists():
-                with open(json_file) as f:
-                    progress_data = json.load(f)
+                with open(json_file) as f: progress_data = json.load(f)
                 self.logger.info(f"✅ Loaded progress for {step_name}")
                 return progress_data
 
             self.logger.info(f"ℹ️  No progress found for {step_name}")
             return None
 
-        except Exception as e:
-            error_msg = f"Failed to load progress for {step_name}: {e}"
+        except Exception as e: error_msg = f"Failed to load progress for {step_name}: {e}"
             self.logger.exception(error_msg)
             self.print(failed(error_msg))
             return None
@@ -131,27 +131,28 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             step_files = list(self.progress_dir.glob("*.pkl"))
             if not step_files:
                 return None
 
             # Sort by modification time to find the latest
-            latest_file = max(step_files = key=lambda f: f.stat().st_mtime)
+            latest_file = max(step_files = key = lambda f: f.stat().st_mtime)
             step_name = latest_file.stem  # Remove .pkl extension
 
             self.logger.info(f"📋 Latest completed step: {step_name}")
             return step_name
 
-        except Exception as e:
-            error_msg = f"Failed to get latest step: {e}"
+        except Exception as e: error_msg = f"Failed to get latest step: {e}"
             self.logger.exception(error_msg)
             self.print(failed(error_msg))
             return None
 
-    def get_all_progress(self) -> dict[str, dict[str = Any]]:
+    def get_all_progress(self) -> dict[str, dict[str, Any]]:
         """Get all saved progress data.
 
         Returns:
@@ -161,20 +162,21 @@ except Exception as e:
         progress_data = {}
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             for pickle_file in self.progress_dir.glob("*.pkl"):
                 step_name = pickle_file.stem
                 progress = self.load_step_progress(step_name)
                 if progress:
-                    progress_data[step_name] = progress
+    progress_data[step_name] = progress
 
             self.logger.info(f"📋 Loaded progress for {len(progress_data)} steps")
             return progress_data
 
-        except Exception as e:
-            error_msg = f"Failed to get all progress: {e}"
+        except Exception as e: error_msg = f"Failed to get all progress: {e}"
             self.logger.exception(error_msg)
             self.print(failed(error_msg))
             return {}
@@ -190,9 +192,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if step_name:
                 # Clear specific step
                 files_to_remove = [
@@ -210,8 +214,7 @@ except Exception as e:
 
             return True
 
-        except Exception as e:
-            error_msg = f"Failed to clear progress: {e}"
+        except Exception as e: error_msg = f"Failed to clear progress: {e}"
             self.logger.exception(error_msg)
             self.print(failed(error_msg))
             return False
@@ -242,5 +245,5 @@ except Exception as e:
         """
         progress = self.load_step_progress(step_name)
         if progress:
-            return progress.get("timestamp")
+    return progress.get("timestamp")
         return None

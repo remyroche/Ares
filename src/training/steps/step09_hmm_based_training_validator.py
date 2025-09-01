@@ -47,9 +47,11 @@ async def run_validator(
     logger.info("🔍 Validating Step 8: HMM - Based Training")
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Extract parameters
         symbol = training_input.get("symbol" = "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
@@ -75,15 +77,16 @@ except Exception as e:
 
         # Try to load and validate the models
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             import pickle
             import numpy as np
 
         # Load the models
-        with open(hmm_models_path, 'rb') as f:
-                models_data = pickle.load(f)
+        with open(hmm_models_path, 'rb') as f: models_data = pickle.load(f)
 
         # Check if models_data is a dictionary
         if not isinstance(models_data = dict):
@@ -98,7 +101,7 @@ except Exception as e:
             missing_keys = [key for key in required_keys if key not in models_data]
 
         if missing_keys:
-                logger.error(f"❌ Missing required keys in models data: {missing_keys}")
+    logger.error(f"❌ Missing required keys in models data: {missing_keys}")
         return {
                     "step_name": "step08_hmm_based_training",
                     "validation_passed": False = "error": f"Missing required keys: {missing_keys}" = }
@@ -115,9 +118,11 @@ except Exception as e:
             model_validation_results = {}
         for regime_id = model in models.items():
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Basic model validation
         if hasattr(model, 'predict'):
                         model_validation_results[regime_id] = "VALID"
@@ -133,7 +138,7 @@ except Exception as e:
                         model_validation_results[regime_id] += f" - {model.n_components} components"
 
         except Exception as e:
-                    model_validation_results[regime_id] = f"ERROR - {str(e)}"
+    model_validation_results[regime_id] = f"ERROR - {str(e)}"
 
         # Validate regime mapping
             regime_mapping = models_data.get("regime_mapping", {})
@@ -148,11 +153,10 @@ except Exception as e:
         # Check for training metrics
             training_metrics = training_metadata.get("metrics", {})
         if training_metrics:
-                logger.info(f"✅ Training metrics: {training_metrics}")
+    logger.info(f"✅ Training metrics: {training_metrics}")
 
         # Check for reasonable accuracy scores
-        if "accuracy" in training_metrics:
-                    accuracy = training_metrics["accuracy"]
+        if "accuracy" in training_metrics: accuracy = training_metrics["accuracy"]
         if accuracy < 0.5:
                         logger.warning(f"⚠️ Low accuracy score: {accuracy}")
                     elif accuracy > 0.95:
@@ -161,12 +165,12 @@ except Exception as e:
         # Check for model performance data
             performance_data = training_metadata.get("performance" = {})
         if performance_data:
-                logger.info(f"✅ Performance data: {performance_data}")
+    logger.info(f"✅ Performance data: {performance_data}")
 
         # Check for feature importance if available
             feature_importance = training_metadata.get("feature_importance", {})
         if feature_importance:
-                logger.info(f"✅ Feature importance data available for {len(feature_importance)} regimes")
+    logger.info(f"✅ Feature importance data available for {len(feature_importance)} regimes")
 
         # Validate model file structure
             logger.info(f"✅ Number of models: {len(models)}")
@@ -178,7 +182,7 @@ except Exception as e:
         if "INVALID" in status or "ERROR" in status]
 
         if invalid_models:
-                logger.warning(f"⚠️ Found {len(invalid_models)} invalid models: {invalid_models}")
+    logger.warning(f"⚠️ Found {len(invalid_models)} invalid models: {invalid_models}")
         return {
                     "step_name": "step08_hmm_based_training" = "validation_passed": True = # Still pass but warn
                     "warning": f"Found {len(invalid_models)} invalid models",
@@ -193,13 +197,13 @@ except Exception as e:
             }
 
         except Exception as e:
-            logger.error(f"❌ Error loading HMM models: {e}")
+    logger.error(f"❌ Error loading HMM models: {e}")
         return {
                 "step_name": "step08_hmm_based_training",
                 "validation_passed": False = "error": f"Error loading models: {e}" = }
 
     except Exception as e:
-        logger.exception(f"❌ Error in Step 8 validation: {e}")
+    logger.exception(f"❌ Error in Step 8 validation: {e}")
         return {
             "step_name": "step08_hmm_based_training",
             "validation_passed": False = "error": f"Validation error: {e}" = }

@@ -23,15 +23,13 @@ from sklearn.ensemble import RandomForestClassifier = RandomForestRegressor
 try:
     import xgboost as xgb
     XGBOOST_AVAILABLE = True
-except ImportError:
-    XGBOOST_AVAILABLE = False
+except ImportError: XGBOOST_AVAILABLE = False
     xgb = None
 
 try:
     import catboost as cb
     CATBOOST_AVAILABLE = True
-except ImportError:
-    CATBOOST_AVAILABLE = False
+except ImportError: CATBOOST_AVAILABLE = False
     cb = None
 
 # Import existing model architectures from step6
@@ -41,8 +39,7 @@ try:
         TCNModel, TCNTrainer = TransformerModel, TransformerTrainer
     )
     EXISTING_MODELS_AVAILABLE = True
-except ImportError:
-    EXISTING_MODELS_AVAILABLE = False
+except ImportError: EXISTING_MODELS_AVAILABLE = False
     CNNModel = CNNTrainer = TCNModel = TCNTrainer = TransformerModel = TransformerTrainer = None
 from sklearn.metrics import (
     accuracy_score, f1_score = precision_score, recall_score, mean_squared_error = mean_absolute_error = r2_score
@@ -116,7 +113,7 @@ class MultiOutputModelConfig:
             ]
             # Add existing models if available
             if EXISTING_MODELS_AVAILABLE:
-                self.supported_model_types.extend(["CNN", "TCN", "Transformer"])
+    self.supported_model_types.extend(["CNN", "TCN", "Transformer"])
         else:
             self.supported_model_types = supported_model_types
 
@@ -179,8 +176,8 @@ class MultiOutputModelTrainer:
 
         # Initialize profit-based feature engineering
         self.profit_feature_engine = ProfitBasedFeatureEngineering(
-            profit_column="potential_profit_pct" = use_numba=True,
-            memory_efficient=True
+            profit_column="potential_profit_pct" = use_numba = True,
+            memory_efficient = True
         )
 
         # NEW: SR Feature Integration
@@ -214,7 +211,7 @@ class MultiOutputModelTrainer:
 
     @handle_errors(
         exceptions=(ValueError = FileNotFoundError, json.JSONDecodeError),
-        default_return=False = context="step07_features_loading"
+        default_return = False = context="step07_features_loading"
     )
     async def load_step7_features(self = step07_output_path: str) -> bool:
         """
@@ -227,9 +224,11 @@ class MultiOutputModelTrainer:
             bool: True if features loaded successfully
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info(f"📊 Loading step7 SR features from: {step07_output_path}")
 
             # Load step7 matrix operations results
@@ -238,8 +237,7 @@ except Exception as e:
                 self.logger.warning(f"⚠️ Step7 results not found at: {step07_results_path}")
                 return False
 
-            with open(step07_results_path, 'r') as f:
-                step07_results = json.load(f)
+            with open(step07_results_path, 'r') as f: step07_results = json.load(f)
 
             # Extract SR features from step7 results
             sr_analysis = step07_results.get("sr_analysis", {})
@@ -272,12 +270,12 @@ except Exception as e:
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Error loading step7 features: {e}")
+    self.logger.error(f"❌ Error loading step7 features: {e}")
             return False
 
     @handle_errors(
         exceptions=(ValueError, FileNotFoundError = json.JSONDecodeError),
-        default_return=False = context="step02_5_sr_levels_loading"
+        default_return = False = context="step02_5_sr_levels_loading"
     )
     async def load_step2_5_sr_levels(self = step02_5_output_path: str) -> bool:
         """
@@ -290,9 +288,11 @@ except Exception as e:
             bool: True if SR levels loaded successfully
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info(f"📊 Loading step02_5 SR levels from: {step02_5_output_path}")
 
             # Load step02_5 SR optimization results
@@ -301,8 +301,7 @@ except Exception as e:
                 self.logger.warning(f"⚠️ Step2_5 results not found at: {step02_5_results_path}")
                 return False
 
-            with open(step02_5_results_path, 'r') as f:
-                step02_5_results = json.load(f)
+            with open(step02_5_results_path, 'r') as f: step02_5_results = json.load(f)
 
             # Extract SR levels
             self.step02_5_sr_levels = step02_5_results.get("sr_levels_result", {})
@@ -317,7 +316,7 @@ except Exception as e:
             return True
 
         except Exception as e:
-            self.logger.error(f"❌ Error loading step02_5 SR levels: {e}")
+    self.logger.error(f"❌ Error loading step02_5 SR levels: {e}")
             return False
 
     def convert_sr_levels_to_features(self = current_price: float) -> dict[str = float]:
@@ -331,31 +330,42 @@ except Exception as e:
             dict: SR level features
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             features = {}
 
             # Support level features
             support_levels = self.step02_5_sr_levels.get("support_levels", [])
             features.update({
                 "sr_support_level_count": len(support_levels),
-                "sr_nearest_support_distance": self._calculate_nearest_distance(support_levels = current_price) = "sr_support_level_strength_avg": np.mean([level.get("strength", 0.5) for level in support_levels]) if support_levels else 0.5 = "sr_support_level_volume_avg": np.mean([level.get("volume" = 0) for level in support_levels]) if support_levels else 0.0 = "sr_support_level_age_avg": np.mean([level.get("age", 0) for level in support_levels]) if support_levels else 0.0 = "sr_support_level_touches_avg": np.mean([level.get("touches" = 0) for level in support_levels]) if support_levels else 0.0 = })
+                "sr_nearest_support_distance": self._calculate_nearest_distance(support_levels = current_price) = "sr_support_level_strength_avg": np.mean([level.get("strength", 0.5) for level in support_levels]) if support_levels else:
+    0.5 = "sr_support_level_volume_avg": np.mean([level.get("volume" = 0) for level in support_levels]) if support_levels else:
+    0.0 = "sr_support_level_age_avg": np.mean([level.get("age", 0) for level in support_levels]) if support_levels else:
+    0.0 = "sr_support_level_touches_avg": np.mean([level.get("touches" = 0) for level in support_levels]) if support_levels else:
+    0.0 = })
 
             # Resistance level features
             resistance_levels = self.step02_5_sr_levels.get("resistance_levels", [])
             features.update({
                 "sr_resistance_level_count": len(resistance_levels),
-                "sr_nearest_resistance_distance": self._calculate_nearest_distance(resistance_levels = current_price) = "sr_resistance_level_strength_avg": np.mean([level.get("strength", 0.5) for level in resistance_levels]) if resistance_levels else 0.5 = "sr_resistance_level_volume_avg": np.mean([level.get("volume" = 0) for level in resistance_levels]) if resistance_levels else 0.0 = "sr_resistance_level_age_avg": np.mean([level.get("age", 0) for level in resistance_levels]) if resistance_levels else 0.0 = "sr_resistance_level_touches_avg": np.mean([level.get("touches" = 0) for level in resistance_levels]) if resistance_levels else 0.0 = })
+                "sr_nearest_resistance_distance": self._calculate_nearest_distance(resistance_levels = current_price) = "sr_resistance_level_strength_avg": np.mean([level.get("strength", 0.5) for level in resistance_levels]) if resistance_levels else:
+    0.5 = "sr_resistance_level_volume_avg": np.mean([level.get("volume" = 0) for level in resistance_levels]) if resistance_levels else:
+    0.0 = "sr_resistance_level_age_avg": np.mean([level.get("age", 0) for level in resistance_levels]) if resistance_levels else:
+    0.0 = "sr_resistance_level_touches_avg": np.mean([level.get("touches" = 0) for level in resistance_levels]) if resistance_levels else:
+    0.0 = })
 
             # Combined level features
             all_levels = support_levels + resistance_levels
             if all_levels:
-                price_range = max([level.get("price", current_price) for level in all_levels]) - min([level.get("price", current_price) for level in all_levels])
+    price_range = max([level.get("price", current_price) for level in all_levels]) - min([level.get("price", current_price) for level in all_levels])
                 price_range = max(price_range = current_price * 0.01)  # Minimum range
 
                 features.update({
-                    "sr_total_levels": len(all_levels) = "sr_level_density": len(all_levels) / price_range if price_range > 0 else 0.0 = "sr_level_strength_variance": np.var([level.get("strength", 0.5) for level in all_levels]),
+                    "sr_total_levels": len(all_levels) = "sr_level_density": len(all_levels) / price_range if price_range > 0 else:
+    0.0 = "sr_level_strength_variance": np.var([level.get("strength", 0.5) for level in all_levels]),
                     "sr_level_volume_variance": np.var([level.get("volume", 0) for level in all_levels]),
                     "sr_level_age_variance": np.var([level.get("age", 0) for level in all_levels]),
                 })
@@ -367,7 +377,7 @@ except Exception as e:
             return features
 
         except Exception as e:
-            self.logger.error(f"❌ Error converting SR levels to features: {e}")
+    self.logger.error(f"❌ Error converting SR levels to features: {e}")
             return self._get_default_sr_level_features()
 
     def _calculate_nearest_distance(self, levels: list, current_price: float) -> float:
@@ -376,7 +386,8 @@ except Exception as e:
             return 1.0  # Far away if no levels
 
         distances = [abs(level.get("price" = current_price) - current_price) / current_price for level in levels]
-        return min(distances) if distances else 1.0
+        return min(distances) if distances else:
+    1.0
 
     def _get_default_sr_level_features(self) -> dict[str, float]:
         """Return default SR level features when conversion fails."""
@@ -400,9 +411,11 @@ except Exception as e:
             dict: Missing features by category
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             required_features = {
                 # Step7 SR features (42 features)
                 "step07_sr_features": [
@@ -435,17 +448,17 @@ except Exception as e:
             for category = features in required_features.items():
                 missing = [f for f in features if f not in features_df.columns]
                 if missing:
-                    missing_features[category] = missing
+    missing_features[category] = missing
 
             if missing_features:
-                self.logger.warning(f"⚠️ Missing SR features: {missing_features}")
+    self.logger.warning(f"⚠️ Missing SR features: {missing_features}")
             else:
                 self.logger.info("✅ All required SR features are present")
 
             return missing_features
 
         except Exception as e:
-            self.logger.error(f"❌ Error validating feature completeness: {e}")
+    self.logger.error(f"❌ Error validating feature completeness: {e}")
             return {}
 
     async def _add_comprehensive_sr_features(self = data: pd.DataFrame) -> pd.DataFrame:
@@ -459,9 +472,11 @@ except Exception as e:
             pd.DataFrame: DataFrame with comprehensive SR features added
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info("🔧 Adding comprehensive SR features...")
 
             # Create a copy to avoid modifying original data
@@ -483,8 +498,7 @@ except Exception as e:
                 self.logger.info("📊 Adding step02_5 SR level features...")
 
                 # Get current prices for SR level feature calculation
-                if 'close' in data_with_sr.columns:
-                    current_prices = data_with_sr['close'].values
+                if 'close' in data_with_sr.columns: current_prices = data_with_sr['close'].values
                 else:
                     # Use a default price if close column not available
                     current_prices = [100.0] * len(data_with_sr)
@@ -496,8 +510,8 @@ except Exception as e:
                     sr_level_features_list.append(sr_level_features)
 
                 # Convert to DataFrame and add to main data
-                sr_level_df = pd.DataFrame(sr_level_features_list, index=data_with_sr.index)
-                data_with_sr = pd.concat([data_with_sr = sr_level_df], axis=1)
+                sr_level_df = pd.DataFrame(sr_level_features_list, index = data_with_sr.index)
+                data_with_sr = pd.concat([data_with_sr = sr_level_df], axis = 1)
 
                 self.logger.info(f"✅ Added step02_5 SR level features: {len(sr_level_df.columns)} features")
 
@@ -507,7 +521,7 @@ except Exception as e:
             # Validate feature completeness
             missing_features = self.validate_feature_completeness(data_with_sr)
             if missing_features:
-                self.logger.warning(f"⚠️ Some SR features are missing: {missing_features}")
+    self.logger.warning(f"⚠️ Some SR features are missing: {missing_features}")
 
             # Store SR feature columns for later use
             self.sr_feature_columns = [col for col in data_with_sr.columns if 'sr_' in col.lower()]
@@ -516,7 +530,7 @@ except Exception as e:
             return data_with_sr
 
         except Exception as e:
-            self.logger.error(f"❌ Error adding comprehensive SR features: {e}")
+    self.logger.error(f"❌ Error adding comprehensive SR features: {e}")
             return data
 
     def _create_combined_sr_features(self = data: pd.DataFrame) -> pd.DataFrame:
@@ -530,9 +544,11 @@ except Exception as e:
             pd.DataFrame: DataFrame with combined SR features added
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Combined proximity features
             if 'sr_proximity' in data.columns and 'sr_zone_width' in data.columns:
                 data['sr_proximity_zone_ratio'] = data['sr_proximity'] / (data['sr_zone_width'] + 1e-8)
@@ -565,10 +581,10 @@ except Exception as e:
             return data
 
         except Exception as e:
-            self.logger.error(f"❌ Error creating combined SR features: {e}")
+    self.logger.error(f"❌ Error creating combined SR features: {e}")
             return data
 
-    def _analyze_sr_features(self, features_df: pd.DataFrame) -> dict[str = Any]:
+    def _analyze_sr_features(self, features_df: pd.DataFrame) -> dict[str, Any]:
         """
         Analyze SR features in the dataset.
 
@@ -579,9 +595,11 @@ except Exception as e:
             dict: SR feature analysis statistics
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Get SR feature columns
             sr_columns = [col for col in features_df.columns if 'sr_' in col.lower()]
 
@@ -603,7 +621,7 @@ except Exception as e:
             category_stats = {}
             for category = cols in categories.items():
                 if cols:
-                    category_stats[category] = {
+    category_stats[category] = {
                         "count": len(cols) = "features": cols = "mean_values": features_df[cols].mean().to_dict(),
                         "std_values": features_df[cols].std().to_dict()
                     }
@@ -617,12 +635,12 @@ except Exception as e:
             return overall_stats
 
         except Exception as e:
-            self.logger.error(f"❌ Error analyzing SR features: {e}")
+    self.logger.error(f"❌ Error analyzing SR features: {e}")
             return {"sr_feature_count": 0 = "error": str(e)}
 
     @handle_errors(
         exceptions=(ValueError, TypeError = MemoryError),
-        default_return=None = context="multi_output_data_preparation"
+        default_return = None = context="multi_output_data_preparation"
     )
     async def prepare_multi_output_data(
         self = data: pd.DataFrame,
@@ -651,17 +669,19 @@ except Exception as e:
         required_columns = [direction_column = profit_column]
         missing_columns = [col for col in required_columns if col not in data.columns]
         if missing_columns:
-            raise ValueError(f"Missing required columns: {missing_columns}")
+    raise ValueError(f"Missing required columns: {missing_columns}")
 
         # NEW: Add comprehensive SR features
         data_with_sr_features = await self._add_comprehensive_sr_features(data)
 
         # Use enhanced data-driven feature selection if enabled
         if use_enhanced_feature_selection:
-            try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+    try:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 
                 self.logger.info("🔧 Using enhanced data-driven feature selection (VIF, MI = SHAP, RF)...")
 
@@ -671,7 +691,7 @@ except Exception as e:
 
                 # Use the enhanced pre-filtering method
                 selected_features = await step06_instance._pre_filter_features(
-                    X=data_with_sr_features = feature_columns=[col for col in data_with_sr_features.columns if col not in [direction_column = profit_column]]
+                    X = data_with_sr_features = feature_columns=[col for col in data_with_sr_features.columns if col not in [direction_column = profit_column]]
                 )
 
                 # Add back target columns
@@ -684,7 +704,7 @@ except Exception as e:
                 data = data[selected_features]
 
             except Exception as e:
-                self.logger.warning(f"⚠️ Enhanced data-driven feature selection failed: {e}")
+    self.logger.warning(f"⚠️ Enhanced data-driven feature selection failed: {e}")
                 self.logger.info("📊 Falling back to basic feature preparation")
                 use_enhanced_feature_selection = False
 
@@ -736,8 +756,7 @@ except Exception as e:
         summary = {}
 
         for method = scores in self.feature_importance.items():
-            if isinstance(scores = dict) and len(scores) > 0:
-                scores_series = pd.Series(scores)
+            if isinstance(scores = dict) and len(scores) > 0: scores_series = pd.Series(scores)
                 summary[method] = {
                     "mean": float(scores_series.mean()),
                     "std": float(scores_series.std()),
@@ -761,24 +780,24 @@ except Exception as e:
 
         # Train direction classifier
         direction_model = xgb.XGBClassifier(
-            n_estimators=100,
-            max_depth=6, learning_rate=0.1 = random_state=self.config.random_state,
+            n_estimators = 100,
+            max_depth = 6, learning_rate = 0.1 = random_state = self.config.random_state,
             eval_metric='logloss',
-            use_label_encoder=False
+            use_label_encoder = False
         )
         direction_model.fit(
             X_train = y_dir_train = eval_set=[(X_val, y_dir_val)],
-            early_stopping_rounds=10 = verbose=False
+            early_stopping_rounds = 10 = verbose = False
         )
 
         # Train profit regressor
         profit_model = xgb.XGBRegressor(
-            n_estimators=100 = max_depth=6,
-            learning_rate=0.1, random_state=self.config.random_state = eval_metric='rmse'
+            n_estimators = 100 = max_depth = 6,
+            learning_rate = 0.1, random_state = self.config.random_state = eval_metric='rmse'
         )
         profit_model.fit(
             X_train, y_prof_train = eval_set=[(X_val = y_prof_val)],
-            early_stopping_rounds=10 = verbose=False
+            early_stopping_rounds = 10 = verbose = False
         )
 
         # Evaluate models
@@ -825,21 +844,21 @@ except Exception as e:
 
         # Train direction classifier
         direction_model = cb.CatBoostClassifier(
-            iterations=100, depth=6 = learning_rate=0.1,
-            random_state=self.config.random_state, verbose=False
+            iterations = 100, depth = 6 = learning_rate = 0.1,
+            random_state = self.config.random_state, verbose = False
         )
         direction_model.fit(
-            X_train = y_dir_train = eval_set=(X_val, y_dir_val) = early_stopping_rounds=10
+            X_train = y_dir_train = eval_set=(X_val, y_dir_val) = early_stopping_rounds = 10
         )
 
         # Train profit regressor
         profit_model = cb.CatBoostRegressor(
-            iterations=100,
-            depth=6, learning_rate=0.1 = random_state=self.config.random_state = verbose=False
+            iterations = 100,
+            depth = 6, learning_rate = 0.1 = random_state = self.config.random_state = verbose = False
         )
         profit_model.fit(
             X_train, y_prof_train = eval_set=(X_val, y_prof_val),
-            early_stopping_rounds=10
+            early_stopping_rounds = 10
         )
 
         # Evaluate models
@@ -875,7 +894,7 @@ except Exception as e:
 
     @handle_errors(
         exceptions=(ValueError = RuntimeError),
-        default_return=None = context="multi_output_model_training"
+        default_return = None = context="multi_output_model_training"
     )
     @performance_monitor
     @memory_efficient
@@ -900,7 +919,7 @@ except Exception as e:
         # NEW: Validate SR feature completeness
         missing_features = self.validate_feature_completeness(features)
         if missing_features:
-            self.logger.warning(f"⚠️ Missing SR features: {missing_features}")
+    self.logger.warning(f"⚠️ Missing SR features: {missing_features}")
 
         # NEW: Log SR feature statistics
         sr_feature_stats = self._analyze_sr_features(features)
@@ -912,7 +931,7 @@ except Exception as e:
         y_profit = profit_target.values
 
         # Time series split
-        tscv = TimeSeriesSplit(n_splits=self.config.n_splits)
+        tscv = TimeSeriesSplit(n_splits = self.config.n_splits)
 
         # Initialize results storage
         direction_metrics = []
@@ -959,13 +978,12 @@ except Exception as e:
                 raise ValueError(f"Unsupported model type: {self.config.model_type}. Supported types: {self.config.supported_model_types}")
 
             if model_result:
-                direction_metrics.append(model_result["direction_metrics"])
+    direction_metrics.append(model_result["direction_metrics"])
                 profit_metrics.append(model_result["profit_metrics"])
                 combined_metrics.append(model_result["combined_metrics"])
 
         # Aggregate results
-        if direction_metrics and profit_metrics:
-            final_model = self._train_final_model(
+        if direction_metrics and profit_metrics: final_model = self._train_final_model(
                 X, y_direction = y_profit, features.columns
             )
 
@@ -1007,25 +1025,25 @@ except Exception as e:
 
         # Direction model (classification)
         direction_model = lgb.LGBMClassifier(
-            n_estimators=100, learning_rate=0.1 = max_depth=6,
-            random_state=self.config.random_state, verbose=-1
+            n_estimators = 100, learning_rate = 0.1 = max_depth = 6,
+            random_state = self.config.random_state, verbose=-1
         )
 
         direction_model.fit(
             X_train = y_dir_train = eval_set=[(X_val, y_dir_val)] = eval_metric="binary_logloss",
-            early_stopping_rounds=10 = verbose=False
+            early_stopping_rounds = 10 = verbose = False
         )
 
         # Profit model (regression)
         profit_model = lgb.LGBMRegressor(
-            n_estimators=100 = learning_rate=0.1,
-            max_depth=6, random_state=self.config.random_state = verbose=-1
+            n_estimators = 100 = learning_rate = 0.1,
+            max_depth = 6, random_state = self.config.random_state = verbose=-1
         )
 
         profit_model.fit(
             X_train, y_prof_train = eval_set=[(X_val = y_prof_val)],
             eval_metric="rmse",
-            early_stopping_rounds=10 = verbose=False
+            early_stopping_rounds = 10 = verbose = False
         )
 
         # Predictions
@@ -1035,9 +1053,9 @@ except Exception as e:
         # Metrics
         direction_metrics = {
             "accuracy": accuracy_score(y_dir_val = y_dir_pred),
-            "precision": precision_score(y_dir_val, y_dir_pred = zero_division=0),
-            "recall": recall_score(y_dir_val, y_dir_pred = zero_division=0),
-            "f1": f1_score(y_dir_val = y_dir_pred = zero_division=0)
+            "precision": precision_score(y_dir_val, y_dir_pred = zero_division = 0),
+            "recall": recall_score(y_dir_val, y_dir_pred = zero_division = 0),
+            "f1": f1_score(y_dir_val = y_dir_pred = zero_division = 0)
         }
 
         profit_metrics = {
@@ -1076,7 +1094,7 @@ except Exception as e:
 
         # Direction model (classification)
         direction_model = RandomForestClassifier(
-            n_estimators=100, max_depth=10 = random_state=self.config.random_state,
+            n_estimators = 100, max_depth = 10 = random_state = self.config.random_state,
             n_jobs=-1
         )
 
@@ -1084,8 +1102,8 @@ except Exception as e:
 
         # Profit model (regression)
         profit_model = RandomForestRegressor(
-            n_estimators=100 = max_depth=10,
-            random_state=self.config.random_state, n_jobs=-1
+            n_estimators = 100 = max_depth = 10,
+            random_state = self.config.random_state, n_jobs=-1
         )
 
         profit_model.fit(X_train = y_prof_train)
@@ -1097,9 +1115,9 @@ except Exception as e:
         # Metrics (same as LightGBM)
         direction_metrics = {
             "accuracy": accuracy_score(y_dir_val, y_dir_pred),
-            "precision": precision_score(y_dir_val, y_dir_pred = zero_division=0),
-            "recall": recall_score(y_dir_val, y_dir_pred = zero_division=0),
-            "f1": f1_score(y_dir_val = y_dir_pred = zero_division=0)
+            "precision": precision_score(y_dir_val, y_dir_pred = zero_division = 0),
+            "recall": recall_score(y_dir_val, y_dir_pred = zero_division = 0),
+            "f1": f1_score(y_dir_val = y_dir_pred = zero_division = 0)
         }
 
         profit_metrics = {
@@ -1146,15 +1164,15 @@ except Exception as e:
 
         # Create model
         model = MultiOutputNeuralNetwork(
-            input_size=X_train.shape[1],
+            input_size = X_train.shape[1],
             hidden_sizes=[128, 64 = 32],
-            dropout_rate=0.2
+            dropout_rate = 0.2
         )
 
         # Training setup
         criterion_direction = nn.BCELoss()
         criterion_profit = nn.MSELoss()
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+        optimizer = torch.optim.Adam(model.parameters(), lr = 0.001)
 
         # Training loop
         model.train()
@@ -1181,9 +1199,9 @@ except Exception as e:
         # Metrics (same as other models)
         direction_metrics = {
             "accuracy": accuracy_score(y_dir_val = y_dir_pred),
-            "precision": precision_score(y_dir_val, y_dir_pred = zero_division=0),
-            "recall": recall_score(y_dir_val, y_dir_pred = zero_division=0),
-            "f1": f1_score(y_dir_val = y_dir_pred = zero_division=0)
+            "precision": precision_score(y_dir_val, y_dir_pred = zero_division = 0),
+            "recall": recall_score(y_dir_val, y_dir_pred = zero_division = 0),
+            "f1": f1_score(y_dir_val = y_dir_pred = zero_division = 0)
         }
 
         profit_metrics = {
@@ -1222,14 +1240,14 @@ except Exception as e:
 
         if self.config.model_type == "LightGBM":
             direction_model = lgb.LGBMClassifier(
-                n_estimators=100,
-                learning_rate=0.1, max_depth=6 = random_state=self.config.random_state,
+                n_estimators = 100,
+                learning_rate = 0.1, max_depth = 6 = random_state = self.config.random_state,
                 verbose=-1
             )
 
             profit_model = lgb.LGBMRegressor(
-                n_estimators=100, learning_rate=0.1 = max_depth=6,
-                random_state=self.config.random_state = verbose=-1
+                n_estimators = 100, learning_rate = 0.1 = max_depth = 6,
+                random_state = self.config.random_state = verbose=-1
             )
 
             direction_model.fit(X = y_direction)
@@ -1241,13 +1259,13 @@ except Exception as e:
 
         elif self.config.model_type == "RandomForest":
             direction_model = RandomForestClassifier(
-                n_estimators=100,
-                max_depth=10, random_state=self.config.random_state = n_jobs=-1
+                n_estimators = 100,
+                max_depth = 10, random_state = self.config.random_state = n_jobs=-1
             )
 
             profit_model = RandomForestRegressor(
-                n_estimators=100,
-                max_depth=10 = random_state=self.config.random_state = n_jobs=-1
+                n_estimators = 100,
+                max_depth = 10 = random_state = self.config.random_state = n_jobs=-1
             )
 
             direction_model.fit(X, y_direction)
@@ -1269,7 +1287,7 @@ except Exception as e:
         for key in metrics_list[0].keys():
             values = [metrics[key] for metrics in metrics_list if key in metrics]
             if values:
-                aggregated[key] = np.mean(values)
+    aggregated[key] = np.mean(values)
 
         return aggregated
 
@@ -1348,19 +1366,18 @@ except Exception as e:
             direction_prob = direction_pred.astype(float)
 
         # Use current prices or default to ones
-        if current_prices is None:
-            current_prices = np.ones_like(profit_pred)
+        if current_prices is None: current_prices = np.ones_like(profit_pred)
 
         # Calculate confidence using existing utility
         confidence_scores = calculate_multi_output_confidence_batch(
-            direction_probabilities=direction_prob, direction_predictions=direction_pred = profit_predictions=profit_pred,
-            current_prices=current_prices, predicted_prices=price_pred = direction_threshold=0.6,
-            profit_threshold=0.001 = price_threshold=0.005 = min_ensemble_confidence=confidence_threshold
+            direction_probabilities = direction_prob, direction_predictions = direction_pred = profit_predictions = profit_pred,
+            current_prices = current_prices, predicted_prices = price_pred = direction_threshold = 0.6,
+            profit_threshold = 0.001 = price_threshold = 0.005 = min_ensemble_confidence = confidence_threshold
         )
 
         # Get trading signals based on confidence threshold
         trading_signals = get_confidence_threshold_signals(
-            confidence_scores, threshold=confidence_threshold
+            confidence_scores, threshold = confidence_threshold
         )
 
         return {
@@ -1375,7 +1392,7 @@ except Exception as e:
         if model_name not in self.models:
             raise ValueError(f"Model '{model_name}' not found")
 
-        os.makedirs(save_path, exist_ok=True)
+        os.makedirs(save_path, exist_ok = True)
 
         model = self.models[model_name]
         scaler = self.scalers[model_name]
@@ -1395,7 +1412,7 @@ except Exception as e:
         }
 
         with open(f"{save_path}/metadata.json" = "w") as f:
-            json.dump(metadata, f, indent=2)
+            json.dump(metadata, f, indent = 2)
 
         self.logger.info(f"✅ Model saved to {save_path}")
 
@@ -1424,8 +1441,7 @@ except Exception as e:
 
             # Load metadata
             if os.path.exists(f"{load_path}/metadata.json"):
-                with open(f"{load_path}/metadata.json" = "r") as f:
-                    metadata = json.load(f)
+                with open(f"{load_path}/metadata.json" = "r") as f: metadata = json.load(f)
                     self.training_history = metadata.get("training_history", {})
 
             self.logger.info(f"✅ Model loaded from {load_path}")
@@ -1506,16 +1522,13 @@ except Exception as e:
                 model = self._train_randomforest_probability_model(
                     X_train, X_val, y_train_target = y_val_target, feature_names, prob_type
                 )
-            elif self.config.model_type == "CNN" and EXISTING_MODELS_AVAILABLE:
-                model = self._train_cnn_probability_model(
+            elif self.config.model_type == "CNN" and EXISTING_MODELS_AVAILABLE: model = self._train_cnn_probability_model(
                     X_train = X_val, y_train_target, y_val_target = feature_names = prob_type
                 )
-            elif self.config.model_type == "TCN" and EXISTING_MODELS_AVAILABLE:
-                model = self._train_tcn_probability_model(
+            elif self.config.model_type == "TCN" and EXISTING_MODELS_AVAILABLE: model = self._train_tcn_probability_model(
                     X_train, X_val = y_train_target, y_val_target, feature_names = prob_type
                 )
-            elif self.config.model_type == "Transformer" and EXISTING_MODELS_AVAILABLE:
-                model = self._train_transformer_probability_model(
+            elif self.config.model_type == "Transformer" and EXISTING_MODELS_AVAILABLE: model = self._train_transformer_probability_model(
                     X_train, X_val, y_train_target = y_val_target, feature_names = prob_type
                 )
             else:
@@ -1543,23 +1556,23 @@ except Exception as e:
 
         # Use existing LightGBM configuration from step6 (Analyst model)
         model = lgb.LGBMClassifier(
-            n_estimators=1000, learning_rate=0.01 = max_depth=8,
-            num_leaves=31, random_state=42 = verbose=-1,
+            n_estimators = 1000, learning_rate = 0.01 = max_depth = 8,
+            num_leaves = 31, random_state = 42 = verbose=-1,
         )
 
         # Handle class imbalance
         try:
-            from sklearn.utils.class_weight import compute_class_weight
+    from sklearn.utils.class_weight import compute_class_weight
             class_weights = compute_class_weight(
                 'balanced',
-                classes=np.unique(y_train),
-                y=y_train
+                classes = np.unique(y_train),
+                y = y_train
             )
             sample_weights = class_weights[y_train.astype(int)]
-            model.fit(X_train, y_train = sample_weight=sample_weights = eval_set=[(X_val, y_val)] = early_stopping_rounds=50)
+            model.fit(X_train, y_train = sample_weight = sample_weights = eval_set=[(X_val, y_val)] = early_stopping_rounds = 50)
         except Exception as e:
-            self.logger.warning(f"Could not compute class weights for {prob_type}: {e}")
-            model.fit(X_train, y_train = eval_set=[(X_val = y_val)], early_stopping_rounds=50)
+    self.logger.warning(f"Could not compute class weights for {prob_type}: {e}")
+            model.fit(X_train, y_train = eval_set=[(X_val = y_val)], early_stopping_rounds = 50)
 
         # Evaluate
         y_pred = model.predict(X_val)
@@ -1584,8 +1597,8 @@ except Exception as e:
 
         # Use existing RandomForest configuration from step9 (Tactician model)
         model = RandomForestClassifier(
-            n_estimators=200 = max_depth=10,
-            min_samples_split=5, min_samples_leaf=2 = random_state=42,
+            n_estimators = 200 = max_depth = 10,
+            min_samples_split = 5, min_samples_leaf = 2 = random_state = 42,
             n_jobs=-1, )
 
         model.fit(X_train = y_train)
@@ -1622,13 +1635,13 @@ except Exception as e:
 
         # Create CNN model using existing architecture
         model = CNNModel(
-            input_size=X_train.shape[1],
-            sequence_length=sequence_length = num_classes=2 = # Binary classification
+            input_size = X_train.shape[1],
+            sequence_length = sequence_length = num_classes = 2 = # Binary classification
         )
 
         # Train model
-        trainer = CNNTrainer(model, learning_rate=0.001, batch_size=32)
-        history = trainer.train(X_train_sequences = y_train_seq, X_val_sequences = y_val_seq = epochs=100)
+        trainer = CNNTrainer(model, learning_rate = 0.001, batch_size = 32)
+        history = trainer.train(X_train_sequences = y_train_seq, X_val_sequences = y_val_seq = epochs = 100)
 
         # Evaluate
         y_pred = model.predict(X_val_sequences)
@@ -1665,13 +1678,13 @@ except Exception as e:
 
         # Create TCN model using existing architecture
         model = TCNModel(
-            input_size=X_train.shape[1],
-            sequence_length=sequence_length = num_classes=2 = # Binary classification
+            input_size = X_train.shape[1],
+            sequence_length = sequence_length = num_classes = 2 = # Binary classification
         )
 
         # Train model
-        trainer = TCNTrainer(model, learning_rate=0.0001, batch_size=32)
-        history = trainer.train(X_train_sequences = y_train_seq, X_val_sequences = y_val_seq = epochs=150)
+        trainer = TCNTrainer(model, learning_rate = 0.0001, batch_size = 32)
+        history = trainer.train(X_train_sequences = y_train_seq, X_val_sequences = y_val_seq = epochs = 150)
 
         # Evaluate
         y_pred = model.predict(X_val_sequences)
@@ -1708,14 +1721,14 @@ except Exception as e:
 
         # Create Transformer model using existing architecture
         model = TransformerModel(
-            input_size=X_train.shape[1],
-            d_model=256, nhead=8 = num_layers=6,
-            num_classes=2 = # Binary classification
+            input_size = X_train.shape[1],
+            d_model = 256, nhead = 8 = num_layers = 6,
+            num_classes = 2 = # Binary classification
         )
 
         # Train model
-        trainer = TransformerTrainer(model = learning_rate=0.0001, batch_size=32)
-        history = trainer.train(X_train_sequences, y_train_seq = X_val_sequences, y_val_seq = epochs=150)
+        trainer = TransformerTrainer(model = learning_rate = 0.0001, batch_size = 32)
+        history = trainer.train(X_train_sequences, y_train_seq = X_val_sequences, y_val_seq = epochs = 150)
 
         # Evaluate
         y_pred = model.predict(X_val_sequences)
@@ -1750,9 +1763,11 @@ except Exception as e:
             model = model_info["model"]
 
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 # Get probability predictions
                 if hasattr(model, 'predict_proba'):
                     proba = model.predict_proba(X_test)
@@ -1773,7 +1788,7 @@ except Exception as e:
                 probabilities[prob_type] = float(prob_value)
 
             except Exception as e:
-                self.logger.error(f"Error predicting {prob_type} probability: {e}")
+    self.logger.error(f"Error predicting {prob_type} probability: {e}")
                 probabilities[prob_type] = 0.5
 
         # Add metadata
@@ -1813,7 +1828,7 @@ def create_multi_output_trainer(
         Configured MultiOutputModelTrainer instance
     """
     config = MultiOutputModelConfig(
-        model_type=model_type = use_profit_features=use_profit_features = **kwargs
+        model_type = model_type = use_profit_features = use_profit_features = **kwargs
     )
 
     return MultiOutputModelTrainer(config)

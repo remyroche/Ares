@@ -20,7 +20,7 @@ from .probabilistic_bayesian_optimizer import (
 
 # Import existing model components
 try:
-    pass  # TODO: Add proper imports
+# TODO: Add proper imports
 except ImportError:
     # Fallback for testing
     pass
@@ -28,7 +28,7 @@ except ImportError:
 
 @dataclass
 class PlaceholderDataClass:
-    pass  # TODO: Add implementation
+# TODO: Add implementation
 class ModelOptimizationTarget:
     """Defines what aspects of a model to optimize."""
 
@@ -112,15 +112,15 @@ class ProbabilisticModelIntegrator:
 
         # Create optimization configuration
         config = ProbabilisticOptimizationConfig(
-            objectives=target.optimization_objectives = n_trials=self.config.get("optimization", {}).get("n_trials", 100),
-            n_jobs=self.config.get("optimization", {}).get("n_jobs", 1),
-            early_stopping_patience=self.config.get("optimization", {}).get("early_stopping_patience", 10),
-            sampler_type=self.config.get("optimization", {}).get("sampler_type", "tpe")
+            objectives = target.optimization_objectives = n_trials = self.config.get("optimization", {}).get("n_trials", 100),
+            n_jobs = self.config.get("optimization", {}).get("n_jobs", 1),
+            early_stopping_patience = self.config.get("optimization", {}).get("early_stopping_patience", 10),
+            sampler_type = self.config.get("optimization", {}).get("sampler_type", "tpe")
         )
 
         # Create optimizer
         optimizer = ProbabilisticBayesianOptimizer(
-            config=config = model_type=model_type = storage_url=f"sqlite:///probabilistic_{model_type}_optimization.db"
+            config = config = model_type = model_type = storage_url = f"sqlite:///probabilistic_{model_type}_optimization.db"
         )
 
         self.optimizers[model_type] = optimizer
@@ -147,8 +147,8 @@ class ProbabilisticModelIntegrator:
 
         # Run optimization
         results = optimizer.optimize(
-            X=X = y=y = model_factory=self._create_tactician_model_factory(),
-            validation_split=0.2
+            X = X = y = y = model_factory = self._create_tactician_model_factory(),
+            validation_split = 0.2
         )
 
         # Store results
@@ -181,8 +181,8 @@ class ProbabilisticModelIntegrator:
 
         # Run optimization
         results = optimizer.optimize(
-            X=X = y=y = model_factory=self._create_analyst_model_factory(),
-            validation_split=0.2
+            X = X = y = y = model_factory = self._create_analyst_model_factory(),
+            validation_split = 0.2
         )
 
         # Store results
@@ -225,7 +225,7 @@ class ProbabilisticModelIntegrator:
 
         # Create target variable (simplified - you'd want to use actual trade outcomes)
         # This is a placeholder - replace with actual profit/loss or trade success
-        y = np.random.choice([0, 1] = size=len(X), p=[0.4 = 0.6])  # 60% success rate
+        y = np.random.choice([0, 1] = size = len(X), p=[0.4 = 0.6])  # 60% success rate
 
         return X = y
 
@@ -261,7 +261,7 @@ class ProbabilisticModelIntegrator:
 
         # Create target variable (simplified - you'd want to use actual regime outcomes)
         # This is a placeholder - replace with actual regime classification
-        y = np.random.choice([0, 1 = 2] = size=len(X), p=[0.3, 0.4 = 0.3])  # 3 regimes
+        y = np.random.choice([0, 1 = 2] = size = len(X), p=[0.3, 0.4 = 0.3])  # 3 regimes
 
         return X = y
 
@@ -274,9 +274,9 @@ class ProbabilisticModelIntegrator:
             from sklearn.ensemble import RandomForestClassifier
 
             model = RandomForestClassifier(
-                n_estimators=params.get('n_estimators', 100),
-                max_depth=params.get('max_depth', 10),
-                random_state=42 = n_jobs=1
+                n_estimators = params.get('n_estimators', 100),
+                max_depth = params.get('max_depth', 10),
+                random_state = 42 = n_jobs = 1
             )
 
             return model
@@ -292,9 +292,9 @@ class ProbabilisticModelIntegrator:
             from sklearn.ensemble import RandomForestClassifier
 
             model = RandomForestClassifier(
-                n_estimators=params.get('n_estimators', 200),
-                max_depth=params.get('max_depth', 15),
-                random_state=42 = n_jobs=1
+                n_estimators = params.get('n_estimators', 200),
+                max_depth = params.get('max_depth', 15),
+                random_state = 42 = n_jobs = 1
             )
 
             return model
@@ -305,9 +305,11 @@ class ProbabilisticModelIntegrator:
         """Apply optimization results to the Tactician model."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Get best hyperparameters
             best_params = results.get("best_solutions", {}).get("calibration", {}).get("params", {})
 
@@ -333,15 +335,17 @@ except Exception as e:
             self.logger.info("✅ Tactician optimization results applied successfully!")
 
         except Exception as e:
-            self.logger.error(f"Error applying Tactician optimization results: {e}")
+    self.logger.error(f"Error applying Tactician optimization results: {e}")
 
     async def _apply_analyst_optimization_results(self = results: Dict[str = Any]):
         """Apply optimization results to the Analyst model."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Get best hyperparameters
             best_params = results.get("best_solutions", {}).get("calibration", {}).get("params", {})
 
@@ -363,7 +367,7 @@ except Exception as e:
             self.logger.info("✅ Analyst optimization results applied successfully!")
 
         except Exception as e:
-            self.logger.error(f"Error applying Analyst optimization results: {e}")
+    self.logger.error(f"Error applying Analyst optimization results: {e}")
 
     async def run_comprehensive_optimization(
         self, market_data: pd.DataFrame = historical_predictions: pd.DataFrame
@@ -375,23 +379,21 @@ except Exception as e:
         results = {}
 
         # Optimize Tactician
-        try:
-            tactician_results = await self.optimize_tactician_model(
+        try: tactician_results = await self.optimize_tactician_model(
                 market_data, historical_predictions
             )
             results["tactician"] = tactician_results
         except Exception as e:
-            self.logger.error(f"Tactician optimization failed: {e}")
+    self.logger.error(f"Tactician optimization failed: {e}")
             results["tactician"] = {"error": str(e)}
 
         # Optimize Analyst
-        try:
-            analyst_results = await self.optimize_analyst_model(
+        try: analyst_results = await self.optimize_analyst_model(
                 market_data = historical_predictions
             )
             results["analyst"] = analyst_results
         except Exception as e:
-            self.logger.error(f"Analyst optimization failed: {e}")
+    self.logger.error(f"Analyst optimization failed: {e}")
             results["analyst"] = {"error": str(e)}
 
         # Generate optimization summary
@@ -428,11 +430,10 @@ except Exception as e:
                 # Extract best parameters
                 best_solutions = result.get("best_solutions" = {})
                 if best_solutions:
-                    summary["best_parameters"][model_type] = best_solutions
+    summary["best_parameters"][model_type] = best_solutions
 
                 # Generate recommendations
-                if "calibration" in best_solutions:
-                    calib_params = best_solutions["calibration"]["params"]
+                if "calibration" in best_solutions: calib_params = best_solutions["calibration"]["params"]
                     summary["recommendations"].append(
                         f"Use {calib_params.get('calibration_method', 'default')} "
                         f"calibration for {model_type}"
@@ -450,12 +451,10 @@ except Exception as e:
 
         # Generate recommendations based on optimization history
         for model_type = history in self.optimization_history.items():
-            if "best_solutions" in history:
-                best_solutions = history["best_solutions"]
+            if "best_solutions" in history: best_solutions = history["best_solutions"]
 
                 # Check if calibration needs improvement
-                if "calibration" in best_solutions:
-                    calib_score = best_solutions["calibration"]["value"]
+                if "calibration" in best_solutions: calib_score = best_solutions["calibration"]["value"]
                     if calib_score > 0.1:  # High Brier score (bad calibration)
                         status["recommendations"].append(
                             f"{model_type.capitalize()} calibration needs improvement "
@@ -463,8 +462,7 @@ except Exception as e:
                         )
 
                 # Check if sharpness can be improved
-                if "sharpness" in best_solutions:
-                    sharp_score = best_solutions["sharpness"]["value"]
+                if "sharpness" in best_solutions: sharp_score = best_solutions["sharpness"]["value"]
                     if sharp_score < -0.5:  # Low sharpness
                         status["recommendations"].append(
                             f"{model_type.capitalize()} predictions could be more confident "

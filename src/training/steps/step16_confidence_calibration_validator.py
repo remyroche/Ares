@@ -19,12 +19,12 @@ from src.utils.base_validator import BaseValidator
 class Step11ConfidenceCalibrationValidator(BaseValidator):
     """Validator for Step 11: Confidence Calibration."""
 
-    def __init__(self, config: dict[str = Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step11_confidence_calibration", config)
 
     async def validate(
-        self, training_input: dict[str = Any],
-        pipeline_state: dict[str, Any] = ) -> bool:
+        self, training_input: dict[str, Any],
+        pipeline_state: dict[str, Any]) -> bool:
         """Validate the confidence calibration step.
 
         Args:
@@ -99,9 +99,11 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Expected calibration file patterns
             expected_files = [
                 f"{data_dir}/{exchange}_{symbol}_calibrated_models.pkl",
@@ -112,12 +114,12 @@ except Exception as e:
             missing_files = [f for f in expected_files if not os.path.exists(f)]
 
         if missing_files:
-        self.logger.error(missing(f"Missing calibration files: {missing_files}"))
+    self.logger.error(missing(f"Missing calibration files: {missing_files}"))
         return False
 
         self.logger.info("✅ Calibration files validation passed")
         return True
 
         except Exception as e:
-        self.logger.exception(f"Error validating calibration files: {e}")
+    self.logger.exception(f"Error validating calibration files: {e}")
         return False

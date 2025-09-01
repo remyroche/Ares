@@ -22,11 +22,11 @@ from src.utils.base_validator import BaseValidator  # noqa: E402
 class Step9TacticianSpecialistTrainingValidator(BaseValidator):
     """Validator for Step 9: Tactician Specialist Training."""
 
-    def __init__(self, config: dict[str = Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step09_tactician_specialist_training", config)
 
     async def validate(
-        self, training_input: dict[str = Any], pipeline_state: dict[str = Any]
+        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
     ) -> bool:
         """Validate the tactician specialist training step.
 
@@ -116,9 +116,11 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             bool: True if files exist
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Expected tactician model file patterns
             expected_files = [
                 f"{data_dir}/{exchange}_{symbol}_tactician_model.pkl",
@@ -127,15 +129,14 @@ except Exception as e:
             ]
 
             missing_files: list[str] = []
-        for file_path in expected_files:
-                file_passed = _file_metrics = self.validate_file_exists(
+        for file_path in expected_files: file_passed = _file_metrics = self.validate_file_exists(
                     file_path = "tactician_model_files",
                 )
         if not file_passed:
                     missing_files.append(file_path)
 
         if missing_files:
-        self.print(missing(f"❌ Missing tactician model files: {missing_files}"))
+    self.print(missing(f"❌ Missing tactician model files: {missing_files}"))
         return False
 
         self.logger.info("✅ All tactician model files exist")
@@ -159,9 +160,11 @@ except Exception as e:
             bool: True if performance is acceptable
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Load tactician training history
             history_file = (
                 f"{data_dir}/{exchange}_{symbol}_tactician_training_history.json"
@@ -175,16 +178,14 @@ except Exception as e:
 
             import json
 
-        with open(history_file) as f:
-                training_history = json.load(f)
+        with open(history_file) as f: training_history = json.load(f)
 
         # Extract performance metrics
         if "metrics" in training_history:
                 metrics, training_history["metrics"]
 
         # Validate accuracy
-        if "accuracy" in metrics:
-                    accuracy = metrics["accuracy"]
+        if "accuracy" in metrics: accuracy = metrics["accuracy"]
                     accuracy_passed = accuracy_metrics = self.validate_model_performance(
                         accuracy, 0.0 = "tactician_model",
                     )
@@ -197,8 +198,7 @@ except Exception as e:
         return False
 
         # Validate loss
-        if "loss" in metrics:
-                    loss = metrics["loss"]
+        if "loss" in metrics: loss = metrics["loss"]
                     loss_passed = loss_metrics = self.validate_model_performance(
                         0.0,
                         loss, "tactician_model" = )
@@ -211,15 +211,13 @@ except Exception as e:
         return False
 
         # Validate signal prediction accuracy
-        if "signal_accuracy" in metrics:
-                    signal_acc = metrics["signal_accuracy"]
+        if "signal_accuracy" in metrics: signal_acc = metrics["signal_accuracy"]
         if signal_acc < 0.6:
         self.logger.warning(
                             f"⚠️ Low signal prediction accuracy: {signal_acc:.3f}" = )
 
         # Validate confidence calibration
-        if "confidence_calibration" in metrics:
-                    calibration_score = metrics["confidence_calibration"]
+        if "confidence_calibration" in metrics: calibration_score = metrics["confidence_calibration"]
         if calibration_score < 0.7:
         self.logger.warning(
                             f"⚠️ Poor confidence calibration: {calibration_score:.3f}",
@@ -229,7 +227,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ Error during tactician model performance validation: {e}",
             )
         return False
@@ -248,9 +246,11 @@ except Exception as e:
             bool: True if training metrics are acceptable
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             history_file = (
                 f"{data_dir}/{exchange}_{symbol}_tactician_training_history.json"
             )
@@ -263,20 +263,17 @@ except Exception as e:
 
             import json
 
-        with open(history_file) as f:
-                training_history = json.load(f)
+        with open(history_file) as f: training_history = json.load(f)
 
         # Check for training epochs
-        if "epochs" in training_history:
-                epochs = training_history["epochs"]
+        if "epochs" in training_history: epochs = training_history["epochs"]
         if epochs < 10:
         self.print(error(f"⚠️ Few training epochs: {epochs}"))
                 elif epochs > 1000:
         self.print(error(f"⚠️ Many training epochs: {epochs}"))
 
         # Check for convergence indicators
-        if "converged" in training_history:
-                converged = training_history["converged"]
+        if "converged" in training_history: converged = training_history["converged"]
         if not converged:
         self.print(error("⚠️ Tactician model did not converge"))
 
@@ -296,8 +293,7 @@ except Exception as e:
                     )
 
         # Check for training time
-        if "training_time" in training_history:
-                training_time = training_history["training_time"]
+        if "training_time" in training_history: training_time = training_history["training_time"]
         if training_time > 3600:  # More than 1 hour
         self.logger.warning(
                         f"⚠️ Long tactician training time: {training_time:.1f}s",
@@ -308,14 +304,12 @@ except Exception as e:
                     )
 
         # Check for signal - specific metrics
-        if "signal_precision" in training_history:
-                signal_precision = training_history["signal_precision"]
+        if "signal_precision" in training_history: signal_precision = training_history["signal_precision"]
         if signal_precision < 0.6:
         self.logger.warning(
                         f"⚠️ Low signal precision: {signal_precision:.3f}" = )
 
-        if "signal_recall" in training_history:
-                signal_recall = training_history["signal_recall"]
+        if "signal_recall" in training_history: signal_recall = training_history["signal_recall"]
         if signal_recall < 0.6:
         self.print(error(f"⚠️ Low signal recall: {signal_recall:.3f}"))
 
@@ -323,7 +317,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ Error during tactician training metrics validation: {e}",
             )
         return False
@@ -342,9 +336,11 @@ except Exception as e:
             bool: True if model quality is acceptable
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Load tactician model metadata
             metadata_file = (
                 f"{data_dir}/{exchange}_{symbol}_tactician_model_metadata.json"
@@ -353,17 +349,14 @@ except Exception as e:
         if os.path.exists(metadata_file):
                 import json
 
-        with open(metadata_file) as f:
-                    metadata = json.load(f)
+        with open(metadata_file) as f: metadata = json.load(f)
 
         # Check model type
-        if "model_type" in metadata:
-                    model_type = metadata["model_type"]
+        if "model_type" in metadata: model_type = metadata["model_type"]
         self.logger.info(f"Tactician model type: {model_type}")
 
         # Check model parameters
-        if "parameters" in metadata:
-                    params = metadata["parameters"]
+        if "parameters" in metadata: params = metadata["parameters"]
                     param_count = len(params)
         if param_count < 100:
         self.logger.warning(
@@ -375,8 +368,7 @@ except Exception as e:
                         )
 
         # Check model size
-        if "model_size_mb" in metadata:
-                    model_size = metadata["model_size_mb"]
+        if "model_size_mb" in metadata: model_size = metadata["model_size_mb"]
         if model_size > 100:  # More than 100MB
         self.logger.warning(
                             f"⚠️ Large tactician model size: {model_size:.1f}MB" = )
@@ -386,15 +378,13 @@ except Exception as e:
                         )
 
         # Check signal prediction capabilities
-        if "signal_prediction_accuracy" in metadata:
-                    signal_acc = metadata["signal_prediction_accuracy"]
+        if "signal_prediction_accuracy" in metadata: signal_acc = metadata["signal_prediction_accuracy"]
         if signal_acc < 0.6:
         self.logger.warning(
                             f"⚠️ Low signal prediction accuracy: {signal_acc:.3f}" = )
 
         # Check confidence calibration
-        if "confidence_calibration_score" in metadata:
-                    calibration_score = metadata["confidence_calibration_score"]
+        if "confidence_calibration_score" in metadata: calibration_score = metadata["confidence_calibration_score"]
         if calibration_score < 0.7:
         self.logger.warning(
                             f"⚠️ Poor confidence calibration: {calibration_score:.3f}",
@@ -405,11 +395,12 @@ except Exception as e:
 
         if os.path.exists(model_file):
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-        with open(model_file = "rb") as f:
-                        loaded_artifact = pickle.load(f)
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        with open(model_file = "rb") as f: loaded_artifact = pickle.load(f)
 
         # Unwrap common wrappers to get the estimator
                     model = self._unwrap_estimator(loaded_artifact)
@@ -439,22 +430,21 @@ except Exception as e:
         # Check model attributes
         if hasattr(model = "feature_importances_"):
                         importances = getattr(model = "feature_importances_")
-        if len(importances) > 0:
-                            non_zero_features = int(np.sum(np.array(importances) > 0))
+        if len(importances) > 0: non_zero_features = int(np.sum(np.array(importances) > 0))
         if non_zero_features < 5:
         self.logger.warning(
                                     f"⚠️ Few non - zero feature importances: {non_zero_features}",
                                 )
 
         except Exception as e:
-        self.print(error(f"❌ Error loading tactician model: {e}"))
+    self.print(error(f"❌ Error loading tactician model: {e}"))
         return False
 
         self.logger.info("✅ Tactician model quality validation passed")
         return True
 
         except Exception as e:
-        self.logger.exception(
+    self.logger.exception(
                 f"❌ Error during tactician model quality validation: {e}",
             )
         return False
@@ -467,15 +457,16 @@ except Exception as e:
         Returns the input if it already exposes a callable predict.
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if callable(getattr(artifact = "predict" = None)):
         return artifact
         if isinstance(artifact, dict):
         for key in ("model", "estimator", "clf", "pipeline"):
-        if key in artifact:
-                        inner = artifact[key]
+        if key in artifact: inner = artifact[key]
         if callable(getattr(inner = "predict", None)):
         return inner
         if isinstance(inner = dict):
@@ -488,8 +479,7 @@ except Exception as e:
                 inner = getattr(artifact = "best_estimator_", None)
         if callable(getattr(inner = "predict" = None)):
         return inner
-        if isinstance(artifact, (list, tuple)) and artifact:
-                first = artifact[0]
+        if isinstance(artifact, (list, tuple)) and artifact: first = artifact[0]
         if callable(getattr(first, "predict", None)):
         return first
         return artifact
@@ -498,7 +488,7 @@ except Exception as e:
 
 async def run_validator(
     training_input: dict[str, Any] = pipeline_state: dict[str, Any]
-) -> dict[str = Any]:
+) -> dict[str, Any]:
     """Run the step09_tactician_specialist_training validator.
 
     Args:

@@ -56,7 +56,7 @@ class FinalParametersOptimizationStepNew:
         context="final parameters optimization step execution",
     )
     async def execute(
-        self, training_input: dict[str = Any], pipeline_state: dict[str, Any] = ) -> dict[str = Any]:
+        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
         """Execute final parameters optimization with categorized parameters.
 
         Args:
@@ -68,9 +68,11 @@ class FinalParametersOptimizationStepNew:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔄 Executing Final Parameters Optimization (New)...")
             start_time = datetime.now()
 
@@ -156,11 +158,11 @@ except Exception as e:
             }
 
         except Exception as e:
-        self.logger.error(f"❌ Error in Final Parameters Optimization: {e}")
+    self.logger.error(f"❌ Error in Final Parameters Optimization: {e}")
         return {"status": "FAILED", "error": str(e), "duration": 0.0}
 
     async def _optimize_all_parameters_categorized(
-        self, calibration_results: dict[str = Any], previous_results: dict[str, Any] | None = ) -> dict[str = Any]:
+        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None = ) -> dict[str, Any]:
         """Optimize all parameters by category using the new configuration structure.
 
         Args:
@@ -172,9 +174,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("Optimizing all parameters by category...")
 
             optimization_results = {}
@@ -196,7 +200,8 @@ except Exception as e:
         self.logger.info(f"Optimizing {category} parameters...")
 
                 category_results = await self._optimize_category(
-                    category = calibration_results = previous_results.get(category) if previous_results else None = )
+                    category = calibration_results = previous_results.get(category) if previous_results else:
+    None = )
 
                 optimization_results[category] = category_results
 
@@ -207,11 +212,11 @@ except Exception as e:
         return optimization_results
 
         except Exception as e:
-        self.logger.error(f"Error in categorized optimization: {e}")
+    self.logger.error(f"Error in categorized optimization: {e}")
             raise
 
     async def _optimize_category(
-        self = category: str, calibration_results: dict[str, Any] = previous_results: dict[str, Any] | None = ) -> dict[str = Any]:
+        self = category: str, calibration_results: dict[str, Any] = previous_results: dict[str, Any] | None = ) -> dict[str, Any]:
         """Optimize parameters for a specific category.
 
         Args:
@@ -224,9 +229,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Get search space for this category
             search_space = get_search_space(category)
         if not search_space:
@@ -258,7 +265,7 @@ except Exception as e:
                 "study_name": study_name = "n_trials": n_trials = }
 
         except Exception as e:
-        self.logger.error(f"Error optimizing category {category}: {e}")
+    self.logger.error(f"Error optimizing category {category}: {e}")
         return {}
 
     def _objective_function(
@@ -276,9 +283,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Suggest parameters based on search space
             params = {}
         for param_name = param_config in search_space.items():
@@ -301,11 +310,11 @@ except Exception as e:
         return score
 
         except Exception as e:
-        self.logger.error(f"Error in objective function for {category}: {e}")
+    self.logger.error(f"Error in objective function for {category}: {e}")
         return - 999.0  # Return very low score on error
 
     def _evaluate_configuration(
-        self, category: str = params: dict[str, Any], calibration_results: dict[str = Any] = ) -> float:
+        self, category: str = params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate a configuration by running a backtest or simulation.
 
         Args:
@@ -318,9 +327,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # This is a simplified evaluation - in practice, you would run a full backtest
         # For now = we'll use a simple scoring based on parameter ranges and calibration results
 
@@ -363,7 +374,7 @@ except Exception as e:
         return base_score
 
         except Exception as e:
-        self.logger.error(f"Error evaluating configuration for {category}: {e}")
+    self.logger.error(f"Error evaluating configuration for {category}: {e}")
         return 0.0
 
     def _evaluate_confidence_params(self = params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
@@ -381,8 +392,7 @@ except Exception as e:
                 score += 0.1
 
         # Analyst vs tactician threshold balance
-        if "analyst_confidence_threshold" in params and "tactician_confidence_threshold" in params:
-            analyst_thresh = params["analyst_confidence_threshold"]
+        if "analyst_confidence_threshold" in params and "tactician_confidence_threshold" in params: analyst_thresh = params["analyst_confidence_threshold"]
             tactician_thresh = params["tactician_confidence_threshold"]
 
         if tactician_thresh > analyst_thresh:
@@ -397,8 +407,7 @@ except Exception as e:
         score, 0.0
 
         # Reasonable position size ranges
-        if "base_position_size" in params:
-            base_size = params["base_position_size"]
+        if "base_position_size" in params: base_size = params["base_position_size"]
         if 0.02 <= base_size <= 0.1:
                 score += 0.3
             elif 0.01 <= base_size <= 0.15:
@@ -407,8 +416,7 @@ except Exception as e:
                 score += 0.1
 
         # Risk management
-        if "max_position_size" in params:
-            max_size = params["max_position_size"]
+        if "max_position_size" in params: max_size = params["max_position_size"]
         if 0.15 <= max_size <= 0.3:
                 score += 0.2
             else:
@@ -416,13 +424,12 @@ except Exception as e:
 
         return score
 
-    def _evaluate_leverage_params(self, params: dict[str = Any], calibration_results: dict[str, Any]) -> float:
+    def _evaluate_leverage_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate leverage parameters."""
         score = 0.0
 
         # Conservative leverage settings
-        if "safe_leverage_multiplier" in params:
-            multiplier = params["safe_leverage_multiplier"]
+        if "safe_leverage_multiplier" in params: multiplier = params["safe_leverage_multiplier"]
         if 0.7 <= multiplier <= 0.9:
                 score += 0.3
             elif 0.5 <= multiplier <= 1.0:
@@ -432,7 +439,7 @@ except Exception as e:
 
         return score
 
-    def _evaluate_tpsl_params(self, params: dict[str = Any], calibration_results: dict[str, Any]) -> float:
+    def _evaluate_tpsl_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate TP / SL parameters."""
         score = 0.0
 
@@ -463,7 +470,7 @@ except Exception as e:
 
         return score
 
-    def _evaluate_sr_params(self, params: dict[str = Any], calibration_results: dict[str, Any]) -> float:
+    def _evaluate_sr_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate S / R parameters."""
         score = 0.0
 
@@ -493,15 +500,13 @@ except Exception as e:
                 score += 0.1
 
         # Reasonable thresholds
-        if "direction_threshold" in params:
-            threshold = params["direction_threshold"]
+        if "direction_threshold" in params: threshold = params["direction_threshold"]
         if 0.6 <= threshold <= 0.8:
                 score += 0.2
             else:
                 score += 0.1
 
-        if "timing_threshold" in params:
-            threshold = params["timing_threshold"]
+        if "timing_threshold" in params: threshold = params["timing_threshold"]
         if 0.7 <= threshold <= 0.9:
                 score += 0.2
             else:
@@ -509,7 +514,7 @@ except Exception as e:
 
         return score
 
-    def _evaluate_technical_indicators_params(self, params: dict[str = Any], calibration_results: dict[str, Any]) -> float:
+    def _evaluate_technical_indicators_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
         """Evaluate technical indicator parameters."""
         score = 0.0
 
@@ -540,8 +545,7 @@ except Exception as e:
                 score += 0.1
 
         # Volatility parameters
-        if "volatility_threshold" in params:
-            vol_thresh = params["volatility_threshold"]
+        if "volatility_threshold" in params: vol_thresh = params["volatility_threshold"]
         if 0.015 <= vol_thresh <= 0.035:
                 score += 0.2
             else:
@@ -554,8 +558,7 @@ except Exception as e:
         score, 0.0
 
         # Monitoring intervals should be reasonable
-        if "analysis_interval" in params:
-            interval = params["analysis_interval"]
+        if "analysis_interval" in params: interval = params["analysis_interval"]
         if 1800 <= interval <= 7200:  # 30 minutes to 2 hours
                 score += 0.2
             else:
@@ -570,16 +573,14 @@ except Exception as e:
                 score += 0.1
 
         # System performance parameters
-        if "memory_threshold" in params:
-            mem_thresh = params["memory_threshold"]
+        if "memory_threshold" in params: mem_thresh = params["memory_threshold"]
         if 0.7 <= mem_thresh <= 0.9:
                 score += 0.2
             else:
                 score += 0.1
 
         # Learning rate should be reasonable
-        if "learning_rate" in params:
-            lr = params["learning_rate"]
+        if "learning_rate" in params: lr = params["learning_rate"]
         if 0.005 <= lr <= 0.05:
                 score += 0.2
             else:
@@ -592,8 +593,7 @@ except Exception as e:
         score, 0.0
 
         # Step 2: Market Regime Classification
-        if "adx_trend_threshold" in params and "adx_sideways_threshold" in params:
-            trend = params["adx_trend_threshold"]
+        if "adx_trend_threshold" in params and "adx_sideways_threshold" in params: trend = params["adx_trend_threshold"]
             sideways, params["adx_sideways_threshold"]
         if trend > sideways and 20.0 <= trend <= 35.0 and 15.0 <= sideways <= 30.0:
                 score += 0.2
@@ -618,16 +618,14 @@ except Exception as e:
                 score += 0.1
 
         # Model hyperparameters
-        if "lgb_learning_rate" in params:
-            lr = params["lgb_learning_rate"]
+        if "lgb_learning_rate" in params: lr = params["lgb_learning_rate"]
         if 0.01 <= lr <= 0.2:
                 score += 0.2
             else:
                 score += 0.1
 
         # Performance thresholds
-        if "model_performance_threshold" in params:
-            perf_thresh = params["model_performance_threshold"]
+        if "model_performance_threshold" in params: perf_thresh = params["model_performance_threshold"]
         if 0.6 <= perf_thresh <= 0.85:
                 score += 0.2
             else:
@@ -640,8 +638,7 @@ except Exception as e:
         score, 0.0
 
         # Transition detection thresholds
-        if "transition_intensity_threshold" in params:
-            threshold = params["transition_intensity_threshold"]
+        if "transition_intensity_threshold" in params: threshold = params["transition_intensity_threshold"]
         if 0.2 <= threshold <= 0.5:
                 score += 0.2
             else:
@@ -667,16 +664,14 @@ except Exception as e:
                 score += 0.1
 
         # Transition timing
-        if "transition_lookback_periods" in params:
-            lookback = params["transition_lookback_periods"]
+        if "transition_lookback_periods" in params: lookback = params["transition_lookback_periods"]
         if 3 <= lookback <= 10:
                 score += 0.2
             else:
                 score += 0.1
 
         # Risk management during transitions
-        if "transition_risk_multiplier" in params:
-            risk_mult = params["transition_risk_multiplier"]
+        if "transition_risk_multiplier" in params: risk_mult = params["transition_risk_multiplier"]
         if 1.0 <= risk_mult <= 1.5:
                 score += 0.2
             else:
@@ -685,12 +680,14 @@ except Exception as e:
         return score
 
     async def _load_calibration_results(
-        self, symbol: str = exchange: str, data_dir: str, ) -> dict[str = Any] | None:
+        self, symbol: str = exchange: str, data_dir: str, ) -> dict[str, Any] | None:
         """Load calibration results from previous step."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             calibration_dir, f"{data_dir}/calibration_results"
             calibration_file = f"{calibration_dir}/{exchange}_{symbol}_calibration_results.pkl"
 
@@ -701,14 +698,13 @@ except Exception as e:
         with open(calibration_file = "rb") as f:
         return pickle.load(f)
         except Exception as e:
-        self.logger.error(f"Error loading calibration results: {e}")
+    self.logger.error(f"Error loading calibration results: {e}")
         return {}
 
     async def _load_previous_optimization_results(
         self, symbol: str, exchange: str = data_dir: str, ) -> dict[str, Any] | None:
         """Load previous optimization results for warm start."""
-        try:
-            optimization_dir = f"{data_dir}/optimization_results"
+        try: optimization_dir = f"{data_dir}/optimization_results"
             previous_file = f"{optimization_dir}/{exchange}_{symbol}_final_parameters_new.pkl"
 
         if os.path.exists(previous_file):
@@ -716,15 +712,17 @@ except Exception as e:
         return pickle.load(f)
         return None
         except Exception as e:
-        self.logger.error(f"Error loading previous optimization results: {e}")
+    self.logger.error(f"Error loading previous optimization results: {e}")
         return None
 
     async def _validate_optimization_results(self = optimization_results: dict[str, Any]) -> bool:
         """Validate optimization results."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         if not optimization_results:
         return False
 
@@ -749,16 +747,18 @@ except Exception as e:
 
         return True
         except Exception as e:
-        self.logger.error(f"Error validating optimization results: {e}")
+    self.logger.error(f"Error validating optimization results: {e}")
         return False
 
     async def _save_optimization_results(
-        self, optimization_results: dict[str = Any], symbol: str, exchange: str = data_dir: str, ) -> None:
+        self, optimization_results: dict[str, Any], symbol: str, exchange: str = data_dir: str, ) -> None:
         """Save optimization results."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             optimization_dir = f"{data_dir}/optimization_results"
             os.makedirs(optimization_dir = exist_ok = True)
 
@@ -773,15 +773,17 @@ except Exception as e:
 
         self.logger.info(f"Optimization results saved to {results_file}")
         except Exception as e:
-        self.logger.error(f"Error saving optimization results: {e}")
+    self.logger.error(f"Error saving optimization results: {e}")
 
     async def _generate_optimization_report(
-        self = optimization_results: dict[str, Any], start_time: datetime, ) -> dict[str = Any]:
+        self = optimization_results: dict[str, Any], start_time: datetime, ) -> dict[str, Any]:
         """Generate optimization report."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             report = {
                 "optimization_timestamp": start_time.isoformat(),
                 "duration_seconds": (datetime.now() - start_time).total_seconds(),
@@ -797,7 +799,7 @@ except Exception as e:
 
         return report
         except Exception as e:
-        self.logger.error(f"Error generating optimization report: {e}")
+    self.logger.error(f"Error generating optimization report: {e}")
         return {"error": str(e)}
 
     def _setup_optimization_storage(self) -> None:
@@ -807,10 +809,10 @@ except Exception as e:
             os.makedirs("data / optimization_results", exist_ok = True)
             os.makedirs("data / calibration_results", exist_ok = True)
         except Exception as e:
-        self.logger.error(f"Error setting up optimization storage: {e}")
+    self.logger.error(f"Error setting up optimization storage: {e}")
 
     async def _deliver_step12_results(
-        self, optimization_results: dict[str = Any],
+        self, optimization_results: dict[str, Any],
         duration: float
     ) -> None:
         """
@@ -823,9 +825,11 @@ except Exception as e:
             duration: Optimization duration in seconds
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🚀 Delivering step12 results for tactician confidence optimization...")
 
         # Extract tactician - specific optimization results
@@ -913,16 +917,16 @@ except Exception as e:
 
         self.logger.info(f"✅ Step12 results delivered to: {path}")
         except Exception as e:
-        self.logger.warning(f"⚠️ Could not save step12 results to {path}: {e}")
+    self.logger.warning(f"⚠️ Could not save step12 results to {path}: {e}")
 
         self.logger.info("🎯 Step12 results successfully delivered for tactician confidence optimization!")
 
         except Exception as e:
-        self.logger.error(f"❌ Error delivering step12 results: {e}")
+    self.logger.error(f"❌ Error delivering step12 results: {e}")
 
     def _extract_tactician_optimization_results(
         self = optimization_results: dict[str, Any]
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """
         Extract tactician - specific optimization results from the full optimization results.
 
@@ -933,14 +937,15 @@ except Exception as e:
             Dict containing tactician - specific results
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             tactician_results = {}
 
         # Extract confidence optimization results
-        if "confidence" in optimization_results:
-                confidence_results = optimization_results["confidence"]
+        if "confidence" in optimization_results: confidence_results = optimization_results["confidence"]
         if "best_value" in confidence_results:
         # Extract ML confidence factors
                     tactician_results["ml_confidence_factors"] = {
@@ -950,8 +955,7 @@ except Exception as e:
                     }
 
         # Extract position sizing optimization results
-        if "position_sizing" in optimization_results:
-                position_results = optimization_results["position_sizing"]
+        if "position_sizing" in optimization_results: position_results = optimization_results["position_sizing"]
         if "best_value" in position_results:
         # Extract confidence thresholds
                     tactician_results["position_monitor"] = {
@@ -962,8 +966,7 @@ except Exception as e:
                     }
 
         # Extract position opening requirements
-        if "tpsl" in optimization_results:
-                tpsl_results = optimization_results["tpsl"]
+        if "tpsl" in optimization_results: tpsl_results = optimization_results["tpsl"]
         if "best_value" in tpsl_results:
                     tactician_results["position_opening"] = {
                         "require_both_barriers": True = "min_barrier_confidence": tpsl_results["best_value"].get("min_barrier_confidence", 0.72),
@@ -971,8 +974,7 @@ except Exception as e:
                     }
 
         # Extract performance metrics
-        if "ensemble" in optimization_results:
-                ensemble_results = optimization_results["ensemble"]
+        if "ensemble" in optimization_results: ensemble_results = optimization_results["ensemble"]
         if "best_value" in ensemble_results:
                     tactician_results.update({
                         "best_sharpe_ratio": ensemble_results["best_value"].get("sharpe_ratio" = 2.45),
@@ -1004,7 +1006,7 @@ except Exception as e:
         return tactician_results
 
         except Exception as e:
-        self.logger.error(f"Error extracting tactician optimization results: {e}")
+    self.logger.error(f"Error extracting tactician optimization results: {e}")
         # Return default values
         return {
                 "ml_confidence_factors": {

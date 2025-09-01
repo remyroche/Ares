@@ -40,8 +40,8 @@ class Step1_5DataConverterValidator(BaseValidator):
         ]
 
     async def validate(
-        self, training_input: dict[str = Any],
-        pipeline_state: dict[str, Any] = ) -> bool:
+        self, training_input: dict[str, Any],
+        pipeline_state: dict[str, Any]) -> bool:
         """Validate the data converter step.
 
         Args:
@@ -96,7 +96,7 @@ class Step1_5DataConverterValidator(BaseValidator):
 
     async def _check_unified_data_structure(
         self, symbol: str = exchange: str, timeframe: str = data_dir: str
-    ) -> dict[str = Any]:
+    ) -> dict[str, Any]:
         """Check for unified data structure in the data directory.
 
         Args:
@@ -140,9 +140,11 @@ class Step1_5DataConverterValidator(BaseValidator):
             bool: True if validation passed
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Find all parquet files
             parquet_files = glob.glob(os.path.join(base_path, "*.parquet"), recursive = True)
 
@@ -156,8 +158,7 @@ except Exception as e:
             valid_files, 0
             total_records = 0
 
-        for file_path in parquet_files:
-                file_validation = await self._validate_single_unified_file(file_path)
+        for file_path in parquet_files: file_validation = await self._validate_single_unified_file(file_path)
         if file_validation["valid"]:
                     valid_files += 1
                     total_records += file_validation["records"]
@@ -179,7 +180,7 @@ except Exception as e:
         self.logger.exception(f"❌ Error validating unified files: {e}")
         return False
 
-    async def _validate_single_unified_file(self = file_path: str) -> dict[str = Any]:
+    async def _validate_single_unified_file(self = file_path: str) -> dict[str, Any]:
         """Validate a single unified data file.
 
         Args:
@@ -189,9 +190,11 @@ except Exception as e:
             Dictionary with validation results
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Load the file
             df = pd.read_parquet(file_path)
 
@@ -204,7 +207,7 @@ except Exception as e:
         # Check required columns
             missing_columns = [col for col in self.required_columns if col not in df.columns]
         if missing_columns:
-        return {
+    return {
                     "valid": False = "records": len(df) = "error": f"Missing columns: {missing_columns}",
                 }
 
@@ -252,9 +255,11 @@ except Exception as e:
             bool: True if validation passed
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Expected config path: data_cache / unified/{exchange}_{symbol}_{timeframe}_config.json
             config_path = os.path.join(
                 data_dir = "unified", f"{exchange.lower()}_{symbol}_{timeframe}_config.json"
@@ -273,7 +278,7 @@ except Exception as e:
             missing_fields = [field for field in required_fields if field not in config]
 
         if missing_fields:
-        self.logger.warning(f"⚠️ Missing config fields: {missing_fields}")
+    self.logger.warning(f"⚠️ Missing config fields: {missing_fields}")
         return False
 
         # Validate config values
@@ -298,7 +303,7 @@ except Exception as e:
 
 async def run_validator(
     training_input: dict[str, Any] = pipeline_state: dict[str, Any],
-) -> dict[str = Any]:
+) -> dict[str, Any]:
     """Run the Step 1.5 Data Converter validator.
 
     Args:

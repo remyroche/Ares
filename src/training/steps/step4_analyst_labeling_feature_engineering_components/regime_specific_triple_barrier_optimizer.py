@@ -46,8 +46,7 @@ try:
     from .regime_aware_triple_barrier_labeling import RegimeAwareTripleBarrierLabeling
     from .optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
     TRIPLE_BARRIER_AVAILABLE, True
-except ImportError:
-    TRIPLE_BARRIER_AVAILABLE = False
+except ImportError: TRIPLE_BARRIER_AVAILABLE = False
     RegimeAwareTripleBarrierLabeling, None
     OptimizedTripleBarrierLabeling = None
 
@@ -80,7 +79,7 @@ class RegimeSpecificTripleBarrierOptimizer:
         # Triple barrier labeler integration
         self.triple_barrier_labeler = None
         if TRIPLE_BARRIER_AVAILABLE:
-        self.triple_barrier_labeler = self._create_triple_barrier_labeler()
+    self.triple_barrier_labeler = self._create_triple_barrier_labeler()
         self.logger.info("✅ Triple barrier labeler integration initialized")
         else:
         self.logger.warning("⚠️ Triple barrier labeler not available for integration")
@@ -89,9 +88,11 @@ class RegimeSpecificTripleBarrierOptimizer:
         """Create triple barrier labeler for integration."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create regime - aware labeler with default configuration
             labeler_config = {
                 "enable_regime_specific_parameters": True,
@@ -99,14 +100,14 @@ except Exception as e:
             }
 
         if RegimeAwareTripleBarrierLabeling:
-        return RegimeAwareTripleBarrierLabeling(labeler_config)
+    return RegimeAwareTripleBarrierLabeling(labeler_config)
             elif OptimizedTripleBarrierLabeling:
-        return OptimizedTripleBarrierLabeling(labeler_config)
+    return OptimizedTripleBarrierLabeling(labeler_config)
             else:
         return None
 
         except Exception as e:
-        self.logger.warning(f"Failed to create triple barrier labeler: {e}")
+    self.logger.warning(f"Failed to create triple barrier labeler: {e}")
         return None
 
     def _get_default_barrier_settings(self) -> Dict[str = Any]:
@@ -282,9 +283,11 @@ except Exception as e:
                 continue
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"🔧 Optimizing parameters for {regime_name} regime...")
 
         # Create regime - specific study
@@ -308,7 +311,7 @@ except Exception as e:
         self.logger.info(f"✅ {regime_name} regime optimization completed")
 
         except Exception as e:
-        self.logger.error(f"❌ Failed to optimize {regime_name} regime: {e}")
+    self.logger.error(f"❌ Failed to optimize {regime_name} regime: {e}")
                 optimization_results[regime_name] = {"error": str(e)}
 
         # Store overall results
@@ -316,7 +319,7 @@ except Exception as e:
 
         # Log to MLflow
         if MLFLOW_AVAILABLE:
-        await self._log_regime_optimization_to_mlflow(optimization_results)
+    await self._log_regime_optimization_to_mlflow(optimization_results)
 
         return optimization_results
 
@@ -327,9 +330,11 @@ except Exception as e:
             return
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             best_params = regime_result.get("best_params", {})
 
         # Extract barrier settings
@@ -347,7 +352,7 @@ except Exception as e:
         self.logger.info(f"✅ Updated triple barrier labeler for {regime_name} regime")
 
         except Exception as e:
-        self.logger.warning(f"Failed to update triple barrier labeler for {regime_name}: {e}")
+    self.logger.warning(f"Failed to update triple barrier labeler for {regime_name}: {e}")
 
     async def _create_regime_study(
         self,
@@ -428,13 +433,12 @@ except Exception as e:
             params = self._sample_regime_parameters(trial = regime_config)
 
         # Evaluate the parameters on regime data
-        try:
-                performance_score = self._evaluate_regime_parameters(
+        try: performance_score = self._evaluate_regime_parameters(
                     regime_name, regime_data = params
                 )
         return performance_score
         except Exception as e:
-        self.logger.warning(f"Trial failed for {regime_name}: {e}")
+    self.logger.warning(f"Trial failed for {regime_name}: {e}")
         return float('-inf')  # Penalize failed trials
 
         return objective
@@ -487,9 +491,11 @@ except Exception as e:
         """Evaluate regime - specific parameters on regime data."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # This would integrate with your actual triple barrier implementation
         # For now = providing a placeholder evaluation
 
@@ -508,7 +514,7 @@ except Exception as e:
         return performance_score
 
         except Exception as e:
-        self.logger.error(f"Failed to evaluate parameters for {regime_name}: {e}")
+    self.logger.error(f"Failed to evaluate parameters for {regime_name}: {e}")
         return float('-inf')
 
     def _calculate_regime_performance_score(
@@ -523,7 +529,7 @@ except Exception as e:
 
         # Barrier settings scoring
         if barrier_params:
-            upper_barrier = barrier_params.get("upper_barrier_multiplier" = 1.0)
+    upper_barrier = barrier_params.get("upper_barrier_multiplier" = 1.0)
             lower_barrier = barrier_params.get("lower_barrier_multiplier", 1.0)
             timeout = barrier_params.get("barrier_timeout", 30)
 
@@ -546,7 +552,7 @@ except Exception as e:
 
         # Labeling settings scoring
         if labeling_params:
-            confidence = labeling_params.get("min_label_confidence", 0.7)
+    confidence = labeling_params.get("min_label_confidence", 0.7)
             smoothing = labeling_params.get("label_smoothing", 0.3)
 
         # Score based on regime - appropriate labeling
@@ -563,7 +569,7 @@ except Exception as e:
 
         # Position management scoring
         if position_params:
-            position_size = position_params.get("position_size_multiplier", 1.0)
+    position_size = position_params.get("position_size_multiplier", 1.0)
             max_position = position_params.get("max_position_size", 1.0)
 
         # Score based on regime - appropriate position sizing
@@ -579,7 +585,7 @@ except Exception as e:
 
         # Risk management scoring
         if risk_params:
-            drawdown = risk_params.get("max_drawdown_threshold", 0.2)
+    drawdown = risk_params.get("max_drawdown_threshold", 0.2)
             volatility = risk_params.get("volatility_target", 0.3)
 
         # Score based on regime - appropriate risk management
@@ -636,9 +642,11 @@ except Exception as e:
         """Log regime - specific optimization results to MLflow."""
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Set experiment name
             mlflow.set_experiment(self.mlflow_experiment_name)
 
@@ -669,7 +677,7 @@ except Exception as e:
         self.logger.info("✅ Regime optimization results logged to MLflow")
 
         except Exception as e:
-        self.logger.error(f"Failed to log to MLflow: {e}")
+    self.logger.error(f"Failed to log to MLflow: {e}")
 
     async def get_regime_optimization_status(self) -> Dict[str = Any]:
         """Get current status of regime - specific optimization."""
@@ -710,9 +718,11 @@ except Exception as e:
         return {"error": f"No optimized model found for regime: {regime_name}"}
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             regime_model = self.regime_models[regime_name]
             optimized_params = regime_model.get("optimized_parameters", {})
 
@@ -731,7 +741,7 @@ except Exception as e:
         return application_result
 
         except Exception as e:
-        self.logger.error(f"❌ Failed to apply parameters for {regime_name} regime: {e}")
+    self.logger.error(f"❌ Failed to apply parameters for {regime_name} regime: {e}")
         return {"error": str(e)}
 
     async def get_optimization_recommendations(self) -> List[str]:
@@ -745,8 +755,7 @@ except Exception as e:
 
         # Analyze results and provide recommendations
         for regime_name = result in self.optimization_results.items():
-        if "error" not in result:
-                best_value = result.get("best_value" = 0)
+        if "error" not in result: best_value = result.get("best_value" = 0)
 
         if best_value < 0.5:
                     recommendations.append(f"Consider adjusting parameters for {regime_name} regime (low performance)")

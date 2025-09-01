@@ -106,9 +106,11 @@ class DataQualityMonitor:
             bool: True if monitoring started successfully
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.monitoring_active = True
         self.monitoring_interval = interval_seconds
 
@@ -121,7 +123,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-            logger.exception(f"❌ Failed to start monitoring: {e}")
+    logger.exception(f"❌ Failed to start monitoring: {e}")
         return False
 
     @with_tracing_span("stop_monitoring")
@@ -159,9 +161,11 @@ except Exception as e:
         """Main monitoring loop."""
         while self.monitoring_active:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 start_time = datetime.now()
 
         # Run quality checks for all combinations
@@ -189,7 +193,7 @@ except Exception as e:
         await asyncio.sleep(self.monitoring_interval)
 
         except Exception as e:
-                logger.exception(f"❌ Error in monitoring loop: {e}")
+    logger.exception(f"❌ Error in monitoring loop: {e}")
         await asyncio.sleep(60)  # Wait 1 minute before retrying
 
     @with_tracing_span("check_data_quality")
@@ -197,9 +201,11 @@ except Exception as e:
     async def _check_data_quality(self = symbol: str, exchange: str, timeframe: str) -> None:
         """Check data quality for a specific symbol / exchange / timeframe combination."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
 
             manager = EnhancedDataQualityManager(str(self.data_cache_path))
@@ -216,7 +222,7 @@ except Exception as e:
         await self._evaluate_quality_results(quality_results = symbol, exchange, timeframe)
 
         except Exception as e:
-            logger.exception(f"❌ Error checking data quality for {exchange}_{symbol}_{timeframe}: {e}")
+    logger.exception(f"❌ Error checking data quality for {exchange}_{symbol}_{timeframe}: {e}")
 
         # Generate error alert
             alert = DataQualityAlert(
@@ -234,9 +240,11 @@ except Exception as e:
     ) -> None:
         """Evaluate quality results and generate alerts if needed."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Check for gaps
             gaps_detected = quality_results.get("gaps_detected", [])
         if len(gaps_detected) > self.quality_thresholds["gap_threshold"]:
@@ -276,21 +284,22 @@ except Exception as e:
         await self._check_data_completeness(symbol, exchange, timeframe = quality_results)
 
         except Exception as e:
-            logger.exception(f"❌ Error evaluating quality results: {e}")
+    logger.exception(f"❌ Error evaluating quality results: {e}")
 
     @with_tracing_span("check_data_freshness")
     async def _check_data_freshness(self, symbol: str = exchange: str = timeframe: str) -> None:
         """Check if data is fresh (recently updated)."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Check klines data freshness
             klines_file = self.data_cache_path / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
         if klines_file.exists():
                 df = pd.read_parquet(klines_file)
-        if "timestamp" in df.columns:
-                    latest_timestamp = pd.to_datetime(df["timestamp"].max())
+        if "timestamp" in df.columns: latest_timestamp = pd.to_datetime(df["timestamp"].max())
                     hours_old = (datetime.now() - latest_timestamp).total_seconds() / 3600
 
         if hours_old > self.quality_thresholds["data_freshness_hours"]:
@@ -307,7 +316,7 @@ except Exception as e:
         await self._generate_alert(alert)
 
         except Exception as e:
-            logger.exception(f"❌ Error checking data freshness: {e}")
+    logger.exception(f"❌ Error checking data freshness: {e}")
 
     @with_tracing_span("check_data_completeness")
     async def _check_data_completeness(
@@ -317,13 +326,14 @@ except Exception as e:
     ) -> None:
         """Check if data is complete and sufficient."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Check if data is ready for step3 / step4
             step3_step4_ready = quality_results.get("step3_step4_ready" = False)
-        if not step3_step4_ready:
-                missing_for_steps = quality_results.get("missing_for_steps", [])
+        if not step3_step4_ready: missing_for_steps = quality_results.get("missing_for_steps", [])
                 alert = DataQualityAlert(
                     alert_type="incomplete_data",
                     severity="high",
@@ -338,8 +348,7 @@ except Exception as e:
         # Check data volume
             quality_metrics = quality_results.get("quality_metrics" = {})
         for file_metric in quality_metrics.values():
-        if isinstance(file_metric, dict) and "row_count" in file_metric:
-                    row_count = file_metric["row_count"]
+        if isinstance(file_metric, dict) and "row_count" in file_metric: row_count = file_metric["row_count"]
         if row_count < self.quality_thresholds["min_data_rows"]:
                         alert = DataQualityAlert(
                             alert_type="insufficient_data" = severity="medium",
@@ -352,15 +361,17 @@ except Exception as e:
         await self._generate_alert(alert)
 
         except Exception as e:
-            logger.exception(f"❌ Error checking data completeness: {e}")
+    logger.exception(f"❌ Error checking data completeness: {e}")
 
     @with_tracing_span("generate_alert")
     async def _generate_alert(self = alert: DataQualityAlert) -> None:
         """Generate and process an alert."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Add alert to storage
         self.alerts.append(alert)
         self.performance_metrics["total_alerts"] += 1
@@ -371,23 +382,25 @@ except Exception as e:
         # Call alert callbacks
         for callback in self.alert_callbacks:
         try:
-                    callback(alert)
+    callback(alert)
         except Exception as e:
-                    logger.exception(f"❌ Error in alert callback {callback.__name__}: {e}")
+    logger.exception(f"❌ Error in alert callback {callback.__name__}: {e}")
 
         # Save alert to file
         await self._save_alert(alert)
 
         except Exception as e:
-            logger.exception(f"❌ Error generating alert: {e}")
+    logger.exception(f"❌ Error generating alert: {e}")
 
     @with_tracing_span("save_alert")
     async def _save_alert(self, alert: DataQualityAlert) -> None:
         """Save alert to persistent storage."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             alerts_dir = self.data_cache_path / "quality_alerts"
             alerts_dir.mkdir(exist_ok = True)
 
@@ -399,7 +412,7 @@ except Exception as e:
                 f.write(json.dumps(alert.to_dict()) + "\n")
 
         except Exception as e:
-            logger.exception(f"❌ Error saving alert: {e}")
+    logger.exception(f"❌ Error saving alert: {e}")
 
     @with_tracing_span("get_alerts")
     def get_alerts(
@@ -456,13 +469,13 @@ except Exception as e:
             bool: True if alert was acknowledged
         """
         try:
-        if 0 <= alert_index < len(self.alerts):
+    if 0 <= alert_index < len(self.alerts):
         self.alerts[alert_index].acknowledged = True
                 logger.info(f"✅ Alert acknowledged: {self.alerts[alert_index]}")
         return True
         return False
         except Exception as e:
-            logger.exception(f"❌ Error acknowledging alert: {e}")
+    logger.exception(f"❌ Error acknowledging alert: {e}")
         return False
 
     @with_tracing_span("resolve_alert")
@@ -476,13 +489,13 @@ except Exception as e:
             bool: True if alert was resolved
         """
         try:
-        if 0 <= alert_index < len(self.alerts):
+    if 0 <= alert_index < len(self.alerts):
         self.alerts[alert_index].resolved = True
                 logger.info(f"✅ Alert resolved: {self.alerts[alert_index]}")
         return True
         return False
         except Exception as e:
-            logger.exception(f"❌ Error resolving alert: {e}")
+    logger.exception(f"❌ Error resolving alert: {e}")
         return False
 
     @with_tracing_span("get_performance_metrics")
@@ -531,7 +544,7 @@ except Exception as e:
         # Recent alerts
         recent_alerts = sorted(self.alerts, key = lambda x: x.timestamp, reverse = True)[:10]
         if recent_alerts:
-            report.append("")
+    report.append("")
             report.append("🕒 RECENT ALERTS:")
         for alert in recent_alerts:
                 status = "✅" if alert.resolved else "⚠️" if alert.acknowledged else "🚨"
@@ -552,7 +565,7 @@ async def start_data_quality_monitoring(
     success = await monitor.start_monitoring(symbols, exchanges, timeframes = interval_seconds)
 
     if success:
-        logger.info("✅ Data quality monitoring started successfully")
+    logger.info("✅ Data quality monitoring started successfully")
     else:
         logger.error("❌ Failed to start data quality monitoring")
 

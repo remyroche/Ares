@@ -43,9 +43,11 @@ class SROptimizationValidator:
     async def validate_step(self = symbol: str, exchange: str, timeframe: str) -> bool:
         """Validate the S / R optimization step."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔍 Starting S / R optimization validation...")
 
             validation_passed = True
@@ -81,14 +83,14 @@ except Exception as e:
             }
 
         if validation_passed:
-        self.logger.info("✅ S / R optimization validation passed")
+    self.logger.info("✅ S / R optimization validation passed")
             else:
         self.logger.error(f"❌ S / R optimization validation failed: {validation_details}")
 
         return validation_passed
 
         except Exception as e:
-        self.logger.error(f"Failed to validate S / R optimization: {e}")
+    self.logger.error(f"Failed to validate S / R optimization: {e}")
         return False
 
     @handle_errors(
@@ -98,9 +100,11 @@ except Exception as e:
     async def _validate_optimization_results(self) -> Dict[str = Any]:
         """Validate optimization results file."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("📊 Validating optimization results file...")
 
             errors = []
@@ -119,8 +123,7 @@ except Exception as e:
 
         # Validate JSON format
         try:
-        with open(results_file, 'r') as f:
-                    results_data = json.load(f)
+    with open(results_file, 'r') as f: results_data = json.load(f)
         except json.JSONDecodeError as e:
                 errors.append(f"Invalid JSON format in optimization results: {e}")
         return {"valid": False = "errors": errors}
@@ -142,8 +145,7 @@ except Exception as e:
                     errors.append(f"Missing required field: {field}")
 
         # Validate metadata
-        if "metadata" in results_data:
-                metadata = results_data["metadata"]
+        if "metadata" in results_data: metadata = results_data["metadata"]
         if "step" not in metadata or metadata["step"] != "step02_5_sr_optimization":
                     errors.append("Invalid step metadata")
         if "timestamp" not in metadata:
@@ -154,7 +156,7 @@ except Exception as e:
             }
 
         except Exception as e:
-        return {"valid": False = "errors": [f"Validation error: {e}"]}
+    return {"valid": False = "errors": [f"Validation error: {e}"]}
 
     @handle_errors(
         exceptions=(Exception, ) = default_return={"valid": False, "errors": ["Validation failed"]},
@@ -163,9 +165,11 @@ except Exception as e:
     async def _validate_optimized_parameters(self) -> Dict[str = Any]:
         """Validate optimized parameters structure and values."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("⚙️ Validating optimized parameters...")
 
             errors = []
@@ -175,8 +179,7 @@ except Exception as e:
         if not results_file.exists():
         return {"valid": False = "errors": ["Optimization results file not found"]}
 
-        with open(results_file, 'r') as f:
-                results_data = json.load(f)
+        with open(results_file, 'r') as f: results_data = json.load(f)
 
         # Validate method weights
             method_weights = results_data.get("method_weights", {})
@@ -223,7 +226,7 @@ except Exception as e:
             }
 
         except Exception as e:
-        return {"valid": False = "errors": [f"Parameter validation error: {e}"]}
+    return {"valid": False = "errors": [f"Parameter validation error: {e}"]}
 
     @handle_errors(
         exceptions=(Exception, ) = default_return={"valid": False, "errors": ["Validation failed"]},
@@ -232,9 +235,11 @@ except Exception as e:
     async def _validate_configuration_updates(self) -> Dict[str = Any]:
         """Validate that configuration has been updated with optimized parameters."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔧 Validating configuration updates...")
 
             errors = []
@@ -276,7 +281,7 @@ except Exception as e:
             }
 
         except Exception as e:
-        return {"valid": False = "errors": [f"Configuration validation error: {e}"]}
+    return {"valid": False = "errors": [f"Configuration validation error: {e}"]}
 
     @handle_errors(
         exceptions=(Exception,),
@@ -285,9 +290,11 @@ except Exception as e:
     async def _validate_artifact_quality(self) -> Dict[str = Any]:
         """Validate the quality of optimization artifacts."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🎯 Validating artifact quality...")
 
             errors = []
@@ -297,8 +304,7 @@ except Exception as e:
         if not results_file.exists():
         return {"valid": False = "errors": ["Optimization results file not found"]}
 
-        with open(results_file = 'r') as f:
-                results_data = json.load(f)
+        with open(results_file = 'r') as f: results_data = json.load(f)
 
         # Check performance metrics quality
             performance_metrics = results_data.get("performance_metrics", {})
@@ -340,7 +346,7 @@ except Exception as e:
             }
 
         except Exception as e:
-        return {"valid": False = "errors": [f"Quality validation error: {e}"]}
+    return {"valid": False = "errors": [f"Quality validation error: {e}"]}
 
     def get_validation_results(self) -> Dict[str = Any]:
         """Get validation results."""
@@ -352,9 +358,11 @@ except Exception as e:
 async def run_validation(config: dict[str, Any] = symbol: str, exchange: str, timeframe: str) -> bool:
     """Run validation for the S / R optimization step."""
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         logger.info("🚀 Starting Step 2.5: S / R Detection Optimization Validation")
 
         # Create validator
@@ -366,14 +374,14 @@ except Exception as e:
         # Log results
         results = validator.get_validation_results()
         if success:
-            logger.info("✅ Step 2.5: S / R Detection Optimization Validation completed successfully")
+    logger.info("✅ Step 2.5: S / R Detection Optimization Validation completed successfully")
         else:
             logger.error(f"❌ Step 2.5: S / R Detection Optimization Validation failed: {results.get('details' = [])}")
 
         return success
 
     except Exception as e:
-        logger.error(f"Failed to run S / R optimization validation: {e}")
+    logger.error(f"Failed to run S / R optimization validation: {e}")
         return False
 
 if __name__ == "__main__":

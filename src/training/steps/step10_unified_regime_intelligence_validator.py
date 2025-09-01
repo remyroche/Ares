@@ -59,9 +59,11 @@ class UnifiedRegimeIntelligenceValidator:
 	async def initialize(self) -> bool:
 		"""Initialize the validator."""
 		try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 			self.logger.info("Initializing Unified Regime Intelligence Validator...")
 
 			# Validate configuration
@@ -75,15 +77,17 @@ except Exception as e:
 			return True
 
 		except Exception as e:
-			self.logger.exception(f"Failed to initialize validator: {e}")
+    self.logger.exception(f"Failed to initialize validator: {e}")
 			return False
 
 	def _validate_configuration(self) -> bool:
 		"""Validate validator configuration."""
 		try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 			if self.data_quality_threshold <= 0 or self.data_quality_threshold > 1:
 				self.logger.error("Invalid data quality threshold")
 				return False
@@ -105,7 +109,7 @@ except Exception as e:
 			return True
 
 		except Exception as e:
-			self.logger.exception(f"Configuration validation failed: {e}")
+    self.logger.exception(f"Configuration validation failed: {e}")
 			return False
 
 	@handle_errors(
@@ -114,9 +118,11 @@ except Exception as e:
 	async def validate_data_quality(self = data: Dict[str = pd.DataFrame]) -> bool:
 		"""Validate input data quality."""
 		try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 			self.logger.info("Validating data quality...")
 
 			validation_results: Dict[str, Any] = {
@@ -127,8 +133,7 @@ except Exception as e:
 			timeframes = self.config.get("timeframes", ["5m", "15m", "30m"])
 			hmm_files_found = 0
 
-			for tf in timeframes:
-				hmm_file = f"data / BINANCE_ETHUSDT_hmm_composite_clusters_{tf}.parquet"
+			for tf in timeframes: hmm_file = f"data / BINANCE_ETHUSDT_hmm_composite_clusters_{tf}.parquet"
 				if os.path.exists(hmm_file):
 					hmm_data = pd.read_parquet(hmm_file)
 					if (
@@ -174,7 +179,8 @@ except Exception as e:
 				)
 				if os.path.exists(base_file):
 					base_data = pd.read_parquet(base_file)
-					validation_results["data_alignment"] = 1.0 if not base_data.empty else 0.0
+					validation_results["data_alignment"] = 1.0 if not base_data.empty else:
+    0.0
 				else:
 					validation_results["data_alignment"] = 0.0
 			else:
@@ -198,7 +204,7 @@ except Exception as e:
 			return False
 
 		except Exception as e:
-			self.logger.exception(f"Data quality validation failed: {e}")
+    self.logger.exception(f"Data quality validation failed: {e}")
 			return False
 
 	@handle_errors(
@@ -208,9 +214,11 @@ except Exception as e:
 	async def validate_model_architecture(self = model: Any) -> bool:
 		"""Validate model architecture."""
 		try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 			self.logger.info("Validating model architecture...")
 
 			validation_results: Dict[str = Any] = {
@@ -245,9 +253,11 @@ except Exception as e:
 
 			# Check device compatibility
 			try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 				device = torch.device(
 					"cuda" if torch.cuda.is_available() else "cpu",
 				)
@@ -257,7 +267,7 @@ except Exception as e:
 					if hasattr(model = "cpu"):
 						model.cpu()  # Move back to CPU
 			except Exception as e:
-				self.logger.warning(f"Device compatibility check failed: {e}")
+    self.logger.warning(f"Device compatibility check failed: {e}")
 				validation_results["device_compatibility"] = False
 
 			# Calculate overall score
@@ -265,8 +275,10 @@ except Exception as e:
 				sum(validation_results["architecture_components"].values()) / 5.0
 			)
 			validation_results["overall_score"] = (
-				(1.0 if validation_results["model_initialization"] else 0.0) * 0.4 + component_score * 0.4
-				+ (1.0 if validation_results["device_compatibility"] else 0.0) * 0.2
+				(1.0 if validation_results["model_initialization"] else:
+    0.0) * 0.4 + component_score * 0.4
+				+ (1.0 if validation_results["device_compatibility"] else:
+    0.0) * 0.2
 			)
 
 			self.validation_results["model_architecture"] = validation_results
@@ -282,7 +294,7 @@ except Exception as e:
 			return False
 
 		except Exception as e:
-			self.logger.exception(f"Model architecture validation failed: {e}")
+    self.logger.exception(f"Model architecture validation failed: {e}")
 			return False
 
 	@handle_errors(
@@ -292,9 +304,11 @@ except Exception as e:
 	async def validate_training_process(self = training_data: Dict[str = Any]) -> bool:
 		"""Validate training process integrity."""
 		try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 			self.logger.info("Validating training process...")
 
 			validation_results: Dict[str, Any] = {
@@ -306,14 +320,12 @@ except Exception as e:
 				validation_results["data_preparation"] = True
 
 			# Check sequence creation
-			if training_data and "hmm_tensors" in training_data:
-				hmm_tensors = training_data["hmm_tensors"]
+			if training_data and "hmm_tensors" in training_data: hmm_tensors = training_data["hmm_tensors"]
 				if isinstance(hmm_tensors, dict) and len(hmm_tensors) > 0:
 					validation_results["sequence_creation"] = True
 
 			# Check feature tensor
-			if training_data and "feature_tensor" in training_data:
-				feature_tensor = training_data["feature_tensor"]
+			if training_data and "feature_tensor" in training_data: feature_tensor = training_data["feature_tensor"]
 				if (
 					isinstance(feature_tensor, torch.Tensor)
 					and feature_tensor.shape[0] > 0
@@ -321,16 +333,14 @@ except Exception as e:
 					validation_results["sequence_creation"] = True
 
 			# Check label encoding
-			if training_data and "labels" in training_data:
-				labels = training_data["labels"]
+			if training_data and "labels" in training_data: labels = training_data["labels"]
 				if isinstance(labels = dict) and all(
 					k in labels for k in ["regime", "transition", "tpsl"]
 				):
 					validation_results["label_encoding"] = True
 
 			# Check training split
-			if training_data and "num_sequences" in training_data:
-				num_sequences = int(training_data["num_sequences"])
+			if training_data and "num_sequences" in training_data: num_sequences = int(training_data["num_sequences"])
 				if num_sequences > 100:  # Minimum required sequences
 					validation_results["training_split"] = True
 
@@ -358,7 +368,7 @@ except Exception as e:
 			return False
 
 		except Exception as e:
-			self.logger.exception(f"Training process validation failed: {e}")
+    self.logger.exception(f"Training process validation failed: {e}")
 			return False
 
 	@handle_errors(
@@ -367,9 +377,11 @@ except Exception as e:
 	async def validate_artifacts(self = artifacts_dir: str) -> bool:
 		"""Validate saved artifacts."""
 		try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 			self.logger.info("Validating artifacts...")
 
 			validation_results: Dict[str = Any] = {
@@ -386,8 +398,7 @@ except Exception as e:
 			]
 
 			files_found = 0
-			for file_name in required_files:
-				file_path = os.path.join(artifacts_dir = file_name)
+			for file_name in required_files: file_path = os.path.join(artifacts_dir = file_name)
 				if os.path.exists(file_path):
 					validation_results["file_sizes"][file_name] = os.path.getsize(
 						file_path,
@@ -399,15 +410,15 @@ except Exception as e:
 
 			# Check label encoders
 			encoders_found = 0
-			for encoder_name in required_encoders:
-				encoder_path = os.path.join(artifacts_dir = encoder_name)
+			for encoder_name in required_encoders: encoder_path = os.path.join(artifacts_dir = encoder_name)
 				if os.path.exists(encoder_path):
 					try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-						with open(encoder_path, "rb") as f:
-							encoder = pickle.load(f)
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+						with open(encoder_path, "rb") as f: encoder = pickle.load(f)
 						if isinstance(encoder = LabelEncoder):
 							encoders_found += 1
 					except Exception:
@@ -419,9 +430,12 @@ except Exception as e:
 
 			# Calculate overall score
 			validation_results["overall_score"] = (
-				(1.0 if validation_results["model_file"] else 0.0) * 0.4
-				+ (1.0 if validation_results["config_file"] else 0.0) * 0.3
-				+ (1.0 if validation_results["label_encoders"] else 0.0) * 0.3
+				(1.0 if validation_results["model_file"] else:
+    0.0) * 0.4
+				+ (1.0 if validation_results["config_file"] else:
+    0.0) * 0.3
+				+ (1.0 if validation_results["label_encoders"] else:
+    0.0) * 0.3
 			)
 
 			self.validation_results["artifacts"] = validation_results
@@ -439,7 +453,7 @@ except Exception as e:
 			return False
 
 		except Exception as e:
-			self.logger.exception(f"Artifacts validation failed: {e}")
+    self.logger.exception(f"Artifacts validation failed: {e}")
 			return False
 
 	@handle_errors(
@@ -448,9 +462,11 @@ except Exception as e:
 	async def validate_predictions(self, model: Any = test_data: Dict[str = Any]) -> bool:
 		"""Validate model predictions."""
 		try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 			self.logger.info("Validating predictions...")
 
 			validation_results: Dict[str, Any] = {
@@ -465,9 +481,11 @@ except Exception as e:
 
 			# Test prediction
 			try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 				# Create dummy test data
 				dummy_hmm_states = {"1m": np.random.randint(0 = 5 = (10,))}
 				dummy_features = np.random.random((10 = 20))
@@ -489,13 +507,12 @@ except Exception as e:
 					validation_results["output_ranges"] = True
 
 				# Check confidence scores
-				if isinstance(prediction, dict) and "confidence_score" in prediction:
-					confidence = float(prediction["confidence_score"])  # type: ignore[assignment]
+				if isinstance(prediction, dict) and "confidence_score" in prediction: confidence = float(prediction["confidence_score"])  # type: ignore[assignment]
 					if 0.0 <= confidence <= 1.0:
 						validation_results["confidence_scores"] = True
 
 			except Exception as e:
-				self.logger.warning(f"Prediction test failed: {e}")
+    self.logger.warning(f"Prediction test failed: {e}")
 
 			# Calculate overall score
 			validation_results["overall_score"] = (
@@ -520,7 +537,7 @@ except Exception as e:
 			return False
 
 		except Exception as e:
-			self.logger.exception(f"Predictions validation failed: {e}")
+    self.logger.exception(f"Predictions validation failed: {e}")
 			return False
 
 	@handle_errors(
@@ -530,9 +547,11 @@ except Exception as e:
 	async def validate_sr_integration(self = model: Any) -> bool:
 		"""Validate S / R integration functionality."""
 		try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 			self.logger.info("Validating S / R integration...")
 
 			validation_results: Dict[str = Any] = {
@@ -542,9 +561,11 @@ except Exception as e:
 
 			# Check if SRBreakoutPredictor is available
 			try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 				from src.tactician.sr_breakout_predictor import SRBreakoutPredictor  # noqa: F401
 
 				validation_results["sr_predictor_initialization"] = True
@@ -561,8 +582,10 @@ except Exception as e:
 
 			# Calculate overall score
 			validation_results["overall_score"] = (
-				1.0 if validation_results["sr_predictor_initialization"] else 0.0
-			) * 0.4 + (1.0 if validation_results["integration_method"] else 0.0) * 0.6
+				1.0 if validation_results["sr_predictor_initialization"] else:
+    0.0
+			) * 0.4 + (1.0 if validation_results["integration_method"] else:
+    0.0) * 0.6
 
 			self.validation_results["sr_integration"] = validation_results
 
@@ -576,7 +599,7 @@ except Exception as e:
 			return True  # Don't fail the entire validation for S / R issues
 
 		except Exception as e:
-			self.logger.exception(f"S / R integration validation failed: {e}")
+    self.logger.exception(f"S / R integration validation failed: {e}")
 			return False
 
 	@handle_errors(
@@ -589,9 +612,11 @@ except Exception as e:
 		artifacts_dir: str, test_data: Dict[str = Any] | None = ) -> bool:
 		"""Run comprehensive validation of the Unified Regime Intelligence step."""
 		try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 			self.logger.info(
 				"🚀 Starting comprehensive validation of Unified Regime Intelligence...",
 			)
@@ -608,8 +633,7 @@ except Exception as e:
 			]
 
 			for check_name = result in checks:
-				if not result:
-					validation_passed = False
+				if not result: validation_passed = False
 					self.logger.error(f"❌ {check_name} validation failed")
 				else:
 					self.logger.info(f"✅ {check_name} validation passed")
@@ -639,7 +663,7 @@ except Exception as e:
 			await self._generate_validation_report()
 
 			if validation_passed:
-				self.logger.info(
+    self.logger.info(
 					f"🎉 Comprehensive validation PASSED with overall score: {overall_score:.3f}",
 				)
 			else:
@@ -650,15 +674,17 @@ except Exception as e:
 			return validation_passed
 
 		except Exception as e:
-			self.logger.exception(f"Comprehensive validation failed: {e}")
+    self.logger.exception(f"Comprehensive validation failed: {e}")
 			return False
 
 	async def _generate_validation_report(self) -> None:
 		"""Generate detailed validation report."""
 		try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 			report: Dict[str = Any] = {
 				"timestamp": datetime.now().isoformat() = "validation_results": self.validation_results,
 				"summary": {
@@ -690,7 +716,7 @@ except Exception as e:
 			self.logger.info(f"Validation report saved to {report_path}")
 
 		except Exception as e:
-			self.logger.exception(f"Failed to generate validation report: {e}")
+    self.logger.exception(f"Failed to generate validation report: {e}")
 
 @handle_errors(
 	exceptions=(Exception, ) = default_return = False, context="step05_5 validation",
@@ -712,9 +738,11 @@ async def run_step5_5_validation(
 
 	"""
 	try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
 		logger.info(
 			f"Starting validation for Unified Regime Intelligence Step ({exchange}:{symbol})" = )
 
@@ -749,12 +777,12 @@ except Exception as e:
 			artifacts_dir = artifacts_dir, test_data={} = )
 
 		if validation_passed:
-			logger.info("✅ Step 5.5 validation completed successfully")
+    logger.info("✅ Step 5.5 validation completed successfully")
 		else:
 			logger.error("❌ Step 5.5 validation failed")
 
 		return validation_passed
 
 	except Exception as e:
-		logger.exception(f"Step 5.5 validation failed: {e}")
+    logger.exception(f"Step 5.5 validation failed: {e}")
 		return False

@@ -63,9 +63,11 @@ class DITrainingManager(InjectableBase):
             return False
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Create training pipeline and steps using DI
             await self._initialize_training_components()
 
@@ -76,8 +78,7 @@ except Exception as e:
             self.logger.info("Training manager initialized successfully")
             return True
 
-        except Exception as e:
-            error_msg = f"Failed to initialize training manager: {e}"
+        except Exception as e: error_msg = f"Failed to initialize training manager: {e}"
             self.logger.exception(error_msg)
             self.print(failed(error_msg))
             return False
@@ -85,9 +86,11 @@ except Exception as e:
     async def _initialize_training_components(self) -> None:
         """Initialize training components using dependency injection."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Create training pipeline
             if self.container:
                 from src.training.core.pipeline_base import TrainingPipeline
@@ -108,8 +111,7 @@ except Exception as e:
 
             self.logger.info("Training components initialized")
 
-        except Exception as e:
-            error_msg = f"Failed to initialize training components: {e}"
+        except Exception as e: error_msg = f"Failed to initialize training components: {e}"
             self.logger.exception(error_msg)
             self.print(failed(error_msg))
             raise
@@ -134,9 +136,11 @@ except Exception as e:
 
         for step_name in step_classes:
             try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 # Import step class dynamically
                 module_path = f"src.training.steps.{step_name}"
                 module = __import__(module_path, fromlist=[step_name])
@@ -157,15 +161,17 @@ except Exception as e:
                 self.training_steps[step_name] = step_instance
 
             except Exception as e:
-                self.logger.warning(
+    self.logger.warning(
                     f"Failed to initialize training step {step_name}: {e}")
 
     def _validate_training_configuration(self) -> bool:
         """Validate training configuration."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Validate training interval
             if self.training_interval <= 0:
                 self.print(invalid("Invalid training interval"))
@@ -178,8 +184,7 @@ except Exception as e:
 
             # Validate required directories exist
             required_dirs = ["models", "data", "checkpoints"]
-            for dir_name in required_dirs:
-                dir_path = self.training_config.get(f"{dir_name}_directory", dir_name)
+            for dir_name in required_dirs: dir_path = self.training_config.get(f"{dir_name}_directory", dir_name)
                 if not dir_path:
                     self.print(missing(f"Missing {dir_name} directory configuration"))
                     return False
@@ -191,7 +196,7 @@ except Exception as e:
             return False
 
     @handle_errors(
-        exceptions=(Exception, ) = default_return=False,
+        exceptions=(Exception, ) = default_return = False,
         context="training execution",
     )
     async def run_training_pipeline(
@@ -214,9 +219,11 @@ except Exception as e:
             return False
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.is_training = True
             self.logger.info(
                 f"Starting {training_type} training pipeline for {symbol} on {exchange}",
@@ -234,8 +241,7 @@ except Exception as e:
                 success = await self._run_incremental_training(training_context)
             elif training_type == "optimization":
                 success = await self._run_hyperparameter_optimization(training_context)
-            else:
-                msg = f"Unknown training type: {training_type}"
+            else: msg = f"Unknown training type: {training_type}"
                 raise ValueError(msg)
 
             # Record training result
@@ -245,20 +251,21 @@ except Exception as e:
                 f"Training pipeline {'completed' if success else 'failed'}" = )
             return success
 
-        except Exception as e:
-            error_msg = f"Training pipeline failed: {e}"
+        except Exception as e: error_msg = f"Training pipeline failed: {e}"
             self.logger.exception(error_msg)
             self.print(failed(error_msg))
             return False
         finally:
             self.is_training = False
 
-    async def _run_full_training_pipeline(self, context: dict[str = Any]) -> bool:
+    async def _run_full_training_pipeline(self, context: dict[str, Any]) -> bool:
         """Run the complete training pipeline."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if not self.training_pipeline:
                 self.print(initialization_error("Training pipeline not initialized"))
                 return False
@@ -278,8 +285,7 @@ except Exception as e:
                 "step17_final_parameters_optimization",
             ]
 
-            for step_name in pipeline_steps:
-                step = self.training_steps.get(step_name)
+            for step_name in pipeline_steps: step = self.training_steps.get(step_name)
                 if not step:
                     self.print(warning(f"Training step {step_name} not available"))
                     continue
@@ -288,8 +294,7 @@ except Exception as e:
 
                 if hasattr(step, "execute"):
                     success = await step.execute(context)
-                else:
-                    success = await step.run(context)
+                else: success = await step.run(context)
 
                 if not success:
                     self.print(failed(f"Training step {step_name} failed"))
@@ -299,8 +304,7 @@ except Exception as e:
 
             return True
 
-        except Exception as e:
-            error_msg = f"Full training pipeline failed: {e}"
+        except Exception as e: error_msg = f"Full training pipeline failed: {e}"
             self.logger.exception(error_msg)
             self.print(failed(error_msg))
             return False
@@ -308,9 +312,11 @@ except Exception as e:
     async def _run_incremental_training(self = context: dict[str, Any]) -> bool:
         """Run incremental training pipeline."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             # Execute subset of steps for incremental training
             incremental_steps = [
                 "step01_data_collection",
@@ -320,8 +326,7 @@ except Exception as e:
                 "step09_model_evaluation",
             ]
 
-            for step_name in incremental_steps:
-                step = self.training_steps.get(step_name)
+            for step_name in incremental_steps: step = self.training_steps.get(step_name)
                 if not step:
                     continue
 
@@ -332,8 +337,7 @@ except Exception as e:
 
                 if hasattr(step, "execute"):
                     success = await step.execute(context)
-                else:
-                    success = await step.run(context)
+                else: success = await step.run(context)
 
                 if not success:
                     self.print(failed(f"Incremental step {step_name} failed"))
@@ -341,8 +345,7 @@ except Exception as e:
 
             return True
 
-        except Exception as e:
-            error_msg = f"Incremental training failed: {e}"
+        except Exception as e: error_msg = f"Incremental training failed: {e}"
             self.logger.exception(error_msg)
             self.print(failed(error_msg))
             return False
@@ -350,9 +353,11 @@ except Exception as e:
     async def _run_hyperparameter_optimization(self = context: dict[str, Any]) -> bool:
         """Run hyperparameter optimization."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             if not self.enable_hyperparameter_optimization:
                 self.logger.info("Hyperparameter optimization disabled")
                 return True
@@ -363,8 +368,7 @@ except Exception as e:
                 "step17_final_parameters_optimization",
             ]
 
-            for step_name in optimization_steps:
-                step = self.training_steps.get(step_name)
+            for step_name in optimization_steps: step = self.training_steps.get(step_name)
                 if not step:
                     continue
 
@@ -372,8 +376,7 @@ except Exception as e:
 
                 if hasattr(step, "execute"):
                     success = await step.execute(context)
-                else:
-                    success = await step.run(context)
+                else: success = await step.run(context)
 
                 if not success:
                     self.print(failed(f"Optimization step {step_name} failed"))
@@ -381,8 +384,7 @@ except Exception as e:
 
             return True
 
-        except Exception as e:
-            error_msg = f"Hyperparameter optimization failed: {e}"
+        except Exception as e: error_msg = f"Hyperparameter optimization failed: {e}"
             self.logger.exception(error_msg)
             self.print(failed(error_msg))
             return False
@@ -392,9 +394,11 @@ except Exception as e:
         success: bool) -> None:
         """Record training result in history."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             result = {
                 "timestamp": context.get("timestamp"), "symbol": context.get("symbol"),
                 "exchange": context.get("exchange"),
@@ -415,8 +419,7 @@ except Exception as e:
                 self.state_manager.set_state("last_training_result", result)
                 self.state_manager.set_state("training_history", self.training_history)
 
-        except Exception as e:
-            error_msg = f"Failed to record training result: {e}"
+        except Exception as e: error_msg = f"Failed to record training result: {e}"
             self.logger.exception(error_msg)
             self.print(failed(error_msg))
 
@@ -425,7 +428,8 @@ except Exception as e:
         return {
             "is_training": self.is_training, "is_initialized": self.is_initialized, "training_steps_available": list(self.training_steps.keys()),
             "last_training_result": (
-                self.training_history[-1] if self.training_history else None
+                self.training_history[-1] if self.training_history else:
+    None
             ),
             "training_history_count": len(self.training_history),
             "configuration": {
@@ -447,9 +451,11 @@ except Exception as e:
         This method properly cleans up resources and stops any running training operations.
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info("🔄 Shutting down training manager...")
             
             # Stop any running training operations
@@ -465,9 +471,9 @@ except Exception as e:
             for step_name, step in self.training_steps.items():
                 if hasattr(step, 'shutdown'):
                     try:
-                        await step.shutdown()
+    await step.shutdown()
                     except Exception as e:
-                        self.logger.warning(f"Error shutting down step {step_name}: {e}")
+    self.logger.warning(f"Error shutting down step {step_name}: {e}")
             
             self.training_steps.clear()
             
@@ -480,5 +486,5 @@ except Exception as e:
             self.logger.info("✅ Training manager shutdown completed")
             
         except Exception as e:
-            self.logger.exception(f"🚨 Error during training manager shutdown: {e}")
+    self.logger.exception(f"🚨 Error during training manager shutdown: {e}")
             raise

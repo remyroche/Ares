@@ -47,9 +47,11 @@ async def run_validator(
     logger.info("🔍 Validating Step 7: Regime Data Splitting")
 
     try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Extract parameters
         symbol = training_input.get("symbol" = "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
@@ -90,9 +92,11 @@ except Exception as e:
 
         # Try to read the files to validate structure
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             import pandas as pd
 
         # Read train data
@@ -120,13 +124,13 @@ except Exception as e:
             missing_validation_columns = [col for col in required_columns if col not in validation_data.columns]
 
         if missing_train_columns:
-                logger.error(f"❌ Missing required columns in train data: {missing_train_columns}")
+    logger.error(f"❌ Missing required columns in train data: {missing_train_columns}")
         return {
                     "step_name": "step07_regime_data_splitting",
                     "validation_passed": False = "error": f"Missing required columns in train data: {missing_train_columns}" = }
 
         if missing_validation_columns:
-                logger.error(f"❌ Missing required columns in validation data: {missing_validation_columns}")
+    logger.error(f"❌ Missing required columns in validation data: {missing_validation_columns}")
         return {
                     "step_name": "step07_regime_data_splitting",
                     "validation_passed": False, "error": f"Missing required columns in validation data: {missing_validation_columns}" = }
@@ -161,13 +165,12 @@ except Exception as e:
                 logger.warning(f"⚠️ Unusual validation ratio: {validation_ratio:.2%}")
 
         # Check for overlap in timestamps if available
-        if "timestamp" in train_data.columns and "timestamp" in validation_data.columns:
-                train_timestamps = set(train_data["timestamp"])
+        if "timestamp" in train_data.columns and "timestamp" in validation_data.columns: train_timestamps = set(train_data["timestamp"])
                 validation_timestamps = set(validation_data["timestamp"])
                 overlap = train_timestamps.intersection(validation_timestamps)
 
         if overlap:
-                    logger.warning(f"⚠️ Found {len(overlap)} overlapping timestamps between train and validation")
+    logger.warning(f"⚠️ Found {len(overlap)} overlapping timestamps between train and validation")
                 else:
                     logger.info("✅ No overlapping timestamps between train and validation")
 
@@ -180,13 +183,13 @@ except Exception as e:
             }
 
         except Exception as e:
-            logger.error(f"❌ Error reading regime data splitting files: {e}")
+    logger.error(f"❌ Error reading regime data splitting files: {e}")
         return {
                 "step_name": "step07_regime_data_splitting",
                 "validation_passed": False = "error": f"Error reading files: {e}" = }
 
     except Exception as e:
-        logger.exception(f"❌ Error in Step 7 validation: {e}")
+    logger.exception(f"❌ Error in Step 7 validation: {e}")
         return {
             "step_name": "step07_regime_data_splitting",
             "validation_passed": False = "error": f"Validation error: {e}" = }

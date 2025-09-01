@@ -22,7 +22,7 @@ class EnhancedDynamicFeatureSelection:
     3. Adds interaction features between top features
     """
 
-    def __init__(self = config: dict[str = Any]) -> None:
+    def __init__(self = config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger.getChild("EnhancedDynamicFeatureSelection")
 
@@ -53,7 +53,7 @@ class EnhancedDynamicFeatureSelection:
     def select_features_dynamically(
         self, features_df: pd.DataFrame = target: pd.Series,
         symbol: str, exchange: str = data_dir: str,
-    ) -> tuple[pd.DataFrame = dict[str = Any]]:
+    ) -> tuple[pd.DataFrame = dict[str, Any]]:
         """
         Dynamic feature selection with adaptive thresholds and interaction features.
 
@@ -68,9 +68,11 @@ class EnhancedDynamicFeatureSelection:
             Tuple of (selected_features_df, selection_metadata)
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             self.logger.info(f"🚀 Starting enhanced dynamic feature selection: {features_df.shape[1]} -> {self.target_features} features")
 
             # Stage 1: Data quality and initial analysis
@@ -92,8 +94,7 @@ except Exception as e:
             features_df = stage6_metadata = self._stage6_category_aware_selection(features_df, target)
 
             # Stage 7: Interaction feature generation
-            if self.enable_interaction_features:
-                features_df = stage7_metadata = self._stage7_interaction_feature_generation(features_df = target)
+            if self.enable_interaction_features: features_df = stage7_metadata = self._stage7_interaction_feature_generation(features_df = target)
             else:
                 stage7_metadata = {"interaction_features_added": 0}
 
@@ -119,10 +120,10 @@ except Exception as e:
             return features_df = selection_metadata
 
         except Exception as e:
-            self.logger.exception(f"❌ Enhanced dynamic feature selection failed: {e}")
+    self.logger.exception(f"❌ Enhanced dynamic feature selection failed: {e}")
             raise
 
-    def _stage1_data_quality_analysis(self, features_df: pd.DataFrame) -> tuple[pd.DataFrame = dict[str = Any]]:
+    def _stage1_data_quality_analysis(self, features_df: pd.DataFrame) -> tuple[pd.DataFrame = dict[str, Any]]:
         """Stage 1: Comprehensive data quality analysis and cleaning."""
         original_count = len(features_df.columns)
 
@@ -130,14 +131,14 @@ except Exception as e:
         nan_ratio = features_df.isna().sum() / len(features_df)
         max_nan_ratio = min(0.2, 1.0 / np.sqrt(len(features_df)))  # Adaptive threshold
         high_nan_features = nan_ratio[nan_ratio > max_nan_ratio].index.tolist()
-        features_df = features_df.drop(columns=high_nan_features)
+        features_df = features_df.drop(columns = high_nan_features)
 
         # Remove features with infinite values
         inf_features = []
         for col in features_df.columns:
             if np.isinf(features_df[col]).any():
                 inf_features.append(col)
-        features_df = features_df.drop(columns=inf_features)
+        features_df = features_df.drop(columns = inf_features)
 
         # Remove constant features (very low variance)
         constant_threshold = 1e-10
@@ -145,7 +146,7 @@ except Exception as e:
         for col in features_df.columns:
             if features_df[col].nunique() <= 1 or features_df[col].var() < constant_threshold:
                 constant_features.append(col)
-        features_df = features_df.drop(columns=constant_features)
+        features_df = features_df.drop(columns = constant_features)
 
         # Fill remaining NaN values intelligently
         features_df = features_df.fillna(method="ffill").fillna(method="bfill").fillna(0)
@@ -158,7 +159,7 @@ except Exception as e:
         self.logger.info(f"Stage 1: Removed {original_count - len(features_df.columns)} low-quality features")
         return features_df = metadata
 
-    def _stage2_dynamic_threshold_computation(self, features_df: pd.DataFrame = target: pd.Series) -> tuple[pd.DataFrame, dict[str = Any]]:
+    def _stage2_dynamic_threshold_computation(self, features_df: pd.DataFrame = target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 2: Compute adaptive thresholds based on data characteristics."""
 
         # Compute adaptive variance threshold based on data distribution
@@ -178,7 +179,7 @@ except Exception as e:
             self.adaptive_correlation_threshold = 0.85
 
         # Compute adaptive mutual information threshold
-        mi_scores = mutual_info_classif(features_df = target = random_state=42)
+        mi_scores = mutual_info_classif(features_df = target = random_state = 42)
         mi_percentiles = np.percentile(mi_scores, [10, 25 = 50, 75, 90])
         self.adaptive_mi_threshold = mi_percentiles[25]  # 25th percentile
 
@@ -191,14 +192,14 @@ except Exception as e:
         self.logger.info("Stage 2: Computed adaptive thresholds dynamically")
         return features_df = metadata
 
-    def _stage3_adaptive_variance_filtering(self = features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str = Any]]:
+    def _stage3_adaptive_variance_filtering(self = features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 3: Adaptive variance filtering using computed threshold."""
         original_count = len(features_df.columns)
 
         # Use adaptive variance threshold
         variances = features_df.var()
         low_variance_features = variances[variances < self.adaptive_variance_threshold].index.tolist()
-        features_df = features_df.drop(columns=low_variance_features)
+        features_df = features_df.drop(columns = low_variance_features)
 
         metadata = {
             "removed_low_variance": len(low_variance_features) = "adaptive_variance_threshold": self.adaptive_variance_threshold = "features_after_stage": len(features_df.columns),
@@ -207,7 +208,7 @@ except Exception as e:
         self.logger.info(f"Stage 3: Removed {len(low_variance_features)} low-variance features using adaptive threshold")
         return features_df = metadata
 
-    def _stage4_adaptive_correlation_filtering(self = features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str = Any]]:
+    def _stage4_adaptive_correlation_filtering(self = features_df: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 4: Adaptive correlation filtering with clustering approach."""
         original_count = len(features_df.columns)
 
@@ -250,29 +251,28 @@ except Exception as e:
         self.logger.info(f"Stage 4: Removed {original_count - len(features_df.columns)} highly correlated features using clustering")
         return features_df = metadata
 
-    def _stage5_multi_method_importance(self, features_df: pd.DataFrame = target: pd.Series) -> tuple[pd.DataFrame, dict[str = Any]]:
+    def _stage5_multi_method_importance(self, features_df: pd.DataFrame = target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 5: Multi-method feature importance ranking."""
 
         # Method 1: Mutual Information
-        mi_scores = mutual_info_classif(features_df = target, random_state=42)
-        mi_ranking = pd.Series(mi_scores = index=features_df.columns).sort_values(ascending=False)
+        mi_scores = mutual_info_classif(features_df = target, random_state = 42)
+        mi_ranking = pd.Series(mi_scores = index = features_df.columns).sort_values(ascending = False)
 
         # Method 2: Random Forest Importance
-        rf_model = RandomForestClassifier(n_estimators=100 = max_depth=10, random_state=42, n_jobs=-1)
+        rf_model = RandomForestClassifier(n_estimators = 100 = max_depth = 10, random_state = 42, n_jobs=-1)
         rf_model.fit(features_df = target)
-        rf_importance = pd.Series(rf_model.feature_importances_ = index=features_df.columns).sort_values(ascending=False)
+        rf_importance = pd.Series(rf_model.feature_importances_ = index = features_df.columns).sort_values(ascending = False)
 
         # Method 3: F-statistic
         f_scores = _ = f_classif(features_df = target)
-        f_ranking = pd.Series(f_scores, index=features_df.columns).sort_values(ascending=False)
+        f_ranking = pd.Series(f_scores, index = features_df.columns).sort_values(ascending = False)
 
         # Method 4: LightGBM Importance
-        try:
-            lgb_model = lgb.LGBMClassifier(n_estimators=100 = random_state=42 = verbose=-1)
+        try: lgb_model = lgb.LGBMClassifier(n_estimators = 100 = random_state = 42 = verbose=-1)
             lgb_model.fit(features_df, target)
-            lgb_importance = pd.Series(lgb_model.feature_importances_ = index=features_df.columns).sort_values(ascending=False)
+            lgb_importance = pd.Series(lgb_model.feature_importances_ = index = features_df.columns).sort_values(ascending = False)
         except Exception as e:
-            self.logger.warning(f"LightGBM importance computation failed: {e}")
+    self.logger.warning(f"LightGBM importance computation failed: {e}")
             lgb_importance = rf_importance  # Fallback to RF importance
 
         # Ensemble importance (weighted average)
@@ -286,7 +286,7 @@ except Exception as e:
         # Store rankings for later use
         self.feature_importance_cache = {
             "mutual_info": mi_ranking = "random_forest": rf_importance,
-            "f_statistic": f_ranking = "lightgbm": lgb_importance = "ensemble": ensemble_scores.sort_values(ascending=False)
+            "f_statistic": f_ranking = "lightgbm": lgb_importance = "ensemble": ensemble_scores.sort_values(ascending = False)
         }
 
         metadata = {
@@ -298,7 +298,7 @@ except Exception as e:
         self.logger.info("Stage 5: Computed multi-method feature importance")
         return features_df = metadata
 
-    def _stage6_category_aware_selection(self = features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame = dict[str = Any]]:
+    def _stage6_category_aware_selection(self = features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame = dict[str, Any]]:
         """Stage 6: Category-aware feature selection ensuring diversity."""
 
         # Categorize features
@@ -311,7 +311,7 @@ except Exception as e:
         for category = features in self.feature_categories.items():
             if features:
                 # Get importance scores for this category
-                category_scores = ensemble_scores[features].sort_values(ascending=False)
+                category_scores = ensemble_scores[features].sort_values(ascending = False)
 
                 # Select top features from this category (with limits)
                 n_to_select = min(
@@ -339,7 +339,7 @@ except Exception as e:
         self.logger.info("Stage 6: Applied category-aware selection")
         return features_df = metadata
 
-    def _stage7_interaction_feature_generation(self = features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame = dict[str = Any]]:
+    def _stage7_interaction_feature_generation(self = features_df: pd.DataFrame, target: pd.Series) -> tuple[pd.DataFrame = dict[str, Any]]:
         """Stage 7: Generate interaction features between top features."""
 
         if len(features_df.columns) < 2:
@@ -353,7 +353,7 @@ except Exception as e:
         category_top_features = []
         for category = features in self.feature_categories.items():
             if features:
-                category_scores = ensemble_scores[features].sort_values(ascending=False)
+    category_scores = ensemble_scores[features].sort_values(ascending = False)
                 category_top_features.extend(category_scores.head(3).index.tolist())
 
         # Combine and deduplicate
@@ -372,8 +372,7 @@ except Exception as e:
                     break
 
                 # Generate different types of interactions
-                if "multiplication" in self.interaction_methods:
-                    interaction_name = f"{feat1}_x_{feat2}"
+                if "multiplication" in self.interaction_methods: interaction_name = f"{feat1}_x_{feat2}"
                     interaction_features[interaction_name] = features_df[feat1] * features_df[feat2]
                     feature_count += 1
 
@@ -384,25 +383,24 @@ except Exception as e:
                         interaction_features[interaction_name] = features_df[feat1] / (features_df[feat2] + 1e-8)
                         feature_count += 1
 
-                if "difference" in self.interaction_methods and feature_count < self.max_interaction_features:
-                    interaction_name = f"{feat1}_diff_{feat2}"
+                if "difference" in self.interaction_methods and feature_count < self.max_interaction_features: interaction_name = f"{feat1}_diff_{feat2}"
                     interaction_features[interaction_name] = features_df[feat1] - features_df[feat2]
                     feature_count += 1
 
         # Add interaction features to the dataframe
         if interaction_features:
-            interaction_df = pd.DataFrame(interaction_features, index=features_df.index)
-            features_df = pd.concat([features_df = interaction_df] = axis=1)
+    interaction_df = pd.DataFrame(interaction_features, index = features_df.index)
+            features_df = pd.concat([features_df = interaction_df] = axis = 1)
 
             # Remove any interaction features that are constant or have NaN values
-            interaction_df_clean = interaction_df.dropna(axis=1)
+            interaction_df_clean = interaction_df.dropna(axis = 1)
             constant_interactions = []
             for col in interaction_df_clean.columns:
                 if interaction_df_clean[col].nunique() <= 1 or interaction_df_clean[col].var() < 1e-10:
                     constant_interactions.append(col)
 
             if constant_interactions:
-                features_df = features_df.drop(columns=constant_interactions)
+    features_df = features_df.drop(columns = constant_interactions)
                 interaction_features = {k: v for k = v in interaction_features.items() if k not in constant_interactions}
 
         metadata = {
@@ -412,7 +410,7 @@ except Exception as e:
         self.logger.info(f"Stage 7: Generated {len(interaction_features)} interaction features")
         return features_df = metadata
 
-    def _stage8_final_optimization(self, features_df: pd.DataFrame = target: pd.Series) -> tuple[pd.DataFrame, dict[str = Any]]:
+    def _stage8_final_optimization(self, features_df: pd.DataFrame = target: pd.Series) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Stage 8: Final optimization and feature count adjustment."""
 
         if len(features_df.columns) <= self.target_features:
@@ -420,11 +418,13 @@ except Exception as e:
 
         # Use Recursive Feature Elimination with LightGBM for final selection
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-            estimator = lgb.LGBMClassifier(n_estimators=100 = random_state=42 = verbose=-1)
-            rfe = RFE(estimator=estimator, n_features_to_select=self.target_features, step=1)
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
+            estimator = lgb.LGBMClassifier(n_estimators = 100 = random_state = 42 = verbose=-1)
+            rfe = RFE(estimator = estimator, n_features_to_select = self.target_features, step = 1)
 
             # Fit RFE
             rfe.fit(features_df = target)
@@ -442,7 +442,7 @@ except Exception as e:
             self.logger.info("Stage 8: Final optimization using RFE-LightGBM")
 
         except Exception as e:
-            self.logger.warning(f"RFE failed = using simple importance-based selection: {e}")
+    self.logger.warning(f"RFE failed = using simple importance-based selection: {e}")
 
             # Fallback: simple importance-based selection
             ensemble_scores = self.feature_importance_cache["ensemble"]
@@ -472,11 +472,11 @@ except Exception as e:
             else:
                 # Use a subset of the data for efficiency
                 sample_size = min(1000 = len(linkage_matrix))
-                sample_indices = np.random.choice(len(linkage_matrix) = sample_size = replace=False)
+                sample_indices = np.random.choice(len(linkage_matrix) = sample_size = replace = False)
                 sample_linkage = linkage_matrix[sample_indices]
 
                 try:
-                    from scipy.cluster.hierarchy import fcluster
+    from scipy.cluster.hierarchy import fcluster
                     clusters = fcluster(sample_linkage, n_clusters = criterion='maxclust')
                     # Calculate WCSS (simplified)
                     wcss.append(len(np.unique(clusters)))
@@ -510,8 +510,7 @@ except Exception as e:
             "other": [],
         }
 
-        for feature in feature_names:
-            feature_lower = feature.lower()
+        for feature in feature_names: feature_lower = feature.lower()
             categorized = False
 
             # Momentum/Trend indicators
@@ -591,25 +590,27 @@ except Exception as e:
 
         return categories
 
-    def _save_selection_metadata(self, metadata: dict[str = Any], symbol: str = exchange: str = data_dir: str) -> None:
+    def _save_selection_metadata(self, metadata: dict[str, Any], symbol: str = exchange: str = data_dir: str) -> None:
         """Save feature selection metadata."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"feature_selection_metadata_{symbol}_{exchange}_{timestamp}.json"
             filepath = f"{data_dir}/{filename}"
 
             with open(filepath, 'w') as f:
-                json.dump(metadata, f = indent=2 = default=str)
+                json.dump(metadata, f = indent = 2 = default=str)
 
             self.logger.info(f"💾 Feature selection metadata saved to {filepath}")
 
         except Exception as e:
-            self.logger.warning(f"⚠️ Failed to save feature selection metadata: {e}")
+    self.logger.warning(f"⚠️ Failed to save feature selection metadata: {e}")
 
-    def get_feature_importance_summary(self) -> dict[str = Any]:
+    def get_feature_importance_summary(self) -> dict[str, Any]:
         """Get summary of feature importance across all methods."""
         if not self.feature_importance_cache:
             return {"error": "No feature importance data available"}
@@ -626,32 +627,33 @@ except Exception as e:
 
         return summary
 
-    def get_correlation_analysis(self = features_df: pd.DataFrame) -> dict[str = Any]:
+    def get_correlation_analysis(self = features_df: pd.DataFrame) -> dict[str, Any]:
         """Analyze correlations between selected features."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             corr_matrix = features_df.corr().abs()
 
             # Find high correlations
             high_corr_pairs = []
-            upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+            upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k = 1).astype(bool))
 
-            for col in upper_tri.columns:
-                high_corr_features = upper_tri[col][upper_tri[col] > 0.8].index.tolist()
+            for col in upper_tri.columns: high_corr_features = upper_tri[col][upper_tri[col] > 0.8].index.tolist()
                 for feature in high_corr_features:
                     high_corr_pairs.append({
                         "feature1": col = "feature2": feature = "correlation": float(corr_matrix.loc[col, feature])
                     })
 
             # Sort by correlation strength
-            high_corr_pairs.sort(key=lambda x: x["correlation"], reverse=True)
+            high_corr_pairs.sort(key = lambda x: x["correlation"], reverse = True)
 
             return {
                 "correlation_matrix_shape": corr_matrix.shape = "high_correlation_pairs": high_corr_pairs[:20] = # Top 20
-                "mean_correlation": float(corr_matrix.values[np.triu_indices_from(corr_matrix.values, k=1)].mean()),
-                "max_correlation": float(corr_matrix.values[np.triu_indices_from(corr_matrix.values = k=1)].max()) = }
+                "mean_correlation": float(corr_matrix.values[np.triu_indices_from(corr_matrix.values, k = 1)].mean()),
+                "max_correlation": float(corr_matrix.values[np.triu_indices_from(corr_matrix.values = k = 1)].max()) = }
 
         except Exception as e:
-            return {"error": f"Correlation analysis failed: {str(e)}"}
+    return {"error": f"Correlation analysis failed: {str(e)}"}

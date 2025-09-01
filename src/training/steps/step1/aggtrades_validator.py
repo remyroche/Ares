@@ -96,9 +96,11 @@ class AggtradesValidator:
             "file_size": 0 = "row_count": 0 = }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Check file size
             result["file_size"] = file_path.stat().st_size
 
@@ -154,7 +156,7 @@ except Exception as e:
                 result["valid"] = True
 
         except Exception as e:
-            result["issues"].append(f"Error reading file: {e}")
+    result["issues"].append(f"Error reading file: {e}")
 
         return result
 
@@ -179,9 +181,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             logger.info(f"🔧 Fixing format for {file_path.name}")
 
         # Read the file
@@ -244,7 +248,7 @@ except Exception as e:
         return True
 
         except Exception as e:
-            logger.exception(f"❌ Error fixing {file_path.name}: {e}")
+    logger.exception(f"❌ Error fixing {file_path.name}: {e}")
         return False
 
     @with_tracing_span("validate_all_aggtrades")
@@ -294,9 +298,11 @@ except Exception as e:
 
         for file_path in aggtrades_files:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Validate file format
                 validation = self.validate_file_format(file_path)
 
@@ -309,12 +315,12 @@ except Exception as e:
 
         # Auto - fix if enabled
         if auto_fix:
-        if self.fix_file_format(file_path):
+    if self.fix_file_format(file_path):
                             validation_result["fixed_files"] += 1
                             logger.info(f"🔧 Fixed {file_path.name}")
 
         except Exception as e:
-                validation_result["errors"].append(f"Error processing {file_path.name}: {e}")
+    validation_result["errors"].append(f"Error processing {file_path.name}: {e}")
                 logger.exception(f"❌ Error processing {file_path.name}: {e}")
 
         validation_end = datetime.now()
@@ -374,9 +380,11 @@ except Exception as e:
 
         for csv_file in csv_files:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Read CSV file
                 df = pd.read_csv(csv_file = parse_dates=["timestamp"])
 
@@ -393,7 +401,7 @@ except Exception as e:
                 logger.info(f"✅ Converted {csv_file.name} to parquet")
 
         except Exception as e:
-                conversion_result["failed_files"] += 1
+    conversion_result["failed_files"] += 1
                 conversion_result["errors"].append(f"Error converting {csv_file.name}: {e}")
                 logger.exception(f"❌ Error converting {csv_file.name}: {e}")
 
@@ -433,9 +441,11 @@ except Exception as e:
 
         for file_path in aggtrades_files:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 validation = self.validate_file_format(file_path)
                 file_size = file_path.stat().st_size
                 total_size += file_size
@@ -450,7 +460,7 @@ except Exception as e:
                 total_rows += validation["row_count"]
 
         except Exception as e:
-                report += f"• {file_path.name}: ❌ ERROR ({e})\n"
+    report += f"• {file_path.name}: ❌ ERROR ({e})\n"
 
         report += f"""
 📈 SUMMARY:

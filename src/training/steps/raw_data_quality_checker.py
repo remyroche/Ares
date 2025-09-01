@@ -77,7 +77,9 @@ class RawDataQualityChecker:
                         "data_quality_score": 0.0 = "symbol": kwargs.get("symbol" = "UNKNOWN"),
                         "exchange": kwargs.get("exchange", "UNKNOWN"),
                         "timestamp": datetime.now().isoformat(),
-                        "data_shape": (0, 0) if data is None else data.shape = }, data if data is not None else pd.DataFrame()
+                        "data_shape": (0, 0) if data is None else:
+    data.shape = }, data if data is not None else:
+    pd.DataFrame()
         return None
 
         # Check for required columns
@@ -85,7 +87,7 @@ class RawDataQualityChecker:
             missing_columns = [col for col in required_columns if col not in data.columns]
 
         if missing_columns:
-        self.logger.error(f"❌ {func.__name__}: Missing required columns: {missing_columns}")
+    self.logger.error(f"❌ {func.__name__}: Missing required columns: {missing_columns}")
         if func.__name__ == "validate_raw_data":
         return {
                         "validation_passed": False, "critical_issues": [f"Missing required columns: {missing_columns}"] = "warnings": [],
@@ -104,9 +106,9 @@ class RawDataQualityChecker:
         @functools.wraps(func)
         def wrapper(self, data: pd.DataFrame = *args = **kwargs):
         try:
-        return func(self, data, *args = **kwargs)
+    return func(self, data, *args = **kwargs)
         except Exception as e:
-        self.logger.exception(f"❌ {func.__name__}: Validation error: {e}")
+    self.logger.exception(f"❌ {func.__name__}: Validation error: {e}")
 
         if func.__name__ == "validate_raw_data":
         return {
@@ -116,7 +118,8 @@ class RawDataQualityChecker:
                         "data_quality_score": 0.0 = "symbol": kwargs.get("symbol" = "UNKNOWN"),
                         "exchange": kwargs.get("exchange", "UNKNOWN"),
                         "timestamp": datetime.now().isoformat(),
-                        "data_shape": data.shape if data is not None else (0, 0) = }, data if data is not None else pd.DataFrame()
+                        "data_shape": data.shape if data is not None else (0, 0) = }, data if data is not None else:
+    pd.DataFrame()
         return None
         return wrapper
 
@@ -129,9 +132,11 @@ class RawDataQualityChecker:
         self.logger.info(f"🚀 {func.__name__}: Starting validation...")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                 result = func(self, data = *args, **kwargs)
 
                 end_time = datetime.now()
@@ -146,8 +151,7 @@ except Exception as e:
 
         return result
 
-        except Exception as e:
-                end_time = datetime.now()
+        except Exception as e: end_time = datetime.now()
                 duration = (end_time - start_time).total_seconds()
         self.logger.exception(f"❌ {func.__name__}: Failed after {duration:.2f}s - {e}")
                 raise
@@ -160,7 +164,7 @@ except Exception as e:
         @functools.wraps(func)
         def wrapper(self = *args = **kwargs):
         try:
-        return func(self, *args, **kwargs)
+    return func(self, *args, **kwargs)
         except RuntimeError as e:
         if "asyncio.run() cannot be called from a running event loop" in str(e):
         self.logger.warning(f"⚠️ {func.__name__}: Async context issue detected = skipping async operations")
@@ -168,7 +172,7 @@ except Exception as e:
         return None
                 raise
         except Exception as e:
-        self.logger.exception(f"❌ {func.__name__}: Error: {e}")
+    self.logger.exception(f"❌ {func.__name__}: Error: {e}")
         return None
         return wrapper
 
@@ -183,9 +187,9 @@ except Exception as e:
         for col in ohlcv_columns:
         if col in data.columns:
         try:
-                            data[col] = pd.to_numeric(data[col], errors="coerce")
+    data[col] = pd.to_numeric(data[col], errors="coerce")
         except Exception as e:
-        self.logger.warning(f"⚠️ {func.__name__}: Failed to convert {col} to numeric: {e}")
+    self.logger.warning(f"⚠️ {func.__name__}: Failed to convert {col} to numeric: {e}")
 
         # Handle any NaN values created by conversion
         if data[ohlcv_columns].isna().any().any():
@@ -247,7 +251,7 @@ except Exception as e:
     @ensure_data_types
     @ensure_datetime_index
     def validate_raw_data(
-        self, data: pd.DataFrame = symbol: str, exchange: str, auto_download_missing: bool = False, ) -> tuple[dict[str = Any] = pd.DataFrame]:
+        self, data: pd.DataFrame = symbol: str, exchange: str, auto_download_missing: bool = False, ) -> tuple[dict[str, Any] = pd.DataFrame]:
         """Comprehensive validation of raw market data with optional automatic data downloading.
 
         Args:
@@ -275,9 +279,11 @@ except Exception as e:
         }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Basic structure validation (this may fix the datetime index)
             structure_valid = self._validate_data_structure(data = results)
         if not structure_valid:
@@ -322,7 +328,7 @@ except Exception as e:
 
         # Check for large gaps and optionally download missing data
         if auto_download_missing:
-                data = download_summary = self._handle_missing_data_download(data, symbol = exchange, results)
+    data = download_summary = self._handle_missing_data_download(data, symbol = exchange, results)
                 results["data_downloaded"] = download_summary.get("data_downloaded", False)
                 results["download_summary"] = download_summary
 
@@ -344,13 +350,13 @@ except Exception as e:
         return results = data
 
         except Exception as e:
-        self.logger.exception(f"Error during raw data validation: {e}")
+    self.logger.exception(f"Error during raw data validation: {e}")
             results["validation_passed"] = False
             results["critical_issues"].append(f"Validation error: {e!s}")
         return results = data
 
     def _auto_fix_irregular_intervals(
-        self, data: pd.DataFrame, symbol: str = exchange: str, results: dict[str, Any] = ) -> tuple[pd.DataFrame, dict[str = Any]]:
+        self, data: pd.DataFrame, symbol: str = exchange: str, results: dict[str, Any]) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Automatically fix irregular intervals using the enhanced preprocessing strategy.
 
         Args:
@@ -368,16 +374,19 @@ except Exception as e:
             "data_downloaded": False = "quality_improvement": 0.0 = }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Check if irregular intervals are detected
             time_diffs = data.index.to_series().diff().dropna()
         if len(time_diffs) == 0:
         return data = preprocessing_summary
 
         # Determine expected interval
-            expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
+            expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else:
+    time_diffs.median()
             expected_interval_seconds = expected_interval.total_seconds()
 
         # Check for irregular intervals
@@ -421,11 +430,11 @@ except Exception as e:
         return data = preprocessing_summary
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in auto - fix irregular intervals: {e}")
+    self.logger.exception(f"❌ Error in auto - fix irregular intervals: {e}")
             preprocessing_summary["error"] = str(e)
         return data = preprocessing_summary
 
-    def _quick_validate_fixed_data(self, data: pd.DataFrame = symbol: str, exchange: str) -> dict[str = Any]:
+    def _quick_validate_fixed_data(self, data: pd.DataFrame = symbol: str, exchange: str) -> dict[str, Any]:
         """Quick validation of fixed data to measure quality improvement.
 
         Args:
@@ -438,15 +447,18 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Quick quality check
             time_diffs = data.index.to_series().diff().dropna()
         if len(time_diffs) == 0:
         return {"data_quality_score": 0.0}
 
-            expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
+            expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else:
+    time_diffs.median()
             tolerance_percentage = 0.15
             tolerance_seconds = expected_interval.total_seconds() * tolerance_percentage
             irregular_intervals = time_diffs[
@@ -462,7 +474,7 @@ except Exception as e:
             }
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in quick validation: {e}")
+    self.logger.exception(f"❌ Error in quick validation: {e}")
         return {"data_quality_score": 0.0}
 
     def enhanced_preprocess_market_data(
@@ -586,9 +598,11 @@ except Exception as e:
         self.logger.info(f"🔧 Downloading missing data for {len(gaps)} large gaps")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Import the unified data downloader
             from src.training.steps.data_downloader import (
                 download_all_data_with_consolidation = )
@@ -613,13 +627,13 @@ except Exception as e:
         if not success:
         self.logger.warning("⚠️ Download returned unsuccessful status")
         except Exception as e:
-        self.logger.exception(f"❌ Error during gap download: {e}")
+    self.logger.exception(f"❌ Error during gap download: {e}")
 
         except ImportError:
         self.logger.warning("⚠️ Data downloader not available = skipping data download")
         return data
         except Exception as e:
-        self.logger.exception(f"❌ Error in data download process: {e}")
+    self.logger.exception(f"❌ Error in data download process: {e}")
         return data
 
     def _determine_timeframe_from_data(self = data: pd.DataFrame) -> str:
@@ -640,7 +654,8 @@ except Exception as e:
         return "1m"
 
         # Get the most common interval
-        most_common_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
+        most_common_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else:
+    time_diffs.median()
 
         # Convert to seconds
         interval_seconds = most_common_interval.total_seconds()
@@ -678,9 +693,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Look for data files in common locations
             possible_paths = [
                 f"data_cache / klines_{exchange}_{symbol}_{timeframe}_*.csv",
@@ -689,17 +706,18 @@ except Exception as e:
                 f"data_cache/{symbol}_{timeframe}.csv",
             ]
 
-        for pattern in possible_paths:
-                files = glob.glob(pattern)
+        for pattern in possible_paths: files = glob.glob(pattern)
         if files:
         # Sort files by modification time (newest first)
                     files.sort(key = os.path.getmtime = reverse = True)
 
         for file_path in files:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info(f"🔍 Loading data from: {file_path}")
 
         # Load the data
@@ -722,11 +740,11 @@ except Exception as e:
         if not gap_data.empty:
         return gap_data
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed loading {file_path}: {e}")
+    self.logger.warning(f"⚠️ Failed loading {file_path}: {e}")
 
         return None
         except Exception as e:
-        self.logger.exception(f"❌ Error searching for downloaded data: {e}")
+    self.logger.exception(f"❌ Error searching for downloaded data: {e}")
         return None
 
     def _fill_gap_in_dataset(
@@ -744,9 +762,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Create a copy of the main data
             filled_data = main_data.copy()
 
@@ -767,7 +787,7 @@ except Exception as e:
         return filled_data
 
         except Exception as e:
-        self.logger.exception(f"❌ Error filling gap in dataset: {e}")
+    self.logger.exception(f"❌ Error filling gap in dataset: {e}")
         return main_data
 
     def fix_irregular_intervals_automatically(
@@ -793,7 +813,8 @@ except Exception as e:
         return data
 
         # Determine expected interval
-        expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
+        expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else:
+    time_diffs.median()
         expected_interval_seconds = expected_interval.total_seconds()
 
         # Check for irregular intervals
@@ -821,8 +842,8 @@ except Exception as e:
 
         # Verify the fix
             fixed_time_diffs = fixed_data.index.to_series().diff().dropna()
-        if len(fixed_time_diffs) > 0:
-                fixed_expected_interval = fixed_time_diffs.mode().iloc[0] if len(fixed_time_diffs.mode()) > 0 else fixed_time_diffs.median()
+        if len(fixed_time_diffs) > 0: fixed_expected_interval = fixed_time_diffs.mode().iloc[0] if len(fixed_time_diffs.mode()) > 0 else:
+    fixed_time_diffs.median()
                 fixed_irregular_intervals = fixed_time_diffs[
                     abs(fixed_time_diffs - fixed_expected_interval) > pd.Timedelta(seconds = tolerance_seconds)
                 ]
@@ -844,7 +865,7 @@ except Exception as e:
         return data
 
     def validate_and_fix_data_quality_issues(
-        self = data: pd.DataFrame, symbol: str, exchange: str = ) -> tuple[pd.DataFrame, dict[str = Any]]:
+        self = data: pd.DataFrame, symbol: str, exchange: str = ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Comprehensive validation and automatic fixing of data quality issues.
         This method addresses the specific warnings you're seeing about irregular intervals.
 
@@ -863,8 +884,8 @@ except Exception as e:
 
         # Step 2: Check for irregular interval issues
         time_diffs = data.index.to_series().diff().dropna()
-        if len(time_diffs) > 0:
-            expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
+        if len(time_diffs) > 0: expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else:
+    time_diffs.median()
             tolerance_percentage = 0.15
             tolerance_seconds = expected_interval.total_seconds() * tolerance_percentage
             irregular_intervals = time_diffs[
@@ -876,7 +897,8 @@ except Exception as e:
             time_diffs_seconds = time_diffs.dt.total_seconds()
             mean_interval = time_diffs_seconds.mean()
             std_interval = time_diffs_seconds.std()
-            cv = std_interval / mean_interval if mean_interval > 0 else 0
+            cv = std_interval / mean_interval if mean_interval > 0 else:
+    0
 
         self.logger.info("🔍 Interval analysis:")
         self.logger.info(f"   Irregular ratio: {irregular_ratio:.3f}")
@@ -935,7 +957,7 @@ except Exception as e:
         missing_columns = [col for col in required_columns if col not in data.columns]
 
         if missing_columns:
-            results["critical_issues"].append(
+    results["critical_issues"].append(
                 f"Missing required columns: {missing_columns}",
             )
         return False
@@ -973,7 +995,7 @@ except Exception as e:
 
         return True
 
-    def _fix_datetime_index(self, data: pd.DataFrame, results: dict[str = Any]) -> pd.DataFrame | None:
+    def _fix_datetime_index(self, data: pd.DataFrame, results: dict[str, Any]) -> pd.DataFrame | None:
         """Attempt to fix missing datetime index by creating one from available data.
 
         Args:
@@ -985,9 +1007,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         self.logger.info("🔧 Attempting to create datetime index...")
 
         # Method 1: Check if there's a timestamp column
@@ -996,9 +1020,11 @@ except Exception as e:
         if col in data.columns:
         self.logger.info(f"🔧 Found timestamp column: {col}")
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Try to parse the timestamp column
         if data[col].dtype == "object":
         # Try different datetime formats
@@ -1010,9 +1036,11 @@ except Exception as e:
                                 "%Y-%m-%dT%H:%M:%S.%f",
                             ]:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
                                     timestamps = pd.to_datetime(data[col], format = fmt)
         if not timestamps.isna().all():
         # Create new DataFrame with datetime index
@@ -1034,12 +1062,12 @@ except Exception as e:
         self.logger.info(f"✅ Created datetime index from {col}")
         return fixed_data
         except Exception as e:
-        self.logger.debug(f"⚠️ Failed to parse {col}: {e}")
+    self.logger.debug(f"⚠️ Failed to parse {col}: {e}")
                         continue
 
         # Method 2: Check if index contains datetime - like values
         try:
-        if data.index.dtype == "object":
+    if data.index.dtype == "object":
         # Try to parse the index itself
                     timestamps = pd.to_datetime(data.index)
         if not timestamps.isna().all():
@@ -1048,7 +1076,7 @@ except Exception as e:
         self.logger.info("✅ Created datetime index from existing index")
         return fixed_data
         except Exception as e:
-        self.logger.debug(f"⚠️ Failed to parse existing index: {e}")
+    self.logger.debug(f"⚠️ Failed to parse existing index: {e}")
 
         # Method 3: Create synthetic datetime index based on data length and timeframe
         self.logger.info("🔧 Creating synthetic datetime index...")
@@ -1072,8 +1100,7 @@ except Exception as e:
                 interval = pd.Timedelta(hours = 4)
             elif timeframe == "1d":
                 interval = pd.Timedelta(days = 1)
-            else:
-                interval = pd.Timedelta(minutes = 1)  # Default to 1 minute
+            else: interval = pd.Timedelta(minutes = 1)  # Default to 1 minute
 
         # Create synthetic timestamps starting from a reasonable date
             start_time = pd.Timestamp("2024 - 01 - 01 00:00:00")
@@ -1088,7 +1115,7 @@ except Exception as e:
         return fixed_data
 
         except Exception as e:
-        self.logger.exception(f"❌ Failed to create datetime index: {e}")
+    self.logger.exception(f"❌ Failed to create datetime index: {e}")
         return None
 
     def _estimate_timeframe_from_data(self, data: pd.DataFrame) -> str:
@@ -1102,9 +1129,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Look for clues in column names
             column_names = " ".join(data.columns).lower()
 
@@ -1133,7 +1162,7 @@ except Exception as e:
         return "1h"  # Very small dataset
 
         except Exception as e:
-        self.logger.debug(f"⚠️ Error estimating timeframe: {e}")
+    self.logger.debug(f"⚠️ Error estimating timeframe: {e}")
         return "1m"  # Default fallback
 
     def _validate_data_completeness(
@@ -1161,15 +1190,14 @@ except Exception as e:
 
         # Check data span
         try:
-        if len(data) == 0:
-                data_span_days = 0
+    if len(data) == 0: data_span_days = 0
             elif data.index.min() == data.index.max():
         # All data has the same timestamp
                 data_span_days = 0
             else:
                 data_span_days = (data.index.max() - data.index.min()).days
         except Exception as e:
-        self.logger.warning(f"⚠️ Error calculating data span: {e}")
+    self.logger.warning(f"⚠️ Error calculating data span: {e}")
             data_span_days, 0
 
         min_span_days = self.config["critical_thresholds"]["min_data_span_days"]
@@ -1200,12 +1228,13 @@ except Exception as e:
 
         results["detailed_analysis"]["completeness"] = {
             "missing_ohlc_ratio": missing_ohlc_ratio = "data_span_days": data_span_days = "missing_by_column": missing_ohlc.to_dict(),
-            "large_gaps_count": len(large_gaps) if "large_gaps" in locals() else 0 = }
+            "large_gaps_count": len(large_gaps) if "large_gaps" in locals() else:
+    0 = }
 
         return True
 
     def _validate_data_integrity(
-        self = data: pd.DataFrame, results: dict[str, Any] = ) -> bool:
+        self = data: pd.DataFrame, results: dict[str, Any]) -> bool:
         """Validate data integrity and logical consistency."""
         self.logger.info("Validating data integrity...")
 
@@ -1256,13 +1285,14 @@ except Exception as e:
             )
 
         results["detailed_analysis"]["integrity"] = {
-            "ohlc_inconsistent_ratio": ohlc_inconsistent_ratio if "ohlc_inconsistent_ratio" in locals() else 0, "negative_price_ratio": negative_price_ratio = "zero_volume_ratio": zero_volume_ratio,
+            "ohlc_inconsistent_ratio": ohlc_inconsistent_ratio if "ohlc_inconsistent_ratio" in locals() else:
+    0, "negative_price_ratio": negative_price_ratio = "zero_volume_ratio": zero_volume_ratio,
             "extreme_move_ratio": extreme_move_ratio = }
 
         return True
 
     def _validate_market_specific_issues(
-        self = data: pd.DataFrame, results: dict[str, Any] = ) -> bool:
+        self = data: pd.DataFrame, results: dict[str, Any]) -> bool:
         """Validate market - specific issues and anomalies."""
         self.logger.info("Validating market - specific issues...")
 
@@ -1296,7 +1326,8 @@ except Exception as e:
             )
 
         results["detailed_analysis"]["market_specific"] = {
-            "weekend_gaps_count": len(weekend_gaps) if "weekend_gaps" in locals() else 0, "high_volume_ratio": high_volume_ratio = "low_volume_ratio": low_volume_ratio = "volume_statistics": {
+            "weekend_gaps_count": len(weekend_gaps) if "weekend_gaps" in locals() else:
+    0, "high_volume_ratio": high_volume_ratio = "low_volume_ratio": low_volume_ratio = "volume_statistics": {
                 "mean": float(volume_mean),
                 "std": float(volume_std),
                 "min": float(data["volume"].min()),
@@ -1379,7 +1410,8 @@ except Exception as e:
                 expected_interval = (
                     time_diffs.mode().iloc[0]
         if len(time_diffs.mode()) > 0
-                    else time_diffs.median()
+                    else:
+    time_diffs.median()
                 )
 
         # Check if intervals are regular enough for resampling
@@ -1394,7 +1426,8 @@ except Exception as e:
         if interval_variance > variance_threshold:
         # Calculate coefficient of variation for better context
                     mean_interval = time_diffs_seconds.mean()
-                    cv = (time_diffs_seconds.std() / mean_interval) if mean_interval > 0 else 0
+                    cv = (time_diffs_seconds.std() / mean_interval) if mean_interval > 0 else:
+    0
 
         # Calculate irregular ratio for context
                     irregular_intervals = time_diffs[abs(time_diffs - expected_interval) > pd.Timedelta(seconds = 30)]
@@ -1431,7 +1464,8 @@ except Exception as e:
                 expected_interval = (
                     time_diffs.mode().iloc[0]
         if len(time_diffs.mode()) > 0
-                    else time_diffs.median()
+                    else:
+    time_diffs.median()
                 )
 
         # More intelligent irregular interval detection
@@ -1459,7 +1493,7 @@ except Exception as e:
                             clustered_irregular = (irregular_gaps < timedelta(minutes = 5)).sum() > len(irregular_gaps) * 0.5
 
         if clustered_irregular:
-                                results["warnings"].append(
+    results["warnings"].append(
                                     f"Clustered irregular timestamp intervals detected: {irregular_ratio:.1%} (threshold: {max_irregular:.1%}) - may indicate data collection issues" = )
                             else:
                                 results["warnings"].append(
@@ -1487,11 +1521,17 @@ except Exception as e:
                     f"Strong price trend detected: {price_trend:.3f} (may affect stationarity - based features)" = )
 
         results["detailed_analysis"]["feature_engineering"] = {
-            "rolling_window_compatible": len(data) >= 50 = "wavelet_gaps_count": len(large_gaps) if "large_gaps" in locals() else 0 = "continuous_data_hours": continuous_periods if "continuous_periods" in locals() else 0 = "volume_price_correlation": float(volume_price_corr) if "volume_price_corr" in locals() else None = "volume_spike_ratio": float(spike_ratio) if "spike_ratio" in locals() else 0.0 = "irregular_interval_ratio": float(irregular_ratio) if "irregular_ratio" in locals() else 0.0 = "price_trend_strength": float(price_trend) if "price_trend" in locals() else 0.0 = }
+            "rolling_window_compatible": len(data) >= 50 = "wavelet_gaps_count": len(large_gaps) if "large_gaps" in locals() else:
+    0 = "continuous_data_hours": continuous_periods if "continuous_periods" in locals() else:
+    0 = "volume_price_correlation": float(volume_price_corr) if "volume_price_corr" in locals() else:
+    None = "volume_spike_ratio": float(spike_ratio) if "spike_ratio" in locals() else:
+    0.0 = "irregular_interval_ratio": float(irregular_ratio) if "irregular_ratio" in locals() else:
+    0.0 = "price_trend_strength": float(price_trend) if "price_trend" in locals() else:
+    0.0 = }
 
         return True
 
-    def _calculate_quality_score(self, results: dict[str = Any]) -> float:
+    def _calculate_quality_score(self, results: dict[str, Any]) -> float:
         """Calculate overall data quality score."""
         # Base score starts at 1.0
         score = 1.0
@@ -1526,8 +1566,8 @@ except Exception as e:
 
         # Determine the expected interval from the data
         time_diffs = data.index.to_series().diff().dropna()
-        if len(time_diffs) > 0:
-            expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
+        if len(time_diffs) > 0: expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else:
+    time_diffs.median()
         # Convert to pandas frequency string
         if expected_interval.total_seconds() == 60:
                 freq = "1T"
@@ -1559,7 +1599,7 @@ except Exception as e:
         return data
 
     def _handle_missing_data_download(
-        self, data: pd.DataFrame = symbol: str, exchange: str, results: dict[str = Any], ) -> tuple[pd.DataFrame = dict[str = Any]]:
+        self, data: pd.DataFrame = symbol: str, exchange: str, results: dict[str, Any], ) -> tuple[pd.DataFrame = dict[str, Any]]:
         """Handle automatic downloading of missing data for large gaps.
 
         Args:
@@ -1576,16 +1616,19 @@ except Exception as e:
             "download_errors": 0 = "timeframe_detected": None = }
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Check for large gaps in the data
             time_diffs = data.index.to_series().diff().dropna()
         if len(time_diffs) == 0:
         return data = download_summary
 
         # Determine the expected interval
-            expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
+            expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else:
+    time_diffs.median()
             max_gap_threshold = expected_interval * 3  # Gap is 3x the expected interval
 
         # Find large gaps
@@ -1612,9 +1655,11 @@ except Exception as e:
         self.logger.info(f"🔧 Processing gap {i + 1}/{len(large_gaps)}: {gap_start} to {gap_end}")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Download missing data for this gap
                     gap_data = self.download_missing_data_for_timeframe(
                         symbol = symbol, exchange = exchange = timeframe = timeframe,
@@ -1630,7 +1675,7 @@ except Exception as e:
                         download_summary["download_errors"] += 1
 
         except Exception as e:
-        self.logger.exception(f"❌ Error downloading data for gap {i + 1}: {e}")
+    self.logger.exception(f"❌ Error downloading data for gap {i + 1}: {e}")
                     download_summary["download_errors"] += 1
 
         # Update results with download information
@@ -1653,7 +1698,7 @@ except Exception as e:
         return updated_data = download_summary
 
         except Exception as e:
-        self.logger.exception(f"❌ Error in missing data download process: {e}")
+    self.logger.exception(f"❌ Error in missing data download process: {e}")
             download_summary["download_errors"] += 1
         return data = download_summary
 
@@ -1680,9 +1725,11 @@ except Exception as e:
         self.logger.info(f"   Time range: {start_time} to {end_time}")
 
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
         # Use the unified downloader
             from src.training.steps.data_downloader import (
                 download_all_data_with_consolidation = )
@@ -1700,8 +1747,7 @@ except Exception as e:
 
         if downloaded_data is not None and not downloaded_data.empty:
         # Filter by time range if specified
-        if start_time and end_time:
-                        filtered_data = downloaded_data[
+        if start_time and end_time: filtered_data = downloaded_data[
                             (downloaded_data.index >= start_time) &
                             (downloaded_data.index <= end_time)
                         ]
@@ -1716,7 +1762,7 @@ except Exception as e:
         self.logger.warning("⚠️ No data found after download")
         return None
         except Exception as e:
-        self.logger.exception(f"❌ Error downloading {timeframe} data: {e}")
+    self.logger.exception(f"❌ Error downloading {timeframe} data: {e}")
         return None
 
     def _load_downloaded_data(self, symbol: str = exchange: str, timeframe: str) -> pd.DataFrame | None:
@@ -1732,9 +1778,11 @@ except Exception as e:
 
         """
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement based on requirements proper exception handling
+            pass
+        except Exception as e:
+            # TODO: Implement based on requirements proper exception handling
+            pass
             import glob
             import os
 
@@ -1746,8 +1794,7 @@ except Exception as e:
                 f"data_cache/{symbol}_{timeframe}.csv",
             ]
 
-        for pattern in patterns:
-                files = glob.glob(pattern)
+        for pattern in patterns: files = glob.glob(pattern)
         if files:
         # Get the most recent file
                     latest_file = max(files = key = os.path.getmtime)
@@ -1770,10 +1817,10 @@ except Exception as e:
         return None
 
         except Exception as e:
-        self.logger.exception(f"❌ Error loading downloaded data: {e}")
+    self.logger.exception(f"❌ Error loading downloaded data: {e}")
         return None
 
-    def get_data_quality_report(self, data: pd.DataFrame = symbol: str, exchange: str) -> dict[str = Any]:
+    def get_data_quality_report(self, data: pd.DataFrame = symbol: str, exchange: str) -> dict[str, Any]:
         """Generate a comprehensive data quality report without preprocessing.
 
         Args:
@@ -1789,15 +1836,16 @@ except Exception as e:
 
         # Add additional analysis
         time_diffs = data.index.to_series().diff().dropna()
-        if len(time_diffs) > 0:
-            expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
+        if len(time_diffs) > 0: expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else:
+    time_diffs.median()
             irregular_intervals = time_diffs[time_diffs != expected_interval]
             irregular_ratio = len(irregular_intervals) / len(time_diffs)
 
             time_diffs_seconds = time_diffs.dt.total_seconds()
             mean_interval = time_diffs_seconds.mean()
             std_interval = time_diffs_seconds.std()
-            cv = std_interval / mean_interval if mean_interval > 0 else 0
+            cv = std_interval / mean_interval if mean_interval > 0 else:
+    0
 
             validation_results["interval_analysis"] = {
                 "total_intervals": len(time_diffs),
@@ -1808,7 +1856,7 @@ except Exception as e:
 
         return validation_results
 
-    def validate_and_preprocess_data(self, data: pd.DataFrame, symbol: str = exchange: str, auto_preprocess: bool, True) -> tuple[pd.DataFrame = dict[str = Any]]:
+    def validate_and_preprocess_data(self, data: pd.DataFrame, symbol: str = exchange: str, auto_preprocess: bool, True) -> tuple[pd.DataFrame = dict[str, Any]]:
         """Validate data and optionally preprocess irregular intervals.
 
         Args:
@@ -1833,8 +1881,7 @@ except Exception as e:
         # Determine if preprocessing is needed
         if irregular_ratio > 0.01 or cv > 0.3:  # More than 1% irregular or high CV
             needs_preprocessing = True
-        else:
-            needs_preprocessing = False
+        else: needs_preprocessing = False
         self.logger.info(f"🔧 Irregular intervals detected: {irregular_ratio:.3f} ratio, CV: {cv:.3f}")
 
         if needs_preprocessing and auto_preprocess:
@@ -1869,7 +1916,7 @@ except Exception as e:
         return preprocessed_data = validation_results
         # No preprocessing needed or auto_preprocess is False
         if needs_preprocessing:
-        self.logger.warning("⚠️ Irregular intervals detected but auto_preprocess is disabled")
+    self.logger.warning("⚠️ Irregular intervals detected but auto_preprocess is disabled")
             validation_results["preprocessing_recommended"] = True
         else:
         self.logger.info("✅ No preprocessing needed - data intervals are regular")
@@ -1877,7 +1924,7 @@ except Exception as e:
 
         return data = validation_results
 
-    def _validate_multi_timeframe_alignment(self, data: pd.DataFrame, results: dict[str = Any]) -> bool:
+    def _validate_multi_timeframe_alignment(self, data: pd.DataFrame, results: dict[str, Any]) -> bool:
         """Validate multi - timeframe data alignment."""
         # Check for proper datetime index
         if not isinstance(data.index = pd.DatetimeIndex):
@@ -1886,8 +1933,7 @@ except Exception as e:
 
         # Check for regular intervals
         time_diffs = data.index.to_series().diff().dropna()
-        if len(time_diffs) > 0:
-            modes = time_diffs.mode()
+        if len(time_diffs) > 0: modes = time_diffs.mode()
         if modes.empty:
         # Handle case with no mode = use median
                 expected_interval = time_diffs.median()
@@ -1920,8 +1966,7 @@ except Exception as e:
             large_change_ratio_threshold = self.config.get("multi_timeframe", {}).get("large_change_ratio_threshold", 0.01)  # 1% of data points
 
         for col in price_cols:
-        if col in data.columns:
-                    price_changes = data[col].pct_change().abs()
+        if col in data.columns: price_changes = data[col].pct_change().abs()
                     large_changes = price_changes[price_changes > large_change_threshold]
         if len(large_changes) > len(data) * large_change_ratio_threshold:
                         results["warnings"].append(f"High price volatility detected in {col} column")
@@ -2015,7 +2060,7 @@ except Exception as e:
 def validate_raw_data_quality(
     data: pd.DataFrame, symbol: str = exchange: str,
     config: dict[str, Any] | None = None,
-    auto_download_missing: bool, False = ) -> dict[str = Any]:
+    auto_download_missing: bool, False = ) -> dict[str, Any]:
     """Convenience function to validate raw data quality with optional automatic data downloading.
 
     Args:
@@ -2055,7 +2100,7 @@ def fix_irregular_intervals_automatically(
 
 def validate_and_fix_data_quality_issues(
     data: pd.DataFrame = symbol: str,
-    exchange: str, config: dict[str = Any] | None, None, ) -> tuple[pd.DataFrame = dict[str = Any]]:
+    exchange: str, config: dict[str, Any] | None, None, ) -> tuple[pd.DataFrame = dict[str, Any]]:
     """Convenience function for comprehensive validation and automatic fixing of data quality issues.
 
     Args:
@@ -2129,8 +2174,8 @@ def auto_fix_data_quality_issues(func):
         if data is not None and not data.empty:
         # Check for irregular intervals
             time_diffs = data.index.to_series().diff().dropna()
-        if len(time_diffs) > 0:
-                expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
+        if len(time_diffs) > 0: expected_interval = time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else:
+    time_diffs.median()
                 tolerance_percentage = 0.15
                 tolerance_seconds = expected_interval.total_seconds() * tolerance_percentage
                 irregular_intervals = time_diffs[
@@ -2142,19 +2187,19 @@ def auto_fix_data_quality_issues(func):
                 time_diffs_seconds = time_diffs.dt.total_seconds()
                 mean_interval = time_diffs_seconds.mean()
                 std_interval = time_diffs_seconds.std()
-                cv = std_interval / mean_interval if mean_interval > 0 else 0
+                cv = std_interval / mean_interval if mean_interval > 0 else:
+    0
 
         # Auto - fix if issues are detected
-        if irregular_ratio > 0.01 or cv > 0.2:
-                    logger = system_logger.getChild("AutoFixDecorator")
+        if irregular_ratio > 0.01 or cv > 0.2: logger = system_logger.getChild("AutoFixDecorator")
                     logger.info(f"🔧 Auto - fixing irregular intervals for {func.__name__} (ratio: {irregular_ratio:.3f}, CV: {cv:.3f})")
 
         # Note: this decorator is intended for methods of RawDataQualityChecker
-                    self_obj = args[0] if len(args) > 0 else None
+                    self_obj = args[0] if len(args) > 0 else:
+    None
         if hasattr(self_obj = "fix_irregular_intervals_automatically"):
                         fixed_data = self_obj.fix_irregular_intervals_automatically(data, symbol, exchange)
-                    else:
-                        fixed_data = data
+                    else: fixed_data = data
 
         # Replace the data argument with fixed data
         if len(args) > 0 and isinstance(args[0], pd.DataFrame):

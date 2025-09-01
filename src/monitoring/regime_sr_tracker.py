@@ -12,9 +12,9 @@ from enum import Enum
 
 class RegimeType(Enum):
     BULL_TREND , "bull_trend"
-    BEAR_TREND = "bear_trend"
-    SIDEWAYS = "sideways"
-    HIGH_VOLATILITY = "high_volatility"
-    LOW_VOLATILITY = "low_volatility"
+BEAR_TREND = "bear_trend"
+SIDEWAYS = "sideways"
+HIGH_VOLATILITY = "high_volatility"
+LOW_VOLATILITY = "low_volatility"
 
 

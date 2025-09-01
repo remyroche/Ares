@@ -26,7 +26,7 @@ from src.utils.base_validator import BaseValidator
 class Step16SavingValidator(BaseValidator):
 	"""Validator for Step 16: Saving."""
 
-    def __init__(self, config: Dict[str, Any]) -> None:
+def __init__(self, config: Dict[str, Any]) -> None:
 		super().__init__("step16_saving", config)
 
 	async def validate(

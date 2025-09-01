@@ -28,867 +28,870 @@ logger = system_logger.getChild("SRLevelsManager")
 class SRLevel:
     """Individual Support/Resistance Level with comprehensive information."""
 
-    def __init__(
-        self,
-        price: float,
-        level_type: str,  # "support" or "resistance"
-        method: str,
-        data_source: str,  # "price" or "vwap"
-        timestamp: datetime,
-        strength: float = 0.5,
-        volume: float = 0.0,
-        touch_count: int = 0,
-        age_hours: float = 0.0,
-        bounce_rate: float = 0.0,
-        isolation_score: float = 0.0,
-        confidence: float = 0.5,
-        metadata: Optional[Dict[str, Any]] = None
-    ):
+def __init__(
+self,
+price: float,
+level_type: str,  # "support" or "resistance"
+method: str,
+data_source: str,  # "price" or "vwap"
+timestamp: datetime,
+strength: float = 0.5,
+volume: float = 0.0,
+touch_count: int = 0,
+age_hours: float = 0.0,
+bounce_rate: float = 0.0,
+isolation_score: float = 0.0,
+confidence: float = 0.5,
+metadata: Optional[Dict[str, Any]] = None
+):
         self.price = price
-        self.level_type = level_type
-        self.method = method
-        self.data_source = data_source
-        self.timestamp = timestamp
-        self.strength = strength
-        self.volume = volume
-        self.touch_count = touch_count
-        self.age_hours = age_hours
-        self.bounce_rate = bounce_rate
-        self.isolation_score = isolation_score
-        self.confidence = confidence
-        self.metadata = metadata or {}
+self.level_type = level_type
+self.method = method
+self.data_source = data_source
+self.timestamp = timestamp
+self.strength = strength
+self.volume = volume
+self.touch_count = touch_count
+self.age_hours = age_hours
+self.bounce_rate = bounce_rate
+self.isolation_score = isolation_score
+self.confidence = confidence
+self.metadata = metadata or {}
 
-        # Calculated fields
-        self.last_touch = timestamp
-        self.total_touches = touch_count
-        self.creation_time = timestamp
+# Calculated fields
+self.last_touch = timestamp
+self.total_touches = touch_count
+self.creation_time = timestamp
 
-    def to_dict(self) -> Dict[str, Any]:
+def to_dict(self) -> Dict[str, Any]:
         """Convert level to dictionary for storage."""
-        return {
-            "price": self.price,
-            "level_type": self.level_type,
-            "method": self.method,
-            "data_source": self.data_source,
-            "timestamp": self.timestamp.isoformat(),
-            "strength": self.strength,
-            "volume": self.volume,
-            "touch_count": self.touch_count,
-            "age_hours": self.age_hours,
-            "bounce_rate": self.bounce_rate,
-            "isolation_score": self.isolation_score,
-            "confidence": self.confidence,
-            "last_touch": self.last_touch.isoformat(),
-            "total_touches": self.total_touches,
-            "creation_time": self.creation_time.isoformat(),
-            "metadata": self.metadata
-        }
+return {
+"price": self.price,
+"level_type": self.level_type,
+"method": self.method,
+"data_source": self.data_source,
+"timestamp": self.timestamp.isoformat(),
+"strength": self.strength,
+"volume": self.volume,
+"touch_count": self.touch_count,
+"age_hours": self.age_hours,
+"bounce_rate": self.bounce_rate,
+"isolation_score": self.isolation_score,
+"confidence": self.confidence,
+"last_touch": self.last_touch.isoformat(),
+"total_touches": self.total_touches,
+"creation_time": self.creation_time.isoformat(),
+"metadata": self.metadata
+}
 
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'SRLevel':
+@classmethod
+def from_dict(cls, data: Dict[str, Any]) -> 'SRLevel':
         """Create level from dictionary."""
-        return cls(
-            price=data["price"],
-            level_type=data["level_type"],
-            method=data["method"],
-            data_source=data["data_source"],
-            timestamp=datetime.fromisoformat(data["timestamp"]),
-            strength=data.get("strength", 0.5),
-            volume=data.get("volume", 0.0),
-            touch_count=data.get("touch_count", 0),
-            age_hours=data.get("age_hours", 0.0),
-            bounce_rate=data.get("bounce_rate", 0.0),
-            isolation_score=data.get("isolation_score", 0.0),
-            confidence=data.get("confidence", 0.5),
-            metadata=data.get("metadata", {})
-        )
+return cls(
+price=data["price"],
+level_type=data["level_type"],
+method=data["method"],
+data_source=data["data_source"],
+timestamp=datetime.fromisoformat(data["timestamp"]),
+strength=data.get("strength", 0.5),
+volume=data.get("volume", 0.0),
+touch_count=data.get("touch_count", 0),
+age_hours=data.get("age_hours", 0.0),
+bounce_rate=data.get("bounce_rate", 0.0),
+isolation_score=data.get("isolation_score", 0.0),
+confidence=data.get("confidence", 0.5),
+metadata=data.get("metadata", {})
+)
 
-    def update_touch(self, current_time: datetime, price: float, volume: float = 0.0):
+def update_touch(self, current_time: datetime, price: float, volume: float = 0.0):
         """Update level with new touch information."""
-        self.last_touch = current_time
-        self.touch_count += 1
-        self.total_touches += 1
-        self.volume = max(self.volume, volume)
+self.last_touch = current_time
+self.touch_count += 1
+self.total_touches += 1
+self.volume = max(self.volume, volume)
 
-        # Update age
-        self.age_hours = (current_time - self.creation_time).total_seconds() / 3600
+# Update age
+self.age_hours = (current_time - self.creation_time).total_seconds() / 3600
 
-        # Update strength based on touch count
-        self.strength = min(1.0, 0.5 + (self.touch_count * 0.1))
+# Update strength based on touch count
+self.strength = min(1.0, 0.5 + (self.touch_count * 0.1))
 
-    def calculate_quality_score(self) -> float:
+def calculate_quality_score(self) -> float:
         """Calculate overall quality score for this level."""
-        score = 0.0
+score = 0.0
 
-        # Base score from strength
-        score += self.strength * 0.3
+# Base score from strength
+score += self.strength * 0.3
 
-        # Touch count bonus
-        score += min(0.3, self.touch_count * 0.05)
+# Touch count bonus
+score += min(0.3, self.touch_count * 0.05)
 
-        # Age bonus (older levels get slight bonus)
-        score += min(0.1, self.age_hours / 1000)
+# Age bonus (older levels get slight bonus)
+score += min(0.1, self.age_hours / 1000)
 
-        # Bounce rate bonus
-        score += self.bounce_rate * 0.2
+# Bounce rate bonus
+score += self.bounce_rate * 0.2
 
-        # Isolation score bonus
-        score += self.isolation_score * 0.1
+# Isolation score bonus
+score += self.isolation_score * 0.1
 
-        return min(1.0, score)
+return min(1.0, score)
 
 
 class SRLevelsManager:
     """
-    Comprehensive SR Levels Manager for trading intelligence.
+Comprehensive SR Levels Manager for trading intelligence.
 
-    Features:
+Features:
     - Calculate SR levels from backtesting data
-    - Continuous updates during live trading
-    - Persistent storage with comprehensive metadata
-    - Price vs VWAP comparison
-    - Level quality scoring and filtering
-    """
+- Continuous updates during live trading
+- Persistent storage with comprehensive metadata
+- Price vs VWAP comparison
+- Level quality scoring and filtering
+"""
 
-    def __init__(self, config: Dict[str, Any]):
+def __init__(self, config: Dict[str, Any]):
         """Initialize SR Levels Manager."""
-        self.config = config
-        self.logger = system_logger.getChild("SRLevelsManager")
+self.config = config
+self.logger = system_logger.getChild("SRLevelsManager")
 
-        # Configuration
-        self.sr_config = config.get("sr_levels_manager", {})
-        self.storage_path = Path(self.sr_config.get("storage_path", "data/sr_levels"))
-        self.max_levels = self.sr_config.get("max_levels", 50)
-        self.min_strength = self.sr_config.get("min_strength", 0.3)
-        self.proximity_threshold = self.sr_config.get("proximity_threshold", 0.005)
+# Configuration
+self.sr_config = config.get("sr_levels_manager", {})
+self.storage_path = Path(self.sr_config.get("storage_path", "data/sr_levels"))
+self.max_levels = self.sr_config.get("max_levels", 50)
+self.min_strength = self.sr_config.get("min_strength", 0.3)
+self.proximity_threshold = self.sr_config.get("proximity_threshold", 0.005)
 
-        # Storage
-        self.storage_path.mkdir(parents=True, exist_ok=True)
-        self.levels_file = self.storage_path / "sr_levels.json"
-        self.history_file = self.storage_path / "sr_levels_history.json"
+# Storage
+self.storage_path.mkdir(parents=True, exist_ok=True)
+self.levels_file = self.storage_path / "sr_levels.json"
+self.history_file = self.storage_path / "sr_levels_history.json"
 
-        # Current levels
-        self.support_levels: List[SRLevel] = []
-        self.resistance_levels: List[SRLevel] = []
+# Current levels
+self.support_levels: List[SRLevel] = []
+self.resistance_levels: List[SRLevel] = []
 
-        # SR predictor for calculations
-        self.sr_predictor: Optional[SRBreakoutPredictor] = None
+# SR predictor for calculations
+self.sr_predictor: Optional[SRBreakoutPredictor] = None
 
-        # Performance tracking
-        self.last_update = datetime.now()
-        self.update_count = 0
+# Performance tracking
+self.last_update = datetime.now()
+self.update_count = 0
 
-    async def initialize(self) -> bool:
+async def initialize(self) -> bool:
         """Initialize the SR Levels Manager."""
-        try:
+try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-            self.logger.info("🔧 Initializing SR Levels Manager...")
+self.logger.info("🔧 Initializing SR Levels Manager...")
 
-            # Initialize SR predictor
-            self.sr_predictor = SRBreakoutPredictor(self.config)
-            if not await self.sr_predictor.initialize():
+# Initialize SR predictor
+self.sr_predictor = SRBreakoutPredictor(self.config)
+if not await self.sr_predictor.initialize():
                 self.logger.error("❌ Failed to initialize SR predictor")
-                return False
+return False
 
-            # Load existing levels
-            await self.load_levels()
+# Load existing levels
+await self.load_levels()
 
-            self.logger.info("✅ SR Levels Manager initialized successfully")
-            return True
+self.logger.info("✅ SR Levels Manager initialized successfully")
+return True
 
-        except Exception as e:
+except Exception as e:
             self.logger.error(f"❌ Failed to initialize SR Levels Manager: {e}")
-            return False
+return False
 
-    async def calculate_sr_levels_from_backtest(
-        self,
-        market_data: pd.DataFrame,
-        timeframe: str = "1m"
-    ) -> Dict[str, List[SRLevel]]:
+async def calculate_sr_levels_from_backtest(
+self,
+market_data: pd.DataFrame,
+timeframe: str = "1m"
+) -> Dict[str, List[SRLevel]]:
         """
-        Calculate SR levels from backtesting data using SR breakout predictor logic.
+Calculate SR levels from backtesting data using SR breakout predictor logic.
 
-        Args:
+Args:
             market_data: Historical market data
-            timeframe: Data timeframe
+timeframe: Data timeframe
 
-        Returns:
+Returns:
             Dictionary with support and resistance levels
-        """
-        try:
+"""
+try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-            self.logger.info(f"🔍 Calculating SR levels from backtest data ({len(market_data)} points)")
+self.logger.info(f"🔍 Calculating SR levels from backtest data ({len(market_data)} points)")
 
-            # Get current price for context
-            current_price = market_data['close'].iloc[-1]
+# Get current price for context
+current_price = market_data['close'].iloc[-1]
 
-            # Use SR breakout predictor's comprehensive detection methods
-            support_levels = []
-            resistance_levels = []
+# Use SR breakout predictor's comprehensive detection methods
+support_levels = []
+resistance_levels = []
 
-            # Method 1: Use the main SR context method (comprehensive)
-            try:
+# Method 1: Use the main SR context method (comprehensive)
+try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-                sr_context = await self.sr_predictor.get_sr_context(market_data, current_price)
+sr_context = await self.sr_predictor.get_sr_context(market_data, current_price)
 
-                # Process support levels from context
-                for level_data in sr_context.get("support_levels", []):
+# Process support levels from context
+for level_data in sr_context.get("support_levels", []):
                     level = self._create_sr_level_from_data(level_data, "support")
-                    if level:
+if level:
                         support_levels.append(level)
 
-                # Process resistance levels from context
-                for level_data in sr_context.get("resistance_levels", []):
+# Process resistance levels from context
+for level_data in sr_context.get("resistance_levels", []):
                     level = self._create_sr_level_from_data(level_data, "resistance")
-                    if level:
+if level:
                         resistance_levels.append(level)
 
-                self.logger.info(f"✅ Retrieved {len(support_levels)} support and {len(resistance_levels)} resistance levels from SR context")
+self.logger.info(f"✅ Retrieved {len(support_levels)} support and {len(resistance_levels)} resistance levels from SR context")
 
-            except Exception as e:
+except Exception as e:
                 self.logger.warning(f"⚠️ SR context method failed: {e}")
 
-            # Method 2: Use direct detection methods if context method didn't provide enough levels
-            if len(support_levels) < 3 or len(resistance_levels) < 3:
+# Method 2: Use direct detection methods if context method didn't provide enough levels
+if len(support_levels) < 3 or len(resistance_levels) < 3:
                 self.logger.info("🔄 Using direct detection methods for additional levels")
 
-                try:
+try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-                    # Direct support level detection
-                    direct_support = await self.sr_predictor._detect_support_levels(market_data)
-                    for level_data in direct_support:
+# Direct support level detection
+direct_support = await self.sr_predictor._detect_support_levels(market_data)
+for level_data in direct_support:
                         level = self._create_sr_level_from_data(level_data, "support")
-                        if level and not self._level_exists(level, support_levels):
+if level and not self._level_exists(level, support_levels):
                             support_levels.append(level)
 
-                    # Direct resistance level detection
-                    direct_resistance = await self.sr_predictor._detect_resistance_levels(market_data)
-                    for level_data in direct_resistance:
+# Direct resistance level detection
+direct_resistance = await self.sr_predictor._detect_resistance_levels(market_data)
+for level_data in direct_resistance:
                         level = self._create_sr_level_from_data(level_data, "resistance")
-                        if level and not self._level_exists(level, resistance_levels):
+if level and not self._level_exists(level, resistance_levels):
                             resistance_levels.append(level)
 
-                    self.logger.info(f"✅ Added {len(direct_support)} direct support and {len(direct_resistance)} direct resistance levels")
+self.logger.info(f"✅ Added {len(direct_support)} direct support and {len(direct_resistance)} direct resistance levels")
 
-                except Exception as e:
+except Exception as e:
                     self.logger.warning(f"⚠️ Direct detection methods failed: {e}")
 
-            # Method 3: Use specific detection methods for comprehensive coverage
-            if len(support_levels) < 5 or len(resistance_levels) < 5:
+# Method 3: Use specific detection methods for comprehensive coverage
+if len(support_levels) < 5 or len(resistance_levels) < 5:
                 self.logger.info("🔄 Using specific detection methods for comprehensive coverage")
 
-                detection_methods = ["fractal", "volume", "pivot", "atr"]
+detection_methods = ["fractal", "volume", "pivot", "atr"]
 
-                for method in detection_methods:
+for method in detection_methods:
                     try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-                        # Temporarily set detection method
-                        original_method = self.sr_predictor.sr_detection_method
-                        self.sr_predictor.sr_detection_method = method
+# Temporarily set detection method
+original_method = self.sr_predictor.sr_detection_method
+self.sr_predictor.sr_detection_method = method
 
-                        # Detect support levels with this method
-                        method_support = await self.sr_predictor._detect_support_levels(market_data)
-                        for level_data in method_support:
+# Detect support levels with this method
+method_support = await self.sr_predictor._detect_support_levels(market_data)
+for level_data in method_support:
                             level = self._create_sr_level_from_data(level_data, "support")
-                            if level and not self._level_exists(level, support_levels):
+if level and not self._level_exists(level, support_levels):
                                 level.metadata["detection_method"] = method
-                                support_levels.append(level)
+support_levels.append(level)
 
-                        # Detect resistance levels with this method
-                        method_resistance = await self.sr_predictor._detect_resistance_levels(market_data)
-                        for level_data in method_resistance:
+# Detect resistance levels with this method
+method_resistance = await self.sr_predictor._detect_resistance_levels(market_data)
+for level_data in method_resistance:
                             level = self._create_sr_level_from_data(level_data, "resistance")
-                            if level and not self._level_exists(level, resistance_levels):
+if level and not self._level_exists(level, resistance_levels):
                                 level.metadata["detection_method"] = method
-                                resistance_levels.append(level)
+resistance_levels.append(level)
 
-                        # Restore original method
-                        self.sr_predictor.sr_detection_method = original_method
+# Restore original method
+self.sr_predictor.sr_detection_method = original_method
 
-                        self.logger.info(f"✅ Added {len(method_support)} {method} support and {len(method_resistance)} {method} resistance levels")
+self.logger.info(f"✅ Added {len(method_support)} {method} support and {len(method_resistance)} {method} resistance levels")
 
-                    except Exception as e:
+except Exception as e:
                         self.logger.warning(f"⚠️ {method} detection method failed: {e}")
-                        # Restore original method on error
-                        self.sr_predictor.sr_detection_method = original_method
+# Restore original method on error
+self.sr_predictor.sr_detection_method = original_method
 
-            # Filter and deduplicate levels
-            support_levels = self._filter_and_deduplicate_levels(support_levels)
-            resistance_levels = self._filter_and_deduplicate_levels(resistance_levels)
+# Filter and deduplicate levels
+support_levels = self._filter_and_deduplicate_levels(support_levels)
+resistance_levels = self._filter_and_deduplicate_levels(resistance_levels)
 
-            # Store levels
-            self.support_levels = support_levels
-            self.resistance_levels = resistance_levels
+# Store levels
+self.support_levels = support_levels
+self.resistance_levels = resistance_levels
 
-            # Save to storage
-            await self.save_levels()
+# Save to storage
+await self.save_levels()
 
-            self.logger.info(f"✅ Final calculation: {len(support_levels)} support and {len(resistance_levels)} resistance levels")
+self.logger.info(f"✅ Final calculation: {len(support_levels)} support and {len(resistance_levels)} resistance levels")
 
-            return {
-                "support_levels": support_levels,
-                "resistance_levels": resistance_levels
-            }
+return {
+"support_levels": support_levels,
+"resistance_levels": resistance_levels
+}
 
-        except Exception as e:
+except Exception as e:
             self.logger.error(f"❌ Error calculating SR levels from backtest: {e}")
-            return {"support_levels": [], "resistance_levels": []}
+return {"support_levels": [], "resistance_levels": []}
 
-    async def calculate_sr_levels_with_method(
-        self,
-        market_data: pd.DataFrame,
-        method: str,
-        level_type: str = "both"
-    ) -> Dict[str, List[SRLevel]]:
+async def calculate_sr_levels_with_method(
+self,
+market_data: pd.DataFrame,
+method: str,
+level_type: str = "both"
+) -> Dict[str, List[SRLevel]]:
         """
-        Calculate SR levels using a specific detection method from SR breakout predictor.
+Calculate SR levels using a specific detection method from SR breakout predictor.
 
-        Args:
+Args:
             market_data: Historical market data
-            method: Detection method ("fractal", "volume", "pivot", "atr")
-            level_type: "support", "resistance", or "both"
+method: Detection method ("fractal", "volume", "pivot", "atr")
+level_type: "support", "resistance", or "both"
 
-        Returns:
+Returns:
             Dictionary with support and/or resistance levels
-        """
-        try:
+"""
+try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-            self.logger.info(f"🔍 Calculating SR levels using {method} method")
+self.logger.info(f"🔍 Calculating SR levels using {method} method")
 
-            # Store original method
-            original_method = self.sr_predictor.sr_detection_method
+# Store original method
+original_method = self.sr_predictor.sr_detection_method
 
-            # Set the requested method
-            self.sr_predictor.sr_detection_method = method
+# Set the requested method
+self.sr_predictor.sr_detection_method = method
 
-            support_levels = []
-            resistance_levels = []
+support_levels = []
+resistance_levels = []
 
-            # Detect support levels if requested
-            if level_type in ["support", "both"]:
+# Detect support levels if requested
+if level_type in ["support", "both"]:
                 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-                    support_data = await self.sr_predictor._detect_support_levels(market_data)
-                    for level_data in support_data:
+support_data = await self.sr_predictor._detect_support_levels(market_data)
+for level_data in support_data:
                         level = self._create_sr_level_from_data(level_data, "support")
-                        if level:
+if level:
                             level.metadata["detection_method"] = method
-                            support_levels.append(level)
+support_levels.append(level)
 
-                    self.logger.info(f"✅ Detected {len(support_levels)} support levels using {method} method")
+self.logger.info(f"✅ Detected {len(support_levels)} support levels using {method} method")
 
-                except Exception as e:
+except Exception as e:
                     self.logger.error(f"❌ Error detecting support levels with {method} method: {e}")
 
-            # Detect resistance levels if requested
-            if level_type in ["resistance", "both"]:
+# Detect resistance levels if requested
+if level_type in ["resistance", "both"]:
                 try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-                    resistance_data = await self.sr_predictor._detect_resistance_levels(market_data)
-                    for level_data in resistance_data:
+resistance_data = await self.sr_predictor._detect_resistance_levels(market_data)
+for level_data in resistance_data:
                         level = self._create_sr_level_from_data(level_data, "resistance")
-                        if level:
+if level:
                             level.metadata["detection_method"] = method
-                            resistance_levels.append(level)
+resistance_levels.append(level)
 
-                    self.logger.info(f"✅ Detected {len(resistance_levels)} resistance levels using {method} method")
+self.logger.info(f"✅ Detected {len(resistance_levels)} resistance levels using {method} method")
 
-                except Exception as e:
+except Exception as e:
                     self.logger.error(f"❌ Error detecting resistance levels with {method} method: {e}")
 
-            # Restore original method
-            self.sr_predictor.sr_detection_method = original_method
+# Restore original method
+self.sr_predictor.sr_detection_method = original_method
 
-            return {
-                "support_levels": support_levels,
-                "resistance_levels": resistance_levels,
-                "method_used": method
-            }
+return {
+"support_levels": support_levels,
+"resistance_levels": resistance_levels,
+"method_used": method
+}
 
-        except Exception as e:
+except Exception as e:
             self.logger.error(f"❌ Error calculating SR levels with {method} method: {e}")
-            # Restore original method on error
-            self.sr_predictor.sr_detection_method = original_method
-            return {"support_levels": [], "resistance_levels": [], "method_used": method}
+# Restore original method on error
+self.sr_predictor.sr_detection_method = original_method
+return {"support_levels": [], "resistance_levels": [], "method_used": method}
 
-    async def update_levels_with_live_data(
-        self,
-        current_price: float,
-        current_volume: float,
-        current_time: datetime
-    ) -> Dict[str, Any]:
+async def update_levels_with_live_data(
+self,
+current_price: float,
+current_volume: float,
+current_time: datetime
+) -> Dict[str, Any]:
         """
-        Update SR levels with live trading data.
+Update SR levels with live trading data.
 
-        Args:
+Args:
             current_price: Current market price
-            current_volume: Current volume
-            current_time: Current timestamp
+current_volume: Current volume
+current_time: Current timestamp
 
-        Returns:
+Returns:
             Update summary
-        """
-        try:
+"""
+try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-            self.logger.info(f"🔄 Updating SR levels with live data (price: {current_price:.4f})")
+self.logger.info(f"🔄 Updating SR levels with live data (price: {current_price:.4f})")
 
-            updates = {
-                "support_touches": 0,
-                "resistance_touches": 0,
-                "new_levels_created": 0,
-                "levels_removed": 0
-            }
+updates = {
+"support_touches": 0,
+"resistance_touches": 0,
+"new_levels_created": 0,
+"levels_removed": 0
+}
 
-            # Check for touches on existing levels
-            for level in self.support_levels + self.resistance_levels:
+# Check for touches on existing levels
+for level in self.support_levels + self.resistance_levels:
                 if self._is_price_near_level(current_price, level.price):
                     level.update_touch(current_time, current_price, current_volume)
-                    if level.level_type == "support":
+if level.level_type == "support":
                         updates["support_touches"] += 1
-                    else:
+else:
                         updates["resistance_touches"] += 1
 
-            # Remove old/weak levels
-            self._cleanup_old_levels()
+# Remove old/weak levels
+self._cleanup_old_levels()
 
-            # Update last update time
-            self.last_update = current_time
-            self.update_count += 1
+# Update last update time
+self.last_update = current_time
+self.update_count += 1
 
-            # Save updated levels
-            await self.save_levels()
+# Save updated levels
+await self.save_levels()
 
-            self.logger.info(f"✅ Updated SR levels: {updates}")
-            return updates
+self.logger.info(f"✅ Updated SR levels: {updates}")
+return updates
 
-        except Exception as e:
+except Exception as e:
             self.logger.error(f"❌ Error updating SR levels: {e}")
-            return {}
+return {}
 
-    def get_sr_levels_for_trading(
-        self,
-        current_price: float,
-        include_metadata: bool = True
-    ) -> Dict[str, Any]:
+def get_sr_levels_for_trading(
+self,
+current_price: float,
+include_metadata: bool = True
+) -> Dict[str, Any]:
         """
-        Get SR levels optimized for trading intelligence.
+Get SR levels optimized for trading intelligence.
 
-        Args:
+Args:
             current_price: Current market price
-            include_metadata: Whether to include detailed metadata
+include_metadata: Whether to include detailed metadata
 
-        Returns:
+Returns:
             Trading-optimized SR levels
-        """
-        try:
+"""
+try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-            # Find nearest levels
-            nearest_support = self._find_nearest_level(current_price, self.support_levels)
-            nearest_resistance = self._find_nearest_level(current_price, self.resistance_levels)
+# Find nearest levels
+nearest_support = self._find_nearest_level(current_price, self.support_levels)
+nearest_resistance = self._find_nearest_level(current_price, self.resistance_levels)
 
-            # Calculate proximity
-            support_proximity = self._calculate_proximity(current_price, nearest_support)
-            resistance_proximity = self._calculate_proximity(current_price, nearest_resistance)
+# Calculate proximity
+support_proximity = self._calculate_proximity(current_price, nearest_support)
+resistance_proximity = self._calculate_proximity(current_price, nearest_resistance)
 
-            # Prepare response
-            response = {
-                "current_price": current_price,
-                "timestamp": datetime.now().isoformat(),
-                "nearest_support": {
-                    "price": nearest_support.price if nearest_support else None,
-                    "strength": nearest_support.strength if nearest_support else None,
-                    "proximity": support_proximity,
-                    "touch_count": nearest_support.touch_count if nearest_support else None,
-                    "age_hours": nearest_support.age_hours if nearest_support else None,
-                    "bounce_rate": nearest_support.bounce_rate if nearest_support else None,
-                    "quality_score": nearest_support.calculate_quality_score() if nearest_support else None
-                } if nearest_support else None,
-                "nearest_resistance": {
-                    "price": nearest_resistance.price if nearest_resistance else None,
-                    "strength": nearest_resistance.strength if nearest_resistance else None,
-                    "proximity": resistance_proximity,
-                    "touch_count": nearest_resistance.touch_count if nearest_resistance else None,
-                    "age_hours": nearest_resistance.age_hours if nearest_resistance else None,
-                    "bounce_rate": nearest_resistance.bounce_rate if nearest_resistance else None,
-                    "quality_score": nearest_resistance.calculate_quality_score() if nearest_resistance else None
-                } if nearest_resistance else None,
-                "all_levels": {
-                    "support_count": len(self.support_levels),
-                    "resistance_count": len(self.resistance_levels),
-                    "total_count": len(self.support_levels) + len(self.resistance_levels)
-                }
-            }
+# Prepare response
+response = {
+"current_price": current_price,
+"timestamp": datetime.now().isoformat(),
+"nearest_support": {
+"price": nearest_support.price if nearest_support else None,
+"strength": nearest_support.strength if nearest_support else None,
+"proximity": support_proximity,
+"touch_count": nearest_support.touch_count if nearest_support else None,
+"age_hours": nearest_support.age_hours if nearest_support else None,
+"bounce_rate": nearest_support.bounce_rate if nearest_support else None,
+"quality_score": nearest_support.calculate_quality_score() if nearest_support else None
+} if nearest_support else None,
+"nearest_resistance": {
+"price": nearest_resistance.price if nearest_resistance else None,
+"strength": nearest_resistance.strength if nearest_resistance else None,
+"proximity": resistance_proximity,
+"touch_count": nearest_resistance.touch_count if nearest_resistance else None,
+"age_hours": nearest_resistance.age_hours if nearest_resistance else None,
+"bounce_rate": nearest_resistance.bounce_rate if nearest_resistance else None,
+"quality_score": nearest_resistance.calculate_quality_score() if nearest_resistance else None
+} if nearest_resistance else None,
+"all_levels": {
+"support_count": len(self.support_levels),
+"resistance_count": len(self.resistance_levels),
+"total_count": len(self.support_levels) + len(self.resistance_levels)
+}
+}
 
-            # Add detailed metadata if requested
-            if include_metadata:
+# Add detailed metadata if requested
+if include_metadata:
                 response["detailed_levels"] = {
-                    "support_levels": [level.to_dict() for level in self.support_levels],
-                    "resistance_levels": [level.to_dict() for level in self.resistance_levels]
-                }
+"support_levels": [level.to_dict() for level in self.support_levels],
+"resistance_levels": [level.to_dict() for level in self.resistance_levels]
+}
 
-            return response
+return response
 
-        except Exception as e:
+except Exception as e:
             self.logger.error(f"❌ Error getting SR levels for trading: {e}")
-            return {}
+return {}
 
-    def compare_price_vs_vwap_predictions(
-        self,
-        price_levels: List[SRLevel],
-        vwap_levels: List[SRLevel]
-    ) -> Dict[str, Any]:
+def compare_price_vs_vwap_predictions(
+self,
+price_levels: List[SRLevel],
+vwap_levels: List[SRLevel]
+) -> Dict[str, Any]:
         """
-        Compare price vs VWAP SR level predictions.
+Compare price vs VWAP SR level predictions.
 
-        Args:
+Args:
             price_levels: Levels detected using price data
-            vwap_levels: Levels detected using VWAP data
+vwap_levels: Levels detected using VWAP data
 
-        Returns:
+Returns:
             Comparison analysis
-        """
-        try:
+"""
+try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-            self.logger.info("🔍 Comparing price vs VWAP SR level predictions")
+self.logger.info("🔍 Comparing price vs VWAP SR level predictions")
 
-            # Count levels by type
-            price_support = [l for l in price_levels if l.level_type == "support"]
-            price_resistance = [l for l in price_levels if l.level_type == "resistance"]
-            vwap_support = [l for l in vwap_levels if l.level_type == "support"]
-            vwap_resistance = [l for l in vwap_levels if l.level_type == "resistance"]
+# Count levels by type
+price_support = [l for l in price_levels if l.level_type == "support"]
+price_resistance = [l for l in price_levels if l.level_type == "resistance"]
+vwap_support = [l for l in vwap_levels if l.level_type == "support"]
+vwap_resistance = [l for l in vwap_levels if l.level_type == "resistance"]
 
-            # Calculate quality metrics
-            price_quality = self._calculate_levels_quality(price_levels)
-            vwap_quality = self._calculate_levels_quality(vwap_levels)
+# Calculate quality metrics
+price_quality = self._calculate_levels_quality(price_levels)
+vwap_quality = self._calculate_levels_quality(vwap_levels)
 
-            # Calculate overlap
-            overlap_analysis = self._calculate_levels_overlap(price_levels, vwap_levels)
+# Calculate overlap
+overlap_analysis = self._calculate_levels_overlap(price_levels, vwap_levels)
 
-            comparison = {
-                "level_counts": {
-                    "price": {
-                        "support": len(price_support),
-                        "resistance": len(price_resistance),
-                        "total": len(price_levels)
-                    },
-                    "vwap": {
-                        "support": len(vwap_support),
-                        "resistance": len(vwap_resistance),
-                        "total": len(vwap_levels)
-                    }
-                },
-                "quality_metrics": {
-                    "price": price_quality,
-                    "vwap": vwap_quality
-                },
-                "overlap_analysis": overlap_analysis,
-                "recommendations": self._generate_comparison_recommendations(
-                    price_quality, vwap_quality, overlap_analysis
-                ),
-                "timestamp": datetime.now().isoformat()
-            }
+comparison = {
+"level_counts": {
+"price": {
+"support": len(price_support),
+"resistance": len(price_resistance),
+"total": len(price_levels)
+},
+"vwap": {
+"support": len(vwap_support),
+"resistance": len(vwap_resistance),
+"total": len(vwap_levels)
+}
+},
+"quality_metrics": {
+"price": price_quality,
+"vwap": vwap_quality
+},
+"overlap_analysis": overlap_analysis,
+"recommendations": self._generate_comparison_recommendations(
+price_quality, vwap_quality, overlap_analysis
+),
+"timestamp": datetime.now().isoformat()
+}
 
-            self.logger.info(f"✅ Price vs VWAP comparison completed")
-            return comparison
+self.logger.info(f"✅ Price vs VWAP comparison completed")
+return comparison
 
-        except Exception as e:
+except Exception as e:
             self.logger.error(f"❌ Error comparing price vs VWAP predictions: {e}")
-            return {}
+return {}
 
-    def _filter_and_deduplicate_levels(self, levels: List[SRLevel]) -> List[SRLevel]:
+def _filter_and_deduplicate_levels(self, levels: List[SRLevel]) -> List[SRLevel]:
         """Filter and deduplicate levels based on quality and proximity."""
-        if not levels:
+if not levels:
             return []
 
-        # Sort by quality score
-        levels.sort(key=lambda x: x.calculate_quality_score(), reverse=True)
+# Sort by quality score
+levels.sort(key=lambda x: x.calculate_quality_score(), reverse=True)
 
-        # Filter by minimum strength
-        levels = [l for l in levels if l.strength >= self.min_strength]
+# Filter by minimum strength
+levels = [l for l in levels if l.strength >= self.min_strength]
 
-        # Deduplicate by proximity
-        filtered = []
-        for level in levels:
+# Deduplicate by proximity
+filtered = []
+for level in levels:
             is_duplicate = False
-            for existing in filtered:
+for existing in filtered:
                 if self._is_price_near_level(level.price, existing.price):
                     is_duplicate = True
-                    break
-            if not is_duplicate:
+break
+if not is_duplicate:
                 filtered.append(level)
 
-        # Limit total levels
-        return filtered[:self.max_levels]
+# Limit total levels
+return filtered[:self.max_levels]
 
-    def _is_price_near_level(self, price1: float, price2: float) -> bool:
+def _is_price_near_level(self, price1: float, price2: float) -> bool:
         """Check if two prices are near each other."""
-        if price2 == 0:
+if price2 == 0:
             return False
-        return abs(price1 - price2) / price2 < self.proximity_threshold
+return abs(price1 - price2) / price2 < self.proximity_threshold
 
-    def _find_nearest_level(self, price: float, levels: List[SRLevel]) -> Optional[SRLevel]:
+def _find_nearest_level(self, price: float, levels: List[SRLevel]) -> Optional[SRLevel]:
         """Find the nearest level to a given price."""
-        if not levels:
+if not levels:
             return None
 
-        nearest = min(levels, key=lambda x: abs(x.price - price))
-        return nearest
+nearest = min(levels, key=lambda x: abs(x.price - price))
+return nearest
 
-    def _calculate_proximity(self, price: float, level: Optional[SRLevel]) -> float:
+def _calculate_proximity(self, price: float, level: Optional[SRLevel]) -> float:
         """Calculate proximity to a level (0 = at level, 1 = far away)."""
-        if not level or level.price == 0:
+if not level or level.price == 0:
             return 1.0
 
-        return abs(price - level.price) / level.price
+return abs(price - level.price) / level.price
 
-    def _cleanup_old_levels(self):
+def _cleanup_old_levels(self):
         """Remove old or weak levels."""
-        current_time = datetime.now()
+current_time = datetime.now()
 
-        # Remove levels older than 30 days and with low strength
-        self.support_levels = [
-            l for l in self.support_levels
-            if (current_time - l.creation_time).days < 30 or l.strength > 0.6
-        ]
+# Remove levels older than 30 days and with low strength
+self.support_levels = [
+l for l in self.support_levels
+if (current_time - l.creation_time).days < 30 or l.strength > 0.6
+]
 
-        self.resistance_levels = [
-            l for l in self.resistance_levels
-            if (current_time - l.creation_time).days < 30 or l.strength > 0.6
-        ]
+self.resistance_levels = [
+l for l in self.resistance_levels
+if (current_time - l.creation_time).days < 30 or l.strength > 0.6
+]
 
-    def _calculate_levels_quality(self, levels: List[SRLevel]) -> Dict[str, float]:
+def _calculate_levels_quality(self, levels: List[SRLevel]) -> Dict[str, float]:
         """Calculate quality metrics for a set of levels."""
-        if not levels:
+if not levels:
             return {"avg_strength": 0.0, "avg_confidence": 0.0, "avg_quality": 0.0}
 
-        avg_strength = np.mean([l.strength for l in levels])
-        avg_confidence = np.mean([l.confidence for l in levels])
-        avg_quality = np.mean([l.calculate_quality_score() for l in levels])
+avg_strength = np.mean([l.strength for l in levels])
+avg_confidence = np.mean([l.confidence for l in levels])
+avg_quality = np.mean([l.calculate_quality_score() for l in levels])
 
-        return {
-            "avg_strength": avg_strength,
-            "avg_confidence": avg_confidence,
-            "avg_quality": avg_quality
-        }
+return {
+"avg_strength": avg_strength,
+"avg_confidence": avg_confidence,
+"avg_quality": avg_quality
+}
 
-    def _calculate_levels_overlap(self, levels1: List[SRLevel], levels2: List[SRLevel]) -> Dict[str, Any]:
+def _calculate_levels_overlap(self, levels1: List[SRLevel], levels2: List[SRLevel]) -> Dict[str, Any]:
         """Calculate overlap between two sets of levels."""
-        if not levels1 or not levels2:
+if not levels1 or not levels2:
             return {"overlap_count": 0, "overlap_rate": 0.0, "overlap_details": []}
 
-        overlap_count = 0
-        overlap_details = []
+overlap_count = 0
+overlap_details = []
 
-        for l1 in levels1:
+for l1 in levels1:
             for l2 in levels2:
                 if (l1.level_type == l2.level_type and
-                    self._is_price_near_level(l1.price, l2.price)):
+self._is_price_near_level(l1.price, l2.price)):
                     overlap_count += 1
-                    overlap_details.append({
-                        "level1": l1.to_dict(),
-                        "level2": l2.to_dict(),
-                        "price_difference": abs(l1.price - l2.price)
-                    })
+overlap_details.append({
+"level1": l1.to_dict(),
+"level2": l2.to_dict(),
+"price_difference": abs(l1.price - l2.price)
+})
 
-        overlap_rate = overlap_count / min(len(levels1), len(levels2)) if min(len(levels1), len(levels2)) > 0 else 0.0
+overlap_rate = overlap_count / min(len(levels1), len(levels2)) if min(len(levels1), len(levels2)) > 0 else 0.0
 
-        return {
-            "overlap_count": overlap_count,
-            "overlap_rate": overlap_rate,
-            "overlap_details": overlap_details
-        }
+return {
+"overlap_count": overlap_count,
+"overlap_rate": overlap_rate,
+"overlap_details": overlap_details
+}
 
-    def _create_sr_level_from_data(self, level_data: Dict[str, Any], level_type: str) -> Optional[SRLevel]:
+def _create_sr_level_from_data(self, level_data: Dict[str, Any], level_type: str) -> Optional[SRLevel]:
         """Create SRLevel object from level data dictionary."""
-        try:
+try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-            if not level_data or not isinstance(level_data, dict):
+if not level_data or not isinstance(level_data, dict):
                 return None
 
-            # Extract timestamp
-            timestamp = level_data.get("timestamp")
-            if isinstance(timestamp, str):
+# Extract timestamp
+timestamp = level_data.get("timestamp")
+if isinstance(timestamp, str):
                 timestamp = datetime.fromisoformat(timestamp)
-            elif timestamp is None:
+elif timestamp is None:
                 timestamp = datetime.now()
 
-            # Create SRLevel object
-            level = SRLevel(
-                price=level_data.get("price", 0),
-                level_type=level_type,
-                method=level_data.get("method", "unknown"),
-                data_source=level_data.get("data_source", "price"),
-                timestamp=timestamp,
-                strength=level_data.get("enhanced_strength", level_data.get("strength", 0.5)),
-                volume=level_data.get("volume", 0.0),
-                touch_count=level_data.get("touch_count", 0),
-                age_hours=level_data.get("age_hours", 0.0),
-                bounce_rate=level_data.get("bounce_rate", 0.0),
-                isolation_score=level_data.get("isolation_score", 0.0),
-                confidence=level_data.get("confidence", 0.5),
-                metadata=level_data.get("metadata", {})
-            )
+# Create SRLevel object
+level = SRLevel(
+price=level_data.get("price", 0),
+level_type=level_type,
+method=level_data.get("method", "unknown"),
+data_source=level_data.get("data_source", "price"),
+timestamp=timestamp,
+strength=level_data.get("enhanced_strength", level_data.get("strength", 0.5)),
+volume=level_data.get("volume", 0.0),
+touch_count=level_data.get("touch_count", 0),
+age_hours=level_data.get("age_hours", 0.0),
+bounce_rate=level_data.get("bounce_rate", 0.0),
+isolation_score=level_data.get("isolation_score", 0.0),
+confidence=level_data.get("confidence", 0.5),
+metadata=level_data.get("metadata", {})
+)
 
-            return level
+return level
 
-        except Exception as e:
+except Exception as e:
             self.logger.error(f"❌ Error creating SR level from data: {e}")
-            return None
+return None
 
-    def _level_exists(self, new_level: SRLevel, existing_levels: List[SRLevel]) -> bool:
+def _level_exists(self, new_level: SRLevel, existing_levels: List[SRLevel]) -> bool:
         """Check if a level already exists in the list based on price proximity."""
-        try:
-            for existing_level in existing_levels:
+try:
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
+for existing_level in existing_levels:
                 if (existing_level.level_type == new_level.level_type and
-                    self._is_price_near_level(new_level.price, existing_level.price)):
+self._is_price_near_level(new_level.price, existing_level.price)):
                     return True
-            return False
+return False
 
-        except Exception as e:
+except Exception as e:
             self.logger.error(f"❌ Error checking level existence: {e}")
-            return False
+return False
 
-    def _generate_comparison_recommendations(
-        self,
-        price_quality: Dict[str, float],
-        vwap_quality: Dict[str, float],
-        overlap_analysis: Dict[str, Any]
-    ) -> List[str]:
+def _generate_comparison_recommendations(
+self,
+price_quality: Dict[str, float],
+vwap_quality: Dict[str, float],
+overlap_analysis: Dict[str, Any]
+) -> List[str]:
         """Generate recommendations based on comparison analysis."""
-        recommendations = []
+recommendations = []
 
-        # Quality-based recommendations
-        if price_quality["avg_quality"] > vwap_quality["avg_quality"]:
+# Quality-based recommendations
+if price_quality["avg_quality"] > vwap_quality["avg_quality"]:
             recommendations.append("Price-based detection shows higher quality - consider prioritizing price data")
-        elif vwap_quality["avg_quality"] > price_quality["avg_quality"]:
+elif vwap_quality["avg_quality"] > price_quality["avg_quality"]:
             recommendations.append("VWAP-based detection shows higher quality - consider prioritizing VWAP data")
 
-        # Overlap-based recommendations
-        if overlap_analysis["overlap_rate"] < 0.3:
+# Overlap-based recommendations
+if overlap_analysis["overlap_rate"] < 0.3:
             recommendations.append("Low overlap between approaches - consider adjusting detection parameters")
-        elif overlap_analysis["overlap_rate"] > 0.8:
+elif overlap_analysis["overlap_rate"] > 0.8:
             recommendations.append("High overlap between approaches - both methods are detecting similar levels")
 
-        # General recommendations
-        if price_quality["avg_quality"] < 0.5:
+# General recommendations
+if price_quality["avg_quality"] < 0.5:
             recommendations.append("Price-based detection quality is low - review detection parameters")
-        if vwap_quality["avg_quality"] < 0.5:
+if vwap_quality["avg_quality"] < 0.5:
             recommendations.append("VWAP-based detection quality is low - review VWAP calculation")
 
-        return recommendations
+return recommendations
 
-    async def save_levels(self):
+async def save_levels(self):
         """Save current levels to storage."""
-        try:
+try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-            data = {
-                "support_levels": [level.to_dict() for level in self.support_levels],
-                "resistance_levels": [level.to_dict() for level in self.resistance_levels],
-                "last_update": self.last_update.isoformat(),
-                "update_count": self.update_count
-            }
+data = {
+"support_levels": [level.to_dict() for level in self.support_levels],
+"resistance_levels": [level.to_dict() for level in self.resistance_levels],
+"last_update": self.last_update.isoformat(),
+"update_count": self.update_count
+}
 
-            with open(self.levels_file, 'w') as f:
+with open(self.levels_file, 'w') as f:
                 json.dump(data, f, indent=2)
 
-            # Save to history
-            await self._save_to_history(data)
+# Save to history
+await self._save_to_history(data)
 
-        except Exception as e:
+except Exception as e:
             self.logger.error(f"❌ Error saving SR levels: {e}")
 
-    async def load_levels(self):
+async def load_levels(self):
         """Load levels from storage."""
-        try:
+try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-            if not self.levels_file.exists():
+if not self.levels_file.exists():
                 self.logger.info("No existing SR levels found, starting fresh")
-                return
+return
 
-            with open(self.levels_file, 'r') as f:
+with open(self.levels_file, 'r') as f:
                 data = json.load(f)
 
-            # Load support levels
-            self.support_levels = [
-                SRLevel.from_dict(level_data)
-                for level_data in data.get("support_levels", [])
-            ]
+# Load support levels
+self.support_levels = [
+SRLevel.from_dict(level_data)
+for level_data in data.get("support_levels", [])
+]
 
-            # Load resistance levels
-            self.resistance_levels = [
-                SRLevel.from_dict(level_data)
-                for level_data in data.get("resistance_levels", [])
-            ]
+# Load resistance levels
+self.resistance_levels = [
+SRLevel.from_dict(level_data)
+for level_data in data.get("resistance_levels", [])
+]
 
-            # Load metadata
-            self.last_update = datetime.fromisoformat(data.get("last_update", datetime.now().isoformat()))
-            self.update_count = data.get("update_count", 0)
+# Load metadata
+self.last_update = datetime.fromisoformat(data.get("last_update", datetime.now().isoformat()))
+self.update_count = data.get("update_count", 0)
 
-            self.logger.info(f"✅ Loaded {len(self.support_levels)} support and {len(self.resistance_levels)} resistance levels")
+self.logger.info(f"✅ Loaded {len(self.support_levels)} support and {len(self.resistance_levels)} resistance levels")
 
-        except Exception as e:
+except Exception as e:
             self.logger.error(f"❌ Error loading SR levels: {e}")
 
-    async def _save_to_history(self, data: Dict[str, Any]):
+async def _save_to_history(self, data: Dict[str, Any]):
         """Save current state to history file."""
-        try:
+try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
-            history_data = []
+history_data = []
 
-            if self.history_file.exists():
+if self.history_file.exists():
                 with open(self.history_file, 'r') as f:
                     history_data = json.load(f)
 
-            # Add current state to history
-            history_data.append({
-                "timestamp": datetime.now().isoformat(),
-                "data": data
-            })
+# Add current state to history
+history_data.append({
+"timestamp": datetime.now().isoformat(),
+"data": data
+})
 
-            # Keep only last 100 entries
-            if len(history_data) > 100:
+# Keep only last 100 entries
+if len(history_data) > 100:
                 history_data = history_data[-100:]
 
-            with open(self.history_file, 'w') as f:
+with open(self.history_file, 'w') as f:
                 json.dump(history_data, f, indent=2)
 
-        except Exception as e:
+except Exception as e:
             self.logger.error(f"❌ Error saving to history: {e}")
 
 
 async def create_sr_levels_manager(config: Dict[str, Any]) -> SRLevelsManager:
     """Factory function to create and initialize SR Levels Manager."""
-    manager = SRLevelsManager(config)
-    if await manager.initialize():
+manager = SRLevelsManager(config)
+if await manager.initialize():
         return manager
-    return None
+return None

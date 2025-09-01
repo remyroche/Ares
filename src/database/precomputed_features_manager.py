@@ -5,10 +5,13 @@
 
 
 try:
-    from src.database.influxdb_manager import InfluxDBManager
-    INFLUXDB_AVAILABLE = True
+    pass  # TODO: Add proper exception handling
+except Exception as e:
+    pass  # TODO: Add proper exception handling
+from src.database.influxdb_manager import InfluxDBManager
+INFLUXDB_AVAILABLE = True
 except Exception:
     InfluxDBManager = None  # type: ignore
-    INFLUXDB_AVAILABLE = False
+INFLUXDB_AVAILABLE = False
 
 

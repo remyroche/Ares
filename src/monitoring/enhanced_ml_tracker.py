@@ -12,19 +12,19 @@ from enum import Enum
 
 class ModelType(Enum):
     XGBOOST = "xgboost"
-    CATBOOST = "catboost"
-    LIGHTGBM = "lightgbm"
-    NEURAL_NETWORK = "neural_network"
-    RANDOM_FOREST = "random_forest"
-    SVM = "svm"
-    LINEAR_REGRESSION = "linear_regression"
-    ENSEMBLE = "ensemble"
-    META_LEARNER = "meta_learner"
+CATBOOST = "catboost"
+LIGHTGBM = "lightgbm"
+NEURAL_NETWORK = "neural_network"
+RANDOM_FOREST = "random_forest"
+SVM = "svm"
+LINEAR_REGRESSION = "linear_regression"
+ENSEMBLE = "ensemble"
+META_LEARNER = "meta_learner"
 
 
 class PredictionType(Enum):
     REGRESSION = "regression"
-    CLASSIFICATION = "classification"
-    PROBABILITY = "probability"
+CLASSIFICATION = "classification"
+PROBABILITY = "probability"
 
 

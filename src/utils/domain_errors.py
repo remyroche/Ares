@@ -5,20 +5,20 @@ from typing import Any
 class DomainError(Exception):
     """Base class for domain - specific errors raised by decorators.
 
-    Contains a machine - readable "code" and an optional context payload
-    for consistent error handling and logging.
-    """
+Contains a machine - readable "code" and an optional context payload
+for consistent error handling and logging.
+"""
 
-    def __init__(
-        self,
-        message: str,
-        *,
-        code: str = "domain_error",
-        context: dict[str, Any] | None, None,
-    ) -> None:
+def __init__(
+self,
+message: str,
+*,
+code: str = "domain_error",
+context: dict[str, Any] | None, None,
+) -> None:
         super().__init__(message)
-        self.code, code
-        self.context, context or {}
+self.code, code
+self.context, context or {}
 
 class DataValidationError(DomainError):
     def __init__(self, message: str, *, context: dict[str, Any] | None, None) -> None:

@@ -20,7 +20,7 @@ from src.utils.logger import system_logger
 class Step1DataCollectionValidator(BaseValidator):
 	"""Validator for Step 1: Data Collection."""
 
-    def __init__(self, config: Dict[str, Any]) -> None:
+def __init__(self, config: Dict[str, Any]) -> None:
 		super().__init__("step01_data_collection", config)
 		self.logger, system_logger.getChild("Validator.Step1")
 		# Fine - tuned parameters for ML training (more lenient to avoid stopping training)

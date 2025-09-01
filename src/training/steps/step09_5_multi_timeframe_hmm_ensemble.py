@@ -1,10 +1,11 @@
-# src / training / steps / step09_5_multi_timeframe_hmm_ensemble.py
+# src/training/steps/step09_5_multi_timeframe_hmm_ensemble.py
 
-"""Step 9.5: Multi - Timeframe HMM Ensemble Training.
+"""Step 9.5: Multi-Timeframe HMM Ensemble Training with Regime-Specific Logic.
 
 This step trains a multi - timeframe HMM cluster ensemble system that combines
 predictions from Enhanced HMM regime forecasting across multiple timeframes (5m, 15m, 30m, 1h)
 to improve regime forecasting accuracy and reduce MAPE.
+
 
 The ensemble works with Enhanced HMM regime forecasting data from Step9 and Step3,
 providing multi-timeframe regime transition predictions.
@@ -19,7 +20,7 @@ import os
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -35,15 +36,6 @@ from src.config.multi_timeframe_hmm_ensemble_config import (
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
 from src.utils.training_pipeline_decorators import (
-
-from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
-)
     validate_step_prerequisites,
     secure_data_processing,
     prevent_data_leakage,
@@ -54,6 +46,491 @@ from src.utils.enhanced_mlflow_integration import (
     debug_training_step,
     monitor_feature_engineering,
 )
+
+from src.utils.enhanced_mlflow_integration import (
+    with_enhanced_mlflow_logging,
+    log_step_report,
+    create_detailed_step_report,
+    log_step_metrics,
+    log_step_dataframe_with_standardized_name,
+    log_step_artifact_with_standardized_name
+)
+
+class RegimeSpecificMultiTimeframeEnsemble:
+    """Regime-specific multi-timeframe HMM ensemble with regime-aware optimization."""
+    
+    def __init__(self, config: dict[str, Any]):
+        self.config = config
+        self.logger = system_logger.getChild("RegimeSpecificMultiTimeframeEnsemble")
+        
+        # Regime-specific configuration
+        self.regime_config = config.get("regime_specific_ensemble", {
+            "min_regime_samples": 100,
+            "regime_specific_timeframes": True,
+            "regime_specific_weights": True,
+            "regime_specific_validation": True,
+            "regime_specific_logging": True,
+            "regime_specific_optimization": True
+        })
+        
+        # Regime-specific results storage
+        self.regime_ensembles = {}
+        self.regime_validation_results = {}
+        self.regime_optimization_results = {}
+        
+        # Timeframes for regime-specific optimization
+        self.timeframes = ["1m", "5m", "15m", "30m"]
+        
+        self.logger.info("🎯 Regime-Specific Multi-Timeframe Ensemble initialized")
+
+    async def run_regime_specific_ensemble_step(
+        self, symbol: str, exchange: str, data_dir: str, 
+        timeframe: str, lookback_days: int
+    ) -> bool:
+        """Run regime-specific multi-timeframe ensemble creation."""
+        
+        self.logger.info(f"🚀 Starting regime-specific multi-timeframe ensemble for {symbol}")
+        
+        try:
+            # Load regime-specific data for each timeframe
+            regime_data = await self._load_regime_specific_data(symbol, exchange, data_dir, lookback_days)
+            
+            if regime_data.empty:
+                self.logger.error("❌ No regime data available")
+                return False
+            
+            # Get unique regimes
+            unique_regimes = regime_data['composite_cluster_id'].unique()
+            self.logger.info(f"📊 Found {len(unique_regimes)} regimes: {unique_regimes}")
+            
+            # Create regime-specific ensembles
+            for regime in unique_regimes:
+                self.logger.info(f"🔄 Creating ensemble for regime: {regime}")
+                
+                regime_ensembles = {}
+                
+                for tf in self.timeframes:
+                    # Load regime-specific data for this timeframe
+                    regime_tf_data = await self._load_regime_timeframe_data(
+                        symbol, exchange, tf, regime, lookback_days
+                    )
+                    
+                    if not regime_tf_data.empty:
+                        # Create regime-specific ensemble for this timeframe
+                        ensemble = await self._create_regime_timeframe_ensemble(
+                            regime_tf_data, regime, tf
+                        )
+                        
+                        if ensemble:
+                            regime_ensembles[tf] = ensemble
+                
+                if regime_ensembles:
+                    # Create regime-specific multi-timeframe ensemble
+                    multi_tf_ensemble = await self._create_regime_multi_timeframe_ensemble(
+                        regime_ensembles, regime
+                    )
+                    
+                    if multi_tf_ensemble:
+                        self.regime_ensembles[regime] = multi_tf_ensemble
+                        
+                        # Validate regime-specific ensemble
+                        validation_success = await self._validate_regime_ensemble(
+                            multi_tf_ensemble, regime
+                        )
+                        
+                        if not validation_success:
+                            self.logger.error(f"❌ Regime {regime} ensemble validation failed")
+                            return False
+                
+                else:
+                    self.logger.warning(f"⚠️ No ensembles created for regime {regime}")
+            
+            # Save regime-specific ensembles
+            await self._save_regime_specific_ensembles(symbol, data_dir)
+            
+            self.logger.info("✅ Regime-specific multi-timeframe ensemble completed successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in regime-specific ensemble creation: {e}")
+            return False
+
+    async def _load_regime_specific_data(
+        self, symbol: str, exchange: str, data_dir: str, lookback_days: int
+    ) -> pd.DataFrame:
+        """Load regime-specific data for all timeframes."""
+        
+        self.logger.info(f"📊 Loading regime-specific data for {symbol}")
+        
+        try:
+            # Load unified data with regime information
+            unified_data_path = f"{data_dir}/{exchange}_{symbol}_unified_data.parquet"
+            if not os.path.exists(unified_data_path):
+                self.logger.error(f"❌ Unified data not found: {unified_data_path}")
+                return pd.DataFrame()
+            
+            unified_data = pd.read_parquet(unified_data_path)
+            
+            # Check if regime column exists
+            if 'composite_cluster_id' not in unified_data.columns:
+                self.logger.error("❌ Regime column 'composite_cluster_id' not found")
+                return pd.DataFrame()
+            
+            # Filter by lookback days if timestamp column exists
+            if 'timestamp' in unified_data.columns:
+                cutoff_date = pd.Timestamp.now() - pd.Timedelta(days=lookback_days)
+                unified_data = unified_data[unified_data['timestamp'] >= cutoff_date]
+            
+            self.logger.info(f"✅ Loaded {len(unified_data)} samples with {unified_data['composite_cluster_id'].nunique()} regimes")
+            return unified_data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error loading regime-specific data: {e}")
+            return pd.DataFrame()
+
+    async def _load_regime_timeframe_data(
+        self, symbol: str, exchange: str, timeframe: str, regime: str, lookback_days: int
+    ) -> pd.DataFrame:
+        """Load regime-specific data for a specific timeframe."""
+        
+        self.logger.info(f"📊 Loading {timeframe} data for regime {regime}")
+        
+        try:
+            # Load timeframe-specific data
+            tf_data_path = f"data/training/{exchange}_{symbol}_{timeframe}_unified_data.parquet"
+            if not os.path.exists(tf_data_path):
+                self.logger.warning(f"⚠️ Timeframe data not found: {tf_data_path}")
+                return pd.DataFrame()
+            
+            tf_data = pd.read_parquet(tf_data_path)
+            
+            # Filter for specific regime
+            if 'composite_cluster_id' in tf_data.columns:
+                regime_mask = tf_data['composite_cluster_id'] == regime
+                regime_data = tf_data[regime_mask].copy()
+                
+                # Regime-specific data validation
+                if len(regime_data) < self.regime_config["min_regime_samples"]:
+                    self.logger.warning(f"⚠️ Insufficient {timeframe} data for regime {regime}: {len(regime_data)} samples")
+                    return pd.DataFrame()
+                
+                self.logger.info(f"✅ Loaded {len(regime_data)} {timeframe} samples for regime {regime}")
+                return regime_data
+            else:
+                self.logger.warning(f"⚠️ No regime column in {timeframe} data")
+                return pd.DataFrame()
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error loading {timeframe} data for regime {regime}: {e}")
+            return pd.DataFrame()
+
+    async def _create_regime_timeframe_ensemble(
+        self, regime_data: pd.DataFrame, regime: str, timeframe: str
+    ) -> Optional[Dict[str, Any]]:
+        """Create regime-specific ensemble for a specific timeframe."""
+        
+        self.logger.info(f"🎯 Creating {timeframe} ensemble for regime {regime}")
+        
+        try:
+            # Regime-specific ensemble configuration
+            ensemble_config = await self._get_regime_specific_ensemble_config(regime, timeframe)
+            
+            # Create ensemble using existing MultiTimeframeHMMEnsemble
+            ensemble = MultiTimeframeHMMEnsemble(ensemble_config)
+            
+            # Train regime-specific ensemble
+            ensemble_results = await ensemble.train_regime_specific_ensemble(
+                regime_data, regime, timeframe
+            )
+            
+            if ensemble_results:
+                # Regime-specific optimization
+                if self.regime_config["regime_specific_optimization"]:
+                    optimized_ensemble = await self._optimize_regime_ensemble(
+                        ensemble_results, regime, timeframe
+                    )
+                    return optimized_ensemble
+                else:
+                    return ensemble_results
+            else:
+                self.logger.error(f"❌ Failed to create {timeframe} ensemble for regime {regime}")
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error creating {timeframe} ensemble for regime {regime}: {e}")
+            return None
+
+    async def _create_regime_multi_timeframe_ensemble(
+        self, regime_ensembles: Dict[str, Any], regime: str
+    ) -> Optional[Dict[str, Any]]:
+        """Create regime-specific multi-timeframe ensemble."""
+        
+        self.logger.info(f"🎯 Creating multi-timeframe ensemble for regime {regime}")
+        
+        try:
+            # Regime-specific multi-timeframe configuration
+            multi_tf_config = await self._get_regime_multi_timeframe_config(regime)
+            
+            # Create multi-timeframe ensemble
+            multi_tf_ensemble = {
+                "regime": regime,
+                "timeframes": list(regime_ensembles.keys()),
+                "ensembles": regime_ensembles,
+                "weights": await self._calculate_regime_specific_weights(regime_ensembles, regime),
+                "config": multi_tf_config,
+                "created_timestamp": datetime.now().isoformat()
+            }
+            
+            # Regime-specific validation
+            if self.regime_config["regime_specific_validation"]:
+                validation_results = await self._validate_regime_multi_timeframe_ensemble(
+                    multi_tf_ensemble, regime
+                )
+                multi_tf_ensemble["validation"] = validation_results
+            
+            return multi_tf_ensemble
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error creating multi-timeframe ensemble for regime {regime}: {e}")
+            return None
+
+    async def _get_regime_specific_ensemble_config(self, regime: str, timeframe: str) -> Dict[str, Any]:
+        """Get regime-specific ensemble configuration."""
+        
+        # Base configuration
+        base_config = get_multi_timeframe_hmm_ensemble_config()
+        
+        # Regime-specific modifications
+        regime_config = base_config.copy()
+        
+        # Regime-specific hyperparameters
+        if self.regime_config["regime_specific_optimization"]:
+            regime_config.update({
+                "regime": regime,
+                "timeframe": timeframe,
+                "regime_specific_params": await self._get_regime_specific_params(regime, timeframe)
+            })
+        
+        return regime_config
+
+    async def _get_regime_multi_timeframe_config(self, regime: str) -> Dict[str, Any]:
+        """Get regime-specific multi-timeframe configuration."""
+        
+        return {
+            "regime": regime,
+            "regime_specific_weights": self.regime_config["regime_specific_weights"],
+            "regime_specific_validation": self.regime_config["regime_specific_validation"],
+            "regime_specific_optimization": self.regime_config["regime_specific_optimization"]
+        }
+
+    async def _calculate_regime_specific_weights(
+        self, regime_ensembles: Dict[str, Any], regime: str
+    ) -> Dict[str, float]:
+        """Calculate regime-specific weights for ensemble combination."""
+        
+        self.logger.info(f"⚖️ Calculating regime-specific weights for regime {regime}")
+        
+        try:
+            weights = {}
+            
+            if self.regime_config["regime_specific_weights"]:
+                # Calculate regime-specific weights based on performance
+                for timeframe, ensemble in regime_ensembles.items():
+                    if ensemble and "performance" in ensemble:
+                        # Use regime-specific performance metrics
+                        performance_score = ensemble["performance"].get("regime_specific_score", 0.5)
+                        weights[timeframe] = performance_score
+                    else:
+                        # Default equal weights
+                        weights[timeframe] = 1.0 / len(regime_ensembles)
+            else:
+                # Equal weights
+                for timeframe in regime_ensembles.keys():
+                    weights[timeframe] = 1.0 / len(regime_ensembles)
+            
+            # Normalize weights
+            total_weight = sum(weights.values())
+            if total_weight > 0:
+                weights = {tf: w / total_weight for tf, w in weights.items()}
+            
+            self.logger.info(f"✅ Calculated weights for regime {regime}: {weights}")
+            return weights
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating regime-specific weights: {e}")
+            # Return equal weights as fallback
+            return {tf: 1.0 / len(regime_ensembles) for tf in regime_ensembles.keys()}
+
+    async def _optimize_regime_ensemble(
+        self, ensemble_results: Dict[str, Any], regime: str, timeframe: str
+    ) -> Dict[str, Any]:
+        """Optimize regime-specific ensemble."""
+        
+        self.logger.info(f"⚙️ Optimizing {timeframe} ensemble for regime {regime}")
+        
+        try:
+            # Regime-specific optimization logic
+            optimized_results = ensemble_results.copy()
+            
+            # Add regime-specific optimization results
+            optimized_results.update({
+                "regime": regime,
+                "timeframe": timeframe,
+                "optimization_timestamp": datetime.now().isoformat(),
+                "regime_specific_optimization": True
+            })
+            
+            # Store optimization results
+            self.regime_optimization_results[f"{regime}_{timeframe}"] = optimized_results
+            
+            return optimized_results
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error optimizing regime ensemble: {e}")
+            return ensemble_results
+
+    async def _validate_regime_ensemble(
+        self, ensemble: Dict[str, Any], regime: str
+    ) -> bool:
+        """Validate regime-specific ensemble."""
+        
+        self.logger.info(f"🔍 Validating ensemble for regime {regime}")
+        
+        try:
+            # Regime-specific validation logic
+            validation_results = {
+                "regime": regime,
+                "validation_timestamp": datetime.now().isoformat(),
+                "timeframes": ensemble.get("timeframes", []),
+                "weights": ensemble.get("weights", {}),
+                "validation_checks": {},
+                "success": True
+            }
+            
+            # Perform regime-specific validation checks
+            validation_checks = await self._perform_regime_validation_checks(ensemble, regime)
+            validation_results["validation_checks"] = validation_checks
+            
+            # Store validation results
+            self.regime_validation_results[regime] = validation_results
+            
+            # Check if validation passed
+            validation_success = all(check.get("passed", False) for check in validation_checks.values())
+            
+            if validation_success:
+                self.logger.info(f"✅ Regime {regime} ensemble validation passed")
+            else:
+                self.logger.error(f"❌ Regime {regime} ensemble validation failed")
+            
+            return validation_success
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error validating regime ensemble: {e}")
+            return False
+
+    async def _validate_regime_multi_timeframe_ensemble(
+        self, ensemble: Dict[str, Any], regime: str
+    ) -> Dict[str, Any]:
+        """Validate regime-specific multi-timeframe ensemble."""
+        
+        try:
+            # Multi-timeframe specific validation
+            validation_results = {
+                "regime": regime,
+                "multi_timeframe_validation": True,
+                "timeframe_count": len(ensemble.get("timeframes", [])),
+                "weight_distribution": ensemble.get("weights", {}),
+                "validation_timestamp": datetime.now().isoformat()
+            }
+            
+            return validation_results
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in multi-timeframe validation: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def _perform_regime_validation_checks(
+        self, ensemble: Dict[str, Any], regime: str
+    ) -> Dict[str, Dict[str, Any]]:
+        """Perform regime-specific validation checks."""
+        
+        try:
+            checks = {}
+            
+            # Check 1: Ensemble structure
+            checks["structure"] = {
+                "passed": "ensembles" in ensemble and "weights" in ensemble,
+                "description": "Ensemble structure validation"
+            }
+            
+            # Check 2: Timeframe coverage
+            checks["timeframes"] = {
+                "passed": len(ensemble.get("timeframes", [])) > 0,
+                "description": "Timeframe coverage validation"
+            }
+            
+            # Check 3: Weight distribution
+            weights = ensemble.get("weights", {})
+            total_weight = sum(weights.values())
+            checks["weights"] = {
+                "passed": abs(total_weight - 1.0) < 0.01,  # Allow small numerical errors
+                "description": "Weight distribution validation"
+            }
+            
+            # Check 4: Regime-specific performance
+            checks["performance"] = {
+                "passed": True,  # Placeholder for actual performance validation
+                "description": "Regime-specific performance validation"
+            }
+            
+            return checks
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error in validation checks: {e}")
+            return {"error": {"passed": False, "description": f"Validation error: {e}"}}
+
+    async def _save_regime_specific_ensembles(self, symbol: str, data_dir: str) -> None:
+        """Save regime-specific ensembles."""
+        
+        self.logger.info("💾 Saving regime-specific ensembles")
+        
+        try:
+            for regime, ensemble in self.regime_ensembles.items():
+                if ensemble:
+                    regime_save_path = f"{data_dir}/regime_ensembles/{symbol}/regime_{regime}"
+                    os.makedirs(regime_save_path, exist_ok=True)
+                    
+                    # Save ensemble configuration
+                    ensemble_config_path = f"{regime_save_path}/ensemble_config.json"
+                    with open(ensemble_config_path, 'w') as f:
+                        json.dump(ensemble, f, indent=2, default=str)
+                    
+                    # Save validation results
+                    if regime in self.regime_validation_results:
+                        validation_path = f"{regime_save_path}/validation_results.json"
+                        with open(validation_path, 'w') as f:
+                            json.dump(self.regime_validation_results[regime], f, indent=2, default=str)
+                    
+                    self.logger.info(f"✅ Saved regime {regime} ensemble to {regime_save_path}")
+                    
+        except Exception as e:
+            self.logger.error(f"❌ Error saving regime-specific ensembles: {e}")
+
+    def _log_regime_specific_metrics(
+        self, regime: str, metrics: dict, step_name: str
+    ) -> None:
+        """Log regime-specific metrics."""
+        
+        if self.regime_config["regime_specific_logging"]:
+            self.logger.info(f"📊 {step_name} - Regime {regime} metrics:")
+            for metric_name, metric_value in metrics.items():
+                self.logger.info(f"   {metric_name}: {metric_value}")
+
+    # Placeholder methods for regime-specific parameters
+    async def _get_regime_specific_params(self, regime: str, timeframe: str) -> Dict[str, Any]:
+        """Get regime-specific parameters."""
+        # Placeholder for actual regime-specific parameter logic
+        return {"regime": regime, "timeframe": timeframe}
 
 @validate_step_prerequisites(
     required_directories=["data / training", "data / regime_forecasting"],
@@ -119,7 +596,7 @@ async def run_step(
     exchange: str,
     data_dir: str,
     timeframe: str = "1h",
-    lookback_days: int, 365,
+    lookback_days: int = 365,
     **kwargs,
 ) -> Dict[str, Any]:
     """

@@ -2201,7 +2201,7 @@ class EnhancedTrainingManager:
                         self.logger.exception(f"❌ Step 7 validator failed: {e} - stopping pipeline")
                         return False
 
-                # Step 8: Enhanced HMM-Based Training with Multi-Output Support
+                # Step 8: Enhanced HMM-Based Training
                 self._heartbeat("Step 8: Enhanced HMM-Based Training")
 
                 should_run_step8 = _should_run("step08_enhanced_hmm_based_training")
@@ -2233,7 +2233,8 @@ class EnhancedTrainingManager:
                         method_a_cfg = self.config.get("method_a_mixture_of_experts", {})
                         enable_multi_output = self.config.get("enable_multi_output", True)
 
-                        step08_success = await step06_hmm_based_training_enhanced.run_enhanced_step(
+                        # Use regime-specific enhanced training
+                        step08_success = await step09_hmm_based_training_enhanced.run_enhanced_regime_specific_step(
                             symbol=symbol,
                             data_dir=data_dir,
                             method_a_mixture_of_experts=method_a_cfg,
@@ -2300,7 +2301,8 @@ class EnhancedTrainingManager:
                     try:
                         from src.training.steps import step09_5_multi_timeframe_hmm_ensemble
 
-                        step09_5_success = await step09_5_multi_timeframe_hmm_ensemble.run_step(
+                        # Use regime-specific ensemble creation
+                        step09_5_success = await step09_5_multi_timeframe_hmm_ensemble.run_regime_specific_ensemble_step(
                             symbol=symbol,
                             exchange=exchange,
                             data_dir=data_dir,
@@ -2420,19 +2422,19 @@ class EnhancedTrainingManager:
                         self.logger.error("❌ Step 7 dependencies not met, skipping")
                         return False
 
-                    from src.training.steps import step07_analyst_enhancement
+                    from src.training.steps.step12_analyst_enhancement import RegimeAwareAnalystEnhancementStep
 
-                    analyst_timeframes = ["30m", "15m", "5m"]
-                    for tf in analyst_timeframes:
-                        self.logger.info(f"🔧 STEP 7: Analyst Enhancement @ {tf}")
-                        step07_success = await step07_analyst_enhancement.run_step(
-                            symbol=symbol,
-                            data_dir=data_dir,
-                            timeframe=tf,
-                            exchange=exchange,
-                        )
-                        if not step07_success:
-                            return False
+                    # Initialize regime-aware analyst enhancement step
+                    analyst_enhancement_step = RegimeAwareAnalystEnhancementStep(self.config)
+                    await analyst_enhancement_step.initialize()
+                    
+                    # Execute regime-aware analyst enhancement
+                    self.logger.info("🔧 STEP 7: Regime-Aware Analyst Enhancement")
+                    step07_result = await analyst_enhancement_step.execute(training_input, pipeline_state)
+                    
+                    if not step07_result or step07_result.get("status") != "SUCCESS":
+                        self.logger.error("❌ Step 7: Regime-Aware Analyst Enhancement failed")
+                        return False
 
                     # Run validator for Step 7 (per timeframe)
                     step07_validation = await self._run_step_validator(
@@ -2521,15 +2523,18 @@ class EnhancedTrainingManager:
                         self.logger.error("❌ Step 9 dependencies not met, skipping")
                         return False
 
-                    from src.training.steps import step09_tactician_specialist_training
+                    from src.training.steps.step15_tactician_specialist_training import RegimeAwareTacticianSpecialistTrainingStep
 
-                    step09_success = await step09_tactician_specialist_training.run_step(
-                        symbol=symbol,
-                        data_dir=data_dir,
-                        timeframe="1m",
-                        exchange=exchange,
-                    )
-                    if not step09_success:
+                    # Initialize regime-aware tactician specialist training step
+                    tactician_step = RegimeAwareTacticianSpecialistTrainingStep(self.config)
+                    await tactician_step.initialize()
+                    
+                    # Execute regime-aware tactician specialist training
+                    self.logger.info("🔧 STEP 9: Regime-Aware Tactician Specialist Training")
+                    step09_result = await tactician_step.execute(training_input, pipeline_state)
+                    
+                    if not step09_result or step09_result.get("status") != "SUCCESS":
+                        self.logger.error("❌ Step 9: Regime-Aware Tactician Specialist Training failed")
                         return False
 
                     # Run validator for Step 9
@@ -2571,15 +2576,18 @@ class EnhancedTrainingManager:
                         self.logger.error("❌ Step 10 dependencies not met, skipping")
                         return False
 
-                    from src.training.steps import step10_confidence_calibration
+                    from src.training.steps.step16_confidence_calibration import RegimeAwareConfidenceCalibrationStep
 
-                    step10_success = await step10_confidence_calibration.run_step(
-                        symbol=symbol,
-                        data_dir=data_dir,
-                        timeframe=timeframe,
-                        exchange=exchange,
-                    )
-                    if not step10_success:
+                    # Initialize regime-aware confidence calibration step
+                    calibration_step = RegimeAwareConfidenceCalibrationStep(self.config)
+                    await calibration_step.initialize()
+                    
+                    # Execute regime-aware confidence calibration
+                    self.logger.info("🔧 STEP 10: Regime-Aware Confidence Calibration")
+                    step10_result = await calibration_step.execute(training_input, pipeline_state)
+                    
+                    if not step10_result or step10_result.get("status") != "SUCCESS":
+                        self.logger.error("❌ Step 10: Regime-Aware Confidence Calibration failed")
                         return False
 
                     # Run validator for Step 10

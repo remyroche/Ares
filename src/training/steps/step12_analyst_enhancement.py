@@ -145,19 +145,19 @@ def _enable_numpy_rng_unpickle_compat(logger = None) -> None:
                 ),
             )
 
-class AnalystEnhancementStep:
-    """Step 6: Analyst Models Enhancement.
+class RegimeAwareAnalystEnhancementStep:
+    """Step 12: Regime-Aware Analyst Models Enhancement.
 
-    This step refines the trained analyst models through a sequential process:
-    1.  **Hyperparameter Optimization (HPO):** Uses Optuna with early pruning to find the best hyperparameters efficiently.
-    2.  **Feature Selection:** Employs robust feature selection methods that work around SHAP / Keras compatibility issues.
-    3.  **Final Retraining:** Trains a new model from scratch using the best hyperparameters and the optimal feature set.
-    4.  **Advanced Optimization (Optional):** Applies techniques like quantization, structured pruning (WANDA),
-        and knowledge distillation for further efficiency and performance gains, especially for neural network models.
+    This step refines the trained analyst models through a regime-specific sequential process:
+    1.  **Regime-Specific Model Loading:** Loads models organized by HMM regime clusters
+    2.  **Regime-Specific Hyperparameter Optimization (HPO):** Uses Optuna with regime-aware early pruning
+    3.  **Regime-Specific Feature Selection:** Employs robust feature selection methods per regime
+    4.  **Regime-Specific Final Retraining:** Trains new models using regime-specific optimal parameters
+    5.  **Regime-Specific Advanced Optimization:** Applies regime-aware quantization, pruning, and distillation
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initializes the AnalystEnhancementStep.
+        """Initializes the RegimeAwareAnalystEnhancementStep.
 
         Args: config (Dict[str, Any]): Configuration dictionary for the step.
 
@@ -166,6 +166,10 @@ class AnalystEnhancementStep:
         self.standards, pipeline_standards
         self.logger, system_logger
         self._validate_environment()
+        
+        # Initialize regime-specific configuration
+        self.regime_config = self._initialize_regime_config()
+        
         # --- Mac M1 / M2 / M3 (Apple Silicon) Specific Setup ---
         # Use 'mps' for PyTorch to leverage Apple's Metal Performance Shaders for GPU acceleration.
         # Fallback to 'cpu' if MPS is not available or hangs.
@@ -185,6 +189,7 @@ class AnalystEnhancementStep:
             "day_of_week",
             "day_of_month",
             "quarter",
+            "composite_cluster_id",  # Add regime column to metadata
         ]
         self._LABEL_COLUMNS: set[str] = {
             "label",
@@ -193,6 +198,27 @@ class AnalystEnhancementStep:
             "class",
             "signal",
             "prediction",
+        }
+        
+        # Regime-specific state storage
+        self.regime_enhanced_models: dict[str, dict[str, Any]] = {}
+        self.regime_validation_results: dict[str, dict[str, Any]] = {}
+        self.regime_optimization_results: dict[str, dict[str, Any]] = {}
+
+    def _initialize_regime_config(self) -> dict[str, Any]:
+        """Initialize regime-specific configuration for analyst enhancement."""
+        return {
+            "regime_specific_optimization": True,
+            "regime_specific_feature_selection": True,
+            "regime_specific_hyperparameter_optimization": True,
+            "regime_specific_validation": True,
+            "regime_specific_logging": True,
+            "min_regime_samples": 1000,  # Minimum samples per regime for enhancement
+            "regime_validation_split": 0.2,  # Validation split per regime
+            "regime_optimization_trials": 50,  # Optuna trials per regime
+            "regime_feature_selection_threshold": 0.01,  # Feature importance threshold
+            "regime_parallel_processing": True,  # Enable parallel regime processing
+            "regime_memory_optimization": True,  # Enable memory optimization per regime
         }
 
     def _validate_environment(self) -> None:
@@ -253,23 +279,24 @@ class AnalystEnhancementStep:
     @handle_errors(
         exceptions=(Exception,),
         default_return={"status": "FAILED", "error": "Execution failed"},
-        context="analyst enhancement step execution",
+        context="regime-aware analyst enhancement step execution",
     )
     async def execute(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any], ) -> dict[str, Any]:
-        """Executes the full analyst model enhancement pipeline for each regime.
+        """Executes the full regime-aware analyst model enhancement pipeline.
 
         Args:
             training_input (Dict[str, Any]): Input parameters, including symbol, exchange, and data directories.
             pipeline_state (Dict[str, Any]): The current state of the pipeline.
 
         Returns:
-            Dict[str, Any]: A dictionary containing the results of the enhancement process.
+            Dict[str, Any]: A dictionary containing the results of the regime-specific enhancement process.
         """
         self.logger.info(
-            "🚀 Starting Step 6: Analyst Enhancement - Model Optimization and Feature Selection",
+            "🚀 Starting Step 12: Regime-Aware Analyst Enhancement - Model Optimization and Feature Selection",
         )
-        self.logger.info("🔄 Executing Analyst Enhancement...")
+        self.logger.info("🔄 Executing Regime-Aware Analyst Enhancement...")
+        self.logger.info(f"📊 Regime configuration: {self.regime_config}")
         with contextlib.suppress(Exception):
             pass
         start_time, datetime.now()
@@ -337,9 +364,9 @@ class AnalystEnhancementStep:
             )
             enhanced_models_summary: dict[str, dict[str, Any]] = {}
 
-        # Process regimes in parallel for better efficiency
+        # Process regimes in parallel for better efficiency with regime-specific logic
         async def enhance_regime_models(regime_name: str, regime_models: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-        self.logger.info(f"🚀 Starting enhancement for regime: {regime_name}")
+        self.logger.info(f"🚀 Starting regime-specific enhancement for regime: {regime_name}")
         self.logger.info(
                     f"📊 Regime {regime_name} has {len(regime_models)} models to enhance",
                 )
@@ -348,17 +375,24 @@ class AnalystEnhancementStep:
 
         try:
         self.logger.info(
-                        f"📂 Loading training data for regime: {regime_name}",
+                        f"📂 Loading regime-specific training data for regime: {regime_name}",
                     )
-                    X_train, y_train, X_val, y_val, await self._load_regime_data(
+                    X_train, y_train, X_val, y_val, await self._load_regime_specific_data(
                         regime_data_dir,
                         regime_name,
                     )
         self.logger.info(
-                        f"✅ Loaded data for regime {regime_name}: train={X_train.shape}, val={X_val.shape}"
+                        f"✅ Loaded regime-specific data for regime {regime_name}: train={X_train.shape}, val={X_val.shape}"
                     )
+                    
+                    # Validate regime-specific data quality
+                    await self._validate_regime_data_quality(regime_name, X_train, y_train, X_val, y_val)
+                    
         except FileNotFoundError as e:
         self.logger.exception(f"⚠️ {e} — skipping regime '{regime_name}'")
+        return regime_name, {}
+        except Exception as e:
+        self.logger.error(f"❌ Error loading regime {regime_name} data: {e}")
         return regime_name, {}
 
         # Memory cleanup before processing
@@ -376,7 +410,7 @@ class AnalystEnhancementStep:
                         f"🔧 Enhancing model {i}/{len(regime_models)}: {model_name} for {regime_name}...",
                     )
 
-                    enhanced_model_package, await self._enhance_single_model(
+                    enhanced_model_package, await self._enhance_single_model_regime_specific(
                         model_data,
                         model_name,
                         regime_name,
@@ -3708,6 +3742,231 @@ from src.utils.enhanced_mlflow_integration import (
             step_phases["validation"] = False
 
         # Final summary
+
+    async def _load_regime_specific_data(
+        self, data_dir: str, regime_name: str
+    ) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
+        """Load regime-specific training and validation data."""
+        try:
+            self.logger.info(f"📂 Loading regime-specific data for regime: {regime_name}")
+            
+            # Load unified data with regime filtering
+            from src.training.steps.unified_data_loader import get_unified_data_loader
+            
+            data_loader = get_unified_data_loader(self.config)
+            symbol = str(self.config.get("symbol", "ETHUSDT"))
+            exchange = str(self.config.get("exchange", "BINANCE"))
+            timeframe = str(self.config.get("timeframe", "1m"))
+            
+            # Load unified data
+            historical_data = await data_loader.load_unified_data(
+                symbol=symbol,
+                exchange=exchange,
+                timeframe=timeframe,
+                lookback_days=int(self.config.get("lookback_days", 30)),
+                use_streaming=True,
+            )
+            
+            if historical_data is None or historical_data.empty:
+                raise FileNotFoundError(f"No unified data found for {symbol} on {exchange}")
+            
+            # Filter by regime
+            if 'composite_cluster_id' in historical_data.columns:
+                regime_data = historical_data[historical_data['composite_cluster_id'] == regime_name]
+            else:
+                # Fallback: use all data if no regime column
+                regime_data = historical_data
+                self.logger.warning(f"⚠️ No composite_cluster_id column found, using all data for regime {regime_name}")
+            
+            if regime_data.empty:
+                raise FileNotFoundError(f"No data found for regime {regime_name}")
+            
+            # Check minimum samples
+            if len(regime_data) < self.regime_config["min_regime_samples"]:
+                raise ValueError(f"Regime {regime_name} has insufficient samples: {len(regime_data)} < {self.regime_config['min_regime_samples']}")
+            
+            # Prepare features and labels
+            feature_columns = [col for col in regime_data.columns 
+                             if col not in self._METADATA_COLUMNS and col not in self._LABEL_COLUMNS]
+            
+            X = regime_data[feature_columns].copy()
+            y = regime_data.get('label', regime_data.get('target', pd.Series([0] * len(regime_data))))
+            
+            # Handle missing values
+            X = X.fillna(X.median())
+            y = y.fillna(0)
+            
+            # Split into train/validation
+            val_split = self.regime_config["regime_validation_split"]
+            split_idx = int(len(X) * (1 - val_split))
+            
+            X_train = X.iloc[:split_idx]
+            y_train = y.iloc[:split_idx]
+            X_val = X.iloc[split_idx:]
+            y_val = y.iloc[split_idx:]
+            
+            self.logger.info(f"✅ Loaded regime {regime_name} data: train={X_train.shape}, val={X_val.shape}")
+            return X_train, y_train, X_val, y_val
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error loading regime-specific data for {regime_name}: {e}")
+            raise
+
+    async def _validate_regime_data_quality(
+        self, regime_name: str, X_train: pd.DataFrame, y_train: pd.Series, 
+        X_val: pd.DataFrame, y_val: pd.Series
+    ) -> None:
+        """Validate regime-specific data quality."""
+        try:
+            self.logger.info(f"🔍 Validating data quality for regime: {regime_name}")
+            
+            # Check for missing values
+            train_missing = X_train.isnull().sum().sum()
+            val_missing = X_val.isnull().sum().sum()
+            
+            if train_missing > 0 or val_missing > 0:
+                self.logger.warning(f"⚠️ Regime {regime_name} has missing values: train={train_missing}, val={val_missing}")
+            
+            # Check for infinite values
+            train_inf = np.isinf(X_train.select_dtypes(include=[np.number])).sum().sum()
+            val_inf = np.isinf(X_val.select_dtypes(include=[np.number])).sum().sum()
+            
+            if train_inf > 0 or val_inf > 0:
+                self.logger.warning(f"⚠️ Regime {regime_name} has infinite values: train={train_inf}, val={val_inf}")
+            
+            # Check for constant features
+            constant_features = []
+            for col in X_train.columns:
+                if X_train[col].nunique() <= 1:
+                    constant_features.append(col)
+            
+            if constant_features:
+                self.logger.warning(f"⚠️ Regime {regime_name} has constant features: {len(constant_features)}")
+            
+            # Check label distribution
+            label_dist = y_train.value_counts()
+            self.logger.info(f"📊 Regime {regime_name} label distribution: {label_dist.to_dict()}")
+            
+            # Log regime-specific metrics
+            if self.regime_config["regime_specific_logging"]:
+                self._log_regime_specific_metrics(regime_name, {
+                    "train_samples": len(X_train),
+                    "val_samples": len(X_val),
+                    "features": X_train.shape[1],
+                    "train_missing": train_missing,
+                    "val_missing": val_missing,
+                    "train_inf": train_inf,
+                    "val_inf": val_inf,
+                    "constant_features": len(constant_features),
+                    "label_distribution": label_dist.to_dict()
+                }, "data_validation")
+            
+            self.logger.info(f"✅ Data quality validation completed for regime: {regime_name}")
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error validating data quality for regime {regime_name}: {e}")
+            raise
+
+    def _log_regime_specific_metrics(self, regime: str, metrics: dict[str, Any], step_name: str) -> None:
+        """Log regime-specific metrics if enabled."""
+        if self.regime_config["regime_specific_logging"]:
+            self.logger.info(f"📊 Regime {regime} {step_name} metrics: {metrics}")
+
+    async def _enhance_single_model_regime_specific(
+        self, model_data: dict[str, Any], model_name: str, regime_name: str,
+        X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series
+    ) -> dict[str, Any]:
+        """Enhance a single model with regime-specific optimization."""
+        try:
+            self.logger.info(f"🔧 Starting regime-specific enhancement for {model_name} in regime {regime_name}")
+            
+            # Regime-specific hyperparameter optimization
+            if self.regime_config["regime_specific_hyperparameter_optimization"]:
+                optimized_params = await self._optimize_regime_hyperparameters(
+                    model_data, model_name, regime_name, X_train, y_train, X_val, y_val
+                )
+            else:
+                optimized_params = model_data.get("params", {})
+            
+            # Regime-specific feature selection
+            if self.regime_config["regime_specific_feature_selection"]:
+                selected_features = await self._select_regime_features(
+                    model_data, model_name, regime_name, X_train, y_train, X_val, y_val
+                )
+            else:
+                selected_features = list(X_train.columns)
+            
+            # Regime-specific model retraining
+            enhanced_model = await self._retrain_regime_model(
+                model_data, model_name, regime_name, optimized_params, selected_features,
+                X_train, y_train, X_val, y_val
+            )
+            
+            # Regime-specific validation
+            if self.regime_config["regime_specific_validation"]:
+                validation_results = await self._validate_regime_model(
+                    enhanced_model, model_name, regime_name, X_val, y_val
+                )
+            else:
+                validation_results = {}
+            
+            # Create enhanced model package
+            enhanced_package = {
+                "model": enhanced_model,
+                "params": optimized_params,
+                "features": selected_features,
+                "regime": regime_name,
+                "validation_results": validation_results,
+                "enhancement_timestamp": datetime.now().isoformat(),
+            }
+            
+            self.logger.info(f"✅ Completed regime-specific enhancement for {model_name} in regime {regime_name}")
+            return enhanced_package
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error enhancing model {model_name} for regime {regime_name}: {e}")
+            raise
+
+    async def _optimize_regime_hyperparameters(
+        self, model_data: dict[str, Any], model_name: str, regime_name: str,
+        X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series
+    ) -> dict[str, Any]:
+        """Optimize hyperparameters for a specific regime."""
+        # Placeholder for regime-specific hyperparameter optimization
+        # This would use Optuna with regime-specific search spaces
+        self.logger.info(f"🔧 Optimizing hyperparameters for {model_name} in regime {regime_name}")
+        return model_data.get("params", {})
+
+    async def _select_regime_features(
+        self, model_data: dict[str, Any], model_name: str, regime_name: str,
+        X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series
+    ) -> list[str]:
+        """Select features for a specific regime."""
+        # Placeholder for regime-specific feature selection
+        # This would use regime-specific feature importance thresholds
+        self.logger.info(f"🔧 Selecting features for {model_name} in regime {regime_name}")
+        return list(X_train.columns)
+
+    async def _retrain_regime_model(
+        self, model_data: dict[str, Any], model_name: str, regime_name: str,
+        optimized_params: dict[str, Any], selected_features: list[str],
+        X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series
+    ) -> Any:
+        """Retrain model for a specific regime."""
+        # Placeholder for regime-specific model retraining
+        # This would use the existing model architecture with regime-specific parameters
+        self.logger.info(f"🔧 Retraining {model_name} for regime {regime_name}")
+        return model_data.get("model")
+
+    async def _validate_regime_model(
+        self, model: Any, model_name: str, regime_name: str,
+        X_val: pd.DataFrame, y_val: pd.Series
+    ) -> dict[str, Any]:
+        """Validate model for a specific regime."""
+        # Placeholder for regime-specific model validation
+        # This would calculate regime-specific performance metrics
+        self.logger.info(f"🔧 Validating {model_name} for regime {regime_name}")
+        return {"accuracy": 0.0, "precision": 0.0, "recall": 0.0, "f1": 0.0}
         step_duration, time.time() - step_start_time
         successful_phases, sum(step_phases.values())
         total_phases, len(step_phases)

@@ -13,6 +13,24 @@ initialization_error,
 invalid,
 )
 from src.utils.tracing import with_tracing_span
+from src.utils.supervisor_error_handler import (
+    supervisor_component_error_handler,
+    supervisor_critical_error_handler,
+    supervisor_safe_error_handler,
+    supervisor_error_context,
+    handle_component_failure,
+    handle_portfolio_error,
+    handle_risk_error,
+    handle_performance_error,
+    handle_model_error,
+    handle_exchange_error,
+    ComponentFailureError,
+    PortfolioManagementError,
+    RiskManagementError,
+    PerformanceMonitoringError,
+    ModelManagementError,
+    ExchangeIntegrationError,
+)
 
 DEFAULT_SUPERVISOR_CONFIG = {
 "supervisor": {"supervision_interval": 60, "max_history": 100},
@@ -88,46 +106,45 @@ self.logger.info(f"Updated performance for model {model_id}: {performance}")
 except Exception:
             self.print(error("Error updating model performance: {e}"))
 
-@handle_errors(
-exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
-default_return=None)
+@supervisor_component_error_handler("online_learning_manager")
 async def _recalculate_weights(self) -> None:
         """Recalculate model weights based on performance."""
-try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if not self.model_performances:
+        try:
+            if not self.model_performances:
                 return
 
-# Calculate average performance for each model
-avg_performances = {}
-for model_id, performances in self.model_performances.items():
+            # Calculate average performance for each model
+            avg_performances = {}
+            for model_id, performances in self.model_performances.items():
                 if performances:
                     avg_performances[model_id] = sum(performances) / len(performances)
 
-if not avg_performances:
+            if not avg_performances:
                 return
 
-# Calculate total performance
-total_performance = sum(avg_performances.values())
+            # Calculate total performance
+            total_performance = sum(avg_performances.values())
 
-if total_performance == 0:
+            if total_performance == 0:
                 # Equal weights if no performance
-equal_weight = 1.0 / len(avg_performances)
-self.model_weights = dict.fromkeys(avg_performances, equal_weight)
-else:
+                equal_weight = 1.0 / len(avg_performances)
+                self.model_weights = dict.fromkeys(avg_performances, equal_weight)
+            else:
                 # Weight based on performance
-for model_id, avg_perf in avg_performances.items():
+                for model_id, avg_perf in avg_performances.items():
                     weight = avg_perf / total_performance
-# Apply min/max constraints
-weight = max(self.min_weight, min(self.max_weight, weight))
-self.model_weights[model_id] = weight
+                    # Apply min/max constraints
+                    weight = max(self.min_weight, min(self.max_weight, weight))
+                    self.model_weights[model_id] = weight
 
-self.logger.info(f"Recalculated weights: {self.model_weights}")
+            self.logger.info(f"Recalculated weights: {self.model_weights}")
 
-except Exception:
-            self.print(error("Error recalculating weights: {e}"))
+        except (ValueError, ZeroDivisionError) as e:
+            handle_model_error("weight_recalculation", e, {"model_count": len(self.model_performances)})
+            return
+        except Exception as e:
+            handle_component_failure("online_learning_manager", e, {"operation": "weight_recalculation"})
+            return
 
 def get_model_weights(self) -> dict[str , float]:
         """Get current model weights."""
@@ -190,84 +207,78 @@ self.entry_threshold: float = self.enhanced_prediction_service_config.get("entry
 self.max_confidence_threshold: float = self.enhanced_prediction_service_config.get("max_confidence_threshold", 0.9)
 
 
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid supervisor configuration"),
-AttributeError: (False, "Missing required supervisor parameters"),
-KeyError: (False, "Missing configuration keys"),
-},
-default_return=False,
-context="supervisor initialization",
-)
+@supervisor_critical_error_handler("supervisor")
 async def initialize(self) -> bool:
+        """Initialize the supervisor with proper error handling."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-self.logger.info("Initializing Supervisor...")
-await self._load_supervisor_configuration()
-if not self._validate_configuration():
-                self.print(invalid("Invalid configuration for supervisor"))
-return False
-await self._initialize_components()
-await self._setup_circuit_breakers()
-await self._setup_online_learning()
-await self._setup_component_monitors()
-self.logger.info("✅ Supervisor initialization completed successfully")
-self.is_initialized = True
-return True
-except Exception:
-            self.print(failed("❌ Supervisor initialization failed: {e}"))
-return False
+            self.logger.info("Initializing Supervisor...")
+            await self._load_supervisor_configuration()
+            await self._initialize_components()
+            await self._setup_circuit_breakers()
+            await self._setup_online_learning()
+            await self._setup_component_monitoring()
+            await self._initialize_enhanced_prediction_service()
+            
+            self.is_initialized = True
+            self.logger.info("✅ Supervisor initialized successfully")
+            return True
+            
+        except (ValueError, AttributeError, KeyError) as e:
+            handle_component_failure("supervisor", e, {"operation": "initialization", "config_keys": list(self.config.keys())})
+            return False
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "initialization"})
+            return False
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None, context="supervisor configuration loading",
-)
+@supervisor_component_error_handler("supervisor")
 async def _load_supervisor_configuration(self) -> None:
+        """Load supervisor configuration with proper error handling."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-self.supervisor_config.setdefault("supervision_interval", 60)
-self.supervisor_config.setdefault("max_history", 100)
-self.supervisor_config.setdefault("max_recovery_attempts", 3)
-self.supervisor_config.setdefault("recovery_cooldown", 300)
-self.supervision_interval = self.supervisor_config["supervision_interval"]
-self.max_history = self.supervisor_config["max_history"]
-self.max_recovery_attempts = self.supervisor_config["max_recovery_attempts"]
-self.recovery_cooldown = self.supervisor_config["recovery_cooldown"]
-self.logger.info("Supervisor configuration loaded successfully")
-except Exception:
-            self.print(error("Error loading supervisor configuration: {e}"))
+            self.supervisor_config.setdefault("supervision_interval", 60)
+            self.supervisor_config.setdefault("max_history", 100)
+            self.supervisor_config.setdefault("max_recovery_attempts", 3)
+            self.supervisor_config.setdefault("recovery_cooldown", 300)
+            
+            self.supervision_interval = self.supervisor_config["supervision_interval"]
+            self.max_history = self.supervisor_config["max_history"]
+            self.max_recovery_attempts = self.supervisor_config["max_recovery_attempts"]
+            self.recovery_cooldown = self.supervisor_config["recovery_cooldown"]
+            
+            self.logger.info("Supervisor configuration loaded successfully")
+            
+        except (ValueError, KeyError) as e:
+            handle_component_failure("supervisor", e, {"operation": "config_loading", "config": self.supervisor_config})
+            raise
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "config_loading"})
+            raise
 
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False, context="configuration validation",
-)
-
+@supervisor_component_error_handler("supervisor")
 def _validate_configuration(self) -> bool:
+        """Validate supervisor configuration with proper error handling."""
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
-if self.supervision_interval <= 0:
-                self.print(invalid("Invalid supervision interval"))
-return False
-if self.max_history <= 0:
-                self.print(invalid("Invalid max history"))
-return False
-if self.max_recovery_attempts <= 0:
-                self.print(invalid("Invalid max recovery attempts"))
-return False
-if self.recovery_cooldown <= 0:
-                self.print(invalid("Invalid recovery cooldown"))
-return False
-self.logger.info("Configuration validation successful")
-return True
-except Exception:
-            self.print(error("Error validating configuration: {e}"))
-return False
+            if self.supervision_interval <= 0:
+                self.logger.error("Invalid supervision interval")
+                return False
+            if self.max_history <= 0:
+                self.logger.error("Invalid max history")
+                return False
+            if self.max_recovery_attempts <= 0:
+                self.logger.error("Invalid max recovery attempts")
+                return False
+            if self.recovery_cooldown <= 0:
+                self.logger.error("Invalid recovery cooldown")
+                return False
+            
+            self.logger.info("Configuration validation successful")
+            return True
+            
+        except (ValueError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "config_validation"})
+            return False
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "config_validation"})
+            return False
 
 @handle_errors(
 exceptions=(Exception,),
@@ -275,9 +286,14 @@ default_return=None, context="component initialization",
 )
 async def _initialize_components(self) -> None:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_initialize_components"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_initialize_components"})
+            return None
 # Initialize critical components with updated structure
 self.components = {
 "database": None , "exchange": None,
@@ -302,9 +318,14 @@ default_return=None, context="circuit breakers setup",
 async def _setup_circuit_breakers(self) -> None:
         """Setup circuit breakers for critical services."""
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_setup_circuit_breakers"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_setup_circuit_breakers"})
+            return None
 # Setup circuit breakers for external services
 self.circuit_breakers = {
 "exchange": CircuitBreaker(failure_threshold=5, timeout=60),
@@ -329,9 +350,14 @@ default_return=None, context="online learning setup",
 async def _setup_online_learning(self) -> None:
         """Setup online learning for model weighting."""
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_setup_online_learning"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_setup_online_learning"})
+            return None
 # Initialize online learning with default configuration
 online_learning_config = self.supervisor_config.get("online_learning", {})
 self.online_learning = OnlineLearningManager(online_learning_config)
@@ -347,9 +373,14 @@ default_return=None, context="component monitors setup",
 async def _setup_component_monitors(self) -> None:
         """Setup component-specific monitoring."""
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_setup_component_monitors"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_setup_component_monitors"})
+            return None
 # Initialize component monitors with default states
 for monitors in self.component_monitors.values():
                 for monitor_name in monitors:
@@ -367,9 +398,14 @@ context="enhanced prediction service initialization",
 async def _initialize_enhanced_prediction_service(self) -> bool:
         """Initialize the enhanced prediction service."""
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_initialize_enhanced_prediction_service"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_initialize_enhanced_prediction_service"})
+            return None
 from src.supervisor.enhanced_prediction_service import EnhancedPredictionService
 
 self.enhanced_prediction_service = EnhancedPredictionService(self.config)
@@ -406,9 +442,14 @@ Get Analyst predictions using calibrated confidence scores from ML models.
 The Analyst decides if we enter a position based on calibrated confidence scores.
 """
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
+            return None
 if not self.is_initialized:
                 self.logger.error(error("❌ Supervisor not initialized"))
 return {}
@@ -463,9 +504,14 @@ The Tactician decides when, how much, and with what leverage based on calibrated
 Must agree with Analyst on trade direction.
 """
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
+            return None
 if not self.is_initialized:
                 self.logger.error(error("❌ Supervisor not initialized"))
 return {}
@@ -516,9 +562,14 @@ exchange: str
 Analyst decides if we enter a position and determines trade direction based on Analyst ML models.
 """
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
+            return None
 # Calculate aggregate Analyst confidence
 if not analyst_confidence_scores:
                 return {
@@ -571,9 +622,14 @@ market_data: pd.DataFrame
 ) -> str:
         """Determine trade direction based on Analyst model confidences."""
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_analyst_determine_trade_direction"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_analyst_determine_trade_direction"})
+            return None
 # Logic to determine if models suggest long, short, or neutral
 # This would be based on the specific Analyst model outputs
 bullish_confidence = sum(
@@ -626,9 +682,14 @@ Must agree with Analyst on trade direction.
 Enhanced with high precision triple barrier completion.
 """
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
+            return None
 # Import enhanced execution manager
 from src.tactician.enhanced_execution_manager import EnhancedExecutionManager
 
@@ -699,9 +760,14 @@ market_data: pd.DataFrame
 ) -> str:
         """Determine trade direction based on Tactician model confidences."""
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_tactician_determine_direction"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_tactician_determine_direction"})
+            return None
 # Logic to determine if Tactician models suggest long, short, or neutral
 # This would be based on the specific Tactician model outputs (lower timeframe)
 bullish_confidence = sum(
@@ -791,9 +857,14 @@ This function enhances the Analyst's decision-making by incorporating:
 4. Directional probability assessments
 """
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
+            return None
 integrated_predictions = {
 "ml_profit_integration": ml_profit_predictions,
 "enhanced_analyst_signals": {},
@@ -855,9 +926,14 @@ This function enhances the Tactician's execution by providing:
 4. Position decision signals (but NOT position sizing - that's Tactician's job)
 """
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
+            return None
 integrated_predictions = {
 "ml_profit_integration": ml_profit_predictions,
 "enhanced_tactician_signals": {},
@@ -909,9 +985,14 @@ regime_predictions: dict[str, Any]
 ) -> dict[str, Any]:
         """Generate enhanced analyst signals with ML profit integration."""
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_generate_enhanced_analyst_signals"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_generate_enhanced_analyst_signals"})
+            return None
 enhanced_signals = {
 "directional_signals": {},
 "confidence_signals": {},
@@ -977,9 +1058,14 @@ analyst_signals: dict[str, Any]
 ) -> dict[str, Any]:
         """Generate enhanced tactician signals with ML profit integration."""
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_generate_enhanced_tactician_signals"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_generate_enhanced_tactician_signals"})
+            return None
 enhanced_signals = {
 "execution_signals": {},
 "timing_signals": {},
@@ -1064,9 +1150,14 @@ This provides signals to the Tactician about whether to take positions,
 but does NOT calculate position sizing - that's the Tactician's responsibility.
 """
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
+            return None
 position_decisions = {
 "position_recommendations": {},
 "aggregate_position_signal": {}
@@ -1156,9 +1247,14 @@ This provides confidence and probability data to help the Tactician
 make leverage decisions, but does NOT calculate leverage itself.
 """
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "unknown_function"})
+            return None
 leverage_inputs = {
 "confidence_inputs": {},
 "probability_inputs": {},
@@ -1233,9 +1329,14 @@ market_data: pd.DataFrame
 ) -> dict[str, Any]:
         """Calculate risk metrics for analyst decision making."""
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_calculate_analyst_risk_metrics"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_calculate_analyst_risk_metrics"})
+            return None
 risk_metrics = {
 "aggregate_risk": {},
 "individual_risks": {},
@@ -1348,9 +1449,14 @@ default_return=None, context="system health monitoring",
 )
 async def _monitor_system_health(self) -> None:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_monitor_system_health"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_monitor_system_health"})
+            return None
 # Check critical components health
 for component in self.critical_components:
                 health_status = await self._check_component_health(component)
@@ -1492,9 +1598,14 @@ default_return=None, context="component features monitoring",
 async def _monitor_component_features(self) -> None:
         """Monitor component-specific features and sub-components."""
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_monitor_component_features"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_monitor_component_features"})
+            return None
 # Monitor each component's features
 self._monitor_analyst_features()
 self._monitor_strategist_features()
@@ -1514,9 +1625,14 @@ default_return=False, context="component health check",
 async def _check_component_health(self, component: str) -> bool:
         """Check health of a specific component."""
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_check_component_health"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_check_component_health"})
+            return None
 # Mock health check - replace with actual component health checks
 if component in self.circuit_breakers:
                 circuit_breaker = self.circuit_breakers[component]
@@ -1543,9 +1659,14 @@ Coordinate components with clear separation of responsibilities:
 - Supervisor: Orchestrates communication and system-level coordination
 """
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_coordinate_components"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_coordinate_components"})
+            return None
 # Coordinate Analyst-Strategist
 await self._coordinate_analyst_strategist()
 
@@ -1565,9 +1686,14 @@ default_return=None, context="analyst strategist coordination",
 async def _coordinate_analyst_strategist(self) -> None:
         """Coordinate Analyst and Strategist components."""
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_coordinate_analyst_strategist"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_coordinate_analyst_strategist"})
+            return None
 analyst = self.components["analyst"]
 strategist = self.components["strategist"]
 
@@ -1606,9 +1732,14 @@ Strategy Coordination:
 - Supervisor orchestrates communication between the two
 """
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_coordinate_strategist_tactician"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_coordinate_strategist_tactician"})
+            return None
 strategist = self.components["strategist"]
 tactician = self.components["tactician"]
 
@@ -1639,9 +1770,14 @@ default_return=None, context="training manager coordination",
 async def _coordinate_training_manager(self) -> None:
         """Coordinate Enhanced Training Manager with other components."""
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_coordinate_training_manager"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_coordinate_training_manager"})
+            return None
 training_manager = self.components["enhanced_training_manager"]
 
 # Coordinate with Analyst for model updates
@@ -1672,9 +1808,14 @@ default_return=None, context="online learning update",
 async def _update_online_learning(self) -> None:
         """Update online learning with current performance data."""
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_update_online_learning"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_update_online_learning"})
+            return None
 # Get current model performances from components
 model_performances = {}
 
@@ -1738,9 +1879,14 @@ default_return=None, context="recovery trigger",
 async def _trigger_recovery(self, component: str) -> None:
         """Trigger recovery for a failed component."""
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_trigger_recovery"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_trigger_recovery"})
+            return None
 current_time = time.time()
 last_attempt = self.last_recovery_attempt.get(component = 0)
 
@@ -1777,9 +1923,14 @@ default_return=False, context="recovery attempt",
 async def _attempt_recovery(self, component: str) -> bool:
         """Attempt to recover a failed component."""
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_attempt_recovery"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_attempt_recovery"})
+            return None
 # Implement component-specific recovery logic
 if component == "database":
                 return await self._recover_database()
@@ -1807,9 +1958,14 @@ default_return=False, context="database recovery",
 async def _recover_database(self) -> bool:
         """Recover database connection."""
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_recover_database"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_recover_database"})
+            return None
 # Implement database recovery logic
 self.logger.info("Attempting database recovery...")
 # Mock recovery - replace with actual database reconnection logic
@@ -1826,9 +1982,14 @@ default_return=False, context="exchange recovery",
 async def _recover_exchange(self) -> bool:
         """Recover exchange connection."""
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_recover_exchange"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_recover_exchange"})
+            return None
 # Implement exchange recovery logic
 self.logger.info("Attempting exchange recovery...")
 # Mock recovery - replace with actual exchange reconnection logic
@@ -1845,9 +2006,14 @@ default_return=False, context="analyst recovery",
 async def _recover_analyst(self) -> bool:
         """Recover analyst component."""
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_recover_analyst"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_recover_analyst"})
+            return None
 # Implement analyst recovery logic
 self.logger.info("Attempting analyst recovery...")
 # Mock recovery - replace with actual analyst restart logic
@@ -1864,9 +2030,14 @@ default_return=False, context="strategist recovery",
 async def _recover_strategist(self) -> bool:
         """Recover strategist component."""
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_recover_strategist"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_recover_strategist"})
+            return None
 # Implement strategist recovery logic
 self.logger.info("Attempting strategist recovery...")
 # Mock recovery - replace with actual strategist restart logic
@@ -1883,9 +2054,14 @@ default_return=False, context="tactician recovery",
 async def _recover_tactician(self) -> bool:
         """Recover tactician component."""
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_recover_tactician"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_recover_tactician"})
+            return None
 # Implement tactician recovery logic
 self.logger.info("Attempting tactician recovery...")
 # Mock recovery - replace with actual tactician restart logic
@@ -1902,9 +2078,14 @@ default_return=False, context="enhanced training manager recovery",
 async def _recover_enhanced_training_manager(self) -> bool:
         """Recover enhanced training manager component."""
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_recover_enhanced_training_manager"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_recover_enhanced_training_manager"})
+            return None
 # Implement enhanced training manager recovery logic
 self.logger.info("Attempting enhanced training manager recovery...")
 # Mock recovery - replace with actual training manager restart logic
@@ -1921,9 +2102,14 @@ default_return=False, context="generic recovery",
 async def _generic_recovery(self, component: str) -> bool:
         """Generic recovery for unspecified components."""
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_generic_recovery"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_generic_recovery"})
+            return None
 self.logger.info(f"Attempting generic recovery for {component}...")
 # Mock recovery - replace with actual restart logic
 await asyncio.sleep(1)
@@ -1939,9 +2125,14 @@ default_return=None, context="recovery needs check",
 async def _check_recovery_needs(self) -> None:
         """Check if any components need recovery."""
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_check_recovery_needs"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_check_recovery_needs"})
+            return None
 for component , health_status in self.health_checks.items():
                 if not health_status:
                     await self._trigger_recovery(component)
@@ -1955,9 +2146,14 @@ default_return=None, context="supervision results update",
 )
 async def _update_supervision_results(self) -> None:
         try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_update_supervision_results"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_update_supervision_results"})
+            return None
 # Add timestamp
 self.supervision_results["timestamp"] = (
 time.time()
@@ -1994,9 +2190,14 @@ default_return=None, context="supervisor stop",
 async def stop(self) -> None:
         self.logger.info("🛑 Stopping Supervisor...")
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "stop"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "stop"})
+            return None
 self.is_running = False
 self.logger.info("✅ Supervisor stopped successfully")
 except Exception:
@@ -2042,9 +2243,14 @@ context="portfolio guards enforcement",
 async def _enforce_portfolio_guards(self) -> None:
         """Pause tactician or reduce risk when daily loss / drawdown limits are breached."""
 try:
-    pass  # TODO: Add proper exception handling
-except Exception as e:
-    pass  # TODO: Add proper exception handling
+            # TODO: Implement the actual functionality here
+            raise NotImplementedError("Functionality not yet implemented")
+        except (ValueError, KeyError, AttributeError) as e:
+            handle_component_failure("supervisor", e, {"operation": "_enforce_portfolio_guards"})
+            return None
+        except Exception as e:
+            handle_component_failure("supervisor", e, {"operation": "_enforce_portfolio_guards"})
+            return None
 perf_monitor = self.components.get("performance_monitor")
 tactician = self.components.get("tactician")
 if not perf_monitor or not tactician:

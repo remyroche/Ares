@@ -75,9 +75,13 @@ class FinalRegimeClusteringStep:
         self.logger.info(f"✅ Loaded optimized parameters: {len(self.optimized_params)} parameters")
             else:
         self.logger.warning("⚠️ No optimized parameters found, using defaults")
+        # Get HMM clusters from environment variable
+        import os
+        hmm_clusters = int(os.environ.get("HMM_CLUSTERS", "20"))
+        self.logger.info(f"🎯 Using {hmm_clusters} HMM clusters (configured via HMM_CLUSTERS environment variable)")
         self.optimized_params = {
                     "n_components": 4,
-                    "n_clusters": 20,
+                    "n_clusters": hmm_clusters,
                     "momentum_window": 15,
                     "volatility_window": 20,
                     "volume_window": 15
@@ -411,7 +415,8 @@ class FinalRegimeClusteringStep:
         self.logger.info("🎯 Performing final clustering...")
 
         # Get optimized clustering parameters
-            n_clusters, self.optimized_params.get("n_clusters", 20)
+            n_clusters = self.optimized_params.get("n_clusters", int(os.environ.get("HMM_CLUSTERS", "20")))
+            self.logger.info(f"🎯 Final clustering using {n_clusters} clusters")
             method, self.optimized_params.get("method", "kmeans")
             random_state, self.optimized_params.get("random_state", 42)
 

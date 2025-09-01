@@ -92,10 +92,10 @@ except Exception as e:
                     key=lambda x: x[1].get("created_at", ""),
                     reverse=True
                 )
-                
+
                 # Remove all but the most recent
                 for result_id, _ in sorted_results[1:]:
                     await temp_db.delete_document("backtest_results", result_id)
-                    
+
         except Exception as e:
             self.logger.error(f"Error cleaning trading export: {e}")

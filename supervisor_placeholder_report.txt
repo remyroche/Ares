@@ -57,7 +57,7 @@ File: src/supervisor/ab_tester.py
   TODO_COMMENTS:
     Line 11: pass  # TODO: Add implementation
       Context:
-        
+
         class ABTester:
             pass  # TODO: Add implementation
         class ABTester:
@@ -82,7 +82,7 @@ File: src/supervisor/ab_tester.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing AB test...")
-        
+
     Line 111: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -124,7 +124,7 @@ File: src/supervisor/ab_tester.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Executing champion phase...")
-        
+
     Line 234: pass  # TODO: Add proper exception handling
       Context:
                 """Execute challenger model phase."""
@@ -138,7 +138,7 @@ File: src/supervisor/ab_tester.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Executing challenger phase...")
-        
+
     Line 262: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -152,7 +152,7 @@ File: src/supervisor/ab_tester.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Analyzing AB test results...")
-        
+
     Line 306: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -169,7 +169,7 @@ File: src/supervisor/ab_tester.py
                         self.logger.warning(
     Line 384: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -199,7 +199,7 @@ File: src/supervisor/dynamic_weighter.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         results = {}
-        
+
     Line 1064: pass  # TODO: Add proper exception handling
       Context:
                 """Perform regime transition."""
@@ -325,7 +325,7 @@ File: src/supervisor/dynamic_weighter.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         results = {}
-        
+
     Line 1271: pass  # TODO: Add proper exception handling
       Context:
                 """Perform price momentum weighting."""
@@ -451,7 +451,7 @@ File: src/supervisor/dynamic_weighter.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         results = {}
-        
+
     Line 1480: pass  # TODO: Add proper exception handling
       Context:
                 """Perform realized volatility weighting."""
@@ -549,7 +549,7 @@ File: src/supervisor/dynamic_weighter.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         history = self.weighting_history.copy()
-        
+
     Line 1684: pass  # TODO: Add proper exception handling
       Context:
                 """Update model weights using online learning."""
@@ -605,7 +605,7 @@ File: src/supervisor/dynamic_weighter.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         model_names = list(model_predictions.keys())
-        
+
     Line 1882: pass  # TODO: Add proper exception handling
       Context:
                 """Get recent performance of a model in a specific regime."""
@@ -636,7 +636,7 @@ File: src/supervisor/dynamic_weighter.py
         if total_weight > 0:
     Line 1939: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -661,7 +661,7 @@ File: src/supervisor/dynamic_weighter.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         global dynamic_weighter
-        
+
 
 File: src/supervisor/enhanced_model_monitor.py
 ----------------------------------------------
@@ -753,7 +753,7 @@ File: src/supervisor/enhanced_model_monitor.py
             """Ensemble performance metrics."""
     Line 118: pass  # TODO: Add implementation
       Context:
-        
+
         class EnhancedModelMonitor:
             pass  # TODO: Add implementation
         class EnhancedModelMonitor:
@@ -778,7 +778,7 @@ File: src/supervisor/enhanced_model_monitor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing Enhanced Model Monitor...")
-        
+
     Line 232: pass  # TODO: Add proper exception handling
       Context:
                 """Load reference data for drift detection."""
@@ -842,7 +842,7 @@ File: src/supervisor/enhanced_prediction_service.py
   TODO_COMMENTS:
     Line 22: pass  # TODO: Add implementation
       Context:
-        
+
         class EnhancedPredictionService:
             pass  # TODO: Add implementation
         class EnhancedPredictionService:
@@ -867,7 +867,7 @@ File: src/supervisor/enhanced_prediction_service.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("🚀 Initializing Enhanced Prediction Service...")
-        
+
     Line 99: pass  # TODO: Add proper exception handling
       Context:
                 """Load Analyst ML models (higher timeframe) from steps 6-14."""
@@ -1007,7 +1007,7 @@ File: src/supervisor/enhanced_prediction_service.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         analyst_scores = {}
-        
+
     Line 367: pass  # TODO: Add proper exception handling
       Context:
                         for model_name, model_data in models.items():
@@ -1035,7 +1035,7 @@ File: src/supervisor/enhanced_prediction_service.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         tactician_scores = {}
-        
+
     Line 422: pass  # TODO: Add proper exception handling
       Context:
                         for model_name, model_data in models.items():
@@ -1183,7 +1183,7 @@ File: src/supervisor/exchange_ab_tester.py
             """Single exchange test result."""
     Line 58: pass  # TODO: Add implementation
       Context:
-        
+
         class ExchangeABTester:
             pass  # TODO: Add implementation
         class ExchangeABTester:
@@ -1208,7 +1208,7 @@ File: src/supervisor/exchange_ab_tester.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing Exchange A/B Tester...")
-        
+
     Line 122: pass  # TODO: Add proper exception handling
       Context:
                 """Start a new A/B test."""
@@ -1250,7 +1250,7 @@ File: src/supervisor/exchange_ab_tester.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         metrics = self.performance_metrics[exchange]
-        
+
     Line 297: pass  # TODO: Add proper exception handling
       Context:
                 """Stop the current A/B test and generate results."""
@@ -1342,7 +1342,7 @@ File: src/supervisor/exchange_volume_adapter.py
   TODO_COMMENTS:
     Line 22: pass  # TODO: Add implementation
       Context:
-        
+
         class ExchangeVolumeAdapter:
             pass  # TODO: Add implementation
         class ExchangeVolumeAdapter:
@@ -1367,7 +1367,7 @@ File: src/supervisor/exchange_volume_adapter.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing Exchange Volume Adapter...")
-        
+
     Line 137: pass  # TODO: Add proper exception handling
       Context:
                 """Load adapter configuration."""
@@ -1666,7 +1666,7 @@ File: src/supervisor/global_portfolio_manager.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         results = {}
-        
+
     Line 512: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -1680,7 +1680,7 @@ File: src/supervisor/global_portfolio_manager.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         results = {}
-        
+
     Line 560: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -1694,7 +1694,7 @@ File: src/supervisor/global_portfolio_manager.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         results = {}
-        
+
     Line 611: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -1708,7 +1708,7 @@ File: src/supervisor/global_portfolio_manager.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         results = {}
-        
+
     Line 665: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -1722,7 +1722,7 @@ File: src/supervisor/global_portfolio_manager.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         results = {}
-        
+
     Line 707: pass  # TODO: Add proper exception handling
       Context:
                 """Perform asset allocation."""
@@ -2030,10 +2030,10 @@ File: src/supervisor/global_portfolio_manager.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         history = self.management_history.copy()
-        
+
     Line 1225: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -2058,7 +2058,7 @@ File: src/supervisor/global_portfolio_manager.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         global global_portfolio_manager
-        
+
 
 File: src/supervisor/main.py
 ----------------------------
@@ -2066,7 +2066,7 @@ File: src/supervisor/main.py
   TODO_COMMENTS:
     Line 20: pass  # TODO: Add implementation
       Context:
-        
+
         class Supervisor:
             pass  # TODO: Add implementation
         class Supervisor:
@@ -2094,7 +2094,7 @@ File: src/supervisor/main.py
                 """
     Line 203: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -2136,7 +2136,7 @@ File: src/supervisor/main.py
         account_info = await self.trader.get_account_info()  # Use self.trader
     Line 331: pass  # TODO: Add implementation
       Context:
-        
+
         class MainSupervisor:
             pass  # TODO: Add implementation
         class MainSupervisor:
@@ -2298,11 +2298,11 @@ File: src/supervisor/model_behavior_tracker.py
         @dataclass
         class PlaceholderDataClass:
             pass  # TODO: Add implementation
-        
+
         class DecisionPathAnalysis:
     Line 82: pass  # TODO: Add implementation
       Context:
-        
+
         class DecisionPathAnalysis:
             pass  # TODO: Add implementation
         class DecisionPathAnalysis:
@@ -2316,7 +2316,7 @@ File: src/supervisor/model_behavior_tracker.py
             """Decision path analysis data."""
     Line 97: pass  # TODO: Add implementation
       Context:
-        
+
         class ModelBehaviorTracker:
             pass  # TODO: Add implementation
         class ModelBehaviorTracker:
@@ -2341,7 +2341,7 @@ File: src/supervisor/model_behavior_tracker.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing Model Behavior Tracker...")
-        
+
     Line 183: pass  # TODO: Add proper exception handling
       Context:
                 """Load reference behavior data for stability calculations."""
@@ -2565,7 +2565,7 @@ File: src/supervisor/model_behavior_tracker.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("🛑 Stopping Model Behavior Tracker...")
-        
+
     Line 623: pass  # TODO: Add proper exception handling
       Context:
                 """Get behavior summary for a specific model."""
@@ -2579,7 +2579,7 @@ File: src/supervisor/model_behavior_tracker.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         history = self.behavior_history.get(model_id = [])
-        
+
     Line 680: pass  # TODO: Add proper exception handling
       Context:
                 """Calculate behavior trend."""
@@ -2657,7 +2657,7 @@ File: src/supervisor/monitoring.py
   TODO_COMMENTS:
     Line 16: pass  # TODO: Add implementation
       Context:
-        
+
         class Monitoring:
             pass  # TODO: Add implementation
         class Monitoring:
@@ -2802,7 +2802,7 @@ File: src/supervisor/multi_exchange_ab_tester.py
   TODO_COMMENTS:
     Line 23: pass  # TODO: Add proper implementation
       Context:
-        
+
         if TYPE_CHECKING:
             pass  # TODO: Add proper implementation
         @dataclass
@@ -2872,7 +2872,7 @@ File: src/supervisor/multi_exchange_ab_tester.py
             """Multi-exchange test summary."""
     Line 90: pass  # TODO: Add implementation
       Context:
-        
+
         class MultiExchangeABTester:
             pass  # TODO: Add implementation
         class MultiExchangeABTester:
@@ -2897,7 +2897,7 @@ File: src/supervisor/multi_exchange_ab_tester.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing Multi-Exchange A/B Tester...")
-        
+
     Line 177: pass  # TODO: Add proper exception handling
       Context:
                 """Validate test configuration."""
@@ -3037,7 +3037,7 @@ File: src/supervisor/multi_exchange_ab_tester.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         await self.stop_multi_exchange_test()
-        
+
     Line 593: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -3059,7 +3059,7 @@ File: src/supervisor/optimizer.py
   TODO_COMMENTS:
     Line 11: pass  # TODO: Add implementation
       Context:
-        
+
         class Optimizer:
             pass  # TODO: Add implementation
         class Optimizer:
@@ -3232,7 +3232,7 @@ File: src/supervisor/performance_monitor.py
   TODO_COMMENTS:
     Line 17: pass  # TODO: Add implementation
       Context:
-        
+
         class PerformanceMonitor:
             pass  # TODO: Add implementation
         class PerformanceMonitor:
@@ -3650,7 +3650,7 @@ File: src/supervisor/performance_reporter.py
         "data": report,
     Line 394: pass  # TODO: Add implementation
       Context:
-        
+
         class PerformanceReporter:
             pass  # TODO: Add implementation
         class PerformanceReporter:
@@ -3675,7 +3675,7 @@ File: src/supervisor/performance_reporter.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing Performance Reporter...")
-        
+
     Line 511: pass  # TODO: Add proper exception handling
       Context:
                 """Load performance reporter configuration."""
@@ -3773,7 +3773,7 @@ File: src/supervisor/performance_reporter.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("📊 Generating performance report...")
-        
+
     Line 709: pass  # TODO: Add proper exception handling
       Context:
                 """Generate a real-time performance report."""
@@ -3829,7 +3829,7 @@ File: src/supervisor/performance_reporter.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        
+
     Line 831: pass  # TODO: Add proper exception handling
       Context:
                 """Export report to JSON format."""
@@ -3871,7 +3871,7 @@ File: src/supervisor/performance_reporter.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         csv_lines = []
-        
+
     Line 904: pass  # TODO: Add proper exception handling
       Context:
         self.logger.info("🛑 Stopping Performance Reporter...")
@@ -4128,7 +4128,7 @@ File: src/supervisor/pnl_loss_functions.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         results = {}
-        
+
     Line 667: pass  # TODO: Add proper exception handling
       Context:
                 """Perform optimization metrics calculation."""
@@ -4142,7 +4142,7 @@ File: src/supervisor/pnl_loss_functions.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         results = {}
-        
+
     Line 701: pass  # TODO: Add proper exception handling
       Context:
                 """Perform realized PnL calculation."""
@@ -4464,10 +4464,10 @@ File: src/supervisor/pnl_loss_functions.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         history = self.calculation_history.copy()
-        
+
     Line 1216: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -4492,7 +4492,7 @@ File: src/supervisor/pnl_loss_functions.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         global pnl_loss_functions
-        
+
     Line 1290: pass  # TODO: Add proper exception handling
       Context:
                 """Perform Treynor ratio calculation."""
@@ -4668,7 +4668,7 @@ File: src/supervisor/risk_allocator.py
   TODO_COMMENTS:
     Line 12: pass  # TODO: Add implementation
       Context:
-        
+
         class RiskAllocator:
             pass  # TODO: Add implementation
         class RiskAllocator:
@@ -4833,7 +4833,7 @@ File: src/supervisor/risk_allocator.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         var_results = {}
-        
+
     Line 348: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -5020,7 +5020,7 @@ File: src/supervisor/supervisor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         from src.supervisor.enhanced_prediction_service import EnhancedPredictionService
-        
+
     Line 409: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -5300,7 +5300,7 @@ File: src/supervisor/supervisor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         training_manager = self.components["enhanced_training_manager"]
-        
+
     Line 1675: pass  # TODO: Add proper exception handling
       Context:
                 """Update online learning with current performance data."""

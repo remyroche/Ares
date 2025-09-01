@@ -583,17 +583,17 @@ self, weighting_input: dict[str, Any]
             returns = weighting_input.get("returns", {})
             if not returns:
                 return {"error": "No returns data provided"}
-            
+
             # Calculate total return
             total_return = sum(returns.values())
             if total_return == 0:
                 return {"error": "Zero total return"}
-            
+
             # Calculate weights proportional to returns
             weights = {}
             for asset, ret in returns.items():
                 weights[asset] = ret / total_return if total_return > 0 else 1.0 / len(returns)
-            
+
             return {
                 "return_based_weighting_completed": True,
                 "weights": weights,
@@ -619,10 +619,10 @@ self, weighting_input: dict[str, Any]
             returns = weighting_input.get("returns", {})
             volatilities = weighting_input.get("volatilities", {})
             risk_free_rate = weighting_input.get("risk_free_rate", 0.02)  # Default 2%
-            
+
             if not returns or not volatilities:
                 return {"error": "Missing returns or volatility data"}
-            
+
             # Calculate Sharpe ratios
             sharpe_ratios = {}
             for asset in returns:
@@ -631,16 +631,16 @@ self, weighting_input: dict[str, Any]
                     sharpe_ratios[asset] = excess_return / volatilities[asset]
                 else:
                     sharpe_ratios[asset] = 0
-            
+
             # Calculate weights
             total_sharpe = sum(sharpe_ratios.values())
             if total_sharpe == 0:
                 return {"error": "Zero total Sharpe ratio"}
-            
+
             weights = {}
             for asset, ratio in sharpe_ratios.items():
                 weights[asset] = ratio / total_sharpe if total_sharpe > 0 else 1.0 / len(sharpe_ratios)
-            
+
             return {
                 "sharpe_based_weighting_completed": True,
                 "weights": weights,
@@ -666,10 +666,10 @@ self, weighting_input: dict[str, Any]
             returns = weighting_input.get("returns", {})
             downside_deviations = weighting_input.get("downside_deviations", {})
             risk_free_rate = weighting_input.get("risk_free_rate", 0.02)  # Default 2%
-            
+
             if not returns or not downside_deviations:
                 return {"error": "Missing returns or downside deviation data"}
-            
+
             # Calculate Sortino ratios
             sortino_ratios = {}
             for asset in returns:
@@ -678,16 +678,16 @@ self, weighting_input: dict[str, Any]
                     sortino_ratios[asset] = excess_return / downside_deviations[asset]
                 else:
                     sortino_ratios[asset] = 0
-            
+
             # Calculate weights
             total_sortino = sum(sortino_ratios.values())
             if total_sortino == 0:
                 return {"error": "Zero total Sortino ratio"}
-            
+
             weights = {}
             for asset, ratio in sortino_ratios.items():
                 weights[asset] = ratio / total_sortino if total_sortino > 0 else 1.0 / len(sortino_ratios)
-            
+
             return {
                 "sortino_based_weighting_completed": True,
                 "weights": weights,
@@ -712,10 +712,10 @@ self, weighting_input: dict[str, Any]
             # Calculate Calmar ratio based weights
             returns = weighting_input.get("returns", {})
             max_drawdowns = weighting_input.get("max_drawdowns", {})
-            
+
             if not returns or not max_drawdowns:
                 return {"error": "Missing returns or drawdown data"}
-            
+
             # Calculate Calmar ratios
             calmar_ratios = {}
             for asset in returns:
@@ -723,16 +723,16 @@ self, weighting_input: dict[str, Any]
                     calmar_ratios[asset] = returns[asset] / abs(max_drawdowns[asset])
                 else:
                     calmar_ratios[asset] = 0
-            
+
             # Calculate weights
             total_calmar = sum(calmar_ratios.values())
             if total_calmar == 0:
                 return {"error": "Zero total Calmar ratio"}
-            
+
             weights = {}
             for asset, ratio in calmar_ratios.items():
                 weights[asset] = ratio / total_calmar if total_calmar > 0 else 1.0 / len(calmar_ratios)
-            
+
             return {
                 "calmar_based_weighting_completed": True,
                 "weights": weights,
@@ -759,10 +759,10 @@ self, weighting_input: dict[str, Any]
             # Calculate VaR-based weights
             returns = weighting_input.get("returns", {})
             volatilities = weighting_input.get("volatilities", {})
-            
+
             if not returns or not volatilities:
                 return {"error": "Missing returns or volatility data"}
-            
+
             # Calculate VaR (simplified: return - 2*volatility)
             var_scores = {}
             for asset in returns:
@@ -770,24 +770,24 @@ self, weighting_input: dict[str, Any]
                     var_scores[asset] = returns[asset] - 2 * volatilities[asset]
                 else:
                     var_scores[asset] = returns[asset]
-            
+
             # Calculate weights (inverse VaR - lower VaR gets higher weight)
             total_var = sum(var_scores.values())
             if total_var == 0:
                 return {"error": "Zero total VaR score"}
-            
+
             weights = {}
             for asset, var_score in var_scores.items():
                 # Invert VaR score for weighting (lower VaR = higher weight)
                 inverse_var = 1 / (abs(var_score) + 1e-8)  # Add small constant to avoid division by zero
                 weights[asset] = inverse_var
-            
+
             # Normalize weights
             total_weight = sum(weights.values())
             if total_weight > 0:
                 for asset in weights:
                     weights[asset] /= total_weight
-            
+
             return {
                 "var_based_weighting_completed": True,
                 "weights": weights,
@@ -811,14 +811,14 @@ self, weighting_input: dict[str, Any]
         try:
             # Calculate volatility-based weights
             volatilities = weighting_input.get("volatilities", {})
-            
+
             if not volatilities:
                 return {"error": "No volatility data provided"}
-            
+
             # Calculate inverse volatility weights (lower volatility = higher weight)
             weights = {}
             total_inverse_vol = 0
-            
+
             for asset, vol in volatilities.items():
                 if vol > 0:
                     inverse_vol = 1 / vol
@@ -826,7 +826,7 @@ self, weighting_input: dict[str, Any]
                     total_inverse_vol += inverse_vol
                 else:
                     weights[asset] = 0
-            
+
             # Normalize weights
             if total_inverse_vol > 0:
                 for asset in weights:
@@ -836,7 +836,7 @@ self, weighting_input: dict[str, Any]
                 num_assets = len(volatilities)
                 for asset in weights:
                     weights[asset] = 1.0 / num_assets
-            
+
             return {
                 "volatility_based_weighting_completed": True,
                 "weights": weights,
@@ -860,14 +860,14 @@ self, weighting_input: dict[str, Any]
         try:
             # Calculate drawdown-based weights
             max_drawdowns = weighting_input.get("max_drawdowns", {})
-            
+
             if not max_drawdowns:
                 return {"error": "No drawdown data provided"}
-            
+
             # Calculate inverse drawdown weights (lower drawdown = higher weight)
             weights = {}
             total_inverse_dd = 0
-            
+
             for asset, drawdown in max_drawdowns.items():
                 if drawdown > 0:
                     inverse_dd = 1 / drawdown
@@ -875,7 +875,7 @@ self, weighting_input: dict[str, Any]
                     total_inverse_dd += inverse_dd
                 else:
                     weights[asset] = 0
-            
+
             # Normalize weights
             if total_inverse_dd > 0:
                 for asset in weights:
@@ -885,7 +885,7 @@ self, weighting_input: dict[str, Any]
                 num_assets = len(max_drawdowns)
                 for asset in weights:
                     weights[asset] = 1.0 / num_assets
-            
+
             return {
                 "drawdown_based_weighting_completed": True,
                 "weights": weights,
@@ -909,14 +909,14 @@ self, weighting_input: dict[str, Any]
         try:
             # Calculate correlation-based weights
             correlation_matrix = weighting_input.get("correlation_matrix", {})
-            
+
             if not correlation_matrix:
                 return {"error": "No correlation matrix provided"}
-            
+
             # Calculate diversification weights (lower correlation = higher weight)
             weights = {}
             total_diversification = 0
-            
+
             for asset, correlations in correlation_matrix.items():
                 if isinstance(correlations, dict):
                     # Calculate average correlation with other assets
@@ -931,7 +931,7 @@ self, weighting_input: dict[str, Any]
                         weights[asset] = 0
                 else:
                     weights[asset] = 0
-            
+
             # Normalize weights
             if total_diversification > 0:
                 for asset in weights:
@@ -941,7 +941,7 @@ self, weighting_input: dict[str, Any]
                 num_assets = len(correlation_matrix)
                 for asset in weights:
                     weights[asset] = 1.0 / num_assets
-            
+
             return {
                 "correlation_based_weighting_completed": True,
                 "weights": weights,
@@ -968,10 +968,10 @@ self, weighting_input: dict[str, Any]
             # Calculate market regime-based weights
             market_data = weighting_input.get("market_data", {})
             current_regime = weighting_input.get("current_regime", "neutral")
-            
+
             if not market_data:
                 return {"error": "No market data provided"}
-            
+
             # Define regime-specific weight adjustments
             regime_adjustments = {
                 "bull_market": 1.2,  # Increase weights in bull market
@@ -980,26 +980,26 @@ self, weighting_input: dict[str, Any]
                 "volatile_market": 0.9,  # Slight decrease in volatile market
                 "neutral": 1.0  # Default
             }
-            
+
             # Get base weights (could be from other weighting methods)
             base_weights = weighting_input.get("base_weights", {})
             if not base_weights:
                 # Use equal weights if no base weights provided
                 assets = list(market_data.keys())
                 base_weights = {asset: 1.0 / len(assets) for asset in assets}
-            
+
             # Apply regime adjustment
             adjustment = regime_adjustments.get(current_regime, 1.0)
             weights = {}
             for asset, base_weight in base_weights.items():
                 weights[asset] = base_weight * adjustment
-            
+
             # Normalize weights
             total_weight = sum(weights.values())
             if total_weight > 0:
                 for asset in weights:
                     weights[asset] /= total_weight
-            
+
             return {
                 "market_regime_weighting_completed": True,
                 "weights": weights,
@@ -1024,21 +1024,21 @@ self, weighting_input: dict[str, Any]
         try:
             # Detect market regime based on market data
             market_data = weighting_input.get("market_data", {})
-            
+
             if not market_data:
                 return {"error": "No market data provided"}
-            
+
             # Extract key metrics for regime detection
             returns = market_data.get("returns", [])
             volatilities = market_data.get("volatilities", [])
-            
+
             if not returns or not volatilities:
                 return {"error": "Missing returns or volatility data"}
-            
+
             # Calculate regime indicators
             avg_return = sum(returns) / len(returns) if returns else 0
             avg_volatility = sum(volatilities) / len(volatilities) if volatilities else 0
-            
+
             # Simple regime detection logic
             if avg_return > 0.02 and avg_volatility < 0.15:  # High return, low volatility
                 regime = "bull_market"
@@ -1060,7 +1060,7 @@ self, weighting_input: dict[str, Any]
                 regime = "neutral"
                 probability = 0.4
                 confidence = 0.65
-            
+
             return {
                 "regime_detection_completed": True,
                 "detected_regime": regime,

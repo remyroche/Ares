@@ -13,18 +13,18 @@ The enhanced_training_manager implements a sophisticated auto-fix mechanism that
 ```python
 async def _ensure_data_quality(self, training_input: dict[str, Any]) -> bool:
     """Ensure data quality and readiness for HMM regime discovery."""
-    
+
     # Get data ready for step3/step4 (which includes HMM)
     data_results = await self.data_quality_manager.get_data_for_step03_step4(
         symbol=symbol,
         exchange=exchange,
         timeframe=timeframe
     )
-    
+
     if not data_results.get("success", False):
         # Try to fix missing data using step1/step01_5 components
         fix_results = await self._fix_missing_data(training_input)
-        
+
         if fix_results.get("success", False):
             self.logger.info("✅ Successfully fixed missing data")
             return True
@@ -40,10 +40,10 @@ async def _ensure_data_quality(self, training_input: dict[str, Any]) -> bool:
 ```python
 def _auto_fix_irregular_intervals(self, data: pd.DataFrame, symbol: str, exchange: str, results: dict[str, Any]) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Automatically fix irregular intervals using the enhanced preprocessing strategy."""
-    
+
     # Check for irregular intervals
     irregular_ratio = len(irregular_intervals) / len(time_diffs)
-    
+
     if irregular_ratio > 0.01:  # More than 1% irregular intervals
         # Apply enhanced preprocessing
         fixed_data = self.enhanced_preprocess_market_data(
@@ -65,7 +65,7 @@ def _auto_fix_irregular_intervals(self, data: pd.DataFrame, symbol: str, exchang
 ```python
 async def _fix_missing_data(self, training_input: dict[str, Any]) -> dict[str, Any]:
     """Fix missing data using step1 and step01_5 components."""
-    
+
     # Try step1 data collection
     step01_success = False
     try:
@@ -97,13 +97,13 @@ async def _fix_missing_data(self, training_input: dict[str, Any]) -> dict[str, A
 
 ```python
 def enhanced_preprocess_market_data(
-    self, data: pd.DataFrame, symbol: str, exchange: str, 
-    expected_interval_seconds: int = 60, 
-    max_forward_fill_seconds: int = 10, 
+    self, data: pd.DataFrame, symbol: str, exchange: str,
+    expected_interval_seconds: int = 60,
+    max_forward_fill_seconds: int = 10,
     download_missing_data: bool = True
 ) -> pd.DataFrame:
     """Enhanced preprocessing with intelligent gap handling."""
-    
+
     # Step 4b: Download missing data for large gaps
     if len(large_gaps) > 0 and download_missing_data:
         self.logger.info("🔧 Step 4b: Downloading missing data for large gaps")
@@ -151,23 +151,23 @@ except Exception as e:
 ```python
 async def _merge_daily_data(self, daily_klines: pd.DataFrame, daily_aggtrades: Optional[pd.DataFrame], daily_futures: Optional[pd.DataFrame], symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
     """Merge daily data with automatic column calculation."""
-    
+
     unified = daily_klines.copy()
-    
+
     # Merge aggtrades data
     if daily_aggtrades is not None and not daily_aggtrades.empty:
         unified = await self._merge_daily_aggtrades(unified, daily_aggtrades)
-    
+
     # Merge futures data
     if daily_futures is not None and not daily_futures.empty:
         unified = await self._merge_daily_futures(unified, daily_futures)
-    
+
     # Fill missing values
     unified = await self._fill_missing_values(unified)
-    
+
     # Step 1.5 Enhancement: Column verification and calculation
     unified = await self._verify_and_calculate_missing_columns(unified, symbol, exchange, timeframe)
-    
+
     return unified
 ```
 

@@ -323,11 +323,11 @@ def get_test_features_and_labels(
 
 def get_full_dataset(data_dir: str, **kwargs) -> pd.DataFrame:
     """Get the full dataset.
-    
+
     Args:
         data_dir: Data directory path
         **kwargs: Additional arguments to pass to get_data_manager
-        
+
     Returns:
         Full dataset as DataFrame
     """

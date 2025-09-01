@@ -443,7 +443,7 @@ except Exception as e:
 
     async def shutdown(self) -> None:
         """Shutdown the training manager.
-        
+
         This method properly cleans up resources and stops any running training operations.
         """
         try:
@@ -451,16 +451,16 @@ except Exception as e:
 except Exception as e:
     pass  # TODO: Add proper exception handling
             self.logger.info("🔄 Shutting down training manager...")
-            
+
             # Stop any running training operations
             await self.stop_training()
-            
+
             # Clean up training components
             if self.training_pipeline:
                 if hasattr(self.training_pipeline, 'shutdown'):
                     await self.training_pipeline.shutdown()
                 self.training_pipeline = None
-            
+
             # Clean up training steps
             for step_name, step in self.training_steps.items():
                 if hasattr(step, 'shutdown'):
@@ -468,17 +468,17 @@ except Exception as e:
                         await step.shutdown()
                     except Exception as e:
                         self.logger.warning(f"Error shutting down step {step_name}: {e}")
-            
+
             self.training_steps.clear()
-            
+
             # Clear training history
             self.training_history.clear()
-            
+
             # Call parent shutdown
             await super().shutdown()
-            
+
             self.logger.info("✅ Training manager shutdown completed")
-            
+
         except Exception as e:
             self.logger.exception(f"🚨 Error during training manager shutdown: {e}")
             raise

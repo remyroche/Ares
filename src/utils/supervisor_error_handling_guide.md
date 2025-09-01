@@ -199,25 +199,25 @@ def performance_monitoring():
 class Supervisor:
     def __init__(self):
         # Initialize components
-        
+
     @supervisor_critical_error_handler("supervisor")
     def start(self):
         """Start the supervisor."""
         # Implementation here
         pass
-        
+
     @supervisor_component_error_handler("supervisor")
     def manage_components(self):
         """Manage supervisor components."""
         # Implementation here
         pass
-        
+
     def complex_operation(self):
         """Complex operation with detailed error handling."""
         with supervisor_error_context("supervisor", "complex_operation") as context:
             # Add context information
             context.data_context.update({"operation_type": "complex"})
-            
+
             # Implementation here
             return result
 ```
@@ -238,7 +238,7 @@ def calculate_pnl(positions: dict, prices: dict):
     """Calculate P&L for positions."""
     if not positions or not prices:
         raise ValueError("Positions and prices are required")
-    
+
     # P&L calculation logic
     return pnl_result
 
@@ -247,7 +247,7 @@ def calculate_loss_metrics(returns: list):
     """Calculate loss metrics."""
     if not returns:
         raise ValueError("Returns data is required")
-    
+
     # Loss calculation logic
     return loss_metrics
 ```
@@ -268,7 +268,7 @@ def generate_report(metrics: dict):
     """Generate performance report."""
     if not metrics:
         raise PerformanceMonitoringError("No metrics provided for report")
-    
+
     # Report generation logic
     return report
 
@@ -277,7 +277,7 @@ def export_report(report: dict, format: str):
     """Export performance report."""
     if not report:
         raise PerformanceMonitoringError("No report to export")
-    
+
     # Export logic
     return export_result
 ```
@@ -298,7 +298,7 @@ def rebalance_portfolio(weights: dict, constraints: dict):
     """Rebalance portfolio."""
     if not weights:
         raise PortfolioManagementError("Portfolio weights are required")
-    
+
     # Rebalancing logic
     return rebalance_result
 
@@ -307,7 +307,7 @@ def validate_portfolio(portfolio: dict):
     """Validate portfolio constraints."""
     if not portfolio:
         raise PortfolioManagementError("Portfolio data is required")
-    
+
     # Validation logic
     return validation_result
 ```
@@ -328,7 +328,7 @@ def calculate_weights(predictions: dict, market_data: dict):
     """Calculate dynamic weights."""
     if not predictions or not market_data:
         raise ValueError("Predictions and market data are required")
-    
+
     # Weight calculation logic
     return weights
 
@@ -337,7 +337,7 @@ def adjust_weights(weights: dict, performance: dict):
     """Adjust weights based on performance."""
     if not weights or not performance:
         raise ValueError("Weights and performance data are required")
-    
+
     # Weight adjustment logic
     return adjusted_weights
 ```
@@ -370,11 +370,11 @@ def adjust_weights(weights: dict, performance: dict):
 ```python
 def test_error_handling():
     """Test error handling implementation."""
-    
+
     # Test successful operation
     result = your_function(valid_data)
     assert result is not None
-    
+
     # Test error handling
     try:
         result = your_function(invalid_data)
@@ -389,11 +389,11 @@ def test_error_handling():
 ```python
 def test_error_recovery():
     """Test error recovery mechanisms."""
-    
+
     # Test retry logic
     result = your_function_with_retry(data)
     assert result is not None
-    
+
     # Test fallback mechanisms
     result = your_function_with_fallback(data)
     assert result is not None

@@ -86,7 +86,7 @@ File: src/analyst/advanced_feature_engineering.py
   TODO_COMMENTS:
     Line 29: pass  # TODO: Add implementation
       Context:
-        
+
         class CandlestickPatternAnalyzer:
             pass  # TODO: Add implementation
         class CandlestickPatternAnalyzer:
@@ -132,7 +132,7 @@ File: src/analyst/advanced_feature_engineering.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         df = df.copy()
-        
+
     Line 672: pass  # TODO: Add proper exception handling
       Context:
                 """Convert pattern analysis to ML features."""
@@ -146,10 +146,10 @@ File: src/analyst/advanced_feature_engineering.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         features = {}
-        
+
     Line 693: pass  # TODO: Add implementation
       Context:
-        
+
         class FeatureInteractionEngine:
             pass  # TODO: Add implementation
         class FeatureInteractionEngine:
@@ -184,7 +184,7 @@ File: src/analyst/advanced_feature_engineering.py
                         self.print(
     Line 851: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -198,7 +198,7 @@ File: src/analyst/advanced_feature_engineering.py
         spread_volume_interactions = self._generate_spread_volume_interactions(features)
     Line 881: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -212,7 +212,7 @@ File: src/analyst/advanced_feature_engineering.py
         for predictor, target in self.causality_pairs:
     Line 920: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -226,7 +226,7 @@ File: src/analyst/advanced_feature_engineering.py
         if "spread_liquidity_change" in features and "volume_roc" in features:
     Line 986: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -240,7 +240,7 @@ File: src/analyst/advanced_feature_engineering.py
         available_spreads = [f for f in self.spread_features if f in features]
     Line 1041: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -254,7 +254,7 @@ File: src/analyst/advanced_feature_engineering.py
         available_momentum = [f for f in self.momentum_features if f in features]
     Line 1078: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -268,7 +268,7 @@ File: src/analyst/advanced_feature_engineering.py
         available_volumes = [f for f in self.volume_features if f in features]
     Line 1115: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -296,7 +296,7 @@ File: src/analyst/advanced_feature_engineering.py
                         return features
     Line 1193: pass  # TODO: Add implementation
       Context:
-        
+
         class AdvancedFeatureEngineering:
             pass  # TODO: Add implementation
         class AdvancedFeatureEngineering:
@@ -314,7 +314,7 @@ File: src/analyst/advanced_feature_engineering.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("🚀 Initializing advanced feature engineering...")
-        
+
     Line 1368: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -342,7 +342,7 @@ File: src/analyst/advanced_feature_engineering.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         features = {}
-        
+
     Line 1517: pass  # TODO: Add proper exception handling
       Context:
                 """Calculate features for a specific timeframe."""
@@ -384,7 +384,7 @@ File: src/analyst/advanced_feature_engineering.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         features = {}
-        
+
     Line 1678: pass  # TODO: Add proper exception handling
       Context:
                 """Calculate volume analysis for a specific timeframe."""
@@ -398,7 +398,7 @@ File: src/analyst/advanced_feature_engineering.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         features = {}
-        
+
     Line 1715: pass  # TODO: Add proper exception handling
       Context:
                 """Calculate volatility analysis for a specific timeframe."""
@@ -412,7 +412,7 @@ File: src/analyst/advanced_feature_engineering.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         features = {}
-        
+
     Line 1752: pass  # TODO: Add proper exception handling
       Context:
                 """Calculate momentum analysis for a specific timeframe."""
@@ -426,7 +426,7 @@ File: src/analyst/advanced_feature_engineering.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         features = {}
-        
+
     Line 1797: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -440,7 +440,7 @@ File: src/analyst/advanced_feature_engineering.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         labels = {}
-        
+
     Line 1833: pass  # TODO: Add proper exception handling
       Context:
                 """Generate analyst labels for setup identification."""
@@ -482,7 +482,7 @@ File: src/analyst/advanced_feature_engineering.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         features = {}
-        
+
     Line 2022: pass  # TODO: Add proper exception handling
       Context:
                 """Calculate price impact metrics."""
@@ -538,7 +538,7 @@ File: src/analyst/advanced_feature_engineering.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         features = {}
-        
+
     Line 2168: pass  # TODO: Add proper exception handling
       Context:
                 """Calculate adaptive moving averages based on volatility."""
@@ -569,7 +569,7 @@ File: src/analyst/advanced_feature_engineering.py
         feature_df = pd.DataFrame([features])
     Line 2243: pass  # TODO: Add implementation
       Context:
-        
+
         class VolatilityRegimeModel:
             pass  # TODO: Add implementation
         class VolatilityRegimeModel:
@@ -601,7 +601,7 @@ File: src/analyst/advanced_feature_engineering.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         returns = price_data["close"].pct_change().dropna()
-        
+
     Line 2309: pass  # TODO: Add proper exception handling
       Context:
                 """Calculate Parkinson volatility estimator."""
@@ -632,7 +632,7 @@ File: src/analyst/advanced_feature_engineering.py
         h = np.log(price_data["high"] / price_data["close"].shift(1))
     Line 2335: pass  # TODO: Add implementation
       Context:
-        
+
         class CorrelationAnalyzer:
             pass  # TODO: Add implementation
         class CorrelationAnalyzer:
@@ -664,10 +664,10 @@ File: src/analyst/advanced_feature_engineering.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         returns = price_data["close"].pct_change().dropna()
-        
+
     Line 2393: pass  # TODO: Add implementation
       Context:
-        
+
         class MomentumAnalyzer:
             pass  # TODO: Add implementation
         class MomentumAnalyzer:
@@ -699,10 +699,10 @@ File: src/analyst/advanced_feature_engineering.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         returns = price_data["close"].pct_change().dropna()
-        
+
     Line 2466: pass  # TODO: Add implementation
       Context:
-        
+
         class LiquidityAnalyzer:
             pass  # TODO: Add implementation
         class LiquidityAnalyzer:
@@ -742,7 +742,7 @@ File: src/analyst/analyst.py
   TODO_COMMENTS:
     Line 38: pass  # TODO: Add implementation
       Context:
-        
+
         class Analyst:
             pass  # TODO: Add implementation
         class Analyst:
@@ -774,7 +774,7 @@ File: src/analyst/analyst.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         from src.training.dual_model_system import setup_dual_model_system
-        
+
     Line 287: pass  # TODO: Add proper exception handling
       Context:
                 """Initialize Market Health Analyzer."""
@@ -788,7 +788,7 @@ File: src/analyst/analyst.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         from src.analyst.market_health_analyzer import setup_market_health_analyzer
-        
+
     Line 312: pass  # TODO: Add proper exception handling
       Context:
                 """Initialize Liquidation Risk Model."""
@@ -802,7 +802,7 @@ File: src/analyst/analyst.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         from src.analyst.liquidation_risk_model import setup_liquidation_risk_model
-        
+
     Line 337: pass  # TODO: Add proper exception handling
       Context:
                 """Initialize Feature Engineering Orchestrator."""
@@ -872,7 +872,7 @@ File: src/analyst/analyst.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         market_data = analysis_input.get("market_data")
-        
+
     Line 665: pass  # TODO: Add proper exception handling
       Context:
                 """Perform indicator analysis."""
@@ -886,7 +886,7 @@ File: src/analyst/analyst.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         market_data = analysis_input.get("market_data")
-        
+
     Line 701: pass  # TODO: Add proper exception handling
       Context:
                 """Perform pattern analysis."""
@@ -914,7 +914,7 @@ File: src/analyst/analyst.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         market_data = analysis_input.get("market_data")
-        
+
     Line 751: pass  # TODO: Add proper exception handling
       Context:
                 """Perform correlation analysis."""
@@ -942,7 +942,7 @@ File: src/analyst/analyst.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         market_data = analysis_input.get("market_data")
-        
+
     Line 796: pass  # TODO: Add proper exception handling
       Context:
                 """Perform risk scoring."""
@@ -998,7 +998,7 @@ File: src/analyst/analyst.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Storing analysis results...")
-        
+
     Line 970: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -1076,7 +1076,7 @@ File: src/analyst/autoencoder_feature_generator.py
         import optuna
     Line 61: pass  # TODO: Add implementation
       Context:
-        
+
         class AutoencoderConfig:
             pass  # TODO: Add implementation
         class AutoencoderConfig:
@@ -1111,7 +1111,7 @@ File: src/analyst/autoencoder_feature_generator.py
         with open(output_path, "w") as file:
     Line 170: pass  # TODO: Add implementation
       Context:
-        
+
         class PriceReturnConverter:
             pass  # TODO: Add implementation
         class PriceReturnConverter:
@@ -1160,7 +1160,7 @@ File: src/analyst/autoencoder_feature_generator.py
                             # CRITICAL: Double-check for known problematic features
     Line 603: pass  # TODO: Add implementation
       Context:
-        
+
         class FeatureFilter:
             pass  # TODO: Add implementation
         class FeatureFilter:
@@ -1192,7 +1192,7 @@ File: src/analyst/autoencoder_feature_generator.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         from shap.explainers import TreeExplainer
-        
+
     Line 794: pass  # TODO: Add proper exception handling
       Context:
         ):  # Need at least 10 samples per class for stratification
@@ -1206,10 +1206,10 @@ File: src/analyst/autoencoder_feature_generator.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         from sklearn.model_selection import train_test_split
-        
+
     Line 973: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -1223,14 +1223,14 @@ File: src/analyst/autoencoder_feature_generator.py
         # Calculate background values from a small subset
     Line 1298: pass  # TODO: Add implementation
       Context:
-        
+
         class ImprovedAutoencoderPreprocessor:
             pass  # TODO: Add implementation
         class ImprovedAutoencoderPreprocessor:
         class ImprovedAutoencoderPreprocessor:
     Line 1414: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -1244,14 +1244,14 @@ File: src/analyst/autoencoder_feature_generator.py
         self.logger.info(f"📊 Input shape: {X.shape}")
     Line 1493: pass  # TODO: Add implementation
       Context:
-        
+
         class SequenceAwareAutoencoder:
             pass  # TODO: Add implementation
         class SequenceAwareAutoencoder:
         class SequenceAwareAutoencoder:
     Line 1579: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -1279,7 +1279,7 @@ File: src/analyst/autoencoder_feature_generator.py
         train_losses = history.history.get("loss", [])
     Line 1732: pass  # TODO: Add implementation
       Context:
-        
+
         class AutoencoderFeatureAnalyzer:
             pass  # TODO: Add implementation
         class AutoencoderFeatureAnalyzer:
@@ -1353,7 +1353,7 @@ File: src/analyst/autoencoder_feature_generator.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         from sklearn.ensemble import GradientBoostingClassifier
-        
+
     Line 2003: pass  # TODO: Add proper exception handling
       Context:
         # 3. Permutation Importance (more robust)
@@ -1426,7 +1426,7 @@ File: src/analyst/autoencoder_feature_generator.py
         recommendations = []
     Line 2499: pass  # TODO: Add implementation
       Context:
-        
+
         class AutoencoderFeatureGenerator:
             pass  # TODO: Add implementation
         class AutoencoderFeatureGenerator:
@@ -1480,7 +1480,7 @@ File: src/analyst/data_utils.py
   TODO_COMMENTS:
     Line 28: pass  # TODO: Add implementation
       Context:
-        
+
         class DataUtils:
             pass  # TODO: Add implementation
         class DataUtils:
@@ -1498,7 +1498,7 @@ File: src/analyst/data_utils.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing Data Utils...")
-        
+
     Line 117: pass  # TODO: Add proper exception handling
       Context:
                 """Load data utils configuration."""
@@ -1638,7 +1638,7 @@ File: src/analyst/data_utils.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         results = {}
-        
+
     Line 504: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -1652,7 +1652,7 @@ File: src/analyst/data_utils.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         results = {}
-        
+
     Line 559: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -1666,7 +1666,7 @@ File: src/analyst/data_utils.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         results = {}
-        
+
     Line 617: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -1680,7 +1680,7 @@ File: src/analyst/data_utils.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         results = {}
-        
+
     Line 660: pass  # TODO: Add proper exception handling
       Context:
                 """Perform outlier removal."""
@@ -1946,10 +1946,10 @@ File: src/analyst/data_utils.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         history = self.processing_history.copy()
-        
+
     Line 1113: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -1974,10 +1974,10 @@ File: src/analyst/data_utils.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         global data_utils
-        
+
     Line 1238: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -1991,7 +1991,7 @@ File: src/analyst/data_utils.py
         df = pd.read_csv(filename, index_col="open_time", parse_dates=True)
     Line 1363: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -2005,7 +2005,7 @@ File: src/analyst/data_utils.py
         df = pd.read_csv(filename, low_memory=False)
     Line 1456: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -2019,7 +2019,7 @@ File: src/analyst/data_utils.py
         df = pd.read_csv(filename, low_memory=False)
     Line 2044: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -2057,14 +2057,14 @@ File: src/analyst/di_analyst.py
   TODO_COMMENTS:
     Line 36: pass  # TODO: Add implementation
       Context:
-        
+
         class DIAnalyst(AnalystBase, IAnalyst):
             pass  # TODO: Add implementation
         class DIAnalyst(AnalystBase, IAnalyst):
         class DIAnalyst(AnalystBase, IAnalyst):
     Line 83: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -2078,7 +2078,7 @@ File: src/analyst/di_analyst.py
         await self._initialize_analysis_components()
     Line 157: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -2145,7 +2145,7 @@ File: src/analyst/di_analyst.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Training analysis models")
-        
+
     Line 350: pass  # TODO: Add proper exception handling
       Context:
                 """Load trained models."""
@@ -2159,13 +2159,13 @@ File: src/analyst/di_analyst.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info(f"Loading models from {model_path}")
-        
+
 
   PLACEHOLDER_FUNCTIONS:
     Line 378: async def _stop_component(self) -> None:
       Context:
         self.logger.info("Analyst component started")
-        
+
         async def _stop_component(self) -> None:
                 """Stop analyst-specific operations."""
         self.is_analyzing = False
@@ -2176,7 +2176,7 @@ File: src/analyst/dynamic_regime_mapper.py
   TODO_COMMENTS:
     Line 13: pass  # TODO: Add implementation
       Context:
-        
+
         class DynamicRegimeMapper:
             pass  # TODO: Add implementation
         class DynamicRegimeMapper:
@@ -2194,7 +2194,7 @@ File: src/analyst/dynamic_regime_mapper.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing Dynamic Regime Mapper...")
-        
+
     Line 78: pass  # TODO: Add proper exception handling
       Context:
                 """Discover regimes by reading Step 1.7 HMM clustering results."""
@@ -2208,7 +2208,7 @@ File: src/analyst/dynamic_regime_mapper.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Discovering regimes from Step 1.7 results...")
-        
+
     Line 114: pass  # TODO: Add proper exception handling
       Context:
                 """Process a Step 1.7 meta file to extract regime information."""
@@ -2222,7 +2222,7 @@ File: src/analyst/dynamic_regime_mapper.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         meta_path = os.path.join(self.data_dir, meta_file)
-        
+
     Line 140: pass  # TODO: Add proper exception handling
       Context:
         for cluster_id_str, description in archetype_descriptions.items():
@@ -2286,7 +2286,7 @@ File: src/analyst/enhanced_prediction_integrator.py
   TODO_COMMENTS:
     Line 24: pass  # TODO: Add implementation
       Context:
-        
+
         class EnhancedPredictionIntegrator:
             pass  # TODO: Add implementation
         class EnhancedPredictionIntegrator:
@@ -2304,7 +2304,7 @@ File: src/analyst/enhanced_prediction_integrator.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("🚀 Initializing Enhanced Prediction Integrator...")
-        
+
     Line 121: pass  # TODO: Add proper exception handling
       Context:
                 """Load HMM-based models from step 6-8."""
@@ -2458,7 +2458,7 @@ File: src/analyst/enhanced_prediction_integrator.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         predictions = {}
-        
+
     Line 396: pass  # TODO: Add proper exception handling
       Context:
                         if "model" in model_data and hasattr(model_data["model"], "predict"):
@@ -2486,7 +2486,7 @@ File: src/analyst/enhanced_prediction_integrator.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         predictions = {}
-        
+
     Line 447: pass  # TODO: Add proper exception handling
       Context:
                         if "model" in model_data and hasattr(model_data["model"], "predict"):
@@ -2514,7 +2514,7 @@ File: src/analyst/enhanced_prediction_integrator.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         calibrated_predictions = {}
-        
+
     Line 524: pass  # TODO: Add proper exception handling
       Context:
                 """Apply optimization weights to calibrated predictions."""
@@ -2528,7 +2528,7 @@ File: src/analyst/enhanced_prediction_integrator.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         optimization_weights = {}
-        
+
     Line 561: pass  # TODO: Add proper exception handling
       Context:
                 """Generate final confidence scores for all predictions."""
@@ -2542,7 +2542,7 @@ File: src/analyst/enhanced_prediction_integrator.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         confidence_scores = {}
-        
+
     Line 600: pass  # TODO: Add proper exception handling
       Context:
                 """Prepare features for model prediction."""
@@ -2598,7 +2598,7 @@ File: src/analyst/enhanced_prediction_integrator.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         calibrated_prediction = prediction_data.copy()
-        
+
 
 File: src/analyst/enhanced_regime_predictor.py
 ----------------------------------------------
@@ -2606,14 +2606,14 @@ File: src/analyst/enhanced_regime_predictor.py
   TODO_COMMENTS:
     Line 6: pass  # TODO: Add implementation
       Context:
-        
+
         This module provides advanced regime change prediction capabilities by integrating:
             pass  # TODO: Add implementation
         - Probability-based regime change detection
         - Adaptive regime boundaries
     Line 25: pass  # TODO: Add implementation
       Context:
-        
+
         class EnhancedRegimePredictor:
             pass  # TODO: Add implementation
         class EnhancedRegimePredictor:
@@ -2631,7 +2631,7 @@ File: src/analyst/enhanced_regime_predictor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("🔮 Predicting regime changes with enhanced model...")
-        
+
     Line 135: pass  # TODO: Add proper exception handling
       Context:
                 """Calculate regime stability (max probability for each timepoint)."""
@@ -2673,7 +2673,7 @@ File: src/analyst/enhanced_regime_predictor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         changes = np.zeros(len(hmm_states), dtype=bool)
-        
+
     Line 230: pass  # TODO: Add proper exception handling
       Context:
                 """Calculate transition probabilities for regime changes."""
@@ -2687,7 +2687,7 @@ File: src/analyst/enhanced_regime_predictor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         transition_probs = np.zeros(len(regime_changes))
-        
+
     Line 263: pass  # TODO: Add proper exception handling
       Context:
                 """Calculate confidence scores for regime change predictions."""
@@ -2701,7 +2701,7 @@ File: src/analyst/enhanced_regime_predictor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         confidence_scores = np.zeros(len(stability))
-        
+
     Line 305: pass  # TODO: Add proper exception handling
       Context:
                 """Apply persistence model to adjust confidence scores."""
@@ -2729,7 +2729,7 @@ File: src/analyst/enhanced_regime_predictor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         events = []
-        
+
     Line 387: pass  # TODO: Add proper exception handling
       Context:
                 """Calculate how long each regime persists."""
@@ -2757,7 +2757,7 @@ File: src/analyst/enhanced_regime_predictor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("📊 Fitting regime persistence model...")
-        
+
     Line 441: pass  # TODO: Add proper exception handling
       Context:
         # Weibull distribution
@@ -2827,7 +2827,7 @@ File: src/analyst/enhanced_regime_predictor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("🔧 Fitting adaptive regime boundaries...")
-        
+
     Line 595: pass  # TODO: Add proper exception handling
       Context:
                 """Extract regime characteristics for boundary calculation."""
@@ -2841,7 +2841,7 @@ File: src/analyst/enhanced_regime_predictor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         characteristics = pd.DataFrame()
-        
+
 
 File: src/analyst/example_directional_analysis.py
 -------------------------------------------------
@@ -2849,14 +2849,14 @@ File: src/analyst/example_directional_analysis.py
   TODO_COMMENTS:
     Line 55: pass  # TODO: Add implementation
       Context:
-        
+
         async def demonstrate_directional_analysis():
             pass  # TODO: Add implementation
         async def demonstrate_directional_analysis():
         async def demonstrate_directional_analysis():
     Line 94: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -2875,14 +2875,14 @@ File: src/analyst/feature_engineering_orchestrator.py
   TODO_COMMENTS:
     Line 27: pass  # TODO: Add implementation
       Context:
-        
+
         class FeatureEngineeringOrchestrator:
             pass  # TODO: Add implementation
         class FeatureEngineeringOrchestrator:
         class FeatureEngineeringOrchestrator:
     Line 121: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -2935,7 +2935,7 @@ File: src/analyst/feature_engineering_orchestrator.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         from src.analyst.meta_labeling_system import MetaLabelingSystem
-        
+
     Line 350: pass  # TODO: Add proper exception handling
       Context:
                 """Calculate standard technical indicators using price differences."""
@@ -2949,7 +2949,7 @@ File: src/analyst/feature_engineering_orchestrator.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         import pandas_ta as ta
-        
+
     Line 413: pass  # TODO: Add proper exception handling
       Context:
                 """Calculate time-based features."""
@@ -3118,7 +3118,7 @@ File: src/analyst/liquidation_risk_model.py
   TODO_COMMENTS:
     Line 13: pass  # TODO: Add implementation
       Context:
-        
+
         class LiquidationRiskModel:
             pass  # TODO: Add implementation
         class LiquidationRiskModel:
@@ -3136,7 +3136,7 @@ File: src/analyst/liquidation_risk_model.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing Liquidation Risk Model...")
-        
+
     Line 126: pass  # TODO: Add proper exception handling
       Context:
                 """Validate risk model configuration."""
@@ -3206,7 +3206,7 @@ File: src/analyst/liquidation_risk_model.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         max_leverage = self.min_leverage
-        
+
     Line 345: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -3248,7 +3248,7 @@ File: src/analyst/liquidation_risk_model.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         liquidation_prices = {}
-        
+
     Line 447: pass  # TODO: Add proper exception handling
       Context:
                 """Clean up liquidation risk model resources."""
@@ -3270,7 +3270,7 @@ File: src/analyst/meta_label_relevance.py
   TODO_COMMENTS:
     Line 164: pass  # TODO: Add implementation
       Context:
-        
+
         class MetaLabelRelevanceEvaluator:
             pass  # TODO: Add implementation
         class MetaLabelRelevanceEvaluator:
@@ -3296,7 +3296,7 @@ File: src/analyst/meta_labeling_system.py
   TODO_COMMENTS:
     Line 22: pass  # TODO: Add implementation
       Context:
-        
+
         class MetaLabelingSystem:
             pass  # TODO: Add implementation
         class MetaLabelingSystem:
@@ -3412,7 +3412,7 @@ File: src/analyst/meta_labeling_system.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         features = {}
-        
+
     Line 273: pass  # TODO: Add proper exception handling
       Context:
                 """Calculate volume-based features."""
@@ -3426,7 +3426,7 @@ File: src/analyst/meta_labeling_system.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         features = {}
-        
+
     Line 317: pass  # TODO: Add proper exception handling
       Context:
                 """Calculate price action pattern features."""
@@ -3440,7 +3440,7 @@ File: src/analyst/meta_labeling_system.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         features = {}
-        
+
     Line 374: pass  # TODO: Add proper exception handling
       Context:
                 """Calculate volatility pattern features."""
@@ -3454,7 +3454,7 @@ File: src/analyst/meta_labeling_system.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         features = {}
-        
+
     Line 417: pass  # TODO: Add proper exception handling
       Context:
                 """Calculate momentum pattern features."""
@@ -3468,7 +3468,7 @@ File: src/analyst/meta_labeling_system.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         features = {}
-        
+
     Line 453: pass  # TODO: Add proper exception handling
       Context:
                 """Detect STRONG_TREND_CONTINUATION pattern."""
@@ -3552,7 +3552,7 @@ File: src/analyst/meta_labeling_system.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         patterns = {}
-        
+
     Line 672: pass  # TODO: Add proper exception handling
       Context:
                 """Detect momentum-related patterns."""
@@ -3566,7 +3566,7 @@ File: src/analyst/meta_labeling_system.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         patterns = {}
-        
+
     Line 713: pass  # TODO: Add proper exception handling
       Context:
                 """Calculate features specific to entry optimization."""
@@ -3580,7 +3580,7 @@ File: src/analyst/meta_labeling_system.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         features = {}
-        
+
     Line 754: pass  # TODO: Add proper exception handling
       Context:
                 """Calculate order book imbalance."""
@@ -3636,7 +3636,7 @@ File: src/analyst/meta_labeling_system.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         signals = {}
-        
+
     Line 913: pass  # TODO: Add proper exception handling
       Context:
                 """Predict MAX_ADVERSE_EXCURSION_RETURN."""
@@ -3744,7 +3744,7 @@ File: src/analyst/ml_confidence_predictor.py
   TODO_COMMENTS:
     Line 32: pass  # TODO: Add implementation
       Context:
-        
+
         class MLConfidencePredictor:
             pass  # TODO: Add implementation
         class MLConfidencePredictor:
@@ -3762,7 +3762,7 @@ File: src/analyst/ml_confidence_predictor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Generating price target confidence predictions...")
-        
+
     Line 518: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -4003,7 +4003,7 @@ File: src/analyst/ml_confidence_predictor.py
                         self.print(warning("Enhanced training manager not available"))
     Line 1159: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -4017,7 +4017,7 @@ File: src/analyst/ml_confidence_predictor.py
         self.enhanced_training_manager.ensemble_creator.get_ensembles()
     Line 1194: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -4031,7 +4031,7 @@ File: src/analyst/ml_confidence_predictor.py
         if regime_models:
     Line 1215: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -4154,7 +4154,7 @@ File: src/analyst/ml_confidence_predictor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("🎯 Generating ensemble confidence predictions")
-        
+
     Line 1477: pass  # TODO: Add proper exception handling
       Context:
         for model_name, model in ensemble_models.items():
@@ -4224,7 +4224,7 @@ File: src/analyst/ml_confidence_predictor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         values = list(predictions.values())
-        
+
     Line 1674: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -4554,7 +4554,7 @@ File: src/analyst/multi_timeframe_feature_engineering.py
   TODO_COMMENTS:
     Line 35: pass  # TODO: Add implementation
       Context:
-        
+
         class MultiTimeframeFeatureEngineering:
             pass  # TODO: Add implementation
         class MultiTimeframeFeatureEngineering:
@@ -4572,7 +4572,7 @@ File: src/analyst/multi_timeframe_feature_engineering.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("🎯 Generating multi-timeframe features...")
-        
+
     Line 391: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -4600,7 +4600,7 @@ File: src/analyst/multi_timeframe_feature_engineering.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         features = base_features.copy()
-        
+
     Line 478: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -4613,7 +4613,7 @@ File: src/analyst/multi_timeframe_feature_engineering.py
             pass  # TODO: Add proper exception handling
         except Exception as e:
             pass  # TODO: Add proper exception handling
-        
+
         # Convert price data to differences for technical indicators
     Line 589: pass  # TODO: Add proper exception handling
       Context:
@@ -4641,7 +4641,7 @@ File: src/analyst/multi_timeframe_feature_engineering.py
             pass  # TODO: Add proper exception handling
         except Exception as e:
             pass  # TODO: Add proper exception handling
-        
+
         # Volatility window
     Line 687: pass  # TODO: Add proper exception handling
       Context:
@@ -4655,7 +4655,7 @@ File: src/analyst/multi_timeframe_feature_engineering.py
             pass  # TODO: Add proper exception handling
         except Exception as e:
             pass  # TODO: Add proper exception handling
-        
+
         # Price momentum
     Line 737: pass  # TODO: Add proper exception handling
       Context:
@@ -4669,7 +4669,7 @@ File: src/analyst/multi_timeframe_feature_engineering.py
             pass  # TODO: Add proper exception handling
         except Exception as e:
             pass  # TODO: Add proper exception handling
-        
+
         # SMA indicators
     Line 796: pass  # TODO: Add proper exception handling
       Context:
@@ -4683,7 +4683,7 @@ File: src/analyst/multi_timeframe_feature_engineering.py
             pass  # TODO: Add proper exception handling
         except Exception as e:
             pass  # TODO: Add proper exception handling
-        
+
         # Add timeframe information
     Line 839: pass  # TODO: Add proper exception handling
       Context:
@@ -4697,7 +4697,7 @@ File: src/analyst/multi_timeframe_feature_engineering.py
             pass  # TODO: Add proper exception handling
         except Exception as e:
             pass  # TODO: Add proper exception handling
-        
+
         cache_key = f"{timeframe}_{datetime.now().strftime('%Y%m%d_%H%M')}"
     Line 857: pass  # TODO: Add proper exception handling
       Context:
@@ -4711,7 +4711,7 @@ File: src/analyst/multi_timeframe_feature_engineering.py
             pass  # TODO: Add proper exception handling
         except Exception as e:
             pass  # TODO: Add proper exception handling
-        
+
         current_time = datetime.now()
     Line 868: pass  # TODO: Add proper exception handling
       Context:
@@ -4725,7 +4725,7 @@ File: src/analyst/multi_timeframe_feature_engineering.py
             pass  # TODO: Add proper exception handling
         except Exception as e:
             pass  # TODO: Add proper exception handling
-        
+
         timestamp_str = key.split("_")[-2] + "_" + key.split("_")[-1]
 
 File: src/analyst/multi_timeframe_regime_integration.py
@@ -4734,7 +4734,7 @@ File: src/analyst/multi_timeframe_regime_integration.py
   TODO_COMMENTS:
     Line 46: pass  # TODO: Add implementation
       Context:
-        
+
         class MultiTimeframeRegimeIntegration:
             pass  # TODO: Add implementation
         class MultiTimeframeRegimeIntegration:
@@ -4752,7 +4752,7 @@ File: src/analyst/multi_timeframe_regime_integration.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing Multi-Timeframe Regime Integration...")
-        
+
     Line 168: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -4822,7 +4822,7 @@ File: src/analyst/multi_timeframe_regime_integration.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("🎓 Training HMM regime classifier with 1h data...")
-        
+
 
 File: src/analyst/order_book_analyzer.py
 ----------------------------------------
@@ -4830,7 +4830,7 @@ File: src/analyst/order_book_analyzer.py
   TODO_COMMENTS:
     Line 12: pass  # TODO: Add implementation
       Context:
-        
+
         class OrderBookAnalyzer:
             pass  # TODO: Add implementation
         class OrderBookAnalyzer:
@@ -4898,7 +4898,7 @@ File: src/analyst/predictive_ensembles.py
   TODO_COMMENTS:
     Line 24: pass  # TODO: Add implementation
       Context:
-        
+
         class PredictiveEnsembles:
             pass  # TODO: Add implementation
         class PredictiveEnsembles:
@@ -4916,7 +4916,7 @@ File: src/analyst/predictive_ensembles.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing Predictive Ensembles...")
-        
+
     Line 122: pass  # TODO: Add proper exception handling
       Context:
                 """Load predictive ensembles configuration."""
@@ -5070,7 +5070,7 @@ File: src/analyst/predictive_ensembles.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         results = {}
-        
+
     Line 533: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -5084,7 +5084,7 @@ File: src/analyst/predictive_ensembles.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         results = {}
-        
+
     Line 584: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -5098,7 +5098,7 @@ File: src/analyst/predictive_ensembles.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         results = {}
-        
+
     Line 637: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -5112,7 +5112,7 @@ File: src/analyst/predictive_ensembles.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         results = {}
-        
+
     Line 692: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -5126,7 +5126,7 @@ File: src/analyst/predictive_ensembles.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         results = {}
-        
+
     Line 726: pass  # TODO: Add proper exception handling
       Context:
                 """Perform random forest ensemble."""
@@ -5448,10 +5448,10 @@ File: src/analyst/predictive_ensembles.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         history = self.ensemble_history.copy()
-        
+
     Line 1268: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -5476,7 +5476,7 @@ File: src/analyst/predictive_ensembles.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         global predictive_ensembles
-        
+
 
 File: src/analyst/predictive_ensembles/enhanced_ensemble_orchestrator.py
 ------------------------------------------------------------------------
@@ -5484,14 +5484,14 @@ File: src/analyst/predictive_ensembles/enhanced_ensemble_orchestrator.py
   TODO_COMMENTS:
     Line 26: pass  # TODO: Add implementation
       Context:
-        
+
         class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
             pass  # TODO: Add implementation
         class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
         class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
     Line 119: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -5552,7 +5552,7 @@ File: src/analyst/predictive_ensembles/ensemble_orchestrator.py
   TODO_COMMENTS:
     Line 19: pass  # TODO: Add implementation
       Context:
-        
+
         class RegimePredictiveEnsembles:
             pass  # TODO: Add implementation
         class RegimePredictiveEnsembles:
@@ -5634,14 +5634,14 @@ File: src/analyst/predictive_ensembles/multi_timeframe_ensemble.py
   TODO_COMMENTS:
     Line 33: pass  # TODO: Add implementation
       Context:
-        
+
         class MultiTimeframeEnsemble:
             pass  # TODO: Add implementation
         class MultiTimeframeEnsemble:
         class MultiTimeframeEnsemble:
     Line 99: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -5680,7 +5680,7 @@ File: src/analyst/predictive_ensembles/multi_timeframe_ensemble.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("🌳 Training XGBoost model...")
-        
+
     Line 330: pass  # TODO: Add proper exception handling
       Context:
                 """Train LSTM model (simplified for now)."""
@@ -5694,7 +5694,7 @@ File: src/analyst/predictive_ensembles/multi_timeframe_ensemble.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("🧠 Training LSTM model (simplified)...")
-        
+
     Line 359: pass  # TODO: Add proper exception handling
       Context:
                 """Train Random Forest model."""
@@ -5708,7 +5708,7 @@ File: src/analyst/predictive_ensembles/multi_timeframe_ensemble.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("🌲 Training Random Forest model...")
-        
+
     Line 384: pass  # TODO: Add proper exception handling
       Context:
                 """Prepare features and target from data."""
@@ -5722,7 +5722,7 @@ File: src/analyst/predictive_ensembles/multi_timeframe_ensemble.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.debug("🔧 Preparing features and target...")
-        
+
     Line 463: pass  # TODO: Add proper exception handling
       Context:
                 """Get predictions and confidences for a timeframe."""
@@ -5764,7 +5764,7 @@ File: src/analyst/predictive_ensembles/multi_timeframe_ensemble.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.debug("🔧 Preparing meta-learner data...")
-        
+
     Line 647: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -5806,7 +5806,7 @@ File: src/analyst/predictive_ensembles/multi_timeframe_ensemble.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.debug("🧠 Combining predictions with meta-learner...")
-        
+
     Line 813: pass  # TODO: Add proper exception handling
       Context:
                 """Simple combination of predictions (fallback)."""
@@ -5848,7 +5848,7 @@ File: src/analyst/predictive_ensembles/multi_timeframe_ensemble.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info(f"📂 Loading multi-timeframe ensemble from {path}")
-        
+
 
 File: src/analyst/predictive_ensembles/regime_ensembles/base_ensemble.py
 ------------------------------------------------------------------------
@@ -5870,7 +5870,7 @@ File: src/analyst/predictive_ensembles/regime_ensembles/base_ensemble.py
         SMOTE_AVAILABLE = True
     Line 39: pass  # TODO: Add implementation
       Context:
-        
+
         class BaseEnsemble:
             pass  # TODO: Add implementation
         class BaseEnsemble:
@@ -6084,7 +6084,7 @@ File: src/analyst/predictive_ensembles/regime_ensembles/base_ensemble.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         _ = float(df.iloc[i]["close"]) if "close" in df.columns else None
-        
+
     Line 1421: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -6098,7 +6098,7 @@ File: src/analyst/predictive_ensembles/regime_ensembles/base_ensemble.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         normalized_df = df.copy()
-        
+
     Line 1659: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -6134,14 +6134,14 @@ File: src/analyst/predictive_ensembles/regime_ensembles/base_ensemble.py
             def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
             def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
                 raise NotImplementedError
-        
+
         # SR context features were moved to step4 unified S/R system.
     Line 1397: raise NotImplementedError
       Context:
         self, df: pd.DataFrame,
         is_live: bool = False, **kwargs: Any) -> pd.DataFrame | dict:
                 raise NotImplementedError
-        
+
         @handle_errors(
 
 File: src/analyst/predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py
@@ -6150,7 +6150,7 @@ File: src/analyst/predictive_ensembles/regime_ensembles/volatile_regime_ensemble
   TODO_COMMENTS:
     Line 34: pass  # TODO: Add implementation
       Context:
-        
+
         class VolatileRegimeEnsemble(BaseEnsemble):
             pass  # TODO: Add implementation
         class VolatileRegimeEnsemble(BaseEnsemble):
@@ -6182,7 +6182,7 @@ File: src/analyst/predictive_ensembles/regime_ensembles/volatile_regime_ensemble
         except Exception as e:
             pass  # TODO: Add proper exception handling
         sequence_length = self.dl_config["sequence_length"]
-        
+
     Line 171: pass  # TODO: Add proper exception handling
       Context:
                 """Train deep learning model (LSTM or Transformer)."""
@@ -6210,7 +6210,7 @@ File: src/analyst/predictive_ensembles/regime_ensembles/volatile_regime_ensemble
         except Exception as e:
             pass  # TODO: Add proper exception handling
         inputs = Input(shape=input_shape)
-        
+
     Line 245: pass  # TODO: Add proper exception handling
       Context:
                 """Build Transformer model."""
@@ -6224,7 +6224,7 @@ File: src/analyst/predictive_ensembles/regime_ensembles/volatile_regime_ensemble
         except Exception as e:
             pass  # TODO: Add proper exception handling
         inputs = Input(shape=input_shape)
-        
+
     Line 302: pass  # TODO: Add proper exception handling
       Context:
                 """Train TabNet model."""
@@ -6255,7 +6255,7 @@ File: src/analyst/predictive_ensembles/regime_ensembles/volatile_regime_ensemble
         returns = aligned_data["close"].pct_change().dropna()
     Line 389: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -6274,7 +6274,7 @@ File: src/analyst/regime_expert_orchestrator.py
   TODO_COMMENTS:
     Line 21: pass  # TODO: Add implementation
       Context:
-        
+
         class RegimeExpertOrchestrator:
             pass  # TODO: Add implementation
         class RegimeExpertOrchestrator:
@@ -6292,7 +6292,7 @@ File: src/analyst/regime_expert_orchestrator.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing Regime Expert Orchestrator...")
-        
+
     Line 128: pass  # TODO: Add proper exception handling
       Context:
                 """Get comprehensive current regime information."""
@@ -6320,7 +6320,7 @@ File: src/analyst/regime_expert_orchestrator.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         cluster_id = regime_info.get("cluster_id")
-        
+
     Line 210: pass  # TODO: Add proper exception handling
       Context:
                 """Handle predictions during market transitions (cluster -1)."""
@@ -6337,7 +6337,7 @@ File: src/analyst/regime_expert_orchestrator.py
         intensity_scores = self._get_current_intensity_scores(regime_info)
     Line 298: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -6521,12 +6521,12 @@ File: src/analyst/unified_regime_classifier.py
         except Exception:
                                     pass
         raise ctor_exc
-        
+
 
   TODO_COMMENTS:
     Line 30: pass  # TODO: Add implementation
       Context:
-        
+
         class UnifiedRegimeClassifier:
             pass  # TODO: Add implementation
         class UnifiedRegimeClassifier:
@@ -6558,7 +6558,7 @@ File: src/analyst/unified_regime_classifier.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         import numpy.random._pickle as np_random_pickle  # type: ignore[attr-defined]
-        
+
     Line 290: pass  # TODO: Add proper exception handling
       Context:
         name_candidate = bit_generator_name
@@ -6614,7 +6614,7 @@ File: src/analyst/unified_regime_classifier.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         import numpy as _np
-        
+
     Line 323: pass  # TODO: Add proper exception handling
       Context:
         if bitgen_cls is None and name_candidate == "MT19937":
@@ -6628,7 +6628,7 @@ File: src/analyst/unified_regime_classifier.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         import numpy.random._mt19937 as _mt  # type: ignore[attr-defined]
-        
+
     Line 469: pass  # TODO: Add proper exception handling
       Context:
                     # Handle async call for enhanced features
@@ -6656,7 +6656,7 @@ File: src/analyst/unified_regime_classifier.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("🔧 Adding enhanced S/R features...")
-        
+
     Line 628: pass  # TODO: Add proper exception handling
       Context:
         for i in range(50, len(features_df)):  # Start after enough data for S/R calculation
@@ -6684,7 +6684,7 @@ File: src/analyst/unified_regime_classifier.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("🔧 Adding basic S/R features...")
-        
+
     Line 761: pass  # TODO: Add proper exception handling
       Context:
         for i in range(20, len(features_df)):
@@ -6782,7 +6782,7 @@ File: src/analyst/unified_regime_classifier.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("🎓 Training HMM-based Market Regime Classifier with enhanced S/R integration...")
-        
+
     Line 1743: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -6796,7 +6796,7 @@ File: src/analyst/unified_regime_classifier.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("🎓 Training Location Classifier...")
-        
+
     Line 1811: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -6810,7 +6810,7 @@ File: src/analyst/unified_regime_classifier.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("🎓 Training Basic Regime Ensemble...")
-        
+
     Line 1895: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -6824,7 +6824,7 @@ File: src/analyst/unified_regime_classifier.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("🎓 Training Complete Regime Classification System...")
-        
+
     Line 1943: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -6902,7 +6902,7 @@ File: src/analyst/unified_regime_intelligence_runtime.py
   TODO_COMMENTS:
     Line 27: pass  # TODO: Add implementation
       Context:
-        
+
         class UnifiedRegimeIntelligenceRuntime:
             pass  # TODO: Add implementation
         class UnifiedRegimeIntelligenceRuntime:
@@ -6920,7 +6920,7 @@ File: src/analyst/unified_regime_intelligence_runtime.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing Unified Regime Intelligence Runtime...")
-        
+
     Line 141: pass  # TODO: Add proper exception handling
       Context:
                 """Load the trained unified regime intelligence model."""
@@ -6948,7 +6948,7 @@ File: src/analyst/unified_regime_intelligence_runtime.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         encoder_names = ["regime", "intensity", "transition", "tpsl"]
-        
+
     Line 199: pass  # TODO: Add proper exception handling
       Context:
                 """Load runtime configuration."""
@@ -7074,7 +7074,7 @@ File: src/analyst/unified_regime_intelligence_runtime.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         enhanced = prediction.copy()
-        
+
     Line 706: pass  # TODO: Add proper exception handling
       Context:
                         regime_pred = prediction["regime"]["prediction"]

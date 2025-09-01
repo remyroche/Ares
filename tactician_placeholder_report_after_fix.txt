@@ -79,14 +79,14 @@ File: src/tactician/async_order_executor.py
   TODO_COMMENTS:
     Line 34: pass  # TODO: Add implementation
       Context:
-        
+
         class ExecutionStrategy(Enum):
             pass  # TODO: Add implementation
         class ExecutionStrategy(Enum):
         class ExecutionStrategy(Enum):
     Line 46: pass  # TODO: Add implementation
       Context:
-        
+
         class ExecutionStatus(Enum):
             pass  # TODO: Add implementation
         class ExecutionStatus(Enum):
@@ -107,7 +107,7 @@ File: src/tactician/async_order_executor.py
         class ExecutionResult:
     Line 100: pass  # TODO: Add implementation
       Context:
-        
+
         class AsyncOrderExecutor:
             pass  # TODO: Add implementation
         class AsyncOrderExecutor:
@@ -125,7 +125,7 @@ File: src/tactician/async_order_executor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing Async Order Executor...")
-        
+
     Line 191: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -265,7 +265,7 @@ File: src/tactician/async_order_executor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Cleaning up Async Order Executor...")
-        
+
 
 File: src/tactician/comprehensive_enhanced_scenario_predictor.py
 ----------------------------------------------------------------
@@ -273,7 +273,7 @@ File: src/tactician/comprehensive_enhanced_scenario_predictor.py
   TODO_COMMENTS:
     Line 5: pass  # TODO: Add implementation
       Context:
-        
+
         Implements advanced probabilistic scenario analysis with:
             pass  # TODO: Add implementation
         - ALL technical indicators (50+ indicators)
@@ -294,7 +294,7 @@ File: src/tactician/comprehensive_enhanced_scenario_predictor.py
         except Exception as e:
     Line 45: pass  # TODO: Add implementation
       Context:
-        
+
         class ComprehensiveEnhancedScenarioPredictor:
             pass  # TODO: Add implementation
         class ComprehensiveEnhancedScenarioPredictor:
@@ -312,7 +312,7 @@ File: src/tactician/comprehensive_enhanced_scenario_predictor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing Comprehensive Enhanced Scenario-Based Predictor...")
-        
+
     Line 341: pass  # TODO: Add proper exception handling
       Context:
                 """Validate comprehensive enhanced scenario predictor configuration."""
@@ -340,7 +340,7 @@ File: src/tactician/comprehensive_enhanced_scenario_predictor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         features = []
-        
+
 
 File: src/tactician/dynamic_barrier_calculator.py
 -------------------------------------------------
@@ -348,7 +348,7 @@ File: src/tactician/dynamic_barrier_calculator.py
   TODO_COMMENTS:
     Line 14: pass  # TODO: Add implementation
       Context:
-        
+
         class DynamicBarrierCalculator:
             pass  # TODO: Add implementation
         class DynamicBarrierCalculator:
@@ -408,7 +408,7 @@ File: src/tactician/dynamic_barrier_calculator.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         barriers = {}
-        
+
     Line 238: pass  # TODO: Add proper exception handling
       Context:
                 """Validate barrier calculation for a timeframe."""
@@ -430,7 +430,7 @@ File: src/tactician/enhanced_execution_manager.py
   TODO_COMMENTS:
     Line 16: pass  # TODO: Add implementation
       Context:
-        
+
         class EnhancedExecutionManager:
             pass  # TODO: Add implementation
         class EnhancedExecutionManager:
@@ -532,7 +532,7 @@ File: src/tactician/enhanced_execution_manager.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         precision_score = execution_params.get("precision_score", 0.0)
-        
+
     Line 469: pass  # TODO: Add proper exception handling
       Context:
                 """Get performance summary for the enhanced execution manager."""
@@ -554,21 +554,21 @@ File: src/tactician/enhanced_order_manager.py
   TODO_COMMENTS:
     Line 24: pass  # TODO: Add implementation
       Context:
-        
+
         class OrderType(Enum):
             pass  # TODO: Add implementation
         class OrderType(Enum):
         class OrderType(Enum):
     Line 37: pass  # TODO: Add implementation
       Context:
-        
+
         class OrderStatus(Enum):
             pass  # TODO: Add implementation
         class OrderStatus(Enum):
         class OrderStatus(Enum):
     Line 50: pass  # TODO: Add implementation
       Context:
-        
+
         class OrderSide(Enum):
             pass  # TODO: Add implementation
         class OrderSide(Enum):
@@ -596,7 +596,7 @@ File: src/tactician/enhanced_order_manager.py
         class OrderState:
     Line 124: pass  # TODO: Add implementation
       Context:
-        
+
         class EnhancedOrderManager:
             pass  # TODO: Add implementation
         class EnhancedOrderManager:
@@ -614,7 +614,7 @@ File: src/tactician/enhanced_order_manager.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing Enhanced Order Manager...")
-        
+
     Line 205: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -698,7 +698,7 @@ File: src/tactician/enhanced_order_manager.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Cleaning up Enhanced Order Manager...")
-        
+
 
 File: src/tactician/enhanced_prediction_integrator.py
 -----------------------------------------------------
@@ -706,7 +706,7 @@ File: src/tactician/enhanced_prediction_integrator.py
   TODO_COMMENTS:
     Line 20: pass  # TODO: Add implementation
       Context:
-        
+
         class TacticianEnhancedPredictionIntegrator:
             pass  # TODO: Add implementation
         class TacticianEnhancedPredictionIntegrator:
@@ -914,7 +914,7 @@ File: src/tactician/enhanced_scenario_based_predictor.py
   TODO_COMMENTS:
     Line 5: pass  # TODO: Add implementation
       Context:
-        
+
         Implements advanced probabilistic scenario analysis with:
             pass  # TODO: Add implementation
         - All step7 technical indicators
@@ -935,7 +935,7 @@ File: src/tactician/enhanced_scenario_based_predictor.py
         except Exception as e:
     Line 47: pass  # TODO: Add implementation
       Context:
-        
+
         class EnhancedScenarioBasedPredictor:
             pass  # TODO: Add implementation
         class EnhancedScenarioBasedPredictor:
@@ -953,7 +953,7 @@ File: src/tactician/enhanced_scenario_based_predictor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing Enhanced Scenario-Based Predictor...")
-        
+
     Line 249: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -981,7 +981,7 @@ File: src/tactician/enhanced_scenario_based_predictor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         features = []
-        
+
     Line 464: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -1037,7 +1037,7 @@ File: src/tactician/enhanced_scenario_based_predictor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Training enhanced scenario prediction model...")
-        
+
     Line 667: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -1115,7 +1115,7 @@ File: src/tactician/fully_migrated_tactician.py
         except Exception as e:
     Line 41: pass  # TODO: Add implementation
       Context:
-        
+
         class FullyMigratedTactician:
             pass  # TODO: Add implementation
         class FullyMigratedTactician:
@@ -1133,7 +1133,7 @@ File: src/tactician/fully_migrated_tactician.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing Fully Migrated Tactician...")
-        
+
     Line 153: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -1217,7 +1217,7 @@ File: src/tactician/fully_migrated_tactician.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         reasoning_parts = []
-        
+
     Line 583: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -1245,7 +1245,7 @@ File: src/tactician/fully_migrated_tactician.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.performance_metrics["total_trades"] += 1
-        
+
 
 File: src/tactician/leverage_sizer.py
 -------------------------------------
@@ -1253,7 +1253,7 @@ File: src/tactician/leverage_sizer.py
   TODO_COMMENTS:
     Line 17: pass  # TODO: Add implementation
       Context:
-        
+
         class LeverageSizer:
             pass  # TODO: Add implementation
         class LeverageSizer:
@@ -1288,7 +1288,7 @@ File: src/tactician/leverage_sizer.py
                         leverage_optimization = step17_results["leverage"]
     Line 192: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -1355,7 +1355,7 @@ File: src/tactician/leverage_sizer.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         adjusted = base_leverage
-        
+
     Line 443: pass  # TODO: Add proper exception handling
       Context:
                 """Generate reason for leverage sizing decision."""
@@ -1423,7 +1423,7 @@ File: src/tactician/ml_tactics_manager.py
             # Log the error and handle gracefully
             pass
         self.logger.info("Initializing ML Tactics Manager...")
-        
+
     Line 171:     pass
       Context:
         except Exception as e:
@@ -1451,7 +1451,7 @@ File: src/tactician/ml_tactics_manager.py
             # Log the error and handle gracefully
             pass
         self.logger.info("Initializing multi-output prediction models...")
-        
+
     Line 374:     pass
       Context:
         except Exception as e:
@@ -1465,21 +1465,21 @@ File: src/tactician/ml_tactics_manager.py
             # Log the error and handle gracefully
             pass
         self.logger.info("Initializing fallback models...")
-        
+
     Line 443:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         self.logger.info("🤖 Executing ML tactics...")
-        
+
     Line 534:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         required_fields = ["symbol", "exchange", "timeframe", "current_price"]
-        
+
     Line 572:     pass
       Context:
         except Exception as e:
@@ -1500,28 +1500,28 @@ File: src/tactician/ml_tactics_manager.py
             # Log the error and handle gracefully
             pass
         entry_prediction = ml_predictions.get("entry_prediction", {})
-        
+
     Line 753:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         sizing_prediction = ml_predictions.get("sizing_prediction", {})
-        
+
     Line 808:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         leverage_prediction = ml_predictions.get("leverage_prediction", {})
-        
+
     Line 863:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         directional_prediction = ml_predictions.get("directional_prediction", {})
-        
+
     Line 915:     pass
       Context:
         except Exception as e:
@@ -1535,14 +1535,14 @@ File: src/tactician/ml_tactics_manager.py
             # Log the error and handle gracefully
             pass
         sizing_decisions = self._make_ml_sizing_decisions(ml_predictions)
-        
+
     Line 1019:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         leverage_decisions = self._make_ml_leverage_decisions(ml_predictions)
-        
+
     Line 1102:     pass
       Context:
         except Exception as e:
@@ -1598,7 +1598,7 @@ File: src/tactician/ml_tactics_manager.py
             # Log the error and handle gracefully
             pass
         features = []
-        
+
     Line 1626:     pass
       Context:
         except Exception as e:
@@ -1647,7 +1647,7 @@ File: src/tactician/ml_tactics_manager.py
             # Log the error and handle gracefully
             pass
         combined_confidence = current_predictions.get("combined_confidence", 0.5)
-        
+
     Line 2038:     pass
       Context:
         except Exception as e:
@@ -1665,13 +1665,13 @@ File: src/tactician/ml_target_updater.py
         await self.update_task
         except asyncio.CancelledError:
                             pass
-        
+
         self.logger.info("✅ ML target updating stopped")
 
   TODO_COMMENTS:
     Line 24: pass  # TODO: Add implementation
       Context:
-        
+
         class MLTargetUpdater:
             pass  # TODO: Add implementation
         class MLTargetUpdater:
@@ -1689,7 +1689,7 @@ File: src/tactician/ml_target_updater.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing ML Target Updater...")
-        
+
     Line 114: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -1927,7 +1927,7 @@ File: src/tactician/ml_target_updater.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Cleaning up ML Target Updater...")
-        
+
 
 File: src/tactician/ml_target_validator.py
 ------------------------------------------
@@ -1935,7 +1935,7 @@ File: src/tactician/ml_target_validator.py
   TODO_COMMENTS:
     Line 20: pass  # TODO: Add implementation
       Context:
-        
+
         class MLTargetValidator:
             pass  # TODO: Add implementation
         class MLTargetValidator:
@@ -1953,7 +1953,7 @@ File: src/tactician/ml_target_validator.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing ML Target Validator...")
-        
+
     Line 95: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -1981,7 +1981,7 @@ File: src/tactician/ml_target_validator.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Validating ML target...")
-        
+
     Line 197: pass  # TODO: Add proper exception handling
       Context:
         if timestamp:
@@ -2009,7 +2009,7 @@ File: src/tactician/ml_target_validator.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Validating ML prediction...")
-        
+
     Line 346: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -2023,7 +2023,7 @@ File: src/tactician/ml_target_validator.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.history.append(record)
-        
+
     Line 369: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -2065,7 +2065,7 @@ File: src/tactician/ml_target_validator.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Cleaning up ML Target Validator...")
-        
+
 
 File: src/tactician/position_closing.py
 ---------------------------------------
@@ -2073,7 +2073,7 @@ File: src/tactician/position_closing.py
   TODO_COMMENTS:
     Line 19: pass  # TODO: Add implementation
       Context:
-        
+
         class PositionCloser:
             pass  # TODO: Add implementation
         class PositionCloser:
@@ -2091,7 +2091,7 @@ File: src/tactician/position_closing.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing Position Closer...")
-        
+
     Line 98: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -2175,7 +2175,7 @@ File: src/tactician/position_closing.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info(f"Closing position: {close_reason}")
-        
+
     Line 332: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -2217,7 +2217,7 @@ File: src/tactician/position_closing.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Cleaning up Position Closer...")
-        
+
 
 File: src/tactician/position_division_strategy.py
 -------------------------------------------------
@@ -2225,7 +2225,7 @@ File: src/tactician/position_division_strategy.py
   TODO_COMMENTS:
     Line 21: pass  # TODO: Add implementation
       Context:
-        
+
         class PositionDivisionStrategy:
             pass  # TODO: Add implementation
         class PositionDivisionStrategy:
@@ -2243,7 +2243,7 @@ File: src/tactician/position_division_strategy.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing Position Division Strategy...")
-        
+
     Line 99: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -2271,7 +2271,7 @@ File: src/tactician/position_division_strategy.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Calculating position division strategy...")
-        
+
     Line 190: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -2299,7 +2299,7 @@ File: src/tactician/position_division_strategy.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         position_sizes = []
-        
+
     Line 271: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -2411,7 +2411,7 @@ File: src/tactician/position_division_strategy.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Cleaning up Position Division Strategy...")
-        
+
 
 File: src/tactician/position_monitor.py
 ---------------------------------------
@@ -2422,13 +2422,13 @@ File: src/tactician/position_monitor.py
         await self.monitoring_task
         except asyncio.CancelledError:
                             pass
-        
+
         self.logger.info("✅ Position monitoring stopped")
 
   TODO_COMMENTS:
     Line 31: pass  # TODO: Add implementation
       Context:
-        
+
         class PositionAction(Enum):
             pass  # TODO: Add implementation
         class PositionAction(Enum):
@@ -2449,7 +2449,7 @@ File: src/tactician/position_monitor.py
         class PositionAlert:
     Line 84: pass  # TODO: Add implementation
       Context:
-        
+
         class PositionMonitor:
             pass  # TODO: Add implementation
         class PositionMonitor:
@@ -2467,7 +2467,7 @@ File: src/tactician/position_monitor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing Position Monitor...")
-        
+
     Line 182: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -2747,7 +2747,7 @@ File: src/tactician/position_monitor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Cleaning up Position Monitor...")
-        
+
 
 File: src/tactician/position_sizer.py
 -------------------------------------
@@ -2755,7 +2755,7 @@ File: src/tactician/position_sizer.py
   TODO_COMMENTS:
     Line 21: pass  # TODO: Add implementation
       Context:
-        
+
         class PositionSizer:
             pass  # TODO: Add implementation
         class PositionSizer:
@@ -2790,7 +2790,7 @@ File: src/tactician/position_sizer.py
                         position_sizing_optimization = step17_results["position_sizing"]
     Line 212: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -2857,7 +2857,7 @@ File: src/tactician/position_sizer.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         adjusted = base_size
-        
+
     Line 500: pass  # TODO: Add proper exception handling
       Context:
                 """Generate reason for position sizing decision."""
@@ -2963,7 +2963,7 @@ File: src/tactician/scenario_based_predictor.py
         except Exception as e:
     Line 42: pass  # TODO: Add implementation
       Context:
-        
+
         class ScenarioBasedPredictor:
             pass  # TODO: Add implementation
         class ScenarioBasedPredictor:
@@ -2981,7 +2981,7 @@ File: src/tactician/scenario_based_predictor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing Scenario-Based Predictor...")
-        
+
     Line 188: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -3051,7 +3051,7 @@ File: src/tactician/scenario_based_predictor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Training scenario prediction model...")
-        
+
     Line 445: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -3121,7 +3121,7 @@ File: src/tactician/scenario_based_predictor.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         features = []
-        
+
 
 File: src/tactician/sr_backtesting_validator.py
 -----------------------------------------------
@@ -3143,7 +3143,7 @@ File: src/tactician/sr_backtesting_validator.py
         class BacktestResult:
     Line 119: pass  # TODO: Add implementation
       Context:
-        
+
         class SRBacktestingValidator:
             pass  # TODO: Add implementation
         class SRBacktestingValidator:
@@ -3175,7 +3175,7 @@ File: src/tactician/sr_backtesting_validator.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info(f"🔍 Starting S/R level validation with {len(sr_levels)} levels")
-        
+
     Line 291: pass  # TODO: Add proper exception handling
       Context:
                 """Test a single S/R level."""
@@ -3259,7 +3259,7 @@ File: src/tactician/sr_backtesting_validator.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         confidence = 0.0
-        
+
     Line 661: pass  # TODO: Add proper exception handling
       Context:
                 """Calculate overall metrics from individual level tests."""
@@ -3376,28 +3376,28 @@ File: src/tactician/sr_breakout_predictor.py
             # Log the error and handle gracefully
             pass
         current_price = sr_context.get("current_price", market_data["close"].iloc[-1])
-        
+
     Line 658:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         score = 1.0
-        
+
     Line 689:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         score = 0.5  # Base score
-        
+
     Line 721:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         score = 0.5  # Base score
-        
+
     Line 755:     pass
       Context:
         except Exception as e:
@@ -3418,7 +3418,7 @@ File: src/tactician/sr_breakout_predictor.py
             # Log the error and handle gracefully
             pass
         import csv
-        
+
     Line 913:     pass
       Context:
         except Exception as e:
@@ -3446,7 +3446,7 @@ File: src/tactician/sr_breakout_predictor.py
             # Log the error and handle gracefully
             pass
         self.logger.info("Predicting SR breakouts...")
-        
+
     Line 1205:     pass
       Context:
         except Exception as e:
@@ -3467,7 +3467,7 @@ File: src/tactician/sr_breakout_predictor.py
             # Log the error and handle gracefully
             pass
         self.logger.info("🔧 Extracting comprehensive SR features for ML training...")
-        
+
     Line 1582:     pass
       Context:
         except Exception as e:
@@ -3488,42 +3488,42 @@ File: src/tactician/sr_breakout_predictor.py
             # Log the error and handle gracefully
             pass
         support_levels = []
-        
+
     Line 1668:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         support_levels = []
-        
+
     Line 1703:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         support_levels = []
-        
+
     Line 1738:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         resistance_levels = []
-        
+
     Line 1770:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         resistance_levels = []
-        
+
     Line 1805:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         resistance_levels = []
-        
+
     Line 1840:     pass
       Context:
         except Exception as e:
@@ -3537,126 +3537,126 @@ File: src/tactician/sr_breakout_predictor.py
             # Log the error and handle gracefully
             pass
         support_levels = []
-        
+
     Line 1919:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         support_levels = []
-        
+
     Line 1951:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         support_levels = []
-        
+
     Line 1980:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         resistance_levels = []
-        
+
     Line 2012:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         resistance_levels = []
-        
+
     Line 2044:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         resistance_levels = []
-        
+
     Line 2073:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         support_levels = []
-        
+
     Line 2105:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         support_levels = []
-        
+
     Line 2138:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         support_levels = []
-        
+
     Line 2171:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         resistance_levels = []
-        
+
     Line 2203:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         resistance_levels = []
-        
+
     Line 2236:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         resistance_levels = []
-        
+
     Line 2269:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         support_levels = []
-        
+
     Line 2301:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         support_levels = []
-        
+
     Line 2337:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         support_levels = []
-        
+
     Line 2373:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         resistance_levels = []
-        
+
     Line 2405:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         resistance_levels = []
-        
+
     Line 2441:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         resistance_levels = []
-        
+
     Line 2482:     pass
       Context:
         except Exception as e:
@@ -3698,14 +3698,14 @@ File: src/tactician/sr_breakout_predictor.py
             # Log the error and handle gracefully
             pass
         imbalances = []
-        
+
     Line 2811:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         confluence_levels = {}
-        
+
     Line 2886:     pass
       Context:
         except Exception as e:
@@ -3726,28 +3726,28 @@ File: src/tactician/sr_breakout_predictor.py
             # Log the error and handle gracefully
             pass
         touch_counts = {}
-        
+
     Line 3000:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         level_ages = {}
-        
+
     Line 3039:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         bounce_rates = {}
-        
+
     Line 3105:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         isolation_scores = {}
-        
+
     Line 3147:     pass
       Context:
         except Exception as e:
@@ -3775,21 +3775,21 @@ File: src/tactician/sr_breakout_predictor.py
             # Log the error and handle gracefully
             pass
         probabilities = {}
-        
+
     Line 3425:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         confidence_scores = {}
-        
+
     Line 3456:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         features = {}
-        
+
     Line 3506:     pass
       Context:
         except Exception as e:
@@ -3824,7 +3824,7 @@ File: src/tactician/sr_breakout_predictor.py
             # Log the error and handle gracefully
             pass
         features: dict[str, float] = {}
-        
+
     Line 3731:     pass
       Context:
         except Exception as e:
@@ -3971,7 +3971,7 @@ File: src/tactician/sr_breakout_predictor.py
             # Log the error and handle gracefully
             pass
         current_price = market_data['close'].iloc[-1]
-        
+
     Line 4638:     pass
       Context:
         except Exception as e:
@@ -4020,7 +4020,7 @@ File: src/tactician/sr_breakout_predictor.py
             # Log the error and handle gracefully
             pass
         method_stats = {}
-        
+
     Line 4884:     pass
       Context:
         except Exception as e:
@@ -4041,7 +4041,7 @@ File: src/tactician/sr_breakout_predictor.py
             # Log the error and handle gracefully
             pass
         total_levels = len(price_levels) + len(vwap_levels)
-        
+
     Line 4997:     pass
       Context:
         except Exception as e:
@@ -4056,7 +4056,7 @@ File: src/tactician/sr_data_integration.py
   TODO_COMMENTS:
     Line 25: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -4084,7 +4084,7 @@ File: src/tactician/sr_data_integration.py
         UNIFIED_LOADER_AVAILABLE = True
     Line 56: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -4098,7 +4098,7 @@ File: src/tactician/sr_data_integration.py
         DATA_DOWNLOADER_AVAILABLE = True
     Line 68: pass  # TODO: Add implementation
       Context:
-        
+
         class SRDataIntegration:
             pass  # TODO: Add implementation
         class SRDataIntegration:
@@ -4334,7 +4334,7 @@ File: src/tactician/sr_data_integration_simple.py
         except ImportError:
     Line 44: pass  # TODO: Add implementation
       Context:
-        
+
         class SRDataIntegrationSimple:
             pass  # TODO: Add implementation
         class SRDataIntegrationSimple:
@@ -4514,7 +4514,7 @@ File: src/tactician/sr_detection_optimization.py
         OPTUNA_AVAILABLE = True
     Line 38: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -4535,7 +4535,7 @@ File: src/tactician/sr_detection_optimization.py
         class OptimizationResult:
     Line 134: pass  # TODO: Add implementation
       Context:
-        
+
         class SRDetectionOptimizer:
             pass  # TODO: Add implementation
         class SRDetectionOptimizer:
@@ -4553,7 +4553,7 @@ File: src/tactician/sr_detection_optimization.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("🚀 Initializing Enhanced S/R Detection Optimizer for 1-30m timeframes...")
-        
+
     Line 254: pass  # TODO: Add proper exception handling
       Context:
                 """Validate optimization configuration."""
@@ -4581,7 +4581,7 @@ File: src/tactician/sr_detection_optimization.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info(f"🎯 Starting comprehensive S/R detection optimization for {target_timeframe} timeframe...")
-        
+
     Line 360: pass  # TODO: Add proper exception handling
       Context:
                 """Update configuration for specific timeframe."""
@@ -4595,7 +4595,7 @@ File: src/tactician/sr_detection_optimization.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         timeframe_config = self.timeframe_config[target_timeframe]
-        
+
     Line 393: pass  # TODO: Add proper exception handling
       Context:
                 """Run optimization using Optuna with timeframe-specific parameters."""
@@ -4623,7 +4623,7 @@ File: src/tactician/sr_detection_optimization.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info(f"Running basic optimization for {target_timeframe} (Optuna not available)")
-        
+
     Line 503: pass  # TODO: Add proper exception handling
       Context:
                 """Evaluate parameters using Optuna trial with timeframe-specific suggestions."""
@@ -4707,7 +4707,7 @@ File: src/tactician/sr_detection_optimization.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         score = 0.0
-        
+
     Line 840: pass  # TODO: Add proper exception handling
       Context:
         if target_data is not None and len(target_data) > 0:
@@ -4799,21 +4799,21 @@ File: src/tactician/sr_levels_manager.py
   TODO_COMMENTS:
     Line 6: pass  # TODO: Add implementation
       Context:
-        
+
         This module provides:
             pass  # TODO: Add implementation
         1. SR level calculation based on backtesting data
         2. Continuous updates during live trading
     Line 29: pass  # TODO: Add implementation
       Context:
-        
+
         class SRLevel:
             pass  # TODO: Add implementation
         class SRLevel:
         class SRLevel:
     Line 148: pass  # TODO: Add implementation
       Context:
-        
+
         class SRLevelsManager:
             pass  # TODO: Add implementation
         class SRLevelsManager:
@@ -4831,7 +4831,7 @@ File: src/tactician/sr_levels_manager.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("🔧 Initializing SR Levels Manager...")
-        
+
     Line 233: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -4845,7 +4845,7 @@ File: src/tactician/sr_levels_manager.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info(f"🔍 Calculating SR levels from backtest data ({len(market_data)} points)")
-        
+
     Line 247: pass  # TODO: Add proper exception handling
       Context:
         # Method 1: Use the main SR context method (comprehensive)
@@ -4859,10 +4859,10 @@ File: src/tactician/sr_levels_manager.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         sr_context = await self.sr_predictor.get_sr_context(market_data, current_price)
-        
+
     Line 274: pass  # TODO: Add proper exception handling
       Context:
-        
+
         try:
             pass  # TODO: Add proper exception handling
         except Exception as e:
@@ -4901,7 +4901,7 @@ File: src/tactician/sr_levels_manager.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info(f"🔍 Calculating SR levels using {method} method")
-        
+
     Line 394: pass  # TODO: Add proper exception handling
       Context:
         if level_type in ["support", "both"]:
@@ -4943,7 +4943,7 @@ File: src/tactician/sr_levels_manager.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info(f"🔄 Updating SR levels with live data (price: {current_price:.4f})")
-        
+
     Line 514: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -4971,7 +4971,7 @@ File: src/tactician/sr_levels_manager.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("🔍 Comparing price vs VWAP SR level predictions")
-        
+
     Line 741: pass  # TODO: Add proper exception handling
       Context:
                 """Create SRLevel object from level data dictionary."""
@@ -5002,7 +5002,7 @@ File: src/tactician/sr_levels_manager.py
                         if (existing_level.level_type == new_level.level_type and
     Line 823: pass  # TODO: Add implementation
       Context:
-        
+
         async def save_levels(self):
             pass  # TODO: Add implementation
         async def save_levels(self):
@@ -5023,7 +5023,7 @@ File: src/tactician/sr_levels_manager.py
         "support_levels": [level.to_dict() for level in self.support_levels],
     Line 848: pass  # TODO: Add implementation
       Context:
-        
+
         async def load_levels(self):
             pass  # TODO: Add implementation
         async def load_levels(self):
@@ -5044,7 +5044,7 @@ File: src/tactician/sr_levels_manager.py
                         self.logger.info("No existing SR levels found, starting fresh")
     Line 885: pass  # TODO: Add implementation
       Context:
-        
+
         async def _save_to_history(self, data: Dict[str, Any]):
             pass  # TODO: Add implementation
         async def _save_to_history(self, data: Dict[str, Any]):
@@ -5062,7 +5062,7 @@ File: src/tactician/sr_levels_manager.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         history_data = []
-        
+
 
 File: src/tactician/sr_weight_optimizer.py
 ------------------------------------------
@@ -5077,7 +5077,7 @@ File: src/tactician/sr_weight_optimizer.py
         class WeightOptimizationResult:
     Line 42: pass  # TODO: Add implementation
       Context:
-        
+
         class SRWeightOptimizer:
             pass  # TODO: Add implementation
         class SRWeightOptimizer:
@@ -5095,7 +5095,7 @@ File: src/tactician/sr_weight_optimizer.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing SR Weight Optimizer...")
-        
+
     Line 126: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -5123,7 +5123,7 @@ File: src/tactician/sr_weight_optimizer.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Starting weight optimization...")
-        
+
     Line 216: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -5277,7 +5277,7 @@ File: src/tactician/sr_weight_optimizer.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Cleaning up SR Weight Optimizer...")
-        
+
 
 File: src/tactician/step17_optimized_tactician.py
 -------------------------------------------------
@@ -5299,7 +5299,7 @@ File: src/tactician/step17_optimized_tactician.py
         except Exception as e:
     Line 39: pass  # TODO: Add implementation
       Context:
-        
+
         class Step17OptimizedTactician:
             pass  # TODO: Add implementation
         class Step17OptimizedTactician:
@@ -5317,7 +5317,7 @@ File: src/tactician/step17_optimized_tactician.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing Step17 Optimized Tactician...")
-        
+
     Line 210: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -5471,7 +5471,7 @@ File: src/tactician/step17_optimized_tactician.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         reasoning_parts = []
-        
+
     Line 799: pass  # TODO: Add proper exception handling
       Context:
                 """Update current position information."""
@@ -5499,7 +5499,7 @@ File: src/tactician/step17_optimized_tactician.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.performance_metrics["total_trades"] += 1
-        
+
 
 File: src/tactician/tactician.py
 --------------------------------
@@ -5507,7 +5507,7 @@ File: src/tactician/tactician.py
   TODO_COMMENTS:
     Line 11: pass  # TODO: Add implementation
       Context:
-        
+
         class Tactician:
             pass  # TODO: Add implementation
         class Tactician:
@@ -5525,7 +5525,7 @@ File: src/tactician/tactician.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing Refactored Tactician...")
-        
+
     Line 97: pass  # TODO: Add proper exception handling
       Context:
                 """Initialize all component managers."""
@@ -5567,7 +5567,7 @@ File: src/tactician/tactician.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("🚀 Starting tactics pipeline execution...")
-        
+
     Line 232: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -5581,7 +5581,7 @@ File: src/tactician/tactician.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         required_fields = ["symbol", "exchange", "timeframe", "current_price"]
-        
+
     Line 266: pass  # TODO: Add proper exception handling
       Context:
         """
@@ -5623,7 +5623,7 @@ File: src/tactician/tactician.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("🛑 Stopping Tactician...")
-        
+
     Line 414: pass  # TODO: Add proper exception handling
       Context:
                 """Cleanup tactician resources."""
@@ -5663,7 +5663,7 @@ File: src/tactician/tactics_orchestrator.py
             # Log the error and handle gracefully
             pass
         self.logger.info("Initializing Decision Policy...")
-        
+
     Line 132:     pass
       Context:
         except Exception as e:
@@ -5691,7 +5691,7 @@ File: src/tactician/tactics_orchestrator.py
             # Log the error and handle gracefully
             pass
         self.logger.info("Generating trade decision...")
-        
+
     Line 288:     pass
       Context:
         except Exception as e:
@@ -5740,21 +5740,21 @@ File: src/tactician/tactics_orchestrator.py
             # Log the error and handle gracefully
             pass
         self.logger.info("Cleaning up Decision Policy...")
-        
+
     Line 641:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         self.logger.info("Initializing Tactics Orchestrator...")
-        
+
     Line 689:     pass
       Context:
         except Exception as e:
             # Log the error and handle gracefully
             pass
         self.logger.info("🔄 Refreshing tactics orchestrator configuration from step17 results...")
-        
+
     Line 730:     pass
       Context:
         except Exception as e:
@@ -5788,7 +5788,7 @@ File: src/tactician/tactics_orchestrator.py
         await self.orchestrator_task
         except asyncio.CancelledError:
                             pass
-        
+
         self.logger.info("✅ Tactics orchestration stopped")
     Line 825:     pass
       Context:
@@ -5886,7 +5886,7 @@ File: src/tactician/tactics_orchestrator.py
         # This would typically involve executing orders based on decisions
         # For now, this is a placeholder
         pass
-        
+
         except Exception as e:
     Line 1248:     pass
       Context:
@@ -5908,4 +5908,3 @@ File: src/tactician/tactics_orchestrator.py
             # Log the error and handle gracefully
             pass
         self.logger.info("Cleaning up Tactics Orchestrator...")
-        

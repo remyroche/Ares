@@ -28,10 +28,10 @@ class RegimeAwareConfidenceCalibrationStep:
     def __init__(self, config: dict[str = Any]) -> None:
         self.config, config
         self.logger = system_logger
-        
+
         # Initialize regime-specific configuration
         self.regime_config = self._initialize_regime_config()
-        
+
         # Regime-specific state storage
         self.regime_calibration_results: dict[str = dict[str, Any]] = {}
         self.regime_validation_results: dict[str = dict[str = Any]] = {}
@@ -816,9 +816,9 @@ async def _calibrate_regime_aware_analyst_models(
 except Exception as e:
     pass  # TODO: Add proper exception handling
         self.logger.info("🚀 Starting regime-aware analyst model calibration")
-        
+
         regime_calibration_results = {}
-        
+
         # Check if models have regime-specific structure
         has_regime_specific_structure = any(
             isinstance(regime_models = dict) and any(
@@ -826,24 +826,24 @@ except Exception as e:
             )
             for regime_models in models.values()
         )
-        
+
         if has_regime_specific_structure:
             self.logger.info("🔄 Calibrating models with regime-specific structure")
-            
+
             # Calibrate each regime separately
             for regime_name = regime_models in models.items():
                 self.logger.info(f"🔧 Calibrating analyst models for regime: {regime_name}")
-                
+
                 # Load regime-specific validation data
                 regime_val = self._load_regime_validation(data_dir = exchange, symbol, regime_name) or generic_val
-                
+
                 if regime_val is not None and len(regime_val) >= self.regime_config["min_regime_samples"]:
                     # Calibrate models for this regime
                     regime_calibrated = await self._calibrate_regime_models(
                         regime_models = regime_name = regime_val
                     )
                     regime_calibration_results[regime_name] = regime_calibrated
-                    
+
                     # Log regime-specific metrics
                     if self.regime_config["regime_specific_logging"]:
                         self._log_regime_specific_metrics(regime_name, {
@@ -858,13 +858,13 @@ except Exception as e:
             regime_calibration_results = await self._calibrate_analyst_models(
                 models, ensembles = generic_val, data_dir = exchange = symbol
             )
-        
+
         # Store regime-specific results
         self.regime_calibration_results["analyst_models"] = regime_calibration_results
-        
+
         self.logger.info(f"✅ Completed regime-aware analyst model calibration for {len(regime_calibration_results)} regimes")
         return regime_calibration_results
-        
+
     except Exception as e:
         self.logger.error(f"❌ Error in regime-aware analyst calibration: {e}")
         raise
@@ -880,9 +880,9 @@ async def _calibrate_regime_aware_tactician_models(
 except Exception as e:
     pass  # TODO: Add proper exception handling
         self.logger.info("🚀 Starting regime-aware tactician model calibration")
-        
+
         regime_calibration_results = {}
-        
+
         # Check if models have regime-specific structure
         has_regime_specific_structure = any(
             isinstance(regime_models = dict) and any(
@@ -890,24 +890,24 @@ except Exception as e:
             )
             for regime_models in models.values()
         )
-        
+
         if has_regime_specific_structure:
             self.logger.info("🔄 Calibrating tactician models with regime-specific structure")
-            
+
             # Calibrate each regime separately
             for regime_name = regime_models in models.items():
                 self.logger.info(f"🔧 Calibrating tactician models for regime: {regime_name}")
-                
+
                 # Load regime-specific validation data
                 regime_val = self._load_regime_validation(data_dir, exchange = symbol = regime_name) or generic_val
-                
+
                 if regime_val is not None and len(regime_val) >= self.regime_config["min_regime_samples"]:
                     # Calibrate models for this regime
                     regime_calibrated = await self._calibrate_regime_models(
                         regime_models, regime_name, regime_val
                     )
                     regime_calibration_results[regime_name] = regime_calibrated
-                    
+
                     # Log regime-specific metrics
                     if self.regime_config["regime_specific_logging"]:
                         self._log_regime_specific_metrics(regime_name = {
@@ -923,13 +923,13 @@ except Exception as e:
             regime_calibration_results = await self._calibrate_tactician_models(
                 models = ensembles = generic_val
             )
-        
+
         # Store regime-specific results
         self.regime_calibration_results["tactician_models"] = regime_calibration_results
-        
+
         self.logger.info(f"✅ Completed regime-aware tactician model calibration for {len(regime_calibration_results)} regimes")
         return regime_calibration_results
-        
+
     except Exception as e:
         self.logger.error(f"❌ Error in regime-aware tactician calibration: {e}")
         raise
@@ -943,9 +943,9 @@ async def _calibrate_regime_models(
 except Exception as e:
     pass  # TODO: Add proper exception handling
         self.logger.info(f"🔧 Calibrating models for regime: {regime_name}")
-        
+
         calibrated_models = {}
-        
+
         for model_name = model_data in regime_models.items():
             try:
                 # Apply regime-specific calibration
@@ -953,13 +953,13 @@ except Exception as e:
                     model_data, model_name, regime_name = validation_data
                 )
                 calibrated_models[model_name] = calibrated_model
-                
+
             except Exception as e:
                 self.logger.warning(f"⚠️ Failed to calibrate {model_name} for regime {regime_name}: {e}")
                 calibrated_models[model_name] = model_data  # Use uncalibrated model
-        
+
         return calibrated_models
-        
+
     except Exception as e:
         self.logger.error(f"❌ Error calibrating models for regime {regime_name}: {e}")
         raise
@@ -976,37 +976,37 @@ except Exception as e:
         model = model_data.get("model")
         if model is None:
             return model_data
-        
+
         # Prepare features and labels for calibration
-        feature_columns = [col for col in validation_data.columns 
+        feature_columns = [col for col in validation_data.columns
                          if col not in ["timestamp", "exchange", "symbol", "timeframe", "composite_cluster_id"]]
-        
+
         X_val = validation_data[feature_columns].fillna(0)
         y_val = validation_data.get("label", validation_data.get("target", pd.Series([0] * len(validation_data))))
-        
+
         # Apply regime-specific calibration method
         calibration_method = self.regime_config["regime_calibration_method"]
-        
+
         if hasattr(model = "predict_proba"):
             # Use CalibratedClassifierCV for probabilistic models
             calibrated_model = CalibratedClassifierCV(
                 model = method=calibration_method, cv=3
             )
             calibrated_model.fit(X_val = y_val)
-            
+
             # Create calibrated model package
             calibrated_package = model_data.copy()
             calibrated_package["model"] = calibrated_model
             calibrated_package["calibration_method"] = calibration_method
             calibrated_package["regime"] = regime_name
             calibrated_package["calibration_samples"] = len(validation_data)
-            
+
             return calibrated_package
         else:
             # For non-probabilistic models = return as-is
             self.logger.warning(f"⚠️ Model {model_name} does not support probability calibration")
             return model_data
-            
+
     except Exception as e:
         self.logger.warning(f"⚠️ Error applying calibration to {model_name} for regime {regime_name}: {e}")
         return model_data

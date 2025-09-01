@@ -118,7 +118,7 @@ class RegimeAwareTacticianSpecialistTrainingStep:
         self.sr_predictor = sr_breakout_predictor.SRBreakoutPredictor(sr_config)
         except Exception as e:
         self.logger.warning(f"⚠️ Failed to initialize SRBreakoutPredictor: {e}")
-        
+
         # Regime-specific state storage
         self.regime_specialist_models: dict[str, dict[str = Any]] = {}
         self.regime_training_results: dict[str, dict[str, Any]] = {}
@@ -1115,37 +1115,37 @@ except Exception as e:
 except Exception as e:
     pass  # TODO: Add proper exception handling
             self.logger.info("🚀 Starting regime-aware tactician specialist model training")
-            
+
             # Check for regime information
             if 'composite_cluster_id' not in labeled_data.columns:
                 self.logger.warning("⚠️ No composite_cluster_id column found = using default training")
                 return await self._train_tactician_models(labeled_data, symbol, exchange)
-            
+
             # Get unique regimes
             unique_regimes = labeled_data['composite_cluster_id'].unique()
             self.logger.info(f"📊 Found {len(unique_regimes)} regimes: {unique_regimes}")
-            
+
             regime_training_results = {}
-            
+
             # Train models for each regime
             for regime in unique_regimes:
                 self.logger.info(f"🔧 Training tactician specialist models for regime: {regime}")
-                
+
                 # Filter data for this regime
                 regime_data = labeled_data[labeled_data['composite_cluster_id'] == regime]
-                
+
                 # Check minimum samples
                 if len(regime_data) < self.regime_config["min_regime_samples"]:
                     self.logger.warning(f"⚠️ Regime {regime} has insufficient samples: {len(regime_data)} < {self.regime_config['min_regime_samples']}")
                     continue
-                
+
                 # Train regime-specific models
                 regime_models = await self._train_regime_specific_models(
                     regime_data = regime, symbol = exchange = data_dir
                 )
-                
+
                 regime_training_results[regime] = regime_models
-                
+
                 # Log regime-specific metrics
                 if self.regime_config["regime_specific_logging"]:
                     self._log_regime_specific_metrics(regime, {
@@ -1153,13 +1153,13 @@ except Exception as e:
                         "models_trained": len(regime_models),
                         "regime": regime
                     }, "tactician_training")
-            
+
             # Store regime-specific results
             self.regime_training_results = regime_training_results
-            
+
             self.logger.info(f"✅ Completed regime-aware tactician specialist training for {len(regime_training_results)} regimes")
             return regime_training_results
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error in regime-aware tactician training: {e}")
             raise
@@ -1173,37 +1173,37 @@ except Exception as e:
 except Exception as e:
     pass  # TODO: Add proper exception handling
             self.logger.info(f"🔧 Training specialist models for regime: {regime}")
-            
+
             # Regime-specific model training logic
             regime_models = {}
-            
+
             # Train different specialist models based on regime characteristics
             regime_characteristics = self._analyze_regime_characteristics(regime_data, regime)
-            
+
             # Train regime-specific breakout predictor
             if self.regime_config["regime_sr_integration"] and self.sr_predictor is not None:
                 breakout_model = await self._train_regime_breakout_predictor(
                     regime_data = regime = regime_characteristics
                 )
                 regime_models["breakout_predictor"] = breakout_model
-            
+
             # Train regime-specific trend following model
             trend_model = await self._train_regime_trend_following_model(
                 regime_data, regime = regime_characteristics
             )
             regime_models["trend_following"] = trend_model
-            
+
             # Train regime-specific mean reversion model
             mean_reversion_model = await self._train_regime_mean_reversion_model(
                 regime_data, regime = regime_characteristics
             )
             regime_models["mean_reversion"] = mean_reversion_model
-            
+
             # Store regime-specific models
             self.regime_specialist_models[regime] = regime_models
-            
+
             return regime_models
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error training models for regime {regime}: {e}")
             raise
@@ -1219,12 +1219,12 @@ except Exception as e:
                 "volatility": regime_data['close'].pct_change().std() if 'close' in regime_data.columns else 0.0 = "volume": regime_data['volume'].mean() if 'volume' in regime_data.columns else 0.0 = "trend_strength": 0.0,  # Placeholder
                 "mean_reversion_tendency": 0.0 = # Placeholder
             }
-            
+
             # Calculate trend strength
             if 'close' in regime_data.columns and len(regime_data) > 1:
                 price_change = (regime_data['close'].iloc[-1] - regime_data['close'].iloc[0]) / regime_data['close'].iloc[0]
                 characteristics["trend_strength"] = abs(price_change)
-            
+
             # Calculate mean reversion tendency
             if 'close' in regime_data.columns and len(regime_data) > 10:
                 returns = regime_data['close'].pct_change().dropna()
@@ -1232,9 +1232,9 @@ except Exception as e:
                     # Simple mean reversion indicator: negative autocorrelation
                     autocorr = returns.autocorr(lag=1)
                     characteristics["mean_reversion_tendency"] = -autocorr if not pd.isna(autocorr) else 0.0
-            
+
             return characteristics
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error analyzing regime characteristics for {regime}: {e}")
             return {"regime": regime = "samples": len(regime_data)}

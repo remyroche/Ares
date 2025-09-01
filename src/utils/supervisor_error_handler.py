@@ -66,7 +66,7 @@ class ComponentFailureError(SupervisorError):
     """Error when a supervisor component fails."""
     def __init__(self, message: str, component: str, context: Dict[str, Any] = None) -> None:
         super().__init__(
-            message, 
+            message,
             code="component_failure",
             context={"component": component, **(context or {})}
         )
@@ -125,13 +125,13 @@ class SupervisorErrorContext:
 
 class SupervisorErrorHandler:
     """Enhanced error handler for supervisor operations."""
-    
+
     def __init__(self, logger: Optional[logging.Logger] = None):
         self.logger = logger or system_logger.getChild("SupervisorErrorHandler")
         self.standardized_handler = StandardizedErrorHandler()
         self.error_history: List[Dict[str, Any]] = []
         self.recovery_strategies = self._initialize_recovery_strategies()
-    
+
     def _initialize_recovery_strategies(self) -> Dict[SupervisorErrorCategory, Dict[str, Any]]:
         """Initialize recovery strategies for different error categories."""
         return {
@@ -199,7 +199,7 @@ class SupervisorErrorHandler:
                 'backoff_seconds': 0,
             },
         }
-    
+
     def handle_error(
         self,
         error: Exception,
@@ -208,7 +208,7 @@ class SupervisorErrorHandler:
         reraise: bool = True
     ) -> ErrorRecord:
         """Handle a supervisor error with full context."""
-        
+
         # Create error context for standardized handler
         error_context = ErrorContext(
             step_name=context.component_name,
@@ -217,32 +217,32 @@ class SupervisorErrorHandler:
             config_context=context.config_context,
             user_context=context.user_context,
         )
-        
+
         # Handle with standardized system
         error_record = self.standardized_handler.handle_step_error(
             error, context.component_name, context.to_dict(), severity
         )
-        
+
         # Add supervisor-specific context
         error_record.context = error_context
         error_record.supervisor_context = context
-        
+
         # Log with supervisor-specific information
         self._log_supervisor_error(error_record, context)
-        
+
         # Add to history
         self.error_history.append({
             'error_record': error_record.to_dict(),
             'supervisor_context': context.to_dict(),
             'timestamp': datetime.now().isoformat(),
         })
-        
+
         # Apply recovery strategy if applicable
         if not reraise:
             self._apply_recovery_strategy(error_record, context)
-        
+
         return error_record
-    
+
     def _log_supervisor_error(self, error_record: ErrorRecord, context: SupervisorErrorContext) -> None:
         """Log supervisor error with detailed context."""
         log_message = f"""
@@ -256,7 +256,7 @@ Supervisor Error in {context.component_name}:
     Performance Metrics: {context.performance_metrics}
     Recovery Strategy: {error_record.recovery_strategy['description']}
 """
-        
+
         if error_record.severity == ErrorSeverity.CRITICAL:
             self.logger.critical(log_message)
         elif error_record.severity == ErrorSeverity.ERROR:
@@ -265,14 +265,14 @@ Supervisor Error in {context.component_name}:
             self.logger.warning(log_message)
         else:
             self.logger.info(log_message)
-    
+
     def _apply_recovery_strategy(self, error_record: ErrorRecord, context: SupervisorErrorContext) -> None:
         """Apply recovery strategy based on error category."""
         strategy = self.recovery_strategies.get(
             SupervisorErrorCategory(error_record.category.value),
             self.recovery_strategies[SupervisorErrorCategory.RECOVERY]
         )
-        
+
         if strategy['retry'] and context.recovery_attempts < strategy['max_retries']:
             self.logger.info(f"Applying recovery strategy: {strategy['description']}")
             # In a real implementation, this would trigger the recovery action
@@ -295,7 +295,7 @@ def supervisor_error_handler_decorator(
 ):
     """
     Decorator for standardized supervisor error handling.
-    
+
     Args:
         component_name: Name of the supervisor component
         operation: Name of the operation being performed
@@ -316,22 +316,22 @@ def supervisor_error_handler_decorator(
                 user_context=kwargs.get('user_context', {}),
                 max_recovery_attempts=max_retries,
             )
-            
+
             for attempt in range(max_retries + 1):
                 try:
                     start_time = time.time()
                     result = func(*args, **kwargs)
                     execution_time = time.time() - start_time
-                    
+
                     # Update performance metrics
                     context.performance_metrics.update({
                         'execution_time': execution_time,
                         'success': True,
                         'attempt': attempt + 1,
                     })
-                    
+
                     return result
-                    
+
                 except Exception as e:
                     context.recovery_attempts = attempt
                     context.performance_metrics.update({
@@ -340,12 +340,12 @@ def supervisor_error_handler_decorator(
                         'attempt': attempt + 1,
                         'error_type': type(e).__name__,
                     })
-                    
+
                     # Handle the error
                     error_record = supervisor_error_handler.handle_error(
                         e, context, severity, reraise=False
                     )
-                    
+
                     # Check if we should retry
                     if attempt < max_retries and error_record.recovery_strategy.get('retry', False):
                         self.logger.warning(f"Retrying {operation_name} in {backoff_seconds} seconds (attempt {attempt + 1}/{max_retries})")
@@ -355,9 +355,9 @@ def supervisor_error_handler_decorator(
                         if reraise:
                             raise e
                         return None
-            
+
             return None
-        
+
         return wrapper
     return decorator
 
@@ -402,7 +402,7 @@ def supervisor_safe_error_handler(component_name: str):
 def supervisor_error_context(component_name: str, operation: str):
     """
     Context manager for supervisor error handling.
-    
+
     Usage:
         with supervisor_error_context("portfolio_manager", "rebalance"):
             # Your code here
@@ -412,7 +412,7 @@ def supervisor_error_context(component_name: str, operation: str):
         component_name=component_name,
         operation=operation,
     )
-    
+
     try:
         yield context
     except Exception as e:
@@ -428,7 +428,7 @@ def handle_component_failure(component_name: str, error: Exception, context: Dic
         operation="component_operation",
         data_context=context or {},
     )
-    
+
     supervisor_error_handler.handle_error(
         ComponentFailureError(f"Component {component_name} failed: {str(error)}", component_name),
         error_context,
@@ -443,7 +443,7 @@ def handle_portfolio_error(operation: str, error: Exception, context: Dict[str, 
         operation=operation,
         data_context=context or {},
     )
-    
+
     supervisor_error_handler.handle_error(
         PortfolioManagementError(f"Portfolio operation '{operation}' failed: {str(error)}"),
         error_context,
@@ -458,7 +458,7 @@ def handle_risk_error(operation: str, error: Exception, context: Dict[str, Any] 
         operation=operation,
         data_context=context or {},
     )
-    
+
     supervisor_error_handler.handle_error(
         RiskManagementError(f"Risk operation '{operation}' failed: {str(error)}"),
         error_context,
@@ -473,7 +473,7 @@ def handle_performance_error(operation: str, error: Exception, context: Dict[str
         operation=operation,
         data_context=context or {},
     )
-    
+
     supervisor_error_handler.handle_error(
         PerformanceMonitoringError(f"Performance operation '{operation}' failed: {str(error)}"),
         error_context,
@@ -488,7 +488,7 @@ def handle_model_error(operation: str, error: Exception, context: Dict[str, Any]
         operation=operation,
         data_context=context or {},
     )
-    
+
     supervisor_error_handler.handle_error(
         ModelManagementError(f"Model operation '{operation}' failed: {str(error)}"),
         error_context,
@@ -503,7 +503,7 @@ def handle_exchange_error(operation: str, error: Exception, context: Dict[str, A
         operation=operation,
         data_context=context or {},
     )
-    
+
     supervisor_error_handler.handle_error(
         ExchangeIntegrationError(f"Exchange operation '{operation}' failed: {str(error)}"),
         error_context,

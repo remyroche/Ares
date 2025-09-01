@@ -27,11 +27,11 @@ File: src/strategist/__init__.py
   TODO_COMMENTS:
     Line 5: pass  # TODO: Add implementation
       Context:
-        
+
         # You can import sub-modules here for easier access, e.g.:
             pass  # TODO: Add implementation
         # from .strategist import Strategist
-        
+
 
 File: src/strategist/strategist.py
 ----------------------------------
@@ -39,7 +39,7 @@ File: src/strategist/strategist.py
   TODO_COMMENTS:
     Line 26: pass  # TODO: Add implementation
       Context:
-        
+
         class Strategist:
             pass  # TODO: Add implementation
         class Strategist:
@@ -57,7 +57,7 @@ File: src/strategist/strategist.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         self.logger.info("Initializing Strategist...")
-        
+
     Line 122: pass  # TODO: Add proper exception handling
       Context:
                 """Initialize strategy components."""
@@ -127,7 +127,7 @@ File: src/strategist/strategist.py
         except Exception as e:
             pass  # TODO: Add proper exception handling
         indicators = {}
-        
+
     Line 316: pass  # TODO: Add proper exception handling
       Context:
                 """Calculate Relative Strength Index."""

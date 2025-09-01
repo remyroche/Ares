@@ -218,11 +218,11 @@ async def initialize(self) -> bool:
             await self._setup_online_learning()
             await self._setup_component_monitoring()
             await self._initialize_enhanced_prediction_service()
-            
+
             self.is_initialized = True
             self.logger.info("✅ Supervisor initialized successfully")
             return True
-            
+
         except (ValueError, AttributeError, KeyError) as e:
             handle_component_failure("supervisor", e, {"operation": "initialization", "config_keys": list(self.config.keys())})
             return False
@@ -238,14 +238,14 @@ async def _load_supervisor_configuration(self) -> None:
             self.supervisor_config.setdefault("max_history", 100)
             self.supervisor_config.setdefault("max_recovery_attempts", 3)
             self.supervisor_config.setdefault("recovery_cooldown", 300)
-            
+
             self.supervision_interval = self.supervisor_config["supervision_interval"]
             self.max_history = self.supervisor_config["max_history"]
             self.max_recovery_attempts = self.supervisor_config["max_recovery_attempts"]
             self.recovery_cooldown = self.supervisor_config["recovery_cooldown"]
-            
+
             self.logger.info("Supervisor configuration loaded successfully")
-            
+
         except (ValueError, KeyError) as e:
             handle_component_failure("supervisor", e, {"operation": "config_loading", "config": self.supervisor_config})
             raise
@@ -269,10 +269,10 @@ def _validate_configuration(self) -> bool:
             if self.recovery_cooldown <= 0:
                 self.logger.error("Invalid recovery cooldown")
                 return False
-            
+
             self.logger.info("Configuration validation successful")
             return True
-            
+
         except (ValueError, AttributeError) as e:
             handle_component_failure("supervisor", e, {"operation": "config_validation"})
             return False

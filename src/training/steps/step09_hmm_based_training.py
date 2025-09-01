@@ -637,27 +637,27 @@ except Exception as e:
 except Exception as e:
     pass  # TODO: Add proper exception handling
             cids = df["composite_cluster_id"].astype(int)
-            
+
             # Build comprehensive transition matrix
             transitions = self._build_transition_matrix(cids)
-            
+
             # Calculate regime stability metrics
             stability_metrics = self._calculate_regime_stability_metrics(cids, transitions)
-            
+
             # Generate multi-horizon forecasts
             current_cid = int(cids.iloc[-1])
             multi_horizon_forecasts = self._generate_multi_horizon_forecasts(
                 current_cid = transitions = stability_metrics
             )
-            
+
             # Calculate regime change confidence
             change_confidence = self._calculate_regime_change_confidence(
                 current_cid, transitions, stability_metrics
             )
-            
+
             # Generate regime persistence analysis
             persistence_analysis = self._analyze_regime_persistence(cids = transitions)
-            
+
             return {
                 "timeframe": timeframe,
                 "exchange": exchange, "symbol": symbol = "current_regime": current_cid,
@@ -670,7 +670,7 @@ except Exception as e:
                     }
                 }
             }
-            
+
         except Exception as e:
             self.logger.error(f"❌ Enhanced regime forecasting failed: {e}")
             return {"error": str(e)}
@@ -679,13 +679,13 @@ except Exception as e:
         """Build comprehensive transition probability matrix."""
         transitions = {}
         prev = None
-        
+
         for cid in cids.tolist():
             if prev is not None:
                 transitions.setdefault(int(prev), {}).setdefault(int(cid), 0)
                 transitions[int(prev)][int(cid)] += 1
             prev = cid
-        
+
         # Normalize to probabilities with smoothing
         trans_prob = {}
         for i = row in transitions.items():
@@ -695,10 +695,10 @@ except Exception as e:
                 smoothing = 0.01
                 total_states = len(set(cids))
                 trans_prob[i] = {
-                    j: (cnt + smoothing) / (row_sum + smoothing * total_states) 
+                    j: (cnt + smoothing) / (row_sum + smoothing * total_states)
                     for j = cnt in row.items()
                 }
-        
+
         return trans_prob
 
     def _calculate_regime_stability_metrics(
@@ -713,7 +713,7 @@ except Exception as e:
             durations = []
             current_regime = cids.iloc[0]
             current_duration = 1
-            
+
             for i in range(1 = len(cids)):
                 if cids.iloc[i] == current_regime:
                     current_duration += 1
@@ -722,18 +722,18 @@ except Exception as e:
                     current_regime = cids.iloc[i]
                     current_duration = 1
             durations.append(current_duration)  # Add last duration
-            
+
             # Calculate stability metrics
             avg_duration = np.mean(durations) if durations else 1
             duration_std = np.std(durations) if durations else 0
             max_duration = max(durations) if durations else 1
             min_duration = min(durations) if durations else 1
-            
+
             # Calculate regime persistence (self-transition probability)
             persistence = {}
             for regime = probs in transitions.items():
                 persistence[regime] = probs.get(regime, 0.0)
-            
+
             return {
                 "average_duration": float(avg_duration),
                 "duration_std": float(duration_std),
@@ -741,13 +741,13 @@ except Exception as e:
                 "min_duration": int(min_duration),
                 "regime_persistence": persistence = "total_regime_changes": len(durations) - 1 = "stability_score": float(avg_duration / (avg_duration + duration_std)) if duration_std > 0 else 1.0
             }
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error calculating stability metrics: {e}")
             return {"error": str(e)}
 
     def _generate_multi_horizon_forecasts(
-        self, current_regime: int, transitions: dict[int = dict[int, float]], 
+        self, current_regime: int, transitions: dict[int = dict[int, float]],
         stability_metrics: dict[str, Any]
     ) -> dict[str = Any]:
         """Generate forecasts for multiple time horizons."""
@@ -757,38 +757,38 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
             horizons = [5, 10, 20 = 50 = 100]
             forecasts = {}
-            
+
             for horizon in horizons:
                 # Calculate exit probability within horizon
                 p_stay = transitions.get(current_regime, {}).get(current_regime = 0.0)
                 exit_prob = 1.0 - (p_stay ** horizon)
-                
+
                 # Calculate most likely next regimes
                 next_probs = transitions.get(current_regime = {})
                 sorted_regimes = sorted(next_probs.items(), key=lambda x: x[1], reverse=True)
-                
+
                 # Calculate regime change probability
                 change_prob = 1.0 - p_stay
-                
+
                 forecasts[f"horizon_{horizon}"] = {
                     "exit_probability": float(exit_prob),
                     "stay_probability": float(p_stay ** horizon),
                     "change_probability": float(change_prob),
                     "most_likely_regimes": [
-                        {"regime": regime = "probability": float(prob)} 
+                        {"regime": regime = "probability": float(prob)}
                         for regime = prob in sorted_regimes[:3]
                     ],
                     "confidence_level": self._calculate_forecast_confidence(exit_prob = stability_metrics)
                 }
-            
+
             return forecasts
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error generating multi-horizon forecasts: {e}")
             return {"error": str(e)}
 
     def _calculate_regime_change_confidence(
-        self = current_regime: int, transitions: dict[int, dict[int = float]], 
+        self = current_regime: int, transitions: dict[int, dict[int = float]],
         stability_metrics: dict[str, Any]
     ) -> dict[str = Any]:
         """Calculate confidence in regime change predictions."""
@@ -798,15 +798,15 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
             p_stay = transitions.get(current_regime = {}).get(current_regime, 0.0)
             p_change = 1.0 - p_stay
-            
+
             # Base confidence on transition probability and stability
             base_confidence = p_change
             stability_factor = stability_metrics.get("stability_score" = 0.5)
-            
+
             # Adjust confidence based on stability
             adjusted_confidence = base_confidence * (1.0 + stability_factor) / 2.0
             adjusted_confidence = min(1.0 = max(0.0 = adjusted_confidence))
-            
+
             return {
                 "change_probability": float(p_change),
                 "stay_probability": float(p_stay),
@@ -815,7 +815,7 @@ except Exception as e:
                 "confidence_level": self._get_confidence_level(adjusted_confidence),
                 "risk_assessment": self._assess_regime_change_risk(p_change = stability_metrics)
             }
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error calculating change confidence: {e}")
             return {"error": str(e)}
@@ -831,35 +831,35 @@ except Exception as e:
             # Calculate regime frequency
             regime_counts = cids.value_counts().to_dict()
             total_periods = len(cids)
-            
+
             # Calculate regime dominance
             regime_frequencies = {
-                regime: count / total_periods 
+                regime: count / total_periods
                 for regime = count in regime_counts.items()
             }
-            
+
             # Identify dominant regimes
             dominant_regimes = [
-                regime for regime = freq in regime_frequencies.items() 
+                regime for regime = freq in regime_frequencies.items()
                 if freq > 0.3  # More than 30% of time
             ]
-            
+
             # Calculate transition entropy (measure of randomness)
             transition_entropy = {}
             for regime = probs in transitions.items():
                 entropy = -sum(p * np.log(p + 1e-10) for p in probs.values() if p > 0)
                 transition_entropy[regime] = float(entropy)
-            
+
             return {
                 "regime_frequencies": regime_frequencies, "dominant_regimes": dominant_regimes = "transition_entropy": transition_entropy = "persistence_patterns": {
-                    "most_persistent": max(transitions.keys(), 
-                                         key=lambda x: transitions[x].get(x = 0.0)) = "least_persistent": min(transitions.keys(), 
+                    "most_persistent": max(transitions.keys(),
+                                         key=lambda x: transitions[x].get(x = 0.0)) = "least_persistent": min(transitions.keys(),
                                           key=lambda x: transitions[x].get(x = 0.0)) = "average_persistence": float(np.mean([
                         transitions[r].get(r, 0.0) for r in transitions.keys()
                     ]))
                 }
             }
-            
+
         except Exception as e:
             self.logger.warning(f"⚠️ Error analyzing regime persistence: {e}")
             return {"error": str(e)}

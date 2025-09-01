@@ -2257,11 +2257,11 @@ except Exception as e:
                     # Initialize regime-aware analyst enhancement step
                     analyst_enhancement_step = RegimeAwareAnalystEnhancementStep(self.config)
                     await analyst_enhancement_step.initialize()
-                    
+
                     # Execute regime-aware analyst enhancement
                     self.logger.info("🔧 STEP 7: Regime-Aware Analyst Enhancement")
                     step07_result = await analyst_enhancement_step.execute(training_input, pipeline_state)
-                    
+
                     if not step07_result or step07_result.get("status") != "SUCCESS":
                         self.logger.error("❌ Step 7: Regime-Aware Analyst Enhancement failed")
                         return False
@@ -2348,11 +2348,11 @@ except Exception as e:
                     # Initialize regime-aware tactician specialist training step
                     tactician_step = RegimeAwareTacticianSpecialistTrainingStep(self.config)
                     await tactician_step.initialize()
-                    
+
                     # Execute regime-aware tactician specialist training
                     self.logger.info("🔧 STEP 9: Regime-Aware Tactician Specialist Training")
                     step09_result = await tactician_step.execute(training_input, pipeline_state)
-                    
+
                     if not step09_result or step09_result.get("status") != "SUCCESS":
                         self.logger.error("❌ Step 9: Regime-Aware Tactician Specialist Training failed")
                         return False
@@ -2397,11 +2397,11 @@ except Exception as e:
                     # Initialize regime-aware confidence calibration step
                     calibration_step = RegimeAwareConfidenceCalibrationStep(self.config)
                     await calibration_step.initialize()
-                    
+
                     # Execute regime-aware confidence calibration
                     self.logger.info("🔧 STEP 10: Regime-Aware Confidence Calibration")
                     step10_result = await calibration_step.execute(training_input, pipeline_state)
-                    
+
                     if not step10_result or step10_result.get("status") != "SUCCESS":
                         self.logger.error("❌ Step 10: Regime-Aware Confidence Calibration failed")
                         return False

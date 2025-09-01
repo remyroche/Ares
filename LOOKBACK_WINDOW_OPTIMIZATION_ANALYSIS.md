@@ -21,16 +21,16 @@ async def find_diverse_lookback_periods(
     timeframe: str = "1m"
 ) -> dict[str, Any]:
     """Find diverse lookback periods for each feature."""
-    
+
     results = {
         "diverse_lookback_periods": {},
         "regime_specific_periods": {}
     }
-    
+
     # 1. Find diverse lookback periods for each feature (global)
     diverse_periods = await self._find_diverse_periods_for_all_features(data, target)
     results["diverse_lookback_periods"] = diverse_periods
-    
+
     # 2. Regime-specific diverse periods (if regimes available)
     if regimes is not None and len(regimes.unique()) > 1:
         regime_periods = await self._find_regime_specific_diverse_periods(
@@ -99,7 +99,7 @@ def _calculate_feature_with_period(
     period: int
 ) -> Optional[pd.Series]:
     """Calculate feature with specific lookback period."""
-    
+
     if feature_name == "RSI":
         return self._calculate_rsi(data['close'], period)
     elif feature_name == "MACD_fast":
@@ -119,26 +119,26 @@ def _calculate_feature_with_period(
 ```python
 def _select_diverse_subset(self, meaningful_periods: List[dict[str, Any]]) -> List[dict[str, Any]]:
     """Select diverse subset using greedy algorithm."""
-    
+
     target_count = min(
         self.diverse_config["target_periods_per_feature"],
         len(meaningful_periods)
     )
-    
+
     # Start with the period with highest information score
     selected = [meaningful_periods[0]]
     remaining = meaningful_periods[1:]
-    
+
     # Greedy selection: add periods that maximize diversity
     while len(selected) < target_count and remaining:
         best_candidate = None
         best_diversity_score = -1
-        
+
         for candidate in remaining:
             # Calculate diversity score for this candidate
             candidate_set = selected + [candidate]
             diversity_score = self._calculate_set_diversity_score(candidate_set)
-            
+
             if diversity_score > best_diversity_score:
                 best_diversity_score = diversity_score
                 best_candidate = candidate
@@ -154,13 +154,13 @@ def _select_diverse_subset(self, meaningful_periods: List[dict[str, Any]]) -> Li
 @dataclass
 class RegimeTripleBarrierConfig:
     """Configuration for regime-specific triple barrier parameters."""
-    
+
     # Regime-specific parameters
     regime_profit_take_multipliers: Dict[str, float] = None
     regime_stop_loss_multipliers: Dict[str, float] = None
     regime_time_barrier_minutes: Dict[str, int] = None
     regime_max_lookahead: Dict[str, int] = None
-    
+
     # TPSL parameters
     regime_tp_multipliers: Dict[str, float] = None
     regime_sl_multipliers: Dict[str, float] = None
@@ -208,7 +208,7 @@ regime_periods = {
 ```python
 class MatrixDiverseLookbackOptimizer:
     """Matrix-based optimizer that finds diverse yet meaningful lookback periods."""
-    
+
     async def find_diverse_lookback_periods_matrix(
         self,
         data: pd.DataFrame,
@@ -280,11 +280,11 @@ async def _create_comprehensive_features(
     timeframe: str
 ) -> Dict[str, Any]:
     """Create comprehensive features using vectorized feature engineering."""
-    
+
     # Add regime-aware features if regime data is available
     if regime_data is not None:
         features_df = _add_regime_aware_features(features_df, merged_data)
-    
+
     # Add HMM feature enhancement if regime data is available
     if regime_data is not None:
         features_df = _enhance_hmm_features(features_df, regime_data)
@@ -295,14 +295,14 @@ async def _create_comprehensive_features(
 ```python
 def _add_regime_aware_features(features_df: pd.DataFrame, merged_data: pd.DataFrame) -> pd.DataFrame:
     """Add regime-aware features using optimized lookback periods."""
-    
+
     # Load regime-specific lookback periods
     regime_periods = diverse_optimizer.get_diverse_lookback_periods(symbol, exchange, timeframe)
-    
+
     for regime in merged_data['composite_cluster_id'].unique():
         regime_mask = merged_data['composite_cluster_id'] == regime
         regime_data = merged_data[regime_mask]
-        
+
         # Apply regime-specific lookback periods
         regime_features = _apply_regime_specific_periods(regime_data, regime_periods[f"regime_{regime}"])
         features_df.loc[regime_mask] = regime_features
@@ -362,7 +362,7 @@ for regime in regimes.unique():
     regime_mask = regimes == regime
     regime_data = data[regime_mask]
     regime_target = target[regime_mask]
-    
+
     # Parallel optimization for each regime
     regime_specific = await self._find_diverse_periods_for_all_features(
         regime_data, regime_target

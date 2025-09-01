@@ -99,27 +99,27 @@ step08_success = await step06_hmm_based_training_enhanced.run_enhanced_step(
 ```python
 # Enhanced regime-specific training
 async def run_enhanced_regime_specific_step(
-    self, symbol: str, data_dir: str, 
+    self, symbol: str, data_dir: str,
     method_a_mixture_of_experts: dict, enable_multi_output: bool
 ) -> bool:
     """Run regime-specific enhanced training."""
-    
+
     # Load regime data
     regime_data = await self._load_regime_specific_data(symbol, data_dir)
-    
+
     for regime in regime_data['composite_cluster_id'].unique():
         regime_mask = regime_data['composite_cluster_id'] == regime
         regime_training_data = regime_data[regime_mask]
-        
+
         # Regime-specific training
         regime_success = await self._train_regime_specific_model(
             regime_training_data, regime, method_a_mixture_of_experts
         )
-        
+
         if not regime_success:
             self.logger.error(f"❌ Regime {regime} training failed")
             return False
-    
+
     return True
 ```
 
@@ -141,35 +141,35 @@ step09_5_success = await step09_5_multi_timeframe_hmm_ensemble.run_step(
 ```python
 # Enhanced regime-specific ensemble creation
 async def run_regime_specific_ensemble_step(
-    self, symbol: str, exchange: str, data_dir: str, 
+    self, symbol: str, exchange: str, data_dir: str,
     timeframe: str, lookback_days: int
 ) -> bool:
     """Run regime-specific multi-timeframe ensemble creation."""
-    
+
     # Load regime-specific data for each timeframe
     timeframes = ["1m", "5m", "15m", "30m"]
-    
+
     for regime in self._get_regime_clusters():
         regime_ensembles = {}
-        
+
         for tf in timeframes:
             # Load regime-specific data for this timeframe
             regime_data = await self._load_regime_timeframe_data(
                 symbol, exchange, tf, regime, lookback_days
             )
-            
+
             # Create regime-specific ensemble for this timeframe
             ensemble = await self._create_regime_timeframe_ensemble(
                 regime_data, regime, tf
             )
-            
+
             regime_ensembles[tf] = ensemble
-        
+
         # Create regime-specific multi-timeframe ensemble
         await self._create_regime_multi_timeframe_ensemble(
             regime_ensembles, regime
         )
-    
+
     return True
 ```
 
@@ -196,31 +196,31 @@ async def enhance_regime_specific_analysts(
     self, analyst_models: dict, data_dir: str
 ) -> dict:
     """Enhance analysts with regime-specific logic."""
-    
+
     enhanced_models = {}
-    
+
     for regime_name, regime_models in analyst_models.items():
         self.logger.info(f"🔄 Enhancing analysts for regime: {regime_name}")
-        
+
         # Load regime-specific data
         regime_data = await self._load_regime_specific_data(regime_name, data_dir)
-        
+
         # Regime-specific enhancement
         enhanced_regime_models = await self._enhance_regime_models(
             regime_models, regime_data, regime_name
         )
-        
+
         # Regime-specific validation
         validation_results = await self._validate_regime_enhancement(
             enhanced_regime_models, regime_data, regime_name
         )
-        
+
         enhanced_models[regime_name] = {
             "models": enhanced_regime_models,
             "validation": validation_results,
             "regime_specific_metrics": self._calculate_regime_metrics(regime_data)
         }
-    
+
     return enhanced_models
 ```
 
@@ -239,34 +239,34 @@ self.barrier_combinations = self.barrier_calculator.calculate_dynamic_barriers(
 # Enhanced regime-specific tactician labeling
 class RegimeAwareTacticianLabeler:
     """Regime-aware tactician labeling with regime-specific barriers."""
-    
+
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.regime_barrier_calculator = RegimeSpecificBarrierCalculator(config)
-    
+
     async def apply_regime_specific_labeling(
         self, data: pd.DataFrame, regime_column: str = "composite_cluster_id"
     ) -> pd.DataFrame:
         """Apply regime-specific tactician labeling."""
-        
+
         labeled_data = data.copy()
-        
+
         for regime in data[regime_column].unique():
             regime_mask = data[regime_column] == regime
             regime_data = data[regime_mask]
-            
+
             # Get regime-specific barriers
             regime_barriers = await self.regime_barrier_calculator.get_regime_barriers(
                 regime, regime_data
             )
-            
+
             # Apply regime-specific labeling
             regime_labeled = await self._apply_regime_barrier_labeling(
                 regime_data, regime_barriers, regime
             )
-            
+
             labeled_data.loc[regime_mask] = regime_labeled
-        
+
         return labeled_data
 ```
 
@@ -290,29 +290,29 @@ async def run_regime_specific_tactician_training(
     self, symbol: str, data_dir: str, timeframe: str, exchange: str
 ) -> bool:
     """Run regime-specific tactician specialist training."""
-    
+
     # Load regime-specific data
     regime_data = await self._load_regime_specific_data(symbol, data_dir)
-    
+
     for regime in regime_data['composite_cluster_id'].unique():
         self.logger.info(f"🎯 Training tactician specialist for regime: {regime}")
-        
+
         regime_mask = regime_data['composite_cluster_id'] == regime
         regime_training_data = regime_data[regime_mask]
-        
+
         # Regime-specific specialist training
         specialist_model = await self._train_regime_specialist(
             regime_training_data, regime, timeframe
         )
-        
+
         # Regime-specific validation
         validation_results = await self._validate_regime_specialist(
             specialist_model, regime_training_data, regime
         )
-        
+
         # Save regime-specific specialist
         await self._save_regime_specialist(specialist_model, regime, data_dir)
-    
+
     return True
 ```
 
@@ -363,19 +363,19 @@ async def _load_regime_specific_data(
     self, symbol: str, data_dir: str, regime: str
 ) -> pd.DataFrame:
     """Load regime-specific data for processing."""
-    
+
     # Load unified data with regime information
     unified_data = await self._load_unified_data(symbol, data_dir)
-    
+
     # Filter for specific regime
     regime_mask = unified_data['composite_cluster_id'] == regime
     regime_data = unified_data[regime_mask].copy()
-    
+
     # Regime-specific data validation
     if len(regime_data) < 100:
         self.logger.warning(f"⚠️ Insufficient data for regime {regime}")
         return pd.DataFrame()
-    
+
     return regime_data
 ```
 
@@ -386,27 +386,27 @@ async def _train_regime_specific_model(
     self, regime_data: pd.DataFrame, regime: str, config: dict
 ) -> Any:
     """Train regime-specific model."""
-    
+
     self.logger.info(f"🎯 Training model for regime: {regime}")
-    
+
     # Regime-specific feature engineering
     regime_features = await self._engineer_regime_features(regime_data, regime)
-    
+
     # Regime-specific hyperparameter optimization
     regime_params = await self._optimize_regime_hyperparameters(
         regime_features, regime
     )
-    
+
     # Regime-specific model training
     regime_model = await self._train_model_with_regime_params(
         regime_features, regime_params, regime
     )
-    
+
     # Regime-specific validation
     validation_results = await self._validate_regime_model(
         regime_model, regime_features, regime
     )
-    
+
     return {
         "model": regime_model,
         "parameters": regime_params,
@@ -422,25 +422,25 @@ async def _validate_regime_specific_results(
     self, results: dict, regime: str, data_dir: str
 ) -> bool:
     """Validate regime-specific results."""
-    
+
     # Load regime-specific validation data
     regime_val_data = await self._load_regime_validation_data(regime, data_dir)
-    
+
     # Regime-specific quality checks
     quality_checks = await self._perform_regime_quality_checks(
         results, regime_val_data, regime
     )
-    
+
     # Regime-specific performance validation
     performance_validation = await self._validate_regime_performance(
         results, regime_val_data, regime
     )
-    
+
     # Log regime-specific results
     self.logger.info(f"📊 Regime {regime} validation results:")
     self.logger.info(f"   Quality checks: {quality_checks}")
     self.logger.info(f"   Performance validation: {performance_validation}")
-    
+
     return quality_checks and performance_validation
 ```
 
@@ -453,7 +453,7 @@ def _log_regime_specific_metrics(
     self, regime: str, metrics: dict, step_name: str
 ) -> None:
     """Log regime-specific metrics."""
-    
+
     self.logger.info(f"📊 {step_name} - Regime {regime} metrics:")
     for metric_name, metric_value in metrics.items():
         self.logger.info(f"   {metric_name}: {metric_value}")
@@ -466,18 +466,18 @@ async def _validate_regime_specific_step(
     self, step_name: str, regime_results: dict
 ) -> bool:
     """Validate regime-specific step execution."""
-    
+
     for regime, results in regime_results.items():
         if not results.get("success", False):
             self.logger.error(f"❌ Regime {regime} failed in {step_name}")
             return False
-        
+
         # Regime-specific quality validation
         quality_valid = await self._validate_regime_quality(results, regime)
         if not quality_valid:
             self.logger.error(f"❌ Regime {regime} quality validation failed")
             return False
-    
+
     return True
 ```
 

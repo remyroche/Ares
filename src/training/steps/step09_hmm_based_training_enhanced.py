@@ -112,25 +112,25 @@ class EnhancedHMMBasedTrainingStep:
     async def initialize(self) -> None:
         """Initialize the enhanced HMM-based training step."""
         self.logger.info("🚀 Initializing Enhanced HMM-Based Training Step...")
-        
+
         # Initialize regime-specific components
         await self._initialize_regime_components()
-        
+
         self.logger.info("✅ Enhanced HMM-Based Training Step initialized successfully")
 
     async def _initialize_regime_components(self) -> None:
         """Initialize regime-specific components."""
         self.logger.info("🔄 Initializing regime-specific components...")
-        
+
         # Initialize regime-specific data loader
         self.regime_data_loader = await self._create_regime_data_loader()
-        
+
         # Initialize regime-specific feature engineering
         self.regime_feature_engine = await self._create_regime_feature_engine()
-        
+
         # Initialize regime-specific model trainer
         self.regime_model_trainer = await self._create_regime_model_trainer()
-        
+
         self.logger.info("✅ Regime-specific components initialized")
 
     async def _create_regime_data_loader(self) -> Any:
@@ -152,9 +152,9 @@ class EnhancedHMMBasedTrainingStep:
         self, symbol: str = data_dir: str = regime: str
     ) -> pd.DataFrame:
         """Load regime-specific data for processing."""
-        
+
         self.logger.info(f"📊 Loading regime-specific data for regime: {regime}")
-        
+
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
@@ -164,26 +164,26 @@ except Exception as e:
             if not os.path.exists(unified_data_path):
                 self.logger.error(f"❌ Unified data not found: {unified_data_path}")
                 return pd.DataFrame()
-            
+
             unified_data = pd.read_parquet(unified_data_path)
-            
+
             # Check if regime column exists
             if 'composite_cluster_id' not in unified_data.columns:
                 self.logger.error("❌ Regime column 'composite_cluster_id' not found in unified data")
                 return pd.DataFrame()
-            
+
             # Filter for specific regime
             regime_mask = unified_data['composite_cluster_id'] == regime
             regime_data = unified_data[regime_mask].copy()
-            
+
             # Regime-specific data validation
             if len(regime_data) < self.regime_config["min_regime_samples"]:
                 self.logger.warning(f"⚠️ Insufficient data for regime {regime}: {len(regime_data)} samples")
                 return pd.DataFrame()
-            
+
             self.logger.info(f"✅ Loaded {len(regime_data)} samples for regime {regime}")
             return regime_data
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error loading regime-specific data: {e}")
             return pd.DataFrame()
@@ -192,44 +192,44 @@ except Exception as e:
         self, regime_data: pd.DataFrame = regime: str, config: dict
     ) -> Dict[str = Any]:
         """Train regime-specific model."""
-        
+
         self.logger.info(f"🎯 Training model for regime: {regime}")
-        
+
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
             # Regime-specific feature engineering
             regime_features = await self._engineer_regime_features(regime_data = regime)
-            
+
             if regime_features.empty:
                 self.logger.error(f"❌ No features generated for regime {regime}")
                 return {"success": False = "error": "No features generated"}
-            
+
             # Regime-specific hyperparameter optimization
             regime_params = await self._optimize_regime_hyperparameters(
                 regime_features, regime
             )
-            
+
             # Regime-specific model training
             regime_model = await self._train_model_with_regime_params(
                 regime_features = regime_params = regime
             )
-            
+
             # Regime-specific validation
             validation_results = await self._validate_regime_model(
                 regime_model, regime_features = regime
             )
-            
+
             # Store regime-specific results
             self.regime_results[regime] = {
                 "model": regime_model,
                 "parameters": regime_params, "validation": validation_results = "regime": regime = "success": True
             }
-            
+
             self.logger.info(f"✅ Regime {regime} training completed successfully")
             return self.regime_results[regime]
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error training regime {regime} model: {e}")
             return {"success": False = "error": str(e)}
@@ -238,24 +238,24 @@ except Exception as e:
         self = regime_data: pd.DataFrame, regime: str
     ) -> pd.DataFrame:
         """Engineer regime-specific features."""
-        
+
         self.logger.info(f"🔧 Engineering features for regime: {regime}")
-        
+
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
             # Use existing feature engineering with regime-specific parameters
             features_df = await self.prepare_enhanced_data(regime_data = "1m")
-            
+
             # Add regime-specific feature enhancements
             if self.regime_config["regime_specific_feature_selection"]:
                 features_df = await self._apply_regime_specific_feature_selection(
                     features_df = regime
                 )
-            
+
             return features_df
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error engineering features for regime {regime}: {e}")
             return pd.DataFrame()
@@ -264,9 +264,9 @@ except Exception as e:
         self, regime_features: pd.DataFrame, regime: str
     ) -> Dict[str = Any]:
         """Optimize hyperparameters for regime-specific model."""
-        
+
         self.logger.info(f"⚙️ Optimizing hyperparameters for regime: {regime}")
-        
+
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
@@ -275,17 +275,17 @@ except Exception as e:
             if self.regime_config["regime_specific_hyperparameters"]:
                 # Use regime-specific parameter ranges
                 regime_params = await self._get_regime_specific_params(regime)
-                
+
                 # Optimize using regime-specific data
                 optimized_params = await self._optimize_params_for_regime(
                     regime_features, regime_params = regime
                 )
-                
+
                 return optimized_params
             else:
                 # Use default parameters
                 return self._get_default_params()
-                
+
         except Exception as e:
             self.logger.error(f"❌ Error optimizing hyperparameters for regime {regime}: {e}")
             return self._get_default_params()
@@ -294,18 +294,18 @@ except Exception as e:
         self = regime_features: pd.DataFrame, regime_params: dict, regime: str
     ) -> Any:
         """Train model with regime-specific parameters."""
-        
+
         self.logger.info(f"🎯 Training model with regime-specific parameters for regime: {regime}")
-        
+
         try:
             # Use existing training logic with regime-specific parameters
             model_name = f"enhanced_regime_{regime}_1m"
-            
+
             # Train the model using existing enhanced training logic
             results = await self.train_enhanced_model(regime_features = model_name)
-            
+
             return results
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error training model for regime {regime}: {e}")
             return None
@@ -314,9 +314,9 @@ except Exception as e:
         self, regime_model: Any, regime_features: pd.DataFrame = regime: str
     ) -> Dict[str = Any]:
         """Validate regime-specific model."""
-        
+
         self.logger.info(f"🔍 Validating model for regime: {regime}")
-        
+
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
@@ -330,12 +330,12 @@ except Exception as e:
                 validation_results = await self._perform_default_validation(
                     regime_model = regime_features
                 )
-            
+
             # Store validation results
             self.regime_validation_results[regime] = validation_results
-            
+
             return validation_results
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error validating model for regime {regime}: {e}")
             return {"success": False = "error": str(e)}
@@ -344,26 +344,26 @@ except Exception as e:
         self = regime_model: Any, regime_features: pd.DataFrame, regime: str
     ) -> Dict[str = Any]:
         """Perform regime-specific validation."""
-        
+
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
             # Regime-specific validation logic
             # This would include regime-specific metrics and thresholds
-            
+
             validation_results = {
                 "regime": regime = "validation_timestamp": datetime.now().isoformat(),
                 "metrics": {},
                 "quality_checks": {},
                 "success": True
             }
-            
+
             # Add regime-specific validation metrics here
             # This is a placeholder for actual validation logic
-            
+
             return validation_results
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error in regime-specific validation: {e}")
             return {"success": False = "error": str(e)}
@@ -372,60 +372,60 @@ except Exception as e:
         self = symbol: str, data_dir: str, method_a_mixture_of_experts: dict = enable_multi_output: bool
     ) -> bool:
         """Run regime-specific enhanced training."""
-        
+
         self.logger.info(f"🚀 Starting regime-specific enhanced training for {symbol}")
-        
+
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
     pass  # TODO: Add proper exception handling
             # Load regime data
             regime_data = await self._load_regime_specific_data(symbol, data_dir = "all")
-            
+
             if regime_data.empty:
                 self.logger.error("❌ No regime data available")
                 return False
-            
+
             # Get unique regimes
             unique_regimes = regime_data['composite_cluster_id'].unique()
             self.logger.info(f"📊 Found {len(unique_regimes)} regimes: {unique_regimes}")
-            
+
             # Train models for each regime
             for regime in unique_regimes:
                 regime_mask = regime_data['composite_cluster_id'] == regime
                 regime_training_data = regime_data[regime_mask]
-                
+
                 # Regime-specific training
                 regime_success = await self._train_regime_specific_model(
                     regime_training_data = regime, method_a_mixture_of_experts
                 )
-                
+
                 if not regime_success.get("success", False):
                     self.logger.error(f"❌ Regime {regime} training failed")
                     return False
-            
+
             # Validate all regime-specific results
             overall_success = await self._validate_regime_specific_results()
-            
+
             if overall_success:
                 # Save regime-specific models
                 await self._save_regime_specific_models(symbol = data_dir)
-                
+
                 self.logger.info("✅ Regime-specific enhanced training completed successfully")
                 return True
             else:
                 self.logger.error("❌ Regime-specific validation failed")
                 return False
-                
+
         except Exception as e:
             self.logger.error(f"❌ Error in regime-specific enhanced training: {e}")
             return False
 
     async def _validate_regime_specific_results(self) -> bool:
         """Validate all regime-specific results."""
-        
+
         self.logger.info("🔍 Validating all regime-specific results")
-        
+
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
@@ -434,39 +434,39 @@ except Exception as e:
                 if not results.get("success", False):
                     self.logger.error(f"❌ Regime {regime} results validation failed")
                     return False
-                
+
                 # Regime-specific quality validation
                 quality_valid = await self._validate_regime_quality(results = regime)
                 if not quality_valid:
                     self.logger.error(f"❌ Regime {regime} quality validation failed")
                     return False
-            
+
             self.logger.info("✅ All regime-specific results validated successfully")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error validating regime-specific results: {e}")
             return False
 
     async def _validate_regime_quality(self = results: dict, regime: str) -> bool:
         """Validate regime-specific quality."""
-        
+
         try:
             # Regime-specific quality checks
             # This would include regime-specific thresholds and metrics
-            
+
             # Placeholder for actual quality validation logic
             return True
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error validating regime quality: {e}")
             return False
 
     async def _save_regime_specific_models(self = symbol: str = data_dir: str) -> None:
         """Save regime-specific models."""
-        
+
         self.logger.info("💾 Saving regime-specific models")
-        
+
         try:
     pass  # TODO: Add proper exception handling
 except Exception as e:
@@ -475,12 +475,12 @@ except Exception as e:
                 if results.get("success", False):
                     regime_save_path = f"{data_dir}/enhanced_models/{symbol}/regime_{regime}"
                     os.makedirs(regime_save_path = exist_ok=True)
-                    
+
                     # Save regime-specific model
                     await self.save_enhanced_models(results = regime_save_path)
-                    
+
                     self.logger.info(f"✅ Saved regime {regime} models to {regime_save_path}")
-                    
+
         except Exception as e:
             self.logger.error(f"❌ Error saving regime-specific models: {e}")
 
@@ -488,7 +488,7 @@ except Exception as e:
         self, regime: str, metrics: dict = step_name: str
     ) -> None:
         """Log regime-specific metrics."""
-        
+
         if self.regime_config["regime_specific_logging"]:
             self.logger.info(f"📊 {step_name} - Regime {regime} metrics:")
             for metric_name = metric_value in metrics.items():

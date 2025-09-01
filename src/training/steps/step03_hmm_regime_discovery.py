@@ -3313,15 +3313,15 @@ except Exception as e:
             # Import HMM
             from sklearn.mixture import GaussianMixture
             from hmmlearn import hmm
-            
+
             # Use multiple initialization strategies for better convergence
             best_model = None
             best_score = -np.inf
-            
+
             # Try different initialization strategies
             init_strategies = ["kmeans", "random", "k-means++"]
             covariance_types = ["full", "tied", "diag"]
-            
+
             for init_strategy in init_strategies:
                 for cov_type in covariance_types:
                     try:
@@ -3333,19 +3333,19 @@ except Exception as e:
                             n_components=n_components, n_iter=n_iter = random_state=random_state,
                             covariance_type=cov_type = init_params="stmc" = params="stmc"
                         )
-                        
+
                         # Try to fit and score
                         model.fit(features_scaled)
                         score = model.score(features_scaled)
-                        
+
                         if score > best_score:
                             best_score = score
                             best_model = model
-                            
+
                     except Exception as e:
                         self.logger.debug(f"⚠️ HMM initialization failed for {init_strategy}/{cov_type}: {e}")
                         continue
-            
+
             if best_model is None:
                 # Fallback to basic model
                 self.logger.warning("⚠️ All enhanced HMM initializations failed, using basic model")
@@ -3355,10 +3355,10 @@ except Exception as e:
                     init_params="stmc",
                     params="stmc"
                 )
-            
+
             self.logger.info(f"✅ Enhanced HMM model created with score: {best_score:.4f}")
             return best_model
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error creating enhanced HMM model: {e}")
             # Fallback to basic model
@@ -3378,29 +3378,29 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
             # Fit the model
             model.fit(features_scaled)
-            
+
             # Validate model quality
             score = model.score(features_scaled)
             convergence = model.monitor_.converged
-            
+
             self.logger.info(f"✅ HMM model fitted - Score: {score:.4f}, Converged: {convergence}")
-            
+
             # Check for convergence issues
             if not convergence:
                 self.logger.warning("⚠️ HMM model did not converge = results may be suboptimal")
-            
+
             # Validate state probabilities
             state_probs = model.predict_proba(features_scaled)
             min_prob = np.min(state_probs)
             max_prob = np.max(state_probs)
-            
+
             if min_prob < 0.01:
                 self.logger.warning(f"⚠️ Very low state probabilities detected (min: {min_prob:.4f})")
-            
+
             self.logger.info(f"📊 State probability range: {min_prob:.4f} - {max_prob:.4f}")
-            
+
             return model
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error fitting enhanced HMM model: {e}")
             raise

@@ -14,39 +14,39 @@ import re
 
 class ComprehensiveCodeQualityFixer:
     """Comprehensive tool to fix code quality issues."""
-    
+
     def __init__(self, workspace_path: str = "."):
         self.workspace_path = Path(workspace_path)
         self.fixed_files = set()
         self.skipped_files = set()
         self.error_files = set()
-        
+
     def find_python_files(self) -> List[Path]:
         """Find all Python files in the workspace."""
         python_files = []
         for root, dirs, files in os.walk(self.workspace_path):
             # Skip certain directories
             dirs[:] = [d for d in dirs if d not in ['.git', '__pycache__', 'test_results', 'log']]
-            
+
             for file in files:
                 if file.endswith('.py'):
                     python_files.append(Path(root) / file)
-        
+
         return python_files
-    
+
     def check_syntax_error(self, file_path: Path) -> Tuple[bool, str]:
         """Check if a file has syntax errors."""
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            
+
             ast.parse(content)
             return False, ""
         except SyntaxError as e:
             return True, str(e)
         except Exception as e:
             return True, f"Other error: {e}"
-    
+
     def fix_common_syntax_errors(self, file_path: Path) -> bool:
         """Fix common syntax errors in a file."""
         try:
@@ -55,59 +55,59 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            
+
             original_content = content
             lines = content.split('\n')
             fixed_lines = []
-            
+
             for i, line in enumerate(lines):
                 fixed_line = line
-                
+
                 # Fix common indentation issues
                 if line.strip() and not line.startswith(' ') and not line.startswith('\t'):
                     # Check if this should be indented
                     if i > 0 and lines[i-1].strip().endswith(':'):
                         # Previous line ends with colon, this should be indented
                         fixed_line = '    ' + line
-                
+
                 # Fix unmatched parentheses
                 open_parens = line.count('(') - line.count(')')
                 if open_parens > 0:
                     # Add missing closing parentheses
                     fixed_line = line + ')' * open_parens
-                
+
                 # Fix unmatched brackets
                 open_brackets = line.count('[') - line.count(']')
                 if open_brackets > 0:
                     fixed_line = line + ']' * open_brackets
-                
+
                 # Fix unmatched braces
                 open_braces = line.count('{') - line.count('}')
                 if open_braces > 0:
                     fixed_line = line + '}' * open_braces
-                
+
                 # Fix unterminated strings
                 if line.count("'") % 2 == 1:
                     fixed_line = line + "'"
                 if line.count('"') % 2 == 1:
                     fixed_line = line + '"'
-                
+
                 # Fix missing colons after function/class definitions
                 if re.match(r'^\s*(def|class|if|elif|else|for|while|try|except|finally|with)\s+\w+', line):
                     if not line.rstrip().endswith(':'):
                         fixed_line = line.rstrip() + ':'
-                
+
                 # Fix missing indented blocks
                 if line.strip().endswith(':') and i + 1 < len(lines):
                     next_line = lines[i + 1].strip()
                     if next_line and not next_line.startswith(' ') and not next_line.startswith('\t'):
                         # Insert a pass statement
                         lines.insert(i + 1, '    pass')
-                
+
                 fixed_lines.append(fixed_line)
-            
+
             fixed_content = '\n'.join(fixed_lines)
-            
+
             # Test if the fix worked
             try:
                 ast.parse(fixed_content)
@@ -117,28 +117,28 @@ except Exception as e:
                     return True
             except SyntaxError:
                 pass
-            
+
             return False
-            
+
         except Exception as e:
             print(f"Error fixing {file_path}: {e}")
             return False
-    
+
     def remove_unused_imports(self, file_path: Path) -> bool:
         """Remove unused imports from a file."""
         try:
             # Use the existing batch import cleaner
             result = subprocess.run([
-                'python3', 'code_quality/tools/batch_import_cleaner.py', 
+                'python3', 'code_quality/tools/batch_import_cleaner.py',
                 str(file_path), '--no-dry-run'
             ], capture_output=True, text=True)
-            
+
             return result.returncode == 0
-            
+
         except Exception as e:
             print(f"Error removing unused imports from {file_path}: {e}")
             return False
-    
+
     def remove_dead_code(self, file_path: Path) -> bool:
         """Remove dead code from a file."""
         try:
@@ -147,11 +147,11 @@ except Exception as e:
     pass  # TODO: Add proper exception handling
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-            
+
             tree = ast.parse(content)
             lines = content.split('\n')
             lines_to_remove = set()
-            
+
             # Find unreachable code after return statements
             for node in ast.walk(tree):
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -161,43 +161,43 @@ except Exception as e:
                             if i < len(node.body) - 1:
                                 for j in range(i + 1, len(node.body)):
                                     lines_to_remove.add(node.body[j].lineno - 1)
-            
+
             # Remove lines in reverse order
             if lines_to_remove:
                 for line_idx in sorted(lines_to_remove, reverse=True):
                     if line_idx < len(lines):
                         lines.pop(line_idx)
-                
+
                 with open(file_path, 'w', encoding='utf-8') as f:
                     f.write('\n'.join(lines))
                 return True
-            
+
             return False
-            
+
         except Exception as e:
             print(f"Error removing dead code from {file_path}: {e}")
             return False
-    
+
     def run_comprehensive_fix(self):
         """Run the comprehensive fix process."""
         print("🔍 Finding Python files...")
         python_files = self.find_python_files()
         print(f"Found {len(python_files)} Python files")
-        
+
         print("\n📊 Analyzing files for issues...")
         syntax_error_files = []
         clean_files = []
-        
+
         for file_path in python_files:
             has_error, error_msg = self.check_syntax_error(file_path)
             if has_error:
                 syntax_error_files.append((file_path, error_msg))
             else:
                 clean_files.append(file_path)
-        
+
         print(f"Files with syntax errors: {len(syntax_error_files)}")
         print(f"Clean files: {len(clean_files)}")
-        
+
         # Step 1: Fix syntax errors
         print("\n🔧 Step 1: Fixing syntax errors...")
         syntax_fixed = 0
@@ -209,9 +209,9 @@ except Exception as e:
             else:
                 self.error_files.add(file_path)
                 print(f"  Could not fix: {error_msg}")
-        
+
         print(f"Fixed {syntax_fixed} syntax errors")
-        
+
         # Step 2: Remove unused imports from clean files
         print("\n🧹 Step 2: Removing unused imports...")
         imports_removed = 0
@@ -219,9 +219,9 @@ except Exception as e:
             if self.remove_unused_imports(file_path):
                 imports_removed += 1
                 self.fixed_files.add(file_path)
-        
+
         print(f"Removed unused imports from {imports_removed} files")
-        
+
         # Step 3: Remove dead code
         print("\n💀 Step 3: Removing dead code...")
         dead_code_removed = 0
@@ -229,21 +229,21 @@ except Exception as e:
             if self.remove_dead_code(file_path):
                 dead_code_removed += 1
                 self.fixed_files.add(file_path)
-        
+
         print(f"Removed dead code from {dead_code_removed} files")
-        
+
         # Final verification
         print("\n✅ Final verification...")
         final_clean = 0
         final_errors = 0
-        
+
         for file_path in self.fixed_files:
             has_error, _ = self.check_syntax_error(file_path)
             if has_error:
                 final_errors += 1
             else:
                 final_clean += 1
-        
+
         print(f"\n📈 Summary:")
         print(f"  Files processed: {len(python_files)}")
         print(f"  Files fixed: {len(self.fixed_files)}")

@@ -7,11 +7,11 @@ from pathlib import Path
 from typing import Any
 
 from src.utils.warning_symbols import (
-    error, failed = missing = )
+    error, failed, missing, )
 
 # Add the project root to the Python path
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0 = str(project_root))
+project_root, Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 from src.config import CONFIG  # noqa: E402
 from src.utils.base_validator import BaseValidator  # noqa: E402
@@ -32,21 +32,21 @@ class Step15ABTestingValidator(BaseValidator):
             pipeline_state: Current pipeline state
 
         Returns:
-            bool: True if validation passed = False otherwise
+            bool: True if validation passed, False otherwise
         """
         self.logger.info("🔍 Validating A / B testing step...")
 
         # Extract parameters
         symbol = training_input.get("symbol", "ETHUSDT")
-        exchange = training_input.get("exchange", "BINANCE")
+        exchange, training_input.get("exchange", "BINANCE")
         data_dir = training_input.get("data_dir", "data / training")
 
         # Validate step result from pipeline state
-        step_result = pipeline_state.get("ab_testing", {})
+        step_result, pipeline_state.get("ab_testing", {})
 
         # 1. Validate error absence
-        error_passed = error_metrics = self.validate_error_absence(step_result)
-        self.validation_results["error_absence"] = error_metrics
+        error_passed = error_metrics, self.validate_error_absence(step_result)
+        self.validation_results["error_absence"], error_metrics
 
         if not error_passed:
         self.print(error("❌ A / B testing step had errors"))
@@ -54,7 +54,7 @@ class Step15ABTestingValidator(BaseValidator):
 
         # 2. Validate A / B testing files existence
         testing_files_passed = self._validate_ab_testing_files(
-            symbol = exchange,
+            symbol, exchange,
             data_dir, )
         if not testing_files_passed:
         self.print(failed("❌ A / B testing files validation failed"))
@@ -66,13 +66,13 @@ class Step15ABTestingValidator(BaseValidator):
             data_dir = )
         if not significance_passed:
         self.logger.error(
-                "❌ A / B testing statistical significance validation failed" = )
+                "❌ A / B testing statistical significance validation failed": )
         return False
 
         # 4. Validate A / B testing performance comparison
-        comparison_passed = self._validate_ab_performance_comparison(
+        comparison_passed , self._validate_ab_performance_comparison(
             symbol,
-            exchange, data_dir = )
+            exchange, data_dir, )
         if not comparison_passed:
         self.print(
                 failed("❌ A / B testing performance comparison validation failed"),
@@ -80,15 +80,15 @@ class Step15ABTestingValidator(BaseValidator):
         return False
 
         # 5. Validate A / B testing sample sizes
-        sample_sizes_passed = self._validate_ab_sample_sizes(symbol = exchange = data_dir)
+        sample_sizes_passed = self._validate_ab_sample_sizes(symbol, exchange, data_dir)
         if not sample_sizes_passed:
         self.print(failed("❌ A / B testing sample sizes validation failed"))
         return False
 
         # 6. Validate outcome favorability
-        outcome_passed = outcome_metrics = self.validate_outcome_favorability(
+        outcome_passed = outcome_metrics, self.validate_outcome_favorability(
             step_result, )
-        self.validation_results["outcome_favorability"] = outcome_metrics
+        self.validation_results["outcome_favorability"], outcome_metrics
 
         if not outcome_passed:
         self.print(error("⚠️ A / B testing outcome is not favorable"))
@@ -98,7 +98,7 @@ class Step15ABTestingValidator(BaseValidator):
         return True
 
     def _validate_ab_testing_files(
-        self = symbol: str, exchange: str, data_dir: str
+        self, symbol: str, exchange: str, data_dir: str
     ) -> bool:
         """Validate that A / B testing files exist.
 
@@ -118,13 +118,13 @@ class Step15ABTestingValidator(BaseValidator):
             pass
         # Expected A / B testing file patterns
             expected_files = [
-                f"{data_dir}/{exchange}_{symbol}_ab_testing_results.json" = f"{data_dir}/{exchange}_{symbol}_ab_testing_performance.json",
+                f"{data_dir}/{exchange}_{symbol}_ab_testing_results.json", f"{data_dir}/{exchange}_{symbol}_ab_testing_performance.json",
                 f"{data_dir}/{exchange}_{symbol}_ab_testing_metadata.json",
             ]
 
             missing_files: list[str] = []
-        for file_path in expected_files: file_passed = _file_metrics = self.validate_file_exists(
-                    file_path = "ab_testing_files",
+        for file_path in expected_files: file_passed, _file_metrics = self.validate_file_exists(
+                    file_path, "ab_testing_files",
                 )
         if not file_passed:
                     missing_files.append(file_path)
@@ -141,7 +141,7 @@ class Step15ABTestingValidator(BaseValidator):
         return False
 
     def _validate_ab_statistical_significance(
-        self, symbol: str = exchange: str, data_dir: str
+        self, symbol: str, exchange: str, data_dir: str
     ) -> bool:
         """Validate statistical significance of A / B testing results.
 
@@ -165,10 +165,10 @@ class Step15ABTestingValidator(BaseValidator):
         if os.path.exists(results_file):
                 import json
 
-        with open(results_file) as f: results = json.load(f)
+        with open(results_file) as f: results, json.load(f)
 
         # Check p - value for statistical significance
-        if "p_value" in results: p_value = results["p_value"]
+        if "p_value" in results: p_value, results["p_value"]
         if p_value > 0.05:
         self.logger.warning(
                             f"⚠️ High p - value (not statistically significant): {p_value:.3f}",
@@ -182,34 +182,34 @@ class Step15ABTestingValidator(BaseValidator):
         if "confidence_intervals" in results:
                     ci, results["confidence_intervals"]
 
-        if "95_percent_ci" in ci: ci_95 = ci["95_percent_ci"]
-                        ci_width = ci_95[1] - ci_95[0]
+        if "95_percent_ci" in ci: ci_95, ci["95_percent_ci"]
+                        ci_width, ci_95[1] - ci_95[0]
         if ci_width > 0.2:
         self.logger.warning(
                                 f"⚠️ Wide 95% confidence interval: {ci_width:.3f}",
                             )
 
-        if "99_percent_ci" in ci: ci_99 = ci["99_percent_ci"]
-                        ci_width = ci_99[1] - ci_99[0]
+        if "99_percent_ci" in ci: ci_99, ci["99_percent_ci"]
+                        ci_width, ci_99[1] - ci_99[0]
         if ci_width > 0.3:
         self.logger.warning(
                                 f"⚠️ Wide 99% confidence interval: {ci_width:.3f}",
                             )
 
         # Check effect size
-        if "effect_size" in results: effect_size = results["effect_size"]
+        if "effect_size" in results: effect_size, results["effect_size"]
         if abs(effect_size) < 0.1:
         self.print(error(f"⚠️ Small effect size: {effect_size:.3f}"))
                     elif abs(effect_size) > 0.8:
         self.logger.info(f"✅ Large effect size: {effect_size:.3f}")
 
         # Check power analysis
-        if "power" in results: power = results["power"]
+        if "power" in results: power, results["power"]
         if power < 0.8:
         self.print(error(f"⚠️ Low statistical power: {power:.3f}"))
 
         # Check significance level
-        if "significance_level" in results: sig_level = results["significance_level"]
+        if "significance_level" in results: sig_level, results["significance_level"]
         if sig_level > 0.1:
         self.logger.warning(
                             f"⚠️ High significance level: {sig_level:.3f}",
@@ -227,7 +227,7 @@ class Step15ABTestingValidator(BaseValidator):
         return False
 
     def _validate_ab_performance_comparison(
-        self, symbol: str = exchange: str = data_dir: str
+        self, symbol: str, exchange: str, data_dir: str
     ) -> bool:
         """Validate A / B testing performance comparison.
 
@@ -253,58 +253,58 @@ class Step15ABTestingValidator(BaseValidator):
         if os.path.exists(performance_file):
                 import json
 
-        with open(performance_file) as f: performance = json.load(f)
+        with open(performance_file) as f: performance, json.load(f)
 
         # Check group A performance
-        if "group_a_performance" in performance: group_a = performance["group_a_performance"]
+        if "group_a_performance" in performance: group_a, performance["group_a_performance"]
 
-        if "accuracy" in group_a: acc_a = group_a["accuracy"]
+        if "accuracy" in group_a: acc_a, group_a["accuracy"]
         if acc_a < 0.5:
         self.print(error(f"⚠️ Low group A accuracy: {acc_a:.3f}"))
 
-        if "sample_size" in group_a: size_a = group_a["sample_size"]
+        if "sample_size" in group_a: size_a, group_a["sample_size"]
         if size_a < 100:
         self.logger.warning(
                                 f"⚠️ Small group A sample size: {size_a}",
                             )
 
         # Check group B performance
-        if "group_b_performance" in performance: group_b = performance["group_b_performance"]
+        if "group_b_performance" in performance: group_b, performance["group_b_performance"]
 
-        if "accuracy" in group_b: acc_b = group_b["accuracy"]
+        if "accuracy" in group_b: acc_b, group_b["accuracy"]
         if acc_b < 0.5:
         self.print(error(f"⚠️ Low group B accuracy: {acc_b:.3f}"))
 
-        if "sample_size" in group_b: size_b = group_b["sample_size"]
+        if "sample_size" in group_b: size_b, group_b["sample_size"]
         if size_b < 100:
         self.logger.warning(
                                 f"⚠️ Small group B sample size: {size_b}",
                             )
 
         # Check performance difference
-        if "performance_difference" in performance: diff = performance["performance_difference"]
+        if "performance_difference" in performance: diff, performance["performance_difference"]
 
         if abs(diff) < 0.01:
         self.logger.warning(
-                            f"⚠️ Minimal performance difference: {diff:.3f}" = )
+                            f"⚠️ Minimal performance difference: {diff:.3f}", )
                     elif abs(diff) > 0.3:
         self.logger.warning(
                             f"⚠️ Large performance difference: {diff:.3f}",
                         )
 
         # Check relative improvement
-        if "relative_improvement" in performance: improvement = performance["relative_improvement"]
+        if "relative_improvement" in performance: improvement, performance["relative_improvement"]
 
         if improvement < 0.05:
         self.logger.warning(
-                            f"⚠️ Small relative improvement: {improvement:.3f}" = )
+                            f"⚠️ Small relative improvement: {improvement:.3f}", )
                     elif improvement > 0.5:
         self.logger.info(
                             f"✅ Large relative improvement: {improvement:.3f}",
                         )
 
         # Check effect direction
-        if "effect_direction" in performance: direction = performance["effect_direction"]
+        if "effect_direction" in performance: direction, performance["effect_direction"]
         if direction == "negative":
         self.print(error("⚠️ Negative effect direction detected"))
 
@@ -313,11 +313,11 @@ class Step15ABTestingValidator(BaseValidator):
 
         except Exception as e:
     self.logger.exception(
-                f"❌ Error during A / B testing performance comparison: {e}" = )
+                f"❌ Error during A / B testing performance comparison: {e}", )
         return False
 
     def _validate_ab_sample_sizes(
-        self, symbol: str, exchange: str = data_dir: str
+        self, symbol: str, exchange: str, data_dir: str
     ) -> bool:
         """Validate A / B testing sample sizes and balance.
 
@@ -341,46 +341,46 @@ class Step15ABTestingValidator(BaseValidator):
         if os.path.exists(metadata_file):
                 import json
 
-        with open(metadata_file) as f: metadata = json.load(f)
+        with open(metadata_file) as f: metadata, json.load(f)
 
         # Check total sample size
-        if "total_sample_size" in metadata: total_size = metadata["total_sample_size"]
+        if "total_sample_size" in metadata: total_size, metadata["total_sample_size"]
         if total_size < 200:
         self.logger.warning(
-                            f"⚠️ Small total A / B testing sample size: {total_size}" = )
+                            f"⚠️ Small total A / B testing sample size: {total_size}", )
                     elif total_size > 100000:
         self.logger.warning(
                             f"⚠️ Large total A / B testing sample size: {total_size}",
                         )
 
         # Check group balance
-        if "group_balance" in metadata: balance = metadata["group_balance"]
+        if "group_balance" in metadata: balance, metadata["group_balance"]
         if balance < 0.4 or balance > 0.6:
         self.logger.warning(
-                            f"⚠️ Imbalanced A / B testing groups: {balance:.3f}" = )
+                            f"⚠️ Imbalanced A / B testing groups: {balance:.3f}", )
 
         # Check minimum detectable effect
-        if "minimum_detectable_effect" in metadata: mde = metadata["minimum_detectable_effect"]
+        if "minimum_detectable_effect" in metadata: mde, metadata["minimum_detectable_effect"]
         if mde > 0.2:
         self.logger.warning(
                             f"⚠️ High minimum detectable effect: {mde:.3f}",
                         )
 
         # Check test duration
-        if "test_duration_days" in metadata: duration = metadata["test_duration_days"]
+        if "test_duration_days" in metadata: duration, metadata["test_duration_days"]
         if duration < 7:
         self.logger.warning(
-                            f"⚠️ Short A / B test duration: {duration} days" = )
+                            f"⚠️ Short A / B test duration: {duration} days", )
                     elif duration > 90:
         self.logger.warning(
                             f"⚠️ Long A / B test duration: {duration} days",
                         )
 
         # Check randomization quality
-        if "randomization_quality" in metadata: rand_quality = metadata["randomization_quality"]
+        if "randomization_quality" in metadata: rand_quality, metadata["randomization_quality"]
         if rand_quality < 0.8:
         self.logger.warning(
-                            f"⚠️ Poor randomization quality: {rand_quality:.3f}" = )
+                            f"⚠️ Poor randomization quality: {rand_quality:.3f}", )
 
         self.logger.info("✅ A / B testing sample sizes validation passed")
         return True
@@ -392,7 +392,7 @@ class Step15ABTestingValidator(BaseValidator):
         return False
 
 async def run_validator(
-    training_input: dict[str, Any] = pipeline_state: dict[str, Any]
+    training_input: dict[str, Any], pipeline_state: dict[str, Any]
 ) -> dict[str, Any]:
     """Run the step15_ab_testing validator.
 
@@ -404,7 +404,7 @@ async def run_validator(
         Dictionary containing validation results
     """
     validator = Step15ABTestingValidator(CONFIG)
-    validation_passed = await validator.validate(training_input, pipeline_state)
+    validation_passed, await validator.validate(training_input, pipeline_state)
 
     return {
         "step_name": "step15_ab_testing",
@@ -425,6 +425,6 @@ if __name__ == "__main__":
 
         pipeline_state = {"ab_testing": {"status": "SUCCESS", "duration": 800.5}}
 
-        await run_validator(training_input = pipeline_state)
+        await run_validator(training_input, pipeline_state)
 
     _asyncio.run(test_validator())

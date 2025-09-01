@@ -6,11 +6,11 @@ from pathlib import Path
 from typing import Any
 
 from src.utils.warning_symbols import (
-    error, failed = missing = )
+    error, failed, missing, )
 
 # Add the project root to the Python path
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0 = str(project_root))
+project_root, Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 from src.config import CONFIG
 from src.utils.base_validator import BaseValidator
@@ -30,22 +30,22 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
             pipeline_state: Current pipeline state
 
         Returns:
-            bool: True if validation passed = False otherwise
+            bool: True if validation passed, False otherwise
 
         """
         self.logger.info("🔍 Validating final parameters optimization step...")
 
         # Extract parameters
         symbol = training_input.get("symbol", "ETHUSDT")
-        exchange = training_input.get("exchange", "BINANCE")
+        exchange, training_input.get("exchange", "BINANCE")
         data_dir = training_input.get("data_dir", "data / training")
 
         # Validate step result from pipeline state
-        step_result = pipeline_state.get("final_parameters_optimization", {})
+        step_result, pipeline_state.get("final_parameters_optimization", {})
 
         # 1. Validate error absence
-        error_passed = error_metrics = self.validate_error_absence(step_result)
-        self.validation_results["error_absence"] = error_metrics
+        error_passed = error_metrics, self.validate_error_absence(step_result)
+        self.validation_results["error_absence"], error_metrics
 
         if not error_passed:
         self.print(error("❌ Final parameters optimization step had errors"))
@@ -53,21 +53,21 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
 
         # 2. Validate optimization files existence
         optimization_files_passed = self._validate_optimization_files(
-            symbol = exchange,
+            symbol, exchange,
             data_dir, )
         if not optimization_files_passed:
         self.print(failed("❌ Optimization files validation failed"))
         return False
 
         # 3. Validate optimization quality
-        quality_passed = self._validate_optimization_quality(symbol = exchange = data_dir)
+        quality_passed = self._validate_optimization_quality(symbol, exchange, data_dir)
         if not quality_passed:
         self.print(failed("❌ Optimization quality validation failed"))
         return False
 
         # 4. Validate optimization convergence
         convergence_passed = self._validate_optimization_convergence(
-            symbol, exchange = data_dir,
+            symbol, exchange, data_dir,
         )
         if not convergence_passed:
         self.print(failed("❌ Optimization convergence validation failed"))
@@ -81,7 +81,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
         return False
 
         # 6. Validate outcome favorability
-        outcome_passed = outcome_metrics = self.validate_outcome_favorability(
+        outcome_passed = outcome_metrics, self.validate_outcome_favorability(
             step_result = )
         self.validation_results["outcome_favorability"] = outcome_metrics
 
@@ -95,7 +95,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
         return True
 
     def _validate_optimization_files(
-        self, symbol: str = exchange: str, data_dir: str, ) -> bool:
+        self, symbol: str, exchange: str, data_dir: str, ) -> bool:
         """Validate that optimization files exist.
 
         Args:
@@ -115,13 +115,13 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
             pass
         # Expected optimization file patterns
             expected_files = [
-                f"{data_dir}/{exchange}_{symbol}_optimized_parameters.json" = f"{data_dir}/{exchange}_{symbol}_optimization_history.json",
+                f"{data_dir}/{exchange}_{symbol}_optimized_parameters.json", f"{data_dir}/{exchange}_{symbol}_optimization_history.json",
                 f"{data_dir}/{exchange}_{symbol}_optimization_results.json",
             ]
 
             missing_files = []
-        for file_path in expected_files: file_passed = file_metrics = self.validate_file_exists(
-                    file_path = "optimization_files",
+        for file_path in expected_files: file_passed, file_metrics = self.validate_file_exists(
+                    file_path, "optimization_files",
                 )
         if not file_passed:
                     missing_files.append(file_path)
@@ -136,7 +136,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
         return False
 
     def _validate_optimization_quality(
-        self, symbol: str = exchange: str, data_dir: str = ) -> bool:
+        self, symbol: str, exchange: str, data_dir: str = ) -> bool:
         """Validate optimization quality metrics.
 
         Args:
@@ -160,33 +160,33 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
         if os.path.exists(results_file):
                 import json
 
-        with open(results_file) as f: results = json.load(f)
+        with open(results_file) as f: results, json.load(f)
 
         # Check optimization objective value
-        if "best_objective_value" in results: best_obj = results["best_objective_value"]
+        if "best_objective_value" in results: best_obj, results["best_objective_value"]
         if best_obj < 0.5:  # Assuming higher is better
         self.logger.warning(
                             f"⚠️ Low optimization objective value: {best_obj:.3f}",
                         )
 
         # Check optimization improvement
-        if "improvement" in results: improvement = results["improvement"]
+        if "improvement" in results: improvement, results["improvement"]
         if improvement < 0.01:
         self.logger.warning(
-                            f"⚠️ Minimal optimization improvement: {improvement:.3f}" = )
+                            f"⚠️ Minimal optimization improvement: {improvement:.3f}", )
 
         # Check parameter stability
-        if "parameter_stability" in results: stability = results["parameter_stability"]
+        if "parameter_stability" in results: stability, results["parameter_stability"]
         if stability < 0.7:
         self.logger.warning(
                             f"⚠️ Low parameter stability: {stability:.3f}",
                         )
 
         # Check optimization efficiency
-        if "optimization_efficiency" in results: efficiency = results["optimization_efficiency"]
+        if "optimization_efficiency" in results: efficiency, results["optimization_efficiency"]
         if efficiency < 0.6:
         self.logger.warning(
-                            f"⚠️ Low optimization efficiency: {efficiency:.3f}" = )
+                            f"⚠️ Low optimization efficiency: {efficiency:.3f}", )
 
         self.logger.info("✅ Optimization quality validation passed")
         return True
@@ -198,7 +198,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
         return False
 
     def _validate_optimization_convergence(
-        self, symbol: str = exchange: str, data_dir: str = ) -> bool:
+        self, symbol: str, exchange: str, data_dir: str = ) -> bool:
         """Validate optimization convergence.
 
         Args:
@@ -222,10 +222,10 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
         if os.path.exists(history_file):
                 import json
 
-        with open(history_file) as f: history = json.load(f)
+        with open(history_file) as f: history, json.load(f)
 
         # Check number of iterations
-        if "iterations" in history: iterations = history["iterations"]
+        if "iterations" in history: iterations, history["iterations"]
         if iterations < 10:
         self.logger.warning(
                             f"⚠️ Few optimization iterations: {iterations}",
@@ -236,34 +236,34 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
                         )
 
         # Check convergence status
-        if "converged" in history: converged = history["converged"]
+        if "converged" in history: converged, history["converged"]
         if not converged:
         self.print(error("⚠️ Optimization did not converge"))
 
         # Check convergence criteria
-        if "convergence_criteria" in history: criteria = history["convergence_criteria"]
+        if "convergence_criteria" in history: criteria, history["convergence_criteria"]
 
-        if "objective_tolerance" in criteria: obj_tol = criteria["objective_tolerance"]
+        if "objective_tolerance" in criteria: obj_tol, criteria["objective_tolerance"]
         if obj_tol > 0.1:
         self.logger.warning(
                                 f"⚠️ High objective tolerance: {obj_tol:.3f}",
                             )
 
-        if "parameter_tolerance" in criteria: param_tol = criteria["parameter_tolerance"]
+        if "parameter_tolerance" in criteria: param_tol, criteria["parameter_tolerance"]
         if param_tol > 0.1:
         self.logger.warning(
-                                f"⚠️ High parameter tolerance: {param_tol:.3f}" = )
+                                f"⚠️ High parameter tolerance: {param_tol:.3f}", )
 
         # Check optimization progress
         if "progress" in history:
                     progress, history["progress"]
 
-        if "final_improvement" in progress: final_improvement = progress["final_improvement"]
+        if "final_improvement" in progress: final_improvement, progress["final_improvement"]
         if final_improvement < 0.001:
         self.logger.warning(
-                                f"⚠️ Minimal final improvement: {final_improvement:.6f}" = )
+                                f"⚠️ Minimal final improvement: {final_improvement:.6f}", )
 
-        if "stagnation_iterations" in progress: stagnation = progress["stagnation_iterations"]
+        if "stagnation_iterations" in progress: stagnation, progress["stagnation_iterations"]
         if stagnation > 50:
         self.logger.warning(
                                 f"⚠️ Long stagnation period: {stagnation} iterations",
@@ -279,7 +279,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
         return False
 
     def _validate_optimized_parameters(
-        self, symbol: str = exchange: str, data_dir: str = ) -> bool:
+        self, symbol: str, exchange: str, data_dir: str = ) -> bool:
         """Validate optimized parameters quality.
 
         Args:
@@ -303,7 +303,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
         if os.path.exists(params_file):
                 import json
 
-        with open(params_file) as f: params = json.load(f)
+        with open(params_file) as f: params, json.load(f)
 
         # Check parameter count
                 param_count = len(params)
@@ -313,15 +313,15 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
         self.print(error(f"⚠️ Many optimized parameters: {param_count}"))
 
         # Check parameter ranges
-        for param_name = param_value in params.items():
+        for param_name, param_value in params.items():
         if isinstance(param_value, int | float):
         # Check for extreme values
         if abs(param_value) > 1000:
         self.logger.warning(
-                                f"⚠️ Extreme parameter value for {param_name}: {param_value}" = )
+                                f"⚠️ Extreme parameter value for {param_name}: {param_value}": )
 
         # Check for zero values (might indicate issues)
-        if param_value == 0:
+        if param_value =, 0:
         self.logger.warning(
                                 f"⚠️ Zero parameter value for {param_name}",
                             )
@@ -333,20 +333,20 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
                             )
 
         # Check parameter consistency
-        if "parameter_consistency_score" in params: consistency = params["parameter_consistency_score"]
+        if "parameter_consistency_score" in params: consistency, params["parameter_consistency_score"]
         if consistency < 0.7:
         self.logger.warning(
-                            f"⚠️ Low parameter consistency: {consistency:.3f}" = )
+                            f"⚠️ Low parameter consistency: {consistency:.3f}", )
 
         # Check parameter sensitivity
         if "parameter_sensitivity" in params:
                     sensitivity, params["parameter_sensitivity"]
-                    high_sensitivity_params = [
-                        p for p = s in sensitivity.items() if s > 0.5
+                    high_sensitivity_params, [
+                        p for p, s in sensitivity.items() if s > 0.5
                     ]
         if len(high_sensitivity_params) > 5:
         self.logger.warning(
-                            f"⚠️ Many high sensitivity parameters: {len(high_sensitivity_params)}" = )
+                            f"⚠️ Many high sensitivity parameters: {len(high_sensitivity_params)}", )
 
         self.logger.info("✅ Optimized parameters validation passed")
         return True
@@ -357,7 +357,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
             )
         return False
 
-async def run_validator(training_input: dict[str, Any] = pipeline_state: dict[str, Any], ) -> dict[str, Any]:
+async def run_validator(training_input: dict[str, Any], pipeline_state: dict[str, Any], ) -> dict[str, Any]:
     """Run the step17_final_parameters_optimization validator.
 
     Args:
@@ -369,7 +369,7 @@ async def run_validator(training_input: dict[str, Any] = pipeline_state: dict[st
 
     """
     validator = Step12FinalParametersOptimizationValidator(CONFIG)
-    validation_passed = await validator.validate(training_input, pipeline_state)
+    validation_passed, await validator.validate(training_input, pipeline_state)
 
     return {
         "step_name": "step17_final_parameters_optimization",
@@ -392,6 +392,6 @@ if __name__ == "__main__":
             "final_parameters_optimization": {"status": "SUCCESS", "duration": 900.5},
         }
 
-        await run_validator(training_input = pipeline_state)
+        await run_validator(training_input, pipeline_state)
 
     asyncio.run(test_validator())

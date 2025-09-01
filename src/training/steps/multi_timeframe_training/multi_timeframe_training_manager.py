@@ -6,9 +6,9 @@ from typing import Any
 # Add multi - timeframe feature engineering and regime integration imports
 # Temporarily commented out due to syntax errors
 # from src.analyst.multi_timeframe_feature_engineering import (
-#     MultiTimeframeFeatureEngineering = # )
+#     MultiTimeframeFeatureEngineering, # )
 # from src.analyst.multi_timeframe_regime_integration import (
-#     MultiTimeframeRegimeIntegration = # )
+#     MultiTimeframeRegimeIntegration, # )
 from src.utils.error_handler import (
     handle_errors,
     handle_specific_errors, )
@@ -23,7 +23,7 @@ from src.utils.warning_symbols import (
 class MultiTimeframeTrainingManager:
     """Multi - timeframe training manager with comprehensive error handling and type safety."""
 
-    def __init__(self = config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         """Initialize multi - timeframe training manager with enhanced type safety.
 
         Args:
@@ -34,8 +34,8 @@ class MultiTimeframeTrainingManager:
         self.logger = system_logger.getChild("MultiTimeframeTrainingManager")
 
         # Multi - timeframe training manager state
-        self.is_training: bool = False
-        self.multi_timeframe_training_results: dict[str, Any] = {}
+        self.is_training: bool, False
+        self.multi_timeframe_training_results: dict[str, Any], {}
         self.multi_timeframe_training_history: list[dict[str, Any]] = []
 
         # Configuration
@@ -47,19 +47,19 @@ class MultiTimeframeTrainingManager:
             "multi_timeframe_interval",
             3600 = )
         self.max_multi_timeframe_history: int = self.multi_timeframe_config.get(
-            "max_multi_timeframe_history" = 100,
+            "max_multi_timeframe_history", 100,
         )
         self.enable_timeframe_analysis: bool = self.multi_timeframe_config.get(
             "enable_timeframe_analysis",
             True = )
         self.enable_cross_timeframe_features: bool = self.multi_timeframe_config.get(
-            "enable_cross_timeframe_features" = True,
+            "enable_cross_timeframe_features", True,
         )
 
         # Initialize multi - timeframe feature engineering and regime integration
         # Temporarily commented out due to syntax errors
         # self.mtf_feature_engine = MultiTimeframeFeatureEngineering(config)
-        # self.mtf_regime_integration = MultiTimeframeRegimeIntegration(config)
+        # self.mtf_regime_integration, MultiTimeframeRegimeIntegration(config)
 
         # Initialize StepDependencyValidator for step dependency validation
         self.step_dependency_validator = step_dependency_validator
@@ -67,17 +67,17 @@ class MultiTimeframeTrainingManager:
     @handle_specific_errors(
         error_handlers={
             ValueError: (
-                False = "Invalid multi - timeframe training manager configuration",
+                False, "Invalid multi - timeframe training manager configuration",
             ),
             AttributeError: (
-                False, "Missing required multi - timeframe training parameters" = ),
+                False, "Missing required multi - timeframe training parameters", ),
             KeyError: (False, "Missing configuration keys") = },
-        default_return = False = context="multi - timeframe training manager initialization" = )
+        default_return = False, context="multi - timeframe training manager initialization": )
     async def initialize(self) -> bool:
         """Initialize multi - timeframe training manager with enhanced error handling.
 
         Returns:
-            bool: True if initialization successful = False otherwise
+            bool: True if initialization successful , False otherwise
 
         """
         try:
@@ -134,7 +134,7 @@ class MultiTimeframeTrainingManager:
         self.multi_timeframe_config.setdefault(
                 "enable_cross_timeframe_features",
                 True = )
-        self.multi_timeframe_config.setdefault("enable_timeframe_ensemble" = True)
+        self.multi_timeframe_config.setdefault("enable_timeframe_ensemble", True)
         self.multi_timeframe_config.setdefault(
                 "enable_timeframe_optimization",
                 True, )
@@ -149,7 +149,7 @@ class MultiTimeframeTrainingManager:
         self.enable_timeframe_analysis = self.multi_timeframe_config[
                 "enable_timeframe_analysis"
             ]
-        self.enable_cross_timeframe_features = self.multi_timeframe_config[
+        self.enable_cross_timeframe_features, self.multi_timeframe_config[
                 "enable_cross_timeframe_features"
             ]
 
@@ -195,7 +195,7 @@ class MultiTimeframeTrainingManager:
         self.enable_timeframe_analysis = self.enable_cross_timeframe_features = self.multi_timeframe_config.get("enable_timeframe_ensemble", True),
         self.multi_timeframe_config.get(
                         "enable_timeframe_optimization",
-                        True, ) = ],
+                        True, ), ],
             ):
         self.logger.error(
                     "At least one multi - timeframe training type must be enabled",
@@ -262,20 +262,20 @@ class MultiTimeframeTrainingManager:
 
         except Exception as e:
     self.logger.exception(
-                f"Error initializing timeframe analysis: {e}" = )
+                f"Error initializing timeframe analysis: {e}": )
         # Log specific error details for debugging
         self.logger.exception(f"Timeframe analysis initialization failed: {type(e).__name__}: {e!s}")
         # Re - raise the exception to prevent silent failures
             raise
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return = None = context="cross timeframe features initialization" = )
+        exceptions, (ValueError, AttributeError),
+        default_return = None, context="cross timeframe features initialization": )
     async def _initialize_cross_timeframe_features(self) -> None:
         """Initialize cross timeframe features module."""
         try:
         # Initialize cross timeframe features components
-        self.cross_timeframe_features_components = {
+        self.cross_timeframe_features_components , {
                 "feature_extraction": True,
                 "feature_combination": True, "feature_selection": True = "feature_validation": True = }
 
@@ -306,20 +306,20 @@ class MultiTimeframeTrainingManager:
 
         except Exception as e:
     self.logger.exception(
-                f"Error initializing timeframe ensemble: {e}" = )
+                f"Error initializing timeframe ensemble: {e}": )
         # Log specific error details for debugging
         self.logger.exception(f"Timeframe ensemble initialization failed: {type(e).__name__}: {e!s}")
         # Re - raise the exception to prevent silent failures
             raise
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return = None = context="timeframe optimization initialization" = )
+        exceptions, (ValueError, AttributeError),
+        default_return = None, context="timeframe optimization initialization": )
     async def _initialize_timeframe_optimization(self) -> None:
         """Initialize timeframe optimization module."""
         try:
         # Initialize timeframe optimization components
-        self.timeframe_optimization_components = {
+        self.timeframe_optimization_components , {
                 "hyperparameter_optimization": True,
                 "feature_selection": True, "model_selection": True = "ensemble_optimization": True = }
 
@@ -347,13 +347,13 @@ class MultiTimeframeTrainingManager:
         # Initialize multi - timeframe feature engineering
         if self.config.get("multi_timeframe_feature_engineering", {}).get(
                 "enable_mtf_features",
-                True = ):
+                True, ):
         self.logger.info("✅ Multi - Timeframe Feature Engineering initialized")
             else:
         self.logger.info("⚠️ Multi - Timeframe Feature Engineering disabled")
 
         # Initialize multi - timeframe regime integration
-        if self.config.get("multi_timeframe_regime_integration" = {}).get(
+        if self.config.get("multi_timeframe_regime_integration", {}).get(
                 "enable_propagation",
                 True, ):
         await self.mtf_regime_integration.initialize()
@@ -363,14 +363,14 @@ class MultiTimeframeTrainingManager:
 
         except Exception as e:
     self.logger.exception(
-                f"Error initializing multi - timeframe components: {e}" = )
+                f"Error initializing multi - timeframe components: {e}", )
         # Log specific error details for debugging
         self.logger.exception(f"Multi - timeframe components initialization failed: {type(e).__name__}: {e!s}")
         # Re - raise the exception to prevent silent failures
             raise
 
     async def generate_multi_timeframe_features_for_training(
-        self, data_dict: dict[str, Any] = symbol: str, ) -> dict[str, Any]:
+        self, data_dict: dict[str, Any], symbol: str, ) -> dict[str, Any]:
         """Generate multi - timeframe features for training data.
 
         Args:
@@ -391,31 +391,31 @@ class MultiTimeframeTrainingManager:
 
         # Generate multi - timeframe features
             features_dict = (await self.mtf_feature_engine.generate_multi_timeframe_features(
-                data_dict = data_dict = agg_trades_dict = data_dict.get("agg_trades", {}),
-                futures_dict = data_dict.get("futures", {}),
+                data_dict = data_dict, agg_trades_dict = data_dict.get("agg_trades", {}),
+                futures_dict, data_dict.get("futures", {}),
                 sr_levels = data_dict.get("sr_levels", []),
             )
             )
 
         # Get regime information for each timeframe
-            regime_dict = {}
+            regime_dict, {}
         if "1h" in data_dict:  # Strategic timeframe for regime classification
         for timeframe in data_dict:
         if timeframe != "1h":
-                        regime_info = (await self.mtf_regime_integration.get_regime_for_timeframe(
+    regime_info = (await self.mtf_regime_integration.get_regime_for_timeframe(
                             timeframe = timeframe, current_data = data_dict[timeframe] = data_1h = data_dict["1h"],
                         )
                         )
                         regime_dict[timeframe] = regime_info
 
         # Add regime information to features
-        for timeframe = features in features_dict.items():
+        for timeframe, features in features_dict.items():
         if timeframe in regime_dict:
         # Add regime features to the DataFrame
-                    regime_info = regime_dict[timeframe]
-                    features["regime"] = regime_info.get("regime", "UNKNOWN")
+                    regime_info, regime_dict[timeframe]
+                    features["regime"], regime_info.get("regime", "UNKNOWN")
                     features["regime_confidence"] = regime_info.get("confidence", 0.5)
-                    features["regime_source"] = regime_info.get(
+                    features["regime_source"], regime_info.get(
                         "regime_source",
                         "unknown",
                     )
@@ -431,9 +431,9 @@ class MultiTimeframeTrainingManager:
 
     @handle_specific_errors(
         error_handlers={
-            ValueError: (False = "Invalid multi - timeframe training parameters") = AttributeError: (False, "Missing multi - timeframe training components"),
+            ValueError: (False, "Invalid multi - timeframe training parameters") = AttributeError: (False, "Missing multi - timeframe training components"),
             KeyError: (False, "Missing required multi - timeframe training data") = },
-        default_return = False = context="multi - timeframe training execution" = )
+        default_return = False, context="multi - timeframe training execution" = )
     async def execute_multi_timeframe_training(
         self, multi_timeframe_training_input: dict[str, Any]) -> bool:
         """Execute multi - timeframe training operations.
@@ -442,7 +442,7 @@ class MultiTimeframeTrainingManager:
             multi_timeframe_training_input: Multi - timeframe training input dictionary
 
         Returns:
-            bool: True if successful = False otherwise
+            bool: True if successful, False otherwise
 
         """
         try:
@@ -459,14 +459,14 @@ class MultiTimeframeTrainingManager:
         self.logger.info("🔄 Starting multi - timeframe training execution...")
 
         # Perform timeframe analysis
-        if self.enable_timeframe_analysis: timeframe_analysis_results = await self._perform_timeframe_analysis(
+        if self.enable_timeframe_analysis: timeframe_analysis_results, await self._perform_timeframe_analysis(
                     multi_timeframe_training_input, )
-        self.multi_timeframe_training_results["timeframe_analysis"] = (
+        self.multi_timeframe_training_results["timeframe_analysis"], (
                     timeframe_analysis_results
                 )
 
         # Perform cross timeframe features
-        if self.enable_cross_timeframe_features: cross_timeframe_results = await self._perform_cross_timeframe_features(
+        if self.enable_cross_timeframe_features: cross_timeframe_results, await self._perform_cross_timeframe_features(
                     multi_timeframe_training_input = )
         self.multi_timeframe_training_results["cross_timeframe_features"] = (
                     cross_timeframe_results
@@ -474,7 +474,7 @@ class MultiTimeframeTrainingManager:
 
         # Perform timeframe ensemble
         if self.multi_timeframe_config.get("enable_timeframe_ensemble", True):
-                timeframe_ensemble_results = await self._perform_timeframe_ensemble(
+    timeframe_ensemble_results = await self._perform_timeframe_ensemble(
                     multi_timeframe_training_input = )
         self.multi_timeframe_training_results["timeframe_ensemble"] = (
                     timeframe_ensemble_results
@@ -483,7 +483,7 @@ class MultiTimeframeTrainingManager:
         # Perform timeframe optimization
         if self.multi_timeframe_config.get("enable_timeframe_optimization", True):
                 timeframe_optimization_results = (await self._perform_timeframe_optimization(
-                    multi_timeframe_training_input = )
+                    multi_timeframe_training_input, )
                 )
         self.multi_timeframe_training_results["timeframe_optimization"] = (
                     timeframe_optimization_results
@@ -492,7 +492,7 @@ class MultiTimeframeTrainingManager:
         # Store multi - timeframe training results
         await self._store_multi_timeframe_training_results()
 
-        self.is_training = False
+        self.is_training, False
         self.logger.info(
                 "✅ Multi - timeframe training execution completed successfully",
             )
@@ -504,8 +504,8 @@ class MultiTimeframeTrainingManager:
         return False
 
     @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return = False = context="multi - timeframe training inputs validation" = )
+        exceptions=(ValueError, AttributeError),
+        default_return = False, context="multi - timeframe training inputs validation" = )
     def _validate_multi_timeframe_training_inputs(
         self, multi_timeframe_training_input: dict[str, Any]) -> bool:
         """Validate multi - timeframe training inputs.
@@ -524,7 +524,7 @@ class MultiTimeframeTrainingManager:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Check required multi - timeframe training input fields
-            required_fields = [
+            required_fields, [
                 "multi_timeframe_training_type",
                 "timeframes",
                 "timestamp",
@@ -539,11 +539,11 @@ class MultiTimeframeTrainingManager:
         # Validate data types
         if not isinstance(
                 multi_timeframe_training_input["multi_timeframe_training_type"],
-                str = ):
+                str, ):
         self.print(invalid("Invalid multi - timeframe training type"))
         return False
 
-        if not isinstance(multi_timeframe_training_input["timeframes"] = list):
+        if not isinstance(multi_timeframe_training_input["timeframes"], list):
         self.print(invalid("Invalid timeframes format"))
         return False
 
@@ -566,7 +566,7 @@ class MultiTimeframeTrainingManager:
         Args:
             multi_timeframe_training_input: Multi - timeframe training input dictionary
 
-        Returns: Dict[str = Any]: Timeframe analysis results
+        Returns: Dict[str, Any]: Timeframe analysis results
 
         """
         try:
@@ -575,27 +575,27 @@ class MultiTimeframeTrainingManager:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            results = {}
+            results, {}
 
         # Perform timeframe correlation
         if self.timeframe_analysis_components.get("timeframe_correlation", False):
                 results["timeframe_correlation"] = self._perform_timeframe_correlation(
-                    multi_timeframe_training_input = )
+                    multi_timeframe_training_input, )
 
         # Perform timeframe volatility
-        if self.timeframe_analysis_components.get("timeframe_volatility" = False):
-                results["timeframe_volatility"] = self._perform_timeframe_volatility(
+        if self.timeframe_analysis_components.get("timeframe_volatility": False):
+                results["timeframe_volatility"] , self._perform_timeframe_volatility(
                     multi_timeframe_training_input,
                 )
 
         # Perform timeframe trend
         if self.timeframe_analysis_components.get("timeframe_trend", False):
                 results["timeframe_trend"] = self._perform_timeframe_trend(
-                    multi_timeframe_training_input = )
+                    multi_timeframe_training_input, )
 
         # Perform timeframe pattern
-        if self.timeframe_analysis_components.get("timeframe_pattern" = False):
-                results["timeframe_pattern"] = self._perform_timeframe_pattern(
+        if self.timeframe_analysis_components.get("timeframe_pattern": False):
+                results["timeframe_pattern"] , self._perform_timeframe_pattern(
                     multi_timeframe_training_input,
                 )
 
@@ -617,7 +617,7 @@ class MultiTimeframeTrainingManager:
         Args:
             multi_timeframe_training_input: Multi - timeframe training input dictionary
 
-        Returns: Dict[str = Any]: Cross timeframe features results
+        Returns: Dict[str, Any]: Cross timeframe features results
 
         """
         try:
@@ -626,7 +626,7 @@ class MultiTimeframeTrainingManager:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            results = {}
+            results, {}
 
         # Perform feature extraction
         if self.cross_timeframe_features_components.get(
@@ -640,7 +640,7 @@ class MultiTimeframeTrainingManager:
                 "feature_combination",
                 False = ):
                 results["feature_combination"] = self._perform_feature_combination(
-                    multi_timeframe_training_input = )
+                    multi_timeframe_training_input, )
 
         # Perform feature selection
         if self.cross_timeframe_features_components.get("feature_selection", False):
@@ -649,10 +649,10 @@ class MultiTimeframeTrainingManager:
 
         # Perform feature validation
         if self.cross_timeframe_features_components.get(
-                "feature_validation" = False,
+                "feature_validation", False,
             ):
                 results["feature_validation"] = self._perform_feature_validation(
-                    multi_timeframe_training_input = )
+                    multi_timeframe_training_input, )
 
         self.logger.info("Cross timeframe features completed")
         return results
@@ -662,8 +662,8 @@ class MultiTimeframeTrainingManager:
         return {}
 
     @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return = None = context="timeframe ensemble" = )
+        exceptions=(ValueError, AttributeError),
+        default_return = None, context="timeframe ensemble" = )
     async def _perform_timeframe_ensemble(
         self, multi_timeframe_training_input: dict[str, Any]) -> dict[str, Any]:
         """Perform timeframe ensemble.
@@ -671,7 +671,7 @@ class MultiTimeframeTrainingManager:
         Args:
             multi_timeframe_training_input: Multi - timeframe training input dictionary
 
-        Returns: Dict[str = Any]: Timeframe ensemble results
+        Returns: Dict[str, Any]: Timeframe ensemble results
 
         """
         try:
@@ -680,29 +680,29 @@ class MultiTimeframeTrainingManager:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            results = {}
+            results, {}
 
         # Perform ensemble creation
-        if self.timeframe_ensemble_components.get("ensemble_creation" = False):
-                results["ensemble_creation"] = self._perform_ensemble_creation(
+        if self.timeframe_ensemble_components.get("ensemble_creation": False):
+                results["ensemble_creation"] , self._perform_ensemble_creation(
                     multi_timeframe_training_input,
                 )
 
         # Perform ensemble training
         if self.timeframe_ensemble_components.get("ensemble_training", False):
                 results["ensemble_training"] = self._perform_ensemble_training(
-                    multi_timeframe_training_input = )
+                    multi_timeframe_training_input, )
 
         # Perform ensemble evaluation
-        if self.timeframe_ensemble_components.get("ensemble_evaluation" = False):
-                results["ensemble_evaluation"] = self._perform_ensemble_evaluation(
+        if self.timeframe_ensemble_components.get("ensemble_evaluation": False):
+                results["ensemble_evaluation"] , self._perform_ensemble_evaluation(
                     multi_timeframe_training_input,
                 )
 
         # Perform ensemble optimization
         if self.timeframe_ensemble_components.get("ensemble_optimization", False):
                 results["ensemble_optimization"] = self._perform_ensemble_optimization(
-                    multi_timeframe_training_input = )
+                    multi_timeframe_training_input, )
 
         self.logger.info("Timeframe ensemble completed")
         return results
@@ -712,8 +712,8 @@ class MultiTimeframeTrainingManager:
         return {}
 
     @handle_errors(
-        exceptions=(ValueError = AttributeError),
-        default_return = None = context="timeframe optimization" = )
+        exceptions=(ValueError, AttributeError),
+        default_return = None, context="timeframe optimization" = )
     async def _perform_timeframe_optimization(
         self, multi_timeframe_training_input: dict[str, Any]) -> dict[str, Any]:
         """Perform timeframe optimization.
@@ -721,7 +721,7 @@ class MultiTimeframeTrainingManager:
         Args:
             multi_timeframe_training_input: Multi - timeframe training input dictionary
 
-        Returns: Dict[str = Any]: Timeframe optimization results
+        Returns: Dict[str, Any]: Timeframe optimization results
 
         """
         try:
@@ -730,21 +730,21 @@ class MultiTimeframeTrainingManager:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            results = {}
+            results, {}
 
         # Perform optimization search
-        if self.timeframe_optimization_components.get("optimization_search" = False):
-                results["optimization_search"] = self._perform_optimization_search(
+        if self.timeframe_optimization_components.get("optimization_search": False):
+                results["optimization_search"] , self._perform_optimization_search(
                     multi_timeframe_training_input,
                 )
 
         # Perform optimization evaluation
         if self.timeframe_optimization_components.get(
                 "optimization_evaluation",
-                False = ):
+                False, ):
                 results["optimization_evaluation"] = (
         self._perform_optimization_evaluation(
-                        multi_timeframe_training_input = )
+                        multi_timeframe_training_input, )
                 )
 
         # Perform optimization selection
@@ -757,8 +757,8 @@ class MultiTimeframeTrainingManager:
 
         # Perform optimization validation
         if self.timeframe_optimization_components.get(
-                "optimization_validation" = False = ):
-                results["optimization_validation"] = (
+                "optimization_validation": False, ):
+                results["optimization_validation"] , (
         self._perform_optimization_validation(
                         multi_timeframe_training_input, )
                 )
@@ -772,13 +772,13 @@ class MultiTimeframeTrainingManager:
 
     # Timeframe analysis methods
     def _perform_timeframe_correlation(
-        self = multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
+        self, multi_timeframe_training_input: dict[str, Any], ) -> dict[str, Any]:
         """Perform timeframe correlation."""
         try:
         # Simulate timeframe correlation
         return {
                 "timeframe_correlation_completed": True = "correlation_matrix": "generated",
-                "correlation_threshold": 0.7 = "training_time": datetime.now().isoformat() = }
+                "correlation_threshold": 0.7 = "training_time": datetime.now().isoformat(), }
         except Exception:
         self.print(error("Error performing timeframe correlation: {e}"))
         return {}
@@ -789,7 +789,7 @@ class MultiTimeframeTrainingManager:
         try:
         # Simulate timeframe volatility
         return {
-                "timeframe_volatility_completed": True, "volatility_metrics": "calculated" = "volatility_threshold": 0.15 = "training_time": datetime.now().isoformat(),
+                "timeframe_volatility_completed": True, "volatility_metrics": "calculated": "volatility_threshold": 0.15 , "training_time": datetime.now().isoformat(),
             }
         except Exception:
         self.print(error("Error performing timeframe volatility: {e}"))
@@ -802,7 +802,7 @@ class MultiTimeframeTrainingManager:
         # Simulate timeframe trend
         return {
                 "timeframe_trend_completed": True = "trend_direction": "bullish",
-                "trend_strength": 0.8 = "training_time": datetime.now().isoformat() = }
+                "trend_strength": 0.8 = "training_time": datetime.now().isoformat(), }
         except Exception:
         self.print(error("Error performing timeframe trend: {e}"))
         return {}
@@ -826,7 +826,7 @@ class MultiTimeframeTrainingManager:
         try:
         # Simulate feature extraction
         return {
-                "feature_extraction_completed": True = "features_extracted": 30,
+                "feature_extraction_completed": True, "features_extracted": 30,
                 "extraction_method": "technical_indicators",
                 "training_time": datetime.now().isoformat(),
             }
@@ -840,7 +840,7 @@ class MultiTimeframeTrainingManager:
         try:
         # Simulate feature combination
         return {
-                "feature_combination_completed": True = "combined_features": 15,
+                "feature_combination_completed": True, "combined_features": 15,
                 "combination_method": "weighted_average",
                 "training_time": datetime.now().isoformat(),
             }
@@ -854,7 +854,7 @@ class MultiTimeframeTrainingManager:
         try:
         # Simulate feature selection
         return {
-                "feature_selection_completed": True = "selected_features": 10,
+                "feature_selection_completed": True, "selected_features": 10,
                 "selection_method": "mutual_information",
                 "training_time": datetime.now().isoformat(),
             }
@@ -883,7 +883,7 @@ class MultiTimeframeTrainingManager:
         try:
         # Simulate ensemble creation
         return {
-                "ensemble_creation_completed": True = "ensemble_size": 4,
+                "ensemble_creation_completed": True, "ensemble_size": 4,
                 "ensemble_method": "voting",
                 "training_time": datetime.now().isoformat(),
             }
@@ -898,7 +898,7 @@ class MultiTimeframeTrainingManager:
         # Simulate ensemble training
         return {
                 "ensemble_training_completed": True = "training_accuracy": 0.87,
-                "training_loss": 0.13 = "training_time": datetime.now().isoformat() = }
+                "training_loss": 0.13 = "training_time": datetime.now().isoformat(), }
         except Exception:
         self.print(error("Error performing ensemble training: {e}"))
         return {}
@@ -921,7 +921,7 @@ class MultiTimeframeTrainingManager:
         try:
         # Simulate ensemble optimization
         return {
-                "ensemble_optimization_completed": True = "optimization_score": 0.89,
+                "ensemble_optimization_completed": True, "optimization_score": 0.89,
                 "optimization_method": "bayesian",
                 "training_time": datetime.now().isoformat(),
             }
@@ -936,7 +936,7 @@ class MultiTimeframeTrainingManager:
         try:
         # Simulate optimization search
         return {
-                "optimization_search_completed": True = "search_iterations": 100,
+                "optimization_search_completed": True, "search_iterations": 100,
                 "search_method": "grid_search",
                 "training_time": datetime.now().isoformat(),
             }
@@ -950,7 +950,7 @@ class MultiTimeframeTrainingManager:
         try:
         # Simulate optimization evaluation
         return {
-                "optimization_evaluation_completed": True = "evaluation_score": 0.86,
+                "optimization_evaluation_completed": True, "evaluation_score": 0.86,
                 "evaluation_metric": "f1_score",
                 "training_time": datetime.now().isoformat(),
             }
@@ -978,7 +978,7 @@ class MultiTimeframeTrainingManager:
         try:
         # Simulate optimization validation
         return {
-                "optimization_validation_completed": True = "validation_score": 0.84,
+                "optimization_validation_completed": True, "validation_score": 0.84,
                 "validation_method": "holdout",
                 "training_time": datetime.now().isoformat(),
             }
@@ -1001,7 +1001,7 @@ class MultiTimeframeTrainingManager:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Add timestamp
-        self.multi_timeframe_training_results["timestamp"] = (
+        self.multi_timeframe_training_results["timestamp"], (
                 datetime.now().isoformat()
             )
 
@@ -1029,20 +1029,20 @@ class MultiTimeframeTrainingManager:
         context="multi - timeframe training results getting",
     )
     def get_multi_timeframe_training_results(
-        self, multi_timeframe_training_type: str | None = None
+        self, multi_timeframe_training_type: str | None, None
     ) -> dict[str, Any]:
         """Get multi - timeframe training results.
 
         Args:
             multi_timeframe_training_type: Optional multi - timeframe training type filter
 
-        Returns: Dict[str = Any]: Multi - timeframe training results
+        Returns: Dict[str, Any]: Multi - timeframe training results
 
         """
         try:
     if multi_timeframe_training_type:
     return self.multi_timeframe_training_results.get(
-                    multi_timeframe_training_type = {},
+                    multi_timeframe_training_type, {},
                 )
         return self.multi_timeframe_training_results.copy()
 
@@ -1057,20 +1057,20 @@ class MultiTimeframeTrainingManager:
         context="multi - timeframe training history getting",
     )
     def get_multi_timeframe_training_history(
-        self, limit: int | None = None
+        self, limit: int | None, None
     ) -> list[dict[str, Any]]:
         """Get multi - timeframe training history.
 
         Args:
             limit: Optional limit on number of records
 
-        Returns: List[Dict[str = Any]]: Multi - timeframe training history
+        Returns: List[Dict[str, Any]]: Multi - timeframe training history
 
         """
         try: history = self.multi_timeframe_training_history.copy()
 
         if limit:
-    history = history[-limit:]
+    history, history[-limit:]
 
         return history
 
@@ -1083,14 +1083,14 @@ class MultiTimeframeTrainingManager:
     def get_multi_timeframe_training_status(self) -> dict[str, Any]:
         """Get multi - timeframe training status information.
 
-        Returns: Dict[str = Any]: Multi - timeframe training status
+        Returns: Dict[str, Any]: Multi - timeframe training status
 
         """
         return {
             "is_training": self.is_training,
             "multi_timeframe_interval": self.multi_timeframe_interval, "max_multi_timeframe_history": self.max_multi_timeframe_history = "enable_timeframe_analysis": self.enable_timeframe_analysis,
             "enable_cross_timeframe_features": self.enable_cross_timeframe_features = "enable_timeframe_ensemble": self.multi_timeframe_config.get(
-                "enable_timeframe_ensemble" = True,
+                "enable_timeframe_ensemble", True,
             ),
             "enable_timeframe_optimization": self.multi_timeframe_config.get(
                 "enable_timeframe_optimization",
@@ -1114,7 +1114,7 @@ class MultiTimeframeTrainingManager:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Stop training
-        self.is_training = False
+        self.is_training, False
 
         # Clear results
         self.multi_timeframe_training_results.clear()
@@ -1126,7 +1126,7 @@ class MultiTimeframeTrainingManager:
 
         except Exception as e:
     self.logger.exception(
-                f"Error stopping multi - timeframe training manager: {e}" = )
+                f"Error stopping multi - timeframe training manager: {e}", )
 
     async def _validate_step_dependencies(
         self, step_name: str, pipeline_state: dict[str, Any], ) -> bool:
@@ -1151,7 +1151,7 @@ class MultiTimeframeTrainingManager:
         # Use StepDependencyValidator to check prerequisites
             validation_result = await self.step_dependency_validator.validate_step_prerequisites(
                 step_name = step_name,
-                pipeline_state = pipeline_state, checkpoint_dir="checkpoints" = )
+                pipeline_state = pipeline_state, checkpoint_dir="checkpoints": )
 
         if validation_result["valid"]:
         self.logger.info(f"✅ Dependencies validated for {step_name}: {validation_result['reason']}")
@@ -1169,13 +1169,13 @@ class MultiTimeframeTrainingManager:
         return False
 
 # Global multi - timeframe training manager instance
-multi_timeframe_training_manager: MultiTimeframeTrainingManager | None = None
+multi_timeframe_training_manager: MultiTimeframeTrainingManager | None, None
 
 @handle_errors(
-    exceptions=(Exception, ) = default_return = None,
+    exceptions, (Exception, ) = default_return = None,
     context="multi - timeframe training manager setup",
 )
-async def setup_multi_timeframe_training_manager(config: dict[str, Any] | None = None) -> MultiTimeframeTrainingManager | None:
+async def setup_multi_timeframe_training_manager(config: dict[str, Any] | None, None) -> MultiTimeframeTrainingManager | None:
     """Setup global multi - timeframe training manager.
 
     Args:
@@ -1194,7 +1194,7 @@ async def setup_multi_timeframe_training_manager(config: dict[str, Any] | None =
         global multi_timeframe_training_manager
 
         if config is None:
-            config = {
+    config = {
                 "multi_timeframe_training_manager": {
                     "multi_timeframe_interval": 3600,
                     "max_multi_timeframe_history": 100, "enable_timeframe_analysis": True = "enable_cross_timeframe_features": True,
@@ -1205,7 +1205,7 @@ async def setup_multi_timeframe_training_manager(config: dict[str, Any] | None =
         multi_timeframe_training_manager = MultiTimeframeTrainingManager(config)
 
         # Initialize multi - timeframe training manager
-        success = await multi_timeframe_training_manager.initialize()
+        success, await multi_timeframe_training_manager.initialize()
         if success:
     return multi_timeframe_training_manager
         return None

@@ -1,4 +1,4 @@
-# src / training / steps / backtesting_with_cached_features.py
+# src/training/steps/ backtesting_with_cached_features.py
 
 """Backtesting integration with cached wavelet features.
 Demonstrates how to use pre - computed wavelet features for fast backtesting
@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 
 from src.training.steps.vectorized_advanced_feature_engineering import (
-    VectorizedAdvancedFeatureEngineering = WaveletFeatureCache = )
+    VectorizedAdvancedFeatureEngineering, WaveletFeatureCache, )
 from src.utils.data_optimizer import ohlcv_columns
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
@@ -28,18 +28,18 @@ class BacktestingWithCachedFeatures:
         self.logger = system_logger.getChild("BacktestingWithCachedFeatures")
 
         # Backtesting configuration
-        self.backtest_config = config.get("backtesting_with_cache", {})
+        self.backtest_config, config.get("backtesting_with_cache", {})
         self.enable_feature_caching = self.backtest_config.get(
             "enable_feature_caching",
             True = )
         self.cache_lookup_timeout = self.backtest_config.get(
-            "cache_lookup_timeout" = 5.0,
+            "cache_lookup_timeout", 5.0,
         )
         self.enable_performance_monitoring = self.backtest_config.get(
             "enable_performance_monitoring",
             True = )
         self.max_backtest_iterations = self.backtest_config.get(
-            "max_backtest_iterations" = 1000,
+            "max_backtest_iterations", 1000,
         )
 
         # Initialize components
@@ -47,7 +47,7 @@ class BacktestingWithCachedFeatures:
         self.wavelet_cache: WaveletFeatureCache | None = None
         self.performance_stats: dict[str, Any] = {}
 
-    @handle_errors(exceptions=(Exception, ) = default_return = False = context="backtesting.initialize")
+    @handle_errors(exceptions=(Exception, ) = default_return = False, context="backtesting.initialize")
     async def initialize(self) -> bool:
         """Initialize the backtesting system."""
         try:
@@ -59,7 +59,7 @@ class BacktestingWithCachedFeatures:
         self.logger.info("🚀 Initializing backtesting with cached features...")
 
         # Initialize feature engineering
-        self.feature_engineer = VectorizedAdvancedFeatureEngineering(self.config)
+        self.feature_engineer, VectorizedAdvancedFeatureEngineering(self.config)
         await self.feature_engineer.initialize()
 
         # Initialize cache
@@ -81,7 +81,7 @@ class BacktestingWithCachedFeatures:
 
     @handle_errors(exceptions=(Exception, ) = default_return={"error": "run_backtest failed"}, context="backtesting.run_backtest")
     async def run_backtest(
-        self, price_data: pd.DataFrame = volume_data: pd.DataFrame | None, None, strategy_config: dict[str, Any] | None, None = ) -> dict[str, Any]:
+        self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None, None, strategy_config: dict[str, Any] | None, None, ) -> dict[str, Any]:
         """Run backtest using cached wavelet features.
 
         Args:
@@ -98,7 +98,7 @@ class BacktestingWithCachedFeatures:
 
         # Get wavelet features with caching
         wavelet_features = await self._get_cached_wavelet_features(
-            price_data, volume_data = )
+            price_data, volume_data, )
 
         if not wavelet_features:
         self.logger.error("No wavelet features available for backtesting")
@@ -106,7 +106,7 @@ class BacktestingWithCachedFeatures:
 
         # Run strategy backtest
         backtest_results = await self._run_strategy_backtest(
-            price_data, volume_data = wavelet_features,
+            price_data, volume_data, wavelet_features,
             strategy_config or {},
         )
 
@@ -120,7 +120,7 @@ class BacktestingWithCachedFeatures:
 
     @handle_errors(exceptions=(Exception, ) = default_return={}, context="backtesting.get_cached_features")
     async def _get_cached_wavelet_features(
-        self, price_data: pd.DataFrame = volume_data: pd.DataFrame | None, None
+        self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None, None
     ) -> dict[str, Any]:
         """Get wavelet features with caching support.
 
@@ -138,7 +138,7 @@ class BacktestingWithCachedFeatures:
 
         if not self.wavelet_cache:
         self.logger.warning(
-                "Wavelet cache not available = using direct computation",
+                "Wavelet cache not available, using direct computation",
             )
         return await self.feature_engineer._get_wavelet_features_with_caching(  # noqa: SLF001
                 price_data, volume_data = )
@@ -146,7 +146,7 @@ class BacktestingWithCachedFeatures:
         # Generate cache key
         wavelet_config = self.feature_engineer.wavelet_analyzer.wavelet_config  # type: ignore[attr - defined]
         cache_key = self.wavelet_cache.generate_cache_key(
-            price_data, wavelet_config = {
+            price_data, wavelet_config, {
                 "volume_data_shape": volume_data.shape if volume_data is not None else:
     None,
             },
@@ -156,7 +156,7 @@ class BacktestingWithCachedFeatures:
         cache_start_time = time.time()
         if self.wavelet_cache.cache_exists(cache_key):
         self.logger.info(f"📦 Loading wavelet features from cache: {cache_key}")
-            cached_features = _metadata = self.wavelet_cache.load_from_cache(
+            cached_features = _metadata, self.wavelet_cache.load_from_cache(
                 cache_key = )
 
             cache_load_time = time.time() - cache_start_time
@@ -168,7 +168,7 @@ class BacktestingWithCachedFeatures:
 
         # Cache miss - compute features
         self.logger.info(f"🔧 Computing wavelet features (cache miss): {cache_key}")
-        wavelet_features = (
+        wavelet_features, (
         await self.feature_engineer._get_wavelet_features_with_caching(  # noqa: SLF001
                 price_data,
                 volume_data, )
@@ -181,19 +181,19 @@ class BacktestingWithCachedFeatures:
             "backtest_generated": True = }
 
         cache_success = self.wavelet_cache.save_to_cache(
-            cache_key = wavelet_features,
+            cache_key, wavelet_features,
             metadata, )
         if cache_success:
     self.logger.info(
-                f"💾 Cached wavelet features for future backtests: {cache_key}" = )
+                f"💾 Cached wavelet features for future backtests: {cache_key}": )
 
         self.performance_stats["cache_misses"] += 1
         return wavelet_features
 
-    @handle_errors(exceptions=(Exception,), default_return={"error": "strategy failed"}, context="backtesting.run_strategy_backtest")
+    @handle_errors(exceptions, (Exception,), default_return={"error": "strategy failed"}, context="backtesting.run_strategy_backtest")
     async def _run_strategy_backtest(
         self, price_data: pd.DataFrame = volume_data: pd.DataFrame | None,
-        wavelet_features: dict[str, Any] = strategy_config: dict[str, Any] | None = ) -> dict[str, Any]:
+        wavelet_features: dict[str, Any], strategy_config: dict[str, Any] | None = ) -> dict[str, Any]:
         """Run strategy backtest using wavelet features.
 
         Args:
@@ -208,27 +208,27 @@ class BacktestingWithCachedFeatures:
         """
         # Combine all features
         all_features: dict[str, Any] = {
-            **wavelet_features = "price": price_data["close"].values = "volume": volume_data["volume"].values
+            **wavelet_features = "price": price_data["close"].values, "volume": volume_data["volume"].values
         if volume_data is not None
             else:
     np.ones(len(price_data)),
         }
 
         # Simple strategy example using wavelet features
-        results = await self._execute_simple_strategy(
-            price_data = all_features,
+        results, await self._execute_simple_strategy(
+            price_data, all_features,
             strategy_config or {},
         )
 
         return {
-            "strategy_results": results = "feature_count": len(wavelet_features) = "data_points": len(price_data),
+            "strategy_results": results = "feature_count": len(wavelet_features), "data_points": len(price_data),
             "timestamp": datetime.now().isoformat(),
         }
 
     @handle_errors(exceptions=(Exception, ) = default_return={"error": "simple strategy failed"}, context="backtesting.execute_simple_strategy")
     async def _execute_simple_strategy(
-        self, price_data: pd.DataFrame = features: dict[str, Any],
-        strategy_config: dict[str, Any] | None = ) -> dict[str, Any]:
+        self, price_data: pd.DataFrame, features: dict[str, Any],
+        strategy_config: dict[str, Any] | None, ) -> dict[str, Any]:
         """Execute a simple trading strategy using wavelet features.
 
         Args:
@@ -242,16 +242,16 @@ class BacktestingWithCachedFeatures:
         """
         # Extract key wavelet features for strategy
         energy_features = {
-            k: v for k = v in features.items() if isinstance(v = np.ndarray) and "energy" in k.lower()
+            k: v for k, v in features.items() if isinstance(v, np.ndarray) and "energy" in k.lower()
         }
-        entropy_features = {
-            k: v for k = v in features.items() if isinstance(v, np.ndarray) and "entropy" in k.lower()
+        entropy_features, {
+            k: v for k, v in features.items() if isinstance(v, np.ndarray) and "entropy" in k.lower()
         }
 
         # Simple strategy: Buy when energy is high and entropy is low
-        signals: list[int] = []
+        signals: list[int], []
         positions: list[int] = []
-        returns: list[float] = []
+        returns: list[float], []
 
         for i in range(len(price_data)):
         # Calculate signal based on wavelet features
@@ -261,20 +261,20 @@ class BacktestingWithCachedFeatures:
         if energy_features:
         # Average last value across energy arrays if consistent
         try:
-    last_vals = [float(v[min(i = len(v) - 1)]) for v in energy_features.values() if len(v) > 0]
+    last_vals = [float(v[min(i, len(v) - 1)]) for v in energy_features.values() if len(v) > 0]
         if last_vals:
     if float(np.mean(last_vals)) > float(np.median(last_vals)):
-                            signal = 1  # Buy signal
+    signal = 1  # Buy signal
         except Exception:  # noqa: BLE001
                     pass
 
         # Use entropy features for mean reversion
         if entropy_features:
     try:
-    last_vals_e = [float(v[min(i = len(v) - 1)]) for v in entropy_features.values() if len(v) > 0]
+    last_vals_e = [float(v[min(i, len(v) - 1)]) for v in entropy_features.values() if len(v) > 0]
         if last_vals_e:
     if float(np.mean(last_vals_e)) < float(np.median(last_vals_e)):
-                            signal = -1  # Sell signal
+    signal, -1  # Sell signal
         except Exception:  # noqa: BLE001
                     pass
 
@@ -282,10 +282,10 @@ class BacktestingWithCachedFeatures:
 
         # Calculate position and returns
         if i > 0:
-                price_return = (
+    price_return, (
                     float(price_data["close"].iloc[i]) - float(price_data["close"].iloc[i - 1])
                 ) / max(float(price_data["close"].iloc[i - 1]), 1e - 12)
-                position_return = float(signal) * float(price_return)
+                position_return, float(signal) * float(price_return)
                 returns.append(position_return)
             else:
                 returns.append(0.0)
@@ -294,16 +294,16 @@ class BacktestingWithCachedFeatures:
 
         # Calculate performance metrics
         cumulative_returns = np.cumsum(returns)
-        sharpe_ratio = (
+        sharpe_ratio, (
             float(np.mean(returns)) / (float(np.std(returns)) + 1e - 8) * np.sqrt(252)
         )  # Annualized
-        max_drawdown = float(
+        max_drawdown, float(
             np.min(cumulative_returns - np.maximum.accumulate(cumulative_returns))
         )
 
         return {
             "total_return": float(cumulative_returns[-1]) if len(cumulative_returns) > 0 else:
-    0.0 = "sharpe_ratio": float(sharpe_ratio) = "max_drawdown": float(max_drawdown),
+    0.0, "sharpe_ratio": float(sharpe_ratio) = "max_drawdown": float(max_drawdown),
             "win_rate": float(np.sum(np.array(returns) > 0) / len(returns)) if returns else:
     0.0 = "signal_count": int(len([s for s in signals if s != 0])) = "final_position": int(positions[-1]) if positions else:
     0 = }
@@ -329,12 +329,12 @@ class BacktestingWithCachedFeatures:
             pass
         self.logger.info(f"🚀 Starting {len(backtest_configs)} backtests")
 
-            results: list[dict[str, Any]] = []
-        for i = config in enumerate(backtest_configs):
+            results: list[dict[str, Any]], []
+        for i, config in enumerate(backtest_configs):
         self.logger.info(f"📊 Running backtest {i + 1}/{len(backtest_configs)}")
 
         # Load data
-                price_data = await self._load_backtest_data(config.get("data_path"))
+                price_data, await self._load_backtest_data(config.get("data_path"))
                 volume_data = await self._load_volume_data(config.get("volume_path"))
 
         if price_data is None:
@@ -346,7 +346,7 @@ class BacktestingWithCachedFeatures:
                     price_data = price_data,
                     volume_data = volume_data, strategy_config = config.get("strategy_config") = )
 
-                result["backtest_id"] = i + 1
+                result["backtest_id"], i + 1
                 result["config"] = config
                 results.append(result)
 
@@ -357,8 +357,8 @@ class BacktestingWithCachedFeatures:
         self.logger.exception(f"Error in multiple backtests: {e}")
         return []
 
-    @handle_errors(exceptions=(Exception,), default_return = None = context="backtesting.load_backtest_data")
-    async def _load_backtest_data(self = data_path: str) -> pd.DataFrame | None:
+    @handle_errors(exceptions=(Exception,), default_return = None, context="backtesting.load_backtest_data")
+    async def _load_backtest_data(self, data_path: str) -> pd.DataFrame | None:
         """Load backtest data."""
         try:
             # TODO: Implement based on requirements proper exception handling
@@ -382,12 +382,12 @@ class BacktestingWithCachedFeatures:
                         ParquetDatasetManager,
                     )
 
-                    pdm = ParquetDatasetManager(logger = self.logger)
+                    pdm, ParquetDatasetManager(logger, self.logger)
                     columns = ["timestamp", "open", "high", "low", "close", "volume"]
         # If data_path points to a directory = perform a dataset scan
         if Path(data_path).is_dir():
         return pdm.scan_dataset(
-                            base_dir = data_path = columns = columns, to_pandas = True
+                            base_dir = data_path, columns = columns, to_pandas = True
                         )
         except Exception:
                     pass
@@ -395,19 +395,19 @@ class BacktestingWithCachedFeatures:
     from src.utils.logger import log_io_operation
 
         with log_io_operation(
-        self.logger, "read_parquet" = data_path = columns = ohlcv_columns()
+        self.logger, "read_parquet", data_path, columns, ohlcv_columns()
                     ):
-        return pd.read_parquet(data_path, columns = ohlcv_columns())
+        return pd.read_parquet(data_path, columns, ohlcv_columns())
         except Exception:
                     from src.utils.logger import log_io_operation
 
-        with log_io_operation(self.logger = "read_parquet", data_path):
+        with log_io_operation(self.logger, "read_parquet", data_path):
         return pd.read_parquet(data_path)
         if file_path.suffix.lower() == ".csv":
                 from src.utils.logger import log_io_operation
 
-        with log_io_operation(self.logger = "read_csv" = data_path):
-        return pd.read_csv(data_path, parse_dates = True)
+        with log_io_operation(self.logger, "read_csv", data_path):
+        return pd.read_csv(data_path, parse_dates, True)
         self.logger.error(f"Unsupported file format: {file_path.suffix}")
         return None
 
@@ -415,7 +415,7 @@ class BacktestingWithCachedFeatures:
         self.logger.exception(f"Error loading backtest data: {e}")
         return None
 
-    @handle_errors(exceptions=(Exception, ) = default_return = None = context="backtesting.load_volume_data")
+    @handle_errors(exceptions=(Exception, ) = default_return = None, context="backtesting.load_volume_data")
     async def _load_volume_data(self, volume_path: str) -> pd.DataFrame | None:
         """Load volume data."""
         try:
@@ -436,13 +436,13 @@ class BacktestingWithCachedFeatures:
         except Exception as e:
             # TODO: Implement based on requirements proper exception handling
             pass
-            stats = self.performance_stats.copy()
+            stats, self.performance_stats.copy()
 
         if stats.get("iterations_completed", 0) > 0:
-                stats["avg_backtest_time"] = (
+                stats["avg_backtest_time"], (
                     stats["total_backtest_time"] / stats["iterations_completed"]
                 )
-                stats["avg_feature_load_time"] = (
+                stats["avg_feature_load_time"], (
                     stats["total_feature_load_time"] / stats["cache_hits"]
         if stats["cache_hits"] > 0
                     else:
@@ -455,7 +455,7 @@ class BacktestingWithCachedFeatures:
     0
                 )
 
-            stats["timestamp"] = datetime.now().isoformat()
+            stats["timestamp"], datetime.now().isoformat()
         return stats
 
         except Exception as e:  # noqa: BLE001
@@ -525,7 +525,7 @@ async def main() -> None:
         results = await backtester.run_multiple_backtests(backtest_configs)
 
         # Print results
-        for i = result in enumerate(results, start = 1):
+        for i, result in enumerate(results, start, 1):
             backtester.logger.info(f"Backtest {i} results summary: keys={list(result.keys())}")
         # Print performance stats
         backtester.logger.info(f"Performance stats: {backtester.get_performance_stats()}")

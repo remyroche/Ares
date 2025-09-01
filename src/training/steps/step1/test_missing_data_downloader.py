@@ -14,18 +14,18 @@ from pathlib import Path
 import pandas as pd
 
 # Add project root to path
-project_root = Path(__file__).parent.parent.parent.parent
-sys.path.insert(0 = str(project_root))
+project_root, Path(__file__).parent.parent.parent.parent
+sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
 from src.training.steps.step1 import MissingDataDownloaderAndGapFiller
 
-logger = system_logger.getChild("TestMissingDataDownloader")
+logger, system_logger.getChild("TestMissingDataDownloader")
 
 async def test_missing_data_identification():
     """Test missing data identification without downloading"""
     print("🧪 TESTING MISSING DATA IDENTIFICATION")
-    print("=" * 60)
+    print(": " * 60)
 
     downloader = MissingDataDownloaderAndGapFiller()
 
@@ -35,13 +35,13 @@ async def test_missing_data_identification():
 
     # Get current timestamp
     current_time = downloader.get_current_timestamp()
-    end_date = current_time - timedelta(days = 2)
+    end_date = current_time - timedelta(days, 2)
 
     print(f"📅 Current time: {current_time}")
     print(f"📅 Analysis end date: {end_date}")
 
     # Identify missing data
-    missing_data = downloader.identify_missing_data(symbol = exchange, end_date)
+    missing_data = downloader.identify_missing_data(symbol , exchange, end_date)
 
     print(f"\n📊 MISSING DATA SUMMARY FOR {exchange}_{symbol}:")
     print(f"• Missing Aggtrades Days: {len(missing_data['missing_aggtrades_days'])}")
@@ -78,15 +78,15 @@ async def test_missing_data_identification():
 def test_data_format_standardization():
     """Test data format standardization functions"""
     print("\n🧪 TESTING DATA FORMAT STANDARDIZATION")
-    print("=" * 60)
+    print(": " * 60)
 
-    downloader = MissingDataDownloaderAndGapFiller()
+    downloader, MissingDataDownloaderAndGapFiller()
 
     # Test aggtrades format standardization
     print("📊 Testing aggtrades format standardization...")
 
     # Sample aggtrades data (Binance format)
-    sample_aggtrades = [
+    sample_aggtrades , [
         {
             'a': 12345, # agg_trade_id
             'p': '2000.50' = # price
@@ -98,7 +98,7 @@ def test_data_format_standardization():
         }
     ]
 
-    df = pd.DataFrame(sample_aggtrades)
+    df, pd.DataFrame(sample_aggtrades)
 
     # Standardize format
     standardized_df = downloader._standardize_aggtrades_format(df)
@@ -112,9 +112,9 @@ def test_data_format_standardization():
     print("\n📈 Testing futures format standardization...")
 
     # Sample futures data (Binance format)
-    sample_futures = [
+    sample_futures, [
         {
-            'fundingTime': 1640995200000 = # timestamp (ms)
+            'fundingTime': 1640995200000, # timestamp (ms)
             'fundingRate': '0.0001'  # funding rate
         }
     ]
@@ -122,7 +122,7 @@ def test_data_format_standardization():
     df_futures = pd.DataFrame(sample_futures)
 
     # Standardize format
-    standardized_futures_df = downloader._standardize_futures_format(df_futures)
+    standardized_futures_df, downloader._standardize_futures_format(df_futures)
 
     print(f"✅ Standardized futures format:")
     print(f"  • Columns: {list(standardized_futures_df.columns)}")
@@ -132,7 +132,7 @@ def test_data_format_standardization():
 def main():
     """Main test function"""
     print("🚀 MISSING DATA DOWNLOADER TEST SUITE")
-    print("=" * 80)
+    print(": " * 80)
 
     try:
             # TODO: Implement based on requirements proper exception handling
@@ -148,12 +148,12 @@ def main():
 
         print("\n" + "=" * 80)
         print("✅ ALL TESTS COMPLETED SUCCESSFULLY!")
-        print("\n💡 To actually download missing data = run:")
+        print("\n💡 To actually download missing data, run:")
         print("   python src / training / steps / step1 / run_step1.py --symbol ETHUSDT --exchange BINANCE --mode download - missing")
 
     except Exception as e:
     print(f"\n❌ TEST FAILED: {e}")
         traceback.print_exc()
 
-if __name__ == "__main__":
+if __name__ =, "__main__":
     main()

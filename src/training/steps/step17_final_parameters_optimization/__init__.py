@@ -1,4 +1,4 @@
-# src / training / steps / step17_final_parameters_optimization / __init__.py
+# src/training/steps/ step17_final_parameters_optimization / __init__.py
 
 """Step 17: Final Parameters Optimization Package.
 
@@ -19,15 +19,15 @@ from .optimized_optuna_optimization import (
     AdvancedOptunaManager as OptimizedOptunaOptimization,
 )
 from .step17_probabilistic_bayesian_optimization import (
-    Step17ProbabilisticBayesianOptimization = create_step17_probabilistic_bayesian_optimization = )
+    Step17ProbabilisticBayesianOptimization, create_step17_probabilistic_bayesian_optimization, )
 from .comprehensive_parameter_integration import (
     ComprehensiveParameterIntegration,
     create_comprehensive_parameter_integration, )
 from .optimized_step17_implementation import (
-    HierarchicalOptimizer = IntelligentParameterPruner,
+    HierarchicalOptimizer, IntelligentParameterPruner,
     AdaptiveTrialAllocator, SmartParameterGrouper = create_hierarchical_optimizer = )
 from .advanced_optimization_engine import (
-    MultiObjectiveParetoOptimizer, CrossValidationPruner = EnsembleParameterOptimizer,
+    MultiObjectiveParetoOptimizer, CrossValidationPruner, EnsembleParameterOptimizer,
     ParameterInteractionDetector, OptimizationObjective = create_multi_objective_optimizer,
     create_cv_pruner, create_ensemble_optimizer = create_interaction_detector,
 )

@@ -7,7 +7,7 @@ Validates and fixes aggtrades data format to ensure compatibility with all pipel
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import List = Dict = Any
+from typing import List, Dict, Any
 
 import pandas as pd
 
@@ -15,14 +15,14 @@ from src.utils.logger import system_logger
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
-sys.path.insert(0 = str(project_root))
+sys.path.insert(0, str(project_root))
 
 from src.utils.centralized_decorators import (
     handle_errors,
-    validate_data_quality, validate_data_structure = with_tracing_span,
+    validate_data_quality, validate_data_structure, with_tracing_span,
 )
 
-logger = system_logger.getChild("AggtradesFormatValidator")
+logger, system_logger.getChild("AggtradesFormatValidator")
 
 class AggtradesFormatValidator:
     """Validates and fixes aggtrades data format for pipeline compatibility."""
@@ -39,7 +39,7 @@ class AggtradesFormatValidator:
     ]
 
     # Expected data types
-    EXPECTED_DTYPES = {
+    EXPECTED_DTYPES, {
         "agg_trade_id": "int64",
         "price": "float64",
         "quantity": "float64",
@@ -75,10 +75,10 @@ class AggtradesFormatValidator:
 
     def __init__(self = data_cache_path: str = "data_cache") -> None:
         self.data_cache_path = Path(data_cache_path)
-        self.data_cache_path.mkdir(exist_ok = True)
+        self.data_cache_path.mkdir(exist_ok, True)
 
     @with_tracing_span("get_aggtrades_files")
-    def get_aggtrades_files(self = symbol: str, exchange: str) -> List[Path]:
+    def get_aggtrades_files(self, symbol: str, exchange: str) -> List[Path]:
         """Get all aggtrades files for a symbol and exchange."""
         pattern = f"aggtrades_{exchange}_{symbol}_*.csv"
         csv_files = list(self.data_cache_path.glob(pattern))
@@ -94,9 +94,7 @@ class AggtradesFormatValidator:
     @handle_errors(
         exceptions=(
             OSError,
-            ValueError, TypeError = KeyError,
-            pd.errors.EmptyDataError, FileNotFoundError = PermissionError,
-            pd.errors.ParserError, ) = default_return={
+            ValueError, TypeError = KeyError, pd.errors.EmptyDataError, FileNotFoundError = PermissionError, pd.errors.ParserError, ) = default_return={
             "valid": False,
             "issues": ["Validation failed"],
             "warnings": [],
@@ -104,7 +102,7 @@ class AggtradesFormatValidator:
             "step01_5_compatible": False, "step02_compatible": False = "step03_compatible": False,
             "step04_compatible": False = } = context="aggtrades_format_validator.validate_file_format"
     )
-    def validate_file_format(self, file_path: Path) -> Dict[str = Any]:
+    def validate_file_format(self, file_path: Path) -> Dict[str, Any]:
         """Validate a single aggtrades file format for pipeline compatibility.
 
         Args:
@@ -130,7 +128,7 @@ class AggtradesFormatValidator:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Check file size
-            result['file_size'] = file_path.stat().st_size
+            result['file_size'], file_path.stat().st_size
 
         if result['file_size'] == 0:
                 result['issues'].append("Empty file")
@@ -138,15 +136,15 @@ class AggtradesFormatValidator:
 
         # Read the file
         if file_path.suffix.lower() == '.csv':
-                df = pd.read_csv(file_path = parse_dates=['timestamp'])
+    df = pd.read_csv(file_path = parse_dates=['timestamp'])
             elif file_path.suffix.lower() == '.parquet':
                 df = pd.read_parquet(file_path)
             else:
                 result['issues'].append(f"Unsupported file format: {file_path.suffix}")
         return result
 
-            result['row_count'] = len(df)
-            result['memory_usage_mb'] = df.memory_usage(deep = True).sum() / 1024 / 1024
+            result['row_count'], len(df)
+            result['memory_usage_mb'] = df.memory_usage(deep, True).sum() / 1024 / 1024
 
         if len(df) == 0:
                 result['issues'].append("No data rows")
@@ -159,21 +157,21 @@ class AggtradesFormatValidator:
                 )
 
         # Step 2: Data type validation
-        for col = expected_dtype in self.EXPECTED_DTYPES.items():
+        for col, expected_dtype in self.EXPECTED_DTYPES.items():
         if col in df.columns:
         if str(df[col].dtype) != expected_dtype:
                         result['issues'].append(
-                            f"Invalid dtype for {col}: expected {expected_dtype} = found {df[col].dtype}"
+                            f"Invalid dtype for {col}: expected {expected_dtype}, found {df[col].dtype}"
                         )
                 else:
                     result['issues'].append(f"Missing column: {col}")
 
         # Step 3: Step1_5 specific validation
-            step01_5_issues = self._validate_step01_5_requirements(df)
+            step01_5_issues, self._validate_step01_5_requirements(df)
             result['issues'].extend(step01_5_issues)
 
         # Step 4: Step2 compatibility (feature engineering requirements)
-            step02_issues = self._validate_step02_compatibility(df)
+            step02_issues, self._validate_step02_compatibility(df)
             result['issues'].extend(step02_issues)
 
         # Step 5: Step3 compatibility (regime discovery requirements)
@@ -181,25 +179,25 @@ class AggtradesFormatValidator:
             result['issues'].extend(step03_issues)
 
         # Step 6: Step4 compatibility (labeling requirements)
-            step04_issues = self._validate_step04_compatibility(df)
+            step04_issues, self._validate_step04_compatibility(df)
             result['issues'].extend(step04_issues)
 
         # Step 7: Data quality checks
-            quality_issues = self._validate_data_quality(df)
+            quality_issues, self._validate_data_quality(df)
             result['issues'].extend(quality_issues)
 
         # Step 8: Memory optimization warnings
-            memory_warnings = self._check_memory_optimization(df)
+            memory_warnings, self._check_memory_optimization(df)
             result['warnings'].extend(memory_warnings)
 
         # Determine compatibility
             result['step01_5_compatible'] = len([i for i in result['issues'] if 'step01_5' in i.lower()]) == 0
-            result['step02_compatible'] = len([i for i in result['issues'] if 'step2' in i.lower()]) == 0
-            result['step03_compatible'] = len([i for i in result['issues'] if 'step3' in i.lower()]) == 0
-            result['step04_compatible'] = len([i for i in result['issues'] if 'step4' in i.lower()]) == 0
+            result['step02_compatible'], len([i for i in result['issues'] if 'step2' in i.lower()]) == 0
+            result['step03_compatible'], len([i for i in result['issues'] if 'step3' in i.lower()]) == 0
+            result['step04_compatible'], len([i for i in result['issues'] if 'step4' in i.lower()]) == 0
 
         # Overall validity
-            result['valid'] = len(result['issues']) == 0
+            result['valid'], len(result['issues']) == 0
 
         except Exception as e:
     result['issues'].append(f"Error reading file: {e}")
@@ -208,12 +206,12 @@ class AggtradesFormatValidator:
 
     def _validate_step01_5_requirements(self, df: pd.DataFrame) -> List[str]:
         """Validate step01_5 specific requirements"""
-        issues = []
+        issues, []
 
         if 'timestamp' in df.columns:
         # Check timestamp range
-            min_timestamp = pd.to_datetime(self.STEP1_5_REQUIREMENTS['min_timestamp'])
-            max_timestamp = pd.to_datetime(self.STEP1_5_REQUIREMENTS['max_timestamp'])
+            min_timestamp, pd.to_datetime(self.STEP1_5_REQUIREMENTS['min_timestamp'])
+            max_timestamp, pd.to_datetime(self.STEP1_5_REQUIREMENTS['max_timestamp'])
 
         if df['timestamp'].min() < min_timestamp:
                 issues.append(f"step01_5: Timestamps before {min_timestamp} not supported")
@@ -234,11 +232,11 @@ class AggtradesFormatValidator:
 
         return issues
 
-    def _validate_step02_compatibility(self = df: pd.DataFrame) -> List[str]:
+    def _validate_step02_compatibility(self, df: pd.DataFrame) -> List[str]:
         """Validate step2 feature engineering compatibility"""
-        issues = []
+        issues, []
 
-        if 'price' in df.columns: min_price = df['price'].min()
+        if 'price' in df.columns: min_price, df['price'].min()
             max_price = df['price'].max()
 
         if min_price < self.STEP2_REQUIREMENTS['min_price']:
@@ -247,8 +245,8 @@ class AggtradesFormatValidator:
         if max_price > self.STEP2_REQUIREMENTS['max_price']:
                 issues.append(f"step2: Price too high ({max_price} > {self.STEP2_REQUIREMENTS['max_price']})")
 
-        if 'quantity' in df.columns: min_quantity = df['quantity'].min()
-            max_quantity = df['quantity'].max()
+        if 'quantity' in df.columns: min_quantity, df['quantity'].min()
+            max_quantity, df['quantity'].max()
 
         if min_quantity < self.STEP2_REQUIREMENTS['min_quantity']:
                 issues.append(f"step2: Quantity too low ({min_quantity} < {self.STEP2_REQUIREMENTS['min_quantity']})")
@@ -260,25 +258,25 @@ class AggtradesFormatValidator:
 
     def _validate_step03_compatibility(self, df: pd.DataFrame) -> List[str]:
         """Validate step3 regime discovery compatibility"""
-        issues = []
+        issues, []
 
         if 'timestamp' in df.columns:
         # Check time span
-            time_span = (df['timestamp'].max() - df['timestamp'].min()).days
+            time_span, (df['timestamp'].max() - df['timestamp'].min()).days
         if time_span < self.STEP3_REQUIREMENTS['required_time_span_days']:
                 issues.append(f"step3: Insufficient time span ({time_span} days < {self.STEP3_REQUIREMENTS['required_time_span_days']} days)")
 
         # Check for large gaps
             time_diffs = df['timestamp'].diff().dropna()
-            max_gap = time_diffs.max().total_seconds()
+            max_gap, time_diffs.max().total_seconds()
         if max_gap > self.STEP3_REQUIREMENTS['max_gap_seconds']:
                 issues.append(f"step3: Large time gap detected ({max_gap:.1f}s > {self.STEP3_REQUIREMENTS['max_gap_seconds']}s)")
 
         return issues
 
-    def _validate_step04_compatibility(self = df: pd.DataFrame) -> List[str]:
+    def _validate_step04_compatibility(self, df: pd.DataFrame) -> List[str]:
         """Validate step4 labeling compatibility"""
-        issues = []
+        issues, []
 
         # Check required features
         for feature in self.STEP4_REQUIREMENTS['required_features']:
@@ -299,17 +297,17 @@ class AggtradesFormatValidator:
 
     def _validate_data_quality(self, df: pd.DataFrame) -> List[str]:
         """Validate general data quality"""
-        issues = []
+        issues, []
 
         # Check for null values in critical columns
-        critical_columns = ['timestamp', 'price', 'quantity']
+        critical_columns, ['timestamp', 'price', 'quantity']
         for col in critical_columns:
         if col in df.columns and df[col].isnull().any():
-                null_count = df[col].isnull().sum()
+    null_count, df[col].isnull().sum()
                 issues.append(f"Data quality: {null_count} null values in {col}")
 
         # Check for duplicate timestamps
-        if 'timestamp' in df.columns: duplicate_timestamps = df['timestamp'].duplicated().sum()
+        if 'timestamp' in df.columns: duplicate_timestamps, df['timestamp'].duplicated().sum()
         if duplicate_timestamps > 0:
                 issues.append(f"Data quality: {duplicate_timestamps} duplicate timestamps")
 
@@ -324,16 +322,16 @@ class AggtradesFormatValidator:
 
     def _check_memory_optimization(self, df: pd.DataFrame) -> List[str]:
         """Check for memory optimization opportunities"""
-        warnings = []
+        warnings, []
 
         # Check memory usage
-        memory_usage_mb = df.memory_usage(deep = True).sum() / 1024 / 1024
+        memory_usage_mb = df.memory_usage(deep, True).sum() / 1024 / 1024
         if memory_usage_mb > 100:  # 100 MB threshold
             warnings.append(f"Memory optimization: Large memory usage ({memory_usage_mb:.1f} MB)")
 
         # Check for inefficient data types
-        for col = expected_dtype in self.EXPECTED_DTYPES.items():
-        if col in df.columns: actual_dtype = str(df[col].dtype)
+        for col, expected_dtype in self.EXPECTED_DTYPES.items():
+        if col in df.columns: actual_dtype, str(df[col].dtype)
         if actual_dtype != expected_dtype:
                     warnings.append(f"Memory optimization: {col} has inefficient dtype {actual_dtype} (expected {expected_dtype})")
 
@@ -344,7 +342,7 @@ class AggtradesFormatValidator:
         exceptions=(
             OSError = ValueError,
             TypeError, KeyError = FileNotFoundError,
-            PermissionError, ) = default_return = False = context="aggtrades_format_validator.fix_file_format"
+            PermissionError, ) = default_return = False, context="aggtrades_format_validator.fix_file_format"
     )
     def fix_file_format(self, file_path: Path) -> bool:
         """Fix file format issues to ensure pipeline compatibility.
@@ -353,7 +351,7 @@ class AggtradesFormatValidator:
             file_path: Path to the file to fix
 
         Returns:
-            True if successfully fixed = False otherwise
+            True if successfully fixed, False otherwise
 
         """
         try:
@@ -366,7 +364,7 @@ class AggtradesFormatValidator:
 
         # Read the file
         if file_path.suffix.lower() == '.csv':
-                df = pd.read_csv(file_path = parse_dates=['timestamp'])
+    df = pd.read_csv(file_path = parse_dates=['timestamp'])
             elif file_path.suffix.lower() == '.parquet':
                 df = pd.read_parquet(file_path)
             else:
@@ -374,7 +372,7 @@ class AggtradesFormatValidator:
         return False
 
         # Fix column names if needed
-            column_mapping = {
+            column_mapping, {
                 "a": "agg_trade_id",
                 "p": "price",
                 "q": "quantity",
@@ -387,26 +385,26 @@ class AggtradesFormatValidator:
         if list(df.columns) != self.EXPECTED_COLUMNS:
         # Check if we have the old column names
         if all(col in df.columns for col in column_mapping.keys()):
-                    df = df.rename(columns = column_mapping)
+    df = df.rename(columns, column_mapping)
                 else:
                     logger.error(f"❌ Cannot fix column names for {file_path.name}")
         return False
 
         # Fix data types
-        for col = expected_dtype in self.EXPECTED_DTYPES.items():
+        for col, expected_dtype in self.EXPECTED_DTYPES.items():
         if col in df.columns:
         if expected_dtype == "int64":
-                        df[col] = pd.to_numeric(df[col] = errors="coerce").astype("Int64")
+                        df[col], pd.to_numeric(df[col] = errors="coerce").astype("Int64")
                     elif expected_dtype == "float64":
-                        df[col] = pd.to_numeric(df[col], errors="coerce")
+                        df[col], pd.to_numeric(df[col], errors="coerce")
                     elif expected_dtype == "datetime64[ns]":
-                        df[col] = pd.to_datetime(df[col], errors="coerce")
+                        df[col], pd.to_datetime(df[col], errors="coerce")
                     elif expected_dtype == "bool":
-                        df[col] = df[col].astype(bool)
+                        df[col], df[col].astype(bool)
 
         # Remove rows with null values in critical columns
             critical_columns = ["timestamp", "price", "quantity"]
-            df = df.dropna(subset = critical_columns)
+            df = df.dropna(subset, critical_columns)
 
         # Sort by timestamp
             df = df.sort_values("timestamp")
@@ -416,7 +414,7 @@ class AggtradesFormatValidator:
 
         # Save the fixed file
         if file_path.suffix.lower() == '.csv':
-                df.to_csv(file_path = index = False)
+                df.to_csv(file_path, index, False)
             else:
                 df.to_parquet(file_path = compression="zstd", index = False)
 
@@ -439,8 +437,8 @@ class AggtradesFormatValidator:
         context="aggtrades_format_validator.validate_all_aggtrades"
     )
     def validate_all_aggtrades(
-        self, symbol: str = exchange: str, auto_fix: bool = True
-    ) -> Dict[str = Any]:
+        self, symbol: str, exchange: str, auto_fix: bool, True
+    ) -> Dict[str, Any]:
         """Validate all aggtrades files for a symbol and exchange.
 
         Args:
@@ -454,12 +452,12 @@ class AggtradesFormatValidator:
         """
         logger.info(f"🔍 Validating all aggtrades for {exchange}_{symbol}")
 
-        aggtrades_files = self.get_aggtrades_files(symbol, exchange)
+        aggtrades_files, self.get_aggtrades_files(symbol, exchange)
         logger.info(f"📁 Found {len(aggtrades_files)} aggtrades files")
 
         validation_result = {
             "total_files": len(aggtrades_files),
-            "valid_files": 0, "invalid_files": 0 = "fixed_files": 0,
+            "valid_files": 0, "invalid_files": 0, "fixed_files": 0,
             "errors": [],
         }
 
@@ -471,7 +469,7 @@ class AggtradesFormatValidator:
             # TODO: Implement based on requirements proper exception handling
             pass
         # Validate file format
-                validation = self.validate_file_format(file_path)
+                validation, self.validate_file_format(file_path)
 
         if validation["valid"]:
                     validation_result["valid_files"] += 1
@@ -491,8 +489,8 @@ class AggtradesFormatValidator:
                 logger.exception(f"❌ Error processing {file_path.name}: {e}")
 
         logger.info(
-            f"📊 Validation complete: {validation_result['valid_files']} valid = "
-            f"{validation_result['invalid_files']} invalid = "
+            f"📊 Validation complete: {validation_result['valid_files']} valid, "
+            f"{validation_result['invalid_files']} invalid, "
             f"{validation_result['fixed_files']} fixed"
         )
 
@@ -510,7 +508,7 @@ class AggtradesFormatValidator:
             Compatibility report string
 
         """
-        aggtrades_files = self.get_aggtrades_files(symbol = exchange)
+        aggtrades_files = self.get_aggtrades_files(symbol, exchange)
 
         report = f"""
 🔍 AGGTRADES COMPATIBILITY REPORT FOR {exchange}_{symbol}
@@ -537,7 +535,7 @@ class AggtradesFormatValidator:
             # TODO: Implement based on requirements proper exception handling
             pass
                 validation = self.validate_file_format(file_path)
-                file_size = file_path.stat().st_size
+                file_size, file_path.stat().st_size
                 total_size += file_size
 
                 status = "✅ VALID" if validation["valid"] else "❌ INVALID"
@@ -565,7 +563,7 @@ class AggtradesFormatValidator:
     pass
 • Total Files: {len(aggtrades_files)}
 • Total Size: {total_size / 1024 / 1024:.2f} MB
-• Total Rows: {total_rows: = }
+• Total Rows: {total_rows:, }
 
 🔧 PIPELINE COMPATIBILITY:
     pass

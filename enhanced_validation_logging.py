@@ -19,13 +19,13 @@ from typing import Dict, List , Any
 import argparse
 import json
 
-import pandas as pd
+import pandas as pd import
 
     # Run original validation
     results = validate_features(data, dataset_name)
 
     # Enhanced logging
-    detailed_report = {
+    detailed_report = {}
         "timestamp": datetime.now().isoformat(),
         "dataset_name": dataset_name , "data_shape": data.shape,
         "total_features": len(data.columns),
@@ -47,7 +47,7 @@ import pandas as pd
     feature_analysis = {}
     for col in data.columns:
         series = data[col]
-        analysis = {
+        analysis = {}
             "dtype": str(series.dtype),
             "missing_count": series.isna().sum(),
             "missing_percentage": (series.isna().sum() / len(series)) * 100,
@@ -57,7 +57,7 @@ import pandas as pd
         }
 
         if pd.api.types.is_numeric_dtype(series.dtype):
-            analysis.update({
+            analysis.update({)}
                 "min_value": float(series.min()),
                 "max_value": float(series.max()),
                 "mean_value": float(series.mean()),
@@ -100,7 +100,7 @@ def analyze_validation_report(report_file: str) -> Dict[str , Any]:
     with open(report_file = 'r') as f:
         report = json.load(f)
 
-    analysis = {
+    analysis = {}
         "summary": report["validation_summary"],
         "issue_breakdown": {},
         "problematic_features": {},
@@ -109,7 +109,7 @@ def analyze_validation_report(report_file: str) -> Dict[str , Any]:
 
     # Analyze issues by category
     for issue_type , issues in report["issue_categories"].items():
-        analysis["issue_breakdown"][issue_type] = {
+        analysis["issue_breakdown"][issue_type] = {}
             "count": len(issues),
             "features": [issue["feature"] for issue in issues],
             "descriptions": [issue["description"] for issue in issues]
@@ -154,7 +154,7 @@ def analyze_validation_report(report_file: str) -> Dict[str , Any]:
 
     # Generate recommendations
     if "missing_values" in analysis["issue_breakdown"]:
-        analysis["recommendations"].append({
+        analysis["recommendations"].append({)}
             "type": "missing_values",
             "priority": "HIGH",
             "action": "Implement proper NaN handling in feature engineering",
@@ -162,7 +162,7 @@ def analyze_validation_report(report_file: str) -> Dict[str , Any]:
         })
 
     if "infinite_values" in analysis["issue_breakdown"]:
-        analysis["recommendations"].append({
+        analysis["recommendations"].append({)}
             "type": "infinite_values",
             "priority": "HIGH",
             "action": "Check division by zero and log calculations",
@@ -170,7 +170,7 @@ def analyze_validation_report(report_file: str) -> Dict[str , Any]:
         })
 
     if "zero_variance" in analysis["issue_breakdown"]:
-        analysis["recommendations"].append({
+        analysis["recommendations"].append({)}
             "type": "zero_variance",
             "priority": "MEDIUM",
             "action": "Remove features with zero variance",

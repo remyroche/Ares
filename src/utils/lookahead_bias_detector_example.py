@@ -126,10 +126,10 @@ def demonstrate_enhanced_detector():
     print()
 
     # Run enhanced detection with implementation analysis
-    results, detector.detect_feature_lookahead_bias(
-        features_df, features_df, target_series = target_series,
+    results = detector.detect_feature_lookahead_bias(
+        features_df, target_series=target_series,
         timestamp_col="timestamp",
-        feature_engineering_code, feature_code
+        feature_engineering_code=feature_code
     )
 
     # Display results

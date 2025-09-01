@@ -33,7 +33,7 @@ from src.integration.paper_trading_integration import (
     setup_paper_trading_integration,
 )
 if TYPE_CHECKING:
-from src.utils.advanced_decorators import performance_monitor, PerformanceLevel
+    from src.utils.advanced_decorators import performance_monitor, PerformanceLevel
 
 class EnhancedTradingLauncher:
     """

@@ -88,8 +88,8 @@ class RegimeAwareConfidenceCalibrationStep:
             Dict containing regime-specific calibration results
         """
         try:
-        self.logger.info("🔄 Executing Regime-Aware Confidence Calibration...")
-        self.logger.info(f"📊 Regime configuration: {self.regime_config}")
+            self.logger.info("🔄 Executing Regime-Aware Confidence Calibration...")
+            self.logger.info(f"📊 Regime configuration: {self.regime_config}")
 
             # Extract parameters
             symbol = training_input.get("symbol", "ETHUSDT")
@@ -271,9 +271,9 @@ class RegimeAwareConfidenceCalibrationStep:
             # Perform calibration
             calibration_results: dict[str, Any] = {}
 
-        # 1. Calibrate individual analyst models (including SR regime separately)
-        self.logger.info("Step11: Calibrating analyst models...")
-            analyst_calibration, await self._calibrate_regime_aware_analyst_models(
+            # 1. Calibrate individual analyst models (including SR regime separately)
+            self.logger.info("Step11: Calibrating analyst models...")
+            analyst_calibration = await self._calibrate_regime_aware_analyst_models(
                 analyst_models,
                 analyst_ensembles,
                 generic_val,
@@ -285,9 +285,9 @@ class RegimeAwareConfidenceCalibrationStep:
             with contextlib.suppress(Exception):
                 pass
 
-        # 2. Calibrate individual tactician models
-        self.logger.info("Step11: Calibrating tactician models...")
-            tactician_calibration, await self._calibrate_regime_aware_tactician_models(
+            # 2. Calibrate individual tactician models
+            self.logger.info("Step11: Calibrating tactician models...")
+            tactician_calibration = await self._calibrate_regime_aware_tactician_models(
                 tactician_models,
                 tactician_ensembles,
                 generic_val,

@@ -1,0 +1,883 @@
+{
+  "summary": {
+    "files_analyzed": 1,
+    "total_placeholders": 58,
+    "pass_statements": 9,
+    "todo_comments": 22,
+    "raise_notimplemented": 1,
+    "placeholder_functions": 0,
+    "empty_classes": 0,
+    "stub_functions": 0,
+    "unimplemented_methods": 6,
+    "placeholder_variables": 7,
+    "incomplete_implementations": 13
+  },
+  "results": {
+    "test_placeholder_finder.py": {
+      "pass_statements": [
+        {
+          "type": "pass_statement",
+          "line": 29,
+          "content": "    pass",
+          "has_todo": false,
+          "in_try_except": false,
+          "context": [
+            "",
+            "def placeholder_function():",
+            "    \"\"\"This function is just a placeholder.\"\"\"",
+            "    pass",
+            "",
+            "def another_placeholder():",
+            "    \"\"\"Another placeholder function.\"\"\""
+          ]
+        },
+        {
+          "type": "pass_statement",
+          "line": 34,
+          "content": "    pass",
+          "has_todo": true,
+          "in_try_except": false,
+          "context": [
+            "def another_placeholder():",
+            "    \"\"\"Another placeholder function.\"\"\"",
+            "    # TODO: Implement this function",
+            "    pass",
+            "",
+            "def stub_function():",
+            "    \"\"\"This is a stub function.\"\"\""
+          ]
+        },
+        {
+          "type": "pass_statement",
+          "line": 52,
+          "content": "    pass",
+          "has_todo": true,
+          "in_try_except": false,
+          "context": [
+            "def temp_function():",
+            "    \"\"\"Temporary function.\"\"\"",
+            "    # FIXME: Replace with proper implementation",
+            "    pass",
+            "",
+            "class EmptyClass:",
+            "    \"\"\"This class is empty.\"\"\""
+          ]
+        },
+        {
+          "type": "pass_statement",
+          "line": 56,
+          "content": "    pass",
+          "has_todo": false,
+          "in_try_except": false,
+          "context": [
+            "",
+            "class EmptyClass:",
+            "    \"\"\"This class is empty.\"\"\"",
+            "    pass",
+            "",
+            "class PlaceholderClass:",
+            "    \"\"\"This class has placeholder methods.\"\"\""
+          ]
+        },
+        {
+          "type": "pass_statement",
+          "line": 62,
+          "content": "        pass",
+          "has_todo": false,
+          "in_try_except": false,
+          "context": [
+            "    \"\"\"This class has placeholder methods.\"\"\"",
+            "    ",
+            "    def __init__(self):",
+            "        pass",
+            "    ",
+            "    def method_to_implement(self):",
+            "        \"\"\"This method needs to be implemented.\"\"\""
+          ]
+        },
+        {
+          "type": "pass_statement",
+          "line": 67,
+          "content": "        pass",
+          "has_todo": true,
+          "in_try_except": false,
+          "context": [
+            "    def method_to_implement(self):",
+            "        \"\"\"This method needs to be implemented.\"\"\"",
+            "        # TODO: Add implementation",
+            "        pass",
+            "",
+            "def function_with_placeholder_variables():",
+            "    \"\"\"Function with placeholder variables.\"\"\""
+          ]
+        },
+        {
+          "type": "pass_statement",
+          "line": 107,
+          "content": "        pass",
+          "has_todo": false,
+          "in_try_except": true,
+          "context": [
+            "    \"\"\"Function with pass in try/except block.\"\"\"",
+            "    try:",
+            "        # This pass is legitimate",
+            "        pass",
+            "    except Exception:",
+            "        # This pass is also legitimate",
+            "        pass"
+          ]
+        },
+        {
+          "type": "pass_statement",
+          "line": 110,
+          "content": "        pass",
+          "has_todo": false,
+          "in_try_except": true,
+          "context": [
+            "        pass",
+            "    except Exception:",
+            "        # This pass is also legitimate",
+            "        pass",
+            "",
+            "def isolated_pass_function():",
+            "    \"\"\"Function with isolated pass statement.\"\"\""
+          ]
+        },
+        {
+          "type": "pass_statement",
+          "line": 115,
+          "content": "    pass",
+          "has_todo": false,
+          "in_try_except": false,
+          "context": [
+            "def isolated_pass_function():",
+            "    \"\"\"Function with isolated pass statement.\"\"\"",
+            "    # This pass should be flagged as it's isolated",
+            "    pass",
+            "    ",
+            "    # Some actual code",
+            "    x = 1"
+          ]
+        }
+      ],
+      "todo_comments": [
+        {
+          "type": "todo_comment",
+          "line": 8,
+          "content": "# FIXME: This needs to be fixed",
+          "category": "FIXME",
+          "description": "This needs to be fixed",
+          "context": [
+            "",
+            "# TODO: This is a simple TODO comment",
+            "# FIXME: This needs to be fixed",
+            "# HACK: This is a temporary hack",
+            "# XXX: This is marked for review"
+          ]
+        },
+        {
+          "type": "todo_comment",
+          "line": 9,
+          "content": "# HACK: This is a temporary hack",
+          "category": "HACK",
+          "description": "This is a temporary hack",
+          "context": [
+            "# TODO: This is a simple TODO comment",
+            "# FIXME: This needs to be fixed",
+            "# HACK: This is a temporary hack",
+            "# XXX: This is marked for review",
+            "# BUG: This is a known bug"
+          ]
+        },
+        {
+          "type": "todo_comment",
+          "line": 10,
+          "content": "# XXX: This is marked for review",
+          "category": "XXX",
+          "description": "This is marked for review",
+          "context": [
+            "# FIXME: This needs to be fixed",
+            "# HACK: This is a temporary hack",
+            "# XXX: This is marked for review",
+            "# BUG: This is a known bug",
+            "# NOTE: This is a note about implementation"
+          ]
+        },
+        {
+          "type": "todo_comment",
+          "line": 11,
+          "content": "# BUG: This is a known bug",
+          "category": "BUG",
+          "description": "This is a known bug",
+          "context": [
+            "# HACK: This is a temporary hack",
+            "# XXX: This is marked for review",
+            "# BUG: This is a known bug",
+            "# NOTE: This is a note about implementation",
+            "# OPTIMIZE: This could be optimized"
+          ]
+        },
+        {
+          "type": "todo_comment",
+          "line": 12,
+          "content": "# NOTE: This is a note about implementation",
+          "category": "NOTE",
+          "description": "This is a note about implementation",
+          "context": [
+            "# XXX: This is marked for review",
+            "# BUG: This is a known bug",
+            "# NOTE: This is a note about implementation",
+            "# OPTIMIZE: This could be optimized",
+            "# REFACTOR: This needs refactoring"
+          ]
+        },
+        {
+          "type": "todo_comment",
+          "line": 13,
+          "content": "# OPTIMIZE: This could be optimized",
+          "category": "OPTIMIZE",
+          "description": "This could be optimized",
+          "context": [
+            "# BUG: This is a known bug",
+            "# NOTE: This is a note about implementation",
+            "# OPTIMIZE: This could be optimized",
+            "# REFACTOR: This needs refactoring",
+            "# CLEANUP: This needs cleanup"
+          ]
+        },
+        {
+          "type": "todo_comment",
+          "line": 14,
+          "content": "# REFACTOR: This needs refactoring",
+          "category": "REFACTOR",
+          "description": "This needs refactoring",
+          "context": [
+            "# NOTE: This is a note about implementation",
+            "# OPTIMIZE: This could be optimized",
+            "# REFACTOR: This needs refactoring",
+            "# CLEANUP: This needs cleanup",
+            "# REVIEW: This needs review"
+          ]
+        },
+        {
+          "type": "todo_comment",
+          "line": 15,
+          "content": "# CLEANUP: This needs cleanup",
+          "category": "CLEANUP",
+          "description": "This needs cleanup",
+          "context": [
+            "# OPTIMIZE: This could be optimized",
+            "# REFACTOR: This needs refactoring",
+            "# CLEANUP: This needs cleanup",
+            "# REVIEW: This needs review",
+            ""
+          ]
+        },
+        {
+          "type": "todo_comment",
+          "line": 16,
+          "content": "# REVIEW: This needs review",
+          "category": "REVIEW",
+          "description": "This needs review",
+          "context": [
+            "# REFACTOR: This needs refactoring",
+            "# CLEANUP: This needs cleanup",
+            "# REVIEW: This needs review",
+            "",
+            "# Placeholder comment"
+          ]
+        },
+        {
+          "type": "placeholder_comment",
+          "line": 18,
+          "content": "# Placeholder comment",
+          "category": "PLACEHOLDER",
+          "description": "Placeholder comment",
+          "context": [
+            "# REVIEW: This needs review",
+            "",
+            "# Placeholder comment",
+            "# implement later",
+            "# to be implemented"
+          ]
+        },
+        {
+          "type": "placeholder_comment",
+          "line": 19,
+          "content": "# implement later",
+          "category": "PLACEHOLDER",
+          "description": "Placeholder comment",
+          "context": [
+            "",
+            "# Placeholder comment",
+            "# implement later",
+            "# to be implemented",
+            "# not implemented"
+          ]
+        },
+        {
+          "type": "placeholder_comment",
+          "line": 20,
+          "content": "# to be implemented",
+          "category": "PLACEHOLDER",
+          "description": "Placeholder comment",
+          "context": [
+            "# Placeholder comment",
+            "# implement later",
+            "# to be implemented",
+            "# not implemented",
+            "# stub"
+          ]
+        },
+        {
+          "type": "placeholder_comment",
+          "line": 21,
+          "content": "# not implemented",
+          "category": "PLACEHOLDER",
+          "description": "Placeholder comment",
+          "context": [
+            "# implement later",
+            "# to be implemented",
+            "# not implemented",
+            "# stub",
+            "# empty for now"
+          ]
+        },
+        {
+          "type": "placeholder_comment",
+          "line": 22,
+          "content": "# stub",
+          "category": "PLACEHOLDER",
+          "description": "Placeholder comment",
+          "context": [
+            "# to be implemented",
+            "# not implemented",
+            "# stub",
+            "# empty for now",
+            "# work in progress"
+          ]
+        },
+        {
+          "type": "placeholder_comment",
+          "line": 23,
+          "content": "# empty for now",
+          "category": "PLACEHOLDER",
+          "description": "Placeholder comment",
+          "context": [
+            "# not implemented",
+            "# stub",
+            "# empty for now",
+            "# work in progress",
+            "# wip"
+          ]
+        },
+        {
+          "type": "placeholder_comment",
+          "line": 24,
+          "content": "# work in progress",
+          "category": "PLACEHOLDER",
+          "description": "Placeholder comment",
+          "context": [
+            "# stub",
+            "# empty for now",
+            "# work in progress",
+            "# wip",
+            ""
+          ]
+        },
+        {
+          "type": "placeholder_comment",
+          "line": 25,
+          "content": "# wip",
+          "category": "PLACEHOLDER",
+          "description": "Placeholder comment",
+          "context": [
+            "# empty for now",
+            "# work in progress",
+            "# wip",
+            "",
+            "def placeholder_function():"
+          ]
+        },
+        {
+          "type": "todo_comment",
+          "line": 33,
+          "content": "# TODO: Implement this function",
+          "category": "TODO",
+          "description": "Implement this function",
+          "context": [
+            "def another_placeholder():",
+            "    \"\"\"Another placeholder function.\"\"\"",
+            "    # TODO: Implement this function",
+            "    pass",
+            ""
+          ]
+        },
+        {
+          "type": "todo_comment",
+          "line": 51,
+          "content": "# FIXME: Replace with proper implementation",
+          "category": "FIXME",
+          "description": "Replace with proper implementation",
+          "context": [
+            "def temp_function():",
+            "    \"\"\"Temporary function.\"\"\"",
+            "    # FIXME: Replace with proper implementation",
+            "    pass",
+            ""
+          ]
+        },
+        {
+          "type": "todo_comment",
+          "line": 66,
+          "content": "# TODO: Add implementation",
+          "category": "TODO",
+          "description": "Add implementation",
+          "context": [
+            "    def method_to_implement(self):",
+            "        \"\"\"This method needs to be implemented.\"\"\"",
+            "        # TODO: Add implementation",
+            "        pass",
+            ""
+          ]
+        },
+        {
+          "type": "todo_comment",
+          "line": 101,
+          "content": "# TODO: Remove this example comment",
+          "category": "TODO",
+          "description": "Remove this example comment",
+          "context": [
+            "",
+            "# This is an example TODO comment that should be flagged",
+            "# TODO: Remove this example comment",
+            "",
+            "def function_in_try_except():"
+          ]
+        },
+        {
+          "type": "todo_comment",
+          "line": 131,
+          "content": "# TODO: Add proper main functionality",
+          "category": "TODO",
+          "description": "Add proper main functionality",
+          "context": [
+            "if __name__ == \"__main__\":",
+            "    # This is a main block with TODO",
+            "    # TODO: Add proper main functionality",
+            "    print(\"This is a test file for the Enhanced Placeholder Finder\")"
+          ]
+        }
+      ],
+      "raise_notimplemented": [
+        {
+          "type": "not_implemented",
+          "line": 42,
+          "content": "raise NotImplementedError(\"Not implemented yet\")",
+          "context": [
+            "",
+            "def unimplemented_method():",
+            "    \"\"\"This method is not implemented.\"\"\"",
+            "    raise NotImplementedError(\"Not implemented yet\")",
+            "",
+            "def incomplete_implementation():",
+            "    \"\"\"This function has an incomplete implementation.\"\"\""
+          ]
+        }
+      ],
+      "placeholder_functions": [],
+      "empty_classes": [],
+      "stub_functions": [],
+      "unimplemented_methods": [
+        {
+          "type": "unimplemented_method",
+          "line": 27,
+          "content": "def placeholder_function():",
+          "method_name": "placeholder_function",
+          "context": [
+            "# work in progress",
+            "# wip",
+            "",
+            "def placeholder_function():",
+            "    \"\"\"This function is just a placeholder.\"\"\"",
+            "    pass",
+            ""
+          ]
+        },
+        {
+          "type": "unimplemented_method",
+          "line": 31,
+          "content": "def another_placeholder():",
+          "method_name": "another_placeholder",
+          "context": [
+            "    \"\"\"This function is just a placeholder.\"\"\"",
+            "    pass",
+            "",
+            "def another_placeholder():",
+            "    \"\"\"Another placeholder function.\"\"\"",
+            "    # TODO: Implement this function",
+            "    pass"
+          ]
+        },
+        {
+          "type": "unimplemented_method",
+          "line": 36,
+          "content": "def stub_function():",
+          "method_name": "stub_function",
+          "context": [
+            "    # TODO: Implement this function",
+            "    pass",
+            "",
+            "def stub_function():",
+            "    \"\"\"This is a stub function.\"\"\"",
+            "    ...",
+            ""
+          ]
+        },
+        {
+          "type": "unimplemented_method",
+          "line": 40,
+          "content": "def unimplemented_method():",
+          "method_name": "unimplemented_method",
+          "context": [
+            "    \"\"\"This is a stub function.\"\"\"",
+            "    ...",
+            "",
+            "def unimplemented_method():",
+            "    \"\"\"This method is not implemented.\"\"\"",
+            "    raise NotImplementedError(\"Not implemented yet\")",
+            ""
+          ]
+        },
+        {
+          "type": "unimplemented_method",
+          "line": 69,
+          "content": "def function_with_placeholder_variables():",
+          "method_name": "function_with_placeholder_variables",
+          "context": [
+            "        # TODO: Add implementation",
+            "        pass",
+            "",
+            "def function_with_placeholder_variables():",
+            "    \"\"\"Function with placeholder variables.\"\"\"",
+            "    temp_var = \"placeholder\"",
+            "    dummy_value = \"to be implemented\""
+          ]
+        },
+        {
+          "type": "unimplemented_method",
+          "line": 87,
+          "content": "def function_with_logging_placeholders():",
+          "method_name": "function_with_logging_placeholders",
+          "context": [
+            "    # This would never execute",
+            "    return False",
+            "",
+            "def function_with_logging_placeholders():",
+            "    \"\"\"Function with logging placeholders.\"\"\"",
+            "    import logging",
+            "    "
+          ]
+        }
+      ],
+      "placeholder_variables": [
+        {
+          "type": "placeholder_variable",
+          "line": 71,
+          "content": "temp_var = \"placeholder\"",
+          "variable_name": "temp_var",
+          "value": "\"placeholder\"",
+          "context": [
+            "def function_with_placeholder_variables():",
+            "    \"\"\"Function with placeholder variables.\"\"\"",
+            "    temp_var = \"placeholder\"",
+            "    dummy_value = \"to be implemented\"",
+            "    stub_data = \"implement later\""
+          ]
+        },
+        {
+          "type": "placeholder_variable",
+          "line": 72,
+          "content": "dummy_value = \"to be implemented\"",
+          "variable_name": "dummy_value",
+          "value": "\"to be implemented\"",
+          "context": [
+            "    \"\"\"Function with placeholder variables.\"\"\"",
+            "    temp_var = \"placeholder\"",
+            "    dummy_value = \"to be implemented\"",
+            "    stub_data = \"implement later\"",
+            "    "
+          ]
+        },
+        {
+          "type": "placeholder_variable",
+          "line": 73,
+          "content": "stub_data = \"implement later\"",
+          "variable_name": "stub_data",
+          "value": "\"implement later\"",
+          "context": [
+            "    temp_var = \"placeholder\"",
+            "    dummy_value = \"to be implemented\"",
+            "    stub_data = \"implement later\"",
+            "    ",
+            "    # This function has some actual logic"
+          ]
+        },
+        {
+          "type": "placeholder_variable",
+          "line": 76,
+          "content": "result = temp_var + dummy_value",
+          "variable_name": "result",
+          "value": "temp_var + dummy_value",
+          "context": [
+            "    ",
+            "    # This function has some actual logic",
+            "    result = temp_var + dummy_value",
+            "    return result",
+            ""
+          ]
+        },
+        {
+          "type": "placeholder_variable",
+          "line": 122,
+          "content": "placeholder_config = \"placeholder\"",
+          "variable_name": "placeholder_config",
+          "value": "\"placeholder\"",
+          "context": [
+            "",
+            "# Variables with placeholder values",
+            "placeholder_config = \"placeholder\"",
+            "temp_settings = \"temp\"",
+            "dummy_data = \"dummy\""
+          ]
+        },
+        {
+          "type": "placeholder_variable",
+          "line": 123,
+          "content": "temp_settings = \"temp\"",
+          "variable_name": "temp_settings",
+          "value": "\"temp\"",
+          "context": [
+            "# Variables with placeholder values",
+            "placeholder_config = \"placeholder\"",
+            "temp_settings = \"temp\"",
+            "dummy_data = \"dummy\"",
+            ""
+          ]
+        },
+        {
+          "type": "placeholder_variable",
+          "line": 124,
+          "content": "dummy_data = \"dummy\"",
+          "variable_name": "dummy_data",
+          "value": "\"dummy\"",
+          "context": [
+            "placeholder_config = \"placeholder\"",
+            "temp_settings = \"temp\"",
+            "dummy_data = \"dummy\"",
+            "",
+            "# This is a comment about finding placeholders but shouldn't be flagged"
+          ]
+        }
+      ],
+      "incomplete_implementations": [
+        {
+          "type": "incomplete_implementation",
+          "line": 27,
+          "content": "def placeholder_function():",
+          "incomplete_line": "print(\"This is incomplete\")",
+          "context": [
+            "# work in progress",
+            "# wip",
+            "",
+            "def placeholder_function():",
+            "    \"\"\"This function is just a placeholder.\"\"\"",
+            "    pass",
+            ""
+          ]
+        },
+        {
+          "type": "incomplete_implementation",
+          "line": 31,
+          "content": "def another_placeholder():",
+          "incomplete_line": "print(\"This is incomplete\")",
+          "context": [
+            "    \"\"\"This function is just a placeholder.\"\"\"",
+            "    pass",
+            "",
+            "def another_placeholder():",
+            "    \"\"\"Another placeholder function.\"\"\"",
+            "    # TODO: Implement this function",
+            "    pass"
+          ]
+        },
+        {
+          "type": "incomplete_implementation",
+          "line": 36,
+          "content": "def stub_function():",
+          "incomplete_line": "print(\"This is incomplete\")",
+          "context": [
+            "    # TODO: Implement this function",
+            "    pass",
+            "",
+            "def stub_function():",
+            "    \"\"\"This is a stub function.\"\"\"",
+            "    ...",
+            ""
+          ]
+        },
+        {
+          "type": "incomplete_implementation",
+          "line": 40,
+          "content": "def unimplemented_method():",
+          "incomplete_line": "print(\"This is incomplete\")",
+          "context": [
+            "    \"\"\"This is a stub function.\"\"\"",
+            "    ...",
+            "",
+            "def unimplemented_method():",
+            "    \"\"\"This method is not implemented.\"\"\"",
+            "    raise NotImplementedError(\"Not implemented yet\")",
+            ""
+          ]
+        },
+        {
+          "type": "incomplete_implementation",
+          "line": 44,
+          "content": "def incomplete_implementation():",
+          "incomplete_line": "print(\"This is incomplete\")",
+          "context": [
+            "    \"\"\"This method is not implemented.\"\"\"",
+            "    raise NotImplementedError(\"Not implemented yet\")",
+            "",
+            "def incomplete_implementation():",
+            "    \"\"\"This function has an incomplete implementation.\"\"\"",
+            "    print(\"This is incomplete\")",
+            "    return None"
+          ]
+        },
+        {
+          "type": "incomplete_implementation",
+          "line": 49,
+          "content": "def temp_function():",
+          "incomplete_line": "raise Exception(\"Generic error\")",
+          "context": [
+            "    print(\"This is incomplete\")",
+            "    return None",
+            "",
+            "def temp_function():",
+            "    \"\"\"Temporary function.\"\"\"",
+            "    # FIXME: Replace with proper implementation",
+            "    pass"
+          ]
+        },
+        {
+          "type": "incomplete_implementation",
+          "line": 61,
+          "content": "def __init__(self):",
+          "incomplete_line": "raise Exception(\"Generic error\")",
+          "context": [
+            "class PlaceholderClass:",
+            "    \"\"\"This class has placeholder methods.\"\"\"",
+            "    ",
+            "    def __init__(self):",
+            "        pass",
+            "    ",
+            "    def method_to_implement(self):"
+          ]
+        },
+        {
+          "type": "incomplete_implementation",
+          "line": 64,
+          "content": "def method_to_implement(self):",
+          "incomplete_line": "raise Exception(\"Generic error\")",
+          "context": [
+            "    def __init__(self):",
+            "        pass",
+            "    ",
+            "    def method_to_implement(self):",
+            "        \"\"\"This method needs to be implemented.\"\"\"",
+            "        # TODO: Add implementation",
+            "        pass"
+          ]
+        },
+        {
+          "type": "incomplete_implementation",
+          "line": 69,
+          "content": "def function_with_placeholder_variables():",
+          "incomplete_line": "raise Exception(\"Generic error\")",
+          "context": [
+            "        # TODO: Add implementation",
+            "        pass",
+            "",
+            "def function_with_placeholder_variables():",
+            "    \"\"\"Function with placeholder variables.\"\"\"",
+            "    temp_var = \"placeholder\"",
+            "    dummy_value = \"to be implemented\""
+          ]
+        },
+        {
+          "type": "incomplete_implementation",
+          "line": 79,
+          "content": "def function_with_incomplete_patterns():",
+          "incomplete_line": "raise Exception(\"Generic error\")",
+          "context": [
+            "    result = temp_var + dummy_value",
+            "    return result",
+            "",
+            "def function_with_incomplete_patterns():",
+            "    \"\"\"Function with incomplete implementation patterns.\"\"\"",
+            "    # This raises a generic exception",
+            "    raise Exception(\"Generic error\")"
+          ]
+        },
+        {
+          "type": "incomplete_implementation",
+          "line": 87,
+          "content": "def function_with_logging_placeholders():",
+          "incomplete_line": "logging.warning(\"This is incomplete\")",
+          "context": [
+            "    # This would never execute",
+            "    return False",
+            "",
+            "def function_with_logging_placeholders():",
+            "    \"\"\"Function with logging placeholders.\"\"\"",
+            "    import logging",
+            "    "
+          ]
+        },
+        {
+          "type": "incomplete_implementation",
+          "line": 103,
+          "content": "def function_in_try_except():",
+          "incomplete_line": "print(\"This is a test file for the Enhanced Placeholder Finder\")",
+          "context": [
+            "# This is an example TODO comment that should be flagged",
+            "# TODO: Remove this example comment",
+            "",
+            "def function_in_try_except():",
+            "    \"\"\"Function with pass in try/except block.\"\"\"",
+            "    try:",
+            "        # This pass is legitimate"
+          ]
+        },
+        {
+          "type": "incomplete_implementation",
+          "line": 112,
+          "content": "def isolated_pass_function():",
+          "incomplete_line": "print(\"This is a test file for the Enhanced Placeholder Finder\")",
+          "context": [
+            "        # This pass is also legitimate",
+            "        pass",
+            "",
+            "def isolated_pass_function():",
+            "    \"\"\"Function with isolated pass statement.\"\"\"",
+            "    # This pass should be flagged as it's isolated",
+            "    pass"
+          ]
+        }
+      ]
+    }
+  },
+  "timestamp": "/workspace/code_quality"
+}

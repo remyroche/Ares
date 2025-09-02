@@ -1782,16 +1782,16 @@ class EnhancedTrainingManager:
                     "force_rerun": self.force_rerun,
                 }
 
-                    step3_success = await self._execute_pipeline_step(
-                        step_name="step3_hmm_regime_discovery",
-                        step_function=_step3.run_step_enhanced,
-                        step_args=step3_args,
-                        step_times=step_times,
-                        pipeline_state=pipeline_state,
-                        training_input=training_input,
-                        is_fatal=True,  # Step 3 is now fatal on failure
-                        step_description="Step 3: HMM Regime Discovery",
-                    )
+                step3_success = await self._execute_pipeline_step(
+                    step_name="step3_hmm_regime_discovery",
+                    step_function=_step3.run_step_enhanced,
+                    step_args=step3_args,
+                    step_times=step_times,
+                    pipeline_state=pipeline_state,
+                    training_input=training_input,
+                    is_fatal=True,  # Step 3 is now fatal on failure
+                    step_description="Step 3: HMM Regime Discovery",
+                )
 
                 if not step3_success:
                     return False

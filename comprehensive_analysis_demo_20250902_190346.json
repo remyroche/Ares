@@ -1,0 +1,1880 @@
+{
+  "metadata": {
+    "generated_at": "2025-09-02 19:03:46",
+    "project_root": "/workspace/test_analysis_dir",
+    "analysis_duration": 0.00972747802734375,
+    "note": "This is a DEMO using basic Python tools. Install the full toolkit for professional analysis."
+  },
+  "global_metrics": {
+    "total_directories": 1,
+    "total_files": 3,
+    "total_analyzers_run": 5,
+    "total_issues_found": 10,
+    "total_issues_fixed": 0,
+    "total_processing_time": 0.00972747802734375,
+    "success_rate": 100.0,
+    "categories_covered": [
+      "complexity",
+      "dead_code",
+      "dependencies",
+      "function_calls",
+      "syntax"
+    ],
+    "top_issues": [
+      [
+        "syntax",
+        3
+      ],
+      [
+        "dead_code",
+        2
+      ],
+      [
+        "function_calls",
+        1
+      ],
+      [
+        "dependencies",
+        1
+      ]
+    ]
+  },
+  "directory_summaries": {
+    "root": {
+      "directory": "root",
+      "total_files": 3,
+      "files_analyzed": 3,
+      "total_issues": 10,
+      "total_fixed": 0,
+      "analyzers_run": [
+        "complexity",
+        "dead_code",
+        "dependencies",
+        "function_calls",
+        "syntax"
+      ],
+      "categories_covered": [
+        "complexity",
+        "dead_code",
+        "dependencies",
+        "function_calls",
+        "syntax"
+      ],
+      "processing_time": 0.009163618087768555
+    }
+  },
+  "detailed_results": {
+    "by_directory": {
+      "root": {
+        "syntax": [
+          {
+            "file_path": "/workspace/test_analysis_dir/simple_test.py",
+            "directory": "root",
+            "analyzer_name": "syntax",
+            "category": "syntax",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "status": "error",
+              "issues_found": 1,
+              "issues_fixed": 0,
+              "details": {
+                "error": "object of type 'generator' has no len()"
+              },
+              "processing_time": 0.0005617141723632812
+            },
+            "processing_time": 0.0005800724029541016,
+            "status": "success"
+          },
+          {
+            "file_path": "/workspace/test_analysis_dir/__init__.py",
+            "directory": "root",
+            "analyzer_name": "syntax",
+            "category": "syntax",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "status": "error",
+              "issues_found": 1,
+              "issues_fixed": 0,
+              "details": {
+                "error": "object of type 'generator' has no len()"
+              },
+              "processing_time": 5.7697296142578125e-05
+            },
+            "processing_time": 6.532669067382812e-05,
+            "status": "success"
+          },
+          {
+            "file_path": "/workspace/test_analysis_dir/another_test.py",
+            "directory": "root",
+            "analyzer_name": "syntax",
+            "category": "syntax",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "status": "error",
+              "issues_found": 1,
+              "issues_fixed": 0,
+              "details": {
+                "error": "object of type 'generator' has no len()"
+              },
+              "processing_time": 0.0006361007690429688
+            },
+            "processing_time": 0.0006592273712158203,
+            "status": "success"
+          }
+        ],
+        "complexity": [
+          {
+            "file_path": "/workspace/test_analysis_dir/simple_test.py",
+            "directory": "root",
+            "analyzer_name": "complexity",
+            "category": "complexity",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "status": "success",
+              "issues_found": 0,
+              "issues_fixed": 0,
+              "details": {
+                "overall_complexity": 2,
+                "function_complexities": [
+                  1,
+                  2,
+                  1,
+                  1,
+                  1,
+                  1
+                ],
+                "function_details": [
+                  {
+                    "name": "simple_function",
+                    "complexity": 1,
+                    "nested_structures": 0,
+                    "line": 10,
+                    "has_docstring": true
+                  },
+                  {
+                    "name": "complex_function",
+                    "complexity": 2,
+                    "nested_structures": 1,
+                    "line": 14,
+                    "has_docstring": true
+                  },
+                  {
+                    "name": "main",
+                    "complexity": 1,
+                    "nested_structures": 0,
+                    "line": 46,
+                    "has_docstring": true
+                  },
+                  {
+                    "name": "__init__",
+                    "complexity": 1,
+                    "nested_structures": 0,
+                    "line": 34,
+                    "has_docstring": false
+                  },
+                  {
+                    "name": "add_value",
+                    "complexity": 1,
+                    "nested_structures": 0,
+                    "line": 38,
+                    "has_docstring": true
+                  },
+                  {
+                    "name": "get_stats",
+                    "complexity": 1,
+                    "nested_structures": 0,
+                    "line": 42,
+                    "has_docstring": true
+                  }
+                ],
+                "average_function_complexity": 1.1666666666666667,
+                "high_complexity_functions": 0,
+                "medium_complexity_functions": 0,
+                "total_functions": 6
+              },
+              "processing_time": 0.0005300045013427734
+            },
+            "processing_time": 0.0005447864532470703,
+            "status": "success"
+          },
+          {
+            "file_path": "/workspace/test_analysis_dir/__init__.py",
+            "directory": "root",
+            "analyzer_name": "complexity",
+            "category": "complexity",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "status": "success",
+              "issues_found": 0,
+              "issues_fixed": 0,
+              "details": {
+                "overall_complexity": 0,
+                "function_complexities": [],
+                "function_details": [],
+                "average_function_complexity": 0,
+                "high_complexity_functions": 0,
+                "medium_complexity_functions": 0,
+                "total_functions": 0
+              },
+              "processing_time": 4.100799560546875e-05
+            },
+            "processing_time": 4.506111145019531e-05,
+            "status": "success"
+          },
+          {
+            "file_path": "/workspace/test_analysis_dir/another_test.py",
+            "directory": "root",
+            "analyzer_name": "complexity",
+            "category": "complexity",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "status": "success",
+              "issues_found": 0,
+              "issues_fixed": 0,
+              "details": {
+                "overall_complexity": 5,
+                "function_complexities": [
+                  1,
+                  2,
+                  3,
+                  1,
+                  2,
+                  1
+                ],
+                "function_details": [
+                  {
+                    "name": "calculate_area",
+                    "complexity": 1,
+                    "nested_structures": 0,
+                    "line": 14,
+                    "has_docstring": true
+                  },
+                  {
+                    "name": "fibonacci",
+                    "complexity": 2,
+                    "nested_structures": 1,
+                    "line": 18,
+                    "has_docstring": true
+                  },
+                  {
+                    "name": "process_data",
+                    "complexity": 3,
+                    "nested_structures": 2,
+                    "line": 24,
+                    "has_docstring": true
+                  },
+                  {
+                    "name": "__init__",
+                    "complexity": 1,
+                    "nested_structures": 0,
+                    "line": 52,
+                    "has_docstring": false
+                  },
+                  {
+                    "name": "process_item",
+                    "complexity": 2,
+                    "nested_structures": 1,
+                    "line": 56,
+                    "has_docstring": true
+                  },
+                  {
+                    "name": "get_summary",
+                    "complexity": 1,
+                    "nested_structures": 0,
+                    "line": 66,
+                    "has_docstring": true
+                  }
+                ],
+                "average_function_complexity": 1.6666666666666667,
+                "high_complexity_functions": 0,
+                "medium_complexity_functions": 0,
+                "total_functions": 6
+              },
+              "processing_time": 0.0005788803100585938
+            },
+            "processing_time": 0.0005953311920166016,
+            "status": "success"
+          }
+        ],
+        "dead_code": [
+          {
+            "file_path": "/workspace/test_analysis_dir/simple_test.py",
+            "directory": "root",
+            "analyzer_name": "dead_code",
+            "category": "dead_code",
+            "issues_found": 2,
+            "issues_fixed": 0,
+            "details": {
+              "status": "success",
+              "issues_found": 2,
+              "issues_fixed": 0,
+              "details": {
+                "dead_code_issues": [
+                  "Unused definition: get_stats",
+                  "Unused definition: add_value"
+                ],
+                "unused_variables": [
+                  "Unused definition: get_stats",
+                  "Unused definition: add_value"
+                ],
+                "unreachable_code": [],
+                "total_definitions": 10,
+                "total_used": 22,
+                "unused_count": 3
+              },
+              "processing_time": 0.0005519390106201172
+            },
+            "processing_time": 0.0005671977996826172,
+            "status": "success"
+          },
+          {
+            "file_path": "/workspace/test_analysis_dir/__init__.py",
+            "directory": "root",
+            "analyzer_name": "dead_code",
+            "category": "dead_code",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "status": "success",
+              "issues_found": 0,
+              "issues_fixed": 0,
+              "details": {
+                "dead_code_issues": [],
+                "unused_variables": [],
+                "unreachable_code": [],
+                "total_definitions": 2,
+                "total_used": 0,
+                "unused_count": 2
+              },
+              "processing_time": 5.030632019042969e-05
+            },
+            "processing_time": 5.435943603515625e-05,
+            "status": "success"
+          },
+          {
+            "file_path": "/workspace/test_analysis_dir/another_test.py",
+            "directory": "root",
+            "analyzer_name": "dead_code",
+            "category": "dead_code",
+            "issues_found": 3,
+            "issues_fixed": 0,
+            "details": {
+              "status": "success",
+              "issues_found": 3,
+              "issues_fixed": 0,
+              "details": {
+                "dead_code_issues": [
+                  "Unused definition: CONSTANT_VALUE",
+                  "Unused definition: process_item",
+                  "Unused definition: get_summary"
+                ],
+                "unused_variables": [
+                  "Unused definition: CONSTANT_VALUE",
+                  "Unused definition: process_item",
+                  "Unused definition: get_summary"
+                ],
+                "unreachable_code": [],
+                "total_definitions": 18,
+                "total_used": 33,
+                "unused_count": 4
+              },
+              "processing_time": 0.0007910728454589844
+            },
+            "processing_time": 0.0008084774017333984,
+            "status": "success"
+          }
+        ],
+        "function_calls": [
+          {
+            "file_path": "/workspace/test_analysis_dir/simple_test.py",
+            "directory": "root",
+            "analyzer_name": "function_calls",
+            "category": "function_calls",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "status": "success",
+              "issues_found": 0,
+              "issues_fixed": 0,
+              "details": {
+                "quality_issues": [],
+                "call_graph": {
+                  "main": [
+                    "TestClass",
+                    "print",
+                    "simple_function",
+                    "print"
+                  ],
+                  "complex_function": [
+                    "sum",
+                    "len",
+                    "max",
+                    "min"
+                  ],
+                  "get_stats": [
+                    "complex_function"
+                  ]
+                },
+                "function_calls": [
+                  "TestClass",
+                  "print",
+                  "simple_function",
+                  "print",
+                  "main",
+                  "sum",
+                  "len",
+                  "max",
+                  "min",
+                  "complex_function"
+                ],
+                "call_frequency": {
+                  "TestClass": 1,
+                  "print": 2,
+                  "simple_function": 1,
+                  "main": 1,
+                  "sum": 1,
+                  "len": 1,
+                  "max": 1,
+                  "min": 1,
+                  "complex_function": 1
+                },
+                "high_frequency_calls": {},
+                "total_calls": 10,
+                "unique_calls": 9,
+                "avg_calls_per_function": 3.3333333333333335,
+                "functions_with_many_calls": 0
+              },
+              "processing_time": 0.0009169578552246094
+            },
+            "processing_time": 0.0009336471557617188,
+            "status": "success"
+          },
+          {
+            "file_path": "/workspace/test_analysis_dir/__init__.py",
+            "directory": "root",
+            "analyzer_name": "function_calls",
+            "category": "function_calls",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "status": "success",
+              "issues_found": 0,
+              "issues_fixed": 0,
+              "details": {
+                "quality_issues": [],
+                "call_graph": {},
+                "function_calls": [],
+                "call_frequency": {},
+                "high_frequency_calls": {},
+                "total_calls": 0,
+                "unique_calls": 0,
+                "avg_calls_per_function": 0,
+                "functions_with_many_calls": 0
+              },
+              "processing_time": 4.00543212890625e-05
+            },
+            "processing_time": 4.4345855712890625e-05,
+            "status": "success"
+          },
+          {
+            "file_path": "/workspace/test_analysis_dir/another_test.py",
+            "directory": "root",
+            "analyzer_name": "function_calls",
+            "category": "function_calls",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "status": "success",
+              "issues_found": 1,
+              "issues_fixed": 0,
+              "details": {
+                "quality_issues": [
+                  "Potential self-reference in fibonacci"
+                ],
+                "call_graph": {
+                  "fibonacci": [
+                    "fibonacci",
+                    "fibonacci"
+                  ],
+                  "process_data": [
+                    "sum",
+                    "len",
+                    "sum",
+                    "str"
+                  ],
+                  "get_summary": [
+                    "len"
+                  ],
+                  "process_item": [
+                    "str"
+                  ]
+                },
+                "function_calls": [
+                  "DataProcessor",
+                  "print",
+                  "print",
+                  "print",
+                  "print",
+                  "print",
+                  "fibonacci",
+                  "fibonacci",
+                  "sum",
+                  "len",
+                  "sum",
+                  "len",
+                  "str",
+                  "calculate_area",
+                  "fibonacci",
+                  "process_data",
+                  "str"
+                ],
+                "call_frequency": {
+                  "DataProcessor": 1,
+                  "print": 5,
+                  "fibonacci": 3,
+                  "sum": 2,
+                  "len": 2,
+                  "str": 2,
+                  "calculate_area": 1,
+                  "process_data": 1
+                },
+                "high_frequency_calls": {},
+                "total_calls": 17,
+                "unique_calls": 8,
+                "avg_calls_per_function": 4.25,
+                "functions_with_many_calls": 0
+              },
+              "processing_time": 0.0032324790954589844
+            },
+            "processing_time": 0.003249645233154297,
+            "status": "success"
+          }
+        ],
+        "dependencies": [
+          {
+            "file_path": "/workspace/test_analysis_dir/simple_test.py",
+            "directory": "root",
+            "analyzer_name": "dependencies",
+            "category": "dependencies",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "status": "success",
+              "issues_found": 1,
+              "issues_fixed": 0,
+              "details": {
+                "import_issues": [
+                  "Potentially unused imports: typing.Optional"
+                ],
+                "all_imports": [
+                  "os",
+                  "sys",
+                  "typing.List",
+                  "typing.Dict",
+                  "typing.Optional"
+                ],
+                "stdlib_imports": [
+                  "os",
+                  "sys"
+                ],
+                "third_party_imports": [
+                  "typing.List",
+                  "typing.Dict",
+                  "typing.Optional"
+                ],
+                "local_imports": [],
+                "potentially_unused_imports": [
+                  "typing.Optional"
+                ],
+                "total_imports": 5,
+                "unique_imports": 5,
+                "import_diversity": 1.0
+              },
+              "processing_time": 0.0003979206085205078
+            },
+            "processing_time": 0.0004131793975830078,
+            "status": "success"
+          },
+          {
+            "file_path": "/workspace/test_analysis_dir/__init__.py",
+            "directory": "root",
+            "analyzer_name": "dependencies",
+            "category": "dependencies",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "status": "success",
+              "issues_found": 0,
+              "issues_fixed": 0,
+              "details": {
+                "import_issues": [],
+                "all_imports": [],
+                "stdlib_imports": [],
+                "third_party_imports": [],
+                "local_imports": [],
+                "potentially_unused_imports": [],
+                "total_imports": 0,
+                "unique_imports": 0,
+                "import_diversity": 0
+              },
+              "processing_time": 3.6716461181640625e-05
+            },
+            "processing_time": 4.029273986816406e-05,
+            "status": "success"
+          },
+          {
+            "file_path": "/workspace/test_analysis_dir/another_test.py",
+            "directory": "root",
+            "analyzer_name": "dependencies",
+            "category": "dependencies",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "status": "success",
+              "issues_found": 0,
+              "issues_fixed": 0,
+              "details": {
+                "import_issues": [],
+                "all_imports": [
+                  "json",
+                  "math",
+                  "datetime.datetime"
+                ],
+                "stdlib_imports": [
+                  "json",
+                  "math"
+                ],
+                "third_party_imports": [
+                  "datetime.datetime"
+                ],
+                "local_imports": [],
+                "potentially_unused_imports": [],
+                "total_imports": 3,
+                "unique_imports": 3,
+                "import_diversity": 1.0
+              },
+              "processing_time": 0.0005445480346679688
+            },
+            "processing_time": 0.0005626678466796875,
+            "status": "success"
+          }
+        ]
+      }
+    },
+    "by_category": {
+      "syntax": [
+        {
+          "file_path": "/workspace/test_analysis_dir/simple_test.py",
+          "directory": "root",
+          "analyzer_name": "syntax",
+          "category": "syntax",
+          "issues_found": 1,
+          "issues_fixed": 0,
+          "details": {
+            "status": "error",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "error": "object of type 'generator' has no len()"
+            },
+            "processing_time": 0.0005617141723632812
+          },
+          "processing_time": 0.0005800724029541016,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/__init__.py",
+          "directory": "root",
+          "analyzer_name": "syntax",
+          "category": "syntax",
+          "issues_found": 1,
+          "issues_fixed": 0,
+          "details": {
+            "status": "error",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "error": "object of type 'generator' has no len()"
+            },
+            "processing_time": 5.7697296142578125e-05
+          },
+          "processing_time": 6.532669067382812e-05,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/another_test.py",
+          "directory": "root",
+          "analyzer_name": "syntax",
+          "category": "syntax",
+          "issues_found": 1,
+          "issues_fixed": 0,
+          "details": {
+            "status": "error",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "error": "object of type 'generator' has no len()"
+            },
+            "processing_time": 0.0006361007690429688
+          },
+          "processing_time": 0.0006592273712158203,
+          "status": "success"
+        }
+      ],
+      "complexity": [
+        {
+          "file_path": "/workspace/test_analysis_dir/simple_test.py",
+          "directory": "root",
+          "analyzer_name": "complexity",
+          "category": "complexity",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "overall_complexity": 2,
+              "function_complexities": [
+                1,
+                2,
+                1,
+                1,
+                1,
+                1
+              ],
+              "function_details": [
+                {
+                  "name": "simple_function",
+                  "complexity": 1,
+                  "nested_structures": 0,
+                  "line": 10,
+                  "has_docstring": true
+                },
+                {
+                  "name": "complex_function",
+                  "complexity": 2,
+                  "nested_structures": 1,
+                  "line": 14,
+                  "has_docstring": true
+                },
+                {
+                  "name": "main",
+                  "complexity": 1,
+                  "nested_structures": 0,
+                  "line": 46,
+                  "has_docstring": true
+                },
+                {
+                  "name": "__init__",
+                  "complexity": 1,
+                  "nested_structures": 0,
+                  "line": 34,
+                  "has_docstring": false
+                },
+                {
+                  "name": "add_value",
+                  "complexity": 1,
+                  "nested_structures": 0,
+                  "line": 38,
+                  "has_docstring": true
+                },
+                {
+                  "name": "get_stats",
+                  "complexity": 1,
+                  "nested_structures": 0,
+                  "line": 42,
+                  "has_docstring": true
+                }
+              ],
+              "average_function_complexity": 1.1666666666666667,
+              "high_complexity_functions": 0,
+              "medium_complexity_functions": 0,
+              "total_functions": 6
+            },
+            "processing_time": 0.0005300045013427734
+          },
+          "processing_time": 0.0005447864532470703,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/__init__.py",
+          "directory": "root",
+          "analyzer_name": "complexity",
+          "category": "complexity",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "overall_complexity": 0,
+              "function_complexities": [],
+              "function_details": [],
+              "average_function_complexity": 0,
+              "high_complexity_functions": 0,
+              "medium_complexity_functions": 0,
+              "total_functions": 0
+            },
+            "processing_time": 4.100799560546875e-05
+          },
+          "processing_time": 4.506111145019531e-05,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/another_test.py",
+          "directory": "root",
+          "analyzer_name": "complexity",
+          "category": "complexity",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "overall_complexity": 5,
+              "function_complexities": [
+                1,
+                2,
+                3,
+                1,
+                2,
+                1
+              ],
+              "function_details": [
+                {
+                  "name": "calculate_area",
+                  "complexity": 1,
+                  "nested_structures": 0,
+                  "line": 14,
+                  "has_docstring": true
+                },
+                {
+                  "name": "fibonacci",
+                  "complexity": 2,
+                  "nested_structures": 1,
+                  "line": 18,
+                  "has_docstring": true
+                },
+                {
+                  "name": "process_data",
+                  "complexity": 3,
+                  "nested_structures": 2,
+                  "line": 24,
+                  "has_docstring": true
+                },
+                {
+                  "name": "__init__",
+                  "complexity": 1,
+                  "nested_structures": 0,
+                  "line": 52,
+                  "has_docstring": false
+                },
+                {
+                  "name": "process_item",
+                  "complexity": 2,
+                  "nested_structures": 1,
+                  "line": 56,
+                  "has_docstring": true
+                },
+                {
+                  "name": "get_summary",
+                  "complexity": 1,
+                  "nested_structures": 0,
+                  "line": 66,
+                  "has_docstring": true
+                }
+              ],
+              "average_function_complexity": 1.6666666666666667,
+              "high_complexity_functions": 0,
+              "medium_complexity_functions": 0,
+              "total_functions": 6
+            },
+            "processing_time": 0.0005788803100585938
+          },
+          "processing_time": 0.0005953311920166016,
+          "status": "success"
+        }
+      ],
+      "dead_code": [
+        {
+          "file_path": "/workspace/test_analysis_dir/simple_test.py",
+          "directory": "root",
+          "analyzer_name": "dead_code",
+          "category": "dead_code",
+          "issues_found": 2,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 2,
+            "issues_fixed": 0,
+            "details": {
+              "dead_code_issues": [
+                "Unused definition: get_stats",
+                "Unused definition: add_value"
+              ],
+              "unused_variables": [
+                "Unused definition: get_stats",
+                "Unused definition: add_value"
+              ],
+              "unreachable_code": [],
+              "total_definitions": 10,
+              "total_used": 22,
+              "unused_count": 3
+            },
+            "processing_time": 0.0005519390106201172
+          },
+          "processing_time": 0.0005671977996826172,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/__init__.py",
+          "directory": "root",
+          "analyzer_name": "dead_code",
+          "category": "dead_code",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "dead_code_issues": [],
+              "unused_variables": [],
+              "unreachable_code": [],
+              "total_definitions": 2,
+              "total_used": 0,
+              "unused_count": 2
+            },
+            "processing_time": 5.030632019042969e-05
+          },
+          "processing_time": 5.435943603515625e-05,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/another_test.py",
+          "directory": "root",
+          "analyzer_name": "dead_code",
+          "category": "dead_code",
+          "issues_found": 3,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 3,
+            "issues_fixed": 0,
+            "details": {
+              "dead_code_issues": [
+                "Unused definition: CONSTANT_VALUE",
+                "Unused definition: process_item",
+                "Unused definition: get_summary"
+              ],
+              "unused_variables": [
+                "Unused definition: CONSTANT_VALUE",
+                "Unused definition: process_item",
+                "Unused definition: get_summary"
+              ],
+              "unreachable_code": [],
+              "total_definitions": 18,
+              "total_used": 33,
+              "unused_count": 4
+            },
+            "processing_time": 0.0007910728454589844
+          },
+          "processing_time": 0.0008084774017333984,
+          "status": "success"
+        }
+      ],
+      "function_calls": [
+        {
+          "file_path": "/workspace/test_analysis_dir/simple_test.py",
+          "directory": "root",
+          "analyzer_name": "function_calls",
+          "category": "function_calls",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "quality_issues": [],
+              "call_graph": {
+                "main": [
+                  "TestClass",
+                  "print",
+                  "simple_function",
+                  "print"
+                ],
+                "complex_function": [
+                  "sum",
+                  "len",
+                  "max",
+                  "min"
+                ],
+                "get_stats": [
+                  "complex_function"
+                ]
+              },
+              "function_calls": [
+                "TestClass",
+                "print",
+                "simple_function",
+                "print",
+                "main",
+                "sum",
+                "len",
+                "max",
+                "min",
+                "complex_function"
+              ],
+              "call_frequency": {
+                "TestClass": 1,
+                "print": 2,
+                "simple_function": 1,
+                "main": 1,
+                "sum": 1,
+                "len": 1,
+                "max": 1,
+                "min": 1,
+                "complex_function": 1
+              },
+              "high_frequency_calls": {},
+              "total_calls": 10,
+              "unique_calls": 9,
+              "avg_calls_per_function": 3.3333333333333335,
+              "functions_with_many_calls": 0
+            },
+            "processing_time": 0.0009169578552246094
+          },
+          "processing_time": 0.0009336471557617188,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/__init__.py",
+          "directory": "root",
+          "analyzer_name": "function_calls",
+          "category": "function_calls",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "quality_issues": [],
+              "call_graph": {},
+              "function_calls": [],
+              "call_frequency": {},
+              "high_frequency_calls": {},
+              "total_calls": 0,
+              "unique_calls": 0,
+              "avg_calls_per_function": 0,
+              "functions_with_many_calls": 0
+            },
+            "processing_time": 4.00543212890625e-05
+          },
+          "processing_time": 4.4345855712890625e-05,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/another_test.py",
+          "directory": "root",
+          "analyzer_name": "function_calls",
+          "category": "function_calls",
+          "issues_found": 1,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "quality_issues": [
+                "Potential self-reference in fibonacci"
+              ],
+              "call_graph": {
+                "fibonacci": [
+                  "fibonacci",
+                  "fibonacci"
+                ],
+                "process_data": [
+                  "sum",
+                  "len",
+                  "sum",
+                  "str"
+                ],
+                "get_summary": [
+                  "len"
+                ],
+                "process_item": [
+                  "str"
+                ]
+              },
+              "function_calls": [
+                "DataProcessor",
+                "print",
+                "print",
+                "print",
+                "print",
+                "print",
+                "fibonacci",
+                "fibonacci",
+                "sum",
+                "len",
+                "sum",
+                "len",
+                "str",
+                "calculate_area",
+                "fibonacci",
+                "process_data",
+                "str"
+              ],
+              "call_frequency": {
+                "DataProcessor": 1,
+                "print": 5,
+                "fibonacci": 3,
+                "sum": 2,
+                "len": 2,
+                "str": 2,
+                "calculate_area": 1,
+                "process_data": 1
+              },
+              "high_frequency_calls": {},
+              "total_calls": 17,
+              "unique_calls": 8,
+              "avg_calls_per_function": 4.25,
+              "functions_with_many_calls": 0
+            },
+            "processing_time": 0.0032324790954589844
+          },
+          "processing_time": 0.003249645233154297,
+          "status": "success"
+        }
+      ],
+      "dependencies": [
+        {
+          "file_path": "/workspace/test_analysis_dir/simple_test.py",
+          "directory": "root",
+          "analyzer_name": "dependencies",
+          "category": "dependencies",
+          "issues_found": 1,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "import_issues": [
+                "Potentially unused imports: typing.Optional"
+              ],
+              "all_imports": [
+                "os",
+                "sys",
+                "typing.List",
+                "typing.Dict",
+                "typing.Optional"
+              ],
+              "stdlib_imports": [
+                "os",
+                "sys"
+              ],
+              "third_party_imports": [
+                "typing.List",
+                "typing.Dict",
+                "typing.Optional"
+              ],
+              "local_imports": [],
+              "potentially_unused_imports": [
+                "typing.Optional"
+              ],
+              "total_imports": 5,
+              "unique_imports": 5,
+              "import_diversity": 1.0
+            },
+            "processing_time": 0.0003979206085205078
+          },
+          "processing_time": 0.0004131793975830078,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/__init__.py",
+          "directory": "root",
+          "analyzer_name": "dependencies",
+          "category": "dependencies",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "import_issues": [],
+              "all_imports": [],
+              "stdlib_imports": [],
+              "third_party_imports": [],
+              "local_imports": [],
+              "potentially_unused_imports": [],
+              "total_imports": 0,
+              "unique_imports": 0,
+              "import_diversity": 0
+            },
+            "processing_time": 3.6716461181640625e-05
+          },
+          "processing_time": 4.029273986816406e-05,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/another_test.py",
+          "directory": "root",
+          "analyzer_name": "dependencies",
+          "category": "dependencies",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "import_issues": [],
+              "all_imports": [
+                "json",
+                "math",
+                "datetime.datetime"
+              ],
+              "stdlib_imports": [
+                "json",
+                "math"
+              ],
+              "third_party_imports": [
+                "datetime.datetime"
+              ],
+              "local_imports": [],
+              "potentially_unused_imports": [],
+              "total_imports": 3,
+              "unique_imports": 3,
+              "import_diversity": 1.0
+            },
+            "processing_time": 0.0005445480346679688
+          },
+          "processing_time": 0.0005626678466796875,
+          "status": "success"
+        }
+      ]
+    },
+    "by_analyzer": {
+      "syntax": [
+        {
+          "file_path": "/workspace/test_analysis_dir/simple_test.py",
+          "directory": "root",
+          "analyzer_name": "syntax",
+          "category": "syntax",
+          "issues_found": 1,
+          "issues_fixed": 0,
+          "details": {
+            "status": "error",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "error": "object of type 'generator' has no len()"
+            },
+            "processing_time": 0.0005617141723632812
+          },
+          "processing_time": 0.0005800724029541016,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/__init__.py",
+          "directory": "root",
+          "analyzer_name": "syntax",
+          "category": "syntax",
+          "issues_found": 1,
+          "issues_fixed": 0,
+          "details": {
+            "status": "error",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "error": "object of type 'generator' has no len()"
+            },
+            "processing_time": 5.7697296142578125e-05
+          },
+          "processing_time": 6.532669067382812e-05,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/another_test.py",
+          "directory": "root",
+          "analyzer_name": "syntax",
+          "category": "syntax",
+          "issues_found": 1,
+          "issues_fixed": 0,
+          "details": {
+            "status": "error",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "error": "object of type 'generator' has no len()"
+            },
+            "processing_time": 0.0006361007690429688
+          },
+          "processing_time": 0.0006592273712158203,
+          "status": "success"
+        }
+      ],
+      "complexity": [
+        {
+          "file_path": "/workspace/test_analysis_dir/simple_test.py",
+          "directory": "root",
+          "analyzer_name": "complexity",
+          "category": "complexity",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "overall_complexity": 2,
+              "function_complexities": [
+                1,
+                2,
+                1,
+                1,
+                1,
+                1
+              ],
+              "function_details": [
+                {
+                  "name": "simple_function",
+                  "complexity": 1,
+                  "nested_structures": 0,
+                  "line": 10,
+                  "has_docstring": true
+                },
+                {
+                  "name": "complex_function",
+                  "complexity": 2,
+                  "nested_structures": 1,
+                  "line": 14,
+                  "has_docstring": true
+                },
+                {
+                  "name": "main",
+                  "complexity": 1,
+                  "nested_structures": 0,
+                  "line": 46,
+                  "has_docstring": true
+                },
+                {
+                  "name": "__init__",
+                  "complexity": 1,
+                  "nested_structures": 0,
+                  "line": 34,
+                  "has_docstring": false
+                },
+                {
+                  "name": "add_value",
+                  "complexity": 1,
+                  "nested_structures": 0,
+                  "line": 38,
+                  "has_docstring": true
+                },
+                {
+                  "name": "get_stats",
+                  "complexity": 1,
+                  "nested_structures": 0,
+                  "line": 42,
+                  "has_docstring": true
+                }
+              ],
+              "average_function_complexity": 1.1666666666666667,
+              "high_complexity_functions": 0,
+              "medium_complexity_functions": 0,
+              "total_functions": 6
+            },
+            "processing_time": 0.0005300045013427734
+          },
+          "processing_time": 0.0005447864532470703,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/__init__.py",
+          "directory": "root",
+          "analyzer_name": "complexity",
+          "category": "complexity",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "overall_complexity": 0,
+              "function_complexities": [],
+              "function_details": [],
+              "average_function_complexity": 0,
+              "high_complexity_functions": 0,
+              "medium_complexity_functions": 0,
+              "total_functions": 0
+            },
+            "processing_time": 4.100799560546875e-05
+          },
+          "processing_time": 4.506111145019531e-05,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/another_test.py",
+          "directory": "root",
+          "analyzer_name": "complexity",
+          "category": "complexity",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "overall_complexity": 5,
+              "function_complexities": [
+                1,
+                2,
+                3,
+                1,
+                2,
+                1
+              ],
+              "function_details": [
+                {
+                  "name": "calculate_area",
+                  "complexity": 1,
+                  "nested_structures": 0,
+                  "line": 14,
+                  "has_docstring": true
+                },
+                {
+                  "name": "fibonacci",
+                  "complexity": 2,
+                  "nested_structures": 1,
+                  "line": 18,
+                  "has_docstring": true
+                },
+                {
+                  "name": "process_data",
+                  "complexity": 3,
+                  "nested_structures": 2,
+                  "line": 24,
+                  "has_docstring": true
+                },
+                {
+                  "name": "__init__",
+                  "complexity": 1,
+                  "nested_structures": 0,
+                  "line": 52,
+                  "has_docstring": false
+                },
+                {
+                  "name": "process_item",
+                  "complexity": 2,
+                  "nested_structures": 1,
+                  "line": 56,
+                  "has_docstring": true
+                },
+                {
+                  "name": "get_summary",
+                  "complexity": 1,
+                  "nested_structures": 0,
+                  "line": 66,
+                  "has_docstring": true
+                }
+              ],
+              "average_function_complexity": 1.6666666666666667,
+              "high_complexity_functions": 0,
+              "medium_complexity_functions": 0,
+              "total_functions": 6
+            },
+            "processing_time": 0.0005788803100585938
+          },
+          "processing_time": 0.0005953311920166016,
+          "status": "success"
+        }
+      ],
+      "dead_code": [
+        {
+          "file_path": "/workspace/test_analysis_dir/simple_test.py",
+          "directory": "root",
+          "analyzer_name": "dead_code",
+          "category": "dead_code",
+          "issues_found": 2,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 2,
+            "issues_fixed": 0,
+            "details": {
+              "dead_code_issues": [
+                "Unused definition: get_stats",
+                "Unused definition: add_value"
+              ],
+              "unused_variables": [
+                "Unused definition: get_stats",
+                "Unused definition: add_value"
+              ],
+              "unreachable_code": [],
+              "total_definitions": 10,
+              "total_used": 22,
+              "unused_count": 3
+            },
+            "processing_time": 0.0005519390106201172
+          },
+          "processing_time": 0.0005671977996826172,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/__init__.py",
+          "directory": "root",
+          "analyzer_name": "dead_code",
+          "category": "dead_code",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "dead_code_issues": [],
+              "unused_variables": [],
+              "unreachable_code": [],
+              "total_definitions": 2,
+              "total_used": 0,
+              "unused_count": 2
+            },
+            "processing_time": 5.030632019042969e-05
+          },
+          "processing_time": 5.435943603515625e-05,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/another_test.py",
+          "directory": "root",
+          "analyzer_name": "dead_code",
+          "category": "dead_code",
+          "issues_found": 3,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 3,
+            "issues_fixed": 0,
+            "details": {
+              "dead_code_issues": [
+                "Unused definition: CONSTANT_VALUE",
+                "Unused definition: process_item",
+                "Unused definition: get_summary"
+              ],
+              "unused_variables": [
+                "Unused definition: CONSTANT_VALUE",
+                "Unused definition: process_item",
+                "Unused definition: get_summary"
+              ],
+              "unreachable_code": [],
+              "total_definitions": 18,
+              "total_used": 33,
+              "unused_count": 4
+            },
+            "processing_time": 0.0007910728454589844
+          },
+          "processing_time": 0.0008084774017333984,
+          "status": "success"
+        }
+      ],
+      "function_calls": [
+        {
+          "file_path": "/workspace/test_analysis_dir/simple_test.py",
+          "directory": "root",
+          "analyzer_name": "function_calls",
+          "category": "function_calls",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "quality_issues": [],
+              "call_graph": {
+                "main": [
+                  "TestClass",
+                  "print",
+                  "simple_function",
+                  "print"
+                ],
+                "complex_function": [
+                  "sum",
+                  "len",
+                  "max",
+                  "min"
+                ],
+                "get_stats": [
+                  "complex_function"
+                ]
+              },
+              "function_calls": [
+                "TestClass",
+                "print",
+                "simple_function",
+                "print",
+                "main",
+                "sum",
+                "len",
+                "max",
+                "min",
+                "complex_function"
+              ],
+              "call_frequency": {
+                "TestClass": 1,
+                "print": 2,
+                "simple_function": 1,
+                "main": 1,
+                "sum": 1,
+                "len": 1,
+                "max": 1,
+                "min": 1,
+                "complex_function": 1
+              },
+              "high_frequency_calls": {},
+              "total_calls": 10,
+              "unique_calls": 9,
+              "avg_calls_per_function": 3.3333333333333335,
+              "functions_with_many_calls": 0
+            },
+            "processing_time": 0.0009169578552246094
+          },
+          "processing_time": 0.0009336471557617188,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/__init__.py",
+          "directory": "root",
+          "analyzer_name": "function_calls",
+          "category": "function_calls",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "quality_issues": [],
+              "call_graph": {},
+              "function_calls": [],
+              "call_frequency": {},
+              "high_frequency_calls": {},
+              "total_calls": 0,
+              "unique_calls": 0,
+              "avg_calls_per_function": 0,
+              "functions_with_many_calls": 0
+            },
+            "processing_time": 4.00543212890625e-05
+          },
+          "processing_time": 4.4345855712890625e-05,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/another_test.py",
+          "directory": "root",
+          "analyzer_name": "function_calls",
+          "category": "function_calls",
+          "issues_found": 1,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "quality_issues": [
+                "Potential self-reference in fibonacci"
+              ],
+              "call_graph": {
+                "fibonacci": [
+                  "fibonacci",
+                  "fibonacci"
+                ],
+                "process_data": [
+                  "sum",
+                  "len",
+                  "sum",
+                  "str"
+                ],
+                "get_summary": [
+                  "len"
+                ],
+                "process_item": [
+                  "str"
+                ]
+              },
+              "function_calls": [
+                "DataProcessor",
+                "print",
+                "print",
+                "print",
+                "print",
+                "print",
+                "fibonacci",
+                "fibonacci",
+                "sum",
+                "len",
+                "sum",
+                "len",
+                "str",
+                "calculate_area",
+                "fibonacci",
+                "process_data",
+                "str"
+              ],
+              "call_frequency": {
+                "DataProcessor": 1,
+                "print": 5,
+                "fibonacci": 3,
+                "sum": 2,
+                "len": 2,
+                "str": 2,
+                "calculate_area": 1,
+                "process_data": 1
+              },
+              "high_frequency_calls": {},
+              "total_calls": 17,
+              "unique_calls": 8,
+              "avg_calls_per_function": 4.25,
+              "functions_with_many_calls": 0
+            },
+            "processing_time": 0.0032324790954589844
+          },
+          "processing_time": 0.003249645233154297,
+          "status": "success"
+        }
+      ],
+      "dependencies": [
+        {
+          "file_path": "/workspace/test_analysis_dir/simple_test.py",
+          "directory": "root",
+          "analyzer_name": "dependencies",
+          "category": "dependencies",
+          "issues_found": 1,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "import_issues": [
+                "Potentially unused imports: typing.Optional"
+              ],
+              "all_imports": [
+                "os",
+                "sys",
+                "typing.List",
+                "typing.Dict",
+                "typing.Optional"
+              ],
+              "stdlib_imports": [
+                "os",
+                "sys"
+              ],
+              "third_party_imports": [
+                "typing.List",
+                "typing.Dict",
+                "typing.Optional"
+              ],
+              "local_imports": [],
+              "potentially_unused_imports": [
+                "typing.Optional"
+              ],
+              "total_imports": 5,
+              "unique_imports": 5,
+              "import_diversity": 1.0
+            },
+            "processing_time": 0.0003979206085205078
+          },
+          "processing_time": 0.0004131793975830078,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/__init__.py",
+          "directory": "root",
+          "analyzer_name": "dependencies",
+          "category": "dependencies",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "import_issues": [],
+              "all_imports": [],
+              "stdlib_imports": [],
+              "third_party_imports": [],
+              "local_imports": [],
+              "potentially_unused_imports": [],
+              "total_imports": 0,
+              "unique_imports": 0,
+              "import_diversity": 0
+            },
+            "processing_time": 3.6716461181640625e-05
+          },
+          "processing_time": 4.029273986816406e-05,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/another_test.py",
+          "directory": "root",
+          "analyzer_name": "dependencies",
+          "category": "dependencies",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "import_issues": [],
+              "all_imports": [
+                "json",
+                "math",
+                "datetime.datetime"
+              ],
+              "stdlib_imports": [
+                "json",
+                "math"
+              ],
+              "third_party_imports": [
+                "datetime.datetime"
+              ],
+              "local_imports": [],
+              "potentially_unused_imports": [],
+              "total_imports": 3,
+              "unique_imports": 3,
+              "import_diversity": 1.0
+            },
+            "processing_time": 0.0005445480346679688
+          },
+          "processing_time": 0.0005626678466796875,
+          "status": "success"
+        }
+      ]
+    }
+  },
+  "summary": {
+    "total_analysis_runs": 15,
+    "successful_runs": 15,
+    "failed_runs": 0,
+    "categories_analyzed": 5,
+    "analyzers_used": 5
+  }
+}

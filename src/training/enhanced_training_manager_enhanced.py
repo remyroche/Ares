@@ -2670,8 +2670,6 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                         "small_movements": len([d for d in upper_barrier_post_hit_movements if d <= 0.01]),  # <= 1%
                         "medium_movements": len([d for d in upper_barrier_post_hit_movements if 0.01 < d <= 0.05]),  # 1-5%
                         "large_movements": len([d for d in upper_barrier_post_hit_movements if d > 0.05])  # > 5%
-
-                        }
                     }
                 },
                 "summary_statistics": {

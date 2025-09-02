@@ -100,50 +100,29 @@ class DataSchema:
         # Check constraints
         for column, constraint in self.constraints.items():
             if column in df.columns:
-                constraint_result = self._validate_constraint(df, column, constraint)
-                if not constraint_result["valid"]:
-                    results["constraint_violations"].append(constraint_result)
-                    results["errors"].append(f"Constraint violation in {column}: {constraint_result['message']}")
-                    results["valid"] = False
+                if "not_null" in constraint and constraint["not_null"]:
+                    if df[column].isnull().any():
+                        results["constraint_violations"].append(f"Column {column} contains null values")
+                        results["warnings"].append(f"Null values found in {column}")
+                
+                if "unique" in constraint and constraint["unique"]:
+                    if df[column].duplicated().any():
+                        results["constraint_violations"].append(f"Column {column} contains duplicate values")
+                        results["warnings"].append(f"Duplicate values found in {column}")
+                
+                if "min" in constraint:
+                    min_val = constraint["min"]
+                    if (df[column] < min_val).any():
+                        results["constraint_violations"].append(f"Column {column} contains values below minimum {min_val}")
+                        results["warnings"].append(f"Values below minimum {min_val} found in {column}")
+                
+                if "max" in constraint:
+                    max_val = constraint["max"]
+                    if (df[column] > max_val).any():
+                        results["constraint_violations"].append(f"Column {column} contains values above maximum {max_val}")
+                        results["warnings"].append(f"Values above maximum {max_val} found in {column}")
         
         return results
-    
-    def _validate_constraint(self, df: pd.DataFrame, column: str, constraint: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate a single column constraint.
-        
-        Args:
-            df: Dataframe to validate
-            column: Column name
-            constraint: Constraint definition
-            
-        Returns:
-            Constraint validation result
-        """
-        result = {"valid": True, "column": column, "message": ""}
-        
-        if "min" in constraint:
-            min_val = constraint["min"]
-            if df[column].min() < min_val:
-                result["valid"] = False
-                result["message"] = f"Minimum value {df[column].min()} is below constraint {min_val}"
-        
-        if "max" in constraint:
-            max_val = constraint["max"]
-            if df[column].max() > max_val:
-                result["valid"] = False
-                result["message"] = f"Maximum value {df[column].max()} is above constraint {max_val}"
-        
-        if "unique" in constraint and constraint["unique"]:
-            if not df[column].is_unique:
-                result["valid"] = False
-                result["message"] = f"Column {column} contains duplicate values"
-        
-        if "not_null" in constraint and constraint["not_null"]:
-            if df[column].isnull().any():
-                result["valid"] = False
-                result["message"] = f"Column {column} contains null values"
-        
-        return result
 
 
 class OutlierInfo:
@@ -151,6 +130,16 @@ class OutlierInfo:
     
     def __init__(self, column: str, indices: List[int], values: List[Any], 
                  method: str, severity: OutlierSeverity, threshold: float):
+        """Initialize outlier information.
+        
+        Args:
+            column: Column name where outliers were detected
+            indices: Row indices of outliers
+            values: Actual outlier values
+            method: Detection method used
+            severity: Severity level of outliers
+            threshold: Threshold used for detection
+        """
         self.column = column
         self.indices = indices
         self.values = values
@@ -161,25 +150,70 @@ class OutlierInfo:
         self.context = {}
     
     def __str__(self):
-        return f"Outlier({self.column}, {len(self.indices)} values, {self.severity.value}, {self.method})"
+        return f"OutlierInfo(column={self.column}, count={len(self.indices)}, severity={self.severity.value}, method={self.method})"
+    
+    def __repr__(self):
+        return self.__str__()
 
 
 class EnhancedOutlierHandler:
-    """Enhanced outlier handler with error raising and schema validation."""
+    """Enhanced outlier detection and handling with multiple methods and severity classification."""
     
     def __init__(self, raise_errors: bool = True, log_details: bool = True):
         """Initialize enhanced outlier handler.
         
         Args:
-            raise_errors: Whether to raise errors for outliers
+            raise_errors: Whether to raise exceptions for critical/high outliers
             log_details: Whether to log detailed outlier information
         """
-        self.standards = pipeline_standards
-        self.logger = system_logger.getChild("EnhancedOutlierHandler")
         self.raise_errors = raise_errors
         self.log_details = log_details
+        self.logger = system_logger.getChild("EnhancedOutlierHandler")
+        self.outlier_history = []
         
-        # Outlier detection methods
+        # Standard schemas for common data types
+        self.standard_schemas = {
+            "klines": DataSchema(
+                name="klines",
+                required_columns=["timestamp", "open", "high", "low", "close", "volume"],
+                data_types={
+                    "timestamp": "int64",
+                    "open": "float64",
+                    "high": "float64", 
+                    "low": "float64",
+                    "close": "float64",
+                    "volume": "float64"
+                },
+                constraints={
+                    "open": {"min": 0, "not_null": True},
+                    "high": {"min": 0, "not_null": True},
+                    "low": {"min": 0, "not_null": True},
+                    "close": {"min": 0, "not_null": True},
+                    "volume": {"min": 0, "not_null": True}
+                }
+            ),
+            "features": DataSchema(
+                name="features",
+                required_columns=["timestamp"],
+                optional_columns=[],  # Features can vary
+                data_types={"timestamp": "int64"},
+                constraints={"timestamp": {"not_null": True}}
+            ),
+            "labels": DataSchema(
+                name="labels",
+                required_columns=["timestamp", "label"],
+                data_types={
+                    "timestamp": "int64",
+                    "label": "object"
+                },
+                constraints={
+                    "timestamp": {"not_null": True},
+                    "label": {"not_null": True}
+                }
+            )
+        }
+        
+        # Available detection methods
         self.detection_methods = {
             "zscore": self._detect_zscore_outliers,
             "iqr": self._detect_iqr_outliers,
@@ -188,164 +222,107 @@ class EnhancedOutlierHandler:
             "mahalanobis": self._detect_mahalanobis_outliers
         }
         
-        # Standard data schemas
-        self.standard_schemas = self._initialize_standard_schemas()
-        
-        # Outlier history
-        self.outlier_history: List[OutlierInfo] = []
+        self.logger.info(f"🔍 Enhanced Outlier Handler initialized with {len(self.detection_methods)} detection methods")
     
-    def _initialize_standard_schemas(self) -> Dict[str, DataSchema]:
-        """Initialize standard data schemas."""
-        schemas = {}
-        
-        # Klines data schema
-        klines_schema = DataSchema(
-            name="klines",
-            required_columns=["timestamp", "open", "high", "low", "close", "volume"],
-            optional_columns=["quote_asset_volume", "number_of_trades", "taker_buy_base_asset_volume", "taker_buy_quote_asset_volume"],
-            data_types={
-                "timestamp": "int64",
-                "open": "float64",
-                "high": "float64",
-                "low": "float64",
-                "close": "float64",
-                "volume": "float64"
-            },
-            constraints={
-                "timestamp": {"not_null": True},
-                "open": {"min": 0, "not_null": True},
-                "high": {"min": 0, "not_null": True},
-                "low": {"min": 0, "not_null": True},
-                "close": {"min": 0, "not_null": True},
-                "volume": {"min": 0, "not_null": True}
-            }
-        )
-        schemas["klines"] = klines_schema
-        
-        # Features data schema
-        features_schema = DataSchema(
-            name="features",
-            required_columns=["timestamp"],
-            optional_columns=[],  # Features can vary
-            data_types={
-                "timestamp": "int64"
-            },
-            constraints={
-                "timestamp": {"not_null": True}
-            }
-        )
-        schemas["features"] = features_schema
-        
-        # Labels data schema
-        labels_schema = DataSchema(
-            name="labels",
-            required_columns=["timestamp", "label"],
-            optional_columns=["confidence", "source"],
-            data_types={
-                "timestamp": "int64",
-                "label": "int64",
-                "confidence": "float64"
-            },
-            constraints={
-                "timestamp": {"not_null": True},
-                "label": {"not_null": True}
-            }
-        )
-        schemas["labels"] = labels_schema
-        
-        return schemas
-    
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="outlier detection"
-    )
-    def detect_outliers(self, data: pd.DataFrame, columns: Optional[List[str]] = None,
-                       method: str = "zscore", threshold: float = 3.0,
-                       severity_threshold: OutlierSeverity = OutlierSeverity.MEDIUM) -> List[OutlierInfo]:
-        """Detect outliers in data with detailed logging.
+    @handle_errors(exceptions=(Exception,), default_return=[], context="outlier_detection")
+    def detect_outliers(self, data: pd.DataFrame, method: str = "zscore", 
+                       threshold: float = 3.0, columns: List[str] = None,
+                       raise_errors: bool = None) -> List[OutlierInfo]:
+        """Detect outliers in data using specified method.
         
         Args:
             data: Data to analyze
-            columns: Columns to check for outliers
-            method: Outlier detection method
-            threshold: Detection threshold
-            severity_threshold: Minimum severity to report
+            method: Detection method to use
+            threshold: Threshold for outlier detection
+            columns: Specific columns to analyze (None for all numeric)
+            raise_errors: Override default error raising behavior
             
         Returns:
-            List of outlier information
+            List of OutlierInfo objects
         """
+        if raise_errors is None:
+            raise_errors = self.raise_errors
+        
+        if method not in self.detection_methods:
+            self.logger.error(f"Unknown detection method: {method}")
+            return []
+        
         if columns is None:
             columns = data.select_dtypes(include=[np.number]).columns.tolist()
         
-        outliers = []
+        all_outliers = []
         
         for column in columns:
             if column not in data.columns:
                 self.logger.warning(f"Column {column} not found in data")
                 continue
             
-            if method in self.detection_methods:
-                column_outliers = self.detection_methods[method](data, column, threshold)
-                outliers.extend(column_outliers)
-            else:
-                self.logger.error(f"Unknown outlier detection method: {method}")
+            if not np.issubdtype(data[column].dtype, np.number):
+                self.logger.warning(f"Column {column} is not numeric, skipping")
+                continue
+            
+            # Remove null values for analysis
+            clean_data = data[column].dropna()
+            if len(clean_data) == 0:
+                self.logger.warning(f"Column {column} has no valid data")
+                continue
+            
+            # Detect outliers using specified method
+            outliers = self.detection_methods[method](data, column, threshold)
+            all_outliers.extend(outliers)
         
-        # Filter by severity
-        filtered_outliers = [o for o in outliers if o.severity.value >= severity_threshold.value]
+        # Log and handle outliers
+        if all_outliers:
+            self._log_outlier_details(all_outliers)
+            if raise_errors:
+                self._handle_outlier_errors(all_outliers)
+            
+            # Add to history
+            self.outlier_history.extend(all_outliers)
         
-        # Log outlier information
-        if self.log_details:
-            self._log_outlier_details(filtered_outliers)
-        
-        # Raise errors if configured
-        if self.raise_errors and filtered_outliers:
-            self._handle_outlier_errors(filtered_outliers)
-        
-        # Store in history
-        self.outlier_history.extend(filtered_outliers)
-        
-        return filtered_outliers
+        return all_outliers
     
     def _detect_zscore_outliers(self, data: pd.DataFrame, column: str, threshold: float) -> List[OutlierInfo]:
         """Detect outliers using Z-score method."""
         outliers = []
         
-        # Calculate Z-scores
-        z_scores = np.abs((data[column] - data[column].mean()) / data[column].std())
-        
-        # Find outliers
-        outlier_indices = np.where(z_scores > threshold)[0]
-        
-        if len(outlier_indices) > 0:
-            outlier_values = data[column].iloc[outlier_indices].tolist()
+        try:
+            # Calculate Z-scores
+            z_scores = np.abs((data[column] - data[column].mean()) / data[column].std())
+            outlier_indices = np.where(z_scores > threshold)[0]
             
-            # Determine severity based on Z-score
-            max_z_score = z_scores.max()
-            if max_z_score > threshold * 2:
-                severity = OutlierSeverity.CRITICAL
-            elif max_z_score > threshold * 1.5:
-                severity = OutlierSeverity.HIGH
-            elif max_z_score > threshold * 1.2:
-                severity = OutlierSeverity.MEDIUM
-            else:
-                severity = OutlierSeverity.LOW
-            
-            outlier_info = OutlierInfo(
-                column=column,
-                indices=outlier_indices.tolist(),
-                values=outlier_values,
-                method="zscore",
-                severity=severity,
-                threshold=threshold
-            )
-            outlier_info.context = {
-                "z_scores": z_scores[outlier_indices].tolist(),
-                "max_z_score": max_z_score,
-                "mean": data[column].mean(),
-                "std": data[column].std()
-            }
-            outliers.append(outlier_info)
+            if len(outlier_indices) > 0:
+                outlier_values = data[column].iloc[outlier_indices].tolist()
+                
+                # Determine severity based on Z-score
+                max_z_score = z_scores.max()
+                if max_z_score > threshold * 3:
+                    severity = OutlierSeverity.CRITICAL
+                elif max_z_score > threshold * 2:
+                    severity = OutlierSeverity.HIGH
+                elif max_z_score > threshold * 1.5:
+                    severity = OutlierSeverity.MEDIUM
+                else:
+                    severity = OutlierSeverity.LOW
+                
+                outlier_info = OutlierInfo(
+                    column=column,
+                    indices=outlier_indices.tolist(),
+                    values=outlier_values,
+                    method="zscore",
+                    severity=severity,
+                    threshold=threshold
+                )
+                outlier_info.context = {
+                    "z_scores": z_scores[outlier_indices].tolist(),
+                    "max_z_score": max_z_score,
+                    "mean": data[column].mean(),
+                    "std": data[column].std()
+                }
+                outliers.append(outlier_info)
+        
+        except Exception as e:
+            self.logger.error(f"Error in Z-score outlier detection: {e}")
         
         return outliers
     
@@ -353,57 +330,58 @@ class EnhancedOutlierHandler:
         """Detect outliers using IQR method."""
         outliers = []
         
-        Q1 = data[column].quantile(0.25)
-        Q3 = data[column].quantile(0.75)
-        IQR = Q3 - Q1
-        
-        lower_bound = Q1 - threshold * IQR
-        upper_bound = Q3 + threshold * IQR
-        
-        # Find outliers
-        outlier_mask = (data[column] < lower_bound) | (data[column] > upper_bound)
-        outlier_indices = np.where(outlier_mask)[0]
-        
-        if len(outlier_indices) > 0:
-            outlier_values = data[column].iloc[outlier_indices].tolist()
+        try:
+            Q1 = data[column].quantile(0.25)
+            Q3 = data[column].quantile(0.75)
+            IQR = Q3 - Q1
             
-            # Determine severity based on distance from bounds
-            distances = []
-            for idx in outlier_indices:
-                val = data[column].iloc[idx]
-                if val < lower_bound:
-                    distance = (lower_bound - val) / IQR
+            lower_bound = Q1 - threshold * IQR
+            upper_bound = Q3 + threshold * IQR
+            
+            outlier_indices = np.where((data[column] < lower_bound) | (data[column] > upper_bound))[0]
+            
+            if len(outlier_indices) > 0:
+                outlier_values = data[column].iloc[outlier_indices].tolist()
+                
+                # Determine severity based on distance from bounds
+                distances = []
+                for idx in outlier_indices:
+                    val = data[column].iloc[idx]
+                    if val < lower_bound:
+                        distances.append((lower_bound - val) / IQR)
+                    else:
+                        distances.append((val - upper_bound) / IQR)
+                
+                max_distance = max(distances)
+                if max_distance > threshold * 2:
+                    severity = OutlierSeverity.CRITICAL
+                elif max_distance > threshold * 1.5:
+                    severity = OutlierSeverity.HIGH
+                elif max_distance > threshold * 1.2:
+                    severity = OutlierSeverity.MEDIUM
                 else:
-                    distance = (val - upper_bound) / IQR
-                distances.append(distance)
-            
-            max_distance = max(distances)
-            if max_distance > threshold * 2:
-                severity = OutlierSeverity.CRITICAL
-            elif max_distance > threshold * 1.5:
-                severity = OutlierSeverity.HIGH
-            elif max_distance > threshold * 1.2:
-                severity = OutlierSeverity.MEDIUM
-            else:
-                severity = OutlierSeverity.LOW
-            
-            outlier_info = OutlierInfo(
-                column=column,
-                indices=outlier_indices.tolist(),
-                values=outlier_values,
-                method="iqr",
-                severity=severity,
-                threshold=threshold
-            )
-            outlier_info.context = {
-                "Q1": Q1,
-                "Q3": Q3,
-                "IQR": IQR,
-                "lower_bound": lower_bound,
-                "upper_bound": upper_bound,
-                "distances": distances
-            }
-            outliers.append(outlier_info)
+                    severity = OutlierSeverity.LOW
+                
+                outlier_info = OutlierInfo(
+                    column=column,
+                    indices=outlier_indices.tolist(),
+                    values=outlier_values,
+                    method="iqr",
+                    severity=severity,
+                    threshold=threshold
+                )
+                outlier_info.context = {
+                    "Q1": Q1,
+                    "Q3": Q3,
+                    "IQR": IQR,
+                    "lower_bound": lower_bound,
+                    "upper_bound": upper_bound,
+                    "max_distance": max_distance
+                }
+                outliers.append(outlier_info)
+        
+        except Exception as e:
+            self.logger.error(f"Error in IQR outlier detection: {e}")
         
         return outliers
     
@@ -458,6 +436,7 @@ class EnhancedOutlierHandler:
         
         except ImportError:
             self.logger.warning("scikit-learn not available for isolation forest outlier detection")
+        
         except Exception as e:
             self.logger.error(f"Error in isolation forest outlier detection: {e}")
         
@@ -514,6 +493,7 @@ class EnhancedOutlierHandler:
         
         except ImportError:
             self.logger.warning("scikit-learn not available for LOF outlier detection")
+        
         except Exception as e:
             self.logger.error(f"Error in LOF outlier detection: {e}")
         
@@ -568,6 +548,7 @@ class EnhancedOutlierHandler:
         
         except ImportError:
             self.logger.warning("scipy not available for Mahalanobis outlier detection")
+        
         except Exception as e:
             self.logger.error(f"Error in Mahalanobis outlier detection: {e}")
         
@@ -645,6 +626,7 @@ class EnhancedOutlierHandler:
             Created data schema
         """
         schema = DataSchema(name, required_columns, optional_columns, data_types, constraints)
+        
         self.standard_schemas[name] = schema
         self.logger.info(f"Created custom schema: {name}")
         return schema

@@ -29,7 +29,7 @@ import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from enum import Enum
 import argparse
 import logging
@@ -261,21 +261,24 @@ class UnifiedQualityOrchestrator:
             }
         }
     
-    def validate_dataframe_quality(self, df: pd.DataFrame, context: str = "") -> QualityResult:
+    def validate_dataframe_quality(self, df, context: str = "") -> QualityResult:
         """Validate DataFrame quality with comprehensive checks."""
         if not PANDAS_AVAILABLE:
             raise ImportError("pandas is required for data quality validation")
         
         result = QualityResult()
         
-        if df is None or df.empty:
+        if df is None or (hasattr(df, 'empty') and df.empty):
             result.add_issue("empty_data", "DataFrame is None or empty")
             return result
         
         # Basic metrics
         result.add_metric("rows", len(df))
         result.add_metric("columns", len(df.columns))
-        result.add_metric("memory_mb", df.memory_usage(deep=True).sum() / 1024 / 1024)
+        if hasattr(df, 'memory_usage'):
+            result.add_metric("memory_mb", df.memory_usage(deep=True).sum() / 1024 / 1024)
+        else:
+            result.add_metric("memory_mb", "unknown")
         
         # Check for NaN values
         self._validate_nan_values(df, result)

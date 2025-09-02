@@ -152,17 +152,56 @@ class AresPipeline:
             print("   ⚙️ Initializing ConfigurationService...")
             self.logger.info("   ⚙️ Initializing ConfigurationService...")
 
+            # Create default configuration if none provided
+            default_config = {
+                "pipeline": {
+                    "loop_interval_seconds": 10,
+                    "max_cycles": 100,
+                    "max_duration_seconds": 3600,
+                    "enable_dual_model_system": True,
+                    "enable_performance_monitoring": True,
+                    "enable_supervision": True,
+                },
+                "trading": {
+                    "default_symbol": "ETHUSDT",
+                    "default_exchange": "BINANCE",
+                    "risk_management": {
+                        "max_position_size": 0.1,
+                        "max_leverage": 3.0,
+                        "stop_loss_percentage": 0.02,
+                        "take_profit_percentage": 0.04,
+                    },
+                },
+                "dual_model_system": {
+                    "analyst_timeframes": ["30m", "15m", "5m"],
+                    "tactician_timeframes": ["1m"],
+                    "analyst_confidence_threshold": 0.6,
+                    "tactician_confidence_threshold": 0.7,
+                    "ensemble_weight_analyst": 0.6,
+                    "ensemble_weight_tactician": 0.4,
+                },
+                "performance": {
+                    "metrics_collection_interval": 30,
+                    "dashboard_update_interval": 60,
+                    "enable_real_time_monitoring": True,
+                }
+            }
+
+            # Merge with provided config
+            if self.config:
+                self._deep_merge_config(default_config, self.config)
+
             # Register ConfigurationService via factory so it receives DI config
             def _config_service_factory(
                 container: DependencyContainer
             ) -> ConfigurationService:
                 # Pass the DI container's config into the service
-                return ConfigurationService(container.get_config("root_config", {}))
+                return ConfigurationService(container.get_config("root_config", default_config))
 
             # Store current container config under a conventional key if missing
             if self.container.get_config("root_config") is None:
                 # The DependencyContainer already holds its config; expose it
-                self.container.set_config("root_config", self.container._config)
+                self.container.set_config("root_config", default_config)
 
             self.container.register_factory(
                 "ConfigurationService",
@@ -177,6 +216,14 @@ class AresPipeline:
             self.logger.exception("Error initializing configuration service")
             raise
 
+    def _deep_merge_config(self, base_config: dict, override_config: dict) -> None:
+        """Deep merge configuration dictionaries."""
+        for key, value in override_config.items():
+            if key in base_config and isinstance(base_config[key], dict) and isinstance(value, dict):
+                self._deep_merge_config(base_config[key], value)
+            else:
+                base_config[key] = value
+
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None, 
@@ -188,25 +235,35 @@ class AresPipeline:
             print("🔧 Registering core services...")
             self.logger.info("🔧 Registering core services...")
 
+            # Get configuration for service registration
+            config_service = self.container.resolve("ConfigurationService")
+            if not config_service:
+                raise ValueError("ConfigurationService not available for service registration")
+
             # Register database manager
             print("   💾 Registering DatabaseManager...")
             self.logger.info("   💾 Registering DatabaseManager...")
             try:
-                self.container.register("DatabaseManager", SQLiteManager)
+                db_config = config_service.get_value("database", {})
+                self.container.register("DatabaseManager", SQLiteManager, config=db_config)
                 print("   ✅ DatabaseManager registered successfully")
                 self.logger.info("   ✅ DatabaseManager registered successfully")
             except Exception as e:
                 print(f"   ❌ Failed to register DatabaseManager: {e}")
                 self.logger.exception("   ❌ Failed to register DatabaseManager")
+                raise
 
             # Register exchange client
             print("   🏢 Registering ExchangeClient...")
             self.logger.info("   🏢 Registering ExchangeClient...")
             try:
-                # Use environment-configured exchange as default
+                # Get exchange configuration
+                exchange_name = get_exchange_name().lower()
+                exchange_config = config_service.get_value("trading.exchange", {})
+                
                 # Build exchange instance via factory and register the instance
                 exchange_instance = RootExchangeFactory.get_exchange(
-                    get_exchange_name().lower(),
+                    exchange_name, config=exchange_config
                 )
                 self.container.register_instance("ExchangeClient", exchange_instance)
                 print("   ✅ ExchangeClient registered successfully")
@@ -214,84 +271,85 @@ class AresPipeline:
             except Exception as e:
                 print(f"   ❌ Failed to register ExchangeClient: {e}")
                 self.logger.exception("   ❌ Failed to register ExchangeClient")
+                raise
 
-            # Register analyst
+            # Register analyst with configuration
             print("   📊 Registering Analyst...")
             self.logger.info("   📊 Registering Analyst...")
             try:
-                self.container.register("Analyst", Analyst, config={"analyst": {}})
+                analyst_config = config_service.get_value("analyst", {})
+                self.container.register("Analyst", Analyst, config=analyst_config)
                 print("   ✅ Analyst registered successfully")
                 self.logger.info("   ✅ Analyst registered successfully")
             except Exception as e:
                 print(f"   ❌ Failed to register Analyst: {e}")
                 self.logger.exception("   ❌ Failed to register Analyst")
+                raise
 
-            # Register strategist
+            # Register strategist with configuration
             print("   🧠 Registering Strategist...")
             self.logger.info("   🧠 Registering Strategist...")
             try:
-                self.container.register(
-                    "Strategist",
-                    Strategist, config={"strategist": {}},
-                )
+                strategist_config = config_service.get_value("strategist", {})
+                self.container.register("Strategist", Strategist, config=strategist_config)
                 print("   ✅ Strategist registered successfully")
                 self.logger.info("   ✅ Strategist registered successfully")
             except Exception as e:
                 print(f"   ❌ Failed to register Strategist: {e}")
                 self.logger.exception("   ❌ Failed to register Strategist")
+                raise
 
-            # Register tactician
+            # Register tactician with configuration
             print("   🎯 Registering Tactician...")
             self.logger.info("   🎯 Registering Tactician...")
             try:
-                self.container.register(
-                    "Tactician",
-                    Tactician, config={"tactician": {}},
-                )
+                tactician_config = config_service.get_value("tactician", {})
+                self.container.register("Tactician", Tactician, config=tactician_config)
                 print("   ✅ Tactician registered successfully")
                 self.logger.info("   ✅ Tactician registered successfully")
             except Exception as e:
                 print(f"   ❌ Failed to register Tactician: {e}")
                 self.logger.exception("   ❌ Failed to register Tactician")
+                raise
 
-            # Register supervisor
+            # Register supervisor with configuration
             print("   👁️ Registering Supervisor...")
             self.logger.info("   👁️ Registering Supervisor...")
             try:
-                self.container.register(
-                    "Supervisor",
-                    Supervisor, config={"supervisor": {}},
-                )
+                supervisor_config = config_service.get_value("supervisor", {})
+                self.container.register("Supervisor", Supervisor, config=supervisor_config)
                 print("   ✅ Supervisor registered successfully")
                 self.logger.info("   ✅ Supervisor registered successfully")
             except Exception as e:
                 print(f"   ❌ Failed to register Supervisor: {e}")
                 self.logger.exception("   ❌ Failed to register Supervisor")
+                raise
 
-            # Register state manager
+            # Register state manager with configuration
             print("   💾 Registering StateManager...")
             self.logger.info("   💾 Registering StateManager...")
             try:
-                self.container.register(
-                    "StateManager",
-                    StateManager, config={"state_manager": {}},
-                )
+                state_config = config_service.get_value("state_manager", {})
+                self.container.register("StateManager", StateManager, config=state_config)
                 print("   ✅ StateManager registered successfully")
                 self.logger.info("   ✅ StateManager registered successfully")
             except Exception as e:
                 print(f"   ❌ Failed to register StateManager: {e}")
                 self.logger.exception("   ❌ Failed to register StateManager")
+                raise
 
-            # Register event bus
+            # Register event bus with configuration
             print("   📡 Registering EventBus...")
             self.logger.info("   📡 Registering EventBus...")
             try:
-                self.container.register("EventBus", EventBus, config={"event_bus": {}})
+                event_bus_config = config_service.get_value("event_bus", {})
+                self.container.register("EventBus", EventBus, config=event_bus_config)
                 print("   ✅ EventBus registered successfully")
                 self.logger.info("   ✅ EventBus registered successfully")
             except Exception as e:
                 print(f"   ❌ Failed to register EventBus: {e}")
                 self.logger.exception("   ❌ Failed to register EventBus")
+                raise
 
             print("✅ Core services registered successfully")
             self.logger.info("✅ Core services registered successfully")
@@ -312,69 +370,85 @@ class AresPipeline:
             print("🔧 Resolving pipeline components...")
             self.logger.info("🔧 Resolving pipeline components...")
 
-            # Resolve all components
-            print("   📊 Resolving Analyst component...")
-            self.logger.info("   📊 Resolving Analyst component...")
-            self.analyst = self.container.resolve("Analyst")
-            if self.analyst:
-                print("   ✅ Analyst component resolved successfully")
-                self.logger.info("   ✅ Analyst component resolved successfully")
-            else:
-                print("   ❌ Failed to resolve Analyst component")
-                self.logger.error("   ❌ Failed to resolve Analyst component")
+            # Get configuration for component validation
+            config_service = self.container.resolve("ConfigurationService")
+            if not config_service:
+                raise ValueError("ConfigurationService not available for component resolution")
 
-            print("   🧠 Resolving Strategist component...")
-            self.logger.info("   🧠 Resolving Strategist component...")
-            self.strategist = self.container.resolve("Strategist")
-            if self.strategist:
-                print("   ✅ Strategist component resolved successfully")
-                self.logger.info("   ✅ Strategist component resolved successfully")
-            else:
-                print("   ❌ Failed to resolve Strategist component")
-                self.logger.error("   ❌ Failed to resolve Strategist component")
+            # Define required components and their validation rules
+            required_components = {
+                "Analyst": {
+                    "interface": IAnalyst,
+                    "required_methods": ["execute_analysis", "initialize", "stop"],
+                    "description": "Market analysis and data processing"
+                },
+                "Strategist": {
+                    "interface": IStrategist,
+                    "required_methods": ["generate_strategy", "initialize", "stop"],
+                    "description": "Trading strategy generation"
+                },
+                "Tactician": {
+                    "interface": ITactician,
+                    "required_methods": ["run", "initialize", "stop"],
+                    "description": "Tactical execution and position management"
+                },
+                "Supervisor": {
+                    "interface": ISupervisor,
+                    "required_methods": ["initialize", "stop"],
+                    "description": "System supervision and monitoring"
+                },
+                "StateManager": {
+                    "interface": IStateManager,
+                    "required_methods": ["initialize", "stop"],
+                    "description": "State management and persistence"
+                },
+                "EventBus": {
+                    "interface": IEventBus,
+                    "required_methods": ["initialize", "stop"],
+                    "description": "Event communication and routing"
+                }
+            }
 
-            print("   🎯 Resolving Tactician component...")
-            self.logger.info("   🎯 Resolving Tactician component...")
-            self.tactician = self.container.resolve("Tactician")
-            if self.tactician:
-                print("   ✅ Tactician component resolved successfully")
-                self.logger.info("   ✅ Tactician component resolved successfully")
-            else:
-                print("   ❌ Failed to resolve Tactician component")
-                self.logger.error("   ❌ Failed to resolve Tactician component")
+            # Resolve and validate each component
+            for component_name, validation_rules in required_components.items():
+                print(f"   🔍 Resolving {component_name} component...")
+                self.logger.info(f"   🔍 Resolving {component_name} component...")
+                
+                try:
+                    # Resolve component
+                    component = self.container.resolve(component_name)
+                    if not component:
+                        raise ValueError(f"Failed to resolve {component_name} from container")
+                    
+                    # Validate component interface
+                    if not isinstance(component, validation_rules["interface"]):
+                        raise TypeError(f"{component_name} does not implement {validation_rules['interface'].__name__}")
+                    
+                    # Validate required methods
+                    for method_name in validation_rules["required_methods"]:
+                        if not hasattr(component, method_name):
+                            raise AttributeError(f"{component_name} missing required method: {method_name}")
+                    
+                    # Store component reference
+                    setattr(self, component_name.lower(), component)
+                    
+                    print(f"   ✅ {component_name} component resolved and validated successfully")
+                    self.logger.info(f"   ✅ {component_name} component resolved and validated successfully")
+                    
+                except Exception as e:
+                    print(f"   ❌ Failed to resolve {component_name} component: {e}")
+                    self.logger.error(f"   ❌ Failed to resolve {component_name} component: {e}")
+                    raise
 
-            print("   👁️ Resolving Supervisor component...")
-            self.logger.info("   👁️ Resolving Supervisor component...")
-            self.supervisor = self.container.resolve("Supervisor")
-            if self.supervisor:
-                print("   ✅ Supervisor component resolved successfully")
-                self.logger.info("   ✅ Supervisor component resolved successfully")
-            else:
-                print("   ❌ Failed to resolve Supervisor component")
-                self.logger.error("   ❌ Failed to resolve Supervisor component")
+            # Validate that all critical components are available
+            critical_components = ["analyst", "tactician", "state_manager"]
+            missing_components = [comp for comp in critical_components if getattr(self, comp) is None]
+            
+            if missing_components:
+                raise ValueError(f"Critical components missing: {missing_components}")
 
-            print("   💾 Resolving StateManager component...")
-            self.logger.info("   💾 Resolving StateManager component...")
-            self.state_manager = self.container.resolve("StateManager")
-            if self.state_manager:
-                print("   ✅ StateManager component resolved successfully")
-                self.logger.info("   ✅ StateManager component resolved successfully")
-            else:
-                print("   ❌ Failed to resolve StateManager component")
-                self.logger.error("   ❌ Failed to resolve StateManager component")
-
-            print("   📡 Resolving EventBus component...")
-            self.logger.info("   📡 Resolving EventBus component...")
-            self.event_bus = self.container.resolve("EventBus")
-            if self.event_bus:
-                print("   ✅ EventBus component resolved successfully")
-                self.logger.info("   ✅ EventBus component resolved successfully")
-            else:
-                print("   ❌ Failed to resolve EventBus component")
-                self.logger.error("   ❌ Failed to resolve EventBus component")
-
-            print("✅ Pipeline components resolved successfully")
-            self.logger.info("✅ Pipeline components resolved successfully")
+            print("✅ Pipeline components resolved and validated successfully")
+            self.logger.info("✅ Pipeline components resolved and validated successfully")
 
         except Exception:
             print(warning("Error resolving pipeline components"))
@@ -389,43 +463,151 @@ class AresPipeline:
     async def _initialize_components(self) -> None:
         """Initialize all pipeline components."""
         try:
+            print("🔧 Initializing pipeline components...")
+            self.logger.info("🔧 Initializing pipeline components...")
+
+            # Define initialization order based on dependencies
+            initialization_order = [
+                ("StateManager", "state_manager", "State management and persistence"),
+                ("EventBus", "event_bus", "Event communication and routing"),
+                ("Analyst", "analyst", "Market analysis and data processing"),
+                ("Strategist", "strategist", "Trading strategy generation"),
+                ("Tactician", "tactician", "Tactical execution and position management"),
+                ("Supervisor", "supervisor", "System supervision and monitoring")
+            ]
+
             # Initialize components in dependency order
-            if self.state_manager:
-                await self.state_manager.initialize()
+            for component_name, attr_name, description in initialization_order:
+                component = getattr(self, attr_name)
+                if component:
+                    try:
+                        print(f"   🔧 Initializing {component_name} ({description})...")
+                        self.logger.info(f"   🔧 Initializing {component_name} ({description})...")
+                        
+                        # Initialize component with timeout protection
+                        init_task = asyncio.create_task(component.initialize())
+                        try:
+                            await asyncio.wait_for(init_task, timeout=30.0)
+                            print(f"   ✅ {component_name} initialized successfully")
+                            self.logger.info(f"   ✅ {component_name} initialized successfully")
+                        except asyncio.TimeoutError:
+                            print(f"   ⚠️ {component_name} initialization timed out")
+                            self.logger.warning(f"   ⚠️ {component_name} initialization timed out")
+                            # Continue with other components
+                        except Exception as e:
+                            print(f"   ❌ Failed to initialize {component_name}: {e}")
+                            self.logger.exception(f"   ❌ Failed to initialize {component_name}")
+                            # For critical components, raise the error
+                            if attr_name in ["state_manager", "analyst", "tactician"]:
+                                raise
+                    except Exception as e:
+                        print(f"   ❌ Error initializing {component_name}: {e}")
+                        self.logger.exception(f"   ❌ Error initializing {component_name}")
+                        if attr_name in ["state_manager", "analyst", "tactician"]:
+                            raise
+                else:
+                    print(f"   ⚠️ {component_name} not available, skipping initialization")
+                    self.logger.warning(f"   ⚠️ {component_name} not available, skipping initialization")
 
-            if self.event_bus:
-                await self.event_bus.initialize()
+            # Validate that critical components are properly initialized
+            critical_components = ["state_manager", "analyst", "tactician"]
+            for comp_name in critical_components:
+                component = getattr(self, comp_name)
+                if not component:
+                    raise ValueError(f"Critical component {comp_name} not available after initialization")
+                
+                # Check if component has required methods
+                if not hasattr(component, "is_initialized"):
+                    self.logger.warning(f"Component {comp_name} does not have is_initialized method")
+                elif not getattr(component, "is_initialized", False):
+                    self.logger.warning(f"Component {comp_name} reports not initialized")
 
-            if self.analyst:
-                await self.analyst.initialize()
-
-            if self.strategist:
-                await self.strategist.initialize()
-
-            if self.tactician:
-                await self.tactician.initialize()
-
-            if self.supervisor:
-                await self.supervisor.initialize()
-
-            self.logger.info("All pipeline components initialized successfully")
+            print("✅ All pipeline components initialized successfully")
+            self.logger.info("✅ All pipeline components initialized successfully")
 
         except Exception:
             self.logger.exception("Error initializing components")
+            raise
 
     def _setup_signal_handlers(self) -> None:
         """Set up signal handlers for graceful shutdown."""
         try:
-            signal.signal(signal.SIGINT, self._signal_handler)
-            signal.signal(signal.SIGTERM, self._signal_handler)
-            self.logger.info("Signal handlers configured")
-        except Exception:
+            # Store original signal handlers for restoration
+            self._original_handlers = {}
+            
+            # Set up signal handlers for graceful shutdown
+            for sig in [signal.SIGINT, signal.SIGTERM]:
+                try:
+                    self._original_handlers[sig] = signal.signal(sig, self._signal_handler)
+                    self.logger.debug(f"Signal handler set for {sig}")
+                except Exception as e:
+                    self.logger.warning(f"Could not set signal handler for {sig}: {e}")
+            
+            # Set up additional signal handlers for debugging
+            if hasattr(signal, 'SIGUSR1'):
+                try:
+                    signal.signal(signal.SIGUSR1, self._debug_signal_handler)
+                    self.logger.debug("Debug signal handler (SIGUSR1) configured")
+                except Exception as e:
+                    self.logger.debug(f"Could not set debug signal handler: {e}")
+            
+            self.logger.info("Signal handlers configured successfully")
+            print("🔄 Signal handlers configured for graceful shutdown")
+            
+        except Exception as e:
             self.logger.exception("Error setting up signal handlers")
+            print(f"⚠️ Warning: Signal handlers not fully configured: {e}")
 
     def _signal_handler(self, signum: int, frame) -> None:
         """Handle signal for graceful shutdown."""
-        self.logger.info(f"Received signal {signum}, initiating graceful shutdown...")
-        asyncio.create_task(self.stop())
+        signal_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+        self.logger.info(f"Received signal {signal_name} ({signum}), initiating graceful shutdown...")
+        print(f"🛑 Received {signal_name} signal, shutting down gracefully...")
+        
+        # Create shutdown task
+        try:
+            if hasattr(self, '_shutdown_task') and not self._shutdown_task.done():
+                self.logger.warning("Shutdown already in progress")
+                return
+            
+            self._shutdown_task = asyncio.create_task(self.stop())
+            self.logger.info("Graceful shutdown task created")
+        except Exception as e:
+            self.logger.exception("Error creating shutdown task")
+            print(f"❌ Error during shutdown: {e}")
+
+    def _debug_signal_handler(self, signum: int, frame) -> None:
+        """Handle debug signal for pipeline status."""
+        self.logger.info(f"Received debug signal {signum}")
+        print("🔍 Debug signal received - displaying pipeline status...")
+        
+        try:
+            # Display current pipeline status
+            status = self.get_pipeline_status()
+            print("📊 Current Pipeline Status:")
+            print(f"   Running: {status.get('is_running', False)}")
+            print(f"   Cycle Count: {status.get('cycle_count', 0)}")
+            print(f"   Components: {len(status.get('components', {}))}")
+            
+            # Log detailed status
+            self.logger.info(f"Pipeline status: {status}")
+        except Exception as e:
+            self.logger.exception("Error handling debug signal")
+            print(f"❌ Error displaying status: {e}")
+
+    def _restore_signal_handlers(self) -> None:
+        """Restore original signal handlers."""
+        try:
+            if hasattr(self, '_original_handlers'):
+                for sig, handler in self._original_handlers.items():
+                    try:
+                        signal.signal(sig, handler)
+                        self.logger.debug(f"Restored signal handler for {sig}")
+                    except Exception as e:
+                        self.logger.warning(f"Could not restore signal handler for {sig}: {e}")
+                self.logger.info("Original signal handlers restored")
+        except Exception as e:
+            self.logger.exception("Error restoring signal handlers")
 
     @handle_specific_errors(
         error_handlers={
@@ -977,152 +1159,466 @@ class AresPipeline:
     async def _initialize_dual_model_system(self) -> None:
         """Initialize the dual model system."""
         try:
+            print("🤖 Initializing Dual Model System...")
+            self.logger.info("🤖 Initializing Dual Model System...")
+
+            # Check if dual model system is enabled in configuration
+            config_service = self.container.resolve("ConfigurationService")
+            if config_service:
+                enable_dual_model = config_service.get_value("pipeline.enable_dual_model_system", True)
+                if not enable_dual_model:
+                    print("   ⚠️ Dual Model System disabled in configuration")
+                    self.logger.info("   ⚠️ Dual Model System disabled in configuration")
+                    return
+            else:
+                print("   ⚠️ ConfigurationService not available, using default settings")
+                self.logger.warning("   ⚠️ ConfigurationService not available, using default settings")
+
             # Get proper configuration for dual model system
             dual_model_config = self._get_dual_model_config()
+            
+            # Validate configuration
+            if not self._validate_dual_model_config(dual_model_config):
+                raise ValueError("Invalid dual model system configuration")
 
+            # Initialize the dual model system
+            print("   🔧 Setting up dual model system...")
+            self.logger.info("   🔧 Setting up dual model system...")
+            
             self.dual_model_system = await setup_dual_model_system(dual_model_config)
+            
             if self.dual_model_system:
                 self.logger.info("✅ Dual Model System initialized successfully")
+                print("   ✅ Dual Model System initialized successfully")
 
                 # Log system information
-                system_info = self.dual_model_system.get_system_info()
-                self.logger.info(
-                    f"   📊 Analyst timeframes: {system_info.get('analyst_timeframes', [])}",
-                )
-                self.logger.info(
-                    f"   📊 Tactician timeframes: {system_info.get('tactician_timeframes', [])}",
-                )
-                self.logger.info(
-                    f"   📊 Analyst confidence threshold: {system_info.get('analyst_confidence_threshold', 0.5)}",
-                )
-                self.logger.info(
-                    f"   📊 Tactician confidence threshold: {system_info.get('tactician_confidence_threshold', 0.6)}",
-                )
+                try:
+                    system_info = self.dual_model_system.get_system_info()
+                    print("   📊 Dual Model System Configuration:")
+                    print(f"      Analyst timeframes: {system_info.get('analyst_timeframes', [])}")
+                    print(f"      Tactician timeframes: {system_info.get('tactician_timeframes', [])}")
+                    print(f"      Analyst confidence threshold: {system_info.get('analyst_confidence_threshold', 0.5)}")
+                    print(f"      Tactician confidence threshold: {system_info.get('tactician_confidence_threshold', 0.6)}")
+                    
+                    self.logger.info(f"   📊 Analyst timeframes: {system_info.get('analyst_timeframes', [])}")
+                    self.logger.info(f"   📊 Tactician timeframes: {system_info.get('tactician_timeframes', [])}")
+                    self.logger.info(f"   📊 Analyst confidence threshold: {system_info.get('analyst_confidence_threshold', 0.5)}")
+                    self.logger.info(f"   📊 Tactician confidence threshold: {system_info.get('tactician_confidence_threshold', 0.6)}")
+                    
+                    # Validate system capabilities
+                    self._validate_dual_model_capabilities(system_info)
+                    
+                except Exception as e:
+                    print(f"   ⚠️ Could not retrieve system info: {e}")
+                    self.logger.warning(f"   ⚠️ Could not retrieve system info: {e}")
             else:
-                self.logger.warning("Dual Model System not available")
-        except Exception:
+                print("   ❌ Failed to initialize Dual Model System")
+                self.logger.error("   ❌ Failed to initialize Dual Model System")
+                raise RuntimeError("Dual Model System initialization failed")
+                
+        except Exception as e:
+            print(f"   ❌ Error initializing dual model system: {e}")
             self.logger.exception("Error initializing dual model system")
+            raise
+
+    def _validate_dual_model_config(self, config: dict) -> bool:
+        """Validate dual model system configuration."""
+        try:
+            required_keys = ["dual_model_system"]
+            if not all(key in config for key in required_keys):
+                self.logger.error(f"Missing required configuration keys: {required_keys}")
+                return False
+            
+            dual_config = config["dual_model_system"]
+            required_dual_keys = [
+                "analyst_timeframes", "tactician_timeframes",
+                "analyst_confidence_threshold", "tactician_confidence_threshold"
+            ]
+            
+            if not all(key in dual_config for key in required_dual_keys):
+                self.logger.error(f"Missing required dual model keys: {required_dual_keys}")
+                return False
+            
+            # Validate confidence thresholds
+            if not (0.0 <= dual_config["analyst_confidence_threshold"] <= 1.0):
+                self.logger.error("Analyst confidence threshold must be between 0.0 and 1.0")
+                return False
+                
+            if not (0.0 <= dual_config["tactician_confidence_threshold"] <= 1.0):
+                self.logger.error("Tactician confidence threshold must be between 0.0 and 1.0")
+                return False
+            
+            # Validate timeframes
+            if not isinstance(dual_config["analyst_timeframes"], list) or len(dual_config["analyst_timeframes"]) == 0:
+                self.logger.error("Analyst timeframes must be a non-empty list")
+                return False
+                
+            if not isinstance(dual_config["tactician_timeframes"], list) or len(dual_config["tactician_timeframes"]) == 0:
+                self.logger.error("Tactician timeframes must be a non-empty list")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            self.logger.exception("Error validating dual model configuration")
+            return False
+
+    def _validate_dual_model_capabilities(self, system_info: dict) -> None:
+        """Validate dual model system capabilities."""
+        try:
+            # Check if system has required methods
+            required_methods = [
+                "make_trading_decision", "should_trigger_training", 
+                "trigger_model_training", "get_system_info"
+            ]
+            
+            missing_methods = []
+            for method in required_methods:
+                if not hasattr(self.dual_model_system, method):
+                    missing_methods.append(method)
+            
+            if missing_methods:
+                self.logger.warning(f"Dual model system missing methods: {missing_methods}")
+                print(f"   ⚠️ Missing methods: {missing_methods}")
+            
+            # Check system health
+            if hasattr(self.dual_model_system, "get_system_health"):
+                health = self.dual_model_system.get_system_health()
+                if health.get("status") != "healthy":
+                    self.logger.warning(f"Dual model system health: {health}")
+                    print(f"   ⚠️ System health: {health.get('status', 'unknown')}")
+            
+        except Exception as e:
+            self.logger.exception("Error validating dual model capabilities")
+            print(f"   ⚠️ Could not validate capabilities: {e}")
 
     async def _initialize_performance_monitoring(self) -> None:
         """Initialize performance monitoring."""
         try:
+            print("📊 Initializing Performance Monitoring...")
             self.logger.info("📊 Initializing Performance Monitoring...")
 
-            # Setup performance monitor
-            self.performance_monitor = await setup_performance_monitor(self.config)
+            # Check if performance monitoring is enabled
+            config_service = self.container.resolve("ConfigurationService")
+            if config_service:
+                enable_monitoring = config_service.get_value("pipeline.enable_performance_monitoring", True)
+                if not enable_monitoring:
+                    print("   ⚠️ Performance monitoring disabled in configuration")
+                    self.logger.info("   ⚠️ Performance monitoring disabled in configuration")
+                    return
+            else:
+                print("   ⚠️ ConfigurationService not available, using default settings")
+                self.logger.warning("   ⚠️ ConfigurationService not available, using default settings")
 
-            if self.performance_monitor:
-                self.logger.info("✅ Performance Monitor initialized successfully")
+            # Setup performance monitor
+            print("   📊 Setting up performance monitor...")
+            self.logger.info("   📊 Setting up performance monitor...")
+            
+            try:
+                self.performance_monitor = await setup_performance_monitor(self.config)
+                
+                if self.performance_monitor:
+                    self.logger.info("✅ Performance Monitor initialized successfully")
+                    print("   ✅ Performance Monitor initialized successfully")
+                    
+                    # Configure monitoring intervals
+                    if hasattr(self.performance_monitor, 'set_collection_interval'):
+                        interval = config_service.get_value("performance.metrics_collection_interval", 30) if config_service else 30
+                        self.performance_monitor.set_collection_interval(interval)
+                        print(f"   ⏱️ Metrics collection interval set to {interval} seconds")
+                else:
+                    print("   ❌ Failed to initialize Performance Monitor")
+                    self.logger.error("   ❌ Failed to initialize Performance Monitor")
+                    raise RuntimeError("Performance Monitor initialization failed")
+                    
+            except Exception as e:
+                print(f"   ❌ Error setting up performance monitor: {e}")
+                self.logger.exception("   ❌ Error setting up performance monitor")
+                raise
 
             # Setup performance dashboard
-            self.performance_dashboard = await setup_performance_dashboard(
-                self.config,
-                self.performance_monitor,
-            )
-
-            if self.performance_dashboard:
-                self.logger.info(
-                    "✅ Performance Dashboard initialized successfully",
+            print("   📈 Setting up performance dashboard...")
+            self.logger.info("   📈 Setting up performance dashboard...")
+            
+            try:
+                self.performance_dashboard = await setup_performance_dashboard(
+                    self.config,
+                    self.performance_monitor,
                 )
-            else:
-                self.logger.warning("⚠️ Failed to initialize Performance Dashboard")
-        except Exception:
+
+                if self.performance_dashboard:
+                    self.logger.info("✅ Performance Dashboard initialized successfully")
+                    print("   ✅ Performance Dashboard initialized successfully")
+                    
+                    # Configure dashboard update interval
+                    if hasattr(self.performance_dashboard, 'set_update_interval'):
+                        interval = config_service.get_value("performance.dashboard_update_interval", 60) if config_service else 60
+                        self.performance_dashboard.set_update_interval(interval)
+                        print(f"   ⏱️ Dashboard update interval set to {interval} seconds")
+                        
+                    # Enable real-time monitoring if configured
+                    if hasattr(self.performance_dashboard, 'enable_real_time_monitoring'):
+                        real_time = config_service.get_value("performance.enable_real_time_monitoring", True) if config_service else True
+                        self.performance_dashboard.enable_real_time_monitoring(real_time)
+                        print(f"   🔄 Real-time monitoring: {'enabled' if real_time else 'disabled'}")
+                        
+                else:
+                    print("   ⚠️ Failed to initialize Performance Dashboard")
+                    self.logger.warning("   ⚠️ Failed to initialize Performance Dashboard")
+                    # Dashboard failure is not critical, continue without it
+                    
+            except Exception as e:
+                print(f"   ⚠️ Error setting up performance dashboard: {e}")
+                self.logger.warning(f"   ⚠️ Error setting up performance dashboard: {e}")
+                # Dashboard failure is not critical, continue without it
+
+            print("✅ Performance monitoring initialization completed")
+            self.logger.info("✅ Performance monitoring initialization completed")
+            
+        except Exception as e:
+            print(f"❌ Error initializing performance monitoring: {e}")
             self.logger.exception("Error initializing performance monitoring")
+            # Performance monitoring failure is not critical for pipeline operation
+            self.logger.warning("Continuing pipeline initialization without performance monitoring")
 
     def _get_dual_model_config(self) -> dict:
         """Get the configuration for the dual model system."""
         try:
-            # Get configuration from the centralized config system
+            # Try to get configuration from the centralized config system first
             dual_model_config = get_dual_model_config()
-
-            if dual_model_config:
+            
+            if dual_model_config and isinstance(dual_model_config, dict):
+                self.logger.info("Retrieved dual model configuration from centralized system")
                 return {"dual_model_system": dual_model_config}
+            
+            # Fallback to ConfigurationService if available
+            config_service = self.container.resolve("ConfigurationService")
+            if config_service:
+                try:
+                    dual_config = config_service.get_value("dual_model_system", {})
+                    if dual_config and isinstance(dual_config, dict):
+                        self.logger.info("Retrieved dual model configuration from ConfigurationService")
+                        return {"dual_model_system": dual_config}
+                except Exception as e:
+                    self.logger.warning(f"Could not retrieve dual model config from ConfigurationService: {e}")
+            
             # Fallback to default configuration
-            return {
+            self.logger.info("Using default dual model configuration")
+            default_config = {
                 "dual_model_system": {
                     "analyst_timeframes": ["30m", "15m", "5m"],
                     "tactician_timeframes": ["1m"],
-                    "analyst_confidence_threshold": 0.5,
-                    "tactician_confidence_threshold": 0.6,
+                    "analyst_confidence_threshold": 0.6,
+                    "tactician_confidence_threshold": 0.7,
                     "enter_signal_validity_duration": 120,
                     "signal_check_interval": 10,
                     "neutral_signal_threshold": 0.5,
                     "close_signal_threshold": 0.4,
                     "position_close_confidence_threshold": 0.6,
                     "enable_ensemble_analysis": True,
-                },
+                    "ensemble_weight_analyst": 0.6,
+                    "ensemble_weight_tactician": 0.4,
+                    "min_confidence_difference": 0.1,
+                    "max_position_hold_time": 3600,
+                    "enable_adaptive_thresholds": True,
+                    "training_trigger_conditions": {
+                        "min_data_points": 1000,
+                        "max_model_age_hours": 24,
+                        "performance_degradation_threshold": 0.1
+                    }
+                }
             }
+            
+            return default_config
 
-        except Exception:
-            self.logger.exception("Error getting dual model config")
-            # Return default configuration
+        except Exception as e:
+            self.logger.exception(f"Error getting dual model config: {e}")
+            # Return robust default configuration
             return {
                 "dual_model_system": {
                     "analyst_timeframes": ["30m", "15m", "5m"],
                     "tactician_timeframes": ["1m"],
-                    "analyst_confidence_threshold": 0.5,
-                    "tactician_confidence_threshold": 0.6,
+                    "analyst_confidence_threshold": 0.6,
+                    "tactician_confidence_threshold": 0.7,
                     "enter_signal_validity_duration": 120,
                     "signal_check_interval": 10,
                     "neutral_signal_threshold": 0.5,
                     "close_signal_threshold": 0.4,
                     "position_close_confidence_threshold": 0.6,
                     "enable_ensemble_analysis": True,
-                },
+                    "ensemble_weight_analyst": 0.6,
+                    "ensemble_weight_tactician": 0.4,
+                    "min_confidence_difference": 0.1,
+                    "max_position_hold_time": 3600,
+                    "enable_adaptive_thresholds": True,
+                    "training_trigger_conditions": {
+                        "min_data_points": 1000,
+                        "max_model_age_hours": 24,
+                        "performance_degradation_threshold": 0.1
+                    }
+                }
             }
 
 
 async def main():
     """Main entry point for the Ares Pipeline."""
-    # Add the project root to the Python path
-    project_root = Path(__file__).parent.parent
-    sys.path.insert(0, str(project_root))
-
-    # Setup logging
-    setup_logging()
-    init_observability({})
-    logger = system_logger.getChild("AresPipelineMain")
-
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description="Ares Trading Pipeline")
-    parser.add_argument("symbol", help="Trading symbol (e.g., ETHUSDT)")
-    parser.add_argument("exchange", help="Exchange name (e.g., BINANCE)")
-    parser.add_argument("--config", help="Path to configuration file")
-
-    args = parser.parse_args()
-
-    # Get trading mode from environment variable
-    trading_mode = os.environ.get("TRADING_MODE", "PAPER").upper()
-
-    logger.info(f"🚀 Starting Ares Pipeline in {trading_mode} mode")
-    logger.info(f"📊 Symbol: {args.symbol}")
-    logger.info(f"🏢 Exchange: {args.exchange}")
-    logger.info(f"🔧 Trading Mode: {trading_mode}")
-
-    # Create pipeline instance
-    pipeline = AresPipeline()
-
     try:
-        # Initialize pipeline
-        if not await pipeline.initialize():
-            print(failed("❌ Failed to initialize pipeline"))
+        # Add the project root to the Python path
+        project_root = Path(__file__).parent.parent
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+
+        # Setup logging
+        setup_logging()
+        init_observability({})
+        logger = system_logger.getChild("AresPipelineMain")
+
+        # Parse command line arguments
+        parser = argparse.ArgumentParser(
+            description="Ares Trading Pipeline - Advanced algorithmic trading system",
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            epilog="""
+Examples:
+  python src/ares_pipeline.py ETHUSDT BINANCE
+  python src/ares_pipeline.py BTCUSDT BINANCE --config config/trading.yaml
+  TRADING_MODE=LIVE python src/ares_pipeline.py ETHUSDT BINANCE
+
+Environment Variables:
+  TRADING_MODE: Set to 'PAPER', 'LIVE', or 'SIMULATION' (default: PAPER)
+  LOG_LEVEL: Set logging level (default: INFO)
+  CONFIG_PATH: Default configuration file path
+            """
+        )
+        
+        parser.add_argument(
+            "symbol", 
+            help="Trading symbol (e.g., ETHUSDT, BTCUSDT, ADAUSDT)"
+        )
+        parser.add_argument(
+            "exchange", 
+            help="Exchange name (e.g., BINANCE, COINBASE, KRAKEN)"
+        )
+        parser.add_argument(
+            "--config", 
+            help="Path to configuration file (YAML/JSON)",
+            default=os.environ.get("CONFIG_PATH", "config/trading.yaml")
+        )
+        parser.add_argument(
+            "--dry-run", 
+            action="store_true",
+            help="Run pipeline in dry-run mode without executing trades"
+        )
+        parser.add_argument(
+            "--verbose", "-v",
+            action="store_true",
+            help="Enable verbose logging"
+        )
+
+        args = parser.parse_args()
+
+        # Validate arguments
+        if not args.symbol or not args.exchange:
+            print(failed("❌ Symbol and exchange are required"))
+            parser.print_help()
             sys.exit(1)
 
-        # Run pipeline
-        result = await pipeline.run()
+        # Get trading mode from environment variable
+        trading_mode = os.environ.get("TRADING_MODE", "PAPER").upper()
+        if trading_mode not in ["PAPER", "LIVE", "SIMULATION"]:
+            print(warning(f"⚠️ Invalid TRADING_MODE '{trading_mode}', using PAPER"))
+            trading_mode = "PAPER"
 
-        if result:
-            logger.info("✅ Pipeline completed successfully")
+        # Set log level based on verbose flag
+        if args.verbose:
+            os.environ["LOG_LEVEL"] = "DEBUG"
+            logger.setLevel("DEBUG")
+
+        # Display startup information
+        print("🚀 Ares Trading Pipeline")
+        print("=" * 50)
+        print(f"📊 Symbol: {args.symbol}")
+        print(f"🏢 Exchange: {args.exchange}")
+        print(f"🔧 Trading Mode: {trading_mode}")
+        print(f"📁 Config: {args.config}")
+        print(f"🔍 Dry Run: {'Yes' if args.dry_run else 'No'}")
+        print(f"📝 Verbose: {'Yes' if args.verbose else 'No'}")
+        print("=" * 50)
+
+        logger.info(f"🚀 Starting Ares Pipeline in {trading_mode} mode")
+        logger.info(f"📊 Symbol: {args.symbol}")
+        logger.info(f"🏢 Exchange: {args.exchange}")
+        logger.info(f"🔧 Trading Mode: {trading_mode}")
+        logger.info(f"📁 Config: {args.config}")
+
+        # Load configuration if provided
+        config = {}
+        if args.config and os.path.exists(args.config):
+            try:
+                import yaml
+                with open(args.config, 'r') as f:
+                    config = yaml.safe_load(f) or {}
+                logger.info(f"✅ Configuration loaded from {args.config}")
+                print(f"✅ Configuration loaded from {args.config}")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not load configuration from {args.config}: {e}")
+                print(f"⚠️ Could not load configuration from {args.config}: {e}")
         else:
-            print(failed("❌ Pipeline failed"))
+            logger.info("Using default configuration")
+            print("ℹ️ Using default configuration")
+
+        # Add command line arguments to config
+        config.update({
+            "symbol": args.symbol,
+            "exchange": args.exchange,
+            "trading_mode": trading_mode,
+            "dry_run": args.dry_run,
+            "verbose": args.verbose
+        })
+
+        # Create pipeline instance
+        pipeline = AresPipeline(config)
+
+        try:
+            # Initialize pipeline
+            print("🔧 Initializing pipeline...")
+            if not await pipeline.initialize():
+                print(failed("❌ Failed to initialize pipeline"))
+                sys.exit(1)
+
+            # Run pipeline
+            print("🚀 Starting pipeline execution...")
+            result = await pipeline.run()
+
+            if result:
+                logger.info("✅ Pipeline completed successfully")
+                print("✅ Pipeline completed successfully")
+                
+                # Display results
+                if isinstance(result, dict):
+                    print(f"📊 Cycles executed: {result.get('cycles_executed', 0)}")
+                    print(f"⏱️ Duration: {result.get('duration_seconds', 0):.2f} seconds")
+                    print(f"📅 Start time: {result.get('start_time')}")
+                    print(f"📅 End time: {result.get('end_time')}")
+            else:
+                print(failed("❌ Pipeline failed"))
+                sys.exit(1)
+
+        except KeyboardInterrupt:
+            logger.info("🛑 Received interrupt signal, shutting down gracefully...")
+            print("🛑 Received interrupt signal, shutting down gracefully...")
+            await pipeline.stop()
+        except Exception as e:
+            print(error(f"💥 Unexpected error: {e}"))
+            logger.exception("Unexpected error in pipeline execution")
+            try:
+                await pipeline.stop()
+            except Exception as stop_error:
+                logger.exception("Error during pipeline shutdown")
+                print(f"⚠️ Error during shutdown: {stop_error}")
             sys.exit(1)
 
-    except KeyboardInterrupt:
-        logger.info("🛑 Received interrupt signal, shutting down gracefully...")
-        await pipeline.stop()
     except Exception as e:
-        print(error(f"💥 Unexpected error: {e}"))
-        await pipeline.stop()
+        print(critical(f"💥 Fatal error in main: {e}"))
         sys.exit(1)
 
 

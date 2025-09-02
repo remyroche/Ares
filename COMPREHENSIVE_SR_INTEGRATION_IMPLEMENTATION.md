@@ -148,7 +148,7 @@ async def _extract_sr_features(self, market_data: pd.DataFrame) -> list[float]:
 class ComprehensiveSRTrainingPipeline:
     """
     Comprehensive training pipeline with full SR feature integration.
-    Integrates step7 SR features and step2_5 SR levels.
+    Integrates step07 SR features and step2_5 SR levels.
     """
     
     async def execute_comprehensive_training(self, training_data, symbol, exchange, timeframe):
@@ -156,7 +156,7 @@ class ComprehensiveSRTrainingPipeline:
         Execute comprehensive training with full SR feature integration.
         Ensures all ML models are trained on complete feature set.
         """
-        # Step 1: Load step7 features (42+ SR features)
+        # Step 1: Load step07 features (42+ SR features)
         # Step 2: Load step2_5 SR levels (15+ level features)
         # Step 3: Prepare comprehensive training data
         # Step 4: Train models with comprehensive features
@@ -180,7 +180,7 @@ class MultiOutputModelTrainer:
     
     async def load_step7_features(self, step7_output_path: str) -> bool:
         """
-        Load comprehensive SR features from step7 enhanced matrix operations.
+        Load comprehensive SR features from step07 enhanced matrix operations.
         Extracts 42+ SR features for ML training.
         """
         
@@ -192,7 +192,7 @@ class MultiOutputModelTrainer:
         
     async def _add_comprehensive_sr_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """
-        Add comprehensive SR features from step7 and step2_5 to the dataset.
+        Add comprehensive SR features from step07 and step2_5 to the dataset.
         Ensures all 57+ SR features are included in training.
         """
         
@@ -204,7 +204,7 @@ class MultiOutputModelTrainer:
 ```
 
 #### **Enhanced Training Process**
-- **Feature Loading**: Loads step7 and step2_5 results
+- **Feature Loading**: Loads step07 and step2_5 results
 - **Feature Integration**: Combines all SR features into comprehensive set
 - **Feature Validation**: Ensures completeness before training
 - **Performance Tracking**: Monitors improvement with comprehensive features

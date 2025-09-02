@@ -2,7 +2,7 @@
 """Test Comprehensive SR Feature Integration.
 
 This script tests the comprehensive SR feature integration implementation
-to ensure all ML models are trained on the full feature set from step7
+to ensure all ML models are trained on the full feature set from step07
 and SR levels from step2_5.
 """
 
@@ -53,7 +53,7 @@ def create_test_market_data(n_rows: int = 1000) -> pd.DataFrame:
 
 
 def create_test_step7_results() -> dict:
-    """Create test step7 matrix operations results."""
+    """Create test step07 matrix operations results."""
     return {
         "sr_analysis": {
             "sr_features": [
@@ -149,11 +149,11 @@ async def test_multi_output_model_trainer():
     config = MultiOutputModelConfig()
     trainer = MultiOutputModelTrainer(config)
     
-    # Test step7 feature loading
+    # Test step07 feature loading
     try:
-        # Create test step7 results
+        # Create test step07 results
         step7_results = create_test_step7_results()
-        step7_path = Path("test_data/step7")
+        step7_path = Path("test_data/step07")
         step7_path.mkdir(parents=True, exist_ok=True)
         
         with open(step7_path / "matrix_operations_results.json", 'w') as f:
@@ -222,12 +222,12 @@ async def test_comprehensive_training_pipeline():
     
     # Create test results directories
     test_config = {
-        "step7_output_path": "test_data/step7",
+        "step7_output_path": "test_data/step07",
         "step2_5_output_path": "test_data/step2_5",
         "training_output_path": "test_data/training"
     }
     
-    # Create test step7 results
+    # Create test step07 results
     step7_results = create_test_step7_results()
     step7_path = Path(test_config["step7_output_path"])
     step7_path.mkdir(parents=True, exist_ok=True)

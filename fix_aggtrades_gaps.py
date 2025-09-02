@@ -12,8 +12,8 @@ from typing import Dict, List
 import asyncio
 import sys
 
-from src.training.steps.step1.data_gap_detector import DataGapDetector
-from src.training.steps.step1.missing_data_downloader_and_gap_filler import MissingDataDownloaderAndGapFiller
+from src.training.steps.step01.data_gap_detector import DataGapDetector
+from src.training.steps.step01.missing_data_downloader_and_gap_filler import MissingDataDownloaderAndGapFiller
 
 # Add project root to path
 project_root=Path(__file__).parent

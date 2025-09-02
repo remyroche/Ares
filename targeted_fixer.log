@@ -25932,3 +25932,752 @@
 2025-09-02 06:18:32,760 - INFO - 
 2025-09-02 06:18:32,760 - INFO - [DRY RUN] Would apply 1 fixes to: src/pipelines/components/data_manager.py
 2025-09-02 06:18:32,760 - INFO - Directory processing complete
+2025-09-02 06:40:56,708 - INFO - Processing file: src/monitoring/error_detection_system.py
+2025-09-02 06:40:56,711 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:40:56,713 - INFO - Applied syntax_errors fix: for\s+([^:]+)\s*$ -> for \1:
+2025-09-02 06:40:56,713 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:40:56,714 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:40:56,715 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:40:56,716 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:40:56,716 - INFO - 
+📝 CHANGES MADE IN src/monitoring/error_detection_system.py:
+2025-09-02 06:40:56,716 - INFO -   1. pass_patterns: Line 80 - '    passINFO , "info"' → '    pass'
+2025-09-02 06:40:56,716 - INFO -   2. syntax_errors: Line 12 - '' → ':'
+2025-09-02 06:40:56,716 - INFO -   3. placeholder_fixes: Line 24 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:40:56,716 - INFO -   4. complex_imports: Line 17 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:40:56,716 - INFO -   5. remaining_patterns: Line 24 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}pass'
+2025-09-02 06:40:56,716 - INFO -   6. remaining_patterns: Line 18 - '        default_return=False,' → '        default_return, False="alertseverity initialization",'
+2025-09-02 06:40:56,716 - INFO - 
+2025-09-02 06:40:56,716 - INFO - [DRY RUN] Would apply 6 fixes to: src/monitoring/error_detection_system.py
+2025-09-02 06:41:03,670 - INFO - Starting to fix Python files in: src/monitoring
+2025-09-02 06:41:03,671 - INFO - Found 18 Python files
+2025-09-02 06:41:03,671 - INFO - Processing file: src/monitoring/error_detection_system.py
+2025-09-02 06:41:03,672 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:41:03,674 - INFO - Applied syntax_errors fix: for\s+([^:]+)\s*$ -> for \1:
+2025-09-02 06:41:03,674 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:41:03,676 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:41:03,676 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:03,678 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:41:03,678 - INFO - 
+📝 CHANGES MADE IN src/monitoring/error_detection_system.py:
+2025-09-02 06:41:03,678 - INFO -   1. pass_patterns: Line 80 - '    passINFO , "info"' → '    pass'
+2025-09-02 06:41:03,678 - INFO -   2. syntax_errors: Line 12 - '' → ':'
+2025-09-02 06:41:03,678 - INFO -   3. placeholder_fixes: Line 24 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:41:03,678 - INFO -   4. complex_imports: Line 17 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:41:03,678 - INFO -   5. remaining_patterns: Line 24 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}pass'
+2025-09-02 06:41:03,678 - INFO -   6. remaining_patterns: Line 18 - '        default_return=False,' → '        default_return, False="alertseverity initialization",'
+2025-09-02 06:41:03,678 - INFO - 
+2025-09-02 06:41:03,678 - INFO - [DRY RUN] Would apply 6 fixes to: src/monitoring/error_detection_system.py
+2025-09-02 06:41:03,678 - INFO - Processing file: src/monitoring/tracking_system.py
+2025-09-02 06:41:03,678 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:41:03,678 - INFO - Applied syntax_errors fix: for\s+([^:]+)\s*$ -> for \1:
+2025-09-02 06:41:03,678 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:41:03,679 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:41:03,679 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:03,679 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:41:03,679 - INFO - 
+📝 CHANGES MADE IN src/monitoring/tracking_system.py:
+2025-09-02 06:41:03,679 - INFO -   1. pass_patterns: Line 36 - '    passENSEMBLE_DECISION, "ensemble_decision"' → '    pass'
+2025-09-02 06:41:03,679 - INFO -   2. syntax_errors: Line 11 - '' → ':'
+2025-09-02 06:41:03,679 - INFO -   3. placeholder_fixes: Line 22 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:41:03,679 - INFO -   4. complex_imports: Line 15 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:41:03,679 - INFO -   5. remaining_patterns: Line 22 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}pass'
+2025-09-02 06:41:03,679 - INFO -   6. remaining_patterns: Line 16 - '        default_return=False,' → '        default_return, False="trackingtype initialization",'
+2025-09-02 06:41:03,679 - INFO - 
+2025-09-02 06:41:03,679 - INFO - [DRY RUN] Would apply 6 fixes to: src/monitoring/tracking_system.py
+2025-09-02 06:41:03,679 - INFO - Processing file: src/monitoring/correlation_manager.py
+2025-09-02 06:41:03,679 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:41:03,679 - INFO - Applied class_definitions fix: class\s+(\w+)\s*\(\.\.\.\): -> class \1:\n    pass
+2025-09-02 06:41:03,680 - INFO - Applied string_literals fix: pass"""([^"]+)""" -> """\1"""
+2025-09-02 06:41:03,680 - INFO - Applied syntax_errors fix: for\s+([^:]+)\s*$ -> for \1:
+2025-09-02 06:41:03,680 - INFO - Applied placeholder_fixes fix: """\.\.\.""" -> """Implementation placeholder - needs specific logic"""
+2025-09-02 06:41:03,680 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:41:03,680 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:41:03,680 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:03,680 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:41:03,680 - INFO - 
+📝 CHANGES MADE IN src/monitoring/correlation_manager.py:
+2025-09-02 06:41:03,680 - INFO -   1. pass_patterns: Line 40 - '    passACTIVE = "active"' → '    pass'
+2025-09-02 06:41:03,680 - INFO -   2. class_definitions: Line 16 - 'class CorrelationStatus(...):' → 'class CorrelationStatus:'
+2025-09-02 06:41:03,680 - INFO -   3. string_literals: Line 40 - '    pass"""..."""' → '    """..."""'
+2025-09-02 06:41:03,680 - INFO -   4. syntax_errors: Line 15 - '' → ':'
+2025-09-02 06:41:03,680 - INFO -   5. placeholder_fixes: Line 40 - '    """..."""' → '    """Implementation placeholder - needs specific logic"""'
+2025-09-02 06:41:03,680 - INFO -   6. placeholder_fixes: Line 28 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:41:03,680 - INFO -   7. complex_imports: Line 21 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:41:03,680 - INFO -   8. remaining_patterns: Line 28 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}pass'
+2025-09-02 06:41:03,680 - INFO -   9. remaining_patterns: Line 22 - '        default_return=False,' → '        default_return, False="correlationstatus initialization",'
+2025-09-02 06:41:03,680 - INFO - 
+2025-09-02 06:41:03,680 - INFO - [DRY RUN] Would apply 9 fixes to: src/monitoring/correlation_manager.py
+2025-09-02 06:41:03,681 - INFO - Processing file: src/monitoring/report_scheduler.py
+2025-09-02 06:41:03,681 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:41:03,681 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:41:03,682 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:03,682 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:41:03,682 - INFO - 
+📝 CHANGES MADE IN src/monitoring/report_scheduler.py:
+2025-09-02 06:41:03,682 - INFO -   1. placeholder_fixes: Line 25 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:41:03,682 - INFO -   2. complex_imports: Line 18 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:41:03,682 - INFO -   3. remaining_patterns: Line 25 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}pass'
+2025-09-02 06:41:03,682 - INFO -   4. remaining_patterns: Line 19 - '        default_return=False,' → '        default_return, False="reporttype initialization",'
+2025-09-02 06:41:03,682 - INFO - 
+2025-09-02 06:41:03,682 - INFO - [DRY RUN] Would apply 4 fixes to: src/monitoring/report_scheduler.py
+2025-09-02 06:41:03,682 - INFO - Processing file: src/monitoring/fractional_system_monitor.py
+2025-09-02 06:41:03,686 - INFO - Applied pass_patterns fix: passpasspass -> pass
+2025-09-02 06:41:03,686 - INFO - Applied pass_patterns fix: pass# -> pass\n        #
+2025-09-02 06:41:03,686 - INFO - Applied pass_patterns fix: passtry: -> pass\n        try:
+2025-09-02 06:41:03,687 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:41:03,687 - INFO - Applied pass_patterns fix: passpass+ -> pass
+2025-09-02 06:41:03,687 - INFO - Applied pass_patterns fix: passself\. -> pass\n        self.
+2025-09-02 06:41:03,687 - INFO - Applied pass_patterns fix: passif -> pass\n        if
+2025-09-02 06:41:03,688 - INFO - Applied function_definitions fix: def\s+(\w+)\s*\(\.\.\.\)\s*->\s*\.\.\.: -> def \1(self):\n        pass
+2025-09-02 06:41:03,688 - INFO - Applied try_except_blocks fix: ^try:\s*$ ->         try:
+2025-09-02 06:41:03,689 - INFO - Applied try_except_blocks fix: try:\s*pass -> try:\n            pass
+2025-09-02 06:41:03,689 - INFO - Applied string_literals fix: pass"""([^"]+)""" -> """\1"""
+2025-09-02 06:41:03,689 - INFO - Applied comment_blocks fix: pass\s*#\s*(.+) -> # \1
+2025-09-02 06:41:03,689 - INFO - Applied comment_blocks fix: pass\s*\"\"\"([^\"]+)\"\"\" -> """\1"""
+2025-09-02 06:41:03,690 - INFO - Applied indentation_issues fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:03,690 - INFO - Applied syntax_errors fix: if\s+([^:]+)\s*$ -> if \1:
+2025-09-02 06:41:03,690 - INFO - Applied syntax_errors fix: for\s+([^:]+)\s*$ -> for \1:
+2025-09-02 06:41:03,691 - INFO - Applied placeholder_fixes fix: """\.\.\.""" -> """Implementation placeholder - needs specific logic"""
+2025-09-02 06:41:03,691 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:41:03,694 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:41:03,695 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:03,700 - INFO - Applied remaining_patterns fix: (\w+)\s*,\s*(\w+)\s*=\s*(\w+) -> \1, \2
+2025-09-02 06:41:03,703 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:41:03,703 - INFO - 
+📝 CHANGES MADE IN src/monitoring/fractional_system_monitor.py:
+2025-09-02 06:41:03,703 - INFO -   1. pass_patterns: Line 122 - '    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")' → '    passpasspassself.logger.error(f"Error in {file_path}: {{e}}")'
+2025-09-02 06:41:03,703 - INFO -   2. pass_patterns: Line 263 - '    pass# Align series' → '    pass'
+2025-09-02 06:41:03,703 - INFO -   3. pass_patterns: Line 155 - '    passtry:' → '    pass'
+2025-09-02 06:41:03,703 - INFO -   4. pass_patterns: Line 34 - '    passpassself.logger.info("Implementation placeholder - needs specific logic")' → '    pass'
+2025-09-02 06:41:03,703 - INFO -   5. pass_patterns: Line 136 - '        passpassself.logger.error(f"Error in {file_path}: {{e}}")' → '        pasself.logger.error(f"Error in {file_path}: {{e}}")'
+2025-09-02 06:41:03,703 - INFO -   6. pass_patterns: Line 35 - '        passself.logger.info("Implementation placeholder - needs specific logic")' → '        pass'
+2025-09-02 06:41:03,703 - INFO -   7. pass_patterns: Line 368 - '        passif len(self.metrics[key]) > self.monitoring_window:' → '        pass'
+2025-09-02 06:41:03,703 - INFO -   8. function_definitions: Line 173 - 'def _calculate_performance_metrics(...) -> ...:' → 'def _calculate_performance_metrics(self):'
+2025-09-02 06:41:03,703 - INFO -   9. try_except_blocks: Line 132 - 'try:' → '        try:'
+2025-09-02 06:41:03,703 - INFO -   10. try_except_blocks: Line 133 - '    pass' → '            pass'
+2025-09-02 06:41:03,703 - INFO -   11. string_literals: Line 41 - '    pass"""Monitor performance of combined fractional system in production."""' → '    """Monitor performance of combined fractional system in production."""'
+2025-09-02 06:41:03,703 - INFO -   12. comment_blocks: Line 310 - '    pass' → '    # Align series'
+2025-09-02 06:41:03,703 - INFO -   13. comment_blocks: Line 174 - '        pass' → '        """..."""'
+2025-09-02 06:41:03,703 - INFO -   14. indentation_issues: Line 137 - '        pasself.logger.error(f"Error in {file_path}: {{e}}")' → '        pass'
+2025-09-02 06:41:03,703 - INFO -   15. syntax_errors: Line 190 - ''feature_count': len(features.columns) if not features.empty else 0,' → ''feature_count': len(features.columns) if not features.empty else 0,:'
+2025-09-02 06:41:03,703 - INFO -   16. syntax_errors: Line 16 - '' → ':'
+2025-09-02 06:41:03,703 - INFO -   17. placeholder_fixes: Line 176 - '        """..."""' → '        """Implementation placeholder - needs specific logic"""'
+2025-09-02 06:41:03,703 - INFO -   18. placeholder_fixes: Line 27 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:41:03,703 - INFO -   19. complex_imports: Line 20 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:41:03,703 - INFO -   20. remaining_patterns: Line 27 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}pass'
+2025-09-02 06:41:03,703 - INFO -   21. remaining_patterns: Line 84 - 'self.alert_output_dir.mkdir(parents=True, exist_ok=True)' → 'self.alert_output_dir.mkdir(parents=True, exist_ok)'
+2025-09-02 06:41:03,703 - INFO -   22. remaining_patterns: Line 21 - '        default_return=False,' → '        default_return, False="fractionalsystemmonitor initialization",'
+2025-09-02 06:41:03,703 - INFO - 
+2025-09-02 06:41:03,703 - INFO - [DRY RUN] Would apply 22 fixes to: src/monitoring/fractional_system_monitor.py
+2025-09-02 06:41:03,703 - INFO - Processing file: src/monitoring/enhanced_ml_tracker.py
+2025-09-02 06:41:03,704 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:41:03,704 - INFO - Applied syntax_errors fix: for\s+([^:]+)\s*$ -> for \1:
+2025-09-02 06:41:03,704 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:41:03,704 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:41:03,704 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:03,705 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:41:03,705 - INFO - 
+📝 CHANGES MADE IN src/monitoring/enhanced_ml_tracker.py:
+2025-09-02 06:41:03,705 - INFO -   1. pass_patterns: Line 52 - '    passXGBOOST = "xgboost"' → '    pass'
+2025-09-02 06:41:03,705 - INFO -   2. syntax_errors: Line 12 - '' → ':'
+2025-09-02 06:41:03,705 - INFO -   3. placeholder_fixes: Line 24 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:41:03,705 - INFO -   4. complex_imports: Line 17 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:41:03,705 - INFO -   5. remaining_patterns: Line 24 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}pass'
+2025-09-02 06:41:03,705 - INFO -   6. remaining_patterns: Line 18 - '        default_return=False,' → '        default_return, False="modeltype initialization",'
+2025-09-02 06:41:03,705 - INFO - 
+2025-09-02 06:41:03,705 - INFO - [DRY RUN] Would apply 6 fixes to: src/monitoring/enhanced_ml_tracker.py
+2025-09-02 06:41:03,705 - INFO - Processing file: src/monitoring/performance_dashboard.py
+2025-09-02 06:41:03,706 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:41:03,706 - INFO - Applied pass_patterns fix: passself\. -> pass\n        self.
+2025-09-02 06:41:03,706 - INFO - Applied string_literals fix: pass"""([^"]+)""" -> """\1"""
+2025-09-02 06:41:03,706 - INFO - Applied syntax_errors fix: for\s+([^:]+)\s*$ -> for \1:
+2025-09-02 06:41:03,706 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:41:03,706 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:41:03,707 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:03,708 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:41:03,708 - INFO - 
+📝 CHANGES MADE IN src/monitoring/performance_dashboard.py:
+2025-09-02 06:41:03,708 - INFO -   1. pass_patterns: Line 78 - '    passpassself.logger.info("Implementation placeholder - needs specific logic")' → '    pass'
+2025-09-02 06:41:03,708 - INFO -   2. pass_patterns: Line 79 - '        passself.logger.info("Implementation placeholder - needs specific logic")' → '        pass'
+2025-09-02 06:41:03,708 - INFO -   3. string_literals: Line 88 - '    pass"""Dashboard metrics data structure."""' → '    """Dashboard metrics data structure."""'
+2025-09-02 06:41:03,708 - INFO -   4. syntax_errors: Line 20 - '@dataclass' → '@dataclass:'
+2025-09-02 06:41:03,708 - INFO -   5. placeholder_fixes: Line 32 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:41:03,708 - INFO -   6. complex_imports: Line 25 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:41:03,708 - INFO -   7. remaining_patterns: Line 32 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}pass'
+2025-09-02 06:41:03,708 - INFO -   8. remaining_patterns: Line 26 - '        default_return=False,' → '        default_return, False="placeholderdataclass initialization",'
+2025-09-02 06:41:03,708 - INFO - 
+2025-09-02 06:41:03,708 - INFO - [DRY RUN] Would apply 8 fixes to: src/monitoring/performance_dashboard.py
+2025-09-02 06:41:03,708 - INFO - Processing file: src/monitoring/integration_manager.py
+2025-09-02 06:41:03,708 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:41:03,709 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:41:03,709 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:41:03,709 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:03,710 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:41:03,710 - INFO - 
+📝 CHANGES MADE IN src/monitoring/integration_manager.py:
+2025-09-02 06:41:03,710 - INFO -   1. pass_patterns: Line 75 - '    passself.logger.info("Implementation placeholder - needs specific logic")' → '    pass'
+2025-09-02 06:41:03,710 - INFO -   2. placeholder_fixes: Line 29 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:41:03,710 - INFO -   3. complex_imports: Line 22 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:41:03,710 - INFO -   4. remaining_patterns: Line 29 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}pass'
+2025-09-02 06:41:03,710 - INFO -   5. remaining_patterns: Line 23 - '        default_return=False,' → '        default_return, False="placeholderdataclass initialization",'
+2025-09-02 06:41:03,710 - INFO - 
+2025-09-02 06:41:03,710 - INFO - [DRY RUN] Would apply 5 fixes to: src/monitoring/integration_manager.py
+2025-09-02 06:41:03,710 - INFO - Processing file: src/monitoring/performance_monitor.py
+2025-09-02 06:41:03,710 - INFO - Applied syntax_errors fix: for\s+([^:]+)\s*$ -> for \1:
+2025-09-02 06:41:03,711 - INFO - 
+📝 CHANGES MADE IN src/monitoring/performance_monitor.py:
+2025-09-02 06:41:03,711 - INFO -   1. syntax_errors: Line 22 - '' → ':'
+2025-09-02 06:41:03,711 - INFO - 
+2025-09-02 06:41:03,711 - INFO - [DRY RUN] Would apply 1 fixes to: src/monitoring/performance_monitor.py
+2025-09-02 06:41:03,711 - INFO - Processing file: src/monitoring/surrogate_optimization_monitor.py
+2025-09-02 06:41:03,713 - INFO - Applied pass_patterns fix: passpasspass -> pass
+2025-09-02 06:41:03,713 - INFO - Applied pass_patterns fix: pass# -> pass\n        #
+2025-09-02 06:41:03,714 - INFO - Applied pass_patterns fix: passtry: -> pass\n        try:
+2025-09-02 06:41:03,714 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:41:03,714 - INFO - Applied pass_patterns fix: passpass+ -> pass
+2025-09-02 06:41:03,714 - INFO - Applied pass_patterns fix: passself\. -> pass\n        self.
+2025-09-02 06:41:03,715 - INFO - Applied pass_patterns fix: passdef -> pass\n        def
+2025-09-02 06:41:03,715 - INFO - Applied function_definitions fix: def\s+(\w+)\s*\(\.\.\.\)\s*->\s*\.\.\.: -> def \1(self):\n        pass
+2025-09-02 06:41:03,715 - INFO - Applied try_except_blocks fix: try:\s*pass -> try:\n            pass
+2025-09-02 06:41:03,716 - INFO - Applied string_literals fix: pass"""([^"]+)""" -> """\1"""
+2025-09-02 06:41:03,716 - INFO - Applied comment_blocks fix: pass\s*#\s*(.+) -> # \1
+2025-09-02 06:41:03,716 - INFO - Applied comment_blocks fix: pass\s*\"\"\"([^\"]+)\"\"\" -> """\1"""
+2025-09-02 06:41:03,716 - INFO - Applied indentation_issues fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:03,717 - INFO - Applied syntax_errors fix: def\s+(\w+)\s*\(([^)]+)\)\s*$ -> def \1(\2):
+2025-09-02 06:41:03,717 - INFO - Applied syntax_errors fix: if\s+([^:]+)\s*$ -> if \1:
+2025-09-02 06:41:03,717 - INFO - Applied syntax_errors fix: for\s+([^:]+)\s*$ -> for \1:
+2025-09-02 06:41:03,717 - INFO - Applied syntax_errors fix: with\s+([^:]+)\s*$ -> with \1:
+2025-09-02 06:41:03,718 - INFO - Applied placeholder_fixes fix: """\.\.\.""" -> """Implementation placeholder - needs specific logic"""
+2025-09-02 06:41:03,718 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:41:03,721 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:41:03,721 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:03,726 - INFO - Applied remaining_patterns fix: (\w+)\s*,\s*(\w+)\s*=\s*(\w+) -> \1, \2
+2025-09-02 06:41:03,728 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:41:03,728 - INFO - 
+📝 CHANGES MADE IN src/monitoring/surrogate_optimization_monitor.py:
+2025-09-02 06:41:03,728 - INFO -   1. pass_patterns: Line 204 - '    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")' → '    passpasspassself.logger.error(f"Error in {file_path}: {{e}}")'
+2025-09-02 06:41:03,728 - INFO -   2. pass_patterns: Line 237 - '    pass# Check for immediate alerts' → '    pass'
+2025-09-02 06:41:03,728 - INFO -   3. pass_patterns: Line 201 - '    passtry:' → '    pass'
+2025-09-02 06:41:03,728 - INFO -   4. pass_patterns: Line 6 - '    passself.logger.info("Implementation placeholder - needs specific logic")' → '    pass'
+2025-09-02 06:41:03,728 - INFO -   5. pass_patterns: Line 224 - '        passpassself.logger.error(f"Error in {file_path}: {{e}}")' → '        pasself.logger.error(f"Error in {file_path}: {{e}}")'
+2025-09-02 06:41:03,728 - INFO -   6. pass_patterns: Line 239 - '        passpassself.logger.error(f"Error in monitoring loop: {e}")' → '        passpass'
+2025-09-02 06:41:03,728 - INFO -   7. pass_patterns: Line 164 - '        passdef __init__(...):' → '        pass'
+2025-09-02 06:41:03,728 - INFO -   8. function_definitions: Line 205 - 'def _start_monitoring(...) -> ...:' → 'def _start_monitoring(self):'
+2025-09-02 06:41:03,728 - INFO -   9. try_except_blocks: Line 223 - '    pass' → '            pass'
+2025-09-02 06:41:03,728 - INFO -   10. string_literals: Line 120 - '    pass"""Data class for optimization metrics."""' → '    """Data class for optimization metrics."""'
+2025-09-02 06:41:03,728 - INFO -   11. comment_blocks: Line 270 - '    pass' → '    # Check for immediate alerts'
+2025-09-02 06:41:03,728 - INFO -   12. comment_blocks: Line 206 - '        pass' → '        """..."""'
+2025-09-02 06:41:03,728 - INFO -   13. indentation_issues: Line 225 - '        pasself.logger.error(f"Error in {file_path}: {{e}}")' → '        pass'
+2025-09-02 06:41:03,728 - INFO -   14. syntax_errors: Line 61 - '    async def initialize(self)' → '    async def initialize(self):'
+2025-09-02 06:41:03,728 - INFO -   15. syntax_errors: Line 401 - 'return {' → 'return {:'
+2025-09-02 06:41:03,728 - INFO -   16. syntax_errors: Line 120 - '    """Data class for optimization metrics."""' → '    """Data class for optimization metrics.""":'
+2025-09-02 06:41:03,728 - INFO -   17. syntax_errors: Line 336 - '' → ':'
+2025-09-02 06:41:03,728 - INFO -   18. placeholder_fixes: Line 206 - '        """..."""' → '        """Implementation placeholder - needs specific logic"""'
+2025-09-02 06:41:03,728 - INFO -   19. placeholder_fixes: Line 47 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:41:03,728 - INFO -   20. complex_imports: Line 33 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:41:03,728 - INFO -   21. remaining_patterns: Line 47 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}pass'
+2025-09-02 06:41:03,728 - INFO -   22. remaining_patterns: Line 220 - 'self.monitoring_thread = threading.Thread(target=self._monitoring_loop, daemon=True)' → 'self.monitoring_thread = threading.Thread(target=self._monitoring_loop, daemon)'
+2025-09-02 06:41:03,728 - INFO -   23. remaining_patterns: Line 34 - '        default_return=False,' → '        default_return, False="placeholderdataclass initialization",'
+2025-09-02 06:41:03,729 - INFO - 
+2025-09-02 06:41:03,729 - INFO - [DRY RUN] Would apply 23 fixes to: src/monitoring/surrogate_optimization_monitor.py
+2025-09-02 06:41:03,729 - INFO - Processing file: src/monitoring/metrics_dashboard.py
+2025-09-02 06:41:03,729 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:41:03,729 - INFO - Applied class_definitions fix: class\s+(\w+)\s*\(\.\.\.\): -> class \1:\n    pass
+2025-09-02 06:41:03,729 - INFO - Applied string_literals fix: pass"""([^"]+)""" -> """\1"""
+2025-09-02 06:41:03,729 - INFO - Applied syntax_errors fix: for\s+([^:]+)\s*$ -> for \1:
+2025-09-02 06:41:03,729 - INFO - Applied placeholder_fixes fix: """\.\.\.""" -> """Implementation placeholder - needs specific logic"""
+2025-09-02 06:41:03,729 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:41:03,729 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:41:03,729 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:03,730 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:41:03,730 - INFO - 
+📝 CHANGES MADE IN src/monitoring/metrics_dashboard.py:
+2025-09-02 06:41:03,730 - INFO -   1. pass_patterns: Line 38 - '    passPERFORMANCE = "performance"' → '    pass'
+2025-09-02 06:41:03,730 - INFO -   2. class_definitions: Line 14 - 'class MetricType(...):' → 'class MetricType:'
+2025-09-02 06:41:03,730 - INFO -   3. string_literals: Line 38 - '    pass"""..."""' → '    """..."""'
+2025-09-02 06:41:03,730 - INFO -   4. syntax_errors: Line 13 - '' → ':'
+2025-09-02 06:41:03,730 - INFO -   5. placeholder_fixes: Line 38 - '    """..."""' → '    """Implementation placeholder - needs specific logic"""'
+2025-09-02 06:41:03,730 - INFO -   6. placeholder_fixes: Line 26 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:41:03,730 - INFO -   7. complex_imports: Line 19 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:41:03,730 - INFO -   8. remaining_patterns: Line 26 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}pass'
+2025-09-02 06:41:03,730 - INFO -   9. remaining_patterns: Line 20 - '        default_return=False,' → '        default_return, False="metrictype initialization",'
+2025-09-02 06:41:03,730 - INFO - 
+2025-09-02 06:41:03,730 - INFO - [DRY RUN] Would apply 9 fixes to: src/monitoring/metrics_dashboard.py
+2025-09-02 06:41:03,730 - INFO - Processing file: src/monitoring/fractional_performance_tracker.py
+2025-09-02 06:41:03,732 - INFO - Applied pass_patterns fix: passpasspass -> pass
+2025-09-02 06:41:03,732 - INFO - Applied pass_patterns fix: pass# -> pass\n        #
+2025-09-02 06:41:03,732 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:41:03,732 - INFO - Applied pass_patterns fix: passpass+ -> pass
+2025-09-02 06:41:03,733 - INFO - Applied pass_patterns fix: passself\. -> pass\n        self.
+2025-09-02 06:41:03,733 - INFO - Applied pass_patterns fix: passdef -> pass\n        def
+2025-09-02 06:41:03,733 - INFO - Applied pass_patterns fix: passreturn -> pass\n        return
+2025-09-02 06:41:03,733 - INFO - Applied function_definitions fix: def\s+(\w+)\s*\(\.\.\.\)\s*->\s*\.\.\.: -> def \1(self):\n        pass
+2025-09-02 06:41:03,733 - INFO - Applied try_except_blocks fix: ^try:\s*$ ->         try:
+2025-09-02 06:41:03,734 - INFO - Applied try_except_blocks fix: try:\s*pass -> try:\n            pass
+2025-09-02 06:41:03,734 - INFO - Applied string_literals fix: pass"""([^"]+)""" -> """\1"""
+2025-09-02 06:41:03,734 - INFO - Applied comment_blocks fix: pass\s*#\s*(.+) -> # \1
+2025-09-02 06:41:03,734 - INFO - Applied comment_blocks fix: pass\s*\"\"\"([^\"]+)\"\"\" -> """\1"""
+2025-09-02 06:41:03,735 - INFO - Applied indentation_issues fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:03,735 - INFO - Applied syntax_errors fix: if\s+([^:]+)\s*$ -> if \1:
+2025-09-02 06:41:03,735 - INFO - Applied syntax_errors fix: for\s+([^:]+)\s*$ -> for \1:
+2025-09-02 06:41:03,735 - INFO - Applied placeholder_fixes fix: """\.\.\.""" -> """Implementation placeholder - needs specific logic"""
+2025-09-02 06:41:03,735 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:41:03,737 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:41:03,738 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:03,741 - INFO - Applied remaining_patterns fix: (\w+)\s*,\s*(\w+)\s*=\s*(\w+) -> \1, \2
+2025-09-02 06:41:03,743 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:41:03,743 - INFO - 
+📝 CHANGES MADE IN src/monitoring/fractional_performance_tracker.py:
+2025-09-02 06:41:03,743 - INFO -   1. pass_patterns: Line 110 - '    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")' → '    passpasspassself.logger.error(f"Error in {file_path}: {{e}}")'
+2025-09-02 06:41:03,743 - INFO -   2. pass_patterns: Line 419 - '    pass# Return alerts from last 24 hours' → '    pass'
+2025-09-02 06:41:03,743 - INFO -   3. pass_patterns: Line 48 - '    passpassself.logger.info("Implementation placeholder - needs specific logic")' → '    pass'
+2025-09-02 06:41:03,743 - INFO -   4. pass_patterns: Line 123 - '        passpassself.logger.error(f"Error in {file_path}: {{e}}")' → '        pasself.logger.error(f"Error in {file_path}: {{e}}")'
+2025-09-02 06:41:03,743 - INFO -   5. pass_patterns: Line 49 - '        passself.logger.info("Implementation placeholder - needs specific logic")' → '        pass'
+2025-09-02 06:41:03,743 - INFO -   6. pass_patterns: Line 59 - '        passdef __init__(...):' → '        pass'
+2025-09-02 06:41:03,743 - INFO -   7. pass_patterns: Line 209 - '        passreturn' → '        pass'
+2025-09-02 06:41:03,743 - INFO -   8. function_definitions: Line 454 - 'def get_performance_summary(...) -> ...:' → 'def get_performance_summary(self):'
+2025-09-02 06:41:03,743 - INFO -   9. try_except_blocks: Line 121 - 'try:' → '        try:'
+2025-09-02 06:41:03,743 - INFO -   10. try_except_blocks: Line 122 - '    pass' → '            pass'
+2025-09-02 06:41:03,743 - INFO -   11. string_literals: Line 55 - '    pass"""Comprehensive performance tracking for fractional implementations."""' → '    """Comprehensive performance tracking for fractional implementations."""'
+2025-09-02 06:41:03,743 - INFO -   12. comment_blocks: Line 505 - '    pass' → '    # Return alerts from last 24 hours'
+2025-09-02 06:41:03,743 - INFO -   13. comment_blocks: Line 455 - '        pass' → '        """..."""'
+2025-09-02 06:41:03,743 - INFO -   14. indentation_issues: Line 126 - '        pasself.logger.error(f"Error in {file_path}: {{e}}")' → '        pass'
+2025-09-02 06:41:03,743 - INFO -   15. syntax_errors: Line 111 - '' → ':'
+2025-09-02 06:41:03,743 - INFO -   16. syntax_errors: Line 14 - '' → ':'
+2025-09-02 06:41:03,743 - INFO -   17. placeholder_fixes: Line 463 - '        """..."""' → '        """Implementation placeholder - needs specific logic"""'
+2025-09-02 06:41:03,743 - INFO -   18. placeholder_fixes: Line 31 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:41:03,743 - INFO -   19. complex_imports: Line 18 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:41:03,743 - INFO -   20. remaining_patterns: Line 31 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}pass'
+2025-09-02 06:41:03,743 - INFO -   21. remaining_patterns: Line 79 - 'self.output_dir.mkdir(parents=True, exist_ok=True)' → 'self.output_dir.mkdir(parents=True, exist_ok)'
+2025-09-02 06:41:03,743 - INFO -   22. remaining_patterns: Line 19 - '        default_return=False,' → '        default_return, False="fractionalperformancetracker initialization",'
+2025-09-02 06:41:03,743 - INFO - 
+2025-09-02 06:41:03,743 - INFO - [DRY RUN] Would apply 22 fixes to: src/monitoring/fractional_performance_tracker.py
+2025-09-02 06:41:03,743 - INFO - Processing file: src/monitoring/csv_exporter.py
+2025-09-02 06:41:03,743 - INFO - Applied syntax_errors fix: for\s+([^:]+)\s*$ -> for \1:
+2025-09-02 06:41:03,743 - INFO - 
+📝 CHANGES MADE IN src/monitoring/csv_exporter.py:
+2025-09-02 06:41:03,743 - INFO -   1. syntax_errors: Line 16 - '' → ':'
+2025-09-02 06:41:03,743 - INFO - 
+2025-09-02 06:41:03,743 - INFO - [DRY RUN] Would apply 1 fixes to: src/monitoring/csv_exporter.py
+2025-09-02 06:41:03,743 - INFO - Processing file: src/monitoring/regime_sr_tracker.py
+2025-09-02 06:41:03,744 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:41:03,744 - INFO - Applied syntax_errors fix: for\s+([^:]+)\s*$ -> for \1:
+2025-09-02 06:41:03,744 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:41:03,744 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:41:03,744 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:03,744 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:41:03,744 - INFO - 
+📝 CHANGES MADE IN src/monitoring/regime_sr_tracker.py:
+2025-09-02 06:41:03,744 - INFO -   1. pass_patterns: Line 36 - '    passBULL_TREND, "bull_trend"' → '    pass'
+2025-09-02 06:41:03,744 - INFO -   2. syntax_errors: Line 11 - '' → ':'
+2025-09-02 06:41:03,744 - INFO -   3. placeholder_fixes: Line 22 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:41:03,744 - INFO -   4. complex_imports: Line 15 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:41:03,744 - INFO -   5. remaining_patterns: Line 22 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}pass'
+2025-09-02 06:41:03,744 - INFO -   6. remaining_patterns: Line 16 - '        default_return=False,' → '        default_return, False="regimetype initialization",'
+2025-09-02 06:41:03,744 - INFO - 
+2025-09-02 06:41:03,744 - INFO - [DRY RUN] Would apply 6 fixes to: src/monitoring/regime_sr_tracker.py
+2025-09-02 06:41:03,744 - INFO - Processing file: src/monitoring/advanced_tracer.py
+2025-09-02 06:41:03,746 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:41:03,746 - INFO - Applied class_definitions fix: class\s+(\w+)\s*\(\.\.\.\): -> class \1:\n    pass
+2025-09-02 06:41:03,746 - INFO - Applied string_literals fix: pass"""([^"]+)""" -> """\1"""
+2025-09-02 06:41:03,746 - INFO - Applied comment_blocks fix: pass\s*\"\"\"([^\"]+)\"\"\" -> """\1"""
+2025-09-02 06:41:03,747 - INFO - Applied syntax_errors fix: def\s+(\w+)\s*\(([^)]+)\)\s*$ -> def \1(\2):
+2025-09-02 06:41:03,747 - INFO - Applied syntax_errors fix: for\s+([^:]+)\s*$ -> for \1:
+2025-09-02 06:41:03,747 - INFO - Applied syntax_errors fix: with\s+([^:]+)\s*$ -> with \1:
+2025-09-02 06:41:03,747 - INFO - Applied placeholder_fixes fix: """\.\.\.""" -> """Implementation placeholder - needs specific logic"""
+2025-09-02 06:41:03,747 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:41:03,748 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:41:03,748 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:03,751 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:41:03,751 - INFO - 
+📝 CHANGES MADE IN src/monitoring/advanced_tracer.py:
+2025-09-02 06:41:03,751 - INFO -   1. pass_patterns: Line 203 - '    passpass"""..."""' → '    pass'
+2025-09-02 06:41:03,751 - INFO -   2. class_definitions: Line 24 - 'class TraceLevel(...):' → 'class TraceLevel:'
+2025-09-02 06:41:03,751 - INFO -   3. string_literals: Line 205 - '        pass"""..."""' → '        """..."""'
+2025-09-02 06:41:03,751 - INFO -   4. comment_blocks: Line 204 - '    pass' → '    """..."""'
+2025-09-02 06:41:03,751 - INFO -   5. syntax_errors: Line 69 - '    def __init__(self, config: dict[str, Any] | None = None)' → '    def __init__(self, config: dict[str, Any] | None = None):'
+2025-09-02 06:41:03,751 - INFO -   6. syntax_errors: Line 23 - '' → ':'
+2025-09-02 06:41:03,751 - INFO -   7. syntax_errors: Line 22 - '' → ':'
+2025-09-02 06:41:03,751 - INFO -   8. placeholder_fixes: Line 204 - '    """..."""' → '    """Implementation placeholder - needs specific logic"""'
+2025-09-02 06:41:03,751 - INFO -   9. placeholder_fixes: Line 36 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:41:03,751 - INFO -   10. complex_imports: Line 29 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:41:03,751 - INFO -   11. remaining_patterns: Line 36 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}pass'
+2025-09-02 06:41:03,751 - INFO -   12. remaining_patterns: Line 30 - '        default_return=False,' → '        default_return, False="tracelevel initialization",'
+2025-09-02 06:41:03,751 - INFO - 
+2025-09-02 06:41:03,751 - INFO - [DRY RUN] Would apply 12 fixes to: src/monitoring/advanced_tracer.py
+2025-09-02 06:41:03,751 - INFO - Processing file: src/monitoring/__init__.py
+2025-09-02 06:41:03,752 - INFO - Applied syntax_errors fix: for\s+([^:]+)\s*$ -> for \1:
+2025-09-02 06:41:03,752 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:41:03,752 - INFO - 
+📝 CHANGES MADE IN src/monitoring/__init__.py:
+2025-09-02 06:41:03,752 - INFO -   1. syntax_errors: Line 27 - '' → ':'
+2025-09-02 06:41:03,752 - INFO -   2. complex_imports: Line 18 - '__all__ = [' → '__all__ , ['
+2025-09-02 06:41:03,752 - INFO - 
+2025-09-02 06:41:03,752 - INFO - [DRY RUN] Would apply 2 fixes to: src/monitoring/__init__.py
+2025-09-02 06:41:03,752 - INFO - Processing file: src/monitoring/trade_conditions_monitor.py
+2025-09-02 06:41:03,752 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:41:03,753 - INFO - Applied syntax_errors fix: for\s+([^:]+)\s*$ -> for \1:
+2025-09-02 06:41:03,753 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:41:03,753 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:41:03,753 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:03,753 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:41:03,753 - INFO - 
+📝 CHANGES MADE IN src/monitoring/trade_conditions_monitor.py:
+2025-09-02 06:41:03,753 - INFO -   1. pass_patterns: Line 36 - '    passENTER_LONG, "enter_long"' → '    pass'
+2025-09-02 06:41:03,753 - INFO -   2. syntax_errors: Line 11 - '' → ':'
+2025-09-02 06:41:03,753 - INFO -   3. placeholder_fixes: Line 22 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:41:03,753 - INFO -   4. complex_imports: Line 15 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:41:03,753 - INFO -   5. remaining_patterns: Line 22 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}pass'
+2025-09-02 06:41:03,753 - INFO -   6. remaining_patterns: Line 16 - '        default_return=False,' → '        default_return, False="tradeaction initialization",'
+2025-09-02 06:41:03,753 - INFO - 
+2025-09-02 06:41:03,753 - INFO - [DRY RUN] Would apply 6 fixes to: src/monitoring/trade_conditions_monitor.py
+2025-09-02 06:41:03,753 - INFO - Processing file: src/monitoring/ml_monitor.py
+2025-09-02 06:41:03,754 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:41:03,755 - INFO - Applied class_definitions fix: class\s+(\w+)\s*\(\.\.\.\): -> class \1:\n    pass
+2025-09-02 06:41:03,755 - INFO - Applied string_literals fix: pass"""([^"]+)""" -> """\1"""
+2025-09-02 06:41:03,755 - INFO - Applied comment_blocks fix: pass\s*\"\"\"([^\"]+)\"\"\" -> """\1"""
+2025-09-02 06:41:03,755 - INFO - Applied placeholder_fixes fix: """\.\.\.""" -> """Implementation placeholder - needs specific logic"""
+2025-09-02 06:41:03,755 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:41:03,756 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:41:03,756 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:03,759 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:41:03,759 - INFO - 
+📝 CHANGES MADE IN src/monitoring/ml_monitor.py:
+2025-09-02 06:41:03,759 - INFO -   1. pass_patterns: Line 177 - '    passCONCEPT_DRIFT = "concept_drift"' → '    pass'
+2025-09-02 06:41:03,759 - INFO -   2. class_definitions: Line 19 - 'class DriftType(...):' → 'class DriftType:'
+2025-09-02 06:41:03,759 - INFO -   3. string_literals: Line 206 - '    pass"""Model drift alert."""' → '    """Model drift alert."""'
+2025-09-02 06:41:03,759 - INFO -   4. comment_blocks: Line 186 - '    pass' → '    """..."""'
+2025-09-02 06:41:03,759 - INFO -   5. placeholder_fixes: Line 177 - '    """..."""' → '    """Implementation placeholder - needs specific logic"""'
+2025-09-02 06:41:03,759 - INFO -   6. placeholder_fixes: Line 31 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:41:03,759 - INFO -   7. complex_imports: Line 24 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:41:03,759 - INFO -   8. remaining_patterns: Line 31 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}pass'
+2025-09-02 06:41:03,759 - INFO -   9. remaining_patterns: Line 25 - '        default_return=False,' → '        default_return, False="drifttype initialization",'
+2025-09-02 06:41:03,759 - INFO - 
+2025-09-02 06:41:03,759 - INFO - [DRY RUN] Would apply 9 fixes to: src/monitoring/ml_monitor.py
+2025-09-02 06:41:03,759 - INFO - Directory processing complete
+2025-09-02 06:41:08,663 - INFO - Processing file: src/monitoring/error_detection_system.py
+2025-09-02 06:41:08,664 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:41:08,666 - INFO - Applied syntax_errors fix: for\s+([^:]+)\s*$ -> for \1:
+2025-09-02 06:41:08,667 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:41:08,668 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:41:08,669 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:08,670 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:41:08,670 - INFO - 
+📝 CHANGES MADE IN src/monitoring/error_detection_system.py:
+2025-09-02 06:41:08,670 - INFO -   1. pass_patterns: Line 80 - '    passINFO , "info"' → '    pass'
+2025-09-02 06:41:08,670 - INFO -   2. syntax_errors: Line 12 - '' → ':'
+2025-09-02 06:41:08,670 - INFO -   3. placeholder_fixes: Line 24 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:41:08,670 - INFO -   4. complex_imports: Line 17 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:41:08,670 - INFO -   5. remaining_patterns: Line 24 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}pass'
+2025-09-02 06:41:08,670 - INFO -   6. remaining_patterns: Line 18 - '        default_return=False,' → '        default_return, False="alertseverity initialization",'
+2025-09-02 06:41:08,670 - INFO - 
+2025-09-02 06:41:08,671 - INFO - Applied 6 fixes to: src/monitoring/error_detection_system.py
+2025-09-02 06:41:14,578 - INFO - Processing file: src/monitoring/correlation_manager.py
+2025-09-02 06:41:14,579 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:41:14,580 - INFO - Applied class_definitions fix: class\s+(\w+)\s*\(\.\.\.\): -> class \1:\n    pass
+2025-09-02 06:41:14,580 - INFO - Applied string_literals fix: pass"""([^"]+)""" -> """\1"""
+2025-09-02 06:41:14,581 - INFO - Applied syntax_errors fix: for\s+([^:]+)\s*$ -> for \1:
+2025-09-02 06:41:14,581 - INFO - Applied placeholder_fixes fix: """\.\.\.""" -> """Implementation placeholder - needs specific logic"""
+2025-09-02 06:41:14,581 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:41:14,582 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:41:14,583 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:14,584 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:41:14,584 - INFO - 
+📝 CHANGES MADE IN src/monitoring/correlation_manager.py:
+2025-09-02 06:41:14,584 - INFO -   1. pass_patterns: Line 40 - '    passACTIVE = "active"' → '    pass'
+2025-09-02 06:41:14,584 - INFO -   2. class_definitions: Line 16 - 'class CorrelationStatus(...):' → 'class CorrelationStatus:'
+2025-09-02 06:41:14,584 - INFO -   3. string_literals: Line 40 - '    pass"""..."""' → '    """..."""'
+2025-09-02 06:41:14,584 - INFO -   4. syntax_errors: Line 15 - '' → ':'
+2025-09-02 06:41:14,584 - INFO -   5. placeholder_fixes: Line 40 - '    """..."""' → '    """Implementation placeholder - needs specific logic"""'
+2025-09-02 06:41:14,584 - INFO -   6. placeholder_fixes: Line 28 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:41:14,584 - INFO -   7. complex_imports: Line 21 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:41:14,584 - INFO -   8. remaining_patterns: Line 28 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}pass'
+2025-09-02 06:41:14,584 - INFO -   9. remaining_patterns: Line 22 - '        default_return=False,' → '        default_return, False="correlationstatus initialization",'
+2025-09-02 06:41:14,584 - INFO - 
+2025-09-02 06:41:14,584 - INFO - Applied 9 fixes to: src/monitoring/correlation_manager.py
+2025-09-02 06:41:18,103 - INFO - Processing file: src/monitoring/report_scheduler.py
+2025-09-02 06:41:18,107 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:41:18,108 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:41:18,109 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:18,110 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:41:18,110 - INFO - 
+📝 CHANGES MADE IN src/monitoring/report_scheduler.py:
+2025-09-02 06:41:18,110 - INFO -   1. placeholder_fixes: Line 25 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:41:18,110 - INFO -   2. complex_imports: Line 18 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:41:18,110 - INFO -   3. remaining_patterns: Line 25 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}pass'
+2025-09-02 06:41:18,110 - INFO -   4. remaining_patterns: Line 19 - '        default_return=False,' → '        default_return, False="reporttype initialization",'
+2025-09-02 06:41:18,110 - INFO - 
+2025-09-02 06:41:18,110 - INFO - Applied 4 fixes to: src/monitoring/report_scheduler.py
+2025-09-02 06:41:21,561 - INFO - Processing file: src/monitoring/fractional_system_monitor.py
+2025-09-02 06:41:21,565 - INFO - Applied pass_patterns fix: passpasspass -> pass
+2025-09-02 06:41:21,566 - INFO - Applied pass_patterns fix: pass# -> pass\n        #
+2025-09-02 06:41:21,566 - INFO - Applied pass_patterns fix: passtry: -> pass\n        try:
+2025-09-02 06:41:21,567 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:41:21,567 - INFO - Applied pass_patterns fix: passpass+ -> pass
+2025-09-02 06:41:21,567 - INFO - Applied pass_patterns fix: passself\. -> pass\n        self.
+2025-09-02 06:41:21,568 - INFO - Applied pass_patterns fix: passif -> pass\n        if
+2025-09-02 06:41:21,569 - INFO - Applied function_definitions fix: def\s+(\w+)\s*\(\.\.\.\)\s*->\s*\.\.\.: -> def \1(self):\n        pass
+2025-09-02 06:41:21,569 - INFO - Applied try_except_blocks fix: ^try:\s*$ ->         try:
+2025-09-02 06:41:21,570 - INFO - Applied try_except_blocks fix: try:\s*pass -> try:\n            pass
+2025-09-02 06:41:21,571 - INFO - Applied string_literals fix: pass"""([^"]+)""" -> """\1"""
+2025-09-02 06:41:21,571 - INFO - Applied comment_blocks fix: pass\s*#\s*(.+) -> # \1
+2025-09-02 06:41:21,572 - INFO - Applied comment_blocks fix: pass\s*\"\"\"([^\"]+)\"\"\" -> """\1"""
+2025-09-02 06:41:21,572 - INFO - Applied indentation_issues fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:21,573 - INFO - Applied syntax_errors fix: if\s+([^:]+)\s*$ -> if \1:
+2025-09-02 06:41:21,573 - INFO - Applied syntax_errors fix: for\s+([^:]+)\s*$ -> for \1:
+2025-09-02 06:41:21,574 - INFO - Applied placeholder_fixes fix: """\.\.\.""" -> """Implementation placeholder - needs specific logic"""
+2025-09-02 06:41:21,574 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:41:21,578 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:41:21,579 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:21,585 - INFO - Applied remaining_patterns fix: (\w+)\s*,\s*(\w+)\s*=\s*(\w+) -> \1, \2
+2025-09-02 06:41:21,588 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:41:21,588 - INFO - 
+📝 CHANGES MADE IN src/monitoring/fractional_system_monitor.py:
+2025-09-02 06:41:21,588 - INFO -   1. pass_patterns: Line 122 - '    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")' → '    passpasspassself.logger.error(f"Error in {file_path}: {{e}}")'
+2025-09-02 06:41:21,588 - INFO -   2. pass_patterns: Line 263 - '    pass# Align series' → '    pass'
+2025-09-02 06:41:21,588 - INFO -   3. pass_patterns: Line 155 - '    passtry:' → '    pass'
+2025-09-02 06:41:21,588 - INFO -   4. pass_patterns: Line 34 - '    passpassself.logger.info("Implementation placeholder - needs specific logic")' → '    pass'
+2025-09-02 06:41:21,588 - INFO -   5. pass_patterns: Line 136 - '        passpassself.logger.error(f"Error in {file_path}: {{e}}")' → '        pasself.logger.error(f"Error in {file_path}: {{e}}")'
+2025-09-02 06:41:21,588 - INFO -   6. pass_patterns: Line 35 - '        passself.logger.info("Implementation placeholder - needs specific logic")' → '        pass'
+2025-09-02 06:41:21,588 - INFO -   7. pass_patterns: Line 368 - '        passif len(self.metrics[key]) > self.monitoring_window:' → '        pass'
+2025-09-02 06:41:21,588 - INFO -   8. function_definitions: Line 173 - 'def _calculate_performance_metrics(...) -> ...:' → 'def _calculate_performance_metrics(self):'
+2025-09-02 06:41:21,588 - INFO -   9. try_except_blocks: Line 132 - 'try:' → '        try:'
+2025-09-02 06:41:21,588 - INFO -   10. try_except_blocks: Line 133 - '    pass' → '            pass'
+2025-09-02 06:41:21,588 - INFO -   11. string_literals: Line 41 - '    pass"""Monitor performance of combined fractional system in production."""' → '    """Monitor performance of combined fractional system in production."""'
+2025-09-02 06:41:21,588 - INFO -   12. comment_blocks: Line 310 - '    pass' → '    # Align series'
+2025-09-02 06:41:21,588 - INFO -   13. comment_blocks: Line 174 - '        pass' → '        """..."""'
+2025-09-02 06:41:21,588 - INFO -   14. indentation_issues: Line 137 - '        pasself.logger.error(f"Error in {file_path}: {{e}}")' → '        pass'
+2025-09-02 06:41:21,588 - INFO -   15. syntax_errors: Line 190 - ''feature_count': len(features.columns) if not features.empty else 0,' → ''feature_count': len(features.columns) if not features.empty else 0,:'
+2025-09-02 06:41:21,588 - INFO -   16. syntax_errors: Line 16 - '' → ':'
+2025-09-02 06:41:21,588 - INFO -   17. placeholder_fixes: Line 176 - '        """..."""' → '        """Implementation placeholder - needs specific logic"""'
+2025-09-02 06:41:21,588 - INFO -   18. placeholder_fixes: Line 27 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:41:21,588 - INFO -   19. complex_imports: Line 20 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:41:21,588 - INFO -   20. remaining_patterns: Line 27 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}pass'
+2025-09-02 06:41:21,588 - INFO -   21. remaining_patterns: Line 84 - 'self.alert_output_dir.mkdir(parents=True, exist_ok=True)' → 'self.alert_output_dir.mkdir(parents=True, exist_ok)'
+2025-09-02 06:41:21,588 - INFO -   22. remaining_patterns: Line 21 - '        default_return=False,' → '        default_return, False="fractionalsystemmonitor initialization",'
+2025-09-02 06:41:21,588 - INFO - 
+2025-09-02 06:41:21,588 - INFO - Applied 22 fixes to: src/monitoring/fractional_system_monitor.py
+2025-09-02 06:41:29,839 - INFO - Processing file: src/monitoring/enhanced_ml_tracker.py
+2025-09-02 06:41:29,840 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:41:29,842 - INFO - Applied syntax_errors fix: for\s+([^:]+)\s*$ -> for \1:
+2025-09-02 06:41:29,843 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:41:29,844 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:41:29,844 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:29,845 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:41:29,845 - INFO - 
+📝 CHANGES MADE IN src/monitoring/enhanced_ml_tracker.py:
+2025-09-02 06:41:29,845 - INFO -   1. pass_patterns: Line 52 - '    passXGBOOST = "xgboost"' → '    pass'
+2025-09-02 06:41:29,845 - INFO -   2. syntax_errors: Line 12 - '' → ':'
+2025-09-02 06:41:29,845 - INFO -   3. placeholder_fixes: Line 24 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:41:29,845 - INFO -   4. complex_imports: Line 17 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:41:29,845 - INFO -   5. remaining_patterns: Line 24 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}pass'
+2025-09-02 06:41:29,846 - INFO -   6. remaining_patterns: Line 18 - '        default_return=False,' → '        default_return, False="modeltype initialization",'
+2025-09-02 06:41:29,846 - INFO - 
+2025-09-02 06:41:29,846 - INFO - Applied 6 fixes to: src/monitoring/enhanced_ml_tracker.py
+2025-09-02 06:41:33,902 - INFO - Processing file: src/monitoring/performance_dashboard.py
+2025-09-02 06:41:33,903 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:41:33,904 - INFO - Applied pass_patterns fix: passself\. -> pass\n        self.
+2025-09-02 06:41:33,905 - INFO - Applied string_literals fix: pass"""([^"]+)""" -> """\1"""
+2025-09-02 06:41:33,906 - INFO - Applied syntax_errors fix: for\s+([^:]+)\s*$ -> for \1:
+2025-09-02 06:41:33,906 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:41:33,907 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:41:33,908 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:33,909 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:41:33,909 - INFO - 
+📝 CHANGES MADE IN src/monitoring/performance_dashboard.py:
+2025-09-02 06:41:33,909 - INFO -   1. pass_patterns: Line 78 - '    passpassself.logger.info("Implementation placeholder - needs specific logic")' → '    pass'
+2025-09-02 06:41:33,909 - INFO -   2. pass_patterns: Line 79 - '        passself.logger.info("Implementation placeholder - needs specific logic")' → '        pass'
+2025-09-02 06:41:33,909 - INFO -   3. string_literals: Line 88 - '    pass"""Dashboard metrics data structure."""' → '    """Dashboard metrics data structure."""'
+2025-09-02 06:41:33,909 - INFO -   4. syntax_errors: Line 20 - '@dataclass' → '@dataclass:'
+2025-09-02 06:41:33,909 - INFO -   5. placeholder_fixes: Line 32 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:41:33,909 - INFO -   6. complex_imports: Line 25 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:41:33,909 - INFO -   7. remaining_patterns: Line 32 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}pass'
+2025-09-02 06:41:33,909 - INFO -   8. remaining_patterns: Line 26 - '        default_return=False,' → '        default_return, False="placeholderdataclass initialization",'
+2025-09-02 06:41:33,909 - INFO - 
+2025-09-02 06:41:33,910 - INFO - Applied 8 fixes to: src/monitoring/performance_dashboard.py
+2025-09-02 06:41:37,902 - INFO - Processing file: src/monitoring/integration_manager.py
+2025-09-02 06:41:37,904 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:41:37,906 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:41:37,907 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:41:37,908 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:37,909 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:41:37,909 - INFO - 
+📝 CHANGES MADE IN src/monitoring/integration_manager.py:
+2025-09-02 06:41:37,909 - INFO -   1. pass_patterns: Line 75 - '    passself.logger.info("Implementation placeholder - needs specific logic")' → '    pass'
+2025-09-02 06:41:37,909 - INFO -   2. placeholder_fixes: Line 29 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:41:37,909 - INFO -   3. complex_imports: Line 22 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:41:37,909 - INFO -   4. remaining_patterns: Line 29 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}pass'
+2025-09-02 06:41:37,909 - INFO -   5. remaining_patterns: Line 23 - '        default_return=False,' → '        default_return, False="placeholderdataclass initialization",'
+2025-09-02 06:41:37,909 - INFO - 
+2025-09-02 06:41:37,909 - INFO - Applied 5 fixes to: src/monitoring/integration_manager.py
+2025-09-02 06:41:41,467 - INFO - Processing file: src/monitoring/performance_monitor.py
+2025-09-02 06:41:41,470 - INFO - Applied syntax_errors fix: for\s+([^:]+)\s*$ -> for \1:
+2025-09-02 06:41:41,472 - INFO - 
+📝 CHANGES MADE IN src/monitoring/performance_monitor.py:
+2025-09-02 06:41:41,472 - INFO -   1. syntax_errors: Line 22 - '' → ':'
+2025-09-02 06:41:41,472 - INFO - 
+2025-09-02 06:41:41,472 - INFO - Applied 1 fixes to: src/monitoring/performance_monitor.py
+2025-09-02 06:41:45,016 - INFO - Processing file: src/monitoring/surrogate_optimization_monitor.py
+2025-09-02 06:41:45,020 - INFO - Applied pass_patterns fix: passpasspass -> pass
+2025-09-02 06:41:45,020 - INFO - Applied pass_patterns fix: pass# -> pass\n        #
+2025-09-02 06:41:45,020 - INFO - Applied pass_patterns fix: passtry: -> pass\n        try:
+2025-09-02 06:41:45,020 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:41:45,021 - INFO - Applied pass_patterns fix: passpass+ -> pass
+2025-09-02 06:41:45,021 - INFO - Applied pass_patterns fix: passself\. -> pass\n        self.
+2025-09-02 06:41:45,021 - INFO - Applied pass_patterns fix: passdef -> pass\n        def
+2025-09-02 06:41:45,022 - INFO - Applied function_definitions fix: def\s+(\w+)\s*\(\.\.\.\)\s*->\s*\.\.\.: -> def \1(self):\n        pass
+2025-09-02 06:41:45,023 - INFO - Applied try_except_blocks fix: try:\s*pass -> try:\n            pass
+2025-09-02 06:41:45,024 - INFO - Applied string_literals fix: pass"""([^"]+)""" -> """\1"""
+2025-09-02 06:41:45,024 - INFO - Applied comment_blocks fix: pass\s*#\s*(.+) -> # \1
+2025-09-02 06:41:45,024 - INFO - Applied comment_blocks fix: pass\s*\"\"\"([^\"]+)\"\"\" -> """\1"""
+2025-09-02 06:41:45,025 - INFO - Applied indentation_issues fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:45,025 - INFO - Applied syntax_errors fix: def\s+(\w+)\s*\(([^)]+)\)\s*$ -> def \1(\2):
+2025-09-02 06:41:45,026 - INFO - Applied syntax_errors fix: if\s+([^:]+)\s*$ -> if \1:
+2025-09-02 06:41:45,026 - INFO - Applied syntax_errors fix: for\s+([^:]+)\s*$ -> for \1:
+2025-09-02 06:41:45,026 - INFO - Applied syntax_errors fix: with\s+([^:]+)\s*$ -> with \1:
+2025-09-02 06:41:45,027 - INFO - Applied placeholder_fixes fix: """\.\.\.""" -> """Implementation placeholder - needs specific logic"""
+2025-09-02 06:41:45,027 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:41:45,030 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:41:45,031 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:41:45,036 - INFO - Applied remaining_patterns fix: (\w+)\s*,\s*(\w+)\s*=\s*(\w+) -> \1, \2
+2025-09-02 06:41:45,039 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:41:45,039 - INFO - 
+📝 CHANGES MADE IN src/monitoring/surrogate_optimization_monitor.py:
+2025-09-02 06:41:45,039 - INFO -   1. pass_patterns: Line 204 - '    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")' → '    passpasspassself.logger.error(f"Error in {file_path}: {{e}}")'
+2025-09-02 06:41:45,039 - INFO -   2. pass_patterns: Line 237 - '    pass# Check for immediate alerts' → '    pass'
+2025-09-02 06:41:45,039 - INFO -   3. pass_patterns: Line 201 - '    passtry:' → '    pass'
+2025-09-02 06:41:45,039 - INFO -   4. pass_patterns: Line 6 - '    passself.logger.info("Implementation placeholder - needs specific logic")' → '    pass'
+2025-09-02 06:41:45,039 - INFO -   5. pass_patterns: Line 224 - '        passpassself.logger.error(f"Error in {file_path}: {{e}}")' → '        pasself.logger.error(f"Error in {file_path}: {{e}}")'
+2025-09-02 06:41:45,039 - INFO -   6. pass_patterns: Line 239 - '        passpassself.logger.error(f"Error in monitoring loop: {e}")' → '        passpass'
+2025-09-02 06:41:45,039 - INFO -   7. pass_patterns: Line 164 - '        passdef __init__(...):' → '        pass'
+2025-09-02 06:41:45,039 - INFO -   8. function_definitions: Line 205 - 'def _start_monitoring(...) -> ...:' → 'def _start_monitoring(self):'
+2025-09-02 06:41:45,039 - INFO -   9. try_except_blocks: Line 223 - '    pass' → '            pass'
+2025-09-02 06:41:45,039 - INFO -   10. string_literals: Line 120 - '    pass"""Data class for optimization metrics."""' → '    """Data class for optimization metrics."""'
+2025-09-02 06:41:45,039 - INFO -   11. comment_blocks: Line 270 - '    pass' → '    # Check for immediate alerts'
+2025-09-02 06:41:45,039 - INFO -   12. comment_blocks: Line 206 - '        pass' → '        """..."""'
+2025-09-02 06:41:45,039 - INFO -   13. indentation_issues: Line 225 - '        pasself.logger.error(f"Error in {file_path}: {{e}}")' → '        pass'
+2025-09-02 06:41:45,039 - INFO -   14. syntax_errors: Line 61 - '    async def initialize(self)' → '    async def initialize(self):'
+2025-09-02 06:41:45,039 - INFO -   15. syntax_errors: Line 401 - 'return {' → 'return {:'
+2025-09-02 06:41:45,039 - INFO -   16. syntax_errors: Line 120 - '    """Data class for optimization metrics."""' → '    """Data class for optimization metrics.""":'
+2025-09-02 06:41:45,039 - INFO -   17. syntax_errors: Line 336 - '' → ':'
+2025-09-02 06:41:45,039 - INFO -   18. placeholder_fixes: Line 206 - '        """..."""' → '        """Implementation placeholder - needs specific logic"""'
+2025-09-02 06:41:45,039 - INFO -   19. placeholder_fixes: Line 47 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:41:45,039 - INFO -   20. complex_imports: Line 33 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:41:45,039 - INFO -   21. remaining_patterns: Line 47 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}pass'
+2025-09-02 06:41:45,039 - INFO -   22. remaining_patterns: Line 220 - 'self.monitoring_thread = threading.Thread(target=self._monitoring_loop, daemon=True)' → 'self.monitoring_thread = threading.Thread(target=self._monitoring_loop, daemon)'
+2025-09-02 06:41:45,039 - INFO -   23. remaining_patterns: Line 34 - '        default_return=False,' → '        default_return, False="placeholderdataclass initialization",'
+2025-09-02 06:41:45,039 - INFO - 
+2025-09-02 06:41:45,040 - INFO - Applied 23 fixes to: src/monitoring/surrogate_optimization_monitor.py
+2025-09-02 06:44:31,318 - INFO - Processing file: src/monitoring/error_detection_system.py
+2025-09-02 06:44:31,318 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:44:31,319 - INFO - Applied string_literals fix: pass"([^"]+)" -> "\1"
+2025-09-02 06:44:31,320 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:44:31,322 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:44:31,324 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:44:31,324 - INFO - 
+📝 CHANGES MADE IN src/monitoring/error_detection_system.py:
+2025-09-02 06:44:31,324 - INFO -   1. placeholder_fixes: Line 24 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:44:31,324 - INFO -   2. string_literals: Line 24 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}")'
+2025-09-02 06:44:31,324 - INFO -   3. complex_imports: Line 17 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:44:31,324 - INFO -   4. remaining_patterns: Line 80 - '    passINFO , "info"' → '    pass'
+2025-09-02 06:44:31,324 - INFO -   5. remaining_patterns: Line 18 - '        default_return=False,' → '        default_return, False="alertseverity initialization",'
+2025-09-02 06:44:31,324 - INFO - 
+2025-09-02 06:44:31,324 - INFO - [DRY RUN] Would apply 5 fixes to: src/monitoring/error_detection_system.py
+2025-09-02 06:44:35,698 - INFO - Processing file: src/monitoring/error_detection_system.py
+2025-09-02 06:44:35,699 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:44:35,700 - INFO - Applied string_literals fix: pass"([^"]+)" -> "\1"
+2025-09-02 06:44:35,701 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:44:35,703 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:44:35,705 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:44:35,705 - INFO - 
+📝 CHANGES MADE IN src/monitoring/error_detection_system.py:
+2025-09-02 06:44:35,705 - INFO -   1. placeholder_fixes: Line 24 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:44:35,705 - INFO -   2. string_literals: Line 24 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}")'
+2025-09-02 06:44:35,705 - INFO -   3. complex_imports: Line 17 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:44:35,705 - INFO -   4. remaining_patterns: Line 80 - '    passINFO , "info"' → '    pass'
+2025-09-02 06:44:35,705 - INFO -   5. remaining_patterns: Line 18 - '        default_return=False,' → '        default_return, False="alertseverity initialization",'
+2025-09-02 06:44:35,705 - INFO - 
+2025-09-02 06:44:35,705 - INFO - Applied 5 fixes to: src/monitoring/error_detection_system.py
+2025-09-02 06:44:50,841 - INFO - Processing file: src/monitoring/tracking_system.py
+2025-09-02 06:44:50,842 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:44:50,843 - INFO - Applied string_literals fix: pass"([^"]+)" -> "\1"
+2025-09-02 06:44:50,844 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:44:50,845 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:44:50,846 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:44:50,846 - INFO - 
+📝 CHANGES MADE IN src/monitoring/tracking_system.py:
+2025-09-02 06:44:50,846 - INFO -   1. placeholder_fixes: Line 22 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:44:50,846 - INFO -   2. string_literals: Line 22 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}")'
+2025-09-02 06:44:50,846 - INFO -   3. complex_imports: Line 15 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:44:50,846 - INFO -   4. remaining_patterns: Line 36 - '    passENSEMBLE_DECISION, "ensemble_decision"' → '    pass'
+2025-09-02 06:44:50,846 - INFO -   5. remaining_patterns: Line 16 - '        default_return=False,' → '        default_return, False="trackingtype initialization",'
+2025-09-02 06:44:50,846 - INFO - 
+2025-09-02 06:44:50,846 - INFO - [DRY RUN] Would apply 5 fixes to: src/monitoring/tracking_system.py
+2025-09-02 06:45:02,515 - INFO - Processing file: src/monitoring/tracking_system.py
+2025-09-02 06:45:02,515 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:45:02,516 - INFO - Applied string_literals fix: pass"([^"]+)" -> "\1"
+2025-09-02 06:45:02,517 - INFO - Applied complex_imports fix: from\s+(\S+)\s+import\s+([^=]+)\s*=\s*([^=]+) -> from \1 import \2, \3
+2025-09-02 06:45:02,519 - INFO - Applied remaining_patterns fix: pass([^#\n]+) -> pass\n        \1
+2025-09-02 06:45:02,519 - INFO - Applied remaining_patterns fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:45:02,519 - INFO - 
+📝 CHANGES MADE IN src/monitoring/tracking_system.py:
+2025-09-02 06:45:02,520 - INFO -   1. placeholder_fixes: Line 22 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:45:02,520 - INFO -   2. string_literals: Line 22 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}")'
+2025-09-02 06:45:02,520 - INFO -   3. complex_imports: Line 15 - '        exceptions=(Exception,),' → '        exceptions, (Exception,),'
+2025-09-02 06:45:02,520 - INFO -   4. remaining_patterns: Line 36 - '    passENSEMBLE_DECISION, "ensemble_decision"' → '    pass'
+2025-09-02 06:45:02,520 - INFO -   5. remaining_patterns: Line 16 - '        default_return=False,' → '        default_return, False="trackingtype initialization",'
+2025-09-02 06:45:02,520 - INFO - 
+2025-09-02 06:45:02,520 - INFO - Applied 5 fixes to: src/monitoring/tracking_system.py
+2025-09-02 06:46:44,074 - INFO - Processing file: src/monitoring/tracking_system.py
+2025-09-02 06:46:44,075 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:46:44,076 - INFO - Applied string_literals fix: pass"([^"]+)" -> "\1"
+2025-09-02 06:46:44,077 - INFO - 
+📝 CHANGES MADE IN src/monitoring/tracking_system.py:
+2025-09-02 06:46:44,077 - INFO -   1. placeholder_fixes: Line 22 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:46:44,077 - INFO -   2. string_literals: Line 22 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}")'
+2025-09-02 06:46:44,077 - INFO - 
+2025-09-02 06:46:44,077 - INFO - [DRY RUN] Would apply 2 fixes to: src/monitoring/tracking_system.py
+2025-09-02 06:46:48,790 - INFO - Processing file: src/monitoring/tracking_system.py
+2025-09-02 06:46:48,791 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:46:48,792 - INFO - Applied string_literals fix: pass"([^"]+)" -> "\1"
+2025-09-02 06:46:48,793 - INFO - 
+📝 CHANGES MADE IN src/monitoring/tracking_system.py:
+2025-09-02 06:46:48,793 - INFO -   1. placeholder_fixes: Line 22 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:46:48,793 - INFO -   2. string_literals: Line 22 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}")'
+2025-09-02 06:46:48,793 - INFO - 
+2025-09-02 06:46:48,793 - INFO - Applied 2 fixes to: src/monitoring/tracking_system.py
+2025-09-02 06:46:56,542 - INFO - Processing file: src/monitoring/correlation_manager.py
+2025-09-02 06:46:56,543 - INFO - Applied placeholder_fixes fix: """\.\.\.""" -> """Implementation placeholder - needs specific logic"""
+2025-09-02 06:46:56,544 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:46:56,545 - INFO - Applied string_literals fix: pass"""([^"]+)""" -> """\1"""
+2025-09-02 06:46:56,545 - INFO - Applied string_literals fix: pass"([^"]+)" -> "\1"
+2025-09-02 06:46:56,546 - INFO - 
+📝 CHANGES MADE IN src/monitoring/correlation_manager.py:
+2025-09-02 06:46:56,546 - INFO -   1. placeholder_fixes: Line 39 - '    pass"""..."""' → '    pass"""Implementation placeholder - needs specific logic"""'
+2025-09-02 06:46:56,546 - INFO -   2. placeholder_fixes: Line 16 - 'class CorrelationStatus(...):' → 'class CorrelationStatus(pass):'
+2025-09-02 06:46:56,546 - INFO -   3. string_literals: Line 39 - '    pass"""Implementation placeholder - needs specific logic"""' → '    """Implementation placeholder - needs specific logic"""'
+2025-09-02 06:46:56,546 - INFO -   4. string_literals: Line 27 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}")'
+2025-09-02 06:46:56,546 - INFO - 
+2025-09-02 06:46:56,546 - INFO - [DRY RUN] Would apply 4 fixes to: src/monitoring/correlation_manager.py
+2025-09-02 06:47:06,295 - INFO - Processing file: src/monitoring/correlation_manager.py
+2025-09-02 06:47:06,296 - INFO - Applied placeholder_fixes fix: """\.\.\.""" -> """Implementation placeholder - needs specific logic"""
+2025-09-02 06:47:06,296 - ERROR - Error processing src/monitoring/correlation_manager.py: look-behind requires fixed-width pattern
+2025-09-02 06:47:14,619 - INFO - Processing file: src/monitoring/correlation_manager.py
+2025-09-02 06:47:14,619 - INFO - Applied placeholder_fixes fix: """\.\.\.""" -> """Implementation placeholder - needs specific logic"""
+2025-09-02 06:47:14,620 - INFO - Applied string_literals fix: pass"""([^"]+)""" -> """\1"""
+2025-09-02 06:47:14,621 - INFO - 
+📝 CHANGES MADE IN src/monitoring/correlation_manager.py:
+2025-09-02 06:47:14,621 - INFO -   1. placeholder_fixes: Line 39 - '    pass"""..."""' → '    pass"""Implementation placeholder - needs specific logic"""'
+2025-09-02 06:47:14,621 - INFO -   2. string_literals: Line 39 - '    pass"""Implementation placeholder - needs specific logic"""' → '    """Implementation placeholder - needs specific logic"""'
+2025-09-02 06:47:14,621 - INFO - 
+2025-09-02 06:47:14,622 - INFO - [DRY RUN] Would apply 2 fixes to: src/monitoring/correlation_manager.py
+2025-09-02 06:47:19,264 - INFO - Processing file: src/monitoring/correlation_manager.py
+2025-09-02 06:47:19,265 - INFO - Applied placeholder_fixes fix: """\.\.\.""" -> """Implementation placeholder - needs specific logic"""
+2025-09-02 06:47:19,266 - INFO - Applied string_literals fix: pass"""([^"]+)""" -> """\1"""
+2025-09-02 06:47:19,266 - INFO - 
+📝 CHANGES MADE IN src/monitoring/correlation_manager.py:
+2025-09-02 06:47:19,266 - INFO -   1. placeholder_fixes: Line 39 - '    pass"""..."""' → '    pass"""Implementation placeholder - needs specific logic"""'
+2025-09-02 06:47:19,266 - INFO -   2. string_literals: Line 39 - '    pass"""Implementation placeholder - needs specific logic"""' → '    """Implementation placeholder - needs specific logic"""'
+2025-09-02 06:47:19,266 - INFO - 
+2025-09-02 06:47:19,267 - INFO - Applied 2 fixes to: src/monitoring/correlation_manager.py

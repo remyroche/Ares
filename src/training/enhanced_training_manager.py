@@ -10,7 +10,7 @@ import time
 import warnings
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import pandas as pd
@@ -78,6 +78,11 @@ from src.utils.training_pipeline_decorators import (
 from src.utils.logger import system_logger
 from src.utils.step_dependency_validator import step_dependency_validator
 from src.utils.validator_orchestrator import validator_orchestrator
+
+# Import enhanced validation modules
+from src.utils.cross_step_validation import CrossStepValidator
+from src.utils.statistical_distribution_validation import StatisticalValidator
+from src.utils.feature_engineering_validation import FeatureEngineeringValidator
 
 
 # ==== Helpers for robust data path and JSON formatting ====
@@ -493,6 +498,11 @@ class EnhancedTrainingManager:
 
         # Initialize StepDependencyValidator for step dependency validation
         self.step_dependency_validator = step_dependency_validator
+        
+        # Initialize enhanced validation modules
+        self.cross_step_validator = CrossStepValidator(self.logger)
+        self.statistical_validator = StatisticalValidator(self.logger)
+        self.feature_engineering_validator = FeatureEngineeringValidator(self.logger)
 
         # Initialize multi-timeframe training manager
         self.multi_timeframe_training_manager = MultiTimeframeTrainingManager(config)
@@ -1529,6 +1539,20 @@ class EnhancedTrainingManager:
                         self.logger.info(
                             "🎉 Step 1: Data Collection completed successfully and validation passed",
                         )
+                        
+                        # Run enhanced validation
+                        enhanced_validation = await self._run_enhanced_validation(
+                            step_name="step1_data_collection",
+                            pipeline_state=pipeline_state,
+                            previous_step_name=None,
+                            training_input=training_input
+                        )
+                        if enhanced_validation.get("validation_passed", False):
+                            self.logger.info(
+                                f"🎉 Enhanced validation passed (quality score: {enhanced_validation['overall_quality_score']:.2f})"
+                            )
+                        else:
+                            self.logger.warning("⚠️ Enhanced validation found issues but continuing")
                     elif self.force_rerun:
                         self.logger.warning(
                             f"⚠️ Step 1 validation failed but is non-fatal: {step1_validation.get('error', 'Unknown error')}",
@@ -1650,6 +1674,20 @@ class EnhancedTrainingManager:
                             self.logger.info(
                                 "🎉 Step 1.5: Data Converter completed successfully and validation passed",
                             )
+                            
+                            # Run enhanced validation
+                            enhanced_validation = await self._run_enhanced_validation(
+                                step_name="step1_5_data_converter",
+                                pipeline_state=pipeline_state,
+                                previous_step_name="step1_data_collection",
+                                training_input=training_input
+                            )
+                            if enhanced_validation.get("validation_passed", False):
+                                self.logger.info(
+                                    f"🎉 Enhanced validation passed (quality score: {enhanced_validation['overall_quality_score']:.2f})"
+                                )
+                            else:
+                                self.logger.warning("⚠️ Enhanced validation found issues but continuing")
                         else:
                             self.logger.error("❌ Step 1.5 validation failed - stopping pipeline")
                             return False
@@ -1759,6 +1797,20 @@ class EnhancedTrainingManager:
                                 self.logger.info(
                                     "🎉 Step 2: Feature Engineering completed successfully and validation passed",
                                 )
+                                
+                                # Run enhanced validation
+                                enhanced_validation = await self._run_enhanced_validation(
+                                    step_name="step2_feature_engineering",
+                                    pipeline_state=pipeline_state,
+                                    previous_step_name="step1_5_data_converter",
+                                    training_input=training_input
+                                )
+                                if enhanced_validation.get("validation_passed", False):
+                                    self.logger.info(
+                                        f"🎉 Enhanced validation passed (quality score: {enhanced_validation['overall_quality_score']:.2f})"
+                                    )
+                                else:
+                                    self.logger.warning("⚠️ Enhanced validation found issues but continuing")
                             else:
                                 self.logger.error("❌ Step 2 validation failed - stopping pipeline")
                                 return False
@@ -1932,6 +1984,20 @@ class EnhancedTrainingManager:
                             self.logger.info(
                                 "🎉 Step 4: Regime Data Splitting completed successfully and validation passed",
                             )
+                            
+                            # Run enhanced validation
+                            enhanced_validation = await self._run_enhanced_validation(
+                                step_name="step4_regime_data_splitting",
+                                pipeline_state=pipeline_state,
+                                previous_step_name="step3_hmm_regime_discovery",
+                                training_input=training_input
+                            )
+                            if enhanced_validation.get("validation_passed", False):
+                                self.logger.info(
+                                    f"🎉 Enhanced validation passed (quality score: {enhanced_validation['overall_quality_score']:.2f})"
+                                )
+                            else:
+                                self.logger.warning("⚠️ Enhanced validation found issues but continuing")
                         else:
                             self.logger.error("❌ Step 4 validation failed - stopping pipeline")
                             return False
@@ -2014,6 +2080,20 @@ class EnhancedTrainingManager:
                             self.logger.info(
                                 "🎉 Step 5: Triple Barrier Method completed successfully and validation passed",
                             )
+                            
+                            # Run enhanced validation
+                            enhanced_validation = await self._run_enhanced_validation(
+                                step_name="step5_triple_barrier_method",
+                                pipeline_state=pipeline_state,
+                                previous_step_name="step4_regime_data_splitting",
+                                training_input=training_input
+                            )
+                            if enhanced_validation.get("validation_passed", False):
+                                self.logger.info(
+                                    f"🎉 Enhanced validation passed (quality score: {enhanced_validation['overall_quality_score']:.2f})"
+                                )
+                            else:
+                                self.logger.warning("⚠️ Enhanced validation found issues but continuing")
                         else:
                             self.logger.error("❌ Step 5 validation failed - stopping pipeline")
                             return False
@@ -2094,6 +2174,20 @@ class EnhancedTrainingManager:
                             self.logger.info(
                                 "🎉 Step 6: Labeling completed successfully and validation passed",
                             )
+                            
+                            # Run enhanced validation
+                            enhanced_validation = await self._run_enhanced_validation(
+                                step_name="step6_labeling",
+                                pipeline_state=pipeline_state,
+                                previous_step_name="step5_triple_barrier_method",
+                                training_input=training_input
+                            )
+                            if enhanced_validation.get("validation_passed", False):
+                                self.logger.info(
+                                    f"🎉 Enhanced validation passed (quality score: {enhanced_validation['overall_quality_score']:.2f})"
+                                )
+                            else:
+                                self.logger.warning("⚠️ Enhanced validation found issues but continuing")
                         else:
                             self.logger.error("❌ Step 6 validation failed - stopping pipeline")
                             return False
@@ -3868,6 +3962,174 @@ class EnhancedTrainingManager:
         except Exception as e:
             self.logger.exception(f"❌ Error running validator for {step_name}: {e}")
             return {"step_name": step_name, "validation_passed": False, "error": str(e)}
+    
+    async def _run_enhanced_validation(
+        self,
+        step_name: str,
+        pipeline_state: dict[str, Any],
+        previous_step_name: Optional[str] = None,
+        training_input: dict[str, Any] = None
+    ) -> dict[str, Any]:
+        """Run enhanced validation including cross-step, statistical, and feature engineering checks.
+        
+        Args:
+            step_name: Current step name
+            pipeline_state: Current pipeline state
+            previous_step_name: Previous step name for cross-step validation
+            training_input: Training input parameters
+            
+        Returns:
+            Enhanced validation results
+        """
+        self.logger.info(f"🔍 Running enhanced validation for {step_name}")
+        
+        enhanced_results = {
+            "step_name": step_name,
+            "validation_passed": True,
+            "cross_step_validation": None,
+            "statistical_validation": None,
+            "feature_validation": None,
+            "overall_quality_score": 1.0
+        }
+        
+        try:
+            # Get current step data
+            current_data = None
+            if step_name in ["step1_data_collection", "step1_5_data_converter"]:
+                current_data = pipeline_state.get("market_data")
+            elif step_name == "step2_feature_engineering":
+                # Try to load features data
+                symbol = training_input.get("symbol", "ETHUSDT")
+                exchange = training_input.get("exchange", "BINANCE")
+                features_path = Path(f"data/training/{exchange}_{symbol}_features_train.parquet")
+                if features_path.exists():
+                    current_data = pd.read_parquet(features_path)
+            elif "feature" in step_name.lower():
+                # For other feature engineering steps
+                current_data = pipeline_state.get("features_df")
+            
+            # 1. Cross-Step Validation
+            if previous_step_name and self.cross_step_validator:
+                prev_data = None
+                if previous_step_name == "step1_data_collection":
+                    prev_data = pipeline_state.get("market_data")
+                elif previous_step_name == "step1_5_data_converter":
+                    # Load unified data
+                    symbol = training_input.get("symbol", "ETHUSDT")
+                    exchange = training_input.get("exchange", "BINANCE")
+                    timeframe = training_input.get("timeframe", "1m")
+                    unified_path = Path(f"data_cache/unified/{exchange}/{symbol}/{timeframe}")
+                    if unified_path.exists():
+                        # Simple approach: load first parquet file found
+                        parquet_files = list(unified_path.glob("**/*.parquet"))
+                        if parquet_files:
+                            prev_data = pd.read_parquet(parquet_files[0])
+                
+                if prev_data is not None and current_data is not None:
+                    cross_step_result = self.cross_step_validator.validate_step_transition(
+                        previous_step_output=prev_data,
+                        current_step_input=current_data,
+                        previous_step_name=previous_step_name,
+                        current_step_name=step_name
+                    )
+                    enhanced_results["cross_step_validation"] = {
+                        "passed": cross_step_result.passed,
+                        "quality_score": cross_step_result.quality_score,
+                        "issues": len(cross_step_result.issues),
+                        "warnings": len(cross_step_result.warnings)
+                    }
+                    
+                    if not cross_step_result.passed:
+                        enhanced_results["validation_passed"] = False
+                        self.logger.warning(f"⚠️ Cross-step validation failed for {step_name}")
+            
+            # 2. Statistical Distribution Validation
+            if current_data is not None and isinstance(current_data, pd.DataFrame) and self.statistical_validator:
+                # Determine which columns to validate
+                columns_to_validate = None
+                if step_name in ["step1_data_collection", "step1_5_data_converter"]:
+                    columns_to_validate = ['open', 'high', 'low', 'close', 'volume']
+                elif "feature" in step_name.lower():
+                    # Validate all numeric columns for feature steps
+                    columns_to_validate = None  # Will validate all numeric
+                
+                stat_result = self.statistical_validator.validate_distribution(
+                    df=current_data,
+                    columns=columns_to_validate,
+                    check_stationarity=True
+                )
+                
+                enhanced_results["statistical_validation"] = {
+                    "passed": stat_result.passed,
+                    "quality_score": stat_result.quality_score,
+                    "issues": len(stat_result.issues),
+                    "warnings": len(stat_result.warnings)
+                }
+                
+                if not stat_result.passed:
+                    enhanced_results["validation_passed"] = False
+                    self.logger.warning(f"⚠️ Statistical validation failed for {step_name}")
+            
+            # 3. Feature Engineering Validation
+            if step_name in ["step2_feature_engineering", "step6_feature_generation", "step7_matrix_feature_selection"]:
+                if current_data is not None and self.feature_engineering_validator:
+                    # Get original data for comparison
+                    original_data = pipeline_state.get("market_data")
+                    if original_data is None:
+                        # Try to load from unified data
+                        symbol = training_input.get("symbol", "ETHUSDT")
+                        exchange = training_input.get("exchange", "BINANCE")
+                        timeframe = training_input.get("timeframe", "1m")
+                        unified_path = Path(f"data_cache/unified/{exchange}/{symbol}/{timeframe}")
+                        if unified_path.exists():
+                            parquet_files = list(unified_path.glob("**/*.parquet"))
+                            if parquet_files:
+                                original_data = pd.read_parquet(parquet_files[0])
+                    
+                    if original_data is not None:
+                        feature_config = training_input.get("feature_config", {})
+                        feature_result = self.feature_engineering_validator.validate_engineered_features(
+                            original_df=original_data,
+                            features_df=current_data,
+                            feature_config=feature_config,
+                            validate_calculations=True,
+                            check_dependencies=True
+                        )
+                        
+                        enhanced_results["feature_validation"] = {
+                            "passed": feature_result.passed,
+                            "quality_score": feature_result.quality_score,
+                            "issues": len(feature_result.issues),
+                            "warnings": len(feature_result.warnings)
+                        }
+                        
+                        if not feature_result.passed:
+                            enhanced_results["validation_passed"] = False
+                            self.logger.warning(f"⚠️ Feature engineering validation failed for {step_name}")
+            
+            # Calculate overall quality score
+            quality_scores = []
+            if enhanced_results["cross_step_validation"]:
+                quality_scores.append(enhanced_results["cross_step_validation"]["quality_score"])
+            if enhanced_results["statistical_validation"]:
+                quality_scores.append(enhanced_results["statistical_validation"]["quality_score"])
+            if enhanced_results["feature_validation"]:
+                quality_scores.append(enhanced_results["feature_validation"]["quality_score"])
+            
+            if quality_scores:
+                enhanced_results["overall_quality_score"] = np.mean(quality_scores)
+            
+            # Log summary
+            self.logger.info(f"✅ Enhanced validation completed for {step_name}")
+            self.logger.info(f"   - Overall quality score: {enhanced_results['overall_quality_score']:.2f}")
+            self.logger.info(f"   - Validation passed: {enhanced_results['validation_passed']}")
+            
+        except Exception as e:
+            self.logger.exception(f"❌ Error in enhanced validation for {step_name}: {e}")
+            enhanced_results["validation_passed"] = False
+            enhanced_results["error"] = str(e)
+        
+        return enhanced_results
 
     @handle_errors(
         exceptions=(Exception,),

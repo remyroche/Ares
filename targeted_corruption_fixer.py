@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Targeted Corruption Fixer - Specialized fixer for specific corruption patterns
+Enhanced Targeted Corruption Fixer - Comprehensive fixer for specific corruption patterns
 found in the codebase.
 
 This fixer is designed to handle the specific corruption patterns we've identified
@@ -26,9 +26,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-class TargetedCorruptionFixer:
+class EnhancedTargetedCorruptionFixer:
     """
-    A targeted fixer for specific corruption patterns found in the codebase.
+    An enhanced targeted fixer for specific corruption patterns found in the codebase.
     """
 
     def __init__(self, dry_run: bool = False):
@@ -50,10 +50,18 @@ class TargetedCorruptionFixer:
                 "function_placeholders": 0,
                 "await_fixes": 0,
                 "remaining_patterns": 0,
+                "class_definitions": 0,
+                "try_except_blocks": 0,
+                "import_statements": 0,
+                "string_literals": 0,
+                "comment_blocks": 0,
+                "indentation_issues": 0,
+                "syntax_errors": 0,
+                "placeholder_fixes": 0,
             },
         }
 
-        # Specific patterns found in the codebase
+        # Enhanced patterns found in the codebase
         self.fix_patterns = {
             "typing_imports": [
                 # Fix: from typing import Any = Dict + List = Optional
@@ -100,6 +108,38 @@ class TargetedCorruptionFixer:
                 (r"passawait", r"pass\n        await"),
                 # Fix: pass followed by any word
                 (r"pass(\w+)", r"pass\n        \1"),
+                # Fix: multiple consecutive pass statements
+                (r"passpass+", r"pass"),
+                # Fix: pass followed by self
+                (r"passself\.", r"pass\n        self."),
+                # Fix: pass followed by logger
+                (r"passlogger\.", r"pass\n        logger."),
+                # Fix: pass followed by try
+                (r"passtry:", r"pass\n        try:"),
+                # Fix: pass followed by except
+                (r"passexcept", r"pass\n        except"),
+                # Fix: pass followed by if
+                (r"passif", r"pass\n        if"),
+                # Fix: pass followed by for
+                (r"passfor", r"pass\n        for"),
+                # Fix: pass followed by while
+                (r"passwhile", r"pass\n        while"),
+                # Fix: pass followed by def
+                (r"passdef", r"pass\n        def"),
+                # Fix: pass followed by class
+                (r"passclass", r"pass\n        class"),
+                # Fix: pass followed by import
+                (r"passimport", r"pass\n        import"),
+                # Fix: pass followed by from
+                (r"passfrom", r"pass\n        from"),
+                # Fix: pass followed by return
+                (r"passreturn", r"pass\n        return"),
+                # Fix: pass followed by raise
+                (r"passraise", r"pass\n        raise"),
+                # Fix: pass followed by break
+                (r"passbreak", r"pass\n        break"),
+                # Fix: pass followed by continue
+                (r"passcontinue", r"pass\n        continue"),
             ],
             "function_definitions": [
                 # Fix: def __init__(self: config: dict[str = Any])
@@ -112,6 +152,149 @@ class TargetedCorruptionFixer:
                     r"def\s+(\w+)\s*\(([^)]*:\s*\w+\s*=\s*\w+[^)]*)\)",
                     self._fix_function_definition,
                 ),
+                # Fix: def __init__(...) -> ...:
+                (
+                    r"def\s+(\w+)\s*\(\.\.\.\)\s*->\s*\.\.\.:",
+                    r"def \1(self):\n        pass",
+                ),
+                # Fix: def __init__(...) -> ...:
+                (
+                    r"def\s+(\w+)\s*\(\.\.\.\)\s*->\s*\.\.\.:",
+                    r"def \1(self):\n        pass",
+                ),
+            ],
+            "class_definitions": [
+                # Fix: class ClassName(...):
+                (
+                    r"class\s+(\w+)\s*\(\.\.\.\):",
+                    r"class \1:\n    pass",
+                ),
+                # Fix: class ClassName(...) with docstring
+                (
+                    r"class\s+(\w+)\s*\(\.\.\.\):\s*\n\s*pass\s*\"\"\"([^\"]+)\"\"\"",
+                    r"class \1:\n    \"\"\"\2\"\"\"\n    pass",
+                ),
+                # Fix: class ClassName(...) with docstring
+                (
+                    r"class\s+(\w+)\s*\(\.\.\.\):\s*\"\"\"([^\"]+)\"\"\"",
+                    r"class \1:\n    \"\"\"\2\"\"\"\n    pass",
+                ),
+            ],
+            "try_except_blocks": [
+                # Fix: passtry:
+                (r"passtry:", r"pass\n        try:"),
+                # Fix: try: without proper indentation
+                (r"^try:\s*$", r"        try:"),
+                # Fix: except: without proper indentation
+                (r"^except\s*:", r"        except:"),
+                # Fix: finally: without proper indentation
+                (r"^finally\s*:", r"        finally:"),
+                # Fix: try: followed by pass
+                (r"try:\s*pass", r"try:\n            pass"),
+                # Fix: except: followed by pass
+                (r"except\s*:\s*pass", r"except:\n            pass"),
+                # Fix: finally: followed by pass
+                (r"finally\s*:\s*pass", r"finally:\n            pass"),
+            ],
+            "import_statements": [
+                # Fix: import statements with equals
+                (
+                    r"import\s+(\w+)\s*=\s*(\w+)",
+                    r"import \1, \2",
+                ),
+                # Fix: from import with equals
+                (
+                    r"from\s+(\S+)\s+import\s+(\w+)\s*=\s*(\w+)",
+                    r"from \1 import \2, \3",
+                ),
+                # Fix: import statements with plus
+                (
+                    r"import\s+(\w+)\s*\+\s*(\w+)",
+                    r"import \1, \2",
+                ),
+                # Fix: from import with plus
+                (
+                    r"from\s+(\S+)\s+import\s+(\w+)\s*\+\s*(\w+)",
+                    r"from \1 import \2, \3",
+                ),
+            ],
+            "string_literals": [
+                # Fix: pass"""docstring"""
+                (r'pass"""([^"]+)"""', r'"""\1"""'),
+                # Fix: pass'docstring'
+                (r"pass'([^']+)'", r"'\1'"),
+                # Fix: pass"docstring"
+                (r'pass"([^"]+)"', r'"\1"'),
+                # Fix: pass followed by string
+                (r'pass([\'"][^\'"]*[\'"])', r'\1'),
+            ],
+            "comment_blocks": [
+                # Fix: pass# comment
+                (r"pass#\s*(.+)", r"# \1"),
+                # Fix: pass followed by comment
+                (r"pass\s*#\s*(.+)", r"# \1"),
+                # Fix: pass followed by comment block
+                (r"pass\s*\"\"\"([^\"]+)\"\"\"", r'"""\1"""'),
+            ],
+            "indentation_issues": [
+                # Fix: pass followed by code without proper indentation
+                (r"pass([^#\n]+)", r"pass\n        \1"),
+                # Fix: pass followed by self without proper indentation
+                (r"passself\.", r"pass\n        self."),
+                # Fix: pass followed by logger without proper indentation
+                (r"passlogger\.", r"pass\n        logger."),
+                # Fix: pass followed by if without proper indentation
+                (r"passif", r"pass\n        if"),
+                # Fix: pass followed by for without proper indentation
+                (r"passfor", r"pass\n        for"),
+                # Fix: pass followed by while without proper indentation
+                (r"passwhile", r"pass\n        while"),
+                # Fix: pass followed by def without proper indentation
+                (r"passdef", r"pass\n        def"),
+                # Fix: pass followed by class without proper indentation
+                (r"passclass", r"pass\n        class"),
+                # Fix: pass followed by import without proper indentation
+                (r"passimport", r"pass\n        import"),
+                # Fix: pass followed by from without proper indentation
+                (r"passfrom", r"pass\n        from"),
+                # Fix: pass followed by return without proper indentation
+                (r"passreturn", r"pass\n        return"),
+                # Fix: pass followed by raise without proper indentation
+                (r"passraise", r"pass\n        raise"),
+                # Fix: pass followed by break without proper indentation
+                (r"passbreak", r"pass\n        break"),
+                # Fix: pass followed by continue without proper indentation
+                (r"passcontinue", r"pass\n        continue"),
+            ],
+            "syntax_errors": [
+                # Fix: missing colons in function definitions
+                (r"def\s+(\w+)\s*\(([^)]+)\)\s*$", r"def \1(\2):"),
+                # Fix: missing colons in class definitions
+                (r"class\s+(\w+)\s*$", r"class \1:"),
+                # Fix: missing colons in if statements
+                (r"if\s+([^:]+)\s*$", r"if \1:"),
+                # Fix: missing colons in for statements
+                (r"for\s+([^:]+)\s*$", r"for \1:"),
+                # Fix: missing colons in while statements
+                (r"while\s+([^:]+)\s*$", r"while \1:"),
+                # Fix: missing colons in try statements
+                (r"try\s*$", r"try:"),
+                # Fix: missing colons in except statements
+                (r"except\s+([^:]+)\s*$", r"except \1:"),
+                # Fix: missing colons in finally statements
+                (r"finally\s*$", r"finally:"),
+                # Fix: missing colons in with statements
+                (r"with\s+([^:]+)\s*$", r"with \1:"),
+            ],
+            "placeholder_fixes": [
+                # Fix: """..."""
+                (r'"""\.\.\."""', r'"""Implementation placeholder - needs specific logic"""'),
+                # Fix: ...
+                (r"\.\.\.", r"pass"),
+                # Fix: pass...
+                (r"pass\.\.\.", r"pass"),
+                # Fix: ... with docstring
+                (r'\.\.\.\s*"""([^"]+)"""', r'pass\n        """\1"""'),
             ],
             "decorators": [
                 # Fix: @handle_errors(exceptions=(Exception,), default_return, False)
@@ -448,7 +631,7 @@ class TargetedCorruptionFixer:
     def print_summary(self) -> None:
         """Print a summary of the fixes applied."""
         print("\n" + "=" * 60)
-        print("TARGETED CORRUPTION FIXER SUMMARY")
+        print("ENHANCED TARGETED CORRUPTION FIXER SUMMARY")
         print("=" * 60)
         print(f"Files processed: {self.stats['files_processed']}")
         print(f"Files fixed: {self.stats['files_fixed']}")
@@ -469,7 +652,7 @@ class TargetedCorruptionFixer:
     def get_fix_summary(self) -> str:
         """Get a detailed summary of fixes for reporting."""
         summary = []
-        summary.append("TARGETED CORRUPTION FIXER RESULTS")
+        summary.append("ENHANCED TARGETED CORRUPTION FIXER RESULTS")
         summary.append("=" * 50)
         summary.append(f"Files processed: {self.stats['files_processed']}")
         summary.append(f"Files fixed: {self.stats['files_fixed']}")
@@ -485,7 +668,7 @@ class TargetedCorruptionFixer:
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="Targeted Corruption Fixer - Fix specific corruption patterns found in the codebase"
+        description="Enhanced Targeted Corruption Fixer - Fix comprehensive corruption patterns found in the codebase"
     )
     parser.add_argument("target", help="File or directory to fix")
     parser.add_argument(
@@ -504,7 +687,7 @@ def main():
         logging.getLogger().setLevel(logging.DEBUG)
 
     # Create fixer
-    fixer = TargetedCorruptionFixer(dry_run=args.dry_run)
+    fixer = EnhancedTargetedCorruptionFixer(dry_run=args.dry_run)
 
     # Process target
     target_path = Path(args.target)

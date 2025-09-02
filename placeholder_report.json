@@ -1,4 +1,14 @@
 {
+  "metadata": {
+    "tool": "Enhanced Placeholder Finder",
+    "version": "2.0.0",
+    "analysis_start_time": "2025-09-02T07:03:56.143068+00:00",
+    "analysis_end_time": "2025-09-02T07:03:59.791155+00:00",
+    "analysis_duration_seconds": 3.648087,
+    "analysis_duration_formatted": "0:00:03.648087",
+    "timestamp_utc": "2025-09-02T07:03:59.791155+00:00",
+    "working_directory": "/workspace"
+  },
   "summary": {
     "files_analyzed": 540,
     "total_placeholders": 13878,
@@ -5222,7 +5232,7 @@
       "raise_notimplemented": [
         {
           "type": "not_implemented",
-          "line": 293,
+          "line": 297,
           "content": "if 'raise NotImplementedError' in line or 'raise NotImplemented' in line:",
           "context": [
             "        lines = content.split('\\n')",
@@ -5236,7 +5246,7 @@
         },
         {
           "type": "not_implemented",
-          "line": 335,
+          "line": 339,
           "content": "'raise NotImplementedError' in body_line or",
           "context": [
             "                                body_line.startswith(\"'''\") or",
@@ -5250,7 +5260,7 @@
         },
         {
           "type": "not_implemented",
-          "line": 336,
+          "line": 340,
           "content": "'raise NotImplemented' in body_line):",
           "context": [
             "                                'TODO' in body_line or",
@@ -5269,7 +5279,7 @@
       "unimplemented_methods": [
         {
           "type": "unimplemented_method",
-          "line": 229,
+          "line": 233,
           "content": "def _find_todo_comments(self, content: str, filepath: str) -> List[Dict[str, Any]]:",
           "method_name": "_find_todo_comments",
           "context": [
@@ -5284,7 +5294,7 @@
         },
         {
           "type": "unimplemented_method",
-          "line": 303,
+          "line": 307,
           "content": "def _find_placeholder_functions(self, content: str, filepath: str) -> List[Dict[str, Any]]:",
           "method_name": "_find_placeholder_functions",
           "context": [
@@ -5299,7 +5309,7 @@
         },
         {
           "type": "unimplemented_method",
-          "line": 393,
+          "line": 397,
           "content": "def _find_stub_functions(self, content: str, filepath: str) -> List[Dict[str, Any]]:",
           "method_name": "_find_stub_functions",
           "context": [
@@ -5314,7 +5324,7 @@
         },
         {
           "type": "unimplemented_method",
-          "line": 425,
+          "line": 429,
           "content": "def _find_unimplemented_methods(self, content: str, filepath: str) -> List[Dict[str, Any]]:",
           "method_name": "_find_unimplemented_methods",
           "context": [
@@ -5329,7 +5339,7 @@
         },
         {
           "type": "unimplemented_method",
-          "line": 455,
+          "line": 459,
           "content": "def _find_placeholder_variables(self, content: str, filepath: str) -> List[Dict[str, Any]]:",
           "method_name": "_find_placeholder_variables",
           "context": [
@@ -5346,7 +5356,7 @@
       "placeholder_variables": [
         {
           "type": "placeholder_variable",
-          "line": 327,
+          "line": 331,
           "content": "if len(body_lines) <= 3:  # Just pass, docstring, or TODO",
           "variable_name": "if len(body_lines) <",
           "value": "3:  # Just pass, docstring, or TODO",
@@ -5360,7 +5370,7 @@
         },
         {
           "type": "placeholder_variable",
-          "line": 618,
+          "line": 622,
           "content": "results = self.placeholders",
           "variable_name": "results",
           "value": "self.placeholders",
@@ -5369,12 +5379,12 @@
             "        if results is None:",
             "            results = self.placeholders",
             "",
-            "        report = []"
+            "        # Calculate analysis duration"
           ]
         },
         {
           "type": "placeholder_variable",
-          "line": 642,
+          "line": 657,
           "content": "dir_stats = defaultdict(lambda: {'files': 0, 'placeholders': 0})",
           "variable_name": "dir_stats",
           "value": "defaultdict(lambda: {'files': 0, 'placeholders': 0})",
@@ -5388,7 +5398,7 @@
         },
         {
           "type": "placeholder_variable",
-          "line": 697,
+          "line": 712,
           "content": "results = self.placeholders",
           "variable_name": "results",
           "value": "self.placeholders",
@@ -5397,12 +5407,12 @@
             "        if results is None:",
             "            results = self.placeholders",
             "            ",
-            "        export_data = {"
+            "        # Calculate analysis duration"
           ]
         },
         {
           "type": "placeholder_variable",
-          "line": 710,
+          "line": 738,
           "content": "parser = argparse.ArgumentParser(description='Enhanced placeholder finder for Python code')",
           "variable_name": "parser",
           "value": "argparse.ArgumentParser(description='Enhanced placeholder finder for Python code')",
@@ -5416,7 +5426,7 @@
         },
         {
           "type": "placeholder_variable",
-          "line": 722,
+          "line": 750,
           "content": "finder = PlaceholderFinder(args.exclusions)",
           "variable_name": "finder",
           "value": "PlaceholderFinder(args.exclusions)",
@@ -5432,7 +5442,7 @@
       "incomplete_implementations": [
         {
           "type": "incomplete_implementation",
-          "line": 21,
+          "line": 22,
           "content": "def __init__(self, exclusions_file: Optional[str] = None):",
           "incomplete_line": "return False",
           "context": [
@@ -5447,12 +5457,12 @@
         },
         {
           "type": "incomplete_implementation",
-          "line": 66,
+          "line": 70,
           "content": "def _load_exclusions(self, exclusions_file: Optional[str]) -> Set[str]:",
           "incomplete_line": "return False",
           "context": [
-            "        logging.basicConfig(level=logging.INFO)",
-            "        self.logger = logging.getLogger(__name__)",
+            "        # Record analysis start time",
+            "        self.analysis_start_time = datetime.now(timezone.utc)",
             "",
             "    def _load_exclusions(self, exclusions_file: Optional[str]) -> Set[str]:",
             "        \"\"\"Load exclusion patterns from file.",
@@ -5462,7 +5472,7 @@
         },
         {
           "type": "incomplete_implementation",
-          "line": 87,
+          "line": 91,
           "content": "def _should_exclude(self, filepath: str) -> bool:",
           "incomplete_line": "return False",
           "context": [
@@ -5477,7 +5487,7 @@
         },
         {
           "type": "incomplete_implementation",
-          "line": 101,
+          "line": 105,
           "content": "def analyze_file(self, filepath: str) -> Dict[str, List[Dict[str, Any]]]:",
           "incomplete_line": "return False",
           "context": [
@@ -5492,7 +5502,7 @@
         },
         {
           "type": "incomplete_implementation",
-          "line": 152,
+          "line": 156,
           "content": "def _find_pass_statements(self, content: str, filepath: str) -> List[Dict[str, Any]]:",
           "incomplete_line": "return False",
           "context": [
@@ -5507,7 +5517,7 @@
         },
         {
           "type": "incomplete_implementation",
-          "line": 198,
+          "line": 202,
           "content": "def _is_isolated_pass(self, lines: List[str], line_num: int) -> bool:",
           "incomplete_line": "return False",
           "context": [
@@ -5522,7 +5532,7 @@
         },
         {
           "type": "incomplete_implementation",
-          "line": 229,
+          "line": 233,
           "content": "def _find_todo_comments(self, content: str, filepath: str) -> List[Dict[str, Any]]:",
           "incomplete_line": "'raise Exception', 'raise RuntimeError', 'raise ValueError',",
           "context": [
@@ -5537,7 +5547,7 @@
         },
         {
           "type": "incomplete_implementation",
-          "line": 279,
+          "line": 283,
           "content": "def _find_raise_notimplemented(self, content: str, filepath: str) -> List[Dict[str, Any]]:",
           "incomplete_line": "'raise Exception', 'raise RuntimeError', 'raise ValueError',",
           "context": [
@@ -5552,7 +5562,7 @@
         },
         {
           "type": "incomplete_implementation",
-          "line": 303,
+          "line": 307,
           "content": "def _find_placeholder_functions(self, content: str, filepath: str) -> List[Dict[str, Any]]:",
           "incomplete_line": "'raise Exception', 'raise RuntimeError', 'raise ValueError',",
           "context": [
@@ -5567,7 +5577,7 @@
         },
         {
           "type": "incomplete_implementation",
-          "line": 351,
+          "line": 355,
           "content": "def _find_empty_classes(self, content: str, filepath: str) -> List[Dict[str, Any]]:",
           "incomplete_line": "'raise Exception', 'raise RuntimeError', 'raise ValueError',",
           "context": [
@@ -5582,7 +5592,7 @@
         },
         {
           "type": "incomplete_implementation",
-          "line": 393,
+          "line": 397,
           "content": "def _find_stub_functions(self, content: str, filepath: str) -> List[Dict[str, Any]]:",
           "incomplete_line": "'raise Exception', 'raise RuntimeError', 'raise ValueError',",
           "context": [
@@ -5597,7 +5607,7 @@
         },
         {
           "type": "incomplete_implementation",
-          "line": 425,
+          "line": 429,
           "content": "def _find_unimplemented_methods(self, content: str, filepath: str) -> List[Dict[str, Any]]:",
           "incomplete_line": "'raise Exception', 'raise RuntimeError', 'raise ValueError',",
           "context": [
@@ -5612,7 +5622,7 @@
         },
         {
           "type": "incomplete_implementation",
-          "line": 455,
+          "line": 459,
           "content": "def _find_placeholder_variables(self, content: str, filepath: str) -> List[Dict[str, Any]]:",
           "incomplete_line": "'raise Exception', 'raise RuntimeError', 'raise ValueError',",
           "context": [
@@ -5627,7 +5637,7 @@
         },
         {
           "type": "incomplete_implementation",
-          "line": 489,
+          "line": 493,
           "content": "def _find_incomplete_implementations(self, content: str, filepath: str) -> List[Dict[str, Any]]:",
           "incomplete_line": "'raise Exception', 'raise RuntimeError', 'raise ValueError',",
           "context": [
@@ -5642,7 +5652,7 @@
         },
         {
           "type": "incomplete_implementation",
-          "line": 530,
+          "line": 534,
           "content": "def _find_function_end(self, lines: List[str], start_line: int) -> int:",
           "incomplete_line": "print(f\"Report written to {args.output}\")",
           "context": [
@@ -5657,7 +5667,7 @@
         },
         {
           "type": "incomplete_implementation",
-          "line": 560,
+          "line": 564,
           "content": "def _find_class_end(self, lines: List[str], start_line: int) -> int:",
           "incomplete_line": "print(f\"Report written to {args.output}\")",
           "context": [
@@ -5672,7 +5682,7 @@
         },
         {
           "type": "incomplete_implementation",
-          "line": 572,
+          "line": 576,
           "content": "def _get_context(self, lines: List[str], line_num: int, context_lines: int = 3) -> List[str]:",
           "incomplete_line": "print(f\"Report written to {args.output}\")",
           "context": [
@@ -5687,7 +5697,7 @@
         },
         {
           "type": "incomplete_implementation",
-          "line": 587,
+          "line": 591,
           "content": "def analyze_directory(self, directory: str) -> Dict[str, Dict[str, List[Dict[str, Any]]]]:",
           "incomplete_line": "print(f\"Report written to {args.output}\")",
           "context": [
@@ -5702,7 +5712,7 @@
         },
         {
           "type": "incomplete_implementation",
-          "line": 608,
+          "line": 612,
           "content": "def generate_report(self, results: Optional[Dict[str, Dict[str, List[Dict[str, Any]]]]] = None) -> str:",
           "incomplete_line": "print(f\"Report written to {args.output}\")",
           "context": [
@@ -5717,7 +5727,7 @@
         },
         {
           "type": "incomplete_implementation",
-          "line": 685,
+          "line": 700,
           "content": "def export_json(self, results: Optional[Dict[str, Dict[str, List[Dict[str, Any]]]]] = None) -> str:",
           "incomplete_line": "print(f\"Report written to {args.output}\")",
           "context": [
@@ -5732,7 +5742,7 @@
         },
         {
           "type": "incomplete_implementation",
-          "line": 708,
+          "line": 736,
           "content": "def main():",
           "incomplete_line": "print(f\"Report written to {args.output}\")",
           "context": [
@@ -214835,6 +214845,5 @@
         }
       ]
     }
-  },
-  "timestamp": "/workspace"
+  }
 }

@@ -13,6 +13,7 @@ from typing import Dict, List, Set, Tuple, Any, Optional
 from collections import defaultdict
 from pathlib import Path
 import logging
+from datetime import datetime, timezone
 
 
 class PlaceholderFinder:
@@ -62,6 +63,9 @@ class PlaceholderFinder:
         # Setup logging
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(__name__)
+        
+        # Record analysis start time
+        self.analysis_start_time = datetime.now(timezone.utc)
 
     def _load_exclusions(self, exclusions_file: Optional[str]) -> Set[str]:
         """Load exclusion patterns from file.
@@ -617,10 +621,21 @@ class PlaceholderFinder:
         if results is None:
             results = self.placeholders
 
+        # Calculate analysis duration
+        analysis_end_time = datetime.now(timezone.utc)
+        analysis_duration = analysis_end_time - self.analysis_start_time
+
         report = []
         report.append("=" * 80)
         report.append("ENHANCED PLACEHOLDER FINDER REPORT")
         report.append("=" * 80)
+        report.append("")
+        
+        # Add timestamp information
+        report.append("ANALYSIS TIMESTAMP:")
+        report.append(f"  Started:  {self.analysis_start_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+        report.append(f"  Completed: {analysis_end_time.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+        report.append(f"  Duration:  {analysis_duration}")
         report.append("")
 
         # Summary statistics
@@ -696,10 +711,23 @@ class PlaceholderFinder:
         if results is None:
             results = self.placeholders
             
+        # Calculate analysis duration
+        analysis_end_time = datetime.now(timezone.utc)
+        analysis_duration = analysis_end_time - self.analysis_start_time
+            
         export_data = {
+            'metadata': {
+                'tool': 'Enhanced Placeholder Finder',
+                'version': '2.0.0',
+                'analysis_start_time': self.analysis_start_time.isoformat(),
+                'analysis_end_time': analysis_end_time.isoformat(),
+                'analysis_duration_seconds': analysis_duration.total_seconds(),
+                'analysis_duration_formatted': str(analysis_duration),
+                'timestamp_utc': analysis_end_time.isoformat(),
+                'working_directory': str(Path().cwd())
+            },
             'summary': self.stats,
-            'results': results,
-            'timestamp': str(Path().cwd())
+            'results': results
         }
         
         return json.dumps(export_data, indent=2, default=str)

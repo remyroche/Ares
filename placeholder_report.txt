@@ -2,6 +2,11 @@
 ENHANCED PLACEHOLDER FINDER REPORT
 ================================================================================
 
+ANALYSIS TIMESTAMP:
+  Started:  2025-09-02 07:03:56 UTC
+  Completed: 2025-09-02 07:03:59 UTC
+  Duration:  0:00:03.596953
+
 SUMMARY STATISTICS:
   Files analyzed: 540
   Total placeholders found: 13878
@@ -4008,7 +4013,7 @@ File: ./code_quality/tools/placeholder_finder.py
 ------------------------------------------------
 
   RAISE_NOTIMPLEMENTED:
-    Line 293: if 'raise NotImplementedError' in line or 'raise NotImplemented' in line:
+    Line 297: if 'raise NotImplementedError' in line or 'raise NotImplemented' in line:
       Context:
                 lines = content.split('\n')
         
@@ -4017,7 +4022,7 @@ File: ./code_quality/tools/placeholder_finder.py
                         not_implemented.append({
                             'type': 'not_implemented',
                             'line': i,
-    Line 335: 'raise NotImplementedError' in body_line or
+    Line 339: 'raise NotImplementedError' in body_line or
       Context:
                                         body_line.startswith("'''") or
                                         'TODO' in body_line or
@@ -4026,7 +4031,7 @@ File: ./code_quality/tools/placeholder_finder.py
                                         'raise NotImplemented' in body_line):
                                         is_placeholder = True
                                         break
-    Line 336: 'raise NotImplemented' in body_line):
+    Line 340: 'raise NotImplemented' in body_line):
       Context:
                                         'TODO' in body_line or
                                         'FIXME' in body_line or
@@ -4037,7 +4042,7 @@ File: ./code_quality/tools/placeholder_finder.py
         
 
   UNIMPLEMENTED_METHODS:
-    Line 229: def _find_todo_comments(self, content: str, filepath: str) -> List[Dict[str, Any]]:
+    Line 233: def _find_todo_comments(self, content: str, filepath: str) -> List[Dict[str, Any]]:
       Context:
                         
                 return False
@@ -4046,7 +4051,7 @@ File: ./code_quality/tools/placeholder_finder.py
                 """Find TODO and related comments.
                 
                 Args:
-    Line 303: def _find_placeholder_functions(self, content: str, filepath: str) -> List[Dict[str, Any]]:
+    Line 307: def _find_placeholder_functions(self, content: str, filepath: str) -> List[Dict[str, Any]]:
       Context:
         
                 return not_implemented
@@ -4055,7 +4060,7 @@ File: ./code_quality/tools/placeholder_finder.py
                 """Find functions with minimal content that might be placeholders.
                 
                 Args:
-    Line 393: def _find_stub_functions(self, content: str, filepath: str) -> List[Dict[str, Any]]:
+    Line 397: def _find_stub_functions(self, content: str, filepath: str) -> List[Dict[str, Any]]:
       Context:
         
                 return empty_classes
@@ -4064,7 +4069,7 @@ File: ./code_quality/tools/placeholder_finder.py
                 """Find stub functions (functions with just ellipsis).
                 
                 Args:
-    Line 425: def _find_unimplemented_methods(self, content: str, filepath: str) -> List[Dict[str, Any]]:
+    Line 429: def _find_unimplemented_methods(self, content: str, filepath: str) -> List[Dict[str, Any]]:
       Context:
         
                 return stub_functions
@@ -4073,7 +4078,7 @@ File: ./code_quality/tools/placeholder_finder.py
                 """Find methods that are explicitly marked as unimplemented.
                 
                 Args:
-    Line 455: def _find_placeholder_variables(self, content: str, filepath: str) -> List[Dict[str, Any]]:
+    Line 459: def _find_placeholder_variables(self, content: str, filepath: str) -> List[Dict[str, Any]]:
       Context:
         
                 return unimplemented_methods
@@ -4084,42 +4089,42 @@ File: ./code_quality/tools/placeholder_finder.py
                 Args:
 
   PLACEHOLDER_VARIABLES:
-    Line 327: if len(body_lines) <= 3:  # Just pass, docstring, or TODO
+    Line 331: if len(body_lines) <= 3:  # Just pass, docstring, or TODO
       Context:
         
                             # Check if body is minimal
                             if len(body_lines) <= 3:  # Just pass, docstring, or TODO
                                 is_placeholder = False
                                 for body_line in body_lines:
-    Line 618: results = self.placeholders
+    Line 622: results = self.placeholders
       Context:
                 """
                 if results is None:
                     results = self.placeholders
         
-                report = []
-    Line 642: dir_stats = defaultdict(lambda: {'files': 0, 'placeholders': 0})
+                # Calculate analysis duration
+    Line 657: dir_stats = defaultdict(lambda: {'files': 0, 'placeholders': 0})
       Context:
         
                 # Per directory statistics
                 dir_stats = defaultdict(lambda: {'files': 0, 'placeholders': 0})
                 for filepath, issues in results.items():
                     directory = os.path.dirname(filepath)
-    Line 697: results = self.placeholders
+    Line 712: results = self.placeholders
       Context:
                 
                 if results is None:
                     results = self.placeholders
                     
-                export_data = {
-    Line 710: parser = argparse.ArgumentParser(description='Enhanced placeholder finder for Python code')
+                # Calculate analysis duration
+    Line 738: parser = argparse.ArgumentParser(description='Enhanced placeholder finder for Python code')
       Context:
         def main():
             """Main entry point."""
             parser = argparse.ArgumentParser(description='Enhanced placeholder finder for Python code')
             parser.add_argument('path', help='Path to analyze (file or directory)')
             parser.add_argument('--exclusions', help='Path to exclusions file')
-    Line 722: finder = PlaceholderFinder(args.exclusions)
+    Line 750: finder = PlaceholderFinder(args.exclusions)
       Context:
                 logging.getLogger().setLevel(logging.DEBUG)
         
@@ -4128,7 +4133,7 @@ File: ./code_quality/tools/placeholder_finder.py
             if os.path.isfile(args.path):
 
   INCOMPLETE_IMPLEMENTATIONS:
-    Line 21: def __init__(self, exclusions_file: Optional[str] = None):
+    Line 22: def __init__(self, exclusions_file: Optional[str] = None):
       Context:
         class PlaceholderFinder:
             """Enhanced placeholder finder with comprehensive detection capabilities."""
@@ -4137,16 +4142,16 @@ File: ./code_quality/tools/placeholder_finder.py
                 """Initialize the PlaceholderFinder.
                 
                 Args:
-    Line 66: def _load_exclusions(self, exclusions_file: Optional[str]) -> Set[str]:
+    Line 70: def _load_exclusions(self, exclusions_file: Optional[str]) -> Set[str]:
       Context:
-                logging.basicConfig(level=logging.INFO)
-                self.logger = logging.getLogger(__name__)
+                # Record analysis start time
+                self.analysis_start_time = datetime.now(timezone.utc)
         
             def _load_exclusions(self, exclusions_file: Optional[str]) -> Set[str]:
                 """Load exclusion patterns from file.
                 
                 Args:
-    Line 87: def _should_exclude(self, filepath: str) -> bool:
+    Line 91: def _should_exclude(self, filepath: str) -> bool:
       Context:
                         self.logger.warning(f"Could not load exclusions file: {e}")
                 return exclusions
@@ -4155,7 +4160,7 @@ File: ./code_quality/tools/placeholder_finder.py
                 """Check if file should be excluded from analysis.
                 
                 Args:
-    Line 101: def analyze_file(self, filepath: str) -> Dict[str, List[Dict[str, Any]]]:
+    Line 105: def analyze_file(self, filepath: str) -> Dict[str, List[Dict[str, Any]]]:
       Context:
                         return True
                 return False
@@ -4164,7 +4169,7 @@ File: ./code_quality/tools/placeholder_finder.py
                 """Analyze a single Python file for placeholders.
                 
                 Args:
-    Line 152: def _find_pass_statements(self, content: str, filepath: str) -> List[Dict[str, Any]]:
+    Line 156: def _find_pass_statements(self, content: str, filepath: str) -> List[Dict[str, Any]]:
       Context:
                     self.logger.warning(f"Error analyzing {filepath}: {e}")
                     return {}
@@ -4173,7 +4178,7 @@ File: ./code_quality/tools/placeholder_finder.py
                 """Find pass statements that might be placeholders.
                 
                 Args:
-    Line 198: def _is_isolated_pass(self, lines: List[str], line_num: int) -> bool:
+    Line 202: def _is_isolated_pass(self, lines: List[str], line_num: int) -> bool:
       Context:
         
                 return pass_statements
@@ -4182,7 +4187,7 @@ File: ./code_quality/tools/placeholder_finder.py
                 """Check if a pass statement is isolated (not in a try/except block).
                 
                 Args:
-    Line 229: def _find_todo_comments(self, content: str, filepath: str) -> List[Dict[str, Any]]:
+    Line 233: def _find_todo_comments(self, content: str, filepath: str) -> List[Dict[str, Any]]:
       Context:
                         
                 return False
@@ -4191,7 +4196,7 @@ File: ./code_quality/tools/placeholder_finder.py
                 """Find TODO and related comments.
                 
                 Args:
-    Line 279: def _find_raise_notimplemented(self, content: str, filepath: str) -> List[Dict[str, Any]]:
+    Line 283: def _find_raise_notimplemented(self, content: str, filepath: str) -> List[Dict[str, Any]]:
       Context:
         
                 return todo_comments
@@ -4200,7 +4205,7 @@ File: ./code_quality/tools/placeholder_finder.py
                 """Find NotImplementedError and NotImplemented raises.
                 
                 Args:
-    Line 303: def _find_placeholder_functions(self, content: str, filepath: str) -> List[Dict[str, Any]]:
+    Line 307: def _find_placeholder_functions(self, content: str, filepath: str) -> List[Dict[str, Any]]:
       Context:
         
                 return not_implemented
@@ -4209,7 +4214,7 @@ File: ./code_quality/tools/placeholder_finder.py
                 """Find functions with minimal content that might be placeholders.
                 
                 Args:
-    Line 351: def _find_empty_classes(self, content: str, filepath: str) -> List[Dict[str, Any]]:
+    Line 355: def _find_empty_classes(self, content: str, filepath: str) -> List[Dict[str, Any]]:
       Context:
         
                 return placeholder_functions
@@ -4218,7 +4223,7 @@ File: ./code_quality/tools/placeholder_finder.py
                 """Find empty classes that might be placeholders.
                 
                 Args:
-    Line 393: def _find_stub_functions(self, content: str, filepath: str) -> List[Dict[str, Any]]:
+    Line 397: def _find_stub_functions(self, content: str, filepath: str) -> List[Dict[str, Any]]:
       Context:
         
                 return empty_classes
@@ -4227,7 +4232,7 @@ File: ./code_quality/tools/placeholder_finder.py
                 """Find stub functions (functions with just ellipsis).
                 
                 Args:
-    Line 425: def _find_unimplemented_methods(self, content: str, filepath: str) -> List[Dict[str, Any]]:
+    Line 429: def _find_unimplemented_methods(self, content: str, filepath: str) -> List[Dict[str, Any]]:
       Context:
         
                 return stub_functions
@@ -4236,7 +4241,7 @@ File: ./code_quality/tools/placeholder_finder.py
                 """Find methods that are explicitly marked as unimplemented.
                 
                 Args:
-    Line 455: def _find_placeholder_variables(self, content: str, filepath: str) -> List[Dict[str, Any]]:
+    Line 459: def _find_placeholder_variables(self, content: str, filepath: str) -> List[Dict[str, Any]]:
       Context:
         
                 return unimplemented_methods
@@ -4245,7 +4250,7 @@ File: ./code_quality/tools/placeholder_finder.py
                 """Find variables that might be placeholders.
                 
                 Args:
-    Line 489: def _find_incomplete_implementations(self, content: str, filepath: str) -> List[Dict[str, Any]]:
+    Line 493: def _find_incomplete_implementations(self, content: str, filepath: str) -> List[Dict[str, Any]]:
       Context:
         
                 return placeholder_variables
@@ -4254,7 +4259,7 @@ File: ./code_quality/tools/placeholder_finder.py
                 """Find functions that appear to have incomplete implementations.
                 
                 Args:
-    Line 530: def _find_function_end(self, lines: List[str], start_line: int) -> int:
+    Line 534: def _find_function_end(self, lines: List[str], start_line: int) -> int:
       Context:
         
                 return incomplete_implementations
@@ -4263,7 +4268,7 @@ File: ./code_quality/tools/placeholder_finder.py
                 """Find the end of a function definition.
                 
                 Args:
-    Line 560: def _find_class_end(self, lines: List[str], start_line: int) -> int:
+    Line 564: def _find_class_end(self, lines: List[str], start_line: int) -> int:
       Context:
         
                 return len(lines)
@@ -4272,7 +4277,7 @@ File: ./code_quality/tools/placeholder_finder.py
                 """Find the end of a class definition.
                 
                 Args:
-    Line 572: def _get_context(self, lines: List[str], line_num: int, context_lines: int = 3) -> List[str]:
+    Line 576: def _get_context(self, lines: List[str], line_num: int, context_lines: int = 3) -> List[str]:
       Context:
                 """
                 return self._find_function_end(lines, start_line)
@@ -4281,7 +4286,7 @@ File: ./code_quality/tools/placeholder_finder.py
                 """Get context lines around a specific line.
                 
                 Args:
-    Line 587: def analyze_directory(self, directory: str) -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
+    Line 591: def analyze_directory(self, directory: str) -> Dict[str, Dict[str, List[Dict[str, Any]]]]:
       Context:
                 end = min(len(lines), line_num + context_lines)
                 return lines[start:end]
@@ -4290,7 +4295,7 @@ File: ./code_quality/tools/placeholder_finder.py
                 """Analyze all Python files in a directory recursively.
                 
                 Args:
-    Line 608: def generate_report(self, results: Optional[Dict[str, Dict[str, List[Dict[str, Any]]]]] = None) -> str:
+    Line 612: def generate_report(self, results: Optional[Dict[str, Dict[str, List[Dict[str, Any]]]]] = None) -> str:
       Context:
         
                 return results
@@ -4299,7 +4304,7 @@ File: ./code_quality/tools/placeholder_finder.py
                 """Generate a comprehensive report of all findings.
                 
                 Args:
-    Line 685: def export_json(self, results: Optional[Dict[str, Dict[str, List[Dict[str, Any]]]]] = None) -> str:
+    Line 700: def export_json(self, results: Optional[Dict[str, Dict[str, List[Dict[str, Any]]]]] = None) -> str:
       Context:
         
                 return "\n".join(report)
@@ -4308,7 +4313,7 @@ File: ./code_quality/tools/placeholder_finder.py
                 """Export results as JSON for programmatic use.
                 
                 Args:
-    Line 708: def main():
+    Line 736: def main():
       Context:
                 return json.dumps(export_data, indent=2, default=str)
         

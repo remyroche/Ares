@@ -11,45 +11,45 @@ from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.supervisor_error_handler import (supervisor_component_error_handler, supervisor_critical_error_handler, supervisor_safe_error_handler, supervisor_error_context, handle_component_failure, handle_portfolio_error, handle_risk_error, handle_performance_error, handle_model_error, handle_exchange_error, ComponentFailureError, PortfolioManagementError, RiskManagementError, PerformanceMonitoringError, ModelManagementError, ExchangeIntegrationError)
 
 class AdvancedReportingEngine:
-        """Advanced reporting engine with real-time analytics and comprehensive analysis."""
+    """Advanced reporting engine with real-time analytics and comprehensive analysis."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
-self.logger = system_logger.getChild("AdvancedReportingEngine")
-        self.        self.report_templates:: dict[str, Any] = {}
-        self.        self.real_time_metrics:: dict[str, Any] = {}
-        self.        self.performance_trends:: dict[str, list[float]] = {}
+        self.logger = system_logger.getChild("AdvancedReportingEngine")
+        self.report_templates: dict[str, Any] = {}
+        self.real_time_metrics: dict[str, Any] = {}
+        self.performance_trends: dict[str, list[float]] = {}
 
     @handle_errors(
-exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
-default_return=None
-)
+        exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
+        default_return=None
+    )
     async def generate_real_time_report(
-self,
-performance_data: dict[str, Any]) -> dict[str, Any]:
+        self,
+        performance_data: dict[str, Any]) -> dict[str, Any]:
         """Generate real-time performance report with advanced analytics."""
         try:
             report = {
-"timestamp": datetime.now().isoformat(),
-"real_time_metrics": await self._calculate_real_time_metrics(
-performance_data),
-"performance_trends": await self._analyze_performance_trends(
-performance_data),
-"risk_analysis": await self._perform_risk_analysis(performance_data),
-"attribution_analysis": await self._perform_attribution_analysis(
-performance_data),
-"forecasting": await self._generate_performance_forecast(
-performance_data),
-}
+                "timestamp": datetime.now().isoformat(),
+                "real_time_metrics": await self._calculate_real_time_metrics(
+                    performance_data),
+                "performance_trends": await self._analyze_performance_trends(
+                    performance_data),
+                "risk_analysis": await self._perform_risk_analysis(performance_data),
+                "attribution_analysis": await self._perform_attribution_analysis(
+                    performance_data),
+                "forecasting": await self._generate_performance_forecast(
+                    performance_data),
+            }
 
-# Cache the report
-self._cache_report("real_time", report)
+            # Cache the report
+            self._cache_report("real_time", report)
 
-return report
+            return report
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(f"Error generating real-time report: {e}")
-return {}
+            return {}
 
     @handle_errors(
 exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),

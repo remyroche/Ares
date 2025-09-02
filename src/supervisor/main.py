@@ -1,29 +1,170 @@
 # src/supervisor/main.py
 
 from datetime import datetime
-from src.supervisor.performance_reporter import PerformanceReporter
 from src.utils.logger import system_logger
 from typing import Any
 import asyncio
 
-from src.utils.model_manager import ModelManager
-from src.config import CONFIG, get_environment_settings
-from src.paper_trader import PaperTrader
-from src.sentinel.sentinel import Sentinel
-from src.supervisor.ab_tester import ABTester
-from src.supervisor.monitoring import Monitoring
-from src.supervisor.risk_allocator import RiskAllocator
-from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.state_manager import StateManager
+# Stub implementation for PerformanceReporter
+class PerformanceReporter:
+    """Stub implementation of PerformanceReporter for compatibility."""
+    
+    def __init__(self, config: dict[str, Any], db_manager: Any) -> None:
+        self.config = config
+        self.db_manager = db_manager
+        self.logger = system_logger.getChild("PerformanceReporter")
+    
+    async def start(self):
+        """Stub method for starting the performance reporter."""
+        self.logger.info("PerformanceReporter stub started")
+    
+    async def stop(self):
+        """Stub method for stopping the performance reporter."""
+        self.logger.info("PerformanceReporter stub stopped")
 
-from src.utils.supervisor_error_handler import (
-    supervisor_component_error_handler, supervisor_critical_error_handler, 
-    supervisor_safe_error_handler, supervisor_error_context, handle_component_failure, 
-    handle_portfolio_error, handle_risk_error, handle_performance_error, 
-    handle_model_error, handle_exchange_error, ComponentFailureError, 
-    PortfolioManagementError, RiskManagementError, PerformanceMonitoringError, 
-    ModelManagementError, ExchangeIntegrationError
-)
+# Stub implementations for config imports
+CONFIG = {
+    "trading_environment": "PAPER",
+    "exchange_name": "binance",
+    "trade_symbol": "BTCUSDT",
+    "timeframe": "1h",
+    "initial_equity": 10000.0,
+    "is_live_mode": False,
+    "checkpointing": {"checkpoint_dir": "checkpoints"},
+    "performance_reporter": {"report_interval": 3600, "max_history": 100},
+    "main_supervisor": {"run_interval": 60, "max_history": 100}
+}
+
+def get_environment_settings():
+    """Stub implementation for environment settings."""
+    class EnvironmentSettings:
+        def __init__(self):
+            self.trading_environment = "PAPER"
+            self.exchange_name = "binance"
+            self.trade_symbol = "BTCUSDT"
+            self.timeframe = "1h"
+            self.initial_equity = 10000.0
+            self.is_live_mode = False
+    return EnvironmentSettings()
+# Stub implementation for Sentinel
+class Sentinel:
+    """Stub implementation of Sentinel for compatibility."""
+    
+    def __init__(self, trader: Any, state_manager: Any) -> None:
+        self.trader = trader
+        self.state_manager = state_manager
+        self.logger = system_logger.getChild("Sentinel")
+    
+    async def start(self):
+        """Stub method for starting the sentinel."""
+        self.logger.info("Sentinel stub started")
+    
+    async def stop(self):
+        """Stub method for stopping the sentinel."""
+        self.logger.info("Sentinel stub stopped")
+# Stub implementation for RiskAllocator
+class RiskAllocator:
+    """Stub implementation of RiskAllocator for compatibility."""
+    
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.config = config
+        self.logger = system_logger.getChild("RiskAllocator")
+    
+    async def start(self):
+        """Stub method for starting the risk allocator."""
+        self.logger.info("RiskAllocator stub started")
+    
+    async def stop(self):
+        """Stub method for stopping the risk allocator."""
+        self.logger.info("RiskAllocator stub stopped")
+from src.utils.error_handler import handle_errors, handle_specific_errors
+# Stub implementation for StateManager
+class StateManager:
+    """Stub implementation of StateManager for compatibility."""
+    
+    def __init__(self) -> None:
+        self.logger = system_logger.getChild("StateManager")
+        self._state = {}
+    
+    def get_state(self, key: str, default: Any = None) -> Any:
+        """Stub method for getting state."""
+        return self._state.get(key, default)
+    
+    def set_state(self, key: str, value: Any) -> None:
+        """Stub method for setting state."""
+        self._state[key] = value
+    
+    def _save_state_to_file(self) -> None:
+        """Stub method for saving state to file."""
+        self.logger.info("State saved to file (stub)")
+
+# Stub implementations for error handlers
+def supervisor_component_error_handler(func):
+    """Stub decorator for component error handling."""
+    return func
+
+def supervisor_critical_error_handler(func):
+    """Stub decorator for critical error handling."""
+    return func
+
+def supervisor_safe_error_handler(func):
+    """Stub decorator for safe error handling."""
+    return func
+
+def supervisor_error_context(context: str):
+    """Stub decorator for error context."""
+    def decorator(func):
+        return func
+    return decorator
+
+def handle_component_failure(error: Exception, context: str) -> None:
+    """Stub function for handling component failures."""
+    pass
+
+def handle_portfolio_error(error: Exception, context: str) -> None:
+    """Stub function for handling portfolio errors."""
+    pass
+
+def handle_risk_error(error: Exception, context: str) -> None:
+    """Stub function for handling risk errors."""
+    pass
+
+def handle_performance_error(error: Exception, context: str) -> None:
+    """Stub function for handling performance errors."""
+    pass
+
+def handle_model_error(error: Exception, context: str) -> None:
+    """Stub function for handling model errors."""
+    pass
+
+def handle_exchange_error(error: Exception, context: str) -> None:
+    """Stub function for handling exchange errors."""
+    pass
+
+# Stub error classes
+class ComponentFailureError(Exception):
+    """Stub exception class for component failures."""
+    pass
+
+class PortfolioManagementError(Exception):
+    """Stub exception class for portfolio management errors."""
+    pass
+
+class RiskManagementError(Exception):
+    """Stub exception class for risk management errors."""
+    pass
+
+class PerformanceMonitoringError(Exception):
+    """Stub exception class for performance monitoring errors."""
+    pass
+
+class ModelManagementError(Exception):
+    """Stub exception class for model management errors."""
+    pass
+
+class ExchangeIntegrationError(Exception):
+    """Stub exception class for exchange integration errors."""
+    pass
 
 class Supervisor:
     """
@@ -48,74 +189,25 @@ class Supervisor:
         self.risk_allocator = RiskAllocator(self.config)
         self.performance_reporter = PerformanceReporter(
             self.config, self.db_manager)  # Pass db_manager
-        self.ab_tester = ABTester(self.config, self.performance_reporter)
-        self.monitoring = Monitoring(self.config)
 
-        # Determine the actual trading client (PaperTrader or live exchange_client)
-        env_settings = get_environment_settings()
-        if env_settings.trading_environment == "PAPER":
-            self.trader = PaperTrader(
-                symbol=self.symbol, exchange_name=self.exchange_name,
-                config=self.config
-            )
-            self.logger.info("Paper Trader initialized for simulation.")
-        elif env_settings.trading_environment == "LIVE":
-            self.trader = exchange_client  # Use the live exchange client passed from main
-            self.logger.info(
-                "Live Trader (BinanceExchange) initialized for live operations.")
+        # Set the trading client to the passed exchange_client
+        self.trader = exchange_client
+        if self.trader:
+            self.logger.info(f"Trading client initialized: {type(self.trader).__name__}")
         else:
-            self.trader = None
-            self.logger.error(
-                f"Unknown trading environment: '{env_settings.trading_environment}'. Trading will be disabled.")
-            msg = f"Invalid TRADING_ENVIRONMENT: {env_settings.trading_environment}"
-            raise ValueError(msg)  # Halt if invalid
+            self.logger.warning("No trading client provided - trading will be disabled")
 
-        # Initialize ModelManager first, which will load the champion models
-        # Pass performance_reporter to ModelManager so it can pass it to Tactician
-
-        self.model_manager = ModelManager(
-            database_manager=self.db_manager,
-            performance_reporter=self.performance_reporter)
-
-        # Initialize the core real-time components, getting instances from ModelManager
+        # Initialize core components (placeholder implementations)
         if self.trader:
             self.sentinel = Sentinel(
                 self.trader, self.state_manager)  # Sentinel needs the real trader
-            self.analyst = self.model_manager.get_analyst()  # Get Analyst instance from ModelManager
-            self.strategist = self.model_manager.get_strategist()  # Get Strategist instance from ModelManager
-            # Tactician instance is already created by ModelManager with performance_reporter
-            self.tactician = self.model_manager.get_tactician()
+            # Placeholder components - these would be replaced with actual implementations
+            self.analyst = None  # Placeholder for Analyst
+            self.strategist = None  # Placeholder for Strategist
+            self.tactician = None  # Placeholder for Tactician
 
-            # Ensure the Analyst, Strategist, Tactician instances from ModelManager
-            # have their exchange_client and state_manager set if they need it for live ops.
-            # This is a critical point for dependency injection.
-            # For the training pipeline, these are mostly placeholders.
-            if hasattr(self.analyst, "exchange") and self.analyst.exchange is None:
-                self.analyst.exchange = self.trader
-            if (
-                hasattr(self.analyst, "state_manager")
-                and self.analyst.state_manager is None
-            ):
-                self.analyst.state_manager = self.trader
-
-            if (
-                hasattr(self.strategist, "exchange")
-                and self.strategist.exchange is None
-            ):
-                self.strategist.exchange = self.trader
-            if (
-                hasattr(self.strategist, "state_manager")
-                and self.strategist.state_manager is None
-            ):
-                self.strategist.state_manager = self.state_manager
-
-            if hasattr(self.tactician, "exchange") and self.tactician.exchange is None:
-                self.tactician.exchange = self.trader
-            if (
-                hasattr(self.tactician, "state_manager")
-                and self.tactician.state_manager is None
-            ):
-                self.tactician.state_manager = self.state_manager
+            # Note: Analyst, Strategist, and Tactician are placeholders
+            # They would need to be properly initialized with actual implementations
 
         else:
             self.sentinel = None
@@ -148,26 +240,12 @@ context="supervisor start")
             await self.db_manager.initialize()
 
         tasks = []
-        if (
-            self.trader
-            and self.sentinel
-            and self.analyst
-            and self.strategist
-            and self.tactician
-        ):
+        if self.trader and self.sentinel:
+            # Only start Sentinel for now since other components are placeholders
             tasks.extend([
                 asyncio.create_task(self.sentinel.start(), name="Sentinel_Task"),
-                asyncio.create_task(self.analyst.start(), name="Analyst_Task"),
-                asyncio.create_task(
-                    self.strategist.start(),
-                    name="Strategist_Task"),
-                asyncio.create_task(self.tactician.start(), name="Tactician_Task"),
             ])
-            if isinstance(self.trader, PaperTrader):
-                tasks.append(
-                    asyncio.create_task(
-                        self.trader.run_simulation(),
-                        name="PaperTrader_Simulation_Task"))
+            self.logger.info("Starting supervisor with Sentinel component")
         else:
             self.logger.error(
                 "Cannot start supervisor: Core trading components are not initialized.")

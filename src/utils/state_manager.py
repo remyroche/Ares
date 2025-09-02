@@ -7,314 +7,300 @@ management.
 """
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 import asyncio
 import json
-
-from src.utils.logger import system_logger
-from src.utils.error_handler import (
-handle_errors,
-handle_file_operations,
-handle_specific_errors,
-)
-from src.utils.warning_symbols import (
-error,
-invalid,
-missing,
-warning,
-)
-
-class StateManager:
-    passpassself.logger.info("Implementation placeholder - needs specific logic")
-class StateManager:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class StateManager:
-    pass"""Enhanced state manager with comprehensive error handling and type safety."""
-
-def __init__(...) -> ...:
-    pass"""..."""
-    passself.config: dict[str, Any] = config
-self.logger, system_logger.getChild("StateManager")
-
-# State management
-self.state: dict[str, Any] = {}
-self.state_file: str | None, None
-self.auto_save: bool, True
-self.save_interval: int, 60  # seconds
-
-# Configuration
-self.state_config: dict[str, Any] = self.config.get("state_manager", {})
-self.state_file, self.state_config.get("state_file", "state / state.json")
-self.auto_save, self.state_config.get("auto_save", True)
-self.save_interval, self.state_config.get("save_interval", 60)
-
-# Auto - save task
-self.auto_save_task: asyncio.Task | None, None
-self.is_running: bool, False
-
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid state manager configuration"),
-AttributeError: (False, "Missing required state parameters"),
-KeyError: (False, "Missing configuration keys"),
-},
-default_return = False,
-context="state manager initialization",
-)
-async def initialize(...) -> ...:
-    """..."""
-    passself.logger.info("Initializing State Manager...")
-
-# Load state configuration
-await self._load_state_configuration()
-
-# Validate configuration
-if not self._validate_configuration():
-    passself.print(invalid("Invalid configuration for state manager"))
-return False
-
-# Load existing state
-await self._load_existing_state()
-
-# Start auto - save if enabled
-if self.auto_save:
-    passpassawait self._start_auto_save()
-
-self.logger.info("✅ State Manager initialization completed successfully")
-return True
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return = None,
-context="state configuration loading",
-)
-async def _load_state_configuration(...) -> ...:
-    """..."""
-    pass# Configuration is already loaded in __init__
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return = False,
-context="configuration validation",
-)
-def _validate_configuration(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Validate state file path
-if not self.state_file:
-    passself.print(invalid("Invalid state file path"))
-return False
-
-# Validate save interval
-if self.save_interval <= 0:
-    passself.print(invalid("Invalid save interval"))
-return False
-
-self.logger.info("Configuration validation successful")
-return True
-
-except Exception as e:
-    passpasspasspasspasspasspassself.print(error(f"Error validating configuration: {e}"))
-return False
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return = None,
-context="existing state loading",
-)
-async def _load_existing_state(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-if Path(self.state_file).exists():
-    passwith open(self.state_file, "r") as f:
-    passself.state, json.load(f)
-self.logger.info("Existing state loaded successfully")
-else:
-    passself.logger.info("No existing state file found, starting fresh")
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.exception(f"Error loading existing state: {e}")
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return = None,
-context="auto - save start",
-)
-async def _start_auto_save(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-self.is_running, True
-self.auto_save_task, asyncio.create_task(self._auto_save_loop())
-self.logger.info("Auto - save started successfully")
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.exception(f"Error starting auto - save: {e}")
-
-async def _auto_save_loop(...) -> ...:
-    """..."""
-    passwhile self.is_running:
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-await asyncio.sleep(self.save_interval)
-await self.save_state()
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.exception(f"Error in auto - save loop: {e}")
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return = False,
-context="state saving",
-)
-async def save_state(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Ensure directory exists
-Path(self.state_file).parent.mkdir(parents = True, exist_ok = True)
-
-# Save state
-with open(self.state_file, "w") as f:
-    passjson.dump(self.state, f, indent = 2, default = str)
-
-self.logger.info("State saved successfully")
-return True
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.exception(f"Error saving state: {e}")
-return False
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return = None,
-context="state getting",
-)
-def get_state(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-return self.state.get(key, default)
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.exception(f"Error getting state: {e}")
-return default
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return = None,
-context="state setting",
-)
-def set_state(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-self.state[key] = value
-self.logger.debug(f"State updated: {key} = {value}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.exception(f"Error setting state: {e}")
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return = None,
-context="state clearing",
-)
-def clear_state(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-self.state.clear()
-self.logger.info("State cleared successfully")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.exception(f"Error clearing state: {e}")
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return = None,
-context="state manager cleanup",
-)
-async def stop(...) -> ...:
-    """..."""
-    passself.logger.info("🛑 Stopping State Manager...")
+import logging
 
 try:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Stop auto - save
-self.is_running, False
-if self.auto_save_task:
-    passself.auto_save_task.cancel()
-try:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-await self.auto_save_task
-except asyncio.CancelledError:
-    passpasspass
+    from .logger import system_logger
+    from .error_handler import (
+        handle_errors,
+        handle_specific_errors,
+    )
+    from .warning_symbols import (
+        error,
+        invalid,
+        missing,
+        warning,
+    )
+except ImportError:
+    # Fallback for when running as standalone
+    from src.utils.logger import system_logger
+    from src.utils.error_handler import (
+        handle_errors,
+        handle_specific_errors,
+    )
+    from src.utils.warning_symbols import (
+        error,
+        invalid,
+        missing,
+        warning,
+    )
 
-# Save final state
-await self.save_state()
 
-self.logger.info("✅ State Manager stopped successfully")
+class StateManager:
+    """Enhanced state manager with comprehensive error handling and type safety."""
 
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.exception(f"Error stopping state manager: {e}")
+    def __init__(self, config: dict[str, Any]) -> None:
+        """Initialize the state manager with configuration."""
+        self.config: dict[str, Any] = config
+        self.logger: logging.Logger = system_logger.getChild("StateManager")
 
-def print(...) -> ...:
-    """..."""
-    passprint(message)
+        # State management
+        self.state: dict[str, Any] = {}
+        self.state_file: Optional[str] = None
+        self.auto_save: bool = True
+        self.save_interval: int = 60  # seconds
+
+        # Configuration
+        self.state_config: dict[str, Any] = self.config.get("state_manager", {})
+        self.state_file = self.state_config.get("state_file", "state/state.json")
+        self.auto_save = self.state_config.get("auto_save", True)
+        self.save_interval = self.state_config.get("save_interval", 60)
+
+        # Auto-save task
+        self.auto_save_task: Optional[asyncio.Task] = None
+        self.is_running: bool = False
+
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (False, "Invalid state manager configuration"),
+            AttributeError: (False, "Missing required state parameters"),
+            KeyError: (False, "Missing configuration keys"),
+        },
+        default_return=False,
+        context="state manager initialization",
+    )
+    async def initialize(self) -> bool:
+        """Initialize the state manager."""
+        try:
+            self.logger.info("Initializing State Manager...")
+
+            # Load state configuration
+            await self._load_state_configuration()
+
+            # Validate configuration
+            if not self._validate_configuration():
+                self.logger.error(invalid("Invalid configuration for state manager"))
+                return False
+
+            # Load existing state
+            await self._load_existing_state()
+
+            # Start auto-save if enabled
+            if self.auto_save:
+                await self._start_auto_save()
+
+            self.logger.info("✅ State Manager initialization completed successfully")
+            return True
+
+        except Exception as e:
+            self.logger.exception(f"Error initializing state manager: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="state configuration loading",
+    )
+    async def _load_state_configuration(self) -> None:
+        """Load state configuration from config."""
+        # Configuration is already loaded in __init__
+        pass
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="configuration validation",
+    )
+    def _validate_configuration(self) -> bool:
+        """Validate the configuration."""
+        try:
+            # Validate state file path
+            if not self.state_file:
+                self.logger.error(invalid("Invalid state file path"))
+                return False
+
+            # Validate save interval
+            if self.save_interval <= 0:
+                self.logger.error(invalid("Invalid save interval"))
+                return False
+
+            self.logger.info("Configuration validation successful")
+            return True
+
+        except Exception as e:
+            self.logger.error(error(f"Error validating configuration: {e}"))
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="existing state loading",
+    )
+    async def _load_existing_state(self) -> None:
+        """Load existing state from file."""
+        try:
+            if Path(self.state_file).exists():
+                with open(self.state_file, "r") as f:
+                    self.state = json.load(f)
+                self.logger.info("Existing state loaded successfully")
+            else:
+                self.logger.info("No existing state file found, starting fresh")
+
+        except Exception as e:
+            self.logger.exception(f"Error loading existing state: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="auto-save start",
+    )
+    async def _start_auto_save(self) -> None:
+        """Start the auto-save functionality."""
+        try:
+            self.is_running = True
+            self.auto_save_task = asyncio.create_task(self._auto_save_loop())
+            self.logger.info("Auto-save started successfully")
+
+        except Exception as e:
+            self.logger.exception(f"Error starting auto-save: {e}")
+
+    async def _auto_save_loop(self) -> None:
+        """Auto-save loop that runs in the background."""
+        while self.is_running:
+            try:
+                await asyncio.sleep(self.save_interval)
+                await self.save_state()
+            except Exception as e:
+                self.logger.exception(f"Error in auto-save loop: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="state saving",
+    )
+    async def save_state(self) -> bool:
+        """Save the current state to file."""
+        try:
+            # Ensure directory exists
+            Path(self.state_file).parent.mkdir(parents=True, exist_ok=True)
+
+            # Save state
+            with open(self.state_file, "w") as f:
+                json.dump(self.state, f, indent=2, default=str)
+
+            self.logger.info("State saved successfully")
+            return True
+
+        except Exception as e:
+            self.logger.exception(f"Error saving state: {e}")
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="state getting",
+    )
+    def get_state(self, key: str, default: Any = None) -> Any:
+        """Get a value from the state."""
+        try:
+            return self.state.get(key, default)
+        except Exception as e:
+            self.logger.exception(f"Error getting state: {e}")
+            return default
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="state setting",
+    )
+    def set_state(self, key: str, value: Any) -> None:
+        """Set a value in the state."""
+        try:
+            self.state[key] = value
+            self.logger.debug(f"State updated: {key} = {value}")
+        except Exception as e:
+            self.logger.exception(f"Error setting state: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="state clearing",
+    )
+    def clear_state(self) -> None:
+        """Clear all state."""
+        try:
+            self.state.clear()
+            self.logger.info("State cleared successfully")
+        except Exception as e:
+            self.logger.exception(f"Error clearing state: {e}")
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="state manager cleanup",
+    )
+    async def stop(self) -> None:
+        """Stop the state manager and cleanup."""
+        self.logger.info("🛑 Stopping State Manager...")
+
+        try:
+            # Stop auto-save
+            self.is_running = False
+            if self.auto_save_task:
+                self.auto_save_task.cancel()
+                try:
+                    await self.auto_save_task
+                except asyncio.CancelledError:
+                    pass
+
+            # Save final state
+            await self.save_state()
+
+            self.logger.info("✅ State Manager stopped successfully")
+
+        except Exception as e:
+            self.logger.exception(f"Error stopping state manager: {e}")
+
+    def print(self, message: str) -> None:
+        """Print a message (utility method)."""
+        print(message)
+
 
 # Global state manager instance
-state_manager: StateManager | None, None
+state_manager: Optional[StateManager] = None
+
 
 @handle_errors(
-exceptions=(Exception,),
-default_return = None,
-context="state manager setup",
+    exceptions=(Exception,),
+    default_return=None,
+    context="state manager setup",
 )
-async def setup_state_manager(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-global state_manager
+async def setup_state_manager(config: Optional[dict[str, Any]] = None) -> Optional[StateManager]:
+    """Set up the global state manager."""
+    try:
+        global state_manager
 
-if config is None:
-    pass# Fallback implementation for config
-config = {
-"state_manager": {
-"state_file": "state / state.json",
-"auto_save": True,
-"save_interval": 60,
-},
-}
+        if config is None:
+            # Fallback implementation for config
+            config = {
+                "state_manager": {
+                    "state_file": "state/state.json",
+                    "auto_save": True,
+                    "save_interval": 60,
+                },
+            }
 
-# Create state manager
-state_manager, StateManager(config)
+        # Create state manager
+        state_manager = StateManager(config)
 
-# Initialize state manager
-success, await state_manager.initialize()
-if success:
-    passreturn state_manager
-return None
+        # Initialize state manager
+        success = await state_manager.initialize()
+        if success:
+            return state_manager
+        return None
 
-except Exception:
-    passpassreturn None
+    except Exception:
+        return None

@@ -1,0 +1,27 @@
+2025-09-02 08:19:22,522 - INFO - Processing file: src/utils/state_manager.py
+2025-09-02 08:19:22,522 - INFO - Performing semantic analysis...
+2025-09-02 08:19:22,522 - INFO - Code quality score: 0.00
+2025-09-02 08:19:22,522 - WARNING - Syntax errors found: 1
+2025-09-02 08:19:22,522 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:19:22,523 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:22,524 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:22,524 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:22,525 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:22,526 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:22,526 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:22,527 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:22,528 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:22,528 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:22,529 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:22,530 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:22,530 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:22,531 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:22,532 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:22,533 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:19:22,533 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:19:22,534 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:22,536 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:22,537 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:19:22,537 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:19:22,538 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:22,540 - INFO - No fixes needed for: src/utils/state_manager.py

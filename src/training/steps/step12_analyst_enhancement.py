@@ -3598,8 +3598,13 @@ from src.utils.training_pipeline_decorators import (
     overfitting_detection=True,
     validation_score_requirements={"cross_validation_score": 0.6},
 )
-async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data/training", force_rerun: bool = False
-    **kwargs, ) -> bool:
+async def run_step(
+    symbol: str, 
+    exchange: str = "BINANCE", 
+    data_dir: str = "data/training", 
+    force_rerun: bool = False,
+    **kwargs
+) -> bool:
     """Run the analyst enhancement step.
 
     Args:
@@ -3609,20 +3614,18 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
         **kwargs: Additional arguments
 
     Returns:
-        bool: True if successful = False otherwise
-
+        bool: True if successful, False otherwise
     """
     # Import logger for step-level logging
     from src.utils.logger import system_logger
-
-from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
-)
+    from src.utils.enhanced_mlflow_integration import (
+        with_enhanced_mlflow_logging,
+        log_step_report,
+        create_detailed_step_report,
+        log_step_metrics,
+        log_step_dataframe_with_standardized_name,
+        log_step_artifact_with_standardized_name
+    )
 
     logger = system_logger.getChild("Step6.AnalystEnhancement")
 

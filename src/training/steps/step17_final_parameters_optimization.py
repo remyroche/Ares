@@ -36,7 +36,7 @@ class FinalParametersOptimizationStep:
             self.logger.warning(f"Missing modules: {missing_modules}")
             # Continue with available modules, using fallbacks where needed
 
-def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
         self.logger = system_logger
         self.optuna_config = get_optuna_config()
@@ -873,16 +873,15 @@ def __init__(self, config: dict[str, Any]) -> None:
             self.logger.info(
                 "Step12: Starting Optuna study for regime-specific parameters",
             )
-            study, optuna.create_study(direction="maximize")
+            study = optuna.create_study(direction="maximize")
             # Warm start: enqueue previous best parameters if available
             if previous_results and "regime_specific_parameters" in previous_results:
-                prev_params, previous_results["regime_specific_parameters"].get(
+                prev_params = previous_results["regime_specific_parameters"].get(
                     "optimized_parameters",
                 )
             if prev_params:
                 study.enqueue_trial(prev_params)
-            self.logger.info(
-                            # Get trials from training input or use default
+            # Get trials from training input or use default
             regime_specific_trials = self.training_input.get("regime_specific_trials", 30)
             self.logger.info(
                 f"Step12: Optimizing regime-specific parameters (n_trials={regime_specific_trials})"
@@ -956,10 +955,10 @@ def __init__(self, config: dict[str, Any]) -> None:
             return self._evaluate_timing_performance(params, calibration_results)
 
             self.logger.info("Step12: Starting Optuna study for timing parameters")
-            study, optuna.create_study(direction="maximize")
+            study = optuna.create_study(direction="maximize")
             # Warm start: enqueue previous best parameters if available
             if previous_results and "timing_parameters" in previous_results:
-                prev_params, previous_results["timing_parameters"].get(
+                prev_params = previous_results["timing_parameters"].get(
                     "optimized_parameters",
                 )
             if prev_params:
@@ -1676,15 +1675,6 @@ def __init__(self, config: dict[str, Any]) -> None:
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
-
-from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
-)
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,
@@ -1700,6 +1690,14 @@ from src.utils.enhanced_mlflow_integration import (
     time_budget_watchdog,
     validate_step_output,
     validate_step_prerequisites,
+)
+from src.utils.enhanced_mlflow_integration import (
+    with_enhanced_mlflow_logging,
+    log_step_report,
+    create_detailed_step_report,
+    log_step_metrics,
+    log_step_dataframe_with_standardized_name,
+    log_step_artifact_with_standardized_name
 )
 
 

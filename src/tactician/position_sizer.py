@@ -421,10 +421,7 @@ class PositionSizer:
         """Calculate weighted position size using Kelly criterion and ML confidence."""
         try:
             # Calculate weighted position size
-            weighted_size = (
-                kelly_position_size * self.kelly_weight
-                + ml_position_size * self.ml_weight
-            ) / (self.kelly_weight + self.ml_weight)
+            weighted_size = (kelly_position_size * ml_position_size)
 
             return max(
                 self.min_position_size, min(self.max_position_size, weighted_size),

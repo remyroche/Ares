@@ -71,6 +71,25 @@ class TacticianTripleBarrierLabeler:
         self.min_volume_threshold = self.config.get("min_volume_threshold", 1000)
         self.min_spread_threshold = self.config.get("min_spread_threshold", 0.0001)
         self.volatility_filter = self.config.get("volatility_filter", True)
+        # Binary classification behavior for downstream regime-aware helpers
+        self.binary_classification = self.config.get("binary_classification", True)
+        
+        # Regime-aware configuration defaults (leveraging HMM clusters)
+        self.regime_config = self.config.get(
+            "regime_config",
+            {
+                "regime_specific_barriers": True,
+                "regime_specific_precision": True,
+                "regime_specific_quality_filters": True,
+                "min_regime_samples": 50,
+            },
+        )
+        # Preferred regime column coming from HMM pipeline
+        self.regime_column = self.config.get("regime_column", "composite_cluster_id")
+        
+        # Hold regime-aware results
+        self.regime_labeling_results: dict[str, Any] = {}
+        self.regime_barrier_results: dict[str, Any] = {}
         
         # Integration Settings
         self.analyst_signal_requirement = self.config.get("analyst_signal_requirement", True)
@@ -93,40 +112,559 @@ class TacticianTripleBarrierLabeler:
         self.logger.info(f"   Precision Threshold: {self.precision_threshold}")
 
     def _apply_quality_filters(self, data: pd.DataFrame, entry_idx: int) -> bool:
-        """Apply quality filters for high precision execution."""
+        """Apply per-entry quality filters for high precision execution.
+
+        Returns True if entry at entry_idx passes quality thresholds, else False.
+        """
         if not self.enable_quality_filters:
             return True
-            
+
         try:
             # Volume filter
             if "volume" in data.columns:
-                volume = data.iloc[entry_idx]["volume"]
-                if volume < self.min_volume_threshold:
+                volume_value = data.iloc[entry_idx]["volume"]
+                if volume_value < self.min_volume_threshold:
                     return False
-            
-            # Spread filter (if bid/ask data available)
-            if "bid" in data.columns and "ask" in data.columns:
-                bid = data.iloc[entry_idx]["bid"]
-                ask = data.iloc[entry_idx]["ask"]
-                spread = (ask - bid) / bid
-                if spread > self.min_spread_threshold:
+
+            # Spread filter: prefer explicit spread, otherwise compute from bid/ask
+            if "spread" in data.columns:
+                spread_value = data.iloc[entry_idx]["spread"]
+                if spread_value > self.min_spread_threshold:
                     return False
-            
-            # Volatility filter
-            if self.volatility_filter and len(data) >= 20:
-                recent_data = data.iloc[max(0, entry_idx-20):entry_idx+1]
+            elif "bid" in data.columns and "ask" in data.columns:
+                bid_value = data.iloc[entry_idx]["bid"]
+                ask_value = data.iloc[entry_idx]["ask"]
+                if bid_value not in (0, None) and pd.notna(bid_value):
+                    computed_spread = (ask_value - bid_value) / bid_value
+                    if computed_spread > self.min_spread_threshold:
+                        return False
+
+            # Volatility filter using recent close returns
+            if self.volatility_filter and len(data) >= 20 and "close" in data.columns:
+                start_idx = max(0, entry_idx - 20)
+                recent_data = data.iloc[start_idx:entry_idx + 1]
                 if len(recent_data) >= 10:
                     returns = recent_data["close"].pct_change().dropna()
-                    volatility = returns.std()
-                    # Filter out extremely high volatility periods
-                    if volatility > 0.01:  # 1% volatility threshold
+                    recent_volatility = returns.std()
+                    if recent_volatility > 0.01:
                         return False
-            
+
             return True
+        except Exception as e:
+            self.logger.warning(f"⚠️ Quality filter check failed at index {entry_idx}: {e}")
+            return True
+
+    async def _get_regime_specific_barriers(
+        self, regime: str, regime_data: pd.DataFrame
+    ) -> Dict[str, Tuple[float, float]]:
+        """Get regime-specific barriers for tactician labeling using existing HMM regime information."""
+        
+        self.logger.info(f"🎯 Calculating regime-specific barriers for regime {regime} using HMM cluster information")
+        
+        try:
+            if self.regime_config["regime_specific_barriers"]:
+                # Use existing HMM regime information instead of recalculating metrics
+                # The HMM clusters already capture volatility, volume, and market characteristics
+                
+                # Get regime-specific parameters from HMM cluster information
+                regime_info = await self._get_regime_info_from_hmm_cluster(regime, regime_data)
+                
+                # Base barriers
+                base_upper = 0.02  # 2% default
+                base_lower = 0.01  # 1% default
+                
+                # Use HMM regime characteristics for barrier adjustment
+                if regime_info.get("regime_type") == "high_volatility":
+                    upper_multiplier = 1.5
+                    lower_multiplier = 1.2
+                elif regime_info.get("regime_type") == "low_volatility":
+                    upper_multiplier = 0.8
+                    lower_multiplier = 0.7
+                elif regime_info.get("regime_type") == "trending":
+                    upper_multiplier = 1.2
+                    lower_multiplier = 0.9
+                elif regime_info.get("regime_type") == "ranging":
+                    upper_multiplier = 0.9
+                    lower_multiplier = 1.1
+                else:  # Default regime
+                    upper_multiplier = 1.0
+                    lower_multiplier = 1.0
+                
+                # Apply regime-specific adjustments based on HMM cluster characteristics
+                regime_intensity = regime_info.get("intensity", 1.0)
+                regime_stability = regime_info.get("stability", 1.0)
+                
+                # Adjust based on regime intensity and stability
+                intensity_adjustment = 1.0 + (regime_intensity - 1.0) * 0.3
+                stability_adjustment = 1.0 + (regime_stability - 1.0) * 0.2
+                
+                upper_multiplier *= intensity_adjustment * stability_adjustment
+                lower_multiplier *= intensity_adjustment * stability_adjustment
+                
+                # Calculate final barriers
+                upper_barrier = base_upper * upper_multiplier
+                lower_barrier = base_lower * lower_multiplier
+                
+                regime_barriers = {
+                    "high_precision": (upper_barrier * 0.5, lower_barrier * 0.25),
+                    "standard": (upper_barrier, lower_barrier),
+                    "conservative": (upper_barrier * 1.5, lower_barrier * 1.5),
+                    "aggressive": (upper_barrier * 0.7, lower_barrier * 0.5)
+                }
+                
+                self.logger.info(f"✅ Calculated regime {regime} barriers using HMM cluster information:")
+                self.logger.info(f"   Regime type: {regime_info.get('regime_type', 'unknown')}")
+                self.logger.info(f"   Intensity: {regime_intensity:.3f}, Stability: {regime_stability:.3f}")
+                for barrier_type, (upper, lower) in regime_barriers.items():
+                    self.logger.info(f"   {barrier_type}: Upper={upper:.4f} ({upper*100:.2f}%), Lower={lower:.4f} ({lower*100:.2f}%)")
+                
+                return regime_barriers
+            else:
+                # Use default barriers
+                return self.barrier_combinations
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating regime-specific barriers: {e}")
+            return self.barrier_combinations
+
+    async def _get_regime_info_from_hmm_cluster(
+        self, regime: str, regime_data: pd.DataFrame
+    ) -> Dict[str, Any]:
+        """Get regime information from existing HMM cluster data."""
+        
+        try:
+            # Extract regime information from HMM cluster columns
+            regime_info = {
+                "regime_type": "unknown",
+                "intensity": 1.0,
+                "stability": 1.0
+            }
+            
+            # Check for HMM intensity columns
+            intensity_columns = [col for col in regime_data.columns if col.startswith('intensity_cluster_')]
+            if intensity_columns:
+                # Use intensity information from HMM clusters
+                intensity_values = regime_data[intensity_columns].mean()
+                regime_info["intensity"] = intensity_values.mean()
+                
+                # Determine regime type based on intensity patterns
+                if regime_info["intensity"] > 1.5:
+                    regime_info["regime_type"] = "high_volatility"
+                elif regime_info["intensity"] < 0.5:
+                    regime_info["regime_type"] = "low_volatility"
+                else:
+                    regime_info["regime_type"] = "normal"
+            
+            # Check for HMM probability columns
+            prob_columns = [col for col in regime_data.columns if col.endswith('_p_state_')]
+            if prob_columns:
+                # Calculate regime stability from probability distributions
+                prob_values = regime_data[prob_columns].mean()
+                regime_info["stability"] = 1.0 - prob_values.std()  # Higher std = lower stability
+            
+            # Check for composite cluster characteristics
+            if 'composite_cluster_id' in regime_data.columns:
+                # Use composite cluster information if available
+                cluster_stats = regime_data.groupby('composite_cluster_id').agg({
+                    'close': ['std', 'mean'],
+                    'volume': ['mean', 'std']
+                }).round(4)
+                
+                if not cluster_stats.empty:
+                    # Determine regime type based on cluster statistics
+                    price_volatility = cluster_stats[('close', 'std')].iloc[0]
+                    volume_level = cluster_stats[('volume', 'mean')].iloc[0]
+                    
+                    if price_volatility > 0.02:
+                        regime_info["regime_type"] = "high_volatility"
+                    elif price_volatility < 0.005:
+                        regime_info["regime_type"] = "low_volatility"
+                    elif volume_level > 10000:
+                        regime_info["regime_type"] = "high_volume"
+                    else:
+                        regime_info["regime_type"] = "normal"
+            
+            return regime_info
+            
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error extracting regime info from HMM cluster: {e}")
+            return {
+                "regime_type": "unknown",
+                "intensity": 1.0,
+                "stability": 1.0
+            }
+
+    def _get_regime_info_from_hmm_cluster_sync(
+        self, regime: str, regime_data: pd.DataFrame
+    ) -> Dict[str, Any]:
+        """Synchronous version: Get regime information from HMM cluster data."""
+        try:
+            regime_info: Dict[str, Any] = {
+                "regime_type": "unknown",
+                "intensity": 1.0,
+                "stability": 1.0,
+            }
+
+            intensity_columns = [col for col in regime_data.columns if col.startswith('intensity_cluster_')]
+            if intensity_columns:
+                intensity_values = regime_data[intensity_columns].mean()
+                regime_info["intensity"] = float(getattr(intensity_values, 'mean', intensity_values.mean)())
+                if regime_info["intensity"] > 1.5:
+                    regime_info["regime_type"] = "high_volatility"
+                elif regime_info["intensity"] < 0.5:
+                    regime_info["regime_type"] = "low_volatility"
+                else:
+                    regime_info["regime_type"] = "normal"
+
+            prob_columns = [col for col in regime_data.columns if col.endswith('_p_state_')]
+            if prob_columns:
+                prob_values = regime_data[prob_columns].mean()
+                # Higher std => lower stability
+                with contextlib.suppress(Exception):
+                    regime_info["stability"] = float(1.0 - prob_values.std())
+
+            if 'composite_cluster_id' in regime_data.columns:
+                cluster_stats = regime_data.groupby('composite_cluster_id').agg({
+                    'close': ['std', 'mean'],
+                    'volume': ['mean', 'std']
+                }).round(4)
+                if not cluster_stats.empty:
+                    price_volatility = float(cluster_stats[('close', 'std')].iloc[0])
+                    volume_level = float(cluster_stats[('volume', 'mean')].iloc[0])
+                    if price_volatility > 0.02:
+                        regime_info["regime_type"] = "high_volatility"
+                    elif price_volatility < 0.005:
+                        regime_info["regime_type"] = "low_volatility"
+                    elif volume_level > 10000:
+                        regime_info["regime_type"] = "high_volume"
+                    else:
+                        regime_info["regime_type"] = "normal"
+
+            return regime_info
+        except Exception as e:
+            self.logger.warning(f"⚠️ Error extracting regime info (sync) from HMM cluster: {e}")
+            return {
+                "regime_type": "unknown",
+                "intensity": 1.0,
+                "stability": 1.0,
+            }
+
+    def _get_regime_specific_barriers_sync(
+        self, regime: str, regime_data: pd.DataFrame
+    ) -> Dict[str, Tuple[float, float]]:
+        """Synchronous version: Compute regime-specific barriers using HMM cluster info."""
+        try:
+            if self.regime_config.get("regime_specific_barriers", True):
+                regime_info = self._get_regime_info_from_hmm_cluster_sync(regime, regime_data)
+                base_upper = 0.02
+                base_lower = 0.01
+                if regime_info.get("regime_type") == "high_volatility":
+                    upper_multiplier = 1.5
+                    lower_multiplier = 1.2
+                elif regime_info.get("regime_type") == "low_volatility":
+                    upper_multiplier = 0.8
+                    lower_multiplier = 0.7
+                elif regime_info.get("regime_type") == "trending":
+                    upper_multiplier = 1.2
+                    lower_multiplier = 0.9
+                elif regime_info.get("regime_type") == "ranging":
+                    upper_multiplier = 0.9
+                    lower_multiplier = 1.1
+                else:
+                    upper_multiplier = 1.0
+                    lower_multiplier = 1.0
+
+                regime_intensity = float(regime_info.get("intensity", 1.0))
+                regime_stability = float(regime_info.get("stability", 1.0))
+                intensity_adjustment = 1.0 + (regime_intensity - 1.0) * 0.3
+                stability_adjustment = 1.0 + (regime_stability - 1.0) * 0.2
+                upper_multiplier *= intensity_adjustment * stability_adjustment
+                lower_multiplier *= intensity_adjustment * stability_adjustment
+                upper_barrier = base_upper * upper_multiplier
+                lower_barrier = base_lower * lower_multiplier
+                return {
+                    "high_precision": (upper_barrier * 0.5, lower_barrier * 0.25),
+                    "standard": (upper_barrier, lower_barrier),
+                    "conservative": (upper_barrier * 1.5, lower_barrier * 1.5),
+                    "aggressive": (upper_barrier * 0.7, lower_barrier * 0.5),
+                }
+            return self.barrier_combinations
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating regime-specific barriers (sync): {e}")
+            return self.barrier_combinations
+
+    async def _apply_regime_barrier_labeling(
+        self, regime_data: pd.DataFrame, regime_barriers: Dict[str, Tuple[float, float]], regime: str
+    ) -> pd.DataFrame:
+        """Apply regime-specific barrier labeling."""
+        
+        self.logger.info(f"🎯 Applying regime-specific barrier labeling for regime {regime}")
+        
+        try:
+            labeled_data = regime_data.copy()
+            
+            # Get regime-specific precision thresholds
+            precision_thresholds = await self._get_regime_specific_precision_thresholds(regime, regime_data)
+            
+            # Get regime-specific quality filters
+            quality_filters = await self._get_regime_specific_quality_filters(regime, regime_data)
+            
+            # Apply regime-specific labeling for each barrier type
+            for barrier_type, (upper_barrier, lower_barrier) in regime_barriers.items():
+                self.logger.info(f"🔄 Applying {barrier_type} barriers for regime {regime}")
+                
+                # Apply regime-specific triple barrier labeling
+                regime_labeled = await self._apply_regime_triple_barrier(
+                    labeled_data, upper_barrier, lower_barrier, 
+                    precision_thresholds, quality_filters, regime, barrier_type
+                )
+                
+                # Store regime-specific results
+                barrier_key = f"{regime}_{barrier_type}"
+                self.regime_barrier_results[barrier_key] = {
+                    "barrier_type": barrier_type,
+                    "upper_barrier": upper_barrier,
+                    "lower_barrier": lower_barrier,
+                    "precision_thresholds": precision_thresholds,
+                    "quality_filters": quality_filters,
+                    "labeled_samples": len(regime_labeled),
+                    "regime": regime
+                }
+                
+                labeled_data = regime_labeled
+            
+            return labeled_data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error applying regime barrier labeling: {e}")
+            return regime_data
+
+    async def _get_regime_specific_precision_thresholds(
+        self, regime: str, regime_data: pd.DataFrame
+    ) -> Dict[str, float]:
+        """Get regime-specific precision thresholds."""
+        
+        try:
+            if self.regime_config["regime_specific_precision"]:
+                # Calculate regime-specific precision thresholds
+                regime_volatility = regime_data['close'].pct_change().std()
+                regime_volume = regime_data['volume'].mean()
+                
+                # Base precision threshold
+                base_precision = 0.85
+                
+                # Adjust based on regime characteristics
+                if regime_volatility > 0.02:  # High volatility regime
+                    precision_threshold = base_precision * 0.9  # Lower threshold for high volatility
+                elif regime_volatility < 0.005:  # Low volatility regime
+                    precision_threshold = base_precision * 1.1  # Higher threshold for low volatility
+                else:  # Normal volatility regime
+                    precision_threshold = base_precision
+                
+                # Volume-based adjustments
+                if regime_volume > 10000:  # High volume regime
+                    precision_threshold *= 1.05
+                elif regime_volume < 1000:  # Low volume regime
+                    precision_threshold *= 0.95
+                
+                # Ensure threshold is within reasonable bounds
+                precision_threshold = max(0.7, min(0.95, precision_threshold))
+                
+                precision_thresholds = {
+                    "precision_threshold": precision_threshold,
+                    "min_signal_strength": precision_threshold * 0.9,
+                    "confidence_boost_threshold": precision_threshold * 1.05
+                }
+                
+                self.logger.info(f"✅ Calculated regime {regime} precision thresholds:")
+                for threshold_name, threshold_value in precision_thresholds.items():
+                    self.logger.info(f"   {threshold_name}: {threshold_value:.3f}")
+                
+                return precision_thresholds
+            else:
+                # Use default precision thresholds
+                return {
+                    "precision_threshold": self.precision_threshold,
+                    "min_signal_strength": self.min_signal_strength,
+                    "confidence_boost_threshold": self.confidence_boost_threshold
+                }
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating regime-specific precision thresholds: {e}")
+            return {
+                "precision_threshold": self.precision_threshold,
+                "min_signal_strength": self.min_signal_strength,
+                "confidence_boost_threshold": self.confidence_boost_threshold
+            }
+
+    async def _get_regime_specific_quality_filters(
+        self, regime: str, regime_data: pd.DataFrame
+    ) -> Dict[str, Any]:
+        """Get regime-specific quality filters."""
+        
+        try:
+            if self.regime_config["regime_specific_quality_filters"]:
+                # Calculate regime-specific quality filter thresholds
+                regime_volume_mean = regime_data['volume'].mean()
+                regime_volume_std = regime_data['volume'].std()
+                regime_spread_mean = regime_data.get('spread', pd.Series([0.0001] * len(regime_data))).mean()
+                
+                # Volume-based quality filters
+                volume_threshold = max(100, regime_volume_mean * 0.1)  # At least 10% of mean volume
+                
+                # Spread-based quality filters
+                spread_threshold = max(0.0001, regime_spread_mean * 2)  # At most 2x mean spread
+                
+                # Volatility-based quality filters
+                regime_volatility = regime_data['close'].pct_change().std()
+                volatility_threshold = regime_volatility * 3  # 3x regime volatility
+                
+                quality_filters = {
+                    "min_volume_threshold": volume_threshold,
+                    "min_spread_threshold": spread_threshold,
+                    "volatility_filter": True,
+                    "volatility_threshold": volatility_threshold,
+                    "enable_quality_filters": True
+                }
+                
+                self.logger.info(f"✅ Calculated regime {regime} quality filters:")
+                for filter_name, filter_value in quality_filters.items():
+                    self.logger.info(f"   {filter_name}: {filter_value}")
+                
+                return quality_filters
+            else:
+                # Use default quality filters
+                return {
+                    "min_volume_threshold": self.min_volume_threshold,
+                    "min_spread_threshold": self.min_spread_threshold,
+                    "volatility_filter": self.volatility_filter,
+                    "enable_quality_filters": self.enable_quality_filters
+                }
+                
+        except Exception as e:
+            self.logger.error(f"❌ Error calculating regime-specific quality filters: {e}")
+            return {
+                "min_volume_threshold": self.min_volume_threshold,
+                "min_spread_threshold": self.min_spread_threshold,
+                "volatility_filter": self.volatility_filter,
+                "enable_quality_filters": self.enable_quality_filters
+            }
+
+    async def _apply_regime_triple_barrier(
+        self, regime_data: pd.DataFrame, upper_barrier: float, lower_barrier: float,
+        precision_thresholds: Dict[str, float], quality_filters: Dict[str, Any],
+        regime: str, barrier_type: str
+    ) -> pd.DataFrame:
+        """Apply regime-specific triple barrier labeling."""
+        
+        self.logger.info(f"🎯 Applying regime-specific triple barrier ({barrier_type}) for regime {regime}")
+        
+        try:
+            labeled_data = regime_data.copy()
+            # Ensure required columns exist
+            if "label" not in labeled_data.columns:
+                labeled_data["label"] = 0
+            if "potential_profit_pct" not in labeled_data.columns:
+                labeled_data["potential_profit_pct"] = 0.0
+            
+            # Apply regime-specific quality filters
+            if quality_filters.get("enable_quality_filters", True):
+                labeled_data = await self._apply_regime_quality_filters(labeled_data, quality_filters, regime)
+            
+            # Apply regime-specific triple barrier logic
+            for i in range(len(labeled_data) - 1):
+                entry_price = labeled_data.iloc[i]['close']
+                entry_idx = i
+                
+                # Calculate barriers
+                profit_barrier = entry_price * (1.0 + upper_barrier)
+                stop_barrier = entry_price * (1.0 - lower_barrier)
+                
+                # Find barrier hit
+                label = 0
+                profit_pct = 0.0
+                
+                for j in range(entry_idx + 1, min(entry_idx + self.max_lookahead, len(labeled_data))):
+                    high_price = labeled_data.iloc[j]['high']
+                    low_price = labeled_data.iloc[j]['low']
+                    
+                    # Check profit barrier first
+                    if high_price >= profit_barrier:
+                        label = 1  # LONG position
+                        profit_pct = upper_barrier
+                        break
+                    
+                    # Check stop barrier
+                    if low_price <= stop_barrier:
+                        label = -1  # SHORT position
+                        profit_pct = -lower_barrier
+                        break
+                
+                # Apply regime-specific precision threshold
+                if abs(profit_pct) > 0:
+                    # Check if signal meets regime-specific precision requirements
+                    if abs(profit_pct) >= precision_thresholds["min_signal_strength"]:
+                        labeled_data.iloc[entry_idx, labeled_data.columns.get_loc('label')] = label
+                        labeled_data.iloc[entry_idx, labeled_data.columns.get_loc('potential_profit_pct')] = profit_pct
+                    else:
+                        # Signal too weak for regime
+                        labeled_data.iloc[entry_idx, labeled_data.columns.get_loc('label')] = 0
+                        labeled_data.iloc[entry_idx, labeled_data.columns.get_loc('potential_profit_pct')] = 0.0
+            
+            # Log regime-specific results
+            long_signals = (labeled_data['label'] == 1).sum()
+            short_signals = (labeled_data['label'] == -1).sum()
+            hold_signals = (labeled_data['label'] == 0).sum()
+            
+            self.logger.info(f"📊 Regime {regime} ({barrier_type}) labeling results:")
+            self.logger.info(f"   LONG signals: {long_signals}")
+            self.logger.info(f"   SHORT signals: {short_signals}")
+            self.logger.info(f"   HOLD signals: {hold_signals}")
+            
+            return labeled_data
+            
+        except Exception as e:
+            self.logger.error(f"❌ Error applying regime triple barrier: {e}")
+            return regime_data
+
+    async def _apply_regime_quality_filters(
+        self, regime_data: pd.DataFrame, quality_filters: Dict[str, Any], regime: str
+    ) -> pd.DataFrame:
+        """Apply regime-specific quality filters."""
+        
+        self.logger.info(f"🔍 Applying regime-specific quality filters for regime {regime}")
+        
+        try:
+            filtered_data = regime_data.copy()
+
+            # Volume threshold
+            min_volume = quality_filters.get("min_volume_threshold", self.min_volume_threshold)
+            if "volume" in filtered_data.columns:
+                filtered_data = filtered_data[filtered_data["volume"] >= min_volume]
+
+            # Spread threshold: use explicit spread if available, else compute from bid/ask
+            spread_threshold = quality_filters.get("min_spread_threshold", self.min_spread_threshold)
+            if "spread" in filtered_data.columns:
+                filtered_data = filtered_data[filtered_data["spread"] <= spread_threshold]
+            elif "bid" in filtered_data.columns and "ask" in filtered_data.columns:
+                with contextlib.suppress(Exception):
+                    computed_spread = (filtered_data["ask"] - filtered_data["bid"]) / filtered_data["bid"]
+                    filtered_data = filtered_data[computed_spread <= spread_threshold]
+
+            # Volatility filter based on rolling returns
+            if quality_filters.get("volatility_filter", self.volatility_filter) and "close" in filtered_data.columns:
+                with contextlib.suppress(Exception):
+                    returns = filtered_data["close"].pct_change()
+                    rolling_vol = returns.rolling(window=20, min_periods=10).std()
+                    vol_threshold = quality_filters.get("volatility_threshold", returns.std() * 3 if returns.std() is not None else 0.03)
+                    mask = (rolling_vol.fillna(0) <= vol_threshold)
+                    filtered_data = filtered_data.loc[mask]
+
+            return filtered_data
             
         except Exception as e:
             self.logger.warning(f"⚠️ Quality filter error: {e}")
-            return True  # Default to allow if filter fails
+            return regime_data  # Default to allowing all if filter fails
 
     def _calculate_adaptive_barriers(self, data: pd.DataFrame, entry_idx: int, base_pt: float, base_sl: float) -> tuple[float, float]:
         """Calculate barriers - no dynamic adaptation, ML model handles market conditions."""

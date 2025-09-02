@@ -1364,4 +1364,4 @@ if __name__ == "__main__":
     async def test() -> None:
         await run_step("ETHUSDT", "BINANCE", "data/training")
 
-    asyncio.run(await test())
+    asyncio.run( test())

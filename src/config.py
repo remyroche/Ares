@@ -11,9 +11,8 @@ from src.config.environment import get_environment_settings, get_env_settings
 from dataclasses import dataclass
 
 # Import the new modular configuration
-from src.config.modular_config import (
 import asyncio
-
+from src.config.modular_config import (
     CONFIG,
     AresConfig,
     get_complete_config,

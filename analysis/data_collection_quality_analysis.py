@@ -78,7 +78,7 @@ class DataCollectionQualityAnalyzer:
         
         for source, pattern_list in patterns.items():
             for pattern in pattern_list:
-                files=glob.glob(os.path.join(data_dir, pattern))
+                files = glob.glob(os.path.join(data_dir, pattern))
                 if files:
                     try:
                         self.data[source] = pd.read_csv(files[0])
@@ -228,19 +228,19 @@ class DataCollectionQualityAnalyzer:
                         data_age = datetime.now() - latest_time
                         data_age_hours = data_age.total_seconds() / 3600
                         
-        # Calculate update frequency
-                        time_diff, df[time_col].diff().dropna()
-                        avg_interval, time_diff.mean().total_seconds() / 3600  # hours
+                        # Calculate update frequency
+                        time_diff = df[time_col].diff().dropna()
+                        avg_interval = time_diff.mean().total_seconds() / 3600  # hours
                         
-        # Freshness score (0-100)
-        if data_age_hours < 1:
-                            freshness_score, 100
+                        # Freshness score (0-100)
+                        if data_age_hours < 1:
+                            freshness_score = 100
                         elif data_age_hours < 24:
-                            freshness_score, 80
+                            freshness_score = 80
                         elif data_age_hours < 168:  # 1 week
-                            freshness_score, 60
+                            freshness_score = 60
                         else:
-                            freshness_score, 20
+                            freshness_score = 20
                         
                         freshness_stats[source] = {
                             'latest_timestamp': latest_time,
@@ -257,7 +257,7 @@ class DataCollectionQualityAnalyzer:
                             'update_frequency_hours': None,
                             'freshness_score': 0
                         }
-        except Exception as e:
+                except Exception as e:
                     print(f"Error analyzing freshness for {source}: {e}")
                     freshness_stats[source] = {
                         'latest_timestamp': None,
@@ -272,10 +272,10 @@ class DataCollectionQualityAnalyzer:
         print("-" * 70)
         
         for source, stats in freshness_stats.items():
-            latest_str, str(stats['latest_timestamp'])[:19] if stats['latest_timestamp'] else 'N/A'
-            age_str, f"{stats['data_age_hours']:.1f}" if stats['data_age_hours'] else 'N/A'
-            freq_str, f"{stats['update_frequency_hours']:.2f}" if stats['update_frequency_hours'] else 'N/A'
-            score_str, f"{stats['freshness_score']}" if stats['freshness_score'] else 'N/A'
+            latest_str = str(stats['latest_timestamp'])[:19] if stats['latest_timestamp'] else 'N/A'
+            age_str = f"{stats['data_age_hours']:.1f}" if stats['data_age_hours'] else 'N/A'
+            freq_str = f"{stats['update_frequency_hours']:.2f}" if stats['update_frequency_hours'] else 'N/A'
+            score_str = f"{stats['freshness_score']}" if stats['freshness_score'] else 'N/A'
             
             print(f"{source:<15} {latest_str:<20} {age_str:<12} {freq_str:<12} {score_str:<8}")
         
@@ -290,7 +290,7 @@ class DataCollectionQualityAnalyzer:
         format_stats={}
         
         for source, df in self.data.items():
-        if df is None or df.empty:
+            if df is None or df.empty:
                 format_stats[source] = {
                     'format_valid': False,
                     'required_columns': [],
@@ -300,50 +300,50 @@ class DataCollectionQualityAnalyzer:
                 }
                 continue
             
-        # Define required columns for each source
+            # Define required columns for each source
             required_columns={
                 'klines': ['open', 'high', 'low', 'close', 'volume'],
                 'agg_trades': ['price', 'quantity', 'timestamp'],
                 'futures': ['fundingRate', 'timestamp']
             }
             
-            required_cols, required_columns.get(source, [])
+            required_cols = required_columns.get(source, [])
             
-        # Check for missing columns, but account for timestamp being in index
-            missing_cols=[]
-        for col in required_cols:
-        if col == 'timestamp':
-        # Check if timestamp is either in columns or is the index
-        if col not in df.columns and (df.index.name != 'timestamp' and 'timestamp' not in str(type(df.index))):
+            # Check for missing columns, but account for timestamp being in index
+            missing_cols = []
+            for col in required_cols:
+                if col == 'timestamp':
+                    # Check if timestamp is either in columns or is the index
+                    if col not in df.columns and (df.index.name != 'timestamp' and 'timestamp' not in str(type(df.index))):
                         missing_cols.append(col)
                 else:
-        if col not in df.columns:
+                    if col not in df.columns:
                         missing_cols.append(col)
             
-        # Check data types
+            # Check data types
             data_types={}
-        for col in df.columns:
+            for col in df.columns:
                 data_types[col] = str(df[col].dtype)
             
-        # Calculate format score
-            format_score, 100
-        if missing_cols:
-                format_score -= len(missing_cols) * 20
+            # Calculate format score
+            format_score = 100
+            if missing_cols:
+                format_score -= min(80, len(missing_cols) * 20)
             
-        # Check for common data quality issues
-            numeric_cols, df.select_dtypes(include=[np.number]).columns
-        if len(numeric_cols) > 0:
-        # Check for infinite values
-                inf_count, df[numeric_cols].isin([np.inf, -np.inf]).sum().sum()
-        if inf_count > 0:
+            # Check for common data quality issues
+            numeric_cols = df.select_dtypes(include=[np.number]).columns
+            if len(numeric_cols) > 0:
+                # Check for infinite values
+                inf_count = df[numeric_cols].isin([np.inf, -np.inf]).sum().sum()
+                if inf_count > 0:
                     format_score -= 10
                 
-        # Check for extreme outliers
-        for col in numeric_cols:
-                    q99, df[col].quantile(0.99)
-                    q01, df[col].quantile(0.01)
-                    extreme_outliers=((df[col] > q99 * 10) | (df[col] < q01 / 10)).sum()
-        if extreme_outliers > len(df) * 0.01:  # More than 1% extreme outliers
+                # Check for extreme outliers
+                for col in numeric_cols:
+                    q99 = df[col].quantile(0.99)
+                    q01 = df[col].quantile(0.01)
+                    extreme_outliers = ((df[col] > q99 * 10) | (df[col] < q01 / 10)).sum()
+                    if extreme_outliers > 0:
                         format_score -= 5
             
             format_stats[source] = {
@@ -361,7 +361,7 @@ class DataCollectionQualityAnalyzer:
         for source, stats in format_stats.items():
             valid_str="✅" if stats['format_valid'] else "❌"
             missing_str = ", ".join(stats['missing_columns'][:3])
-        if len(stats['missing_columns']) > 3:
+            if len(stats['missing_columns']) > 3:
                 missing_str += "..."
             
             print(f"{source:<15} {valid_str:<8} {missing_str:<15} {stats['format_score']:<8}")
@@ -377,7 +377,7 @@ class DataCollectionQualityAnalyzer:
         reliability_stats={}
         
         for source, df in self.data.items():
-        if df is None or df.empty:
+            if df is None or df.empty:
                 reliability_stats[source] = {
                     'reliability_score': 0,
                     'consistency_score': 0,
@@ -386,58 +386,55 @@ class DataCollectionQualityAnalyzer:
                 }
                 continue
             
-            issues=[]
-            reliability_score, 100
-            consistency_score, 100
+            issues = []
+            reliability_score = 100
+            consistency_score = 100
             
-        # Check for data gaps
-            time_col, None
-        for col in df.columns:
-        if 'time' in col.lower() or 'timestamp' in col.lower():
-                    time_col, col
+            # Check for data gaps
+            time_col = None
+            for col in df.columns:
+                if 'time' in col.lower() or 'timestamp' in col.lower():
+                    time_col = col
                     break
             
-        if time_col:
-        try:
+            if time_col:
+                try:
                     df[time_col] = pd.to_datetime(df[time_col], unit='ms', errors='coerce')
-                    time_diff, df[time_col].diff().dropna()
+                    time_diff = df[time_col].diff().dropna()
                     
-        # Check for large gaps
-                    large_gaps, time_diff[time_diff > timedelta(hours=2)]
-        if len(large_gaps) > 0:
-                        issues.append(f"Found {len(large_gaps)} large time gaps")
-                        reliability_score -= len(large_gaps) * 2
+                    # Check for large gaps
+                    large_gaps = time_diff[time_diff > timedelta(hours=2)]
+                    if len(large_gaps) > 0:
+                        issues.append(f"Data gaps detected: {len(large_gaps)} occurrences")
                     
-        # Check for duplicate timestamps
-                    duplicates, df[time_col].duplicated().sum()
-        if duplicates > 0:
-                        issues.append(f"Found {duplicates} duplicate timestamps")
-                        reliability_score -= duplicates
+                    # Check for duplicate timestamps
+                    duplicates = df[time_col].duplicated().sum()
+                    if duplicates > 0:
+                        issues.append(f"Duplicate timestamps: {duplicates}")
                     
-        except Exception as e:
+                except Exception as e:
                     issues.append(f"Time column processing error: {e}")
                     reliability_score -= 20
             
-        # Check for missing values in critical columns
+            # Check for missing values in critical columns
             critical_cols=['open', 'high', 'low', 'close', 'volume'] if source== 'klines' else ['price', 'quantity']
-        for col in critical_cols:
-        if col in df.columns:
+            for col in critical_cols:
+                if col in df.columns:
                     missing_pct=(df[col].isnull().sum() / len(df)) * 100
-        if missing_pct > 5:
+                    if missing_pct > 5:
                         issues.append(f"High missing values in {col}: {missing_pct:.1f}%")
-                        reliability_score -= missing_pct
             
-        # Check for data consistency
-        if source== 'klines':
-        # Check OHLC consistency
-        if all(col in df.columns for col in ['open', 'high', 'low', 'close']):
+            # Check for data consistency
+            if source== 'klines':
+                # Check OHLC consistency
+                if all(col in df.columns for col in ['open', 'high', 'low', 'close']):
                     invalid_ohlc=((df['high'] < df['low']) | 
                                   (df['open'] > df['high']) | 
                                   (df['close'] > df['high']) |
                                   (df['open'] < df['low']) |
                                   (df['close'] < df['low'])).sum()
                     
-        if invalid_ohlc > 0:
+                    if invalid_ohlc > 0:
                         issues.append(f"Found {invalid_ohlc} invalid OHLC combinations")
                         consistency_score -= invalid_ohlc
             
@@ -454,7 +451,7 @@ class DataCollectionQualityAnalyzer:
         
         for source, stats in reliability_stats.items():
             issues_str=", ".join(stats['data_quality_issues'][:2])
-        if len(stats['data_quality_issues']) > 2:
+            if len(stats['data_quality_issues']) > 2:
                 issues_str += "..."
             
             print(f"{source:<15} {stats['reliability_score']:<12.1f} {stats['consistency_score']:<12.1f} {issues_str:<20}")
@@ -476,64 +473,68 @@ class DataCollectionQualityAnalyzer:
         # Check timestamp alignment
         time_cols = {}
         for source, df in self.data.items():
-        if df is not None and not df.empty:
-        for col in df.columns:
-        if 'time' in col.lower() or 'timestamp' in col.lower():
-                        time_cols[source] = col
+            if df is not None and not df.empty:
+                # Prefer 'timestamp' over 'time'
+                time_col = None
+                for col in df.columns:
+                    if 'timestamp' in col.lower() or 'time' in col.lower():
+                        time_col = col
                         break
+                if time_col:
+                    time_cols[source] = time_col
         
         if len(time_cols) >= 2:
-        # Compare time ranges
+            # Compare time ranges
             time_ranges={}
-        for source, time_col in time_cols.items():
-        try:
-                    df, self.data[source]
+            for source, time_col in time_cols.items():
+                try:
+                    df = self.data[source]
                     df[time_col] = pd.to_datetime(df[time_col], unit='ms', errors='coerce')
                     time_ranges[source] = (df[time_col].min(), df[time_col].max())
-        except Exception as e:
+                except Exception as e:
                     print(f"Error processing time column for {source}: {e}")
             
-        if len(time_ranges) >= 2:
-                sources, list(time_ranges.keys())
-        for i in range(len(sources)):
-        for j in range(i+1, len(sources)):
-                        source1, source2, sources[i], sources[j]
-                        start1, end1, time_ranges[source1]
-                        start2, end2, time_ranges[source2]
+            if len(time_ranges) >= 2:
+                sources = list(time_ranges.keys())
+                for i in range(len(sources)):
+                    for j in range(i+1, len(sources)):
+                        source1, source2 = sources[i], sources[j]
+                        start1, end1 = time_ranges[source1]
+                        start2, end2 = time_ranges[source2]
                         
-                        overlap_start, max(start1, start2)
-                        overlap_end, min(end1, end2)
+                        overlap_start = max(start1, start2)
+                        overlap_end = min(end1, end2)
                         
-        if overlap_start >= overlap_end:
-                            consistency_issues.append(f"No time overlap between {source1} and {source2}")
+                        if overlap_end <= overlap_start:
+                            consistency_issues.append(f"No overlap between {source1} and {source2}")
                         else:
-                            overlap_duration, overlap_end - overlap_start
-                            total_duration, min(end1 - start1, end2 - start2)
-                            overlap_percentage=(overlap_duration / total_duration) * 100
+                            overlap_duration = overlap_end - overlap_start
+                            total_duration = min(end1 - start1, end2 - start2)
+                            overlap_percentage = (overlap_duration / total_duration) * 100
                             
-        if overlap_percentage < 80:
+                            if overlap_percentage < 80:
                                 consistency_issues.append(f"Low time overlap between {source1} and {source2}: {overlap_percentage:.1f}%")
         
         # Check for price consistency between klines and agg_trades
         if 'klines' in self.data and 'agg_trades' in self.data:
-            klines_df, self.data['klines']
-            trades_df, self.data['agg_trades']
+            klines_df = self.data['klines']
+            trades_df = self.data['agg_trades']
             
-        if not klines_df.empty and not trades_df.empty:
-        if 'close' in klines_df.columns and 'price' in trades_df.columns:
-        # Sample comparison
-                    klines_sample, klines_df['close'].sample(min(1000, len(klines_df)))
-                    trades_sample, trades_df['price'].sample(min(1000, len(trades_df)))
+            if not klines_df.empty and not trades_df.empty:
+                if 'close' in klines_df.columns and 'price' in trades_df.columns:
+                    # Sample comparison
+                    klines_sample = klines_df['close'].sample(min(1000, len(klines_df)))
+                    trades_sample = trades_df['price'].sample(min(1000, len(trades_df)))
                     
-                    klines_mean, klines_sample.mean()
-                    trades_mean, trades_sample.mean()
+                    klines_mean = klines_sample.mean()
+                    trades_mean = trades_sample.mean()
                     
-        if abs(klines_mean - trades_mean) / klines_mean > 0.1:  # 10% difference
+                    if abs(klines_mean - trades_mean) / klines_mean > 0.1:  # 10% difference
                         consistency_issues.append(f"Significant price difference between klines and trades: {((trades_mean - klines_mean) / klines_mean * 100):.1f}%")
         
         if consistency_issues:
             print("Consistency issues found:")
-        for issue in consistency_issues:
+            for issue in consistency_issues:
                 print(f"  ⚠️  {issue}")
         else:
             print("✅ No major consistency issues found")
@@ -549,17 +550,17 @@ class DataCollectionQualityAnalyzer:
         quality_scores={}
         
         for source in self.data_sources:
-        if source not in self.data or self.data[source] is None or self.data[source].empty:
+            if source not in self.data or self.data[source] is None or self.data[source].empty:
                 quality_scores[source] = 0
                 continue
             
-        # Calculate composite quality score
-            completeness, self.report.get('completeness', {}).get(source, {}).get('completeness_percentage', 0)
-            freshness, self.report.get('freshness', {}).get(source, {}).get('freshness_score', 0)
-            format_valid, self.report.get('format_validation', {}).get(source, {}).get('format_score', 0)
-            reliability, self.report.get('reliability', {}).get(source, {}).get('overall_score', 0)
+            # Calculate composite quality score
+            completeness = self.report.get('completeness', {}).get(source, {}).get('completeness_percentage', 0)
+            freshness = self.report.get('freshness', {}).get(source, {}).get('freshness_score', 0)
+            format_valid = self.report.get('format_validation', {}).get(source, {}).get('format_score', 0)
+            reliability = self.report.get('reliability', {}).get(source, {}).get('overall_score', 0)
             
-        # Weighted average
+            # Weighted average
             quality_score=(completeness * 0.3 + freshness * 0.25 + 
                            format_valid * 0.25 + reliability * 0.2)
             
@@ -570,7 +571,7 @@ class DataCollectionQualityAnalyzer:
         print("-" * 40)
         
         for source, score in quality_scores.items():
-        if score >= 80:
+            if score >= 80:
                 status="✅ Excellent"
             elif score >= 60:
                 status = "⚠️  Good"
@@ -582,7 +583,7 @@ class DataCollectionQualityAnalyzer:
             print(f"{source:<15} {score:<15.1f} {status:<10}")
         
         # Overall pipeline quality
-        overall_quality, np.mean(list(quality_scores.values()))
+        overall_quality = np.mean(list(quality_scores.values()))
         print(f"\nOverall Pipeline Quality: {overall_quality:.1f}/100")
         
         if overall_quality >= 80:
@@ -590,9 +591,9 @@ class DataCollectionQualityAnalyzer:
         elif overall_quality >= 60:
             print("✅ Good data collection quality")
         elif overall_quality >= 40:
-            print(warning(" Fair data collection quality - consider improvements")))
+            print(warning(" Fair data collection quality - consider improvements"))
         else:
-            print(warning("Poor data collection quality - immediate attention required")))
+            print(warning("Poor data collection quality - immediate attention required"))
         
         self.report['quality_scores'] = quality_scores
         self.report['overall_quality'] = overall_quality
@@ -606,32 +607,32 @@ class DataCollectionQualityAnalyzer:
         recommendations=[]
         
         # Check completeness
-        completeness, self.report.get('completeness', {})
+        completeness = self.report.get('completeness', {})
         for source, stats in completeness.items():
-        if stats['completeness_percentage'] < 80:
+            if stats['completeness_percentage'] < 80:
                 recommendations.append(f"📊 {source}: Improve data completeness (currently {stats['completeness_percentage']:.1f}%)")
         
         # Check freshness
-        freshness, self.report.get('freshness', {})
+        freshness = self.report.get('freshness', {})
         for source, stats in freshness.items():
-        if stats.get('freshness_score', 0) < 60:
+            if stats.get('freshness_score', 0) < 60:
                 recommendations.append(f"⏰ {source}: Data is stale ({stats.get('data_age_hours', 0):.1f} hours old)")
         
         # Check format validation
-        format_validation, self.report.get('format_validation', {})
+        format_validation = self.report.get('format_validation', {})
         for source, stats in format_validation.items():
-        if not stats['format_valid']:
+            if not stats['format_valid']:
                 missing_cols=", ".join(stats['missing_columns'])
                 recommendations.append(f"📋 {source}: Missing required columns: {missing_cols}")
         
         # Check reliability
-        reliability, self.report.get('reliability', {})
+        reliability = self.report.get('reliability', {})
         for source, stats in reliability.items():
-        if stats['overall_score'] < 70:
+            if stats['overall_score'] < 70:
                 recommendations.append(f"🔍 {source}: Data reliability issues detected")
         
         # Check consistency
-        consistency_issues, self.report.get('consistency_issues', [])
+        consistency_issues = self.report.get('consistency_issues', [])
         if consistency_issues:
             recommendations.append("🔄 Data consistency issues detected between sources")
         
@@ -639,7 +640,7 @@ class DataCollectionQualityAnalyzer:
             print("✅ No major issues detected. Data collection quality is good!")
         else:
             print("Recommendations for improvement:")
-        for rec in recommendations:
+            for rec in recommendations:
                 print(f"  {rec}")
         
         self.report['recommendations'] = recommendations
@@ -650,15 +651,15 @@ class DataCollectionQualityAnalyzer:
         print("\n📈 GENERATING VISUALIZATIONS...")
         
         try:
-        # Create figure with subplots
+            # Create figure with subplots
             fig, axes, plt.subplots(2, 2, figsize=(15, 12))
             fig.suptitle('Data Collection Quality Analysis Report', fontsize=16, fontweight='bold')
             
-        # 1. Quality scores by source
-            quality_scores, self.report.get('quality_scores', {})
-        if quality_scores:
-                sources, list(quality_scores.keys())
-                scores, list(quality_scores.values())
+            # 1. Quality scores by source
+            quality_scores = self.report.get('quality_scores', {})
+            if quality_scores:
+                sources = list(quality_scores.keys())
+                scores = list(quality_scores.values())
                 
                 colors=['green' if score >= 80 else 'orange' if score >= 60 else 'red' for score in scores]
                 axes[0, 0].bar(sources, scores, color=colors)
@@ -667,10 +668,10 @@ class DataCollectionQualityAnalyzer:
                 axes[0, 0].set_ylim(0, 100)
                 axes[0, 0].grid(True, alpha=0.3)
             
-        # 2. Completeness comparison
-            completeness, self.report.get('completeness', {})
-        if completeness:
-                sources, list(completeness.keys())
+            # 2. Completeness comparison
+            completeness = self.report.get('completeness', {})
+            if completeness:
+                sources = list(completeness.keys())
                 completeness_pcts=[completeness[source].get('completeness_percentage', 0) for source in sources]
                 
                 axes[0, 1].bar(sources, completeness_pcts, color='skyblue')
@@ -679,10 +680,10 @@ class DataCollectionQualityAnalyzer:
                 axes[0, 1].set_ylim(0, 100)
                 axes[0, 1].grid(True, alpha=0.3)
             
-        # 3. Freshness scores
-            freshness, self.report.get('freshness', {})
-        if freshness:
-                sources, list(freshness.keys())
+            # 3. Freshness scores
+            freshness = self.report.get('freshness', {})
+            if freshness:
+                sources = list(freshness.keys())
                 freshness_scores=[freshness[source].get('freshness_score', 0) for source in sources]
                 
                 axes[1, 0].bar(sources, freshness_scores, color='lightgreen')
@@ -691,9 +692,9 @@ class DataCollectionQualityAnalyzer:
                 axes[1, 0].set_ylim(0, 100)
                 axes[1, 0].grid(True, alpha=0.3)
             
-        # 4. Overall quality pie chart
-            overall_quality, self.report.get('overall_quality', 0)
-        if overall_quality > 0:
+            # 4. Overall quality pie chart
+            overall_quality = self.report.get('overall_quality', 0)
+            if overall_quality > 0:
                 axes[1, 1].pie([overall_quality, 100 - overall_quality], 
                                labels=['Quality Score', 'Remaining'],
                                autopct='%1.1f%%',
@@ -705,7 +706,7 @@ class DataCollectionQualityAnalyzer:
             print("✅ Visualizations saved as 'data_collection_quality_report.png'")
             
         except Exception as e:
-            print(warning("Error creating visualizations: {e}")))
+            print(warning("Error creating visualizations: {e}"))
     
 
     def save_report(self, filename='data_collection_quality_report.txt'):
@@ -714,45 +715,45 @@ class DataCollectionQualityAnalyzer:
             f.write("DATA COLLECTION QUALITY ANALYSIS REPORT\n")
             f.write("=" * 50 + "\n\n")
             
-        # Overall quality
-            overall_quality, self.report.get('overall_quality', 0)
+            # Overall quality
+            overall_quality = self.report.get('overall_quality', 0)
             f.write(f"Overall Pipeline Quality: {overall_quality:.1f}/100\n\n")
             
-        # Quality scores
-            quality_scores, self.report.get('quality_scores', {})
+            # Quality scores
+            quality_scores = self.report.get('quality_scores', {})
             f.write("QUALITY SCORES BY SOURCE:\n")
-        for source, score in quality_scores.items():
+            for source, score in quality_scores.items():
                 f.write(f"{source}: {score:.1f}/100\n")
             f.write("\n")
             
-        # Completeness
-            completeness, self.report.get('completeness', {})
+            # Completeness
+            completeness = self.report.get('completeness', {})
             f.write("COMPLETENESS ANALYSIS:\n")
-        for source, stats in completeness.items():
+            for source, stats in completeness.items():
                 f.write(f"{source}: {stats.get('completeness_percentage', 0):.1f}% complete\n")
             f.write("\n")
             
-        # Freshness
-            freshness, self.report.get('freshness', {})
+            # Freshness
+            freshness = self.report.get('freshness', {})
             f.write("FRESHNESS ANALYSIS:\n")
-        for source, stats in freshness.items():
-                age_hours, stats.get('data_age_hours', 0)
+            for source, stats in freshness.items():
+                age_hours = stats.get('data_age_hours', 0)
                 f.write(f"{source}: {age_hours:.1f} hours old\n")
             f.write("\n")
             
-        # Recommendations
-            recommendations, self.report.get('recommendations', [])
-        if recommendations:
+            # Recommendations
+            recommendations = self.report.get('recommendations', [])
+            if recommendations:
                 f.write("RECOMMENDATIONS:\n")
-        for rec in recommendations:
+                for rec in recommendations:
                     f.write(f"- {rec}\n")
-            f.write("\n")
+                f.write("\n")
         
-        print(f"✅ Report saved as '{filename}'")
+            print(f"✅ Report saved as '{filename}'")
 
 def main():
     """Main function to run the analysis."""
-    analyzer, DataCollectionQualityAnalyzer()
+    analyzer = DataCollectionQualityAnalyzer()
     
     # Try to load data from common locations
     data_paths=[
@@ -762,15 +763,15 @@ def main():
         'data/'
     ]
     
-    data_loaded, False
+    data_loaded = False
     for path in data_paths:
         if os.path.exists(path):
-        if analyzer.load_data(path):
-                data_loaded, True
+            if analyzer.load_data(path):
+                data_loaded = True
                 break
     
     if not data_loaded:
-        print(warning("Could not find data file. Please specify the path to your collected data.")))
+        print(warning("Could not find data file. Please specify the path to your collected data."))
         print("Common locations checked:")
         for path in data_paths:
             print(f"  - {path}")

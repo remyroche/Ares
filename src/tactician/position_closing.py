@@ -17,14 +17,14 @@ from src.utils.warning_symbols import (
 
 
 class PositionCloser:
-    passpass"""
+    """
     Position Closer that handles position closure based on dual model confidence scores
     and ATR-based exit rules.
     """
 
-    def __init__(...) -> ...:
-    """..."""
-    passself.config = config
+    def __init__(self, config: Dict[str, Any]) -> None:
+        """Initialize the Position Closer."""
+        self.config = config
         self.logger = system_logger.getChild("PositionCloser")
 
         # Configuration from step17 optimization results
@@ -55,74 +55,65 @@ class PositionCloser:
         default_return=False,
         context="position closer initialization"
     )
-    async def initialize(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def initialize(self) -> bool:
+        """Initialize the Position Closer."""
+        try:
             self.logger.info("Initializing Position Closer...")
 
             # Validate configuration
             if not self._validate_configuration():
-    passself.logger.error("Invalid position closer configuration")
+                self.logger.error("Invalid position closer configuration")
                 return False
 
             self.logger.info("✅ Position Closer initialized successfully")
             return True
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"❌ Position Closer initialization failed: {e}")
+            self.logger.error(f"❌ Position Closer initialization failed: {e}")
             return False
 
-    def _validate_configuration(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    def _validate_configuration(self) -> bool:
+        """Validate the configuration parameters."""
+        try:
             if self.atr_multiplier <= 0:
-    passself.logger.error("ATR multiplier must be positive")
+                self.logger.error("ATR multiplier must be positive")
                 return False
 
             if not (0 <= self.confidence_threshold <= 1):
-    passself.logger.error("Confidence threshold must be between 0 and 1")
+                self.logger.error("Confidence threshold must be between 0 and 1")
                 return False
 
             if self.min_hold_time <= 0:
-    passself.logger.error("Min hold time must be positive")
+                self.logger.error("Min hold time must be positive")
                 return False
 
             if self.max_hold_time <= self.min_hold_time:
-    passself.logger.error("Max hold time must be greater than min hold time")
+                self.logger.error("Max hold time must be greater than min hold time")
                 return False
 
             if self.stop_loss_multiplier <= 0:
-    passself.logger.error("Stop loss multiplier must be positive")
+                self.logger.error("Stop loss multiplier must be positive")
                 return False
 
             if self.take_profit_multiplier <= 0:
-    passself.logger.error("Take profit multiplier must be positive")
+                self.logger.error("Take profit multiplier must be positive")
                 return False
 
             if self.trailing_stop_distance <= 0:
-    passself.logger.error("Trailing stop distance must be positive")
+                self.logger.error("Trailing stop distance must be positive")
                 return False
 
             return True
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Configuration validation failed: {e}")
+            self.logger.error(f"Configuration validation failed: {e}")
             return False
 
-    def refresh_step17_configuration(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    def refresh_step17_configuration(self, step17_results: Dict[str, Any]) -> None:
+        """Refresh configuration from step17 optimization results."""
+        try:
             if "tpsl" in step17_results:
-    passtpsl_optimization = step17_results["tpsl"]
+                tpsl_optimization = step17_results["tpsl"]
 
                 # Update position closing parameters
                 self.atr_multiplier = tpsl_optimization.get("atr_multiplier", self.atr_multiplier)
@@ -139,87 +130,89 @@ except Exception as e:
                 self.logger.info("✅ Position closer configuration refreshed from step17 results")
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error refreshing step17 configuration: {e}")
+            self.logger.error(f"Error refreshing step17 configuration: {e}")
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="position closure evaluation"
     )
-    async def should_close_position(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def should_close_position(
+        self, 
+        position_data: Dict[str, Any], 
+        model_confidence: float, 
+        atr_value: float, 
+        current_price: float
+    ) -> bool:
+        """Determine if a position should be closed."""
+        try:
             # Check confidence threshold
             if model_confidence < self.confidence_threshold:
-    passself.logger.info(f"Closing position due to low confidence: {model_confidence:.3f}")
+                self.logger.info(f"Closing position due to low confidence: {model_confidence:.3f}")
                 return True
 
             # Check ATR-based exit
             if self._should_close_by_atr(position_data, atr_value, current_price):
-    passself.logger.info("Closing position due to ATR-based exit rule")
+                self.logger.info("Closing position due to ATR-based exit rule")
                 return True
 
             # Check minimum hold time
             if self._should_close_by_time(position_data):
-    passself.logger.info("Closing position due to minimum hold time")
+                self.logger.info("Closing position due to minimum hold time")
                 return True
 
             return False
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"❌ Position closure evaluation failed: {e}")
+            self.logger.error(f"❌ Position closure evaluation failed: {e}")
             return False
 
-    def _should_close_by_atr(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    def _should_close_by_atr(
+        self, 
+        position_data: Dict[str, Any], 
+        atr_value: float, 
+        current_price: float
+    ) -> bool:
+        """Check if position should be closed based on ATR."""
+        try:
             entry_price = position_data.get("entry_price", 0)
             if entry_price <= 0:
-    passreturn False
+                return False
 
             # Calculate ATR-based exit levels
             atr_exit_distance = atr_value * self.atr_multiplier
 
             # For long positions
             if position_data.get("side", "").upper() == "LONG":
-    passstop_loss = entry_price - atr_exit_distance
+                stop_loss = entry_price - atr_exit_distance
                 return current_price <= stop_loss
 
             # For short positions
             elif position_data.get("side", "").upper() == "SHORT":
-    passpassstop_loss = entry_price + atr_exit_distance
+                stop_loss = entry_price + atr_exit_distance
                 return current_price >= stop_loss
 
             return False
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"❌ ATR-based closure check failed: {e}")
+            self.logger.error(f"❌ ATR-based closure check failed: {e}")
             return False
 
-    def _should_close_by_time(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    def _should_close_by_time(self, position_data: Dict[str, Any]) -> bool:
+        """Check if position should be closed based on time."""
+        try:
             entry_time = position_data.get("entry_time")
             if not entry_time:
-    passreturn False
+                return False
 
             if isinstance(entry_time, str):
-    passentry_time = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
+                entry_time = datetime.fromisoformat(entry_time.replace('Z', '+00:00'))
 
             hold_time = (datetime.now() - entry_time).total_seconds()
             return hold_time >= self.min_hold_time
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"❌ Time-based closure check failed: {e}")
+            self.logger.error(f"❌ Time-based closure check failed: {e}")
             return False
 
     @handle_errors(
@@ -227,12 +220,13 @@ except Exception as e:
         default_return=None,
         context="position closure execution"
     )
-    async def close_position(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def close_position(
+        self, 
+        position_data: Dict[str, Any], 
+        close_reason: str
+    ) -> Optional[Dict[str, Any]]:
+        """Close a position and record the closure."""
+        try:
             self.logger.info(f"Closing position: {close_reason}")
 
             # Record closure
@@ -255,50 +249,44 @@ except Exception as e:
             return closure_record
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"❌ Position closure failed: {e}")
+            self.logger.error(f"❌ Position closure failed: {e}")
             return None
 
-    def _calculate_pnl(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    def _calculate_pnl(self, position_data: Dict[str, Any]) -> float:
+        """Calculate PnL for a position."""
+        try:
             entry_price = position_data.get("entry_price", 0)
             current_price = position_data.get("current_price", 0)
             quantity = position_data.get("quantity", 0)
             side = position_data.get("side", "").upper()
 
             if entry_price <= 0 or current_price <= 0 or quantity <= 0:
-    passreturn 0.0
+                return 0.0
 
             if side == "LONG":
-    passreturn (current_price - entry_price) * quantity
+                return (current_price - entry_price) * quantity
             elif side == "SHORT":
-    passpassreturn (entry_price - current_price) * quantity
+                return (entry_price - current_price) * quantity
             else:
-    passreturn 0.0
+                return 0.0
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"❌ PnL calculation failed: {e}")
+            self.logger.error(f"❌ PnL calculation failed: {e}")
             return 0.0
 
-    def get_closed_positions(...) -> ...:
-    """..."""
-    passreturn self.closed_positions.copy()
+    def get_closed_positions(self) -> List[Dict[str, Any]]:
+        """Get list of closed positions."""
+        return self.closed_positions.copy()
 
-    def get_position_history(...) -> ...:
-    """..."""
-    passreturn self.position_history.copy()
+    def get_position_history(self) -> List[Dict[str, Any]]:
+        """Get complete position history."""
+        return self.position_history.copy()
 
-    def get_performance_metrics(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    def get_performance_metrics(self) -> Dict[str, Any]:
+        """Get performance metrics for closed positions."""
+        try:
             if not self.closed_positions:
-    passreturn {
+                return {
                     "total_positions": 0,
                     "winning_positions": 0,
                     "losing_positions": 0,
@@ -322,19 +310,19 @@ except Exception as e:
             }
 
         except Exception as e:
-    passpasspasspasspasspasspasspassself.logger.error(f"❌ Performance metrics calculation failed: {e}")
+            self.logger.error(f"❌ Performance metrics calculation failed: {e}")
             return {}
 
-    async def cleanup(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.info("Cleaning up Position Closer...")
+    async def cleanup(self) -> None:
+        """Cleanup resources."""
+        try:
+            self.logger.info("Cleaning up Position Closer...")
 
             # Save position history if needed
             if self.position_history:
-    passself.logger.info(f"Saving {len(self.position_history)} position records")
+                self.logger.info(f"Saving {len(self.position_history)} position records")
 
             self.logger.info("✅ Position Closer cleanup completed")
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"❌ Position Closer cleanup failed: {e}")
+            self.logger.error(f"❌ Position Closer cleanup failed: {e}")

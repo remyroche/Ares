@@ -1,0 +1,23 @@
+2025-09-02 09:08:19,458 - INFO - Processing file: src/tactician/ml_target_validator.py
+2025-09-02 09:08:19,458 - INFO - Performing semantic analysis...
+2025-09-02 09:08:19,458 - INFO - Code quality score: 0.00
+2025-09-02 09:08:19,458 - WARNING - Syntax errors found: 1
+2025-09-02 09:08:19,458 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 09:08:19,460 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:19,465 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:19,466 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:19,468 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:19,469 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:19,470 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:19,471 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:19,473 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:19,474 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:19,475 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:19,479 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 09:08:19,480 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 09:08:19,481 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:19,485 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:19,485 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:08:19,485 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:08:19,488 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:19,490 - INFO - No fixes needed for: src/tactician/ml_target_validator.py

@@ -18,13 +18,13 @@ from src.utils.centralized_decorators import validate_data_quality
 
 
 class MLTargetValidator:
-    passpass"""
+    """
     Enhanced ML Target Validator component with DI, type hints, and robust error handling.
     """
 
-    def __init__(...) -> ...:
-    pass"""..."""
-    passself.config = config
+    def __init__(self, config: Dict[str, Any]) -> None:
+        """Initialize the ML Target Validator."""
+        self.config = config
         self.logger = system_logger.getChild("MLTargetValidator")
 
         # State tracking
@@ -48,17 +48,14 @@ class MLTargetValidator:
         default_return=False,
         context="ML target validator initialization"
     )
-    async def initialize(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def initialize(self) -> bool:
+        """Initialize the ML Target Validator."""
+        try:
             self.logger.info("Initializing ML Target Validator...")
 
             # Validate configuration
             if not self._validate_configuration():
-    passself.logger.error("Invalid ML target validator configuration")
+                self.logger.error("Invalid ML target validator configuration")
                 return False
 
             # Clear history
@@ -69,35 +66,32 @@ except Exception as e:
             return True
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"❌ ML Target Validator initialization failed: {e}")
+            self.logger.error(f"❌ ML Target Validator initialization failed: {e}")
             return False
 
-    def _validate_configuration(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    def _validate_configuration(self) -> bool:
+        """Validate the configuration parameters."""
+        try:
             if self.validation_interval <= 0:
-    passself.logger.error("Validation interval must be positive")
+                self.logger.error("Validation interval must be positive")
                 return False
 
             if self.max_history <= 0:
-    passself.logger.error("Max history must be positive")
+                self.logger.error("Max history must be positive")
                 return False
 
             if not (0 <= self.min_confidence_threshold <= self.max_confidence_threshold <= 1):
-    passself.logger.error("Confidence thresholds must be between 0 and 1")
+                self.logger.error("Confidence thresholds must be between 0 and 1")
                 return False
 
             if self.min_target_value >= self.max_target_value:
-    passself.logger.error("Min target value must be less than max target value")
+                self.logger.error("Min target value must be less than max target value")
                 return False
 
             return True
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Configuration validation failed: {e}")
+            self.logger.error(f"Configuration validation failed: {e}")
             return False
 
     @validate_data_quality(
@@ -113,12 +107,9 @@ except Exception as e:
         default_return=False,
         context="target validation"
     )
-    async def validate_target(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def validate_target(self, target_data: Dict[str, Any]) -> bool:
+        """Validate an ML target."""
+        try:
             self.logger.info("Validating ML target...")
 
             # Extract target components
@@ -129,15 +120,15 @@ except Exception as e:
 
             # Validate target value
             if target_value is None:
-    passself.logger.error(validation_error("Target value is missing"))
+                self.logger.error(validation_error("Target value is missing"))
                 return False
 
             if not isinstance(target_value, (int, float)):
-    passself.logger.error(validation_error("Target value must be numeric"))
+                self.logger.error(validation_error("Target value must be numeric"))
                 return False
 
             if not self.min_target_value <= target_value <= self.max_target_value:
-    passself.logger.error(
+                self.logger.error(
                     validation_error(
                         f"Target value {target_value} outside valid range [{self.min_target_value}, {self.max_target_value}]"
                     )
@@ -146,24 +137,24 @@ except Exception as e:
 
             # Validate confidence
             if not isinstance(confidence, (int, float)):
-    passself.logger.error(validation_error("Confidence must be numeric"))
+                self.logger.error(validation_error("Confidence must be numeric"))
                 return False
 
             if not 0 <= confidence <= 1:
-    passself.logger.error(validation_error("Confidence must be between 0 and 1"))
+                self.logger.error(validation_error("Confidence must be between 0 and 1"))
                 return False
 
             if not self.min_confidence_threshold <= confidence <= self.max_confidence_threshold:
-    passself.logger.warning(
+                self.logger.warning(
                     f"Confidence {confidence:.3f} outside preferred range [{self.min_confidence_threshold}, {self.max_confidence_threshold}]"
                 )
 
             # Validate timestamp
             if timestamp:
-    passtry:
-    passdatetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                try:
+                    datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
                 except ValueError:
-    passpassself.logger.error(validation_error("Invalid timestamp format"))
+                    self.logger.error(validation_error("Invalid timestamp format"))
                     return False
 
             # Record validation
@@ -182,7 +173,7 @@ except Exception as e:
             return True
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"❌ Target validation failed: {e}")
+            self.logger.error(f"❌ Target validation failed: {e}")
 
             # Record failed validation
             validation_record = {
@@ -210,12 +201,9 @@ except Exception as e:
         default_return=False,
         context="prediction validation"
     )
-    async def validate_prediction(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def validate_prediction(self, prediction_data: Dict[str, Any]) -> bool:
+        """Validate an ML prediction."""
+        try:
             self.logger.info("Validating ML prediction...")
 
             # Extract prediction components
@@ -226,15 +214,15 @@ except Exception as e:
 
             # Validate prediction value
             if prediction_value is None:
-    passself.logger.error(validation_error("Prediction value is missing"))
+                self.logger.error(validation_error("Prediction value is missing"))
                 return False
 
             if not isinstance(prediction_value, (int, float)):
-    passself.logger.error(validation_error("Prediction value must be numeric"))
+                self.logger.error(validation_error("Prediction value must be numeric"))
                 return False
 
             if not self.min_target_value <= prediction_value <= self.max_target_value:
-    passself.logger.error(
+                self.logger.error(
                     validation_error(
                         f"Prediction value {prediction_value} outside valid range [{self.min_target_value}, {self.max_target_value}]"
                     )
@@ -243,16 +231,16 @@ except Exception as e:
 
             # Validate confidence
             if not isinstance(confidence, (int, float)):
-    passself.logger.error(validation_error("Confidence must be numeric"))
+                self.logger.error(validation_error("Confidence must be numeric"))
                 return False
 
             if not 0 <= confidence <= 1:
-    passself.logger.error(validation_error("Confidence must be between 0 and 1"))
+                self.logger.error(validation_error("Confidence must be between 0 and 1"))
                 return False
 
             # Validate model name
             if not model_name or not isinstance(model_name, str):
-    passself.logger.error(validation_error("Model name is required"))
+                self.logger.error(validation_error("Model name is required"))
                 return False
 
             # Record validation
@@ -274,7 +262,7 @@ except Exception as e:
             return True
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"❌ Prediction validation failed: {e}")
+            self.logger.error(f"❌ Prediction validation failed: {e}")
 
             # Record failed validation
             validation_record = {
@@ -290,37 +278,34 @@ except Exception as e:
             self._add_to_history(validation_record)
             return False
 
-    def _add_to_history(...) -> ...:
-    """..."""
-    passtry:
-    passself.history.append(record)
+    def _add_to_history(self, record: Dict[str, Any]) -> None:
+        """Add a validation record to history."""
+        try:
+            self.history.append(record)
 
             # Maintain history size limit
             if len(self.history) > self.max_history:
-    passself.history = self.history[-self.max_history:]
+                self.history = self.history[-self.max_history:]
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"❌ Error adding to history: {e}")
+            self.logger.error(f"❌ Error adding to history: {e}")
 
-    def get_validation_history(...) -> ...:
-    """..."""
-    passtry:
-    passif limit:
-    passreturn self.history[-limit:]
+    def get_validation_history(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """Get validation history."""
+        try:
+            if limit:
+                return self.history[-limit:]
             return self.history.copy()
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"❌ Error getting validation history: {e}")
+            self.logger.error(f"❌ Error getting validation history: {e}")
             return []
 
-    def get_validation_statistics(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    def get_validation_statistics(self) -> Dict[str, Any]:
+        """Get validation statistics."""
+        try:
             if not self.history:
-    passreturn {
+                return {
                     "total_validations": 0,
                     "valid_count": 0,
                     "invalid_count": 0,
@@ -346,12 +331,12 @@ except Exception as e:
             }
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"❌ Error calculating validation statistics: {e}")
+            self.logger.error(f"❌ Error calculating validation statistics: {e}")
             return {}
 
-    def get_status(...) -> ...:
-    """..."""
-    passreturn {
+    def get_status(self) -> Dict[str, Any]:
+        """Get current status."""
+        return {
             "is_running": self.is_running,
             "validation_interval": self.validation_interval,
             "history_size": len(self.history),
@@ -359,10 +344,10 @@ except Exception as e:
             "statistics": self.get_validation_statistics()
         }
 
-    async def cleanup(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.info("Cleaning up ML Target Validator...")
+    async def cleanup(self) -> None:
+        """Cleanup resources."""
+        try:
+            self.logger.info("Cleaning up ML Target Validator...")
 
             # Clear history
             self.history.clear()
@@ -371,4 +356,4 @@ except Exception as e:
             self.logger.info("✅ ML Target Validator cleanup completed")
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"❌ ML Target Validator cleanup failed: {e}")
+            self.logger.error(f"❌ ML Target Validator cleanup failed: {e}")

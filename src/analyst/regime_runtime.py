@@ -161,8 +161,9 @@ def get_current_regime_info(
                     try:
                         kid = int(c.split("_")[-1])
                         intensities[kid] = float(row_int[c].iloc[0])
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logging.debug(f"Failed to parse intensity cluster {c}: {e}")
+                        continue
     # Forecasting features
     p_emerge: dict[int, float] = {}
     exit_hazard: float | None = None

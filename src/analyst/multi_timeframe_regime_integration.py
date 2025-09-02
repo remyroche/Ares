@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
+import logging
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent
@@ -61,6 +62,7 @@ class MultiTimeframeRegimeIntegration:
             config: Configuration dictionary
         """
         self.config = config
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.logger = system_logger.getChild("MultiTimeframeRegimeIntegration")
 
         # Initialize Unified regime classifier (1h only)

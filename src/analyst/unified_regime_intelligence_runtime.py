@@ -31,6 +31,7 @@ class UnifiedRegimeIntelligenceRuntime:
     """Runtime for unified regime intelligence with S/R level monitoring."""
 
     def __init__(self, config: dict[str, Any]):
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.config = config
         self.logger = logger
 
@@ -669,7 +670,8 @@ class UnifiedRegimeIntelligenceRuntime:
                         [regime_pred]
                     )[0]
                     enhanced["regime"]["name"] = regime_name
-                except:
+                except (IndexError, KeyError, AttributeError) as e:
+                    self.logger.warning(f"Error decoding regime name: {e}")
                     enhanced["regime"]["name"] = f"REGIME_{regime_pred}"
 
             # Decode intensity scores
@@ -690,7 +692,8 @@ class UnifiedRegimeIntelligenceRuntime:
                         [tpsl_pred]
                     )[0]
                     enhanced["tpsl"]["name"] = tpsl_name
-                except:
+                except (IndexError, KeyError, AttributeError) as e:
+                    self.logger.warning(f"Error decoding tpsl name: {e}")
                     enhanced["tpsl"]["name"] = prediction["tpsl"].get(
                         "direction", "hold"
                     )

@@ -13,6 +13,7 @@ from src.config import CONFIG
 from src.utils.logger import system_logger
 
 from .regime_ensembles.volatile_regime_ensemble import VolatileRegimeEnsemble
+import logging
 
 
 class RegimePredictiveEnsembles:
@@ -23,6 +24,7 @@ class RegimePredictiveEnsembles:
     """
 
     def __init__(self, config):
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.config = config.get("analyst", {})
         self.logger = system_logger.getChild("PredictiveEnsembles.Orchestrator")
 

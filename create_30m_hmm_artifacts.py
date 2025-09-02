@@ -3,8 +3,7 @@
 Script to create missing HMM artifacts for 30m timeframe.
 This will run the step1_7 HMM regime discovery process specifically for 30m.
 """
-
-        import traceback
+import traceback
 from pathlib import Path
 from src.training.steps.step3_hmm_regime_discovery import run_step
 from src.utils.logger import system_logger
@@ -13,12 +12,12 @@ import os
 import sys
 
 # Add the project root to the path
-project_root, Path(__file__).parent
+project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 async def create_30m_hmm_artifacts():
     """Create missing HMM artifacts for 30m timeframe."""
-    logger, system_logger.getChild("Create30mArtifacts")
+    logger = system_logger.getChild("Create30mArtifacts")
 
     logger.info("🔧 Starting creation of missing 30m HMM artifacts...")
 
@@ -35,10 +34,13 @@ async def create_30m_hmm_artifacts():
 
     try:
         # Run the HMM regime discovery for 30m timeframe
-        success=await run_step(
-            symbol, symbol=exchange=exchange,
-            data_dir, data_dir=timeframe=timeframe,
-            lookback_days, lookback_days=lookback_days)
+        success = await run_step(
+            symbol=symbol,
+            exchange=exchange,
+            data_dir=data_dir,
+            timeframe=timeframe,
+            lookback_days=lookback_days,
+        )
 
         if success:
             logger.info("✅ Successfully created 30m HMM artifacts!")

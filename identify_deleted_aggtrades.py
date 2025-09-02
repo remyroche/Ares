@@ -93,7 +93,7 @@ def main():
         print(f"\n📅 MISSING FILES BY MONTH:")
         print("-" * 40)
         for month, dates in sorted(missing_by_month.items()):
-        print(f"{month}: {len(dates)} files")
+            print(f"{month}: {len(dates)} files")
 
     else:
         print("\n🎉 All expected files exist!")

@@ -1,0 +1,192 @@
+================================================================================
+COMPREHENSIVE PROFESSIONAL CODE QUALITY ANALYSIS REPORT
+================================================================================
+
+Generated: 2025-09-02 20:53:39
+Project Root: /workspace/src/utils
+Analysis Duration: 42.68 seconds
+
+🌍 GLOBAL METRICS
+--------------------------------------------------
+Total Directories: 1
+Total Files: 66
+Total Analyzers Run: 15
+Total Issues Found: 0
+Total Issues Fixed: 0
+Success Rate: 100.0%
+Categories Covered: type_checking, advanced_ast, error_handling, auto_fixing, complexity, signatures, architecture, syntax, dependencies, concurrency, dead_code, call_graph, code_duplication
+
+📁 DIRECTORY ANALYSIS SUMMARIES
+================================================================================
+
+📂 root/
+   Files: 66 (analyzed: 66)
+   Issues: 0 (fixed: 0)
+   Analyzers: 15
+   Categories: type_checking, advanced_ast, error_handling, auto_fixing, complexity, signatures, architecture, syntax, dependencies, concurrency, dead_code, call_graph, code_duplication
+   Processing Time: 42.68s
+
+🔍 ANALYSIS BY CATEGORY
+================================================================================
+
+📊 AUTO_FIXING
+   Files Analyzed: 66
+   Issues Found: 0
+   Issues Fixed: 0
+
+📊 SYNTAX
+   Files Analyzed: 66
+   Issues Found: 0
+   Issues Fixed: 0
+
+📊 COMPLEXITY
+   Files Analyzed: 66
+   Issues Found: 0
+   Issues Fixed: 0
+
+📊 DEAD_CODE
+   Files Analyzed: 66
+   Issues Found: 0
+   Issues Fixed: 0
+
+📊 DEPENDENCIES
+   Files Analyzed: 66
+   Issues Found: 0
+   Issues Fixed: 0
+
+📊 CALL_GRAPH
+   Files Analyzed: 66
+   Issues Found: 0
+   Issues Fixed: 0
+
+📊 SIGNATURES
+   Files Analyzed: 66
+   Issues Found: 0
+   Issues Fixed: 0
+
+📊 TYPE_CHECKING
+   Files Analyzed: 66
+   Issues Found: 0
+   Issues Fixed: 0
+
+📊 ADVANCED_AST
+   Files Analyzed: 66
+   Issues Found: 0
+   Issues Fixed: 0
+
+📊 ARCHITECTURE
+   Files Analyzed: 66
+   Issues Found: 0
+   Issues Fixed: 0
+
+📊 CODE_DUPLICATION
+   Files Analyzed: 66
+   Issues Found: 0
+   Issues Fixed: 0
+
+📊 ERROR_HANDLING
+   Files Analyzed: 66
+   Issues Found: 0
+   Issues Fixed: 0
+
+📊 CONCURRENCY
+   Files Analyzed: 66
+   Issues Found: 0
+   Issues Fixed: 0
+
+⚡ ANALYZER PERFORMANCE
+================================================================================
+
+🔧 auto_fixer
+   Files Processed: 66
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 0.00s
+
+🔧 sequential_fixer
+   Files Processed: 66
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 0.00s
+
+🔧 syntax
+   Files Processed: 66
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 0.00s
+
+🔧 complexity
+   Files Processed: 66
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 0.00s
+
+🔧 dead_code
+   Files Processed: 66
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 0.00s
+
+🔧 dependencies
+   Files Processed: 66
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 0.00s
+
+🔧 imports
+   Files Processed: 66
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 0.00s
+
+🔧 call_graph
+   Files Processed: 66
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 0.00s
+
+🔧 signatures
+   Files Processed: 66
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 0.00s
+
+🔧 type_checking
+   Files Processed: 66
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 39.12s
+
+🔧 advanced_ast
+   Files Processed: 66
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 1.49s
+
+🔧 architecture
+   Files Processed: 66
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 0.62s
+
+🔧 code_duplication
+   Files Processed: 66
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 0.43s
+
+🔧 error_handling
+   Files Processed: 66
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 0.41s
+
+🔧 concurrency
+   Files Processed: 66
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 0.60s
+
+================================================================================
+END OF COMPREHENSIVE PROFESSIONAL ANALYSIS REPORT
+================================================================================

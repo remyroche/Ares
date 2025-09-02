@@ -3,8 +3,9 @@ Minimal file utilities for code quality analysis.
 """
 
 import os
+import ast
 from pathlib import Path
-from typing import List, Pattern
+from typing import List, Pattern, Dict
 import fnmatch
 
 
@@ -49,3 +50,39 @@ def _should_exclude(path: str, exclude_patterns: List[str]) -> bool:
             return True
     
     return False
+
+
+def get_file_dependencies(file_path: str) -> Dict[str, List[str]]:
+    """Extract import dependencies from a Python file.
+    
+    Returns a dictionary with keys:
+    - 'imports': list of top-level modules imported via `import x`
+    - 'from_imports': list of fully qualified names imported via `from x import y`
+    - 'relative_imports': list of relative imports like `.module.name`
+    """
+    dependencies: Dict[str, List[str]] = {
+        "imports": [],
+        "from_imports": [],
+        "relative_imports": []
+    }
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        tree = ast.parse(content)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    # store the module root (e.g., numpy from numpy.linalg)
+                    dependencies["imports"].append(alias.name)
+            elif isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                for alias in node.names:
+                    if module.startswith("."):
+                        dependencies["relative_imports"].append(f"{module}.{alias.name}")
+                    else:
+                        full_name = f"{module}.{alias.name}" if module else alias.name
+                        dependencies["from_imports"].append(full_name)
+    except Exception:
+        # Fail silently; analyzers will handle empty deps
+        pass
+    return dependencies

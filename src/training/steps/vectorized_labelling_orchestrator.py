@@ -23,6 +23,8 @@ import pandas as pd
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+from src.training.hmm_regime_barrier_optimizer import HMMRegimeBarrierOptimizer
+from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import apply_regime_aware_triple_barrier_labeling_with_barriers
 
 
 # -----------------------------------------------------------------------------
@@ -99,6 +101,13 @@ class VectorizedLabellingOrchestrator:
         )
         self.enable_parquet_saving = self.orchestrator_config.get(
             "enable_parquet_saving", True
+        )
+        # Auto HMM barrier recalculation for step4 labeling
+        self.auto_recalculate_hmm_barriers = bool(
+            self.orchestrator_config.get("auto_recalculate_hmm_barriers", True)
+        )
+        self.hmm_barrier_regime_column = str(
+            self.orchestrator_config.get("hmm_barrier_regime_column", "hmm_regime")
         )
         # Strict feature shapes mode: treat scalar features as errors
         self.strict_feature_shapes = bool(
@@ -420,9 +429,45 @@ class VectorizedLabellingOrchestrator:
 
             # 3. Triple barrier labeling
             self.logger.info("🏷️ Applying triple barrier labeling...")
-            labeled_data = self.triple_barrier_labeler.apply_triple_barrier_labeling_vectorized(  # noqa: E501
-                price_data.copy()
-            )
+            labeled_data = None
+            try:
+                if self.auto_recalculate_hmm_barriers and self.hmm_barrier_regime_column in price_data.columns:
+                    self.logger.info(
+                        f"🔁 Auto-recalculating HMM regime barriers using column '{self.hmm_barrier_regime_column}'..."
+                    )
+                    hmm_optimizer = HMMRegimeBarrierOptimizer(
+                        self.config.get("hmm_regime_barrier_optimizer", {})
+                    )
+                    _ = await hmm_optimizer.optimize_regime_barriers(
+                        price_data, regime_column=self.hmm_barrier_regime_column
+                    )
+                    barriers_path = hmm_optimizer.export_barrier_map()
+                    self.logger.info(
+                        f"✅ HMM barriers ready at {barriers_path}. Applying regime-aware labeling..."
+                    )
+                    labeled_data = apply_regime_aware_triple_barrier_labeling_with_barriers(
+                        data=price_data.copy(),
+                        barrier_map_or_path=barriers_path,
+                        regime_column=self.hmm_barrier_regime_column,
+                        binary_classification=True,
+                        default_time_barrier_minutes=int(self.orchestrator_config.get("time_barrier_minutes", 30)),
+                        default_max_lookahead=int(self.orchestrator_config.get("max_lookahead", 100)),
+                    )
+                else:
+                    if self.auto_recalculate_hmm_barriers:
+                        self.logger.warning(
+                            f"⚠️ auto_recalculate_hmm_barriers enabled but regime column '{self.hmm_barrier_regime_column}' not found; falling back to default labeling."
+                        )
+                    labeled_data = self.triple_barrier_labeler.apply_triple_barrier_labeling_vectorized(  # noqa: E501
+                        price_data.copy()
+                    )
+            except Exception as e:
+                self.logger.warning(
+                    f"⚠️ Regime-aware labeling path failed ({e}); falling back to default labeler."
+                )
+                labeled_data = self.triple_barrier_labeler.apply_triple_barrier_labeling_vectorized(  # noqa: E501
+                    price_data.copy()
+                )
 
             # 4. Combine features and labels
             self.logger.info("🔗 Combining features and labels...")

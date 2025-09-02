@@ -241,15 +241,16 @@ class LabelingStep:
                 self.logger.error("❌ Failed to generate comprehensive labels")
                 return False
 
-            # Save results
-            output_path = Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_labeled_data.parquet"
-            output_path.parent.mkdir(parents=True, exist_ok=True)
+            # Save results under standardized labeled_data directory
+            labeled_dir = Path(data_dir) / "training" / "labeled_data"
+            labeled_dir.mkdir(parents=True, exist_ok=True)
+            output_path = labeled_dir / f"{exchange}_{symbol}_{timeframe}_labeled_data.parquet"
             
             labeled_data.to_parquet(output_path)
             self.logger.info(f"✅ Labeled data saved to {output_path}")
 
-            # Save labeling metadata
-            metadata_path = Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_labeling_metadata.json"
+            # Save labeling metadata alongside labeled data
+            metadata_path = labeled_dir / f"{exchange}_{symbol}_{timeframe}_labeling_metadata.json"
             metadata = {
                 "symbol": symbol,
                 "exchange": exchange,

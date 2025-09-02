@@ -1,15 +1,15 @@
 # src/utils/parquet_utils.py
 
-from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-from typing import Any
-import os
-
-import shutil
 import gc
+import os
+import shutil
+from typing import Any
+
 import pandas as pd
 
-from src.utils.error_handler import handle_file_operations, handle_data_processing_errors
+from src.utils.error_handler import handle_data_processing_errors, handle_file_operations
+from src.utils.logger import system_logger
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 
 class ParquetUtils:
@@ -18,7 +18,9 @@ class ParquetUtils:
     def __init__(self) -> None:
         self.logger = system_logger.getChild("ParquetUtils")
 
-    @handle_file_operations(default_return={"valid": False, "error": "validation_error"}, context="ParquetUtils.validate_parquet_file")
+    @handle_file_operations(
+        default_return={"valid": False, "error": "validation_error"}, context="ParquetUtils.validate_parquet_file"
+    )
     def validate_parquet_file(self, file_path: str) -> dict[str, Any]:
         """
         Validate a parquet file and return detailed information about its structure.
@@ -96,8 +98,7 @@ class ParquetUtils:
         for idx, engine in enumerate(engines, start=1):
             try:
                 strategy_msg = (
-                    f"   Trying strategy {idx}/{len(engines)}: "
-                    f"{'default' if engine is None else engine} engine"
+                    f"   Trying strategy {idx}/{len(engines)}: " f"{'default' if engine is None else engine} engine"
                 )
                 self.logger.info(strategy_msg)
                 read_kwargs = dict(kwargs)

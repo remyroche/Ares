@@ -213,7 +213,8 @@ class FeatureOutputValidator:
         )
 
         structure_valid = self._validate_output_structure(
-            features_df, validation_results,
+            features_df,
+            validation_results,
         )
         if not structure_valid:
             print(
@@ -288,7 +289,9 @@ class FeatureOutputValidator:
         )
 
         value_valid = self._validate_feature_values(
-            features_df, method_name, validation_results,
+            features_df,
+            method_name,
+            validation_results,
         )
         if not value_valid:
             print(
@@ -326,7 +329,8 @@ class FeatureOutputValidator:
         )
 
         relationship_valid = self._validate_feature_relationships(
-            features_df, validation_results,
+            features_df,
+            validation_results,
         )
         if not relationship_valid:
             print(
@@ -365,7 +369,9 @@ class FeatureOutputValidator:
             )
 
             consistency_valid = self._validate_input_output_consistency(
-                features_df, input_data_shape, validation_results,
+                features_df,
+                input_data_shape,
+                validation_results,
             )
             if not consistency_valid:
                 print(
@@ -403,7 +409,9 @@ class FeatureOutputValidator:
         )
 
         downstream_valid = self._validate_downstream_compatibility(
-            features_df, method_name, validation_results,
+            features_df,
+            method_name,
+            validation_results,
         )
         if not downstream_valid:
             print(
@@ -440,9 +448,7 @@ class FeatureOutputValidator:
             f"🔍 [FEATURE OUTPUT VALIDATION] Calculating quality score for {method_name}",
         )
 
-        validation_results["output_quality_score"] = (
-            self._calculate_output_quality_score(validation_results)
-        )
+        validation_results["output_quality_score"] = self._calculate_output_quality_score(validation_results)
 
         print(
             f"📊 [FEATURE OUTPUT VALIDATION] Quality score for {method_name}: {validation_results['output_quality_score']:.2f}",
@@ -452,9 +458,7 @@ class FeatureOutputValidator:
         )
 
         # Generate recommendations
-        validation_results["recommendations"] = (
-            self._generate_output_recommendations(validation_results)
-        )
+        validation_results["recommendations"] = self._generate_output_recommendations(validation_results)
 
         if validation_results["validation_passed"]:
             self.logger.info(
@@ -469,13 +473,11 @@ class FeatureOutputValidator:
 
         return validation_results
 
-    def _convert_features_to_dataframe(
-        self, features: dict[str, Any] | pd.DataFrame
-    ) -> pd.DataFrame | None:
+    def _convert_features_to_dataframe(self, features: dict[str, Any] | pd.DataFrame) -> pd.DataFrame | None:
         """Convert features to DataFrame for validation."""
         # Handle None input
         if features is None:
-        # Fallback implementation for features
+            # Fallback implementation for features
             self.logger.warning(
                 "⚠️ [FEATURE OUTPUT VALIDATION] Features input is None",
             )
@@ -494,9 +496,7 @@ class FeatureOutputValidator:
 
             try:
                 # Handle different feature dict formats
-                if all(
-                    isinstance(v, (pd.Series, pd.DataFrame)) for v in features.values()
-                ):
+                if all(isinstance(v, (pd.Series, pd.DataFrame)) for v in features.values()):
                     # Features are Series/DataFrames
                     feature_series: list[pd.Series] = []
                     for name, series in features.items():
@@ -511,9 +511,7 @@ class FeatureOutputValidator:
                     if feature_series:
                         return pd.concat(feature_series, axis=1)
 
-                if all(
-                    isinstance(v, (int, float, np.generic)) for v in features.values()
-                ):
+                if all(isinstance(v, (int, float, np.generic)) for v in features.values()):
                     # Features are scalar values
                     return pd.DataFrame([features])
 
@@ -522,8 +520,8 @@ class FeatureOutputValidator:
                     feature_series = []
                     for name, value in features.items():
                         if value is None:
-        # Fallback implementation for value
-        # Fallback implementation for value
+                            # Fallback implementation for value
+                            # Fallback implementation for value
                             continue
                         if isinstance(value, np.ndarray):
                             # Convert numpy array to pandas Series
@@ -557,7 +555,8 @@ class FeatureOutputValidator:
                             if len(series) < max_length:
                                 # Pad shorter series with NaN
                                 padded_series = pd.Series(
-                                    [np.nan] * max_length, name=series.name,
+                                    [np.nan] * max_length,
+                                    name=series.name,
                                 )
                                 padded_series.iloc[: len(series)] = series.values
                                 aligned_series.append(padded_series)
@@ -579,8 +578,8 @@ class FeatureOutputValidator:
                     feature_series = []
                     for name, value in features.items():
                         if value is None:
-        # Fallback implementation for value
-        # Fallback implementation for value
+                            # Fallback implementation for value
+                            # Fallback implementation for value
                             continue
                         if isinstance(value, pd.Series):
                             feature_series.append(value.rename(name))
@@ -612,7 +611,9 @@ class FeatureOutputValidator:
         return None
 
     def _validate_output_structure(
-        self, features_df: pd.DataFrame, results: dict[str, Any],
+        self,
+        features_df: pd.DataFrame,
+        results: dict[str, Any],
     ) -> bool:
         """Validate basic output structure."""
         self.logger.info("Validating output structure...")
@@ -655,7 +656,9 @@ class FeatureOutputValidator:
         return True
 
     def _validate_data_types(
-        self, features_df: pd.DataFrame, results: dict[str, Any],
+        self,
+        features_df: pd.DataFrame,
+        results: dict[str, Any],
     ) -> bool:
         """Validate data types of features."""
         self.logger.info("Validating data types...")
@@ -713,7 +716,10 @@ class FeatureOutputValidator:
         return {}
 
     def _validate_feature_values(
-        self, features_df: pd.DataFrame, method_name: str, results: dict[str, Any],
+        self,
+        features_df: pd.DataFrame,
+        method_name: str,
+        results: dict[str, Any],
     ) -> bool:
         """Validate feature values for common issues."""
         self.logger.info("Validating feature values...")
@@ -740,10 +746,7 @@ class FeatureOutputValidator:
                         f"High NaN percentage in {col}: {nan_percentage:.3f} (threshold: {max_nan})",
                     )
                     return False
-                if (
-                    nan_percentage
-                    > self.config["warning_thresholds"]["max_nan_percentage"]
-                ):
+                if nan_percentage > self.config["warning_thresholds"]["max_nan_percentage"]:
                     results["warnings"].append(
                         f"Moderate NaN percentage in {col}: {nan_percentage:.3f}",
                     )
@@ -764,10 +767,7 @@ class FeatureOutputValidator:
                         f"High infinite percentage in {col}: {inf_percentage:.3f} (threshold: {max_inf})",
                     )
                     return False
-                if (
-                    inf_percentage
-                    > self.config["warning_thresholds"]["max_infinite_percentage"]
-                ):
+                if inf_percentage > self.config["warning_thresholds"]["max_infinite_percentage"]:
                     results["warnings"].append(
                         f"Moderate infinite percentage in {col}: {inf_percentage:.3f}",
                     )
@@ -788,13 +788,9 @@ class FeatureOutputValidator:
             # Check constant values
             if self.config["validation_checks"]["check_constant_values"]:
                 constant_percentage = (
-                    (series == series.mode().iloc[0]).sum() / float(len(series))
-                    if len(series.mode()) > 0
-                    else 0.0
+                    (series == series.mode().iloc[0]).sum() / float(len(series)) if len(series.mode()) > 0 else 0.0
                 )
-                max_constant = self.config["critical_thresholds"][
-                    "max_constant_percentage"
-                ]
+                max_constant = self.config["critical_thresholds"]["max_constant_percentage"]
 
                 if constant_percentage > max_constant:
                     results["critical_issues"].append(
@@ -816,12 +812,7 @@ class FeatureOutputValidator:
                 extreme_count = int(((series > upper_bound) | (series < lower_bound)).sum())
                 extreme_percentage = extreme_count / max(len(series), 1)
 
-                if (
-                    extreme_percentage
-                    > self.config["critical_thresholds"][
-                        "max_extreme_values_percentage"
-                    ]
-                ):
+                if extreme_percentage > self.config["critical_thresholds"]["max_extreme_values_percentage"]:
                     self.logger.warning(
                         f"High extreme values in {col}: {extreme_percentage:.3f}",
                     )
@@ -833,7 +824,9 @@ class FeatureOutputValidator:
         return True
 
     def _validate_feature_relationships(
-        self, features_df: pd.DataFrame, results: dict[str, Any],
+        self,
+        features_df: pd.DataFrame,
+        results: dict[str, Any],
     ) -> bool:
         """Validate relationships between features."""
         self.logger.info("Validating feature relationships...")
@@ -846,10 +839,7 @@ class FeatureOutputValidator:
             for i in range(len(corr_matrix.columns)):
                 for j in range(i + 1, len(corr_matrix.columns)):
                     corr_val = float(corr_matrix.iloc[i, j])
-                    if (
-                        corr_val
-                        > self.config["warning_thresholds"]["max_correlation_threshold"]
-                    ):
+                    if corr_val > self.config["warning_thresholds"]["max_correlation_threshold"]:
                         col_pair = (
                             str(corr_matrix.columns[i]),
                             str(corr_matrix.columns[j]),
@@ -865,7 +855,7 @@ class FeatureOutputValidator:
         if self.config["validation_checks"]["check_duplicate_features"]:
             duplicate_features: list[tuple[str, str]] = []
             for i, col1 in enumerate(features_df.columns):
-                for j, col2 in enumerate(features_df.columns[i + 1 :], i + 1):
+                for j, col2 in enumerate(features_df.columns[i + 1:], i + 1):
                     if features_df[col1].equals(features_df[col2]):
                         duplicate_features.append((str(col1), str(col2)))
 
@@ -930,25 +920,31 @@ class FeatureOutputValidator:
 
         # Check compatibility with model training
         model_compatible = self._validate_model_training_compatibility(
-            features_df, results,
+            features_df,
+            results,
         )
         if not model_compatible:
             return False
 
         # Check compatibility with feature selection
         selection_compatible = self._validate_feature_selection_compatibility(
-            features_df, results,
+            features_df,
+            results,
         )
         if not selection_compatible:
             return False
 
         # Check compatibility with regime-specific requirements
         return self._validate_regime_compatibility(
-            features_df, method_name, results,
+            features_df,
+            method_name,
+            results,
         )
 
     def _validate_sklearn_compatibility(
-        self, features_df: pd.DataFrame, results: dict[str, Any],
+        self,
+        features_df: pd.DataFrame,
+        results: dict[str, Any],
     ) -> bool:
         """Validate compatibility with sklearn preprocessing."""
 
@@ -1007,7 +1003,9 @@ class FeatureOutputValidator:
         return True
 
     def _validate_model_training_compatibility(
-        self, features_df: pd.DataFrame, results: dict[str, Any],
+        self,
+        features_df: pd.DataFrame,
+        results: dict[str, Any],
     ) -> bool:
         """Validate compatibility with model training."""
 
@@ -1018,9 +1016,7 @@ class FeatureOutputValidator:
             if pd.api.types.is_numeric_dtype(series.dtype) and float(series.var()) == 0.0:
                 zero_var_features.append(str(col))
 
-        zero_var_percentage = (
-            len(zero_var_features) / max(len(features_df.columns), 1)
-        )
+        zero_var_percentage = len(zero_var_features) / max(len(features_df.columns), 1)
         if zero_var_percentage > 0.5:  # More than 50% zero variance
             results["warnings"].append(
                 f"Too many zero-variance features: {zero_var_percentage:.2f}",
@@ -1059,7 +1055,9 @@ class FeatureOutputValidator:
         return True
 
     def _validate_feature_selection_compatibility(
-        self, features_df: pd.DataFrame, results: dict[str, Any],
+        self,
+        features_df: pd.DataFrame,
+        results: dict[str, Any],
     ) -> bool:
         """Validate compatibility with feature selection methods."""
 
@@ -1101,7 +1099,10 @@ class FeatureOutputValidator:
         return True
 
     def _validate_regime_compatibility(
-        self, features_df: pd.DataFrame, method_name: str, results: dict[str, Any],
+        self,
+        features_df: pd.DataFrame,
+        method_name: str,
+        results: dict[str, Any],
     ) -> bool:
         """Validate compatibility with regime-specific requirements."""
 
@@ -1136,10 +1137,7 @@ class FeatureOutputValidator:
             volatility_features = [
                 str(col)
                 for col in features_df.columns
-                if any(
-                    keyword in str(col).lower()
-                    for keyword in ["volatility", "std", "variance", "atr", "bbands"]
-                )
+                if any(keyword in str(col).lower() for keyword in ["volatility", "std", "variance", "atr", "bbands"])
             ]
 
             if not volatility_features:
@@ -1153,8 +1151,7 @@ class FeatureOutputValidator:
                     str(col)
                     for col in features_df.columns
                     if any(
-                        keyword in str(col).lower()
-                        for keyword in ["volume", "trade", "bid", "ask", "spread", "impact"]
+                        keyword in str(col).lower() for keyword in ["volume", "trade", "bid", "ask", "spread", "impact"]
                     )
                 ]
 
@@ -1168,10 +1165,7 @@ class FeatureOutputValidator:
                 wavelet_features = [
                     str(col)
                     for col in features_df.columns
-                    if any(
-                        keyword in str(col).lower()
-                        for keyword in ["wavelet", "cwt", "db", "haar", "sym"]
-                    )
+                    if any(keyword in str(col).lower() for keyword in ["wavelet", "cwt", "db", "haar", "sym"])
                 ]
 
                 if not wavelet_features:
@@ -1254,9 +1248,7 @@ class FeatureOutputValidator:
         if model_warnings:
             recommendations.append("Review model training compatibility issues")
 
-        selection_warnings = [
-            w for w in results["warnings"] if "selection" in w.lower()
-        ]
+        selection_warnings = [w for w in results["warnings"] if "selection" in w.lower()]
         if selection_warnings:
             recommendations.append(
                 "Consider feature engineering improvements for better selection",
@@ -1272,9 +1264,7 @@ class FeatureOutputValidator:
         if temporal_warnings:
             recommendations.append("Include temporal features for time series analysis")
 
-        volatility_warnings = [
-            w for w in results["warnings"] if "volatility" in w.lower()
-        ]
+        volatility_warnings = [w for w in results["warnings"] if "volatility" in w.lower()]
         if volatility_warnings:
             recommendations.append("Add volatility features for regime detection")
 
@@ -1282,6 +1272,7 @@ class FeatureOutputValidator:
 
 
 # Convenience function for easy integration
+
 
 def validate_feature_output(
     features: dict[str, Any] | pd.DataFrame,

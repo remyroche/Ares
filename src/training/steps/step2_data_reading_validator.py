@@ -118,8 +118,24 @@ async def run_validator(
             
             # Check for timestamp column
             if "timestamp" not in data.columns:
-                logger.warning("⚠️ Timestamp column not found")
-            
+                logger.error("❌ Timestamp column not found")
+                return {
+                    "step_name": "step2_data_reading",
+                    "validation_passed": False,
+                    "error": "Missing required 'timestamp' column",
+                }
+
+            # Enforce acceptable timestamp dtype (datetime64 or numeric milliseconds)
+            ts_is_datetime = data["timestamp"].dtype.kind == "M"
+            ts_is_numeric = str(data["timestamp"].dtype).startswith("int") or str(data["timestamp"].dtype).startswith("float")
+            if not (ts_is_datetime or ts_is_numeric):
+                logger.error("❌ 'timestamp' must be datetime64 or numeric (ms)")
+                return {
+                    "step_name": "step2_data_reading",
+                    "validation_passed": False,
+                    "error": "'timestamp' must be datetime64 or numeric (ms)",
+                }
+
             # Check for NaN values
             nan_count = data[required_columns].isna().sum().sum()
             if nan_count > 0:

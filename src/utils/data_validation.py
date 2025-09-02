@@ -1,14 +1,14 @@
 # src/utils/data_validation.py
 
 from __future__ import annotations
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
-from typing import Any, Optional, Union, overload
 import logging
+from typing import Any, Optional, Union, overload
 
 import numpy as np
 import pandas as pd
 
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 logger = logging.getLogger(__name__)
 
@@ -170,7 +170,7 @@ def safe_division(
     try:
         # Series / Series
         if isinstance(numerator, pd.Series) and isinstance(denominator, pd.Series):
-            with np.errstate(divide="ignore", invalid="ignore"): 
+            with np.errstate(divide="ignore", invalid="ignore"):
                 result = numerator / denominator
             zeros = (denominator == 0).sum()
             smalls = ((denominator != 0) & (np.abs(denominator) < 1e-12)).sum()
@@ -186,7 +186,8 @@ def safe_division(
 
         # ndarray/scalars
         if isinstance(numerator, (np.ndarray, float, int)) and isinstance(
-            denominator, (np.ndarray, float, int),
+            denominator,
+            (np.ndarray, float, int),
         ):
             num_arr = np.asarray(numerator)
             den_arr = np.asarray(denominator)

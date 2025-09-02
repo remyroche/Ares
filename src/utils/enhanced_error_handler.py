@@ -9,19 +9,22 @@ This module provides specialized error handling for training steps with:
 - Validation integration
 """
 
-from collections.abc import Callable
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-from contextlib import contextmanager
-from typing import Any, Awaitable, Callable as TypingCallable, TypeVar, cast
 import asyncio
 import functools
 import logging
 import time
 import traceback
-
+from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any, Awaitable
+from typing import Callable as TypingCallable
+from typing import TypeVar, cast
+
 import pandas as pd
+
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 # Type variables
 T = TypeVar("T")
@@ -216,9 +219,7 @@ class TrainingStepErrorHandler:
                 StepStatus.NOT_STARTED: "⏳",
             }.get(context.status, "❓")
 
-            duration_str = (
-                f"{context.get_duration():.2f}s" if context.end_time else "running"
-            )
+            duration_str = f"{context.get_duration():.2f}s" if context.end_time else "running"
             self.logger.info(
                 f"{status_emoji} {step_name}: {context.status.value} ({duration_str})",
             )
@@ -299,9 +300,7 @@ def training_step_error_handler(
                 # Log performance metrics
                 if log_performance:
                     context.performance_metrics["execution_time"] = execution_time
-                    context.performance_metrics["memory_usage"] = (
-                        "N/A"  # Could be enhanced
-                    )
+                    context.performance_metrics["memory_usage"] = "N/A"  # Could be enhanced
                     handler.log_step_progress(
                         step_name,
                         f"Performance: {execution_time:.2f}s execution time",

@@ -178,7 +178,8 @@ class TripleBarrierMethodStep:
             
             # Combine data with labels
             result_data = data.copy()
-            result_data['label'] = labeled_data['label']
+            # Align with downstream expectation: 'triple_barrier_label'
+            result_data['triple_barrier_label'] = labeled_data['label']
             result_data['potential_profit_pct'] = labeled_data['potential_profit_pct']
             
             # Create enhanced labels that include profit information
@@ -233,8 +234,8 @@ class TripleBarrierMethodStep:
             metrics_calculated = {
                 "triple_barrier_success": 1.0,
                 "total_samples": len(result_data) if result_data is not None else 0,
-                "labeled_samples": len(result_data[result_data['label'].notna()]) if result_data is not None else 0,
-                "label_distribution": result_data['label'].value_counts().to_dict() if result_data is not None and 'label' in result_data.columns else {},
+                "labeled_samples": len(result_data[result_data['triple_barrier_label'].notna()]) if result_data is not None and 'triple_barrier_label' in result_data.columns else 0,
+                "label_distribution": result_data['triple_barrier_label'].value_counts().to_dict() if result_data is not None and 'triple_barrier_label' in result_data.columns else {},
             }
             
             # Create training input for report
@@ -289,7 +290,7 @@ class TripleBarrierMethodStep:
                     additional_metadata={
                         "artifact_type": "triple_barrier_labels",
                         "dataframe_shape": list(result_data.shape),
-                        "label_distribution": result_data['label'].value_counts().to_dict() if 'label' in result_data.columns else {},
+                        "label_distribution": result_data['triple_barrier_label'].value_counts().to_dict() if 'triple_barrier_label' in result_data.columns else {},
                         "asset": symbol,
                         "lookback_period": self.config.get("lookback_days", 1095),
                         "project_version": self.config.get("project_version", "1.0.0"),

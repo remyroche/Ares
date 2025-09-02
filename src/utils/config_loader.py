@@ -1,12 +1,13 @@
 # src/utils/config_loader.py
 
-from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-from typing import Any
 import os
+from typing import Any
 
 from src.utils.error_handler import handle_errors
-from src.utils.warning_symbols import yaml, error, missing
+from src.utils.logger import system_logger
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+from src.utils.warning_symbols import error, missing, yaml
+
 
 class ConfigLoader:
     """
@@ -87,7 +88,6 @@ class ConfigLoader:
         default_return={},
         context="combined sizing config loading",
     )
-
     def load_combined_sizing_config(self, config_dir: str = "config") -> dict[str, Any]:
         """
         Load combined position and leverage sizing configuration.
@@ -106,7 +106,6 @@ class ConfigLoader:
         default_return={},
         context="config validation",
     )
-
     def validate_config(self, config: dict[str, Any], config_type: str) -> bool:
         """
         Validate configuration structure.
@@ -165,7 +164,6 @@ class ConfigLoader:
         default_return={},
         context="config merging",
     )
-
     def merge_configs(self, *configs: dict[str, Any]) -> dict[str, Any]:
         """
         Merge multiple configuration dictionaries.
@@ -193,11 +191,7 @@ class ConfigLoader:
             source: Source dictionary to merge from
         """
         for key, value in source.items():
-            if (
-                key in target
-                and isinstance(target[key], dict)
-                and isinstance(value, dict)
-            ):
+            if key in target and isinstance(target[key], dict) and isinstance(value, dict):
                 self._deep_merge(target[key], value)
             else:
                 target[key] = value
@@ -207,8 +201,9 @@ class ConfigLoader:
         default_return={},
         context="config loading with fallback",
     )
-
-    def load_config_with_fallback(self, primary_config: str,
+    def load_config_with_fallback(
+        self,
+        primary_config: str,
         fallback_config: str = "config",
         config_dir: str = "config",
     ) -> dict[str, Any]:
@@ -244,7 +239,7 @@ class ConfigLoader:
         )
         return {}
 
-# Convenience functions
+    # Convenience functions
 
     def load_position_sizing_config(config_dir: str = "config") -> dict[str, Any]:
         """Load position sizing configuration."""

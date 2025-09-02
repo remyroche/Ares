@@ -1,0 +1,24 @@
+2025-09-02 08:37:32,878 - INFO - Processing file: src/components/modular_strategist.py
+2025-09-02 08:37:32,879 - INFO - Performing semantic analysis...
+2025-09-02 08:37:32,879 - INFO - Code quality score: 0.00
+2025-09-02 08:37:32,879 - WARNING - Syntax errors found: 1
+2025-09-02 08:37:32,879 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:37:32,882 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:32,885 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:32,887 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:32,890 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:32,893 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:32,896 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:32,898 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:32,901 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:32,904 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:32,907 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:32,910 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:32,912 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:32,915 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:32,919 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:32,927 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:32,930 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:32,930 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:37:32,937 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:32,942 - INFO - No fixes needed for: src/components/modular_strategist.py

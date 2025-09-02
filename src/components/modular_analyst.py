@@ -1,937 +1,505 @@
 # src/components/modular_analyst.py
 
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Union
+import asyncio
+import json
+import traceback
+
 from src.utils.logger import system_logger
-from typing import Any
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import error, failed, initialization_error, invalid, missing
 
+
 class ModularAnalyst:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class ModularAnalyst:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class ModularAnalyst:
-    pass"""
-Enhanced modular analyst with comprehensive error handling and type safety.
-"""
-
-def __init__(...) -> ...:
-    pass"""..."""
-    passself.config: dict[str, Any] = config
-self.logger = system_logger.getChild("ModularAnalyst")
-
-# Analysis state
-self.is_analyzing: bool = False
-self.analysis_results: dict[str, Any] = {}
-self.analysis_history: list[dict[str, Any]] = []
-
-# Configuration
-self.analyst_config: dict[str, Any] = self.config.get("modular_analyst", {})
-self.analysis_interval: int = self.analyst_config.get("analysis_interval", 60)
-self.max_analysis_history: int = self.analyst_config.get(
-"max_analysis_history",
-100,
-)
-self.enable_technical_analysis: bool = self.analyst_config.get(
-"enable_technical_analysis",
-True,
-)
-self.enable_fundamental_analysis: bool = self.analyst_config.get(
-"enable_fundamental_analysis",
-True,
-)
-
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid modular analyst configuration"),
-AttributeError: (False, "Missing required analyst parameters"),
-KeyError: (False, "Missing configuration keys"),
-},
-default_return=False,
-context="modular analyst initialization",
-)
-async def initialize(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-self.logger.info("Initializing Modular Analyst...")
-
-# Load analyst configuration
-await self._load_analyst_configuration()
-
-# Validate configuration
-if not self._validate_configuration():
-    passself.logger.error(invalid("Invalid configuration for modular analyst"))
-return False
-
-# Initialize analysis modules
-await self._initialize_analysis_modules()
-
-self.logger.info("✅ Modular Analyst initialization completed successfully")
-return True
-
-except Exception as e:
-    passpasspasspasspasspasspasspassself.logger.error(failed(f"❌ Modular Analyst initialization failed: {e}"))
-return False
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="analyst configuration loading",
-)
-async def _load_analyst_configuration(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Set default analyst parameters
-self.analyst_config.setdefault("analysis_interval", 60)
-self.analyst_config.setdefault("max_analysis_history", 100)
-self.analyst_config.setdefault("enable_technical_analysis", True)
-self.analyst_config.setdefault("enable_fundamental_analysis", True)
-self.analyst_config.setdefault("enable_sentiment_analysis", False)
-self.analyst_config.setdefault("enable_risk_analysis", True)
-
-# Update configuration
-self.analysis_interval = self.analyst_config["analysis_interval"]
-self.max_analysis_history = self.analyst_config["max_analysis_history"]
-self.enable_technical_analysis = self.analyst_config[
-"enable_technical_analysis"
-]
-self.enable_fundamental_analysis = self.analyst_config[
-"enable_fundamental_analysis"
-]
-
-self.logger.info("Analyst configuration loaded successfully")
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error loading analyst configuration: {e}"))
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False,
-context="configuration validation",
-)
-def _validate_configuration(...) -> ...:
-    """..."""
-    pass# Validate analysis interval
-if self.analysis_interval <= 0:
-    passself.logger.error(invalid("Invalid analysis interval"))
-return False
-
-# Validate max analysis history
-if self.max_analysis_history <= 0:
-    passself.logger.error(invalid("Invalid max analysis history"))
-return False
-
-# Validate that at least one analysis type is enabled
-if not any(
-[
-self.enable_technical_analysis,
-self.enable_fundamental_analysis,
-self.analyst_config.get("enable_sentiment_analysis", False),
-self.analyst_config.get("enable_risk_analysis", True),
-],
-):
-    passself.logger.error(error("At least one analysis type must be enabled"))
-return False
-
-self.logger.info("Configuration validation successful")
-return True
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="analysis modules initialization",
-)
-async def _initialize_analysis_modules(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Initialize technical analysis module
-if self.enable_technical_analysis:
-    passawait self._initialize_technical_analysis()
-
-# Initialize fundamental analysis module
-if self.enable_fundamental_analysis:
-    passawait self._initialize_fundamental_analysis()
-
-# Initialize sentiment analysis module
-if self.analyst_config.get("enable_sentiment_analysis", False):
-    passawait self._initialize_sentiment_analysis()
-
-# Initialize risk analysis module
-if self.analyst_config.get("enable_risk_analysis", True):
-    passawait self._initialize_risk_analysis()
-
-self.logger.info("Analysis modules initialized successfully")
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(initialization_error(f"Error initializing analysis modules: {e}"))
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="technical analysis initialization",
-)
-async def _initialize_technical_analysis(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Initialize technical analysis indicators
-self.technical_indicators = {
-"sma": True,
-"ema": True,
-"rsi": True,
-"macd": True,
-"bollinger_bands": True,
-"stochastic": True,
-}
-
-self.logger.info("Technical analysis module initialized")
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(initialization_error(f"Error initializing technical analysis: {e}"))
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="fundamental analysis initialization",
-)
-async def _initialize_fundamental_analysis(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Initialize fundamental analysis metrics
-self.fundamental_metrics = {
-"pe_ratio": True,
-"pb_ratio": True,
-"debt_to_equity": True,
-"roe": True,
-"revenue_growth": True,
-"earnings_growth": True,
-}
-
-self.logger.info("Fundamental analysis module initialized")
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(initialization_error(f"Error initializing fundamental analysis: {e}"))
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="sentiment analysis initialization",
-)
-async def _initialize_sentiment_analysis(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Initialize sentiment analysis metrics
-self.sentiment_metrics = {
-"news_sentiment": True,
-"social_sentiment": True,
-"market_sentiment": True,
-"fear_greed_index": True,
-}
-
-self.logger.info("Sentiment analysis module initialized")
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(initialization_error(f"Error initializing sentiment analysis: {e}"))
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="risk analysis initialization",
-)
-async def _initialize_risk_analysis(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Initialize risk analysis metrics
-self.risk_metrics = {
-"var": True,
-"max_drawdown": True,
-"sharpe_ratio": True,
-"volatility": True,
-"beta": True,
-"correlation": True,
-}
-
-self.logger.info("Risk analysis module initialized")
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(initialization_error(f"Error initializing risk analysis: {e}"))
-
-@handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid analysis parameters"),
-AttributeError: (False, "Missing analysis components"),
-KeyError: (False, "Missing required analysis data"),
-},
-default_return=False,
-context="market analysis",
-)
-async def analyze_market_data(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-if not self._validate_market_data(market_data):
-    passreturn False
-
-self.is_analyzing = True
-self.logger.info("🔄 Starting market analysis...")
-
-# Perform technical analysis
-if self.enable_technical_analysis:
-    passtechnical_results = await self._perform_technical_analysis(market_data)
-self.analysis_results["technical"] = technical_results
-
-# Perform fundamental analysis
-if self.enable_fundamental_analysis:
-    passfundamental_results = await self._perform_fundamental_analysis(market_data)
-self.analysis_results["fundamental"] = fundamental_results
-
-# Perform sentiment analysis
-if self.analyst_config.get("enable_sentiment_analysis", False):
-    passsentiment_results = await self._perform_sentiment_analysis(market_data)
-self.analysis_results["sentiment"] = sentiment_results
-
-# Perform risk analysis
-if self.analyst_config.get("enable_risk_analysis", True):
-    passrisk_results = await self._perform_risk_analysis(market_data)
-self.analysis_results["risk"] = risk_results
-
-# Store analysis results
-await self._store_analysis_results()
-
-self.is_analyzing = False
-self.logger.info("✅ Market analysis completed successfully")
-return True
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error analyzing market data: {e}"))
-self.is_analyzing = False
-return False
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False,
-context="market data validation",
-)
-def _validate_market_data(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Check required market data fields
-required_fields = ["symbol", "price", "volume", "timestamp"]
-for field in required_fields:
-    passif field not in market_data:
-    passself.logger.error(missing(f"Missing required market data field: {field}"))
-return False
-
-# Validate data types
-if not isinstance(market_data["price"], (int, float)):
-    passself.logger.error(invalid("Invalid price data type"))
-return False
-
-if not isinstance(market_data["volume"], (int, float)):
-    passself.logger.error(invalid("Invalid volume data type"))
-return False
-
-return True
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error validating market data: {e}"))
-return False
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="technical analysis",
-)
-async def _perform_technical_analysis(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-results = {}
-
-# Calculate SMA
-if self.technical_indicators.get("sma", False):
-    passresults["sma"] = self._calculate_sma(market_data)
-
-# Calculate EMA
-if self.technical_indicators.get("ema", False):
-    passresults["ema"] = self._calculate_ema(market_data)
-
-# Calculate RSI
-if self.technical_indicators.get("rsi", False):
-    passresults["rsi"] = self._calculate_rsi(market_data)
-
-# Calculate MACD
-if self.technical_indicators.get("macd", False):
-    passresults["macd"] = self._calculate_macd(market_data)
-
-# Calculate Bollinger Bands
-if self.technical_indicators.get("bollinger_bands", False):
-    passresults["bollinger_bands"] = self._calculate_bollinger_bands(market_data)
-
-# Calculate Stochastic
-if self.technical_indicators.get("stochastic", False):
-    passresults["stochastic"] = self._calculate_stochastic(market_data)
-
-self.logger.info("Technical analysis completed")
-return results
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error performing technical analysis: {e}"))
-return {}
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="fundamental analysis",
-)
-async def _perform_fundamental_analysis(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-results = {}
-
-# Calculate PE Ratio
-if self.fundamental_metrics.get("pe_ratio", False):
-    passresults["pe_ratio"] = self._calculate_pe_ratio(market_data)
-
-# Calculate PB Ratio
-if self.fundamental_metrics.get("pb_ratio", False):
-    passresults["pb_ratio"] = self._calculate_pb_ratio(market_data)
-
-# Calculate Debt to Equity
-if self.fundamental_metrics.get("debt_to_equity", False):
-    passresults["debt_to_equity"] = self._calculate_debt_to_equity(market_data)
-
-# Calculate ROE
-if self.fundamental_metrics.get("roe", False):
-    passresults["roe"] = self._calculate_roe(market_data)
-
-# Calculate Revenue Growth
-if self.fundamental_metrics.get("revenue_growth", False):
-    passresults["revenue_growth"] = self._calculate_revenue_growth(market_data)
-
-# Calculate Earnings Growth
-if self.fundamental_metrics.get("earnings_growth", False):
-    passresults["earnings_growth"] = self._calculate_earnings_growth(market_data)
-
-self.logger.info("Fundamental analysis completed")
-return results
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error performing fundamental analysis: {e}"))
-return {}
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="sentiment analysis",
-)
-async def _perform_sentiment_analysis(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-results = {}
-
-# Calculate News Sentiment
-if self.sentiment_metrics.get("news_sentiment", False):
-    passresults["news_sentiment"] = self._calculate_news_sentiment(market_data)
-
-# Calculate Social Sentiment
-if self.sentiment_metrics.get("social_sentiment", False):
-    passresults["social_sentiment"] = self._calculate_social_sentiment(market_data)
-
-# Calculate Market Sentiment
-if self.sentiment_metrics.get("market_sentiment", False):
-    passresults["market_sentiment"] = self._calculate_market_sentiment(market_data)
-
-# Calculate Fear Greed Index
-if self.sentiment_metrics.get("fear_greed_index", False):
-    passresults["fear_greed_index"] = self._calculate_fear_greed_index(market_data)
-
-self.logger.info("Sentiment analysis completed")
-return results
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error performing sentiment analysis: {e}"))
-return {}
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="risk analysis",
-)
-async def _perform_risk_analysis(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-results = {}
-
-# Calculate VaR
-if self.risk_metrics.get("var", False):
-    passresults["var"] = self._calculate_var(market_data)
-
-# Calculate max drawdown
-if self.risk_metrics.get("max_drawdown", False):
-    passresults["max_drawdown"] = self._calculate_max_drawdown(market_data)
-
-# Calculate Sharpe ratio
-if self.risk_metrics.get("sharpe_ratio", False):
-    passresults["sharpe_ratio"] = self._calculate_sharpe_ratio(market_data)
-
-# Calculate volatility
-if self.risk_metrics.get("volatility", False):
-    passresults["volatility"] = self._calculate_risk_volatility(market_data)
-
-self.logger.info("Risk analysis completed")
-return results
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error performing risk analysis: {e}"))
-return {}
-
-# Technical analysis calculation methods
-
-def _calculate_sma(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Simulate SMA calculation
-prices = [100, 101, 102, 103, 104]  # Sample prices
-return sum(prices) / len(prices)
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error calculating SMA: {e}"))
-return 0.0
-
-def _calculate_ema(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Simulate EMA calculation
-return 102.5  # Sample EMA value
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error calculating EMA: {e}"))
-return 0.0
-
-def _calculate_rsi(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Simulate RSI calculation
-return 65.0  # Sample RSI value
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error calculating RSI: {e}"))
-return 0.0
-
-def _calculate_macd(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Simulate MACD calculation
-return {
-"macd_line": 0.5,
-"signal_line": 0.3,
-"histogram": 0.2,
-}
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error calculating MACD: {e}"))
-return {"macd_line": 0.0, "signal_line": 0.0, "histogram": 0.0}
-
-def _calculate_bollinger_bands(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Simulate Bollinger Bands calculation
-return {
-"upper_band": 105.0,
-"middle_band": 102.0,
-"lower_band": 99.0,
-}
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error calculating Bollinger Bands: {e}"))
-return {"upper_band": 0.0, "middle_band": 0.0, "lower_band": 0.0}
-
-def _calculate_stochastic(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Simulate Stochastic calculation
-return {
-"k_percent": 75.0,
-"d_percent": 70.0,
-}
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error calculating Stochastic: {e}"))
-return {"k_percent": 0.0, "d_percent": 0.0}
-
-# Fundamental analysis calculation methods
-
-def _calculate_pe_ratio(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Simulate PE ratio calculation
-return 15.5
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error calculating PE ratio: {e}"))
-return 0.0
-
-def _calculate_pb_ratio(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Simulate PB ratio calculation
-return 2.1
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error calculating PB ratio: {e}"))
-return 0.0
-
-def _calculate_debt_to_equity(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Simulate debt to equity calculation
-return 0.8
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error calculating debt to equity: {e}"))
-return 0.0
-
-def _calculate_roe(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Simulate ROE calculation
-return 0.12
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error calculating ROE: {e}"))
-return 0.0
-
-def _calculate_revenue_growth(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Simulate revenue growth calculation
-return 0.08
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error calculating revenue growth: {e}"))
-return 0.0
-
-def _calculate_earnings_growth(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Simulate earnings growth calculation
-return 0.10
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error calculating earnings growth: {e}"))
-return 0.0
-
-# Sentiment analysis calculation methods
-
-def _calculate_news_sentiment(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Simulate news sentiment calculation
-return 0.6
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error calculating news sentiment: {e}"))
-return 0.0
-
-def _calculate_social_sentiment(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Simulate social sentiment calculation
-return 0.7
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error calculating social sentiment: {e}"))
-return 0.0
-
-def _calculate_market_sentiment(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Simulate market sentiment calculation
-return 0.65
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error calculating market sentiment: {e}"))
-return 0.0
-
-def _calculate_fear_greed_index(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Simulate fear & greed index calculation
-return 55.0
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error calculating fear & greed index: {e}"))
-return 0.0
-
-# Risk analysis calculation methods
-
-def _calculate_var(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Simulate VaR calculation
-return 0.025
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error calculating VaR: {e}"))
-return 0.0
-
-def _calculate_max_drawdown(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Simulate max drawdown calculation
-return 0.15
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error calculating max drawdown: {e}"))
-return 0.0
-
-def _calculate_sharpe_ratio(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Simulate Sharpe ratio calculation
-return 1.2
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error calculating Sharpe ratio: {e}"))
-return 0.0
-
-def _calculate_risk_volatility(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Simulate volatility calculation
-return 0.18
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error calculating volatility: {e}"))
-return 0.0
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="analysis results storage",
-)
-async def _store_analysis_results(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Add timestamp
-self.analysis_results["timestamp"] = datetime.now().isoformat()
-
-# Add to history
-self.analysis_history.append(self.analysis_results.copy())
-
-# Limit history size
-if len(self.analysis_history) > self.max_analysis_history:
-    passself.analysis_history.pop(0)
-
-self.logger.info("Analysis results stored successfully")
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error storing analysis results: {e}"))
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="analysis results getting",
-)
-def get_analysis_results(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-if analysis_type:
-    passreturn self.analysis_results.get(analysis_type, {})
-return self.analysis_results.copy()
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error getting analysis results: {e}"))
-return {}
-
-@handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="analysis history getting",
-)
-def get_analysis_history(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-history = self.analysis_history.copy()
-
-if limit:
-    passhistory = history[-limit:]
-
-return history
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error getting analysis history: {e}"))
-return []
-
-def get_analyst_status(...) -> ...:
-    """..."""
-    passreturn {
-"is_analyzing": self.is_analyzing,
-"analysis_interval": self.analysis_interval,
-"max_analysis_history": self.max_analysis_history,
-"enable_technical_analysis": self.enable_technical_analysis,
-"enable_fundamental_analysis": self.enable_fundamental_analysis,
-"enable_sentiment_analysis": self.analyst_config.get(
-"enable_sentiment_analysis",
-False,
-),
-"enable_risk_analysis": self.analyst_config.get(
-"enable_risk_analysis",
-True,
-),
-"analysis_history_count": len(self.analysis_history),
-}
-
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="modular analyst cleanup",
-)
-async def stop(...) -> ...:
-    """..."""
-    passself.logger.info("🛑 Stopping Modular Analyst...")
-
-try:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Stop analyzing
-self.is_analyzing = False
-
-# Clear results
-self.analysis_results.clear()
-
-# Clear history
-self.analysis_history.clear()
-
-self.logger.info("✅ Modular Analyst stopped successfully")
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(error(f"Error stopping modular analyst: {e}"))
-
-# Global modular analyst instance
-modular_analyst: ModularAnalyst | None = None
-
-@handle_errors(
-exceptions=(Exception,),
-default_return=None,
-context="modular analyst setup",
-)
-async def setup_modular_analyst(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-global modular_analyst
-
-if config is None:
-    passconfig = {
-"modular_analyst": {
-"analysis_interval": 60,
-"max_analysis_history": 100,
-"enable_technical_analysis": True,
-"enable_fundamental_analysis": True,
-"enable_sentiment_analysis": False,
-"enable_risk_analysis": True,
-},
-}
-
-# Create modular analyst
-modular_analyst = ModularAnalyst(config)
-
-# Initialize modular analyst
-success = await modular_analyst.initialize()
-if success:
-    passreturn modular_analyst
-return None
-
-except Exception as e:
-    passpasspasspasspasspasspassprint(f"Error setting up modular analyst: {e}")
-return None
+    """
+    Enhanced modular analyst with comprehensive error handling and type safety.
+    
+    This class provides financial analysis capabilities including technical analysis,
+    fundamental analysis, sentiment analysis, and risk assessment.
+    """
+    
+    def __init__(self, config: Dict[str, Any]) -> None:
+        """
+        Initialize the ModularAnalyst with configuration.
+        
+        Args:
+            config: Configuration dictionary containing analyst settings
+        """
+        self.config: Dict[str, Any] = config
+        self.logger = system_logger.getChild("ModularAnalyst")
+        
+        # Analysis state
+        self.is_analyzing: bool = False
+        self.analysis_results: Dict[str, Any] = {}
+        self.analysis_history: List[Dict[str, Any]] = []
+        
+        # Configuration
+        self.analyst_config: Dict[str, Any] = self.config.get("modular_analyst", {})
+        self.analysis_interval: int = self.analyst_config.get("analysis_interval", 60)
+        self.max_analysis_history: int = self.analyst_config.get("max_analysis_history", 100)
+        self.enable_technical_analysis: bool = self.analyst_config.get("enable_technical_analysis", True)
+        self.enable_fundamental_analysis: bool = self.analyst_config.get("enable_fundamental_analysis", True)
+        self.enable_sentiment_analysis: bool = self.analyst_config.get("enable_sentiment_analysis", False)
+        self.enable_risk_analysis: bool = self.analyst_config.get("enable_risk_analysis", True)
+        
+        # Analysis modules
+        self.technical_analyzer = None
+        self.fundamental_analyzer = None
+        self.sentiment_analyzer = None
+        self.risk_analyzer = None
+        
+        self.logger.info("ModularAnalyst initialized with configuration")
+
+    @handle_specific_errors(
+        error_handlers={
+            ValueError: (False, "Invalid modular analyst configuration"),
+            AttributeError: (False, "Missing required analyst parameters"),
+            KeyError: (False, "Missing configuration keys"),
+        },
+        default_return=False,
+        context="modular analyst initialization",
+    )
+    async def initialize(self) -> bool:
+        """
+        Initialize the analyst and all its modules.
+        
+        Returns:
+            bool: True if initialization successful, False otherwise
+        """
+        try:
+            self.logger.info("Initializing Modular Analyst...")
+            
+            # Load analyst configuration
+            await self._load_analyst_configuration()
+            
+            # Validate configuration
+            if not self._validate_configuration():
+                self.logger.error(invalid("Invalid configuration for modular analyst"))
+                return False
+            
+            # Initialize analysis modules
+            await self._initialize_analysis_modules()
+            
+            self.logger.info("✅ Modular Analyst initialization completed successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(failed(f"❌ Modular Analyst initialization failed: {e}"))
+            self.logger.debug(f"Traceback: {traceback.format_exc()}")
+            return False
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="analyst configuration loading",
+    )
+    async def _load_analyst_configuration(self) -> None:
+        """
+        Load and validate analyst configuration.
+        """
+        try:
+            # Set default analyst parameters
+            self.analyst_config.setdefault("analysis_interval", 60)
+            self.analyst_config.setdefault("max_analysis_history", 100)
+            self.analyst_config.setdefault("enable_technical_analysis", True)
+            self.analyst_config.setdefault("enable_fundamental_analysis", True)
+            self.analyst_config.setdefault("enable_sentiment_analysis", False)
+            self.analyst_config.setdefault("enable_risk_analysis", True)
+            
+            # Update configuration
+            self.analysis_interval = self.analyst_config["analysis_interval"]
+            self.max_analysis_history = self.analyst_config["max_analysis_history"]
+            self.enable_technical_analysis = self.analyst_config["enable_technical_analysis"]
+            self.enable_fundamental_analysis = self.analyst_config["enable_fundamental_analysis"]
+            self.enable_sentiment_analysis = self.analyst_config["enable_sentiment_analysis"]
+            self.enable_risk_analysis = self.analyst_config["enable_risk_analysis"]
+            
+            self.logger.info("Analyst configuration loaded successfully")
+            
+        except Exception as e:
+            self.logger.error(f"Error loading analyst configuration: {e}")
+            raise
+
+    def _validate_configuration(self) -> bool:
+        """
+        Validate the analyst configuration.
+        
+        Returns:
+            bool: True if configuration is valid, False otherwise
+        """
+        try:
+            required_keys = ["analysis_interval", "max_analysis_history"]
+            for key in required_keys:
+                if key not in self.analyst_config:
+                    self.logger.error(missing(f"Missing required configuration key: {key}"))
+                    return False
+            
+            if self.analysis_interval <= 0:
+                self.logger.error(invalid("Analysis interval must be positive"))
+                return False
+                
+            if self.max_analysis_history <= 0:
+                self.logger.error(invalid("Max analysis history must be positive"))
+                return False
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error validating configuration: {e}")
+            return False
+
+    async def _initialize_analysis_modules(self) -> None:
+        """
+        Initialize all analysis modules based on configuration.
+        """
+        try:
+            if self.enable_technical_analysis:
+                self.technical_analyzer = TechnicalAnalyzer(self.analyst_config)
+                self.logger.info("Technical analyzer initialized")
+            
+            if self.enable_fundamental_analysis:
+                self.fundamental_analyzer = FundamentalAnalyzer(self.analyst_config)
+                self.logger.info("Fundamental analyzer initialized")
+            
+            if self.enable_sentiment_analysis:
+                self.sentiment_analyzer = SentimentAnalyzer(self.analyst_config)
+                self.logger.info("Sentiment analyzer initialized")
+            
+            if self.enable_risk_analysis:
+                self.risk_analyzer = RiskAnalyzer(self.analyst_config)
+                self.logger.info("Risk analyzer initialized")
+                
+        except Exception as e:
+            self.logger.error(f"Error initializing analysis modules: {e}")
+            raise
+
+    @handle_errors(
+        exceptions=(ValueError, AttributeError, RuntimeError),
+        default_return=None,
+        context="financial analysis",
+    )
+    async def analyze_market(self, market_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Perform comprehensive market analysis.
+        
+        Args:
+            market_data: Market data to analyze
+            
+        Returns:
+            Dict containing analysis results or None if analysis fails
+        """
+        try:
+            if self.is_analyzing:
+                self.logger.warning("Analysis already in progress")
+                return None
+            
+            self.is_analyzing = True
+            self.logger.info("Starting market analysis...")
+            
+            analysis_result = {
+                "timestamp": datetime.now().isoformat(),
+                "market_data": market_data,
+                "technical_analysis": None,
+                "fundamental_analysis": None,
+                "sentiment_analysis": None,
+                "risk_assessment": None,
+                "overall_score": 0.0,
+                "recommendations": []
+            }
+            
+            # Perform technical analysis
+            if self.technical_analyzer and self.enable_technical_analysis:
+                try:
+                    analysis_result["technical_analysis"] = await self.technical_analyzer.analyze(market_data)
+                except Exception as e:
+                    self.logger.error(f"Technical analysis failed: {e}")
+            
+            # Perform fundamental analysis
+            if self.fundamental_analyzer and self.enable_fundamental_analysis:
+                try:
+                    analysis_result["fundamental_analysis"] = await self.fundamental_analyzer.analyze(market_data)
+                except Exception as e:
+                    self.logger.error(f"Fundamental analysis failed: {e}")
+            
+            # Perform sentiment analysis
+            if self.sentiment_analyzer and self.enable_sentiment_analysis:
+                try:
+                    analysis_result["sentiment_analysis"] = await self.sentiment_analyzer.analyze(market_data)
+                except Exception as e:
+                    self.logger.error(f"Sentiment analysis failed: {e}")
+            
+            # Perform risk assessment
+            if self.risk_analyzer and self.enable_risk_analysis:
+                try:
+                    analysis_result["risk_assessment"] = await self.risk_analyzer.assess_risk(market_data)
+                except Exception as e:
+                    self.logger.error(f"Risk assessment failed: {e}")
+            
+            # Calculate overall score
+            analysis_result["overall_score"] = self._calculate_overall_score(analysis_result)
+            
+            # Generate recommendations
+            analysis_result["recommendations"] = self._generate_recommendations(analysis_result)
+            
+            # Store results
+            self.analysis_results = analysis_result
+            self._add_to_history(analysis_result)
+            
+            self.logger.info(f"Market analysis completed. Overall score: {analysis_result['overall_score']:.2f}")
+            return analysis_result
+            
+        except Exception as e:
+            self.logger.error(f"Market analysis failed: {e}")
+            self.logger.debug(f"Traceback: {traceback.format_exc()}")
+            return None
+            
+        finally:
+            self.is_analyzing = False
+
+    def _calculate_overall_score(self, analysis_result: Dict[str, Any]) -> float:
+        """
+        Calculate overall analysis score based on individual analysis results.
+        
+        Args:
+            analysis_result: Analysis results dictionary
+            
+        Returns:
+            float: Overall score between 0.0 and 1.0
+        """
+        try:
+            scores = []
+            weights = []
+            
+            # Technical analysis score
+            if analysis_result["technical_analysis"]:
+                tech_score = analysis_result["technical_analysis"].get("score", 0.0)
+                scores.append(tech_score)
+                weights.append(0.3)
+            
+            # Fundamental analysis score
+            if analysis_result["fundamental_analysis"]:
+                fund_score = analysis_result["fundamental_analysis"].get("score", 0.0)
+                scores.append(fund_score)
+                weights.append(0.4)
+            
+            # Sentiment analysis score
+            if analysis_result["sentiment_analysis"]:
+                sent_score = analysis_result["sentiment_analysis"].get("score", 0.0)
+                scores.append(sent_score)
+                weights.append(0.2)
+            
+            # Risk assessment score (inverted - lower risk = higher score)
+            if analysis_result["risk_assessment"]:
+                risk_score = 1.0 - analysis_result["risk_assessment"].get("risk_level", 0.5)
+                scores.append(risk_score)
+                weights.append(0.1)
+            
+            if not scores:
+                return 0.0
+            
+            # Calculate weighted average
+            total_weight = sum(weights)
+            weighted_sum = sum(score * weight for score, weight in zip(scores, weights))
+            
+            return weighted_sum / total_weight if total_weight > 0 else 0.0
+            
+        except Exception as e:
+            self.logger.error(f"Error calculating overall score: {e}")
+            return 0.0
+
+    def _generate_recommendations(self, analysis_result: Dict[str, Any]) -> List[str]:
+        """
+        Generate recommendations based on analysis results.
+        
+        Args:
+            analysis_result: Analysis results dictionary
+            
+        Returns:
+            List of recommendation strings
+        """
+        recommendations = []
+        
+        try:
+            overall_score = analysis_result.get("overall_score", 0.0)
+            
+            if overall_score >= 0.8:
+                recommendations.append("Strong buy recommendation - market conditions are favorable")
+            elif overall_score >= 0.6:
+                recommendations.append("Buy recommendation - market shows positive signals")
+            elif overall_score >= 0.4:
+                recommendations.append("Hold position - market is neutral, monitor for changes")
+            elif overall_score >= 0.2:
+                recommendations.append("Consider selling - market shows negative signals")
+            else:
+                recommendations.append("Strong sell recommendation - market conditions are unfavorable")
+            
+            # Add specific recommendations based on individual analysis
+            if analysis_result.get("technical_analysis"):
+                tech_analysis = analysis_result["technical_analysis"]
+                if tech_analysis.get("trend", "").lower() == "bullish":
+                    recommendations.append("Technical indicators show bullish trend")
+                elif tech_analysis.get("trend", "").lower() == "bearish":
+                    recommendations.append("Technical indicators show bearish trend")
+            
+            if analysis_result.get("risk_assessment"):
+                risk_level = analysis_result["risk_assessment"].get("risk_level", 0.5)
+                if risk_level > 0.7:
+                    recommendations.append("High risk detected - implement risk management strategies")
+                elif risk_level < 0.3:
+                    recommendations.append("Low risk environment - consider increasing position sizes")
+            
+        except Exception as e:
+            self.logger.error(f"Error generating recommendations: {e}")
+            recommendations.append("Unable to generate specific recommendations due to analysis errors")
+        
+        return recommendations
+
+    def _add_to_history(self, analysis_result: Dict[str, Any]) -> None:
+        """
+        Add analysis result to history, maintaining maximum history size.
+        
+        Args:
+            analysis_result: Analysis result to add
+        """
+        try:
+            self.analysis_history.append(analysis_result)
+            
+            # Maintain maximum history size
+            if len(self.analysis_history) > self.max_analysis_history:
+                self.analysis_history.pop(0)
+                
+        except Exception as e:
+            self.logger.error(f"Error adding to history: {e}")
+
+    def get_analysis_history(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Get analysis history.
+        
+        Args:
+            limit: Maximum number of results to return
+            
+        Returns:
+            List of analysis results
+        """
+        try:
+            if limit is None:
+                return self.analysis_history.copy()
+            else:
+                return self.analysis_history[-limit:].copy()
+        except Exception as e:
+            self.logger.error(f"Error retrieving analysis history: {e}")
+            return []
+
+    def get_latest_analysis(self) -> Optional[Dict[str, Any]]:
+        """
+        Get the most recent analysis result.
+        
+        Returns:
+            Latest analysis result or None if no analysis performed
+        """
+        try:
+            if self.analysis_history:
+                return self.analysis_history[-1].copy()
+            return None
+        except Exception as e:
+            self.logger.error(f"Error retrieving latest analysis: {e}")
+            return None
+
+    def clear_history(self) -> None:
+        """Clear analysis history."""
+        try:
+            self.analysis_history.clear()
+            self.logger.info("Analysis history cleared")
+        except Exception as e:
+            self.logger.error(f"Error clearing history: {e}")
+
+    def get_status(self) -> Dict[str, Any]:
+        """
+        Get current analyst status.
+        
+        Returns:
+            Dictionary containing current status information
+        """
+        try:
+            return {
+                "is_analyzing": self.is_analyzing,
+                "analysis_interval": self.analysis_interval,
+                "history_size": len(self.analysis_history),
+                "max_history_size": self.max_analysis_history,
+                "enabled_modules": {
+                    "technical_analysis": self.enable_technical_analysis,
+                    "fundamental_analysis": self.enable_fundamental_analysis,
+                    "sentiment_analysis": self.enable_sentiment_analysis,
+                    "risk_analysis": self.enable_risk_analysis
+                },
+                "last_analysis": self.analysis_history[-1]["timestamp"] if self.analysis_history else None
+            }
+        except Exception as e:
+            self.logger.error(f"Error getting status: {e}")
+            return {}
+
+
+# Placeholder classes for analysis modules
+class TechnicalAnalyzer:
+    """Placeholder for technical analysis module."""
+    
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+    
+    async def analyze(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Placeholder technical analysis."""
+        return {
+            "score": 0.7,
+            "trend": "neutral",
+            "indicators": {},
+            "signals": []
+        }
+
+
+class FundamentalAnalyzer:
+    """Placeholder for fundamental analysis module."""
+    
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+    
+    async def analyze(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Placeholder fundamental analysis."""
+        return {
+            "score": 0.6,
+            "valuation": "fair",
+            "metrics": {},
+            "outlook": "stable"
+        }
+
+
+class SentimentAnalyzer:
+    """Placeholder for sentiment analysis module."""
+    
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+    
+    async def analyze(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Placeholder sentiment analysis."""
+        return {
+            "score": 0.5,
+            "sentiment": "neutral",
+            "confidence": 0.8,
+            "sources": []
+        }
+
+
+class RiskAnalyzer:
+    """Placeholder for risk analysis module."""
+    
+    def __init__(self, config: Dict[str, Any]):
+        self.config = config
+    
+    async def assess_risk(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Placeholder risk assessment."""
+        return {
+            "risk_level": 0.4,
+            "risk_factors": [],
+            "mitigation_strategies": [],
+            "confidence": 0.7
+        }

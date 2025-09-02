@@ -1,0 +1,46 @@
+{
+  "directory_path": "docs",
+  "analysis_timestamp": "2025-09-02T17:29:15.404089",
+  "file_pattern": "*",
+  "summary": {
+    "overall_quality": "excellent",
+    "total_files": 1,
+    "successful_analyses": 1,
+    "failed_analyses": 0,
+    "success_rate": 1.0,
+    "quality_distribution": {
+      "excellent": 1
+    },
+    "total_size_bytes": 2759,
+    "total_size_mb": 0.003
+  },
+  "file_results": {
+    "docs/wavelet_feature_selection_config.yaml": {
+      "file_path": "docs/wavelet_feature_selection_config.yaml",
+      "file_name": "wavelet_feature_selection_config.yaml",
+      "context": "File: wavelet_feature_selection_config.yaml",
+      "analysis_timestamp": "2025-09-02T17:29:15.404053",
+      "file_info": {
+        "size_bytes": 2759,
+        "size_mb": 0.003,
+        "format": "TEXT"
+      },
+      "structure_analysis": {
+        "total_characters": 2759,
+        "total_lines": 85,
+        "non_empty_lines": 70,
+        "average_line_length": 32.46,
+        "longest_line": 76,
+        "shortest_line": 0,
+        "encoding_issues": []
+      },
+      "quality_assessment": {
+        "overall_quality": "excellent",
+        "quality_score": 100,
+        "issues": []
+      },
+      "issues": [],
+      "recommendations": []
+    }
+  }
+}

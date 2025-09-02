@@ -1,0 +1,33 @@
+{
+  "file_path": "feature_specific_thresholds_summary.txt",
+  "file_name": "feature_specific_thresholds_summary.txt",
+  "context": "Feature Thresholds Summary",
+  "analysis_timestamp": "2025-09-02T17:29:25.001667",
+  "file_info": {
+    "size_bytes": 1523,
+    "size_mb": 0.001,
+    "format": "TEXT"
+  },
+  "structure_analysis": {
+    "total_characters": 1502,
+    "total_lines": 1,
+    "non_empty_lines": 1,
+    "average_line_length": 1502.0,
+    "longest_line": 1502,
+    "shortest_line": 1502,
+    "encoding_issues": []
+  },
+  "quality_assessment": {
+    "overall_quality": "good",
+    "quality_score": 85,
+    "issues": [
+      "Very long lines detected"
+    ]
+  },
+  "issues": [
+    "Very long lines detected (over 1000 characters)"
+  ],
+  "recommendations": [
+    "Consider breaking very long lines for better readability"
+  ]
+}

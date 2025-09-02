@@ -1,0 +1,318 @@
+================================================================================
+DIRECTORY DATA QUALITY ANALYSIS REPORT
+================================================================================
+
+DIRECTORY INFORMATION:
+----------------------------------------
+Directory Path: .
+Analysis Time: 2025-09-02T17:26:23.940433
+File Pattern: *
+
+ANALYSIS SUMMARY:
+----------------------------------------
+Overall Quality: GOOD
+Total Files: 141
+Successful Analyses: 141
+Failed Analyses: 0
+Success Rate: 100.0%
+Total Size: 2.51 MB
+
+QUALITY DISTRIBUTION:
+----------------------------------------
+• Excellent: 132 files
+• Good: 9 files
+
+INDIVIDUAL FILE RESULTS:
+----------------------------------------
+✅ data_quality_directory_report.txt: EXCELLENT (0.001 MB)
+
+✅ feature_action_plan.txt: EXCELLENT (0.001 MB)
+
+✅ trade_data_quality_report.txt: EXCELLENT (0.001 MB)
+
+✅ requirements.txt: EXCELLENT (0.002 MB)
+
+✅ feature_specific_thresholds_summary.txt: GOOD (0.001 MB)
+    - Very long lines detected (over 1000 characters)
+
+✅ results_directory_quality_report.txt: EXCELLENT (0.001 MB)
+
+✅ unified_quality_report_20250902_172616.txt: EXCELLENT (0.003 MB)
+
+✅ syntax_error_report.txt: EXCELLENT (0.056 MB)
+
+✅ PIPELINE_FIXES_SUMMARY.txt: GOOD (0.0 MB)
+    - High empty line ratio: 1/2
+
+✅ python_code_quality_report.txt: EXCELLENT (0.001 MB)
+
+✅ missing_aggtrades_dates.txt: EXCELLENT (0.001 MB)
+
+✅ regime_calculation_investigation_report.txt: EXCELLENT (0.004 MB)
+
+✅ requirements_surrogate.txt: EXCELLENT (0.0 MB)
+
+✅ workspace_json_files_report.txt: GOOD (0.002 MB)
+    - High empty line ratio: 16/53
+
+✅ sr_position_quality_report.txt: EXCELLENT (0.001 MB)
+
+✅ small_files_analysis.txt: EXCELLENT (0.006 MB)
+
+✅ quality_report_20250902_172503.json: GOOD (0.611 MB)
+
+✅ realistic_regime_simulation_20250815_171904.json: EXCELLENT (0.005 MB)
+
+✅ quality_report_20250902_172419.json: EXCELLENT (0.221 MB)
+
+✅ quality_report_20250902_172408.json: GOOD (0.022 MB)
+
+✅ quality_report_20250902_172439.json: EXCELLENT (0.006 MB)
+
+✅ hmm_optimization_config.json: EXCELLENT (0.002 MB)
+
+✅ state.json: EXCELLENT (0.0 MB)
+
+✅ mlflow_integration_validation_results.json: EXCELLENT (0.026 MB)
+
+✅ code_quality_assessment_results.json: EXCELLENT (0.087 MB)
+
+✅ quality_report_20250902_172416.json: EXCELLENT (0.153 MB)
+
+✅ regime_merging_simulation_20250815_171741.json: EXCELLENT (0.004 MB)
+
+✅ trade_data_20250822_092158.json: EXCELLENT (0.003 MB)
+
+✅ quality_report_20250902_172435.json: EXCELLENT (0.001 MB)
+
+✅ step_formatter.py: EXCELLENT (0.012 MB)
+
+✅ kelly_criterion_fix.py: EXCELLENT (0.007 MB)
+
+✅ check_trade_data.py: EXCELLENT (0.001 MB)
+
+✅ create_regime_splits.py: EXCELLENT (0.005 MB)
+
+✅ demo_step_formatting.py: EXCELLENT (0.003 MB)
+
+✅ create_30m_hmm_artifacts.py: EXCELLENT (0.003 MB)
+
+✅ fix_metadata_and_naming.py: EXCELLENT (0.008 MB)
+
+✅ complete_remaining_steps_integration.py: EXCELLENT (0.014 MB)
+
+✅ final_targeted_fix_v3.py: EXCELLENT (0.004 MB)
+
+✅ test_step_formatter.py: EXCELLENT (0.004 MB)
+
+✅ targeted_fix.py: GOOD (0.003 MB)
+    - High empty line ratio: 32/105
+
+✅ enhanced_validation_logging.py: EXCELLENT (0.008 MB)
+
+✅ example_enhanced_multi_timeframe_optimization.py: EXCELLENT (0.017 MB)
+
+✅ quick_error_scanner.py: EXCELLENT (0.006 MB)
+
+✅ simulate_regime_merging_from_existing_data.py: EXCELLENT (0.01 MB)
+
+✅ standardize_utility_modules.py: EXCELLENT (0.005 MB)
+
+✅ test_data_quality_and_formatting.py: EXCELLENT (0.024 MB)
+
+✅ optimize_hmm_regime_parameters.py: EXCELLENT (0.059 MB)
+
+✅ final_utils_fix.py: EXCELLENT (0.003 MB)
+
+✅ download_futures_only.py: EXCELLENT (0.005 MB)
+
+✅ update_all_steps_mlflow_integration.py: EXCELLENT (0.015 MB)
+
+✅ detect_and_fill_gaps_immediate.py: EXCELLENT (0.004 MB)
+
+✅ fix_remaining_25.py: EXCELLENT (0.006 MB)
+
+✅ validate_advanced_sr_methods.py: EXCELLENT (0.01 MB)
+
+✅ fix_syntax_errors_enhanced.py: EXCELLENT (0.012 MB)
+
+✅ comprehensive_gap_filler.py: EXCELLENT (0.011 MB)
+
+✅ test_tactician_multi_output_system.py: EXCELLENT (0.017 MB)
+
+✅ demo_step_formatter.py: EXCELLENT (0.007 MB)
+
+✅ test_plugins.py: EXCELLENT (0.005 MB)
+
+✅ download_missing_aggtrades_days.py: EXCELLENT (0.009 MB)
+
+✅ download_missing_aggtrades_2023_2024.py: EXCELLENT (0.008 MB)
+
+✅ format_steps.py: EXCELLENT (0.003 MB)
+
+✅ check_syntax.py: EXCELLENT (0.002 MB)
+
+✅ debug_metadata_detection.py: EXCELLENT (0.004 MB)
+
+✅ run_30m_hmm_step.py: EXCELLENT (0.003 MB)
+
+✅ ares_launcher.py: EXCELLENT (0.109 MB)
+
+✅ extract_feature_details.py: EXCELLENT (0.013 MB)
+
+✅ debug_low_variance_features.py: EXCELLENT (0.009 MB)
+
+✅ implement_feature_specific_validation.py: EXCELLENT (0.012 MB)
+
+✅ analyze_strict_thresholds.py: EXCELLENT (0.006 MB)
+
+✅ consolidate_aggtrades.py: EXCELLENT (0.002 MB)
+
+✅ check_existing_data.py: EXCELLENT (0.002 MB)
+
+✅ automated_syntax_fixer.py: EXCELLENT (0.009 MB)
+
+✅ simple_syntax_check.py: EXCELLENT (0.005 MB)
+
+✅ comprehensive_fix.py: EXCELLENT (0.003 MB)
+
+✅ feature_analysis_script.py: EXCELLENT (0.005 MB)
+
+✅ test_enhanced_outlier_handler_and_schema.py: EXCELLENT (0.024 MB)
+
+✅ gap_filler_clean.py: EXCELLENT (0.009 MB)
+
+✅ download_missing_data.py: EXCELLENT (0.004 MB)
+
+✅ complete_remaining_16_steps.py: EXCELLENT (0.018 MB)
+
+✅ run_step2_direct.py: EXCELLENT (0.001 MB)
+
+✅ core_syntax_checker.py: EXCELLENT (0.002 MB)
+
+✅ optimize_hmm_regime_parameters_advanced.py: EXCELLENT (0.036 MB)
+
+✅ test_simple.py: GOOD (0.0 MB)
+    - High empty line ratio: 1/2
+
+✅ fix_partially_integrated_steps.py: EXCELLENT (0.01 MB)
+
+✅ create_correct_mock_data.py: EXCELLENT (0.014 MB)
+
+✅ run_syntax_fix.py: EXCELLENT (0.003 MB)
+
+✅ fix_import_errors.py: EXCELLENT (0.006 MB)
+
+✅ debug_hmm_combinations.py: EXCELLENT (0.005 MB)
+
+✅ auto_syntax_fixer.py: EXCELLENT (0.006 MB)
+
+✅ consolidate_data.py: EXCELLENT (0.005 MB)
+
+✅ analyze_validation_issues.py: EXCELLENT (0.012 MB)
+
+✅ test_comprehensive_security.py: EXCELLENT (0.028 MB)
+
+✅ final_fix.py: EXCELLENT (0.003 MB)
+
+✅ cleanup_script.py: EXCELLENT (0.01 MB)
+
+✅ download_aggtrades_range.py: EXCELLENT (0.003 MB)
+
+✅ fix_remaining_issues.py: EXCELLENT (0.003 MB)
+
+✅ fix_syntax_errors.py: EXCELLENT (0.009 MB)
+
+✅ fix_data_issues.py: EXCELLENT (0.006 MB)
+
+✅ targeted_syntax_fixer.py: EXCELLENT (0.01 MB)
+
+✅ debug_clustering.py: EXCELLENT (0.003 MB)
+
+✅ run_fixed_hmm_regime_discovery.py: EXCELLENT (0.002 MB)
+
+✅ identify_deleted_aggtrades.py: EXCELLENT (0.003 MB)
+
+✅ debug_interaction_flow.py: EXCELLENT (0.005 MB)
+
+✅ example_matrix_diverse_lookback_optimization.py: EXCELLENT (0.014 MB)
+
+✅ final_targeted_fix_v2.py: EXCELLENT (0.004 MB)
+
+✅ convert_csv_to_parquet.py: GOOD (0.001 MB)
+    - High empty line ratio: 16/53
+
+✅ fix_remaining_files.py: EXCELLENT (0.005 MB)
+
+✅ diagnose_regime_data.py: EXCELLENT (0.022 MB)
+
+✅ fix_remaining_errors.py: EXCELLENT (0.01 MB)
+
+✅ fix_aggtrades_gaps.py: EXCELLENT (0.006 MB)
+
+✅ enhanced_validation_wrapper.py: EXCELLENT (0.003 MB)
+
+✅ standardize_remaining_steps.py: EXCELLENT (0.006 MB)
+
+✅ syntax_checker.py: EXCELLENT (0.005 MB)
+
+✅ style_analysis.py: EXCELLENT (0.006 MB)
+
+✅ fix_decorator_application.py: EXCELLENT (0.006 MB)
+
+✅ syntax_error_count_analysis.py: EXCELLENT (0.008 MB)
+
+✅ fix_exception_handling.py: EXCELLENT (0.012 MB)
+
+✅ simulate_regime_merging_optimization.py: EXCELLENT (0.007 MB)
+
+✅ conservative_syntax_fixer.py: EXCELLENT (0.006 MB)
+
+✅ optimize_hmm_regime_parameters_enhanced.py: EXCELLENT (0.018 MB)
+
+✅ final_targeted_fix.py: EXCELLENT (0.004 MB)
+
+✅ multi_objective_hmm_optimizer.py: EXCELLENT (0.041 MB)
+
+✅ complete_remaining_steps.py: EXCELLENT (0.017 MB)
+
+✅ temp_fixed2.py: EXCELLENT (0.214 MB)
+
+✅ syntax_error_scanner.py: EXCELLENT (0.01 MB)
+
+✅ feature_specific_validation.py: EXCELLENT (0.004 MB)
+
+✅ fix_utils_syntax.py: EXCELLENT (0.004 MB)
+
+✅ download_missing_futures.py: EXCELLENT (0.005 MB)
+
+✅ test_file.py: GOOD (0.001 MB)
+    - High empty line ratio: 10/33
+
+✅ fix_multi_timeframe_data.py: EXCELLENT (0.012 MB)
+
+✅ test_comprehensive_sr_integration.py: EXCELLENT (0.014 MB)
+
+✅ download_specific_missing_data.py: EXCELLENT (0.008 MB)
+
+✅ cleanup_actions.py: EXCELLENT (0.023 MB)
+
+✅ fix_remaining_indentation.py: EXCELLENT (0.004 MB)
+
+✅ fix_all_remaining_files.py: EXCELLENT (0.005 MB)
+
+✅ diagnose_interaction_features.py: EXCELLENT (0.008 MB)
+
+✅ comprehensive_gap_filler_v2.py: EXCELLENT (0.012 MB)
+
+✅ final_fix_script.py: EXCELLENT (0.004 MB)
+
+✅ download_remaining_aggtrades.py: EXCELLENT (0.006 MB)
+
+✅ diagnose_feature_pipeline.py: EXCELLENT (0.006 MB)
+
+✅ comprehensive_code_quality_assessment.py: EXCELLENT (0.019 MB)
+
+================================================================================
+End of Report
+================================================================================

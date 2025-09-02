@@ -1,5 +1,22 @@
 # src/training/steps/step18_*.py
 
+from src.utils.training_pipeline_decorators import (
+    artifact_versioning,
+    artifact_write_lock,
+    circuit_breaker_protection,
+    debug_training_step,
+    deterministic_seed,
+    idempotent_step,
+    memory_efficient,
+    nan_inf_and_constant_guard,
+    prevent_data_leakage,
+    quality_gate,
+    resource_monitor,
+    secure_data_processing,
+    time_budget_watchdog,
+    validate_step_output,
+    validate_step_prerequisites,
+)
 import asyncio
 import contextlib
 import json
@@ -15,8 +32,6 @@ from src.utils.warning_symbols import (
 
 class WalkForwardValidationStep:
     """Step 13: Walk-Forward Validation using existing step6_walk_forward_validation."""
-
-    
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""
@@ -40,9 +55,7 @@ class WalkForwardValidationStep:
             )
             raise
 
-    async def execute(
-        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def execute(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
         """Execute walk-forward validation.
 
         Args:
@@ -64,9 +77,7 @@ class WalkForwardValidationStep:
             # In a full implementation, this would call the prior step's core routine.
 
             # Load walk-forward validation results
-            wfv_results_file = (
-                f"{data_dir}/{exchange}_{symbol}_walk_forward_results.json"
-            )
+            wfv_results_file = f"{data_dir}/{exchange}_{symbol}_walk_forward_results.json"
 
             if os.path.exists(wfv_results_file):
                 with open(wfv_results_file) as f:
@@ -143,31 +154,6 @@ class WalkForwardValidationStep:
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
-from src.utils.training_pipeline_decorators import (
-    artifact_versioning,
-    artifact_write_lock,
-    circuit_breaker_protection,
-    debug_training_step,
-    deterministic_seed,
-    idempotent_step,
-    memory_efficient,
-    nan_inf_and_constant_guard,
-    prevent_data_leakage,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    time_budget_watchdog,
-    validate_step_output,
-    validate_step_prerequisites,
-)
-from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
-)
 
 
 # For backward compatibility with existing step structure
@@ -189,7 +175,10 @@ from src.utils.enhanced_mlflow_integration import (
     context="Walk Forward Validation",
 )
 @secure_data_processing(
-    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
+    backup_before=True,
+    integrity_checks=True,
+    memory_cleanup=True,
+    data_validation=True,
 )
 @prevent_data_leakage(
     temporal_validation=True,
@@ -205,7 +194,10 @@ from src.utils.enhanced_mlflow_integration import (
     auto_cleanup=True,
 )
 @memory_efficient(
-    chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=25,
+    chunk_size=10000,
+    streaming_processing=True,
+    memory_pool=True,
+    cleanup_frequency=25,
 )
 @debug_training_step(
     log_intermediate_results=True,

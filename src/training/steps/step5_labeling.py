@@ -11,19 +11,19 @@ Key Enhancements:
 - Configuration-Driven Behavior: Added configurable toggles for automatic barrier recalculation
 """
 
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 import asyncio
 import sys
-from pathlib import Path
-from typing import Any, Dict, List, Optional
 import time
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, Optional
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import pipeline standards
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 # Standardized import management
 REQUIRED_MODULES = [
@@ -33,7 +33,7 @@ REQUIRED_MODULES = [
     "src.utils.centralized_decorators",
     "src.utils.logger",
     "src.utils.enhanced_mlflow_integration",
-    "src.analyst.meta_labeling_system"
+    "src.analyst.meta_labeling_system",
 ]
 
 # Validate environment dependencies
@@ -49,15 +49,21 @@ numpy = PipelineStandards.safe_import("numpy", None)
 pandas = PipelineStandards.safe_import("pandas", None)
 
 # Fallback functions if imports fail
+
+
 def create_fallback_logger():
     import logging
+
     logging.basicConfig(level=logging.INFO)
     return logging.getLogger(__name__)
+
 
 def create_fallback_decorator():
     def decorator(func):
         return func
+
     return decorator
+
 
 # Initialize fallbacks
 if system_logger is None:
@@ -111,7 +117,7 @@ class LabelingStep:
         self.standards = pipeline_standards
         self.start_time = None
         self.step_timings = {}
-        
+
         # Validate environment on initialization
         self._validate_environment()
         self._initialize_components()
@@ -119,7 +125,7 @@ class LabelingStep:
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
-        
+
         missing_modules = [module for module, available in dependency_status.items() if not available]
         if missing_modules:
             self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
@@ -130,34 +136,35 @@ class LabelingStep:
     def _initialize_components(self) -> None:
         """Initialize labeling components with regime-aware triple barrier support."""
         self.logger.info("🔧 Initializing labeling components...")
-        
+
         # Initialize new configuration options for regime-aware labeling
         labeling_cfg = self.config.get("vectorized_labelling_orchestrator", {})
         self.auto_recalculate_hmm_barriers = bool(labeling_cfg.get("auto_recalculate_hmm_barriers", True))
         self.regime_col = str(labeling_cfg.get("hmm_barrier_regime_column", "hmm_regime"))
         self.time_barrier_minutes = int(labeling_cfg.get("time_barrier_minutes", 30))
         self.max_lookahead = int(labeling_cfg.get("max_lookahead", 100))
-        
+
         self.logger.info(f"📋 Regime-aware labeling configuration:")
         self.logger.info(f"   - Auto recalculate HMM barriers: {self.auto_recalculate_hmm_barriers}")
         self.logger.info(f"   - HMM regime column: {self.regime_col}")
         self.logger.info(f"   - Time barrier minutes: {self.time_barrier_minutes}")
         self.logger.info(f"   - Max lookahead: {self.max_lookahead}")
-        
+
         # Initialize only regime-aware triple barrier components
         self.regime_barrier_optimizer = None
-        
+
         try:
             # Try to import and initialize RegimeSpecificTripleBarrierOptimizer
             from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_specific_triple_barrier_optimizer import (
-                RegimeSpecificTripleBarrierOptimizer
+                RegimeSpecificTripleBarrierOptimizer,
             )
+
             self.regime_barrier_optimizer = RegimeSpecificTripleBarrierOptimizer(self.config)
             self.logger.info("✅ RegimeSpecificTripleBarrierOptimizer initialized successfully")
         except Exception as e:
             self.logger.warning(f"⚠️ Could not initialize RegimeSpecificTripleBarrierOptimizer: {e}")
             self.regime_barrier_optimizer = None
-        
+
         # Initialize meta-labeling system if available
         if meta_labeling_system is not None:
             try:
@@ -188,11 +195,7 @@ class LabelingStep:
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
     @with_tracing_span("execute_labeling")
-    @quality_gate(
-        min_quality_score=0.7,
-        max_correlation=0.95,
-        required_grade="C"
-    )
+    @quality_gate(min_quality_score=0.7, max_correlation=0.95, required_grade="C")
     @with_enhanced_mlflow_logging("step5_labeling")
     @comprehensive_data_validation
     @handle_errors
@@ -225,7 +228,9 @@ class LabelingStep:
 
         try:
             # Load triple barrier labels from previous step
-            triple_barrier_path = Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet"
+            triple_barrier_path = (
+                Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_triple_barrier_labels.parquet"
+            )
             if not triple_barrier_path.exists():
                 self.logger.error(f"❌ Triple barrier labels not found at {triple_barrier_path}")
                 return False
@@ -244,7 +249,7 @@ class LabelingStep:
             # Save results
             output_path = Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_labeled_data.parquet"
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            
+
             labeled_data.to_parquet(output_path)
             self.logger.info(f"✅ Labeled data saved to {output_path}")
 
@@ -255,26 +260,33 @@ class LabelingStep:
                 "exchange": exchange,
                 "timeframe": timeframe,
                 "total_samples": len(labeled_data),
-                "label_distribution": labeled_data['label'].value_counts().to_dict(),
-                "triple_barrier_distribution": labeled_data['triple_barrier_label'].value_counts().to_dict(),
+                "label_distribution": labeled_data["label"].value_counts().to_dict(),
+                "triple_barrier_distribution": labeled_data["triple_barrier_label"].value_counts().to_dict(),
                 "created_at": pd.Timestamp.now().isoformat(),
-                "labeling_config": self.config.get("labeling", {})
+                "labeling_config": self.config.get("labeling", {}),
             }
-            
+
             import json
-            with open(metadata_path, 'w') as f:
+
+            with open(metadata_path, "w") as f:
                 json.dump(metadata, f, indent=2)
-            
+
             self.logger.info(f"✅ Labeling metadata saved to {metadata_path}")
 
             self._log_step_timing("Labeling", step_start)
-            
+
             # Log artifacts and create detailed report
             await self._log_step5_artifacts_and_report(
-            # Standardized naming pattern: {exchange}_{symbol}_{timestamp}_{step_num}_{artifact_type}
-                symbol, exchange, timeframe, data_dir, labeled_data, output_path, metadata_path
+                # Standardized naming pattern: {exchange}_{symbol}_{timestamp}_{step_num}_{artifact_type}
+                symbol,
+                exchange,
+                timeframe,
+                data_dir,
+                labeled_data,
+                output_path,
+                metadata_path,
             )
-            
+
             return True
 
         except Exception as e:
@@ -289,7 +301,7 @@ class LabelingStep:
         data_dir: str,
         labeled_data: pd.DataFrame,
         output_path: Path,
-        metadata_path: Path
+        metadata_path: Path,
     ) -> None:
         """Log step 5 artifacts and create detailed report."""
         try:
@@ -303,23 +315,31 @@ class LabelingStep:
                 "data_quality_score": 1.0,
                 "processing_efficiency": 1.0,
             }
-            
+
             # Collect artifacts generated
             artifacts_generated = [
                 str(output_path),
                 str(metadata_path),
                 f"{exchange}_{symbol}_{timeframe}_labeling_metrics.json",
             ]
-            
+
             # Collect metrics
             metrics_calculated = {
                 "labeling_success": 1.0,
                 "total_samples": len(labeled_data) if labeled_data is not None else 0,
-                "labeled_samples": len(labeled_data[labeled_data['label'].notna()]) if labeled_data is not None else 0,
-                "label_distribution": labeled_data['label'].value_counts().to_dict() if labeled_data is not None and 'label' in labeled_data.columns else {},
-                "triple_barrier_distribution": labeled_data['triple_barrier_label'].value_counts().to_dict() if labeled_data is not None and 'triple_barrier_label' in labeled_data.columns else {},
+                "labeled_samples": len(labeled_data[labeled_data["label"].notna()]) if labeled_data is not None else 0,
+                "label_distribution": (
+                    labeled_data["label"].value_counts().to_dict()
+                    if labeled_data is not None and "label" in labeled_data.columns
+                    else {}
+                ),
+                "triple_barrier_distribution": (
+                    labeled_data["triple_barrier_label"].value_counts().to_dict()
+                    if labeled_data is not None and "triple_barrier_label" in labeled_data.columns
+                    else {}
+                ),
             }
-            
+
             # Create training input for report
             training_input = {
                 "symbol": symbol,
@@ -327,7 +347,7 @@ class LabelingStep:
                 "timeframe": timeframe,
                 "data_dir": data_dir,
             }
-            
+
             # Create step data for report
             step_data = {
                 "output_path": str(output_path),
@@ -335,7 +355,7 @@ class LabelingStep:
                 "data_shape": list(labeled_data.shape) if labeled_data is not None else [],
                 "label_columns": list(labeled_data.columns) if labeled_data is not None else [],
             }
-            
+
             # Create detailed report
             report_data = create_detailed_step_report(
                 step_name="step5_labeling",
@@ -344,9 +364,9 @@ class LabelingStep:
                 execution_metadata=execution_metadata,
                 artifacts_generated=artifacts_generated,
                 metrics_calculated=metrics_calculated,
-                errors_encountered=[]
+                errors_encountered=[],
             )
-            
+
             # Log the report
             report_name = log_step_report(
                 config=self.config,
@@ -359,10 +379,10 @@ class LabelingStep:
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
                     "project_version": self.config.get("project_version", "1.0.0"),
-                }
+                },
             )
             self.logger.info(f"✅ Logged labeling report: {report_name}")
-            
+
             # Log labeled data DataFrame
             if labeled_data is not None:
                 artifact_name = log_step_dataframe_with_standardized_name(
@@ -373,15 +393,17 @@ class LabelingStep:
                     additional_metadata={
                         "artifact_type": "labeled_data",
                         "dataframe_shape": list(labeled_data.shape),
-                        "label_distribution": labeled_data['label'].value_counts().to_dict() if 'label' in labeled_data.columns else {},
+                        "label_distribution": (
+                            labeled_data["label"].value_counts().to_dict() if "label" in labeled_data.columns else {}
+                        ),
                         "asset": symbol,
                         "lookback_period": self.config.get("lookback_days", 1095),
                         "project_version": self.config.get("project_version", "1.0.0"),
                         "timeframe": timeframe,
-                    }
+                    },
                 )
                 self.logger.info(f"✅ Logged labeled data: {artifact_name}")
-            
+
             # Log labeling metadata
             if metadata_path.exists():
                 metadata_artifact_name = log_step_artifact_with_standardized_name(
@@ -395,10 +417,10 @@ class LabelingStep:
                         "asset": symbol,
                         "lookback_period": self.config.get("lookback_days", 1095),
                         "project_version": self.config.get("project_version", "1.0.0"),
-                    }
+                    },
                 )
                 self.logger.info(f"✅ Logged labeling metadata: {metadata_artifact_name}")
-            
+
             # Log metrics
             log_step_metrics(
                 config=self.config,
@@ -410,18 +432,20 @@ class LabelingStep:
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
                     "project_version": self.config.get("project_version", "1.0.0"),
-                }
+                },
             )
-            
+
             self.logger.info("✅ Step 5 artifacts and reports logged successfully")
-            
+
         except Exception as e:
             self.logger.error(f"❌ Failed to log step 5 artifacts and reports: {e}")
             # Don't fail the step if MLflow logging fails
 
-    async def _generate_comprehensive_labels(self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
+    async def _generate_comprehensive_labels(
+        self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str
+    ) -> Optional[pd.DataFrame]:
         """Generate comprehensive labels combining multiple labeling strategies with regime-aware triple barrier method.
-        
+
         New Labeling Flow:
         Primary Path: Attempts regime-aware labeling using RegimeSpecificTripleBarrierOptimizer
         Fallback Path: Uses OptimizedTripleBarrierLabeling if regime-aware methods fail
@@ -429,35 +453,39 @@ class LabelingStep:
         """
         try:
             result_data = data.copy()
-            
+
             # Check if we need to generate triple barrier labels or if they already exist
-            if 'triple_barrier_label' not in result_data.columns:
+            if "triple_barrier_label" not in result_data.columns:
                 self.logger.info("🔄 Triple barrier labels not found, generating them using regime-aware methods...")
-                
+
                 # Primary Path: Attempt regime-aware labeling
                 if self.regime_barrier_optimizer is not None and self.auto_recalculate_hmm_barriers:
                     try:
                         self.logger.info("🚀 Attempting regime-aware triple barrier labeling...")
-                        
+
                         # Check if we have regime information
                         if self.regime_col in result_data.columns:
                             self.logger.info(f"✅ Found regime column: {self.regime_col}")
-                            
+
                             # Generate regime-aware labels
-                            regime_labels = await self._generate_regime_aware_labels(result_data, symbol, exchange, timeframe)
+                            regime_labels = await self._generate_regime_aware_labels(
+                                result_data, symbol, exchange, timeframe
+                            )
                             if regime_labels is not None:
-                                result_data['triple_barrier_label'] = regime_labels
-                                result_data['labeling_method'] = 'regime_aware'
+                                result_data["triple_barrier_label"] = regime_labels
+                                result_data["labeling_method"] = "regime_aware"
                                 self.logger.info("✅ Generated regime-aware triple barrier labels")
                             else:
                                 raise Exception("Regime-aware labeling failed")
                         else:
                             self.logger.warning(f"⚠️ Regime column '{self.regime_col}' not found")
                             raise Exception("Regime column not found")
-                            
+
                     except Exception as e:
                         self.logger.error(f"❌ Regime-aware labeling failed: {e}")
-                        self.logger.error("❌ No fallback labeling method available - regime-aware labeling is required")
+                        self.logger.error(
+                            "❌ No fallback labeling method available - regime-aware labeling is required"
+                        )
                         return None
                 else:
                     # Auto-calculation disabled or optimizer not available
@@ -467,87 +495,82 @@ class LabelingStep:
                         self.logger.error("❌ Regime barrier optimizer not available")
                     self.logger.error("❌ Regime-aware labeling is required - no fallback available")
                     return None
-            
+
             # 2. Generate meta-labels if meta-labeling system is available
             if self.meta_labeling_system:
                 try:
                     await self.meta_labeling_system.initialize()
-                    
+
                     # Generate analyst labels
                     analyst_labels = await self.meta_labeling_system._generate_analyst_labels(
                         data, symbol, exchange, timeframe
                     )
                     if analyst_labels is not None:
-                        result_data['analyst_label'] = analyst_labels
+                        result_data["analyst_label"] = analyst_labels
                         self.logger.info("✅ Generated analyst labels")
-                    
+
                     # Generate tactician labels
                     tactician_labels = await self.meta_labeling_system._generate_tactician_labels(
                         data, symbol, exchange, timeframe
                     )
                     if tactician_labels is not None:
-                        result_data['tactician_label'] = tactician_labels
+                        result_data["tactician_label"] = tactician_labels
                         self.logger.info("✅ Generated tactician labels")
-                        
+
                 except Exception as e:
                     self.logger.warning(f"⚠️ Meta-labeling failed: {e}")
-            
+
             # 3. Create composite label (primary label for training)
             composite_label = await self._create_composite_label(result_data)
-            result_data['label'] = composite_label
-            
+            result_data["label"] = composite_label
+
             # 4. Add label metadata
-            result_data['label_confidence'] = await self._calculate_label_confidence(result_data)
-            result_data['label_source'] = await self._determine_label_source(result_data)
-            
+            result_data["label_confidence"] = await self._calculate_label_confidence(result_data)
+            result_data["label_source"] = await self._determine_label_source(result_data)
+
             self.logger.info(f"✅ Generated comprehensive labels with {len(result_data.columns)} columns")
             self.logger.info(f"   - Label distribution: {result_data['label'].value_counts().to_dict()}")
             self.logger.info(f"   - Labeling method used: {result_data.get('labeling_method', 'unknown')}")
-            
+
             return result_data
 
         except Exception as e:
             self.logger.exception(f"❌ Error generating comprehensive labels: {e}")
             return None
 
-
-
     async def _create_composite_label(self, data: pd.DataFrame) -> pd.Series:
         """Create composite label from multiple labeling strategies."""
         try:
             # Start with triple barrier labels as base
-            composite_label = data['triple_barrier_label'].copy()
-            
+            composite_label = data["triple_barrier_label"].copy()
+
             # If we have analyst labels, use them to enhance the composite
-            if 'analyst_label' in data.columns:
+            if "analyst_label" in data.columns:
                 # Combine triple barrier with analyst labels
                 # Analyst labels can override triple barrier in certain conditions
-                analyst_override_mask = (
-                    (data['analyst_label'] != 0) & 
-                    (data['triple_barrier_label'] == 0)
-                )
-                composite_label[analyst_override_mask] = data['analyst_label'][analyst_override_mask]
-            
+                analyst_override_mask = (data["analyst_label"] != 0) & (data["triple_barrier_label"] == 0)
+                composite_label[analyst_override_mask] = data["analyst_label"][analyst_override_mask]
+
             return composite_label
 
         except Exception as e:
             self.logger.warning(f"⚠️ Error creating composite label: {e}")
             # Fallback to triple barrier labels
-            return data['triple_barrier_label']
+            return data["triple_barrier_label"]
 
     async def _calculate_label_confidence(self, data: pd.DataFrame) -> pd.Series:
         """Calculate confidence scores for labels."""
         try:
             confidence = np.ones(len(data), dtype=np.float32)
-            
+
             # Higher confidence when multiple labeling strategies agree
-            if 'analyst_label' in data.columns:
-                agreement_mask = (data['label'] == data['analyst_label']) & (data['analyst_label'] != 0)
+            if "analyst_label" in data.columns:
+                agreement_mask = (data["label"] == data["analyst_label"]) & (data["analyst_label"] != 0)
                 confidence[agreement_mask] += 0.2
-            
+
             # Cap confidence at 1.0
             confidence = np.minimum(confidence, 1.0)
-            
+
             return pd.Series(confidence, index=data.index)
 
         except Exception as e:
@@ -558,77 +581,79 @@ class LabelingStep:
         """Determine the source of each label."""
         try:
             sources = []
-            
+
             for idx in range(len(data)):
-                if data['label'].iloc[idx] == data['triple_barrier_label'].iloc[idx]:
-                    if 'analyst_label' in data.columns and data['label'].iloc[idx] == data['analyst_label'].iloc[idx]:
+                if data["label"].iloc[idx] == data["triple_barrier_label"].iloc[idx]:
+                    if "analyst_label" in data.columns and data["label"].iloc[idx] == data["analyst_label"].iloc[idx]:
                         sources.append("triple_barrier+analyst")
                     else:
                         sources.append("triple_barrier")
-                elif 'analyst_label' in data.columns and data['label'].iloc[idx] == data['analyst_label'].iloc[idx]:
+                elif "analyst_label" in data.columns and data["label"].iloc[idx] == data["analyst_label"].iloc[idx]:
                     sources.append("analyst")
                 else:
                     sources.append("composite")
-            
+
             return pd.Series(sources, index=data.index)
 
         except Exception as e:
             self.logger.warning(f"⚠️ Error determining label source: {e}")
             return pd.Series("unknown", index=data.index)
 
-    async def _generate_regime_aware_labels(self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Optional[pd.Series]:
+    async def _generate_regime_aware_labels(
+        self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str
+    ) -> Optional[pd.Series]:
         """Generate regime-aware triple barrier labels using RegimeSpecificTripleBarrierOptimizer."""
         try:
             if self.regime_barrier_optimizer is None:
                 self.logger.error("❌ Regime barrier optimizer not available")
                 return None
-            
+
             self.logger.info("🔧 Generating regime-aware triple barrier labels...")
-            
+
             # Prepare data for regime-aware labeling
             if self.regime_col not in data.columns:
                 self.logger.error(f"❌ Regime column '{self.regime_col}' not found in data")
                 return None
-            
+
             # Check if we have the required OHLCV columns
-            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            required_columns = ["open", "high", "low", "close", "volume"]
             missing_columns = [col for col in required_columns if col not in data.columns]
             if missing_columns:
                 self.logger.error(f"❌ Missing required columns for triple barrier labeling: {missing_columns}")
                 return None
-            
+
             # Generate regime-aware labels
             try:
                 # Use the regime-aware triple barrier labeling
                 from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import (
-                    RegimeAwareTripleBarrierLabeling
+                    RegimeAwareTripleBarrierLabeling,
                 )
-                
+
                 regime_labeler = RegimeAwareTripleBarrierLabeling(
                     default_profit_take_multiplier=0.002,
                     default_stop_loss_multiplier=0.001,
                     default_time_barrier_minutes=self.time_barrier_minutes,
-                    default_max_lookahead=self.max_lookahead
+                    default_max_lookahead=self.max_lookahead,
                 )
-                
+
                 # Generate labels
                 labels = regime_labeler.generate_labels(
                     data,
                     regime_column=self.regime_col,
                     time_barrier_minutes=self.time_barrier_minutes,
-                    max_lookahead=self.max_lookahead
+                    max_lookahead=self.max_lookahead,
                 )
-                
+
                 if labels is not None:
                     self.logger.info(f"✅ Generated {len(labels)} regime-aware labels")
                     return labels
                 else:
                     raise Exception("Regime-aware labeling returned None")
-                    
+
             except Exception as e:
                 self.logger.warning(f"⚠️ Regime-aware labeling failed: {e}")
                 return None
-                
+
         except Exception as e:
             self.logger.exception(f"❌ Error in regime-aware labeling: {e}")
             return None
@@ -682,12 +707,12 @@ async def run_step(
             "profit_take_multiplier": 0.002,
             "stop_loss_multiplier": 0.001,
         },
-        **config
+        **config,
     }
 
     step = LabelingStep(step_config)
     await step.initialize()
-    
+
     return await step.execute_labeling(
         symbol=symbol,
         exchange=exchange,
@@ -700,12 +725,7 @@ async def run_step(
 if __name__ == "__main__":
     # Test the step
     async def test():
-        success = await run_step(
-            symbol="ETHUSDT",
-            exchange="BINANCE",
-            timeframe="1m",
-            data_dir="data_cache"
-        )
+        success = await run_step(symbol="ETHUSDT", exchange="BINANCE", timeframe="1m", data_dir="data_cache")
         print(f"Step 5 result: {success}")
 
     asyncio.run(test())

@@ -44,7 +44,8 @@ class SROutcomeModelTrainer:
         # Model configuration
         self.model_config = config.get("sr_outcome_model", {})
         self.model_type = self.model_config.get(
-            "model_type", "ensemble",
+            "model_type",
+            "ensemble",
         )  # ensemble, lightgbm, xgboost
         self.feature_config = self.model_config.get("features", {})
 
@@ -53,23 +54,27 @@ class SROutcomeModelTrainer:
         self.validation_months = self.training_config.get("validation_months", 1)
         self.training_months = self.training_config.get("training_months", 3)
         self.min_samples_per_class = self.training_config.get(
-            "min_samples_per_class", 1000,
+            "min_samples_per_class",
+            1000,
         )
 
         # Ensemble configuration
         self.ensemble_config = self.model_config.get("ensemble", {})
         self.use_ensemble = self.ensemble_config.get("use_ensemble", True)
         self.ensemble_weights = self.ensemble_config.get(
-            "weights", [0.6, 0.4],
+            "weights",
+            [0.6, 0.4],
         )  # LightGBM, XGBoost
         self.voting_method = self.ensemble_config.get("voting", "soft")  # soft, hard
 
         # Feature engineering configuration
         self.use_temporal_features = self.feature_config.get(
-            "use_temporal_features", True,
+            "use_temporal_features",
+            True,
         )
         self.use_volatility_regime = self.feature_config.get(
-            "use_volatility_regime", True,
+            "use_volatility_regime",
+            True,
         )
         self.use_order_flow = self.feature_config.get("use_order_flow", False)
 
@@ -155,9 +160,7 @@ class SROutcomeModelTrainer:
             self.logger.exception(f"Error during model training: {e}")
             return False
 
-    async def _prepare_training_data(
-        self, training_data: dict[str, pd.DataFrame]
-    ) -> pd.DataFrame | None:
+    async def _prepare_training_data(self, training_data: dict[str, pd.DataFrame]) -> pd.DataFrame | None:
         """Prepare training data with S/R context and outcome labeling."""
         try:
             self.logger.info("🔄 Preparing training data...")
@@ -190,9 +193,7 @@ class SROutcomeModelTrainer:
             self.logger.exception(f"Error preparing training data: {e}")
             return None
 
-    async def _label_sr_outcomes(
-        self, data: pd.DataFrame, timeframe: str
-    ) -> pd.DataFrame | None:
+    async def _label_sr_outcomes(self, data: pd.DataFrame, timeframe: str) -> pd.DataFrame | None:
         """Label S/R outcomes for training data."""
         try:
             if data.empty:
@@ -269,62 +270,29 @@ class SROutcomeModelTrainer:
             features: dict[str, float] = {}
 
             # Price-based features
-            features["price_change_1m"] = (
-                market_data["close"].pct_change().iloc[-1]
-                if len(market_data) > 1
-                else 0
-            )
-            features["price_change_5m"] = (
-                market_data["close"].pct_change(5).iloc[-1]
-                if len(market_data) > 5
-                else 0
-            )
-            features["price_change_15m"] = (
-                market_data["close"].pct_change(15).iloc[-1]
-                if len(market_data) > 15
-                else 0
-            )
+            features["price_change_1m"] = market_data["close"].pct_change().iloc[-1] if len(market_data) > 1 else 0
+            features["price_change_5m"] = market_data["close"].pct_change(5).iloc[-1] if len(market_data) > 5 else 0
+            features["price_change_15m"] = market_data["close"].pct_change(15).iloc[-1] if len(market_data) > 15 else 0
             features["price_volatility"] = (
-                market_data["close"].rolling(20).std().iloc[-1]
-                if len(market_data) >= 20
-                else 0
+                market_data["close"].rolling(20).std().iloc[-1] if len(market_data) >= 20 else 0
             )
 
             # Volume-based features
             features["volume_ratio"] = (
-                (
-                    market_data["volume"].iloc[-1]
-                    / market_data["volume"].rolling(20).mean().iloc[-1]
-                )
+                (market_data["volume"].iloc[-1] / market_data["volume"].rolling(20).mean().iloc[-1])
                 if len(market_data) >= 20
                 else 1.0
             )
-            features["volume_momentum"] = (
-                market_data["volume"].pct_change().iloc[-1]
-                if len(market_data) > 1
-                else 0
-            )
+            features["volume_momentum"] = market_data["volume"].pct_change().iloc[-1] if len(market_data) > 1 else 0
             features["volume_volatility"] = (
-                market_data["volume"].rolling(10).std().iloc[-1]
-                if len(market_data) >= 10
-                else 0
+                market_data["volume"].rolling(10).std().iloc[-1] if len(market_data) >= 10 else 0
             )
 
             # Technical indicators
-            features["rsi"] = (
-                self._calculate_rsi(market_data["close"]).iloc[-1]
-                if len(market_data) >= 14
-                else 50
-            )
-            features["macd"] = (
-                self._calculate_macd(market_data["close"]).iloc[-1]
-                if len(market_data) >= 26
-                else 0
-            )
+            features["rsi"] = self._calculate_rsi(market_data["close"]).iloc[-1] if len(market_data) >= 14 else 50
+            features["macd"] = self._calculate_macd(market_data["close"]).iloc[-1] if len(market_data) >= 26 else 0
             features["bb_position"] = (
-                self._calculate_bb_position(market_data["close"]).iloc[-1]
-                if len(market_data) >= 20
-                else 0.5
+                self._calculate_bb_position(market_data["close"]).iloc[-1] if len(market_data) >= 20 else 0.5
             )
 
             # S/R-specific features
@@ -332,22 +300,20 @@ class SROutcomeModelTrainer:
                 nearest_support = sr_context.get("nearest_support", current_price)
                 nearest_resistance = sr_context.get("nearest_resistance", current_price)
 
-                features["distance_to_support"] = (
-                    current_price - nearest_support
-                ) / current_price
-                features["distance_to_resistance"] = (
-                    nearest_resistance - current_price
-                ) / current_price
+                features["distance_to_support"] = (current_price - nearest_support) / current_price
+                features["distance_to_resistance"] = (nearest_resistance - current_price) / current_price
                 features["support_strength"] = sr_context.get("support_strength", 0.5)
                 features["resistance_strength"] = sr_context.get(
-                    "resistance_strength", 0.5,
+                    "resistance_strength",
+                    0.5,
                 )
 
                 # Pivot level features
                 pivot_levels = sr_context.get("pivot_levels", {})
                 if pivot_levels:
                     features["nearest_pivot_strength"] = pivot_levels.get(
-                        "nearest_strength", 0.5,
+                        "nearest_strength",
+                        0.5,
                     )
                     features["pivot_touches"] = pivot_levels.get("nearest_touches", 0)
                 else:
@@ -395,9 +361,7 @@ class SROutcomeModelTrainer:
 
                 if len(outcome_data) > min_count:
                     # Sample down to min_count
-                    balanced_samples.append(
-                        outcome_data.sample(n=min_count, random_state=42)
-                    )
+                    balanced_samples.append(outcome_data.sample(n=min_count, random_state=42))
                 else:
                     # Keep all samples if below min_count
                     balanced_samples.append(outcome_data)
@@ -413,9 +377,7 @@ class SROutcomeModelTrainer:
             return data
 
     @validate_feature_engineering_with_lookahead_bias_detection
-    async def _engineer_features(
-        self, data: pd.DataFrame
-    ) -> tuple[np.ndarray | None, np.ndarray | None]:
+    async def _engineer_features(self, data: pd.DataFrame) -> tuple[np.ndarray | None, np.ndarray | None]:
         """Engineer features for model training."""
         try:
             self.logger.info("🔄 Engineering features...")
@@ -517,9 +479,7 @@ class SROutcomeModelTrainer:
             tscv = TimeSeriesSplit(n_splits=5)
 
             # Hyperparameter optimization for LightGBM
-            best_params = await self._optimize_lightgbm_hyperparameters(
-                X, y, sample_weights, tscv
-            )
+            best_params = await self._optimize_lightgbm_hyperparameters(X, y, sample_weights, tscv)
 
             # Train final model with best parameters
             final_model = lgb.LGBMClassifier(**best_params, random_state=42)
@@ -557,9 +517,7 @@ class SROutcomeModelTrainer:
             tscv = TimeSeriesSplit(n_splits=5)
 
             # Hyperparameter optimization for XGBoost
-            best_params = await self._optimize_xgboost_hyperparameters(
-                X, y, sample_weights, tscv
-            )
+            best_params = await self._optimize_xgboost_hyperparameters(X, y, sample_weights, tscv)
 
             # Train final model with best parameters
             final_model = xgb.XGBClassifier(**best_params, random_state=42)
@@ -618,7 +576,11 @@ class SROutcomeModelTrainer:
             return False
 
     async def _optimize_lightgbm_hyperparameters(
-        self, X: np.ndarray, y: np.ndarray, sample_weights: np.ndarray, tscv: TimeSeriesSplit,
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        sample_weights: np.ndarray,
+        tscv: TimeSeriesSplit,
     ) -> dict:
         """Optimize LightGBM hyperparameters using Optuna."""
         try:
@@ -629,23 +591,23 @@ class SROutcomeModelTrainer:
                     "num_class": 3,
                     "boosting_type": "gbdt",
                     "metric": "multi_logloss",
-                    "learning_rate": trial.suggest_float(
-                        "learning_rate", 0.01, 0.1, log=True
-                    ),
+                    "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.1, log=True),
                     "num_leaves": trial.suggest_int("num_leaves", 15, 63),
                     "max_depth": trial.suggest_int("max_depth", 4, 12),
                     "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 10, 50),
                     "feature_fraction": trial.suggest_float(
-                        "feature_fraction", 0.6, 0.9,
+                        "feature_fraction",
+                        0.6,
+                        0.9,
                     ),
                     "bagging_fraction": trial.suggest_float(
-                        "bagging_fraction", 0.6, 0.9,
+                        "bagging_fraction",
+                        0.6,
+                        0.9,
                     ),
                     "bagging_freq": trial.suggest_int("bagging_freq", 1, 10),
                     "reg_alpha": trial.suggest_float("reg_alpha", 0.01, 0.3, log=True),
-                    "reg_lambda": trial.suggest_float(
-                        "reg_lambda", 0.01, 0.3, log=True
-                    ),
+                    "reg_lambda": trial.suggest_float("reg_lambda", 0.01, 0.3, log=True),
                     "random_state": 42,
                 }
 
@@ -657,7 +619,7 @@ class SROutcomeModelTrainer:
                     w_train = sample_weights[train_idx]
                     X_val = X[val_idx]
                     y_val = y[val_idx]
-                    w_val = sample_weights[val_idx]
+                    sample_weights[val_idx]
 
                     model = lgb.LGBMClassifier(**params, random_state=42)
                     model.fit(X_train, y_train, sample_weight=w_train)
@@ -669,7 +631,7 @@ class SROutcomeModelTrainer:
                 return float(np.mean(scores))
 
             # Get trials from training input or use default
-            sr_lightgbm_trials = getattr(self, 'training_input', {}).get("sr_lightgbm_trials", 30)
+            sr_lightgbm_trials = getattr(self, "training_input", {}).get("sr_lightgbm_trials", 30)
             # Run optimization
             study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials=sr_lightgbm_trials)
@@ -708,7 +670,11 @@ class SROutcomeModelTrainer:
             }
 
     async def _optimize_xgboost_hyperparameters(
-        self, X: np.ndarray, y: np.ndarray, sample_weights: np.ndarray, tscv: TimeSeriesSplit,
+        self,
+        X: np.ndarray,
+        y: np.ndarray,
+        sample_weights: np.ndarray,
+        tscv: TimeSeriesSplit,
     ) -> dict:
         """Optimize XGBoost hyperparameters using Optuna."""
         try:
@@ -718,20 +684,18 @@ class SROutcomeModelTrainer:
                     "objective": "multi:softprob",
                     "num_class": 3,
                     "eval_metric": "mlogloss",
-                    "learning_rate": trial.suggest_float(
-                        "learning_rate", 0.01, 0.1, log=True
-                    ),
+                    "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.1, log=True),
                     "max_depth": trial.suggest_int("max_depth", 3, 10),
                     "min_child_weight": trial.suggest_int("min_child_weight", 1, 10),
                     "subsample": trial.suggest_float("subsample", 0.6, 0.9),
                     "colsample_bytree": trial.suggest_float(
-                        "colsample_bytree", 0.6, 0.9,
+                        "colsample_bytree",
+                        0.6,
+                        0.9,
                     ),
                     "gamma": trial.suggest_float("gamma", 0, 0.5),
                     "reg_alpha": trial.suggest_float("reg_alpha", 0.01, 0.3, log=True),
-                    "reg_lambda": trial.suggest_float(
-                        "reg_lambda", 0.01, 0.3, log=True
-                    ),
+                    "reg_lambda": trial.suggest_float("reg_lambda", 0.01, 0.3, log=True),
                     "random_state": 42,
                 }
 
@@ -743,7 +707,7 @@ class SROutcomeModelTrainer:
                     w_train = sample_weights[train_idx]
                     X_val = X[val_idx]
                     y_val = y[val_idx]
-                    w_val = sample_weights[val_idx]
+                    sample_weights[val_idx]
 
                     model = xgb.XGBClassifier(**params, random_state=42)
                     model.fit(X_train, y_train, sample_weight=w_train)
@@ -755,7 +719,7 @@ class SROutcomeModelTrainer:
                 return float(np.mean(scores))
 
             # Get trials from training input or use default
-            sr_xgboost_trials = getattr(self, 'training_input', {}).get("sr_xgboost_trials", 30)
+            sr_xgboost_trials = getattr(self, "training_input", {}).get("sr_xgboost_trials", 30)
             # Run optimization
             study = optuna.create_study(direction="maximize")
             study.optimize(objective, n_trials=sr_xgboost_trials)
@@ -790,9 +754,7 @@ class SROutcomeModelTrainer:
                 "random_state": 42,
             }
 
-    async def _evaluate_model(
-        self, X: np.ndarray, y: np.ndarray, model_name: str = "Model"
-    ) -> None:
+    async def _evaluate_model(self, X: np.ndarray, y: np.ndarray, model_name: str = "Model") -> None:
         """Evaluate the trained model."""
         try:
             # Use appropriate model for evaluation
@@ -814,9 +776,7 @@ class SROutcomeModelTrainer:
             y_pred_proba = model_to_evaluate.predict_proba(X)
 
             # Metrics
-            report = classification_report(
-                y, y_pred, target_names=self.label_encoder.classes_
-            )
+            report = classification_report(y, y_pred, target_names=self.label_encoder.classes_)
             conf_matrix = confusion_matrix(y, y_pred)
             auc_score = roc_auc_score(y, y_pred_proba, multi_class="ovr")
 
@@ -831,22 +791,13 @@ class SROutcomeModelTrainer:
                 ).sort_values("importance", ascending=False)
             elif model_name == "Ensemble":
                 # For ensemble, combine feature importance from both models
-                lgb_importance = (
-                    self.models["lgb"].feature_importances_
-                    if "lgb" in self.models
-                    else None
-                )
-                xgb_importance = (
-                    self.models["xgb"].feature_importances_
-                    if "xgb" in self.models
-                    else None
-                )
+                lgb_importance = self.models["lgb"].feature_importances_ if "lgb" in self.models else None
+                xgb_importance = self.models["xgb"].feature_importances_ if "xgb" in self.models else None
 
                 if lgb_importance is not None and xgb_importance is not None:
                     # Weighted average of feature importance
                     weighted_importance = (
-                        lgb_importance * self.ensemble_weights[0]
-                        + xgb_importance * self.ensemble_weights[1]
+                        lgb_importance * self.ensemble_weights[0] + xgb_importance * self.ensemble_weights[1]
                     )
                     feature_importance = pd.DataFrame(
                         {
@@ -868,9 +819,7 @@ class SROutcomeModelTrainer:
                 "auc_score": float(auc_score),
                 "classification_report": report,
                 "confusion_matrix": conf_matrix.tolist(),
-                "feature_importance": feature_importance.to_dict("records")
-                if feature_importance is not None
-                else None,
+                "feature_importance": feature_importance.to_dict("records") if feature_importance is not None else None,
                 "timestamp": datetime.now().isoformat(),
             }
 
@@ -1023,17 +972,13 @@ class SROutcomeModelTrainer:
         rs = gain / loss
         return 100 - (100 / (1 + rs))
 
-    def _calculate_macd(
-        self, prices: pd.Series, fast: int = 12, slow: int = 26
-    ) -> pd.Series:
+    def _calculate_macd(self, prices: pd.Series, fast: int = 12, slow: int = 26) -> pd.Series:
         """Calculate MACD indicator."""
         ema_fast = prices.ewm(span=fast).mean()
         ema_slow = prices.ewm(span=slow).mean()
         return ema_fast - ema_slow
 
-    def _calculate_bb_position(
-        self, prices: pd.Series, period: int = 20, std: int = 2
-    ) -> pd.Series:
+    def _calculate_bb_position(self, prices: pd.Series, period: int = 20, std: int = 2) -> pd.Series:
         """Calculate Bollinger Band position."""
         sma = prices.rolling(window=period).mean()
         std_dev = prices.rolling(window=period).std()
@@ -1068,16 +1013,8 @@ class SROutcomeModelTrainer:
             if len(market_data) < 10:
                 return 0.0
 
-            short_momentum = (
-                market_data["close"].pct_change(5).iloc[-1]
-                if len(market_data) > 5
-                else 0
-            )
-            long_momentum = (
-                market_data["close"].pct_change(20).iloc[-1]
-                if len(market_data) > 20
-                else 0
-            )
+            short_momentum = market_data["close"].pct_change(5).iloc[-1] if len(market_data) > 5 else 0
+            long_momentum = market_data["close"].pct_change(20).iloc[-1] if len(market_data) > 20 else 0
 
             momentum = short_momentum * 0.7 + long_momentum * 0.3
 
@@ -1086,16 +1023,12 @@ class SROutcomeModelTrainer:
             self.logger.exception(f"Error calculating momentum strength: {e}")
             return 0.0
 
-    def _calculate_time_since_sr_touch(
-        self, market_data: pd.DataFrame, sr_context: dict
-    ) -> float:
+    def _calculate_time_since_sr_touch(self, market_data: pd.DataFrame, sr_context: dict) -> float:
         """Calculate time since last S/R level touch."""
         # Placeholder implementation
         return 0.5
 
-    def _calculate_sr_touch_frequency(
-        self, market_data: pd.DataFrame, sr_context: dict
-    ) -> float:
+    def _calculate_sr_touch_frequency(self, market_data: pd.DataFrame, sr_context: dict) -> float:
         """Calculate S/R level touch frequency."""
         # Placeholder implementation
         return 0.5

@@ -1,7 +1,6 @@
 # src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py
 
 import contextlib
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -20,17 +19,18 @@ except Exception:  # pragma: no cover
 
 if "numba" in globals() and numba is not None:
     pass  # TODO: Add proper implementation
+
     @numba.jit(nopython=True, cache=True)
     def _numba_triple_barrier_labels(
-        close: np.ndarray, 
-        high: np.ndarray, 
-        low: np.ndarray, 
-        pt_mult: float, 
-        sl_mult: float, 
+        close: np.ndarray,
+        high: np.ndarray,
+        low: np.ndarray,
+        pt_mult: float,
+        sl_mult: float,
         end_idx_arr: np.ndarray,
     ) -> tuple[np.ndarray, np.ndarray]:
         """Numba-accelerated triple barrier labeling with profit tracking.
-        
+
         Returns:
             labels: 1 for LONG position, -1 for SHORT position, 0 for HOLD
             profit_pcts: Actual profit/loss percentages at barrier hits
@@ -38,21 +38,21 @@ if "numba" in globals() and numba is not None:
         labels = np.zeros(close.shape[0], dtype=np.int8)
         profit_pcts = np.zeros(close.shape[0], dtype=np.float64)
         n = close.shape[0]
-        
+
         for i in range(n - 1):
             entry_price = close[i]
             profit_barrier = entry_price * (1.0 + pt_mult)
             stop_barrier = entry_price * (1.0 - sl_mult)
             end_idx = int(end_idx_arr[i])
-            
+
             if end_idx <= i + 1:
                 labels[i] = 0  # HOLD - no position
                 profit_pcts[i] = 0.0
                 continue
-                
+
             lab = 0
             profit_pct = 0.0
-            
+
             for j in range(i + 1, end_idx):
                 # Profit check first to match tie handling with vectorized baseline
                 if high[j] >= profit_barrier:
@@ -65,10 +65,10 @@ if "numba" in globals() and numba is not None:
                     # Calculate actual loss percentage at barrier hit
                     profit_pct = -sl_mult
                     break
-                    
+
             labels[i] = lab
             profit_pcts[i] = profit_pct
-            
+
         return labels, profit_pcts
 
 
@@ -82,11 +82,11 @@ class OptimizedTripleBarrierLabeling:
     """
 
     def __init__(
-        self, 
-        profit_take_multiplier: float = 0.002, 
-        stop_loss_multiplier: float = 0.001, 
-        time_barrier_minutes: int = 30, 
-        max_lookahead: int = 100, 
+        self,
+        profit_take_multiplier: float = 0.002,
+        stop_loss_multiplier: float = 0.001,
+        time_barrier_minutes: int = 30,
+        max_lookahead: int = 100,
         binary_classification: bool = True,  # Default to True to fix label imbalance
     ) -> None:
         """Initialize the optimized triple barrier labeling.
@@ -121,19 +121,15 @@ class OptimizedTripleBarrierLabeling:
                 "⚠️ Triple barrier labeling configured for ternary classification (BUY/HOLD/SELL)",
             )
             self.logger.warning("   → This may lead to label imbalance issues")
-            self.logger.warning(
-                "   → Consider using binary_classification=True for better results"
-            )
+            self.logger.warning("   → Consider using binary_classification=True for better results")
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.DataFrame(),
-        context="optimized_triple_barrier_labeling.vectorized"
+        exceptions=(Exception,), default_return=pd.DataFrame(), context="optimized_triple_barrier_labeling.vectorized"
     )
     @guard_dataframe_nulls(mode="warn", arg_index=1)
     @with_tracing_span("TripleBarrier.apply_vectorized", log_args=False)
     def apply_triple_barrier_labeling_vectorized(
-        self, 
+        self,
         data: pd.DataFrame,
     ) -> pd.DataFrame:
         """Apply a correct forward-looking Triple Barrier Method with profit tracking.
@@ -225,9 +221,7 @@ class OptimizedTripleBarrierLabeling:
         labels: np.ndarray
         profit_pcts: np.ndarray
         use_numba = (
-            "numba" in globals()
-            and numba is not None
-            and callable(globals().get("_numba_triple_barrier_labels"))
+            "numba" in globals() and numba is not None and callable(globals().get("_numba_triple_barrier_labels"))
         )
         if use_numba and n >= 512:
             self.logger.info("⚡ Using Numba-accelerated triple barrier labeling with profit tracking")
@@ -244,38 +238,38 @@ class OptimizedTripleBarrierLabeling:
             self.logger.info("🐍 Using Python vectorized triple barrier labeling with profit tracking")
             labels = np.zeros(n, dtype=np.int8)
             profit_pcts = np.zeros(n, dtype=np.float64)
-            
+
             for i in range(n - 1):
                 entry_price = close[i]
                 profit_barrier = entry_price * (1.0 + pt_mult)
                 stop_barrier = entry_price * (1.0 - sl_mult)
                 end_idx = int(end_idx_arr[i])
-                
+
                 if end_idx <= i + 1:
                     labels[i] = 0
                     profit_pcts[i] = 0.0
                     continue
-                    
+
                 win_high = high[i + 1 : end_idx]
                 win_low = low[i + 1 : end_idx]
                 profit_hits = np.where(win_high >= profit_barrier)[0]
                 stop_hits = np.where(win_low <= stop_barrier)[0]
-                
+
                 if profit_hits.size == 0 and stop_hits.size == 0:
                     labels[i] = 0
                     profit_pcts[i] = 0.0
                     continue
-                    
+
                 if profit_hits.size == 0:
                     labels[i] = -1
                     profit_pcts[i] = -sl_mult  # SHORT position - stop loss hit
                     continue
-                    
+
                 if stop_hits.size == 0:
                     labels[i] = 1
                     profit_pcts[i] = pt_mult  # LONG position - profit take hit
                     continue
-                    
+
                 # Both barriers hit - check which came first
                 if profit_hits[0] <= stop_hits[0]:
                     labels[i] = 1
@@ -300,19 +294,33 @@ class OptimizedTripleBarrierLabeling:
         self.logger.info(f"   HOLD (0): {hold_samples} samples (removed)")
         self.logger.info(f"   Total samples: {filtered_count} (from {original_count})")
         self.logger.info(
-            f"   Filtering ratio: {hold_samples/original_count:.1%} HOLD samples removed",
+            f"   Filtering ratio: {hold_samples / original_count:.1%} HOLD samples removed",
         )
-        
+
         # Log profit statistics
         if len(labeled_data) > 0:
-            long_profits = labeled_data[labeled_data['label'] == 1]['potential_profit_pct']
-            short_profits = labeled_data[labeled_data['label'] == -1]['potential_profit_pct']
-            
+            long_profits = labeled_data[labeled_data["label"] == 1]["potential_profit_pct"]
+            short_profits = labeled_data[labeled_data["label"] == -1]["potential_profit_pct"]
+
             self.logger.info("💰 Profit statistics:")
-            self.logger.info(f"   LONG signals - Avg profit: {long_profits.mean():.4f}, Max: {long_profits.max():.4f}, Min: {long_profits.min():.4f}")
-            self.logger.info(f"   SHORT signals - Avg profit: {short_profits.mean():.4f}, Max: {short_profits.max():.4f}, Min: {short_profits.min():.4f}")
-            self.logger.info(f"   Overall - Avg profit: {labeled_data['potential_profit_pct'].mean():.4f}, Std: {labeled_data['potential_profit_pct'].std():.4f}")
-        
+            self.logger.info(
+                f"   LONG signals - Avg profit: {
+                    long_profits.mean():.4f}, Max: {
+                    long_profits.max():.4f}, Min: {
+                    long_profits.min():.4f}"
+            )
+            self.logger.info(
+                f"   SHORT signals - Avg profit: {
+                    short_profits.mean():.4f}, Max: {
+                    short_profits.max():.4f}, Min: {
+                    short_profits.min():.4f}"
+            )
+            self.logger.info(
+                f"   Overall - Avg profit: {
+                    labeled_data['potential_profit_pct'].mean():.4f}, Std: {
+                    labeled_data['potential_profit_pct'].std():.4f}"
+            )
+
         if self.binary_classification:
             self.logger.info(
                 "   Reason: binary_classification=True. HOLDs occur when neither profit-take nor stop-loss was hit before the time barrier;"
@@ -329,32 +337,19 @@ class OptimizedTripleBarrierLabeling:
         labels_arr = labeled_data["label"].to_numpy()
         long_mask = labels_arr == 1
         short_mask = labels_arr == -1
-        long_agree = (
-            float(np.mean(next_sign_filtered[long_mask] > 0))
-            if long_mask.any()
-            else float("nan")
-        )
-        short_agree = (
-            float(np.mean(next_sign_filtered[short_mask] < 0))
-            if short_mask.any()
-            else float("nan")
-        )
+        long_agree = float(np.mean(next_sign_filtered[long_mask] > 0)) if long_mask.any() else float("nan")
+        short_agree = float(np.mean(next_sign_filtered[short_mask] < 0)) if short_mask.any() else float("nan")
         overall_agree = float(
             np.mean(
-                ((next_sign_filtered > 0) & long_mask)
-                | ((next_sign_filtered < 0) & short_mask),
+                ((next_sign_filtered > 0) & long_mask) | ((next_sign_filtered < 0) & short_mask),
             ),
         )
         self.logger.info(
             {
                 "msg": "Triple-barrier labeling diagnostics with profit tracking",
                 "distribution": distribution,
-                "long_nextbar_agree": round(long_agree, 4)
-                    if long_agree == long_agree
-                    else None,
-                "short_nextbar_agree": round(short_agree, 4)
-                    if short_agree == short_agree
-                    else None,
+                "long_nextbar_agree": round(long_agree, 4) if long_agree == long_agree else None,
+                "short_nextbar_agree": round(short_agree, 4) if short_agree == short_agree else None,
                 "overall_nextbar_agree": round(overall_agree, 4),
             },
         )
@@ -366,15 +361,9 @@ class OptimizedTripleBarrierLabeling:
         return labeled_data
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.DataFrame(),
-        context="optimized_triple_barrier_labeling.parallel"
+        exceptions=(Exception,), default_return=pd.DataFrame(), context="optimized_triple_barrier_labeling.parallel"
     )
-    def apply_triple_barrier_labeling_parallel(
-        self, 
-        data: pd.DataFrame, 
-        n_jobs: int = -1
-    ) -> pd.DataFrame:
+    def apply_triple_barrier_labeling_parallel(self, data: pd.DataFrame, n_jobs: int = -1) -> pd.DataFrame:
         """Apply parallel Triple Barrier Method for labeling.
 
         Args:
@@ -390,7 +379,7 @@ class OptimizedTripleBarrierLabeling:
     @handle_errors(
         exceptions=(Exception,),
         default_return=pd.DataFrame(),
-        context="optimized_triple_barrier_labeling.process_chunk"
+        context="optimized_triple_barrier_labeling.process_chunk",
     )
     def _process_chunk(self, chunk: pd.DataFrame) -> pd.DataFrame:
         """Process a single chunk of data.
@@ -405,17 +394,17 @@ class OptimizedTripleBarrierLabeling:
 
     def apply_triple_barrier_labels(self, data: pd.DataFrame) -> pd.Series:
         """Apply triple barrier labels and return only the labels series.
-        
+
         This is a convenience method for backward compatibility.
-        
+
         Args:
             data: Market data
-            
+
         Returns:
             Series with triple barrier labels
         """
         labeled_data = self.apply_triple_barrier_labeling_vectorized(data)
-        return labeled_data['label']
+        return labeled_data["label"]
 
 
 @with_tracing_span("benchmark_triple_barrier_methods", log_args=False)
@@ -471,7 +460,7 @@ if __name__ == "__main__":
             "close": np.random.uniform(100, 110, 1000),
             "volume": np.random.uniform(1000, 10000, 1000),
         },
-        index=dates
+        index=dates,
     )
 
     # Test optimization
@@ -481,7 +470,7 @@ if __name__ == "__main__":
     # Benchmark
     results = benchmark_triple_barrier_methods(data)
     print(f"Benchmark results: {results}")
-    
+
     # Show profit tracking results
     print(f"\nProfit tracking results:")
     print(f"LONG signals: {labeled_data[labeled_data['label'] == 1]['potential_profit_pct'].describe()}")

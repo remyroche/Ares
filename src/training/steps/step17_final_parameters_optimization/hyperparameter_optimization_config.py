@@ -622,12 +622,8 @@ class HyperparameterOptimizationConfig:
         """Get a summary of all optimization configurations."""
         summary = {
             "total_search_spaces": len(self.search_spaces),
-            "total_parameters": sum(
-                len(space.parameters) for space in self.search_spaces.values()
-            ),
-            "total_trials": sum(
-                space.n_trials for space in self.search_spaces.values()
-            ),
+            "total_parameters": sum(len(space.parameters) for space in self.search_spaces.values()),
+            "total_trials": sum(space.n_trials for space in self.search_spaces.values()),
             "search_spaces": {},
         }
 
@@ -637,9 +633,7 @@ class HyperparameterOptimizationConfig:
                 "n_trials": space.n_trials,
                 "strategy": space.optimization_strategy.value,
                 "timeout_seconds": space.timeout_seconds,
-                "evaluation_metrics": [
-                    metric.value for metric in space.evaluation_metrics
-                ],
+                "evaluation_metrics": [metric.value for metric in space.evaluation_metrics],
             }
 
         return summary
@@ -682,8 +676,7 @@ def get_optimization_plan() -> dict[str, Any]:
 
     return {
         "optimization_plan": {
-            "total_estimated_time_hours": summary["total_trials"]
-            * 0.5,  # 30 min (0.5 hours) per trial
+            "total_estimated_time_hours": summary["total_trials"] * 0.5,  # 30 min (0.5 hours) per trial
             "total_estimated_cost": summary["total_trials"] * 0.1,  # $0.10 per trial
             "parallel_execution": config.global_config["n_jobs"] > 1,
             "search_spaces_order": list(config.search_spaces.keys()),

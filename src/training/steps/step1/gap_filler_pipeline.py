@@ -9,7 +9,7 @@ import io
 import ssl
 import sys
 import zipfile
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 
 import aiohttp
@@ -45,9 +45,7 @@ class GapFillerPipeline:
         if self.session:
             await self.session.close()
 
-    def detect_gaps_in_file(
-        self, file_path: Path, min_gap_seconds: int = 5
-    ) -> list[dict]:
+    def detect_gaps_in_file(self, file_path: Path, min_gap_seconds: int = 5) -> list[dict]:
         """Detect gaps in a single aggtrades file."""
         try:
             # Read the file (Parquet or CSV)
@@ -96,7 +94,13 @@ class GapFillerPipeline:
             return []
 
     async def _fetch_aggtrades_from_binance_vision(
-        self, symbol: str, gap_start: datetime, gap_end: datetime, start_time_ms: int, end_time_ms: int, market_segment: str = "um"
+        self,
+        symbol: str,
+        gap_start: datetime,
+        gap_end: datetime,
+        start_time_ms: int,
+        end_time_ms: int,
+        market_segment: str = "um",
     ) -> list[dict]:
         """Download aggregated trades from Binance Vision for a specific gap period."""
         await self._ensure_session()
@@ -120,12 +124,7 @@ class GapFillerPipeline:
                     return []
 
                 with zf.open(csv_names[0]) as f:
-                    df = pd.read_csv(
-                        f,
-                        header=None,
-                        names=["a", "p", "q", "f", "l", "T", "m", "M"],
-                        low_memory=False
-                    )
+                    df = pd.read_csv(f, header=None, names=["a", "p", "q", "f", "l", "T", "m", "M"], low_memory=False)
 
             if df.empty:
                 return []
@@ -136,11 +135,7 @@ class GapFillerPipeline:
             for col in ["p", "q"]:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
 
-            df["m"] = (
-                df["m"]
-                .map({"true": True, "false": False, True: True, False: False})
-                .astype("boolean")
-            )
+            df["m"] = df["m"].map({"true": True, "false": False, True: True, False: False}).astype("boolean")
 
             # Drop invalid timestamps and filter to gap period
             df = df.dropna(subset=["T"])
@@ -197,7 +192,11 @@ class GapFillerPipeline:
             end_time_ms = int(gap_end.timestamp() * 1000)
 
             missing_data = await self._fetch_aggtrades_from_binance_vision(
-                symbol=symbol, gap_start=gap_start, gap_end=gap_end, start_time_ms=start_time_ms, end_time_ms=end_time_ms
+                symbol=symbol,
+                gap_start=gap_start,
+                gap_end=gap_end,
+                start_time_ms=start_time_ms,
+                end_time_ms=end_time_ms,
             )
 
             if missing_data and len(missing_data) > 0:
@@ -253,18 +252,12 @@ class GapFillerPipeline:
                     }
 
                 # Combine data
-                df_combined = pd.concat(
-                    [df_existing, df_missing], ignore_index=True
-                )
-                df_combined = df_combined.sort_values("timestamp").drop_duplicates(
-                    subset=["timestamp"]
-                )
+                df_combined = pd.concat([df_existing, df_missing], ignore_index=True)
+                df_combined = df_combined.sort_values("timestamp").drop_duplicates(subset=["timestamp"])
 
                 # Save back in the same format
                 if file_path.suffix.lower() == ".parquet":
-                    df_combined.to_parquet(
-                        file_path, compression="zstd", index=False
-                    )
+                    df_combined.to_parquet(file_path, compression="zstd", index=False)
                 elif file_path.suffix.lower() == ".csv":
                     df_combined.to_csv(file_path, index=False)
 
@@ -359,7 +352,9 @@ class GapFillerPipeline:
 
 
 # Function to integrate with pipeline
-async def run_gap_filling_pipeline(symbol: str = "ETHUSDT", exchange: str = "BINANCE", data_cache_path: str = "data_cache"):
+async def run_gap_filling_pipeline(
+    symbol: str = "ETHUSDT", exchange: str = "BINANCE", data_cache_path: str = "data_cache"
+):
     """Run gap filling as part of the training pipeline."""
     gap_filler = GapFillerPipeline(data_cache_path)
     return await gap_filler.run_pipeline(symbol, exchange)

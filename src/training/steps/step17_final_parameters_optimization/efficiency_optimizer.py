@@ -27,9 +27,7 @@ class EfficiencyConfig:
 
     # Data subsampling
     enable_data_subsampling: bool = True
-    subsample_fraction: float = (
-        0.1  # Use 10% of data for initial trials (more aggressive)
-    )
+    subsample_fraction: float = 0.1  # Use 10% of data for initial trials (more aggressive)
     adaptive_subsampling: bool = True  # Increase data usage for promising trials
 
     # Caching
@@ -195,9 +193,11 @@ class EfficiencyOptimizer:
                 "cache_stats": {
                     "hits": self.cache_hits,
                     "misses": self.cache_misses,
-                    "hit_rate": self.cache_hits / (self.cache_hits + self.cache_misses)
-                    if (self.cache_hits + self.cache_misses) > 0
-                    else 0,
+                    "hit_rate": (
+                        self.cache_hits / (self.cache_hits + self.cache_misses)
+                        if (self.cache_hits + self.cache_misses) > 0
+                        else 0
+                    ),
                 },
             }
 
@@ -206,7 +206,10 @@ class EfficiencyOptimizer:
             raise
 
     def _calculate_adaptive_trials(
-        self, base_trials: int, search_space: dict[str, Any], ) -> int:
+        self,
+        base_trials: int,
+        search_space: dict[str, Any],
+    ) -> int:
         """Calculate adaptive number of trials based on search space complexity."""
         try:
             # Count parameters
@@ -242,7 +245,9 @@ class EfficiencyOptimizer:
             return base_trials
 
     async def _get_warm_start_parameters(
-        self, search_space: dict[str, Any], ) -> list[dict[str, Any]]:
+        self,
+        search_space: dict[str, Any],
+    ) -> list[dict[str, Any]]:
         """Get warm start parameters from previous optimizations."""
         try:
             # Load previous results from cache
@@ -269,7 +274,11 @@ class EfficiencyOptimizer:
             return []
 
     def _generate_smart_parameters(
-        self, search_space: dict[str, Any], n_trials: int, previous_results: list[dict[str, Any]], ) -> list[dict[str, Any]]:
+        self,
+        search_space: dict[str, Any],
+        n_trials: int,
+        previous_results: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         """Generate smart parameters based on previous results."""
         try:
             params_list = []
@@ -277,18 +286,11 @@ class EfficiencyOptimizer:
             for _i in range(n_trials):
                 if previous_results and self.config.enable_smart_sampling:
                     # Use previous results to guide sampling
-                    best_results = sorted(
-                        previous_results,
-                        key=lambda x: x.get("value", 0)
-                    )[:5]
+                    best_results = sorted(previous_results, key=lambda x: x.get("value", 0))[:5]
 
                     # Generate parameters similar to good results
-                    if (
-                        best_results and np.random.random() < 0.7
-                    ):  # 70% chance to use smart sampling
-                        base_params = best_results[
-                            np.random.randint(len(best_results))
-                        ]["params"]
+                    if best_results and np.random.random() < 0.7:  # 70% chance to use smart sampling
+                        base_params = best_results[np.random.randint(len(best_results))]["params"]
                         params = self._perturb_parameters(base_params, search_space)
                     else:
                         params = self._generate_random_parameters(search_space)
@@ -301,12 +303,12 @@ class EfficiencyOptimizer:
 
         except Exception as e:
             self.logger.exception(f"Error generating smart parameters: {e}")
-            return [
-                self._generate_random_parameters(search_space) for _ in range(n_trials)
-            ]
+            return [self._generate_random_parameters(search_space) for _ in range(n_trials)]
 
     def _generate_random_parameters(
-        self, search_space: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        search_space: dict[str, Any],
+    ) -> dict[str, Any]:
         """Generate random parameters within search space."""
         try:
             params = {}
@@ -342,7 +344,10 @@ class EfficiencyOptimizer:
             return {}
 
     def _generate_diverse_parameters(
-        self, search_space: dict[str, Any], index: int, ) -> dict[str, Any]:
+        self,
+        search_space: dict[str, Any],
+        index: int,
+    ) -> dict[str, Any]:
         """Generate diverse parameters for warm start."""
         try:
             params = {}
@@ -392,7 +397,10 @@ class EfficiencyOptimizer:
             return {}
 
     def _perturb_parameters(
-        self, base_params: dict[str, Any], search_space: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        base_params: dict[str, Any],
+        search_space: dict[str, Any],
+    ) -> dict[str, Any]:
         """Perturb base parameters to create similar but different parameters."""
         try:
             perturbed_params = {}
@@ -431,9 +439,7 @@ class EfficiencyOptimizer:
                         if np.random.random() < 0.8:
                             perturbed_value = base_value
                         else:
-                            perturbed_value = np.random.choice(
-                                [c for c in choices if c != base_value]
-                            )
+                            perturbed_value = np.random.choice([c for c in choices if c != base_value])
 
                     perturbed_params[param_name] = perturbed_value
                 else:
@@ -446,7 +452,11 @@ class EfficiencyOptimizer:
             return base_params
 
     async def _process_trials_batch(
-        self, objective_function, params_list: list[dict[str, Any]], batch_name: str, ) -> list[dict[str, Any]]:
+        self,
+        objective_function,
+        params_list: list[dict[str, Any]],
+        batch_name: str,
+    ) -> list[dict[str, Any]]:
         """Process a batch of trials efficiently."""
         try:
             start_time = time.time()
@@ -470,9 +480,7 @@ class EfficiencyOptimizer:
                 results = []
                 for future in futures:
                     try:
-                        result = future.result(
-                            timeout=300
-                        )  # 5 minute timeout per trial
+                        result = future.result(timeout=300)  # 5 minute timeout per trial
                         results.append(result)
                     except Exception as e:
                         self.logger.exception(f"Trial evaluation failed: {e}")
@@ -499,7 +507,11 @@ class EfficiencyOptimizer:
             return []
 
     def _evaluate_trial(
-        self, objective_function, params: dict[str, Any], trial_index: int, ) -> dict[str, Any]:
+        self,
+        objective_function,
+        params: dict[str, Any],
+        trial_index: int,
+    ) -> dict[str, Any]:
         """Evaluate a single trial with caching."""
         try:
             start_time = time.time()
@@ -774,12 +786,7 @@ if __name__ == "__main__":
 
     async def test() -> None:
         await optimizer.initialize()
-        await optimizer.optimize_trial_efficiency(
-            test_objective,
-            search_space,
-            n_trials=50,
-            timeout_seconds=60
-        )
+        await optimizer.optimize_trial_efficiency(test_objective, search_space, n_trials=50, timeout_seconds=60)
         await optimizer.cleanup()
 
     asyncio.run(test())

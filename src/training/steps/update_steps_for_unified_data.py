@@ -22,7 +22,7 @@ TRAINING_STEPS: List[str] = [
     "step9_tactician_specialist_training",
     "step10_tactician_ensemble_creation",
     "step11_confidence_calibration",
-            "step17_final_parameters_optimization",
+    "step17_final_parameters_optimization",
     "step13_walk_forward_validation",
     "step14_monte_carlo_validation",
     "step15_ab_testing",
@@ -32,9 +32,7 @@ TRAINING_STEPS: List[str] = [
 
 def get_unified_data_loader_import() -> str:
     """Get the import statement for the unified data loader."""
-    return (
-        "from src.training.steps.unified_data_loader import get_unified_data_loader"
-    )
+    return "from src.training.steps.unified_data_loader import get_unified_data_loader"
 
 
 def get_unified_data_loading_code(
@@ -195,9 +193,9 @@ def generate_step_update_template(step_name: str) -> str:
 
 ## 2. Replace existing data loading code with:
 {get_unified_data_loading_code(
-    lookback_days=guidance['lookback_days'],
-    timeframe_var=f'\"{guidance["timeframe"]}\"',
-)}
+        lookback_days=guidance['lookback_days'],
+        timeframe_var=f'\"{guidance["timeframe"]}\"',
+    )}
 
 ## 3. Step-specific considerations:
 # {guidance['notes']}
@@ -214,7 +212,6 @@ def generate_step_update_template(step_name: str) -> str:
 #         regime_data = json.load(f)
 #     # Process regime data as needed
 """
-
 
 
 def main() -> None:

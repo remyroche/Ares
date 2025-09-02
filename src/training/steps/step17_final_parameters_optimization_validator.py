@@ -1,5 +1,7 @@
 """Validator for Step 12: Final Parameters Optimization."""
 
+from src.utils.base_validator import BaseValidator
+from src.config import CONFIG
 import os
 import sys
 from pathlib import Path
@@ -15,9 +17,6 @@ from src.utils.warning_symbols import (
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.config import CONFIG
-from src.utils.base_validator import BaseValidator
-
 
 class Step12FinalParametersOptimizationValidator(BaseValidator):
     """Validator for Step 12: Final Parameters Optimization."""
@@ -26,7 +25,10 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
         super().__init__("step17_final_parameters_optimization", config)
 
     async def validate(
-        self, training_input: dict[str, Any], pipeline_state: dict[str, Any], ) -> bool:
+        self,
+        training_input: dict[str, Any],
+        pipeline_state: dict[str, Any],
+    ) -> bool:
         """Validate the final parameters optimization step.
 
         Args:
@@ -107,7 +109,11 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
         return True
 
     def _validate_optimization_files(
-        self, symbol: str, exchange: str, data_dir: str, ) -> bool:
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
+    ) -> bool:
         """Validate that optimization files exist.
 
         Args:
@@ -146,7 +152,11 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
             return False
 
     def _validate_optimization_quality(
-        self, symbol: str, exchange: str, data_dir: str, ) -> bool:
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
+    ) -> bool:
         """Validate optimization quality metrics.
 
         Args:
@@ -210,7 +220,11 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
             return False
 
     def _validate_optimization_convergence(
-        self, symbol: str, exchange: str, data_dir: str, ) -> bool:
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
+    ) -> bool:
         """Validate optimization convergence.
 
         Args:
@@ -296,7 +310,11 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
             return False
 
     def _validate_optimized_parameters(
-        self, symbol: str, exchange: str, data_dir: str, ) -> bool:
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
+    ) -> bool:
         """Validate optimized parameters quality.
 
         Args:
@@ -357,9 +375,7 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
                 # Check parameter sensitivity
                 if "parameter_sensitivity" in params:
                     sensitivity = params["parameter_sensitivity"]
-                    high_sensitivity_params = [
-                        p for p, s in sensitivity.items() if s > 0.5
-                    ]
+                    high_sensitivity_params = [p for p, s in sensitivity.items() if s > 0.5]
                     if len(high_sensitivity_params) > 5:
                         self.logger.warning(
                             f"⚠️ Many high sensitivity parameters: {len(high_sensitivity_params)}",
@@ -375,7 +391,10 @@ class Step12FinalParametersOptimizationValidator(BaseValidator):
             return False
 
 
-async def run_validator(training_input: dict[str, Any], pipeline_state: dict[str, Any], ) -> dict[str, Any]:
+async def run_validator(
+    training_input: dict[str, Any],
+    pipeline_state: dict[str, Any],
+) -> dict[str, Any]:
     """Run the step17_final_parameters_optimization validator.
 
     Args:

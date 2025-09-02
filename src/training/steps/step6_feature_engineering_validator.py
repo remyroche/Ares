@@ -1,18 +1,14 @@
 # src/training/steps/step7_feature_engineering_validator.py
 
 import json
-import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict
 
 import pandas as pd
 
 from src.utils.base_validator import BaseValidator
+from src.utils.enhanced_validation_decorators import smart_validation_cache, validate_step6_comprehensive
 from src.utils.logger import system_logger
-from src.utils.enhanced_validation_decorators import (
-    validate_step6_comprehensive,
-    smart_validation_cache
-)
 
 logger = system_logger.getChild("Step6FeatureEngineeringValidator")
 
@@ -45,9 +41,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
             # Check if regime-aware features exist
             regime_features_dir = Path(data_dir) / "training" / "regime_features"
             if not regime_features_dir.exists():
-                self.logger.warning(
-                    f"⚠️ Regime features directory not found: {regime_features_dir}"
-                )
+                self.logger.warning(f"⚠️ Regime features directory not found: {regime_features_dir}")
                 return False
 
             # Validate regime-specific feature files
@@ -64,9 +58,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
                 # Check for feature files
                 feature_files = list(regime_dir.glob("*.parquet"))
                 if not feature_files:
-                    self.logger.warning(
-                        f"⚠️ No feature files found for regime: {regime_name}"
-                    )
+                    self.logger.warning(f"⚠️ No feature files found for regime: {regime_name}")
                     continue
 
                 # Validate feature file
@@ -85,7 +77,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
                 "data_dir": data_dir,
                 "error_type": type(e).__name__,
                 "error_message": str(e),
-                "timestamp": pd.Timestamp.now().isoformat()
+                "timestamp": pd.Timestamp.now().isoformat(),
             }
             self.logger.exception(f"❌ Step 6 validation failed: {error_context}")
             return False
@@ -112,7 +104,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
                 check_data_types=True,
                 check_value_ranges=True,
                 check_duplicates=True,
-                check_temporal_consistency=True
+                check_temporal_consistency=True,
             )
 
             if not df_valid:
@@ -122,20 +114,18 @@ class Step6FeatureEngineeringValidator(BaseValidator):
             # Additional feature engineering-specific validation
             feature_columns = [col for col in df.columns if col not in ["timestamp", "label"]]
             if len(feature_columns) < 5:
-                self.logger.warning(
-                    f"⚠️ Insufficient features in {feature_file.name}: {len(feature_columns)} features"
-                )
+                self.logger.warning(f"⚠️ Insufficient features in {feature_file.name}: {len(feature_columns)} features")
                 return False
 
             # Check for infinite or NaN values in features
-            numeric_features = df[feature_columns].select_dtypes(include=['number'])
+            numeric_features = df[feature_columns].select_dtypes(include=["number"])
             if not numeric_features.empty:
-                infinite_count = numeric_features.isin([float('inf'), float('-inf')]).sum().sum()
+                infinite_count = numeric_features.isin([float("inf"), float("-inf")]).sum().sum()
                 nan_count = numeric_features.isna().sum().sum()
-                
+
                 if infinite_count > 0:
                     self.logger.warning(f"⚠️ Found {infinite_count} infinite values in {feature_file.name}")
-                
+
                 if nan_count > 0:
                     self.logger.warning(f"⚠️ Found {nan_count} NaN values in {feature_file.name}")
 
@@ -147,25 +137,20 @@ class Step6FeatureEngineeringValidator(BaseValidator):
                 "file": str(feature_file),
                 "regime": regime_name,
                 "error_type": type(e).__name__,
-                "error_message": str(e)
+                "error_message": str(e),
             }
             self.logger.exception(f"❌ Failed to validate feature file: {error_context}")
             return False
 
     def validate_step_prerequisites(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate prerequisites for Step 6 using BaseValidator methods."""
-        validation_result = {
-            "validation_passed": True,
-            "warnings": [],
-            "errors": [],
-            "details": {}
-        }
+        validation_result = {"validation_passed": True, "warnings": [], "errors": [], "details": {}}
 
         try:
             # Check if step5_labeling output exists using BaseValidator
             step5_output_dir = Path("data/training/labeled_data")
             step5_files = list(step5_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*labeled*.parquet"))
-            
+
             if not step5_files:
                 validation_result["validation_passed"] = False
                 validation_result["errors"].append(
@@ -177,7 +162,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
                     file_valid, file_metrics = self.validate_file_exists(str(file_path), "step05 output file")
                     if not file_valid:
                         validation_result["warnings"].append(f"File validation failed: {file_path}")
-                
+
                 validation_result["details"]["step5_files_found"] = len(step5_files)
                 validation_result["details"]["step5_files"] = [str(f) for f in step5_files]
 
@@ -189,12 +174,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
 
     def validate_step_output(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate Step 6 output files and content using BaseValidator methods."""
-        validation_result = {
-            "validation_passed": True,
-            "warnings": [],
-            "errors": [],
-            "details": {}
-        }
+        validation_result = {"validation_passed": True, "warnings": [], "errors": [], "details": {}}
 
         try:
             # Define expected output files
@@ -219,16 +199,14 @@ class Step6FeatureEngineeringValidator(BaseValidator):
             for regime_dir in regime_dirs:
                 feature_files = list(regime_dir.glob("*.parquet"))
                 total_feature_files += len(feature_files)
-                
+
                 if feature_files:
                     # Validate first feature file as sample
                     sample_file = feature_files[0]
                     try:
                         df = pd.read_parquet(sample_file)
                         # Use BaseValidator's DataFrame validation
-                        df_valid, df_metrics = self.validate_dataframe_quality(
-                            df, min_rows=100, check_data_types=True
-                        )
+                        df_valid, df_metrics = self.validate_dataframe_quality(df, min_rows=100, check_data_types=True)
                         validation_result["details"][f"{regime_dir.name}_sample_valid"] = df_valid
                         validation_result["details"][f"{regime_dir.name}_sample_rows"] = len(df)
                         validation_result["details"][f"{regime_dir.name}_sample_columns"] = list(df.columns)
@@ -258,36 +236,30 @@ async def run_validator(
         Dictionary containing validation results
     """
     logger.info("🔍 Validating Step 6: Feature Engineering")
-    
+
     try:
         # Extract parameters
         symbol = training_input.get("symbol", "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
         timeframe = training_input.get("timeframe", "1m")
         data_dir = training_input.get("data_dir", "data_cache")
-        
+
         # Initialize validator with BaseValidator inheritance
         config = training_input.get("config", {})
         validator = Step6FeatureEngineeringValidator(config)
-        
+
         # Validate prerequisites using BaseValidator methods
         prereq_result = validator.validate_step_prerequisites(symbol, exchange, timeframe)
-        
+
         # Validate step execution
-        step_result = await validator.validate_step6_feature_engineering(
-            symbol, exchange, data_dir, training_input
-        )
-        
+        step_result = await validator.validate_step6_feature_engineering(symbol, exchange, data_dir, training_input)
+
         # Validate outputs using BaseValidator methods
         output_result = validator.validate_step_output(symbol, exchange, timeframe)
-        
+
         # Combine results
-        validation_passed = (
-            prereq_result["validation_passed"] and 
-            step_result and 
-            output_result["validation_passed"]
-        )
-        
+        validation_passed = prereq_result["validation_passed"] and step_result and output_result["validation_passed"]
+
         return {
             "step_name": "step6_feature_engineering",
             "validation_passed": validation_passed,
@@ -295,9 +267,9 @@ async def run_validator(
             "step_execution": step_result,
             "outputs": output_result,
             "warnings": prereq_result["warnings"] + output_result["warnings"],
-            "errors": prereq_result["errors"] + output_result["errors"]
+            "errors": prereq_result["errors"] + output_result["errors"],
         }
-        
+
     except Exception as e:
         error_context = {
             "step": "step6_feature_engineering",
@@ -305,30 +277,24 @@ async def run_validator(
             "exchange": training_input.get("exchange", "UNKNOWN"),
             "error_type": type(e).__name__,
             "error_message": str(e),
-            "timestamp": pd.Timestamp.now().isoformat()
+            "timestamp": pd.Timestamp.now().isoformat(),
         }
         logger.exception(f"❌ Step 6 validation failed: {error_context}")
         return {
             "step_name": "step6_feature_engineering",
             "validation_passed": False,
             "error": str(e),
-            "error_context": error_context
+            "error_context": error_context,
         }
 
 
 if __name__ == "__main__":
     # Test the validator
     import asyncio
-    
-    test_input = {
-        "symbol": "ETHUSDT",
-        "exchange": "BINANCE", 
-        "timeframe": "1m",
-        "data_dir": "data_cache",
-        "config": {}
-    }
-    
+
+    test_input = {"symbol": "ETHUSDT", "exchange": "BINANCE", "timeframe": "1m", "data_dir": "data_cache", "config": {}}
+
     test_state = {}
-    
+
     result = asyncio.run(run_validator(test_input, test_state))
     print(json.dumps(result, indent=2))

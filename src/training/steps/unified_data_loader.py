@@ -16,54 +16,62 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 try:
-    from src.utils.error_handler import handle_errors
-    from src.utils.logger import system_logger
     from src.utils.centralized_decorators import (
         guard_dataframe_nulls,
-        with_tracing_span,
+        sanitize_string,
         secure_file_path,
         validate_dataframe_schema,
         validate_file_size,
-        sanitize_string,
+        with_tracing_span,
     )
+    from src.utils.error_handler import handle_errors
+    from src.utils.logger import system_logger
 except ImportError:
     # Fallback imports
     def handle_errors(*args, **kwargs):
         def decorator(func):
             return func
+
         return decorator
 
     def guard_dataframe_nulls(*args, **kwargs):
         def decorator(func):
             return func
+
         return decorator
 
     def with_tracing_span(*args, **kwargs):
         def decorator(func):
             return func
+
         return decorator
 
     def secure_file_path(*args, **kwargs):
         def decorator(func):
             return func
+
         return decorator
 
     def validate_dataframe_schema(*args, **kwargs):
         def decorator(func):
             return func
+
         return decorator
 
     def validate_file_size(*args, **kwargs):
         def decorator(func):
             return func
+
         return decorator
 
     def sanitize_string(*args, **kwargs):
         def decorator(func):
             return func
+
         return decorator
 
     import logging
+
     system_logger = logging.getLogger(__name__)
 
 
@@ -116,7 +124,14 @@ class UnifiedDataLoader:
     @validate_file_size(max_size_mb=100)
     @with_tracing_span("UnifiedDataLoader.load_unified_data")
     async def load_unified_data(
-        self, symbol: str, exchange: str, timeframe: str, data_dir: str = "data_cache", start_date: Optional[str] = None, end_date: Optional[str] = None, columns: Optional[list[str]] = None
+        self,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+        data_dir: str = "data_cache",
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        columns: Optional[list[str]] = None,
     ) -> Optional[pd.DataFrame]:
         """Load unified data created by step1_5 with comprehensive validation.
 
@@ -150,6 +165,7 @@ class UnifiedDataLoader:
             # Load data using ParquetDatasetManager if available
             try:
                 from src.training.steps.step1_5_data_converter import ParquetDatasetManager
+
                 pdm = ParquetDatasetManager(logger=self.logger)
 
                 # Build filters for date range if specified
@@ -284,7 +300,11 @@ class UnifiedDataLoader:
 
     @secure_file_path(allowed_dirs=["data_cache", "data"])
     async def _load_unified_data_fallback(
-        self, unified_path: str, start_date: Optional[str] = None, end_date: Optional[str] = None, columns: Optional[list[str]] = None
+        self,
+        unified_path: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        columns: Optional[list[str]] = None,
     ) -> Optional[pd.DataFrame]:
         """Fallback method to load unified data without ParquetDatasetManager.
 
@@ -354,9 +374,7 @@ class UnifiedDataLoader:
             return None
 
     @sanitize_string(max_length=100, allowed_chars="A-Za-z0-9/_-")
-    def _get_unified_data_path(
-        self, symbol: str, exchange: str, timeframe: str, data_dir: str
-    ) -> str:
+    def _get_unified_data_path(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> str:
         """Get the path to unified data with input sanitization.
 
         Args:
@@ -443,6 +461,7 @@ class UnifiedDataLoader:
 # Global instance for easy access
 _unified_data_loader = None
 
+
 def get_unified_data_loader(config: Optional[dict[str, Any]] = None) -> UnifiedDataLoader:
     """Get or create a global unified data loader instance.
 
@@ -464,7 +483,14 @@ def get_unified_data_loader(config: Optional[dict[str, Any]] = None) -> UnifiedD
     default_return=None,
     context="load_unified_data",
 )
-async def load_unified_data(symbol: str, exchange: str, timeframe: str, data_dir: str = "data_cache", start_date: Optional[str] = None, end_date: Optional[str] = None, columns: Optional[list[str]] = None
+async def load_unified_data(
+    symbol: str,
+    exchange: str,
+    timeframe: str,
+    data_dir: str = "data_cache",
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    columns: Optional[list[str]] = None,
 ) -> Optional[pd.DataFrame]:
     """Load unified data with global loader instance.
 
@@ -488,7 +514,7 @@ async def load_unified_data(symbol: str, exchange: str, timeframe: str, data_dir
         data_dir=data_dir,
         start_date=start_date,
         end_date=end_date,
-        columns=columns
+        columns=columns,
     )
 
 
@@ -497,7 +523,8 @@ async def load_unified_data(symbol: str, exchange: str, timeframe: str, data_dir
     default_return=None,
     context="get_unified_data_info",
 )
-async def get_unified_data_info(symbol: str, exchange: str, timeframe: str, data_dir: str = "data_cache"
+async def get_unified_data_info(
+    symbol: str, exchange: str, timeframe: str, data_dir: str = "data_cache"
 ) -> Optional[dict[str, Any]]:
     """Get information about unified data with global loader instance.
 
@@ -511,9 +538,4 @@ async def get_unified_data_info(symbol: str, exchange: str, timeframe: str, data
         Dictionary with data information or None if failed
     """
     loader = get_unified_data_loader()
-    return await loader.get_data_info(
-        symbol=symbol,
-        exchange=exchange,
-        timeframe=timeframe,
-        data_dir=data_dir
-    )
+    return await loader.get_data_info(symbol=symbol, exchange=exchange, timeframe=timeframe, data_dir=data_dir)

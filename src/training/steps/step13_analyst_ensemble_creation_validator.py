@@ -21,7 +21,12 @@ class Step7AnalystEnsembleCreationValidator:
 
     @handle_errors
     def validate(
-        self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any], ) -> bool:
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
+        training_input: dict[str, Any],
+    ) -> bool:
         """Validate Step 7: Analyst Ensemble Creation.
 
         Args:
@@ -39,13 +44,15 @@ class Step7AnalystEnsembleCreationValidator:
         try:
             # Validate ensemble files exist
             ensemble_files_passed = self._validate_ensemble_files(
-                symbol=exchange, data_dir=data_dir,
+                symbol=exchange,
+                data_dir=data_dir,
             )
             self.validation_results["ensemble_files"] = ensemble_files_passed
 
             # Validate ensemble structure
             ensemble_structure_passed = self._validate_ensemble_structure(
-                symbol=exchange, data_dir=data_dir,
+                symbol=exchange,
+                data_dir=data_dir,
             )
             self.validation_results["ensemble_structure"] = ensemble_structure_passed
 
@@ -71,13 +78,18 @@ class Step7AnalystEnsembleCreationValidator:
             return False
 
     def _validate_ensemble_files(
-        self, symbol: str, exchange: str, data_dir: str, ) -> bool:
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
+    ) -> bool:
         """Validate that ensemble files exist."""
         try:
             # Expected ensemble files
             ensemble_dir = os.path.join(data_dir, "analyst_ensemble")
             summary_file = os.path.join(
-                ensemble_dir, f"{exchange}_{symbol}_analyst_ensemble_summary.json",
+                ensemble_dir,
+                f"{exchange}_{symbol}_analyst_ensemble_summary.json",
             )
 
             missing_files = []
@@ -105,7 +117,11 @@ class Step7AnalystEnsembleCreationValidator:
             return False
 
     def _validate_ensemble_structure(
-        self, symbol: str, exchange: str, data_dir: str, ) -> bool:
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
+    ) -> bool:
         """Validate ensemble structure and metadata."""
         try:
             summary_file = os.path.join(
@@ -130,9 +146,7 @@ class Step7AnalystEnsembleCreationValidator:
                 "ensemble_weights",
                 "ensemble_metadata",
             ]
-            missing_fields = [
-                field for field in required_fields if field not in summary
-            ]
+            missing_fields = [field for field in required_fields if field not in summary]
 
             if missing_fields:
                 self.logger.error(
@@ -152,12 +166,16 @@ class Step7AnalystEnsembleCreationValidator:
             if metadata.get("symbol") != symbol or metadata.get("exchange") != exchange:
                 self.logger.error(
                     failed(
-                        f"❌ Metadata mismatch: expected {exchange}_{symbol}, got {metadata.get('exchange')}_{metadata.get('symbol')}",
+                        f"❌ Metadata mismatch: expected {exchange}_{symbol}, got {
+                            metadata.get('exchange')}_{
+                            metadata.get('symbol')}",
                     ),
                 )
                 self.print(
                     failed(
-                        f"❌ Metadata mismatch: expected {exchange}_{symbol}, got {metadata.get('exchange')}_{metadata.get('symbol')}",
+                        f"❌ Metadata mismatch: expected {exchange}_{symbol}, got {
+                            metadata.get('exchange')}_{
+                            metadata.get('symbol')}",
                     ),
                 )
                 return False
@@ -187,7 +205,13 @@ class Step7AnalystEnsembleCreationValidator:
         self.logger.info(message)
 
 
-def step7_analyst_ensemble_creation_validator(symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any], config: dict[str, Any], ) -> bool:
+def step7_analyst_ensemble_creation_validator(
+    symbol: str,
+    exchange: str,
+    data_dir: str,
+    training_input: dict[str, Any],
+    config: dict[str, Any],
+) -> bool:
     """Step 7: Analyst Ensemble Creation Validator.
 
     Args:

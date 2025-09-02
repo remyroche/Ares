@@ -2,6 +2,8 @@
 
 """Validator for Step 2: Feature Engineering."""
 
+from src.utils.base_validator import BaseValidator
+from src.config import CONFIG
 import asyncio
 import os
 import pickle
@@ -15,9 +17,6 @@ import pandas as pd
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-
-from src.config import CONFIG
-from src.utils.base_validator import BaseValidator
 
 
 class Step2FeatureEngineeringValidator(BaseValidator):
@@ -68,7 +67,9 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
         # 2. Validate feature engineering outputs (CRITICAL - blocks process)
         features_passed = self._validate_feature_engineering_outputs(
-            symbol=symbol, exchange=exchange, data_dir=data_dir,
+            symbol=symbol,
+            exchange=exchange,
+            data_dir=data_dir,
         )
         if not features_passed:
             self.logger.error(
@@ -78,7 +79,9 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
         # 2.5. Validate minimum relevant features requirement (CRITICAL - make or break)
         relevant_features_passed = self._validate_minimum_relevant_features(
-            symbol=symbol, exchange=exchange, data_dir=data_dir,
+            symbol=symbol,
+            exchange=exchange,
+            data_dir=data_dir,
         )
         if not relevant_features_passed:
             self.logger.error(
@@ -88,7 +91,9 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
         # 3. Validate feature quality (CRITICAL - blocks process if insufficient relevant features)
         feature_quality_passed = self._validate_feature_quality(
-            symbol=symbol, exchange=exchange, data_dir=data_dir,
+            symbol=symbol,
+            exchange=exchange,
+            data_dir=data_dir,
         )
         if not feature_quality_passed:
             self.logger.error(
@@ -120,7 +125,10 @@ class Step2FeatureEngineeringValidator(BaseValidator):
         return False
 
     def _validate_feature_engineering_outputs(
-        self, symbol: str, exchange: str, data_dir: str,
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
     ) -> bool:
         """Validate feature engineering outputs.
 
@@ -144,7 +152,8 @@ class Step2FeatureEngineeringValidator(BaseValidator):
             missing_files: list[str] = []
             for file_path in expected_files:
                 file_passed, file_metrics = self.validate_file_exists(
-                    file_path, "feature_engineering",
+                    file_path,
+                    "feature_engineering",
                 )
                 if not file_passed:
                     missing_files.append(file_path)
@@ -186,7 +195,10 @@ class Step2FeatureEngineeringValidator(BaseValidator):
             return False
 
     def _validate_labeling_quality(
-        self, symbol: str, exchange: str, data_dir: str,
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
     ) -> bool:
         """Validate labeling quality.
 
@@ -226,9 +238,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
                     # Check for OHLCV columns (optional but recommended)
                     ohlcv_columns = ["open", "high", "low", "close", "volume"]
-                    missing_ohlcv = [
-                        col for col in ohlcv_columns if col not in labeled_data.columns
-                    ]
+                    missing_ohlcv = [col for col in ohlcv_columns if col not in labeled_data.columns]
                     if missing_ohlcv:
                         self.logger.warning(
                             f"⚠️ Missing OHLCV columns in {file_path}: {missing_ohlcv} - this may affect labeling quality",
@@ -253,7 +263,9 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
                     if len(unique_labels) > self.max_label_classes:
                         self.logger.warning(
-                            f"⚠️ Many label classes: {len(unique_labels)} (max: {self.max_label_classes}) - continuing with caution",
+                            f"⚠️ Many label classes: {
+                                len(unique_labels)} (max: {
+                                self.max_label_classes}) - continuing with caution",
                         )
 
                     # Check for label balance (more lenient)
@@ -264,7 +276,9 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
                     if balance_ratio < self.min_label_balance:
                         self.logger.warning(
-                            f"⚠️ Label balance is poor: {balance_ratio:.3f} (min: {self.min_label_balance:.3f}) - continuing with caution",
+                            f"⚠️ Label balance is poor: {
+                                balance_ratio:.3f} (min: {
+                                self.min_label_balance:.3f}) - continuing with caution",
                         )
                         return False
 
@@ -295,7 +309,10 @@ class Step2FeatureEngineeringValidator(BaseValidator):
             return False
 
     def _validate_feature_quality(
-        self, symbol: str, exchange: str, data_dir: str,
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
     ) -> bool:
         """Validate feature quality.
 
@@ -332,9 +349,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
                     # Blocker: raw OHLCV must not be present in saved features
                     forbidden = {"open", "high", "low", "close", "volume"}
-                    present_forbidden = [
-                        c for c in feature_data.columns if c in forbidden
-                    ]
+                    present_forbidden = [c for c in feature_data.columns if c in forbidden]
                     if present_forbidden:
                         self.logger.warning(
                             f"⚠️ Raw OHLCV columns found in features ({present_forbidden}) for {file_path} - removing them automatically",
@@ -363,9 +378,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
                     # Check for missing values
                     missing_ratios = feature_data.isnull().sum() / len(feature_data)
-                    high_missing_features = missing_ratios[
-                        missing_ratios > 0.5
-                    ].index.tolist()
+                    high_missing_features = missing_ratios[missing_ratios > 0.5].index.tolist()
 
                     # Calculate relevant features (excluding problematic ones)
                     problematic_features = set(constant_features + high_missing_features)
@@ -375,10 +388,14 @@ class Step2FeatureEngineeringValidator(BaseValidator):
                     # Check relevant feature count (CRITICAL - blocks process if insufficient)
                     if relevant_feature_count < self.min_feature_count:
                         self.logger.error(
-                            f"❌ Insufficient relevant features: {relevant_feature_count} (minimum required: {self.min_feature_count}) - stopping process",
+                            f"❌ Insufficient relevant features: {relevant_feature_count} (minimum required: {
+                                self.min_feature_count}) - stopping process",
                         )
                         self.logger.error(
-                            f"❌ Problematic features excluded: {len(problematic_features)} (constant: {len(constant_features)}, high missing: {len(high_missing_features)})",
+                            f"❌ Problematic features excluded: {
+                                len(problematic_features)} (constant: {
+                                len(constant_features)}, high missing: {
+                                len(high_missing_features)})",
                         )
                         return False
 
@@ -386,7 +403,8 @@ class Step2FeatureEngineeringValidator(BaseValidator):
                     feature_count = len(feature_data.columns)
                     if feature_count > self.max_feature_count:
                         self.logger.warning(
-                            f"⚠️ Too many features: {feature_count} (max: {self.max_feature_count}) - continuing with caution",
+                            f"⚠️ Too many features: {feature_count} (max: {
+                                self.max_feature_count}) - continuing with caution",
                         )
 
                     if constant_features:
@@ -398,28 +416,26 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
                     if high_missing_features:
                         self.logger.warning(
-                            f"⚠️ Found {len(high_missing_features)} features with >50% missing values - continuing with caution",
+                            f"⚠️ Found {
+                                len(high_missing_features)} features with >50% missing values - continuing with caution",
                         )
 
                     # Check for high correlation features
-                    numeric_cols = feature_data.select_dtypes(
-                        include=[np.number]
-                    ).columns
+                    numeric_cols = feature_data.select_dtypes(include=[np.number]).columns
                     if len(numeric_cols) > 1:
                         corr_matrix = feature_data[numeric_cols].corr().abs()
                         high_corr_pairs: list[tuple[str, str]] = []
                         for i in range(len(corr_matrix.columns)):
                             for j in range(i + 1, len(corr_matrix.columns)):
-                                if (
-                                    corr_matrix.iloc[i, j] > 0.95
-                                ):  # Very high correlation
+                                if corr_matrix.iloc[i, j] > 0.95:  # Very high correlation
                                     high_corr_pairs.append(
                                         (corr_matrix.columns[i], corr_matrix.columns[j]),
                                     )
 
                         if high_corr_pairs:
                             self.logger.warning(
-                                f"⚠️ Found {len(high_corr_pairs)} highly correlated feature pairs - continuing with caution",
+                                f"⚠️ Found {
+                                    len(high_corr_pairs)} highly correlated feature pairs - continuing with caution",
                             )
 
                 except Exception as e:
@@ -436,7 +452,10 @@ class Step2FeatureEngineeringValidator(BaseValidator):
             return False
 
     def _validate_minimum_relevant_features(
-        self, symbol: str, exchange: str, data_dir: str,
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
     ) -> bool:
         """Validate minimum relevant features requirement (MAKE OR BREAK).
 
@@ -453,7 +472,10 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
         """
         try:
-            self.logger.info(f"🔍 Validating minimum relevant features requirement ({self.min_feature_count} required)...")
+            self.logger.info(
+                f"🔍 Validating minimum relevant features requirement ({
+                    self.min_feature_count} required)..."
+            )
 
             # Load feature files
             feature_files = [
@@ -481,9 +503,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
 
                     # Remove raw OHLCV columns if present
                     forbidden = {"open", "high", "low", "close", "volume"}
-                    present_forbidden = [
-                        c for c in feature_data.columns if c in forbidden
-                    ]
+                    present_forbidden = [c for c in feature_data.columns if c in forbidden]
                     if present_forbidden:
                         feature_data = feature_data.drop(columns=present_forbidden)
 
@@ -494,9 +514,7 @@ class Step2FeatureEngineeringValidator(BaseValidator):
                             constant_features.append(col)
 
                     missing_ratios = feature_data.isnull().sum() / len(feature_data)
-                    high_missing_features = missing_ratios[
-                        missing_ratios > 0.5
-                    ].index.tolist()
+                    high_missing_features = missing_ratios[missing_ratios > 0.5].index.tolist()
 
                     # Calculate relevant features
                     problematic_features = set(constant_features + high_missing_features)
@@ -623,7 +641,8 @@ class Step2FeatureEngineeringValidator(BaseValidator):
                     avg_diff = np.mean(distribution_diffs)
                     if avg_diff > self.data_balance_threshold:
                         self.logger.warning(
-                            f"⚠️ Large distribution difference in {split_name} split: {avg_diff:.3f} - continuing with caution",
+                            f"⚠️ Large distribution difference in {split_name} split: {
+                                avg_diff:.3f} - continuing with caution",
                         )
                         return False
 
@@ -635,7 +654,10 @@ class Step2FeatureEngineeringValidator(BaseValidator):
             return False
 
 
-async def run_validator(training_input: dict[str, Any], pipeline_state: dict[str, Any], ) -> dict[str, Any]:
+async def run_validator(
+    training_input: dict[str, Any],
+    pipeline_state: dict[str, Any],
+) -> dict[str, Any]:
     """Run the Step 2 Feature Engineering validator.
 
     Args:

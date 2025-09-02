@@ -9,6 +9,15 @@ The optimizer uses meta-label intensities and activations to determine optimal S
 for each label-driven regime, considering success proxies from backtest simulations.
 """
 
+from src.utils.warning_symbols import (
+    error,
+    failed,
+    initialization_error,
+    warning,
+)
+from src.utils.logger import system_logger
+from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.config import CONFIG
 import os
 import sys
 from datetime import datetime
@@ -24,15 +33,6 @@ project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 # MetaLabelingSystem removed - using only HMM market regimes
-from src.config import CONFIG
-from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    initialization_error,
-    warning,
-)
 
 
 class RegimeSpecificTPSLOptimizer:
@@ -61,7 +61,7 @@ class RegimeSpecificTPSLOptimizer:
         # Regime-specific parameters for HMM clusters (seeded defaults)
         # These will be dynamically updated based on actual HMM cluster analysis
         self.regime_parameters = {
-        # HMM Cluster 0 - will be characterized by step1_7 analysis
+            # HMM Cluster 0 - will be characterized by step1_7 analysis
             "hmm_cluster_0": {
                 "target_pct": 0.5,
                 "stop_pct": 0.2,
@@ -70,7 +70,7 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 7.0,
                 "frequency_score": 100.0,
             },
-        # HMM Cluster 1 - will be characterized by step1_7 analysis
+            # HMM Cluster 1 - will be characterized by step1_7 analysis
             "hmm_cluster_1": {
                 "target_pct": 0.4,
                 "stop_pct": 0.15,
@@ -79,7 +79,7 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 6.5,
                 "frequency_score": 80.0,
             },
-        # HMM Cluster 2 - will be characterized by step1_7 analysis
+            # HMM Cluster 2 - will be characterized by step1_7 analysis
             "hmm_cluster_2": {
                 "target_pct": 0.3,
                 "stop_pct": 0.2,
@@ -88,7 +88,7 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 7.5,
                 "frequency_score": 100.0,
             },
-        # HMM Cluster 3 - will be characterized by step1_7 analysis
+            # HMM Cluster 3 - will be characterized by step1_7 analysis
             "hmm_cluster_3": {
                 "target_pct": 0.6,
                 "stop_pct": 0.15,
@@ -97,7 +97,7 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 6.0,
                 "frequency_score": 70.0,
             },
-        # HMM Cluster 4 - will be characterized by step1_7 analysis
+            # HMM Cluster 4 - will be characterized by step1_7 analysis
             "hmm_cluster_4": {
                 "target_pct": 0.35,
                 "stop_pct": 0.2,
@@ -106,7 +106,7 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 5.5,
                 "frequency_score": 60.0,
             },
-        # HMM Cluster 5 - will be characterized by step1_7 analysis
+            # HMM Cluster 5 - will be characterized by step1_7 analysis
             "hmm_cluster_5": {
                 "target_pct": 0.5,
                 "stop_pct": 0.15,
@@ -115,7 +115,7 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 5.5,
                 "frequency_score": 70.0,
             },
-        # HMM Cluster 6 - will be characterized by step1_7 analysis
+            # HMM Cluster 6 - will be characterized by step1_7 analysis
             "hmm_cluster_6": {
                 "target_pct": 0.25,
                 "stop_pct": 0.2,
@@ -124,7 +124,7 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 6.0,
                 "frequency_score": 90.0,
             },
-        # HMM Cluster 7 - will be characterized by step1_7 analysis
+            # HMM Cluster 7 - will be characterized by step1_7 analysis
             "hmm_cluster_7": {
                 "target_pct": 0.5,
                 "stop_pct": 0.25,
@@ -141,7 +141,7 @@ class RegimeSpecificTPSLOptimizer:
                 "success_rate": 6.0,
                 "frequency_score": 100.0,
             },
-        # Fallbacks (legacy names kept for compatibility)
+            # Fallbacks (legacy names kept for compatibility)
             "SIDEWAYS_RANGE": {
                 "target_pct": 0.5,
                 "stop_pct": 0.3,
@@ -303,7 +303,9 @@ class RegimeSpecificTPSLOptimizer:
         context="regime identification",
     )
     async def identify_current_regime(
-        self, current_data: pd.DataFrame, ) -> tuple[str, float, dict[str, Any]]:
+        self,
+        current_data: pd.DataFrame,
+    ) -> tuple[str, float, dict[str, Any]]:
         """Identify the current dominant meta-label driven market regime.
 
         Args:
@@ -382,7 +384,11 @@ class RegimeSpecificTPSLOptimizer:
         context="regime-specific TP/SL optimization",
     )
     async def optimize_tpsl_for_regime(
-        self, regime: str, historical_data: pd.DataFrame, current_data: pd.DataFrame, ) -> dict[str, Any]:
+        self,
+        regime: str,
+        historical_data: pd.DataFrame,
+        current_data: pd.DataFrame,
+    ) -> dict[str, Any]:
         """Optimize TP/SL parameters for a specific label-driven market regime.
 
         Args:
@@ -449,7 +455,12 @@ class RegimeSpecificTPSLOptimizer:
             )
 
     def _evaluate_tpsl_parameters(
-        self, trial: optuna.Trial, regime: str, historical_data: pd.DataFrame, base_params: dict[str, Any], ) -> float:
+        self,
+        trial: optuna.Trial,
+        regime: str,
+        historical_data: pd.DataFrame,
+        base_params: dict[str, Any],
+    ) -> float:
         """Evaluate TP/SL parameters using backtesting simulation.
 
         Args:
@@ -513,7 +524,12 @@ class RegimeSpecificTPSLOptimizer:
             return -1.0
 
     def _simulate_trades(
-        self, data: pd.DataFrame, target_pct: float, stop_pct: float, regime: str, ) -> list[dict[str, Any]]:
+        self,
+        data: pd.DataFrame,
+        target_pct: float,
+        stop_pct: float,
+        regime: str,
+    ) -> list[dict[str, Any]]:
         """Simulate trades using given TP/SL parameters.
 
         Args:

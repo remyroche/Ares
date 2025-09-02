@@ -49,3 +49,33 @@ def _should_exclude(path: str, exclude_patterns: List[str]) -> bool:
             return True
     
     return False
+
+
+def get_file_dependencies(file_path: str) -> List[str]:
+    """
+    Get a list of dependencies (imports) for a Python file.
+    
+    Args:
+        file_path: Path to the Python file
+        
+    Returns:
+        List of imported module names
+    """
+    dependencies = []
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            import ast
+            tree = ast.parse(f.read())
+            
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    dependencies.append(alias.name)
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    dependencies.append(node.module)
+    except Exception:
+        pass
+    
+    return list(set(dependencies))

@@ -4,6 +4,12 @@
 Validates and fixes aggtrades data format for step1_5_data_converter.py processing.
 """
 
+from src.utils.centralized_decorators import (
+    handle_errors,
+    optimize_memory_usage,
+    validate_data_structure,
+    with_tracing_span,
+)
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -16,12 +22,6 @@ from src.utils.logger import system_logger
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.centralized_decorators import (
-    handle_errors,
-    optimize_memory_usage,
-    validate_data_structure,
-    with_tracing_span,
-)
 
 logger = system_logger.getChild("AggtradesValidator")
 
@@ -86,7 +86,7 @@ class AggtradesValidator:
             "file_size": 0,
             "row_count": 0,
         },
-        context="aggtrades_validator.validate_file_format"
+        context="aggtrades_validator.validate_file_format",
     )
     def validate_file_format(self, file_path: Path) -> dict:
         """Validate a single aggtrades file format.
@@ -98,10 +98,10 @@ class AggtradesValidator:
             Dictionary with validation results
 
         """
-        validation_start = datetime.now()
+        datetime.now()
         logger.info(f"🔍 VALIDATING FILE: {file_path.name}")
         logger.info(f"📁 Full path: {file_path}")
-        logger.info(f"📊 File size: {file_path.stat().st_size / (1024*1024):.2f} MB")
+        logger.info(f"📊 File size: {file_path.stat().st_size / (1024 * 1024):.2f} MB")
         logger.info(f"🔍 Validating {file_path.name}")
 
         result = {
@@ -186,7 +186,7 @@ class AggtradesValidator:
             pd.errors.ParserError,
         ),
         default_return=False,
-        context="aggtrades_validator.fix_file_format"
+        context="aggtrades_validator.fix_file_format",
     )
     def fix_file_format(self, file_path: Path) -> bool:
         """Fix file format if needed.
@@ -281,11 +281,9 @@ class AggtradesValidator:
             "fixed_files": 0,
             "errors": [],
         },
-        context="aggtrades_validator.validate_all_aggtrades"
+        context="aggtrades_validator.validate_all_aggtrades",
     )
-    def validate_all_aggtrades(
-        self, symbol: str, exchange: str, auto_fix: bool = True
-    ) -> dict:
+    def validate_all_aggtrades(self, symbol: str, exchange: str, auto_fix: bool = True) -> dict:
         """Validate all aggtrades files for a symbol and exchange.
 
         Args:
@@ -343,7 +341,7 @@ class AggtradesValidator:
 
         validation_end = datetime.now()
         validation_time = validation_end - validation_start
-        
+
         logger.info("-" * 60)
         logger.info("📊 AGGTRADES VALIDATION SUMMARY")
         logger.info(f"⏱️  Validation time: {validation_time}")
@@ -351,16 +349,21 @@ class AggtradesValidator:
         logger.info(f"✅ Valid files: {validation_result['valid_files']}")
         logger.info(f"❌ Invalid files: {validation_result['invalid_files']}")
         logger.info(f"🔧 Fixed files: {validation_result['fixed_files']}")
-        logger.info(f"📊 Success rate: {validation_result['valid_files']/validation_result['total_files']*100:.1f}%" if validation_result['total_files'] > 0 else "📊 Success rate: N/A")
-        
-        if validation_result['errors']:
+        logger.info(
+            f"📊 Success rate: {
+                validation_result['valid_files'] / validation_result['total_files'] * 100:.1f}%"
+            if validation_result["total_files"] > 0
+            else "📊 Success rate: N/A"
+        )
+
+        if validation_result["errors"]:
             logger.error("❌ VALIDATION ERRORS:")
-            for i, error in enumerate(validation_result['errors'], 1):
+            for i, error in enumerate(validation_result["errors"], 1):
                 logger.error(f"  {i}. {error}")
-        
-        if validation_result['invalid_files'] > 0 and not auto_fix:
+
+        if validation_result["invalid_files"] > 0 and not auto_fix:
             logger.warning("⚠️  Some files are invalid and auto-fix is disabled!")
-        elif validation_result['invalid_files'] == 0:
+        elif validation_result["invalid_files"] == 0:
             logger.info("✅ All aggtrades files are valid!")
 
         return validation_result
@@ -380,7 +383,7 @@ class AggtradesValidator:
             "failed_files": 0,
             "errors": [],
         },
-        context="aggtrades_validator.convert_to_parquet"
+        context="aggtrades_validator.convert_to_parquet",
     )
     def convert_to_parquet(self, symbol: str, exchange: str) -> dict:
         """Convert CSV aggtrades files to parquet format.
@@ -449,7 +452,7 @@ class AggtradesValidator:
 
         report = f"""
 🔍 AGGTRADES VALIDATION REPORT FOR {exchange}_{symbol}
-{'='*60}
+{'=' * 60}
 
 📁 FILES FOUND: {len(aggtrades_files)}
 
@@ -466,7 +469,10 @@ class AggtradesValidator:
                 total_size += file_size
 
                 status = "✅ VALID" if validation["valid"] else "❌ INVALID"
-                report += f"• {file_path.name}: {status} ({validation['row_count']} rows, {file_size/1024/1024:.2f} MB)\n"
+                report += f"• {
+                    file_path.name}: {status} ({
+                    validation['row_count']} rows, {
+                    file_size / 1024 / 1024:.2f} MB)\n"
 
                 if not validation["valid"]:
                     for issue in validation["issues"]:
@@ -480,9 +486,9 @@ class AggtradesValidator:
         report += f"""
 📈 SUMMARY:
 • Total Files: {len(aggtrades_files)}
-• Total Size: {total_size/1024/1024:.2f} MB
+• Total Size: {total_size / 1024 / 1024:.2f} MB
 • Total Rows: {total_rows:,}
-{'='*60}
+{'=' * 60}
 """
 
         return report

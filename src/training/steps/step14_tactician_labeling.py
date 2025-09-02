@@ -12,12 +12,29 @@ Enhanced for high precision completion of Analyst signals with:
 - Regime-aware multi-outcome prediction structure
 """
 
+from src.utils.centralized_decorators import (
+    artifact_versioning,
+    artifact_write_lock,
+    circuit_breaker_protection,
+    debug_training_step,
+    deterministic_seed,
+    idempotent_step,
+    memory_efficient,
+    nan_inf_and_constant_guard,
+    prevent_data_leakage,
+    quality_gate,
+    resource_monitor,
+    secure_data_processing,
+    time_budget_watchdog,
+    validate_step_output,
+    validate_step_prerequisites,
+)
 import asyncio
 import contextlib
 import os
 import pickle
 from pathlib import Path
-from typing import Any, Dict, Tuple, Optional
+from typing import Any, Dict, Tuple
 
 import numpy as np
 import pandas as pd
@@ -25,10 +42,11 @@ import pandas as pd
 from src.training.data_sharing_manager import get_data_sharing_manager
 from src.training.steps.unified_data_loader import get_unified_data_loader
 from src.utils.error_handler import handle_errors
-from src.utils.logger import system_logger, dependency_status
+from src.utils.logger import dependency_status, system_logger
 
 # Preference order for selecting analyst ensembles
 ENSEMBLE_PREFERENCE_ORDER = ("stacking_cv", "dynamic_weighting", "voting")
+
 
 class RegimeAwareTacticianLabeler:
     """Regime-aware tactician labeling with regime-specific barriers and precision thresholds."""
@@ -41,14 +59,17 @@ class RegimeAwareTacticianLabeler:
         self._load_enhanced_config()
 
         # Regime-specific configuration
-        self.regime_config = config.get("regime_specific_tactician", {
-            "regime_specific_barriers": True,
-            "regime_specific_precision": True,
-            "regime_specific_quality_filters": True,
-            "regime_specific_validation": True,
-            "regime_specific_logging": True,
-            "min_regime_samples": 100
-        })
+        self.regime_config = config.get(
+            "regime_specific_tactician",
+            {
+                "regime_specific_barriers": True,
+                "regime_specific_precision": True,
+                "regime_specific_quality_filters": True,
+                "regime_specific_validation": True,
+                "regime_specific_logging": True,
+                "min_regime_samples": 100,
+            },
+        )
 
         # Regime-specific results storage
         self.regime_barrier_results = {}
@@ -61,15 +82,13 @@ class RegimeAwareTacticianLabeler:
         """Load enhanced configuration for regime-aware execution."""
         # Import dynamic barrier calculator
         from src.tactician.dynamic_barrier_calculator import DynamicBarrierCalculator
-        
+
         # Initialize dynamic barrier calculator
         self.barrier_calculator = DynamicBarrierCalculator(self.config)
 
         # Get all 4 barrier combinations for primary timeframe (1m)
-        self.barrier_combinations = self.barrier_calculator.calculate_dynamic_barriers(
-            timeframe="1m"
-        )
-        
+        self.barrier_combinations = self.barrier_calculator.calculate_dynamic_barriers(timeframe="1m")
+
         # Get configuration for other settings
         self.max_lookahead = self.config.get("max_lookahead", 50)  # Reduced lookahead
 
@@ -110,9 +129,9 @@ class RegimeAwareTacticianLabeler:
         self, data: pd.DataFrame, regime_column: str = "composite_cluster_id"
     ) -> pd.DataFrame:
         """Apply regime-specific tactician labeling."""
-        
+
         self.logger.info(f"🚀 Starting regime-specific tactician labeling")
-        
+
         try:
             # Check for regime column
             if regime_column not in data.columns:
@@ -136,25 +155,25 @@ class RegimeAwareTacticianLabeler:
             for regime in unique_regimes:
                 regime_mask = regime_data == regime
                 regime_data_subset = labeled_data[regime_mask]
-                
+
                 if len(regime_data_subset) >= self.regime_config["min_regime_samples"]:
                     self.logger.info(f"🔄 Applying regime-specific labeling for regime {regime}")
-                    
+
                     # Get regime-specific barriers
                     regime_barriers = await self._get_regime_specific_barriers(regime, regime_data_subset)
-                    
+
                     # Apply regime-specific labeling
                     regime_labeled = await self._apply_regime_barrier_labeling(
                         regime_data_subset, regime_barriers, regime
                     )
-                    
+
                     # Store regime-specific results
                     self.regime_labeling_results[regime] = {
                         "barriers": regime_barriers,
                         "labeled_samples": len(regime_labeled),
-                        "regime": regime
+                        "regime": regime,
                     }
-                    
+
                     # Update main dataframe
                     labeled_data.loc[regime_mask] = regime_labeled
                 else:
@@ -174,7 +193,7 @@ class RegimeAwareTacticianLabeler:
                 self.logger.info(f"   Total: {filtered_count}/{original_count} samples retained")
 
             return labeled_data
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error in regime-specific labeling: {e}")
             return data
@@ -183,20 +202,20 @@ class RegimeAwareTacticianLabeler:
         self, regime: str, regime_data: pd.DataFrame
     ) -> Dict[str, Tuple[float, float]]:
         """Get regime-specific barriers for tactician labeling."""
-        
+
         self.logger.info(f"🎯 Calculating regime-specific barriers for regime {regime}")
-        
+
         try:
             if self.regime_config["regime_specific_barriers"]:
                 # Calculate regime-specific barrier parameters
-                regime_volatility = regime_data['close'].pct_change().std()
-                regime_volume = regime_data['volume'].mean()
-                regime_spread = regime_data.get('spread', pd.Series([0.0001] * len(regime_data))).mean()
-                
+                regime_volatility = regime_data["close"].pct_change().std()
+                regime_volume = regime_data["volume"].mean()
+                regime_data.get("spread", pd.Series([0.0001] * len(regime_data))).mean()
+
                 # Regime-specific barrier calculation
                 base_upper = 0.02  # 2% default
                 base_lower = 0.01  # 1% default
-                
+
                 # Adjust based on regime characteristics
                 if regime_volatility > 0.02:  # High volatility regime
                     upper_multiplier = 1.5
@@ -207,7 +226,7 @@ class RegimeAwareTacticianLabeler:
                 else:  # Normal volatility regime
                     upper_multiplier = 1.0
                     lower_multiplier = 1.0
-                
+
                 # Volume-based adjustments
                 if regime_volume > 10000:  # High volume regime
                     upper_multiplier *= 1.1
@@ -215,27 +234,35 @@ class RegimeAwareTacticianLabeler:
                 elif regime_volume < 1000:  # Low volume regime
                     upper_multiplier *= 0.9
                     lower_multiplier *= 0.9
-                
+
                 # Calculate final barriers
                 upper_barrier = base_upper * upper_multiplier
                 lower_barrier = base_lower * lower_multiplier
-                
+
                 regime_barriers = {
                     "high_precision": (upper_barrier * 0.5, lower_barrier * 0.25),
                     "standard": (upper_barrier, lower_barrier),
                     "conservative": (upper_barrier * 1.5, lower_barrier * 1.5),
-                    "aggressive": (upper_barrier * 0.7, lower_barrier * 0.5)
+                    "aggressive": (upper_barrier * 0.7, lower_barrier * 0.5),
                 }
-                
+
                 self.logger.info(f"✅ Calculated regime {regime} barriers:")
                 for barrier_type, (upper, lower) in regime_barriers.items():
-                    self.logger.info(f"   {barrier_type}: Upper={upper:.4f} ({upper*100:.2f}%), Lower={lower:.4f} ({lower*100:.2f}%)")
-                
+                    self.logger.info(
+                        f"   {barrier_type}: Upper={
+                            upper:.4f} ({
+                            upper *
+                            100:.2f}%), Lower={
+                            lower:.4f} ({
+                            lower *
+                            100:.2f}%)"
+                    )
+
                 return regime_barriers
             else:
                 # Use default barriers
                 return self.barrier_combinations
-                
+
         except Exception as e:
             self.logger.error(f"❌ Error calculating regime-specific barriers: {e}")
             return self.barrier_combinations
@@ -244,28 +271,33 @@ class RegimeAwareTacticianLabeler:
         self, regime_data: pd.DataFrame, regime_barriers: Dict[str, Tuple[float, float]], regime: str
     ) -> pd.DataFrame:
         """Apply regime-specific barrier labeling."""
-        
+
         self.logger.info(f"🎯 Applying regime-specific barrier labeling for regime {regime}")
-        
+
         try:
             labeled_data = regime_data.copy()
-            
+
             # Get regime-specific precision thresholds
             precision_thresholds = await self._get_regime_specific_precision_thresholds(regime, regime_data)
-            
+
             # Get regime-specific quality filters
             quality_filters = await self._get_regime_specific_quality_filters(regime, regime_data)
-            
+
             # Apply regime-specific labeling for each barrier type
             for barrier_type, (upper_barrier, lower_barrier) in regime_barriers.items():
                 self.logger.info(f"🔄 Applying {barrier_type} barriers for regime {regime}")
-                
+
                 # Apply regime-specific triple barrier labeling
                 regime_labeled = await self._apply_regime_triple_barrier(
-                    labeled_data, upper_barrier, lower_barrier, 
-                    precision_thresholds, quality_filters, regime, barrier_type
+                    labeled_data,
+                    upper_barrier,
+                    lower_barrier,
+                    precision_thresholds,
+                    quality_filters,
+                    regime,
+                    barrier_type,
                 )
-                
+
                 # Store regime-specific results
                 barrier_key = f"{regime}_{barrier_type}"
                 self.regime_barrier_results[barrier_key] = {
@@ -275,13 +307,13 @@ class RegimeAwareTacticianLabeler:
                     "precision_thresholds": precision_thresholds,
                     "quality_filters": quality_filters,
                     "labeled_samples": len(regime_labeled),
-                    "regime": regime
+                    "regime": regime,
                 }
-                
+
                 labeled_data = regime_labeled
-            
+
             return labeled_data
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error applying regime barrier labeling: {e}")
             return regime_data
@@ -290,16 +322,16 @@ class RegimeAwareTacticianLabeler:
         self, regime: str, regime_data: pd.DataFrame
     ) -> Dict[str, float]:
         """Get regime-specific precision thresholds."""
-        
+
         try:
             if self.regime_config["regime_specific_precision"]:
                 # Calculate regime-specific precision thresholds
-                regime_volatility = regime_data['close'].pct_change().std()
-                regime_volume = regime_data['volume'].mean()
-                
+                regime_volatility = regime_data["close"].pct_change().std()
+                regime_volume = regime_data["volume"].mean()
+
                 # Base precision threshold
                 base_precision = 0.85
-                
+
                 # Adjust based on regime characteristics
                 if regime_volatility > 0.02:  # High volatility regime
                     precision_threshold = base_precision * 0.9  # Lower threshold for high volatility
@@ -307,77 +339,75 @@ class RegimeAwareTacticianLabeler:
                     precision_threshold = base_precision * 1.1  # Higher threshold for low volatility
                 else:  # Normal volatility regime
                     precision_threshold = base_precision
-                
+
                 # Volume-based adjustments
                 if regime_volume > 10000:  # High volume regime
                     precision_threshold *= 1.05
                 elif regime_volume < 1000:  # Low volume regime
                     precision_threshold *= 0.95
-                
+
                 # Ensure threshold is within reasonable bounds
                 precision_threshold = max(0.7, min(0.95, precision_threshold))
-                
+
                 precision_thresholds = {
                     "precision_threshold": precision_threshold,
                     "min_signal_strength": precision_threshold * 0.9,
-                    "confidence_boost_threshold": precision_threshold * 1.05
+                    "confidence_boost_threshold": precision_threshold * 1.05,
                 }
-                
+
                 self.logger.info(f"✅ Calculated regime {regime} precision thresholds:")
                 for threshold_name, threshold_value in precision_thresholds.items():
                     self.logger.info(f"   {threshold_name}: {threshold_value:.3f}")
-                
+
                 return precision_thresholds
             else:
                 # Use default precision thresholds
                 return {
                     "precision_threshold": self.precision_threshold,
                     "min_signal_strength": self.min_signal_strength,
-                    "confidence_boost_threshold": self.confidence_boost_threshold
+                    "confidence_boost_threshold": self.confidence_boost_threshold,
                 }
-                
+
         except Exception as e:
             self.logger.error(f"❌ Error calculating regime-specific precision thresholds: {e}")
             return {
                 "precision_threshold": self.precision_threshold,
                 "min_signal_strength": self.min_signal_strength,
-                "confidence_boost_threshold": self.confidence_boost_threshold
+                "confidence_boost_threshold": self.confidence_boost_threshold,
             }
 
-    async def _get_regime_specific_quality_filters(
-        self, regime: str, regime_data: pd.DataFrame
-    ) -> Dict[str, Any]:
+    async def _get_regime_specific_quality_filters(self, regime: str, regime_data: pd.DataFrame) -> Dict[str, Any]:
         """Get regime-specific quality filters."""
-        
+
         try:
             if self.regime_config["regime_specific_quality_filters"]:
                 # Calculate regime-specific quality filter thresholds
-                regime_volume_mean = regime_data['volume'].mean()
-                regime_volume_std = regime_data['volume'].std()
-                regime_spread_mean = regime_data.get('spread', pd.Series([0.0001] * len(regime_data))).mean()
-                
+                regime_volume_mean = regime_data["volume"].mean()
+                regime_data["volume"].std()
+                regime_spread_mean = regime_data.get("spread", pd.Series([0.0001] * len(regime_data))).mean()
+
                 # Volume-based quality filters
                 volume_threshold = max(100, regime_volume_mean * 0.1)  # At least 10% of mean volume
-                
+
                 # Spread-based quality filters
                 spread_threshold = max(0.0001, regime_spread_mean * 2)  # At most 2x mean spread
-                
+
                 # Volatility-based quality filters
-                regime_volatility = regime_data['close'].pct_change().std()
+                regime_volatility = regime_data["close"].pct_change().std()
                 volatility_threshold = regime_volatility * 3  # 3x regime volatility
-                
+
                 quality_filters = {
                     "min_volume_threshold": volume_threshold,
                     "min_spread_threshold": spread_threshold,
                     "volatility_filter": True,
                     "volatility_threshold": volatility_threshold,
-                    "enable_quality_filters": True
+                    "enable_quality_filters": True,
                 }
-                
+
                 self.logger.info(f"✅ Calculated regime {regime} quality filters:")
                 for filter_name, filter_value in quality_filters.items():
                     self.logger.info(f"   {filter_name}: {filter_value}")
-                
+
                 return quality_filters
             else:
                 # Use default quality filters
@@ -385,86 +415,91 @@ class RegimeAwareTacticianLabeler:
                     "min_volume_threshold": self.min_volume_threshold,
                     "min_spread_threshold": self.min_spread_threshold,
                     "volatility_filter": self.volatility_filter,
-                    "enable_quality_filters": self.enable_quality_filters
+                    "enable_quality_filters": self.enable_quality_filters,
                 }
-                
+
         except Exception as e:
             self.logger.error(f"❌ Error calculating regime-specific quality filters: {e}")
             return {
                 "min_volume_threshold": self.min_volume_threshold,
                 "min_spread_threshold": self.min_spread_threshold,
                 "volatility_filter": self.volatility_filter,
-                "enable_quality_filters": self.enable_quality_filters
+                "enable_quality_filters": self.enable_quality_filters,
             }
 
     async def _apply_regime_triple_barrier(
-        self, regime_data: pd.DataFrame, upper_barrier: float, lower_barrier: float,
-        precision_thresholds: Dict[str, float], quality_filters: Dict[str, Any],
-        regime: str, barrier_type: str
+        self,
+        regime_data: pd.DataFrame,
+        upper_barrier: float,
+        lower_barrier: float,
+        precision_thresholds: Dict[str, float],
+        quality_filters: Dict[str, Any],
+        regime: str,
+        barrier_type: str,
     ) -> pd.DataFrame:
         """Apply regime-specific triple barrier labeling."""
-        
+
         self.logger.info(f"🎯 Applying regime-specific triple barrier ({barrier_type}) for regime {regime}")
-        
+
         try:
             labeled_data = regime_data.copy()
-            
+
             # Apply regime-specific quality filters
             if quality_filters.get("enable_quality_filters", True):
                 labeled_data = await self._apply_regime_quality_filters(labeled_data, quality_filters, regime)
-            
+
             # Apply regime-specific triple barrier logic
             for i in range(len(labeled_data) - 1):
-                entry_price = labeled_data.iloc[i]['close']
+                entry_price = labeled_data.iloc[i]["close"]
                 entry_idx = i
-                
+
                 # Calculate barriers
                 profit_barrier = entry_price * (1.0 + upper_barrier)
                 stop_barrier = entry_price * (1.0 - lower_barrier)
-                
+
                 # Find barrier hit
                 label = 0
                 profit_pct = 0.0
-                
+
                 for j in range(entry_idx + 1, min(entry_idx + self.max_lookahead, len(labeled_data))):
-                    high_price = labeled_data.iloc[j]['high']
-                    low_price = labeled_data.iloc[j]['low']
-                    
+                    high_price = labeled_data.iloc[j]["high"]
+                    low_price = labeled_data.iloc[j]["low"]
+
                     # Check profit barrier first
                     if high_price >= profit_barrier:
                         label = 1  # LONG position
                         profit_pct = upper_barrier
                         break
-                    
+
                     # Check stop barrier
                     if low_price <= stop_barrier:
                         label = -1  # SHORT position
                         profit_pct = -lower_barrier
                         break
-                
+
                 # Apply regime-specific precision threshold
                 if abs(profit_pct) > 0:
                     # Check if signal meets regime-specific precision requirements
                     if abs(profit_pct) >= precision_thresholds["min_signal_strength"]:
-                        labeled_data.iloc[entry_idx, labeled_data.columns.get_loc('label')] = label
-                        labeled_data.iloc[entry_idx, labeled_data.columns.get_loc('potential_profit_pct')] = profit_pct
+                        labeled_data.iloc[entry_idx, labeled_data.columns.get_loc("label")] = label
+                        labeled_data.iloc[entry_idx, labeled_data.columns.get_loc("potential_profit_pct")] = profit_pct
                     else:
                         # Signal too weak for regime
-                        labeled_data.iloc[entry_idx, labeled_data.columns.get_loc('label')] = 0
-                        labeled_data.iloc[entry_idx, labeled_data.columns.get_loc('potential_profit_pct')] = 0.0
-            
+                        labeled_data.iloc[entry_idx, labeled_data.columns.get_loc("label")] = 0
+                        labeled_data.iloc[entry_idx, labeled_data.columns.get_loc("potential_profit_pct")] = 0.0
+
             # Log regime-specific results
-            long_signals = (labeled_data['label'] == 1).sum()
-            short_signals = (labeled_data['label'] == -1).sum()
-            hold_signals = (labeled_data['label'] == 0).sum()
-            
+            long_signals = (labeled_data["label"] == 1).sum()
+            short_signals = (labeled_data["label"] == -1).sum()
+            hold_signals = (labeled_data["label"] == 0).sum()
+
             self.logger.info(f"📊 Regime {regime} ({barrier_type}) labeling results:")
             self.logger.info(f"   LONG signals: {long_signals}")
             self.logger.info(f"   SHORT signals: {short_signals}")
             self.logger.info(f"   HOLD signals: {hold_signals}")
-            
+
             return labeled_data
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error applying regime triple barrier: {e}")
             return regime_data
@@ -473,95 +508,93 @@ class RegimeAwareTacticianLabeler:
         self, regime_data: pd.DataFrame, quality_filters: Dict[str, Any], regime: str
     ) -> pd.DataFrame:
         """Apply regime-specific quality filters."""
-        
+
         self.logger.info(f"🔍 Applying regime-specific quality filters for regime {regime}")
-        
+
         try:
             filtered_data = regime_data.copy()
-            
+
             # Volume filter
             if "volume" in filtered_data.columns:
                 volume_threshold = quality_filters.get("min_volume_threshold", 1000)
-                volume_mask = filtered_data['volume'] >= volume_threshold
+                volume_mask = filtered_data["volume"] >= volume_threshold
                 filtered_data = filtered_data[volume_mask]
                 self.logger.info(f"   Volume filter: {len(regime_data)} -> {len(filtered_data)} samples")
-            
+
             # Spread filter
             if "spread" in filtered_data.columns:
                 spread_threshold = quality_filters.get("min_spread_threshold", 0.0001)
-                spread_mask = filtered_data['spread'] <= spread_threshold
+                spread_mask = filtered_data["spread"] <= spread_threshold
                 filtered_data = filtered_data[spread_mask]
                 self.logger.info(f"   Spread filter: {len(regime_data)} -> {len(filtered_data)} samples")
-            
+
             # Volatility filter
             if quality_filters.get("volatility_filter", True):
                 volatility_threshold = quality_filters.get("volatility_threshold", 0.02)
-                returns = filtered_data['close'].pct_change().abs()
+                returns = filtered_data["close"].pct_change().abs()
                 volatility_mask = returns <= volatility_threshold
                 filtered_data = filtered_data[volatility_mask]
                 self.logger.info(f"   Volatility filter: {len(regime_data)} -> {len(filtered_data)} samples")
-            
+
             return filtered_data
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error applying regime quality filters: {e}")
             return regime_data
 
     def _apply_default_labeling(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply default labeling when regime information is not available."""
-        
+
         self.logger.info("🔄 Applying default tactician labeling")
-        
+
         try:
             labeled_data = data.copy()
-            
+
             # Apply default barriers
             default_barriers = self.barrier_combinations.get("standard", (0.02, 0.01))
             upper_barrier, lower_barrier = default_barriers
-            
+
             # Apply default triple barrier logic
             for i in range(len(labeled_data) - 1):
-                entry_price = labeled_data.iloc[i]['close']
+                entry_price = labeled_data.iloc[i]["close"]
                 entry_idx = i
-                
+
                 # Calculate barriers
                 profit_barrier = entry_price * (1.0 + upper_barrier)
                 stop_barrier = entry_price * (1.0 - lower_barrier)
-                
+
                 # Find barrier hit
                 label = 0
                 profit_pct = 0.0
-                
+
                 for j in range(entry_idx + 1, min(entry_idx + self.max_lookahead, len(labeled_data))):
-                    high_price = labeled_data.iloc[j]['high']
-                    low_price = labeled_data.iloc[j]['low']
-                    
+                    high_price = labeled_data.iloc[j]["high"]
+                    low_price = labeled_data.iloc[j]["low"]
+
                     # Check profit barrier first
                     if high_price >= profit_barrier:
                         label = 1  # LONG position
                         profit_pct = upper_barrier
                         break
-                    
+
                     # Check stop barrier
                     if low_price <= stop_barrier:
                         label = -1  # SHORT position
                         profit_pct = -lower_barrier
                         break
-                
-                labeled_data.iloc[entry_idx, labeled_data.columns.get_loc('label')] = label
-                labeled_data.iloc[entry_idx, labeled_data.columns.get_loc('potential_profit_pct')] = profit_pct
-            
+
+                labeled_data.iloc[entry_idx, labeled_data.columns.get_loc("label")] = label
+                labeled_data.iloc[entry_idx, labeled_data.columns.get_loc("potential_profit_pct")] = profit_pct
+
             return labeled_data
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error applying default labeling: {e}")
             return data
 
-    def _log_regime_specific_metrics(
-        self, regime: str, metrics: dict, step_name: str
-    ) -> None:
+    def _log_regime_specific_metrics(self, regime: str, metrics: dict, step_name: str) -> None:
         """Log regime-specific metrics."""
-        
+
         if self.regime_config["regime_specific_logging"]:
             self.logger.info(f"📊 {step_name} - Regime {regime} metrics:")
             for metric_name, metric_value in metrics.items():
@@ -570,8 +603,6 @@ class RegimeAwareTacticianLabeler:
 
 class TacticianLabelingStep:
     """Step 8: Tactician Model Labeling using Analyst's model."""
-
-    
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""
@@ -599,7 +630,9 @@ class TacticianLabelingStep:
         context="tactician labeling step execution",
     )
     async def execute(
-        self, training_input: dict[str, Any], pipeline_state: dict[str, Any],
+        self,
+        training_input: dict[str, Any],
+        pipeline_state: dict[str, Any],
     ) -> dict[str, Any]:
         """Execute tactician model labeling."""
         try:
@@ -624,7 +657,8 @@ class TacticianLabelingStep:
 
             # Use lookback_days from config (should be passed from enhanced training manager)
             config_lookback = self.config.get(
-                "lookback_days", BLANK_TRAINING_LOOKBACK_DAYS,
+                "lookback_days",
+                BLANK_TRAINING_LOOKBACK_DAYS,
             )
             data_1m = await data_sharing_manager.get_unified_data(
                 symbol=symbol,
@@ -656,7 +690,7 @@ class TacticianLabelingStep:
                     "has_aggtrades_data": False,
                     "has_futures_data": False,
                 }
-            
+
             self.logger.info(f"✅ Loaded unified data: {data_info['rows']} rows")
             with contextlib.suppress(Exception):
                 self.logger.info(
@@ -669,9 +703,7 @@ class TacticianLabelingStep:
 
             # Ensure we have the required OHLCV columns
             required_columns = ["timestamp", "open", "high", "low", "close", "volume"]
-            missing_columns = [
-                col for col in required_columns if col not in data_1m.columns
-            ]
+            missing_columns = [col for col in required_columns if col not in data_1m.columns]
             if missing_columns:
                 self.logger.error(f"🚨 Missing required columns: {missing_columns}")
                 return {
@@ -680,7 +712,13 @@ class TacticianLabelingStep:
                 }
             with contextlib.suppress(Exception):
                 self.logger.info(
-                    f"Loaded 1m data: shape={getattr(data_1m, 'shape', None)}, columns={list(getattr(data_1m, 'columns', [])[:10])}"
+                    f"Loaded 1m data: shape={
+                        getattr(
+                            data_1m, 'shape', None)}, columns={
+                        list(
+                            getattr(
+                                data_1m, 'columns', [])[
+                                :10])}"
                 )
 
             # Load analyst ensemble models
@@ -694,9 +732,7 @@ class TacticianLabelingStep:
 
             # Apply the specialized Tactician Triple Barrier
             labeler = RegimeAwareTacticianLabeler(self.config)
-            labeled_data = await labeler.apply_regime_specific_labeling(
-                data_with_features, "composite_cluster_id"
-            )
+            labeled_data = await labeler.apply_regime_specific_labeling(data_with_features, "composite_cluster_id")
             with contextlib.suppress(Exception):
                 self.logger.info(
                     f"Strategic signals summary: total={len(strategic_signals)}, nonzero={(strategic_signals != 0).sum()}"
@@ -752,15 +788,15 @@ class TacticianLabelingStep:
                                 break
                     if chosen_ensemble is None:
                         # Fallback if saved dict is a single-ensemble payload
-                        chosen_ensemble = (
-                            loaded.get("ensemble") if "ensemble" in loaded else None
-                        )
+                        chosen_ensemble = loaded.get("ensemble") if "ensemble" in loaded else None
                 # Record whatever we found (could be None; upstream handles None)
                 analyst_ensembles[regime_name] = chosen_ensemble
         return analyst_ensembles
 
     async def _generate_strategic_signals(
-        self, data: pd.DataFrame, analyst_ensembles: dict[str, Any],
+        self,
+        data: pd.DataFrame,
+        analyst_ensembles: dict[str, Any],
     ) -> tuple[pd.DataFrame, pd.Series]:
         """Generate strategic signals using analyst ensemble models."""
         self.logger.info("Generating strategic 'setup' signals from Analyst models...")
@@ -787,9 +823,7 @@ class TacticianLabelingStep:
             # Ensure the model's expected features are present
             if hasattr(ensemble, "feature_names_in_"):
                 features_for_model = [
-                    f
-                    for f in getattr(ensemble, "feature_names_in_", [])
-                    if f in data_with_features.columns
+                    f for f in getattr(ensemble, "feature_names_in_", []) if f in data_with_features.columns
                 ]
                 x_regime = data_with_features.loc[regime_mask, features_for_model]
             else:
@@ -825,22 +859,20 @@ class TacticianLabelingStep:
         data = data.copy()
         data["returns"] = data["close"].pct_change()
         # Volatility is calculated here for the Analyst's regime detection, not for Tactician labeling.
-        data["volatility"] = (
-            data["returns"].rolling(window=60).std().bfill()
-        )  # 1-hour volatility
+        data["volatility"] = data["returns"].rolling(window=60).std().bfill()  # 1-hour volatility
         # ... Add all other features your Analyst models were trained on ...
         # e.g., RSI, MACD, Bollinger Bands, etc.
         return data.fillna(method="ffill").fillna(0)
 
-    def _save_results(self, labeled_data: pd.DataFrame, signals: pd.Series, data_dir: str, exchange: str, symbol: str) -> Tuple[str, str]:
+    def _save_results(
+        self, labeled_data: pd.DataFrame, signals: pd.Series, data_dir: str, exchange: str, symbol: str
+    ) -> Tuple[str, str]:
         """Saves the labeled data and signals to disk."""
         labeled_data_dir = f"{data_dir}/tactician_labeled_data"
         Path(labeled_data_dir).mkdir(parents=True, exist_ok=True)
 
         # Prefer Parquet for DataFrame/Series persistence
-        labeled_file_parquet = (
-            f"{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.parquet"
-        )
+        labeled_file_parquet = f"{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.parquet"
         try:
             try:
                 from src.training.enhanced_training_manager_optimized import (
@@ -864,24 +896,16 @@ class TacticianLabelingStep:
                     labeled_file_parquet,
                     compression="snappy",
                 ):
-                    labeled_data.to_parquet(
-                        labeled_file_parquet, compression="snappy", index=False
-                    )
+                    labeled_data.to_parquet(labeled_file_parquet, compression="snappy", index=False)
                 with contextlib.suppress(Exception):
-                    log_dataframe_overview(
-                        self.logger, labeled_data, name="labeled_data"
-                    )
+                    log_dataframe_overview(self.logger, labeled_data, name="labeled_data")
         except Exception:
             # Fallback to Pickle for compatibility
-            labeled_file_pickle = (
-                f"{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.pkl"
-            )
+            labeled_file_pickle = f"{labeled_data_dir}/{exchange}_{symbol}_tactician_labeled.pkl"
             labeled_data.to_pickle(labeled_file_pickle)
             labeled_file_parquet = labeled_file_pickle
 
-        signals_file_parquet = (
-            f"{data_dir}/{exchange}_{symbol}_strategic_signals.parquet"
-        )
+        signals_file_parquet = f"{data_dir}/{exchange}_{symbol}_strategic_signals.parquet"
         try:
             # Save Series as Parquet by converting to DataFrame
             _signals_df = signals.to_frame(name="signal").reset_index()
@@ -907,15 +931,11 @@ class TacticianLabelingStep:
                     signals_file_parquet,
                     compression="snappy",
                 ):
-                    _signals_df.to_parquet(
-                        signals_file_parquet, compression="snappy", index=False
-                    )
+                    _signals_df.to_parquet(signals_file_parquet, compression="snappy", index=False)
                 with contextlib.suppress(Exception):
                     log_dataframe_overview(self.logger, _signals_df, name="signals_df")
         except Exception:
-            signals_file_pickle = (
-                f"{data_dir}/{exchange}_{symbol}_strategic_signals.pkl"
-            )
+            signals_file_pickle = f"{data_dir}/{exchange}_{symbol}_strategic_signals.pkl"
             signals.to_pickle(signals_file_pickle)
             signals_file_parquet = signals_file_pickle
 
@@ -923,32 +943,6 @@ class TacticianLabelingStep:
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
-from src.utils.centralized_decorators import (
-    artifact_versioning,
-    artifact_write_lock,
-    circuit_breaker_protection,
-    debug_training_step,
-    deterministic_seed,
-    idempotent_step,
-    memory_efficient,
-    nan_inf_and_constant_guard,
-    prevent_data_leakage,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    time_budget_watchdog,
-    validate_step_output,
-    validate_step_prerequisites,
-)
-
-from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
-)
 
 
 # For backward compatibility with existing step structure
@@ -970,7 +964,10 @@ from src.utils.enhanced_mlflow_integration import (
     context="Tactician Labeling",
 )
 @secure_data_processing(
-    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
+    backup_before=True,
+    integrity_checks=True,
+    memory_cleanup=True,
+    data_validation=True,
 )
 @prevent_data_leakage(
     temporal_validation=True,
@@ -985,7 +982,10 @@ from src.utils.enhanced_mlflow_integration import (
     auto_cleanup=True,
 )
 @memory_efficient(
-    chunk_size=20000, streaming_processing=True, memory_pool=True, cleanup_frequency=40,
+    chunk_size=20000,
+    streaming_processing=True,
+    memory_pool=True,
+    cleanup_frequency=40,
 )
 @debug_training_step(
     log_intermediate_results=True,

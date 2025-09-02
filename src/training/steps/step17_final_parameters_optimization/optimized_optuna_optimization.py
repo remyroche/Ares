@@ -14,9 +14,6 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 
 from src.utils.logger import setup_logging
-from src.utils.warning_symbols import (
-    failed,
-)
 
 setup_logging()
 
@@ -119,14 +116,8 @@ class AdvancedOptunaManager:
 
     def _summarize_study(self, study: optuna.Study) -> dict[str, Any]:
         """Extracts key results from a completed study."""
-        pruned_trials = study.get_trials(
-            deepcopy=False,
-            states=[optuna.trial.TrialState.PRUNED]
-        )
-        complete_trials = study.get_trials(
-            deepcopy=False,
-            states=[optuna.trial.TrialState.COMPLETE]
-        )
+        pruned_trials = study.get_trials(deepcopy=False, states=[optuna.trial.TrialState.PRUNED])
+        complete_trials = study.get_trials(deepcopy=False, states=[optuna.trial.TrialState.COMPLETE])
 
         summary = {
             "study_name": study.study_name,
@@ -140,7 +131,15 @@ class AdvancedOptunaManager:
         return summary
 
     def optimize(
-        self, model_type: str, X: pd.DataFrame, y: pd.Series, n_trials: int = 100, n_jobs: int = -1, cv_folds: int = 5, early_stopping_patience: int | None = 15, subsample_fraction: float | None = None
+        self,
+        model_type: str,
+        X: pd.DataFrame,
+        y: pd.Series,
+        n_trials: int = 100,
+        n_jobs: int = -1,
+        cv_folds: int = 5,
+        early_stopping_patience: int | None = 15,
+        subsample_fraction: float | None = None,
     ) -> dict[str, Any]:
         """Runs a full hyperparameter optimization for a specified model.
 
@@ -167,12 +166,9 @@ class AdvancedOptunaManager:
             storage=self.storage_url,
             study_name=study_name,
             direction="maximize",
-            pruner=optuna.pruners.HyperbandPruner(
-                min_resource=1,
-                max_resource=n_trials
-            ),
+            pruner=optuna.pruners.HyperbandPruner(min_resource=1, max_resource=n_trials),
             sampler=optuna.samplers.TPESampler(seed=42),
-            load_if_exists=True
+            load_if_exists=True,
         )
 
         def objective(trial: optuna.Trial) -> float:
@@ -200,13 +196,7 @@ class AdvancedOptunaManager:
                     n_estimators = params["n_estimators"]
                     for i, step in enumerate(range(10, n_estimators + 1, 10)):
                         model.n_estimators = step
-                        score = cross_val_score(
-                            model,
-                            X_sample,
-                            y_sample,
-                            cv=cv,
-                            scoring="accuracy"
-                        ).mean()
+                        score = cross_val_score(model, X_sample, y_sample, cv=cv, scoring="accuracy").mean()
                         intermediate_scores.append(score)
                         trial.report(score, step=i)
                         if trial.should_prune():
@@ -214,13 +204,7 @@ class AdvancedOptunaManager:
                     return np.mean(intermediate_scores)
 
                 # Native pruning for LightGBM and XGBoost
-                score = cross_val_score(
-                    model,
-                    X_sample,
-                    y_sample,
-                    cv=cv,
-                    scoring="accuracy"
-                ).mean()
+                score = cross_val_score(model, X_sample, y_sample, cv=cv, scoring="accuracy").mean()
                 trial.report(score, step=0)  # Report final score
                 return score
 
@@ -285,7 +269,4 @@ if __name__ == "__main__":
     )
 
     # 5. You can easily retrieve the full study from storage if needed
-    loaded_study = optuna.load_study(
-        study_name="production_models_lightgbm",
-        storage=optimizer.storage_url
-    )
+    loaded_study = optuna.load_study(study_name="production_models_lightgbm", storage=optimizer.storage_url)

@@ -1,0 +1,234 @@
+================================================================================
+COMPREHENSIVE PROFESSIONAL CODE QUALITY ANALYSIS REPORT
+================================================================================
+
+Generated: 2025-09-02 20:53:59
+Project Root: /workspace/src/training/steps
+Analysis Duration: 171.31 seconds
+
+🌍 GLOBAL METRICS
+--------------------------------------------------
+Total Directories: 7
+Total Files: 119
+Total Analyzers Run: 15
+Total Issues Found: 0
+Total Issues Fixed: 0
+Success Rate: 100.0%
+Categories Covered: dead_code, syntax, type_checking, architecture, code_duplication, concurrency, auto_fixing, signatures, advanced_ast, dependencies, call_graph, error_handling, complexity
+
+📁 DIRECTORY ANALYSIS SUMMARIES
+================================================================================
+
+📂 root/
+   Files: 81 (analyzed: 81)
+   Issues: 0 (fixed: 0)
+   Analyzers: 15
+   Categories: dead_code, syntax, type_checking, architecture, code_duplication, concurrency, auto_fixing, signatures, advanced_ast, dependencies, call_graph, error_handling, complexity
+   Processing Time: 115.24s
+
+📂 step17_final_parameters_optimization/
+   Files: 12 (analyzed: 12)
+   Issues: 0 (fixed: 0)
+   Analyzers: 15
+   Categories: dead_code, syntax, type_checking, architecture, code_duplication, concurrency, auto_fixing, signatures, advanced_ast, dependencies, call_graph, error_handling, complexity
+   Processing Time: 18.82s
+
+📂 step1/
+   Files: 13 (analyzed: 13)
+   Issues: 0 (fixed: 0)
+   Analyzers: 15
+   Categories: dead_code, syntax, type_checking, architecture, code_duplication, concurrency, auto_fixing, signatures, advanced_ast, dependencies, call_graph, error_handling, complexity
+   Processing Time: 20.27s
+
+📂 step4_analyst_labeling_feature_engineering_components/
+   Files: 6 (analyzed: 6)
+   Issues: 0 (fixed: 0)
+   Analyzers: 15
+   Categories: dead_code, syntax, type_checking, architecture, code_duplication, concurrency, auto_fixing, signatures, advanced_ast, dependencies, call_graph, error_handling, complexity
+   Processing Time: 8.06s
+
+📂 multi_timeframe_training/
+   Files: 2 (analyzed: 2)
+   Issues: 0 (fixed: 0)
+   Analyzers: 15
+   Categories: dead_code, syntax, type_checking, architecture, code_duplication, concurrency, auto_fixing, signatures, advanced_ast, dependencies, call_graph, error_handling, complexity
+   Processing Time: 2.59s
+
+📂 analyst_training_components/
+   Files: 2 (analyzed: 2)
+   Issues: 0 (fixed: 0)
+   Analyzers: 15
+   Categories: dead_code, syntax, type_checking, architecture, code_duplication, concurrency, auto_fixing, signatures, advanced_ast, dependencies, call_graph, error_handling, complexity
+   Processing Time: 2.61s
+
+📂 data_preparation_components/
+   Files: 3 (analyzed: 3)
+   Issues: 0 (fixed: 0)
+   Analyzers: 15
+   Categories: dead_code, syntax, type_checking, architecture, code_duplication, concurrency, auto_fixing, signatures, advanced_ast, dependencies, call_graph, error_handling, complexity
+   Processing Time: 3.71s
+
+🔍 ANALYSIS BY CATEGORY
+================================================================================
+
+📊 AUTO_FIXING
+   Files Analyzed: 119
+   Issues Found: 0
+   Issues Fixed: 0
+
+📊 SYNTAX
+   Files Analyzed: 119
+   Issues Found: 0
+   Issues Fixed: 0
+
+📊 COMPLEXITY
+   Files Analyzed: 119
+   Issues Found: 0
+   Issues Fixed: 0
+
+📊 DEAD_CODE
+   Files Analyzed: 119
+   Issues Found: 0
+   Issues Fixed: 0
+
+📊 DEPENDENCIES
+   Files Analyzed: 119
+   Issues Found: 0
+   Issues Fixed: 0
+
+📊 CALL_GRAPH
+   Files Analyzed: 119
+   Issues Found: 0
+   Issues Fixed: 0
+
+📊 SIGNATURES
+   Files Analyzed: 119
+   Issues Found: 0
+   Issues Fixed: 0
+
+📊 TYPE_CHECKING
+   Files Analyzed: 119
+   Issues Found: 0
+   Issues Fixed: 0
+
+📊 ADVANCED_AST
+   Files Analyzed: 119
+   Issues Found: 0
+   Issues Fixed: 0
+
+📊 ARCHITECTURE
+   Files Analyzed: 119
+   Issues Found: 0
+   Issues Fixed: 0
+
+📊 CODE_DUPLICATION
+   Files Analyzed: 119
+   Issues Found: 0
+   Issues Fixed: 0
+
+📊 ERROR_HANDLING
+   Files Analyzed: 119
+   Issues Found: 0
+   Issues Fixed: 0
+
+📊 CONCURRENCY
+   Files Analyzed: 119
+   Issues Found: 0
+   Issues Fixed: 0
+
+⚡ ANALYZER PERFORMANCE
+================================================================================
+
+🔧 auto_fixer
+   Files Processed: 119
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 0.00s
+
+🔧 sequential_fixer
+   Files Processed: 119
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 0.00s
+
+🔧 syntax
+   Files Processed: 119
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 0.00s
+
+🔧 complexity
+   Files Processed: 119
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 0.00s
+
+🔧 dead_code
+   Files Processed: 119
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 0.00s
+
+🔧 dependencies
+   Files Processed: 119
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 0.00s
+
+🔧 imports
+   Files Processed: 119
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 0.00s
+
+🔧 call_graph
+   Files Processed: 119
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 0.00s
+
+🔧 signatures
+   Files Processed: 119
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 0.00s
+
+🔧 type_checking
+   Files Processed: 119
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 161.19s
+
+🔧 advanced_ast
+   Files Processed: 119
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 3.99s
+
+🔧 architecture
+   Files Processed: 119
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 1.82s
+
+🔧 code_duplication
+   Files Processed: 119
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 1.26s
+
+🔧 error_handling
+   Files Processed: 119
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 1.22s
+
+🔧 concurrency
+   Files Processed: 119
+   Success Rate: 100.0%
+   Issues Found: 0
+   Total Time: 1.82s
+
+================================================================================
+END OF COMPREHENSIVE PROFESSIONAL ANALYSIS REPORT
+================================================================================

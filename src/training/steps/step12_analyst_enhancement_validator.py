@@ -1,5 +1,7 @@
 """Validator for Step 6: HMM-Based Enhancement."""
 
+from src.utils.base_validator import BaseValidator
+from src.config import CONFIG
 import asyncio
 import os
 import pickle
@@ -21,9 +23,6 @@ from src.utils.warning_symbols import (
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.config import CONFIG
-from src.utils.base_validator import BaseValidator
-
 
 class Step6HMMBasedEnhancementValidator(BaseValidator):
     """Validator for Step 6: HMM-Based Enhancement."""
@@ -31,9 +30,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
     def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step6_hmm_based_enhancement", config)
 
-    async def validate(
-        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
-    ) -> bool:
+    async def validate(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> bool:
         """Validate the HMM-based enhancement step.
 
         Args:
@@ -192,22 +189,20 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
         if successful_phases >= 4:  # At least 4 out of 5 phases successful
             self.logger.info("✅ Step 6 validation passed")
             self.logger.info(
-                f"   Success rate: {successful_phases/total_phases*100:.1f}%",
+                f"   Success rate: {successful_phases / total_phases * 100:.1f}%",
             )
             validation_result = True
         else:
             self.logger.error("❌ Step 6 validation failed")
             self.logger.error(
-                f"   Success rate: {successful_phases/total_phases*100:.1f}%",
+                f"   Success rate: {successful_phases / total_phases * 100:.1f}%",
             )
             validation_result = False
 
         self.logger.info("=" * 80)
         return validation_result
 
-    def _validate_enhanced_model_files(
-        self, symbol: str, exchange: str, data_dir: str
-    ) -> bool:
+    def _validate_enhanced_model_files(self, symbol: str, exchange: str, data_dir: str) -> bool:
         """Validate that enhanced HMM model files exist.
 
         Args:
@@ -272,9 +267,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
             )
             return False
 
-    def _validate_performance_improvement(
-        self, symbol: str, exchange: str, data_dir: str
-    ) -> bool:
+    def _validate_performance_improvement(self, symbol: str, exchange: str, data_dir: str) -> bool:
         """Validate that HMM performance has improved after enhancement.
 
         Args:
@@ -290,9 +283,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
             # Load original metrics from step05 HMM history
             import json
 
-            original_history_file = (
-                f"{data_dir}/hmm_models/{exchange}_{symbol}_hmm_training_history.json"
-            )
+            original_history_file = f"{data_dir}/hmm_models/{exchange}_{symbol}_hmm_training_history.json"
             original_metrics: dict[str, Any] = {}
             if os.path.exists(original_history_file):
                 with open(original_history_file) as f:
@@ -300,9 +291,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                     original_metrics = original_data.get("metrics", {})
 
             # Load enhanced HMM models summary produced by Step 6
-            summary_file = (
-                f"{data_dir}/{exchange}_{symbol}_hmm_enhancement_summary.json"
-            )
+            summary_file = f"{data_dir}/{exchange}_{symbol}_hmm_enhancement_summary.json"
             if not os.path.exists(summary_file):
                 self.print(
                     missing(f"❌ HMM enhancement summary not found: {summary_file}"),
@@ -342,9 +331,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
                 "improvements": improvements,
                 "positive_improvements": positive_improvements,
                 "total_improvements": total_improvements,
-                "improvement_ratio": (
-                    positive_improvements / total_improvements if total_improvements else 0
-                ),
+                "improvement_ratio": (positive_improvements / total_improvements if total_improvements else 0),
             }
 
             self.logger.info("✅ HMM performance improvement validation completed")
@@ -356,9 +343,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
             )
             return False
 
-    def _validate_enhancement_quality(
-        self, symbol: str, exchange: str, data_dir: str
-    ) -> bool:
+    def _validate_enhancement_quality(self, symbol: str, exchange: str, data_dir: str) -> bool:
         """Validate the quality of the HMM enhancement process.
 
         Args:
@@ -374,9 +359,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
             # Load enhancement summary to find a concrete model artifact
             import json
 
-            summary_file = (
-                f"{data_dir}/{exchange}_{symbol}_hmm_enhancement_summary.json"
-            )
+            summary_file = f"{data_dir}/{exchange}_{symbol}_hmm_enhancement_summary.json"
             if not os.path.exists(summary_file):
                 self.print(
                     missing(f"❌ HMM enhancement summary not found: {summary_file}"),
@@ -427,7 +410,8 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
             else:
                 self.print(
                     missing(
-                        f"❌ Enhanced HMM model missing predict method (artifact: {model_path}, type: {type(model).__name__})",
+                        f"❌ Enhanced HMM model missing predict method (artifact: {model_path}, type: {
+                            type(model).__name__})",
                     ),
                 )
                 return False
@@ -496,9 +480,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
             return artifact
 
 
-async def run_validator(
-    training_input: dict[str, Any], pipeline_state: dict[str, Any]
-) -> dict[str, Any]:
+async def run_validator(training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
     """Run the step6_hmm_based_enhancement validator.
 
     Args:

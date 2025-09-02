@@ -235,9 +235,7 @@ class DataValidator:
 
         # Check for required columns
         required_columns = ["price", "quantity", "is_buyer_maker"]
-        missing_columns = [
-            col for col in required_columns if col not in agg_trades.columns
-        ]
+        missing_columns = [col for col in required_columns if col not in agg_trades.columns]
         if missing_columns:
             self.errors.append(
                 f"Missing required columns in agg_trades: {missing_columns}",

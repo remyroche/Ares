@@ -3,26 +3,18 @@
 import asyncio
 import json
 import os
-import pickle
-import time
 from datetime import datetime
-from typing import Any, Never
+from typing import Any
 
 import joblib
 import lightgbm as lgb
-import numpy as np
 import optuna
 import pandas as pd
 import torch
-import torch.nn.functional as F
 import xgboost as xgb
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.feature_selection import mutual_info_classif
 from sklearn.metrics import accuracy_score
-from sklearn.model_selection import KFold
 from torch import nn, optim
-from torch.nn.utils import prune
-from torch.utils.data import DataLoader, TensorDataset
 
 # Import shap with error handling
 try:
@@ -34,17 +26,12 @@ except ImportError:
 try:
     import torch
     from torch import nn, optim
-    from torch.utils.data import DataLoader, TensorDataset
 
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
 
-import contextlib
 
-from src.config import CONFIG
-from src.training.steps.unified_data_loader import get_unified_data_loader
-from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
@@ -52,16 +39,6 @@ from src.utils.warning_symbols import (
     error,
     failed,
     timeout,
-    warning,
-)
-
-from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
 )
 
 # Suppress Optuna's verbose logging to keep the output clean
@@ -70,7 +47,7 @@ optuna.logging.set_verbosity(optuna.logging.WARNING)
 # Required modules for this step
 REQUIRED_MODULES = [
     "numpy",
-    "pandas", 
+    "pandas",
     "torch",
     "sklearn",
     "lightgbm",
@@ -78,7 +55,7 @@ REQUIRED_MODULES = [
     "optuna",
     "joblib",
     "src.utils.logger",
-    "src.utils.error_handler"
+    "src.utils.error_handler",
 ]
 
 # Validate environment dependencies
@@ -103,7 +80,7 @@ class AnalystCreationStep:
         self.standards = pipeline_standards
         self.logger = system_logger
         self._validate_environment()
-        
+
         # --- Mac M1/M2/M3 (Apple Silicon) Specific Setup ---
         # Use 'mps' for PyTorch to leverage Apple's Metal Performance Shaders for GPU acceleration.
         # Fallback to 'cpu' if MPS is not available or hangs.
@@ -193,9 +170,7 @@ class AnalystCreationStep:
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="analyst creation step execution",
     )
-    async def execute(
-        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def execute(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
         """Executes the analyst model creation pipeline for each regime.
 
         Args:
@@ -209,8 +184,8 @@ class AnalystCreationStep:
             "🚀 Starting Step 11: Analyst Creation - Base Model Creation for Each Regime",
         )
         self.logger.info("🔄 Executing Analyst Creation...")
-        
-        start_time = datetime.now()
+
+        datetime.now()
 
         try:
             data_dir: str = str(training_input.get("data_dir", "data/training"))
@@ -227,7 +202,7 @@ class AnalystCreationStep:
             # Load regime splits from previous step
             self.logger.info("🔄 Loading regime splits from previous step...")
             regime_splits = await self._load_regime_splits(regime_data_dir)
-            
+
             if not regime_splits:
                 msg = f"No regime splits found in {regime_data_dir}. Step 8 must complete successfully first."
                 raise ValueError(msg)
@@ -253,9 +228,7 @@ class AnalystCreationStep:
                     return regime_name, {}
 
                 # Create base models for this regime
-                regime_models = await self._create_regime_analysts(
-                    regime_name, X_train, y_train, X_val, y_val
-                )
+                regime_models = await self._create_regime_analysts(regime_name, X_train, y_train, X_val, y_val)
 
                 return regime_name, regime_models
 
@@ -277,7 +250,7 @@ class AnalystCreationStep:
             for batch_idx, i in enumerate(range(0, len(tasks), max_concurrent), 1):
                 batch = tasks[i : i + max_concurrent]
                 self.logger.info(
-                    f"🔄 Processing batch {batch_idx}: regimes {i+1}-{min(i+max_concurrent, len(tasks))}",
+                    f"🔄 Processing batch {batch_idx}: regimes {i + 1}-{min(i + max_concurrent, len(tasks))}",
                 )
                 results = await asyncio.gather(*batch, return_exceptions=True)
 
@@ -286,7 +259,7 @@ class AnalystCreationStep:
                     if isinstance(result, Exception):
                         self.logger.error(f"❌ Error in regime {regime_idx}: {result}")
                         continue
-                    
+
                     regime_name, regime_models = result
                     created_models_summary[regime_name] = regime_models
                     self.logger.info(f"✅ Completed analyst creation for regime: {regime_name}")
@@ -296,7 +269,10 @@ class AnalystCreationStep:
 
             # Log creation summary
             total_models = sum(len(models) for models in created_models_summary.values())
-            self.logger.info(f"🎉 Analyst creation completed: {len(created_models_summary)} regimes, {total_models} total models")
+            self.logger.info(
+                f"🎉 Analyst creation completed: {
+                    len(created_models_summary)} regimes, {total_models} total models"
+            )
 
             pipeline_state["analyst_creation_completed"] = True
             pipeline_state["created_analyst_models"] = created_models_summary
@@ -316,44 +292,40 @@ class AnalystCreationStep:
             symbol = self.config.get("symbol", "ETHUSDT")
             exchange = self.config.get("exchange", "BINANCE")
             timeframe = self.config.get("timeframe", "1m")
-            
+
             # Try to load unified regime dataset first (new approach)
             unified_regime_file = os.path.join(
-                data_dir, "training", 
-                f"{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet"
+                data_dir, "training", f"{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet"
             )
-            
+
             if os.path.exists(unified_regime_file):
                 self.logger.info(f"✅ Loading unified regime dataset: {unified_regime_file}")
                 unified_data = pd.read_parquet(unified_regime_file)
-                
+
                 # Load regime labels mapping
-                labels_file = os.path.join(
-                    data_dir, "training", 
-                    f"{exchange}_{symbol}_{timeframe}_regime_labels.json"
-                )
-                
+                labels_file = os.path.join(data_dir, "training", f"{exchange}_{symbol}_{timeframe}_regime_labels.json")
+
                 if os.path.exists(labels_file):
                     with open(labels_file) as f:
                         regime_labels = json.load(f)
-                    
+
                     regime_ids = regime_labels.get("regime_ids", [])
                     self.logger.info(f"📊 Found {len(regime_ids)} regimes in unified dataset")
-                    
+
                     # Create regime splits from unified dataset
                     regime_splits = {}
                     for regime_id in regime_ids:
                         regime_data = unified_data[unified_data["composite_cluster_id"] == regime_id].copy()
-                        
+
                         if len(regime_data) > 0:
                             regime_splits[f"regime_{regime_id}"] = regime_data
                             self.logger.info(f"📊 Created regime {regime_id}: {len(regime_data)} rows")
-                    
+
                     self.logger.info(f"✅ Created {len(regime_splits)} regime splits from unified dataset")
                     return regime_splits
                 else:
                     self.logger.warning(f"⚠️ Regime labels file not found: {labels_file}")
-            
+
             # Fallback to legacy approach for backward compatibility
             self.logger.warning("⚠️ Falling back to legacy regime data loading approach")
             regime_splits_dir = os.path.join(data_dir, "training", "regime_splits")
@@ -376,13 +348,18 @@ class AnalystCreationStep:
             self.logger.exception(f"❌ Error loading regime splits: {e}")
             return {}
 
-    async def _prepare_regime_data(self, regime_data: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
+    async def _prepare_regime_data(
+        self, regime_data: pd.DataFrame
+    ) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame, pd.Series]:
         """Prepare data for analyst model creation."""
         try:
             # Separate features and labels
-            feature_columns = [col for col in regime_data.columns 
-                             if col not in self._METADATA_COLUMNS and col not in self._LABEL_COLUMNS]
-            
+            feature_columns = [
+                col
+                for col in regime_data.columns
+                if col not in self._METADATA_COLUMNS and col not in self._LABEL_COLUMNS
+            ]
+
             X = regime_data[feature_columns]
             y = regime_data["label"] if "label" in regime_data.columns else pd.Series([0] * len(regime_data))
 
@@ -398,12 +375,7 @@ class AnalystCreationStep:
             raise
 
     async def _create_regime_analysts(
-        self, 
-        regime_name: str, 
-        X_train: pd.DataFrame, 
-        y_train: pd.Series, 
-        X_val: pd.DataFrame, 
-        y_val: pd.Series
+        self, regime_name: str, X_train: pd.DataFrame, y_train: pd.Series, X_val: pd.DataFrame, y_val: pd.Series
     ) -> dict[str, Any]:
         """Create base analyst models for a specific regime."""
         try:
@@ -446,15 +418,15 @@ class AnalystCreationStep:
         try:
             # Basic LightGBM parameters
             params = {
-                'objective': 'binary',
-                'metric': 'binary_logloss',
-                'boosting_type': 'gbdt',
-                'num_leaves': 31,
-                'learning_rate': 0.05,
-                'feature_fraction': 0.9,
-                'bagging_fraction': 0.8,
-                'bagging_freq': 5,
-                'verbose': -1
+                "objective": "binary",
+                "metric": "binary_logloss",
+                "boosting_type": "gbdt",
+                "num_leaves": 31,
+                "learning_rate": 0.05,
+                "feature_fraction": 0.9,
+                "bagging_fraction": 0.8,
+                "bagging_freq": 5,
+                "verbose": -1,
             }
 
             # Create dataset
@@ -467,7 +439,7 @@ class AnalystCreationStep:
                 train_data,
                 valid_sets=[val_data],
                 num_boost_round=100,
-                callbacks=[lgb.early_stopping(stopping_rounds=10)]
+                callbacks=[lgb.early_stopping(stopping_rounds=10)],
             )
 
             # Evaluate
@@ -480,7 +452,7 @@ class AnalystCreationStep:
                 "accuracy": accuracy,
                 "model_type": "lightgbm",
                 "creation_date": datetime.now().isoformat(),
-                "feature_importance": dict(zip(X_train.columns, model.feature_importance()))
+                "feature_importance": dict(zip(X_train.columns, model.feature_importance())),
             }
 
         except Exception as e:
@@ -494,13 +466,13 @@ class AnalystCreationStep:
         try:
             # Basic XGBoost parameters
             params = {
-                'objective': 'binary:logistic',
-                'eval_metric': 'logloss',
-                'max_depth': 6,
-                'learning_rate': 0.1,
-                'subsample': 0.8,
-                'colsample_bytree': 0.8,
-                'n_estimators': 100
+                "objective": "binary:logistic",
+                "eval_metric": "logloss",
+                "max_depth": 6,
+                "learning_rate": 0.1,
+                "subsample": 0.8,
+                "colsample_bytree": 0.8,
+                "n_estimators": 100,
             }
 
             # Train model
@@ -516,7 +488,7 @@ class AnalystCreationStep:
                 "accuracy": accuracy,
                 "model_type": "xgboost",
                 "creation_date": datetime.now().isoformat(),
-                "feature_importance": dict(zip(X_train.columns, model.feature_importances_))
+                "feature_importance": dict(zip(X_train.columns, model.feature_importances_)),
             }
 
         except Exception as e:
@@ -530,11 +502,11 @@ class AnalystCreationStep:
         try:
             # Basic Random Forest parameters
             params = {
-                'n_estimators': 100,
-                'max_depth': 10,
-                'min_samples_split': 2,
-                'min_samples_leaf': 1,
-                'random_state': 42
+                "n_estimators": 100,
+                "max_depth": 10,
+                "min_samples_split": 2,
+                "min_samples_leaf": 1,
+                "random_state": 42,
             }
 
             # Train model
@@ -550,7 +522,7 @@ class AnalystCreationStep:
                 "accuracy": accuracy,
                 "model_type": "random_forest",
                 "creation_date": datetime.now().isoformat(),
-                "feature_importance": dict(zip(X_train.columns, model.feature_importances_))
+                "feature_importance": dict(zip(X_train.columns, model.feature_importances_)),
             }
 
         except Exception as e:
@@ -578,7 +550,7 @@ class AnalystCreationStep:
                 nn.ReLU(),
                 nn.Dropout(0.2),
                 nn.Linear(32, 1),
-                nn.Sigmoid()
+                nn.Sigmoid(),
             ).to(self.device)
 
             # Training setup
@@ -606,7 +578,7 @@ class AnalystCreationStep:
                 "accuracy": accuracy,
                 "model_type": "neural_network",
                 "creation_date": datetime.now().isoformat(),
-                "device": self.device
+                "device": self.device,
             }
 
         except Exception as e:
@@ -623,10 +595,10 @@ class AnalystCreationStep:
                 for model_name, model_data in regime_models.items():
                     if model_data.get("model") is not None:
                         model_file = os.path.join(regime_dir, f"{model_name}.joblib")
-                        
+
                         # Save model
                         joblib.dump(model_data["model"], model_file)
-                        
+
                         # Save metadata
                         metadata_file = os.path.join(regime_dir, f"{model_name}_metadata.json")
                         metadata = {
@@ -634,9 +606,9 @@ class AnalystCreationStep:
                             "model_type": model_data.get("model_type", "unknown"),
                             "creation_date": model_data.get("creation_date", ""),
                             "feature_importance": model_data.get("feature_importance", {}),
-                            "device": model_data.get("device", "cpu")
+                            "device": model_data.get("device", "cpu"),
                         }
-                        
+
                         with open(metadata_file, "w") as f:
                             json.dump(metadata, f, indent=2)
 
@@ -646,11 +618,7 @@ class AnalystCreationStep:
             self.logger.exception(f"❌ Error saving analyst models: {e}")
 
 
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=False,
-    context="step11_analyst_creation"
-)
+@handle_errors(exceptions=(Exception,), default_return=False, context="step11_analyst_creation")
 async def run_step(
     symbol: str,
     exchange: str,
@@ -673,7 +641,7 @@ async def run_step(
         bool: True if successful, False otherwise
     """
     logger = system_logger.getChild("Step11AnalystCreation")
-    
+
     logger.info("=" * 80)
     logger.info("🚀 STEP 11: Analyst Creation")
     logger.info("=" * 80)
@@ -683,7 +651,7 @@ async def run_step(
     logger.info(f"📁 Data directory: {data_dir}")
     logger.info(f"🔄 Force rerun: {force_rerun}")
     logger.info("=" * 80)
-    
+
     try:
         # Initialize analyst creation step
         config = {
@@ -692,7 +660,7 @@ async def run_step(
             "TIMEFRAME": timeframe,
             "DATA_DIR": data_dir,
         }
-        
+
         logger.info("🔧 Initializing analyst creation step...")
         step = AnalystCreationStep(config)
         await step.initialize()
@@ -713,27 +681,27 @@ async def run_step(
 
         if result.get("analyst_creation_completed", False):
             logger.info("✅ Step 11: Analyst Creation completed successfully")
-            
+
             # Log creation results
             if result.get("created_analyst_models"):
                 models = result["created_analyst_models"]
                 logger.info(f"📊 Created analyst models for {len(models)} regimes")
-                
+
                 for regime_name, regime_models in models.items():
                     model_count = len(regime_models)
                     logger.info(f"   - {regime_name}: {model_count} models")
-                    
+
                     for model_name, model_data in regime_models.items():
                         accuracy = model_data.get("accuracy", 0.0)
                         logger.info(f"     - {model_name}: {accuracy:.4f} accuracy")
-            
+
             return True
         else:
             logger.error("❌ Step 11: Analyst Creation failed")
             error = result.get("analyst_creation_error", "Unknown error")
             logger.error(f"   Error details: {error}")
             return False
-            
+
     except Exception as e:
         logger.exception(f"❌ Unexpected error in Step 11: {e}")
         return False

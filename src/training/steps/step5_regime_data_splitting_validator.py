@@ -1,5 +1,7 @@
 """Validator for Step 5: Regime Data Splitting."""
 
+from src.utils.logger import system_logger
+from src.utils.base_validator import BaseValidator
 import asyncio
 import os
 import sys
@@ -12,9 +14,6 @@ import pandas as pd
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.base_validator import BaseValidator
-from src.utils.logger import system_logger
-
 
 # Validator for Step 5: Regime Data Splitting
 class Step5RegimeDataSplittingValidator(BaseValidator):
@@ -22,9 +21,7 @@ class Step5RegimeDataSplittingValidator(BaseValidator):
         super().__init__("step5_regime_data_splitting", config)
         self.logger = system_logger.getChild("Validator.Step5Split")
 
-    async def validate(
-        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
-    ) -> bool:
+    async def validate(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> bool:
         symbol = training_input.get("symbol", "ETHUSDT")
         exchange = training_input.get("exchange", "BINANCE")
         data_dir = training_input.get("data_dir", "data/training")
@@ -58,9 +55,7 @@ class Step5RegimeDataSplittingValidator(BaseValidator):
             return False
 
 
-async def run_validator(
-    training_input: dict[str, Any], pipeline_state: dict[str, Any]
-) -> dict[str, Any]:
+async def run_validator(training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
     v = Step5RegimeDataSplittingValidator({})
     ok = await v.validate(training_input, pipeline_state)
     return {"step_name": "step5_regime_data_splitting", "validation_passed": ok}

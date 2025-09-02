@@ -146,7 +146,10 @@ class AdvancedEvaluationEngine:
             return PerformanceMetrics()
 
     def _simulate_trading_performance(
-        self, parameters: dict[str, Any], calibration_results: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        parameters: dict[str, Any],
+        calibration_results: dict[str, Any],
+    ) -> dict[str, Any]:
         """Simulate trading performance based on parameters."""
         try:
             # Extract key parameters
@@ -182,12 +185,7 @@ class AdvancedEvaluationEngine:
                     # Simulate trade outcome
                     win_probability = min(
                         0.8,
-                        (
-                            analyst_confidence
-                            + tactician_confidence
-                            + ensemble_confidence
-                        )
-                        / 3,
+                        (analyst_confidence + tactician_confidence + ensemble_confidence) / 3,
                     )
                     is_win = np.random.random() < win_probability
 
@@ -243,7 +241,9 @@ class AdvancedEvaluationEngine:
             }
 
     def _calculate_performance_metrics(
-        self, performance_data: dict[str, Any], ) -> PerformanceMetrics:
+        self,
+        performance_data: dict[str, Any],
+    ) -> PerformanceMetrics:
         """Calculate comprehensive performance metrics."""
         try:
             trades = performance_data.get("trades", [])
@@ -257,7 +257,7 @@ class AdvancedEvaluationEngine:
 
             # Basic metrics
             total_trades = len(trades)
-            winning_trades = len(df[df["is_win"] == True])
+            winning_trades = len(df[df["is_win"]])
             losing_trades = len(df[df["is_win"] == False])
             win_rate = winning_trades / total_trades if total_trades > 0 else 0.0
 
@@ -268,17 +268,11 @@ class AdvancedEvaluationEngine:
             # Profit factor
             gross_profit = df[df["return"] > 0]["return"].sum()
             gross_loss = abs(df[df["return"] < 0]["return"].sum())
-            profit_factor = (
-                gross_profit / gross_loss if gross_loss > 0 else float("inf")
-            )
+            profit_factor = gross_profit / gross_loss if gross_loss > 0 else float("inf")
 
             # Average win/loss
-            average_win = (
-                df[df["is_win"] == True]["return"].mean() if winning_trades > 0 else 0.0
-            )
-            average_loss = (
-                df[df["is_win"] == False]["return"].mean() if losing_trades > 0 else 0.0
-            )
+            average_win = df[df["is_win"]]["return"].mean() if winning_trades > 0 else 0.0
+            average_loss = df[df["is_win"] == False]["return"].mean() if losing_trades > 0 else 0.0
 
             # Risk metrics
             cumulative_returns = returns_series.cumsum()
@@ -286,31 +280,23 @@ class AdvancedEvaluationEngine:
             drawdowns = rolling_max - cumulative_returns
             max_drawdown = drawdowns.max() if not drawdowns.empty else 0.0
 
-            volatility = returns_series.std() * (252 ** 0.5) if not returns_series.empty else 0.0
+            volatility = returns_series.std() * (252**0.5) if not returns_series.empty else 0.0
 
             # Risk-adjusted performance metrics
             risk_free_rate_daily = self.risk_free_rate / 252
             excess_returns = returns_series - risk_free_rate_daily
             sharpe_ratio = (
-                (excess_returns.mean() / (excess_returns.std() + 1e-9)) * (252 ** 0.5)
+                (excess_returns.mean() / (excess_returns.std() + 1e-9)) * (252**0.5)
                 if not returns_series.empty
                 else 0.0
             )
 
             negative_returns = returns_series[returns_series < 0]
-            downside_deviation = negative_returns.std() * (252 ** 0.5) if not negative_returns.empty else 0.0
-            sortino_ratio = (
-                (excess_returns.mean() / (downside_deviation + 1e-9))
-                if downside_deviation > 0
-                else 0.0
-            )
+            downside_deviation = negative_returns.std() * (252**0.5) if not negative_returns.empty else 0.0
+            sortino_ratio = (excess_returns.mean() / (downside_deviation + 1e-9)) if downside_deviation > 0 else 0.0
 
             max_drawdown_pct = max_drawdown if isinstance(max_drawdown, float) else float(max_drawdown)
-            calmar_ratio = (
-                (total_return / (max_drawdown_pct + 1e-9))
-                if max_drawdown_pct > 0
-                else 0.0
-            )
+            calmar_ratio = (total_return / (max_drawdown_pct + 1e-9)) if max_drawdown_pct > 0 else 0.0
 
             # Additional metrics
             average_trade_duration = float((df["timestamp"].diff().mean() or pd.Timedelta(0)).total_seconds())
@@ -330,7 +316,9 @@ class AdvancedEvaluationEngine:
                 max_drawdown=float(max_drawdown_pct),
                 volatility=float(volatility),
                 value_at_risk=float(np.percentile(returns, 5)) if len(returns) > 0 else 0.0,
-                conditional_value_at_risk=float(np.mean([r for r in returns if r <= np.percentile(returns, 5)])) if len(returns) > 0 else 0.0,
+                conditional_value_at_risk=(
+                    float(np.mean([r for r in returns if r <= np.percentile(returns, 5)])) if len(returns) > 0 else 0.0
+                ),
                 total_trades=int(total_trades),
                 winning_trades=int(winning_trades),
                 losing_trades=int(losing_trades),
@@ -396,7 +384,10 @@ class AdvancedEvaluationEngine:
             return 0.0
 
     def _calculate_value_at_risk(
-        self, returns: pd.Series, confidence_level: float, ) -> float:
+        self,
+        returns: pd.Series,
+        confidence_level: float,
+    ) -> float:
         """Calculate Value at Risk."""
         try:
             if len(returns) == 0:
@@ -408,7 +399,10 @@ class AdvancedEvaluationEngine:
             return 0.0
 
     def _calculate_conditional_value_at_risk(
-        self, returns: pd.Series, confidence_level: float, ) -> float:
+        self,
+        returns: pd.Series,
+        confidence_level: float,
+    ) -> float:
         """Calculate Conditional Value at Risk (Expected Shortfall)."""
         try:
             if len(returns) == 0:
@@ -510,14 +504,13 @@ class AdvancedEvaluationEngine:
         try:
             # Calculate actual win/loss amounts and ratios
             avg_win_amount = metrics.average_win if metrics.average_win > 0 else 0.01
-            avg_loss_amount = (
-                abs(metrics.average_loss) if metrics.average_loss < 0 else 0.01
-            )
+            avg_loss_amount = abs(metrics.average_loss) if metrics.average_loss < 0 else 0.01
             win_loss_amount_ratio = avg_win_amount / avg_loss_amount
             # Revised: capped win/loss frequency ratio (concise)
             if metrics.losing_trades <= 0:
                 win_loss_frequency_ratio = 10.0 if metrics.winning_trades > 0 else 1.0
-            else: win_loss_frequency_ratio = min(
+            else:
+                win_loss_frequency_ratio = min(
                     metrics.winning_trades / metrics.losing_trades,
                     10.0,
                 )
@@ -549,9 +542,7 @@ class AdvancedEvaluationEngine:
                 ),  # Invert and cap at 30%
             }
             # Calculate weighted score with emphasis on actual win/loss amounts
-            composite_score = sum(
-                weights[metric] * normalized_metrics[metric] for metric in weights
-            )
+            composite_score = sum(weights[metric] * normalized_metrics[metric] for metric in weights)
             # Bonus for high win rate and good win/loss amounts
             if metrics.win_rate > 0.6 and win_loss_amount_ratio > 2.0:
                 composite_score *= 1.15  # 15% bonus for excellent win/loss amounts
@@ -647,7 +638,6 @@ if __name__ == "__main__":
 
     # Generate report
     report = engine.generate_evaluation_report(metrics)
-
 
     for data in report.values():
         if isinstance(data, dict):

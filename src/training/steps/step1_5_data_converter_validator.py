@@ -1,6 +1,9 @@
 """Validator for Step 1.5: Data Converter."""
 
 from __future__ import annotations
+from src.utils.logger import system_logger
+from src.utils.base_validator import BaseValidator
+from src.config import CONFIG
 
 import asyncio
 import glob
@@ -16,10 +19,6 @@ import pandas as pd
 project_root = Path(__file__).resolve().parents[2]
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
-
-from src.config import CONFIG
-from src.utils.base_validator import BaseValidator
-from src.utils.logger import system_logger
 
 
 class Step1_5DataConverterValidator(BaseValidator):
@@ -112,9 +111,7 @@ class Step1_5DataConverterValidator(BaseValidator):
             Dictionary with structure information
         """
         # Expected unified data path: data_cache/unified/{exchange}/{symbol}/{timeframe}/
-        unified_base = os.path.join(
-            data_dir, "unified", exchange.lower(), symbol, timeframe
-        )
+        unified_base = os.path.join(data_dir, "unified", exchange.lower(), symbol, timeframe)
 
         if os.path.exists(unified_base) and os.path.isdir(unified_base):
             # Check for parquet files in the directory
@@ -134,9 +131,7 @@ class Step1_5DataConverterValidator(BaseValidator):
             "file_count": 0,
         }
 
-    async def _validate_unified_files(
-        self, base_path: str, symbol: str, exchange: str, timeframe: str
-    ) -> bool:
+    async def _validate_unified_files(self, base_path: str, symbol: str, exchange: str, timeframe: str) -> bool:
         """Validate the unified data files.
 
         Args:
@@ -178,7 +173,9 @@ class Step1_5DataConverterValidator(BaseValidator):
             if total_records < self.min_records:
                 self.logger.warning(f"⚠️ Low total records: {total_records} (minimum: {self.min_records})")
 
-            self.logger.info(f"✅ Unified files validation: {valid_files}/{len(parquet_files)} files, {total_records} total records")
+            self.logger.info(
+                f"✅ Unified files validation: {valid_files}/{len(parquet_files)} files, {total_records} total records"
+            )
             return True
 
         except Exception as e:  # pragma: no cover - defensive
@@ -254,9 +251,7 @@ class Step1_5DataConverterValidator(BaseValidator):
                 "error": f"File read error: {str(e)}",
             }
 
-    async def _validate_unified_config(
-        self, symbol: str, exchange: str, timeframe: str, data_dir: str
-    ) -> bool:
+    async def _validate_unified_config(self, symbol: str, exchange: str, timeframe: str, data_dir: str) -> bool:
         """Validate the unified data configuration file.
 
         Args:
@@ -270,9 +265,7 @@ class Step1_5DataConverterValidator(BaseValidator):
         """
         try:
             # Expected config path: data_cache/unified/{exchange}_{symbol}_{timeframe}_config.json
-            config_path = os.path.join(
-                data_dir, "unified", f"{exchange.lower()}_{symbol}_{timeframe}_config.json"
-            )
+            config_path = os.path.join(data_dir, "unified", f"{exchange.lower()}_{symbol}_{timeframe}_config.json")
 
             if not os.path.exists(config_path):
                 self.logger.warning(f"⚠️ Config file not found: {config_path}")

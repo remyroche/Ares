@@ -3,12 +3,8 @@
 """Validator for Step 7: Enhanced Matrix Operations."""
 
 import json
-import os
 from pathlib import Path
 from typing import Any, Dict, List
-
-import numpy as np
-import pandas as pd
 
 from src.utils.base_validator import BaseValidator
 from src.utils.logger import system_logger
@@ -24,18 +20,13 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
 
     def validate_step_prerequisites(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate prerequisites for Step 2.5."""
-        validation_result = {
-            "validation_passed": True,
-            "warnings": [],
-            "errors": [],
-            "details": {}
-        }
+        validation_result = {"validation_passed": True, "warnings": [], "errors": [], "details": {}}
 
         try:
             # Check if step6_feature_engineering output exists
             step6_output_dir = Path("data/training")
             step6_files = list(step6_output_dir.glob(f"{exchange}_{symbol}_{timeframe}*features*.parquet"))
-            
+
             if not step6_files:
                 validation_result["validation_passed"] = False
                 validation_result["errors"].append(
@@ -48,9 +39,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
             # Check if matrix operations directory exists
             matrix_ops_dir = Path("data/matrix_operations")
             if not matrix_ops_dir.exists():
-                validation_result["warnings"].append(
-                    f"Matrix operations directory does not exist: {matrix_ops_dir}"
-                )
+                validation_result["warnings"].append(f"Matrix operations directory does not exist: {matrix_ops_dir}")
 
         except Exception as e:
             validation_result["validation_passed"] = False
@@ -60,12 +49,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
 
     def validate_step_output(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
         """Validate Step 2.5 output files and content."""
-        validation_result = {
-            "validation_passed": True,
-            "warnings": [],
-            "errors": [],
-            "details": {}
-        }
+        validation_result = {"validation_passed": True, "warnings": [], "errors": [], "details": {}}
 
         try:
             # Define expected output files
@@ -73,13 +57,13 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
             expected_files = [
                 f"{exchange}_{symbol}_{timeframe}_matrix_operations_config.json",
                 f"{exchange}_{symbol}_{timeframe}_matrix_operations_results.json",
-                f"{exchange}_{symbol}_{timeframe}_matrix_operations_summary.json"
+                f"{exchange}_{symbol}_{timeframe}_matrix_operations_summary.json",
             ]
 
             # Check if all expected files exist
             missing_files = []
             existing_files = []
-            
+
             for filename in expected_files:
                 file_path = output_dir / filename
                 if file_path.exists():
@@ -89,27 +73,23 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
 
             if missing_files:
                 validation_result["validation_passed"] = False
-                validation_result["errors"].extend([
-                    f"Missing matrix operations file: {f}" for f in missing_files
-                ])
+                validation_result["errors"].extend([f"Missing matrix operations file: {f}" for f in missing_files])
             else:
                 validation_result["details"]["files_found"] = len(existing_files)
                 validation_result["details"]["files"] = existing_files
 
             # Validate each file content
             if existing_files:
-                file_validations = self._validate_file_contents(
-                    output_dir, symbol, exchange, timeframe
-                )
-                
+                file_validations = self._validate_file_contents(output_dir, symbol, exchange, timeframe)
+
                 for file_validation in file_validations:
                     if not file_validation["valid"]:
                         validation_result["validation_passed"] = False
                         validation_result["errors"].extend(file_validation["errors"])
-                    
+
                     if file_validation["warnings"]:
                         validation_result["warnings"].extend(file_validation["warnings"])
-                    
+
                     validation_result["details"].update(file_validation["details"])
 
         except Exception as e:
@@ -119,11 +99,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
         return validation_result
 
     def _validate_file_contents(
-        self, 
-        output_dir: Path, 
-        symbol: str, 
-        exchange: str, 
-        timeframe: str
+        self, output_dir: Path, symbol: str, exchange: str, timeframe: str
     ) -> List[Dict[str, Any]]:
         """Validate the content of matrix operations files."""
         validations = []
@@ -150,21 +126,16 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
 
     def _validate_config_file(self, config_file: Path) -> Dict[str, Any]:
         """Validate matrix operations configuration file."""
-        validation = {
-            "valid": True,
-            "errors": [],
-            "warnings": [],
-            "details": {}
-        }
+        validation = {"valid": True, "errors": [], "warnings": [], "details": {}}
 
         try:
-            with open(config_file, 'r') as f:
+            with open(config_file, "r") as f:
                 config = json.load(f)
 
             # Check required fields
             required_fields = [
                 "enable_gpu_acceleration",
-                "enable_sparse_optimizations", 
+                "enable_sparse_optimizations",
                 "enable_memory_optimization",
                 "enable_parallel_processing",
                 "condition_number_threshold",
@@ -176,7 +147,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
                 "tolerance",
                 "data_shape",
                 "numeric_columns",
-                "operations"
+                "operations",
             ]
 
             missing_fields = [field for field in required_fields if field not in config]
@@ -186,24 +157,29 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
 
             # Validate data types and ranges
             if "condition_number_threshold" in config:
-                if not isinstance(config["condition_number_threshold"], (int, float)) or config["condition_number_threshold"] <= 0:
+                if (
+                    not isinstance(config["condition_number_threshold"], (int, float))
+                    or config["condition_number_threshold"] <= 0
+                ):
                     validation["valid"] = False
                     validation["errors"].append("condition_number_threshold must be a positive number")
 
             if "correlation_threshold" in config:
-                if not isinstance(config["correlation_threshold"], (int, float)) or not (0 <= config["correlation_threshold"] <= 1):
+                if not isinstance(config["correlation_threshold"], (int, float)) or not (
+                    0 <= config["correlation_threshold"] <= 1
+                ):
                     validation["valid"] = False
                     validation["errors"].append("correlation_threshold must be between 0 and 1")
 
             if "operations" in config:
                 expected_operations = [
                     "correlation_analysis",
-                    "condition_number_check", 
+                    "condition_number_check",
                     "eigenvalue_analysis",
                     "singular_value_decomposition",
-                    "matrix_rank_analysis"
+                    "matrix_rank_analysis",
                 ]
-                
+
                 if not isinstance(config["operations"], list):
                     validation["valid"] = False
                     validation["errors"].append("operations must be a list")
@@ -226,37 +202,32 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
 
     def _validate_results_file(self, results_file: Path) -> Dict[str, Any]:
         """Validate matrix operations results file."""
-        validation = {
-            "valid": True,
-            "errors": [],
-            "warnings": [],
-            "details": {}
-        }
+        validation = {"valid": True, "errors": [], "warnings": [], "details": {}}
 
         try:
-            with open(results_file, 'r') as f:
+            with open(results_file, "r") as f:
                 results = json.load(f)
 
             # Check if results contain expected operations
             expected_operations = [
                 "correlation_analysis",
                 "condition_number_check",
-                "eigenvalue_analysis", 
+                "eigenvalue_analysis",
                 "singular_value_decomposition",
-                "matrix_rank_analysis"
+                "matrix_rank_analysis",
             ]
 
             operations_found = []
             for operation in expected_operations:
                 if operation in results:
                     operations_found.append(operation)
-                    
+
                     # Validate specific operation results
                     op_validation = self._validate_operation_results(operation, results[operation])
                     if not op_validation["valid"]:
                         validation["valid"] = False
                         validation["errors"].extend(op_validation["errors"])
-                    
+
                     if op_validation["warnings"]:
                         validation["warnings"].extend(op_validation["warnings"])
 
@@ -278,12 +249,7 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
 
     def _validate_operation_results(self, operation: str, results: Dict[str, Any]) -> Dict[str, Any]:
         """Validate specific operation results."""
-        validation = {
-            "valid": True,
-            "errors": [],
-            "warnings": [],
-            "details": {}
-        }
+        validation = {"valid": True, "errors": [], "warnings": [], "details": {}}
 
         if operation == "correlation_analysis":
             if "correlation_matrix" not in results:
@@ -332,26 +298,21 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
 
     def _validate_summary_file(self, summary_file: Path) -> Dict[str, Any]:
         """Validate matrix operations summary file."""
-        validation = {
-            "valid": True,
-            "errors": [],
-            "warnings": [],
-            "details": {}
-        }
+        validation = {"valid": True, "errors": [], "warnings": [], "details": {}}
 
         try:
-            with open(summary_file, 'r') as f:
+            with open(summary_file, "r") as f:
                 summary = json.load(f)
 
             # Check required fields
             required_fields = [
                 "timestamp",
-                "symbol", 
+                "symbol",
                 "exchange",
                 "timeframe",
                 "operations_performed",
                 "data_shape",
-                "numeric_columns"
+                "numeric_columns",
             ]
 
             missing_fields = [field for field in required_fields if field not in summary]
@@ -395,5 +356,5 @@ class Step7EnhancedMatrixOperationsValidator(BaseValidator):
             "output_validation": output,
             "overall_validation_passed": prerequisites["validation_passed"] and output["validation_passed"],
             "total_warnings": len(prerequisites["warnings"]) + len(output["warnings"]),
-            "total_errors": len(prerequisites["errors"]) + len(output["errors"])
+            "total_errors": len(prerequisites["errors"]) + len(output["errors"]),
         }

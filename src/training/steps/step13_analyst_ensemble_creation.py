@@ -11,24 +11,10 @@ from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
-from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
-)
-
 logger = system_logger
 
 # Required modules for this step
-REQUIRED_MODULES = [
-    "pandas",
-    "joblib",
-    "src.utils.logger",
-    "src.utils.error_handler"
-]
+REQUIRED_MODULES = ["pandas", "joblib", "src.utils.logger", "src.utils.error_handler"]
 
 # Validate environment dependencies
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
@@ -54,7 +40,11 @@ class AnalystEnsembleCreationStep:
 
     @handle_errors
     def execute(
-        self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any],
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
+        training_input: dict[str, Any],
     ) -> bool:
         """Execute Step 7: Create analyst ensemble models.
 
@@ -79,7 +69,10 @@ class AnalystEnsembleCreationStep:
                 )
                 logger.info("📝 Creating placeholder ensemble for Step 7")
                 return self._create_placeholder_ensemble(
-                    symbol, exchange, data_dir, training_input,
+                    symbol,
+                    exchange,
+                    data_dir,
+                    training_input,
                 )
 
             # Load enhanced models from Step 6
@@ -90,12 +83,18 @@ class AnalystEnsembleCreationStep:
                     "⚠️ No enhanced models found, creating placeholder ensemble",
                 )
                 return self._create_placeholder_ensemble(
-                    symbol, exchange, data_dir, training_input,
+                    symbol,
+                    exchange,
+                    data_dir,
+                    training_input,
                 )
 
             # Create ensemble
             ensemble_result = self._create_ensemble(
-                ensemble_models, symbol, exchange, data_dir,
+                ensemble_models,
+                symbol,
+                exchange,
+                data_dir,
             )
 
             # Save ensemble summary
@@ -144,7 +143,11 @@ class AnalystEnsembleCreationStep:
             return {}
 
     def _create_ensemble(
-        self, ensemble_models: dict[str, Any], symbol: str, exchange: str, data_dir: str,
+        self,
+        ensemble_models: dict[str, Any],
+        symbol: str,
+        exchange: str,
+        data_dir: str,
     ) -> dict[str, Any]:
         """Create ensemble from loaded models."""
         try:
@@ -161,14 +164,14 @@ class AnalystEnsembleCreationStep:
                 if sample is not None:
                     features_df, target = sample
 
-                    optimized_features, selection_metadata = (
-                        optimized_feature_selection.select_features_optimized(
-                            features_df, target, model_type="ensemble_models", step_name="step7_ensemble"
-                        )
+                    optimized_features, selection_metadata = optimized_feature_selection.select_features_optimized(
+                        features_df, target, model_type="ensemble_models", step_name="step7_ensemble"
                     )
 
                     logger.info(
-                        f"✅ Applied optimized feature selection for ensemble: {features_df.shape[1]} -> {optimized_features.shape[1]} features"
+                        f"✅ Applied optimized feature selection for ensemble: {
+                            features_df.shape[1]} -> {
+                            optimized_features.shape[1]} features"
                     )
 
                     # Log performance metrics
@@ -187,9 +190,7 @@ class AnalystEnsembleCreationStep:
                             "symbol": symbol,
                             "exchange": exchange,
                             "created_at": pd.Timestamp.now().isoformat(),
-                            "model_count": sum(
-                                len(models) for models in ensemble_models.values()
-                            ),
+                            "model_count": sum(len(models) for models in ensemble_models.values()),
                             "feature_selection_metadata": selection_metadata,
                         },
                     }
@@ -201,9 +202,7 @@ class AnalystEnsembleCreationStep:
                             "symbol": symbol,
                             "exchange": exchange,
                             "created_at": pd.Timestamp.now().isoformat(),
-                            "model_count": sum(
-                                len(models) for models in ensemble_models.values()
-                            ),
+                            "model_count": sum(len(models) for models in ensemble_models.values()),
                         },
                     }
 
@@ -216,9 +215,7 @@ class AnalystEnsembleCreationStep:
                         "symbol": symbol,
                         "exchange": exchange,
                         "created_at": pd.Timestamp.now().isoformat(),
-                        "model_count": sum(
-                            len(models) for models in ensemble_models.values()
-                        ),
+                        "model_count": sum(len(models) for models in ensemble_models.values()),
                     },
                 }
 
@@ -238,7 +235,9 @@ class AnalystEnsembleCreationStep:
             logger.exception(f"❌ Error creating ensemble: {e}")
             return {}
 
-    def _get_sample_data_for_feature_selection(self, data_dir: str, symbol: str, exchange: str) -> Optional[Tuple[pd.DataFrame, pd.Series]]:
+    def _get_sample_data_for_feature_selection(
+        self, data_dir: str, symbol: str, exchange: str
+    ) -> Optional[Tuple[pd.DataFrame, pd.Series]]:
         """Get sample data for feature selection from existing features."""
         try:
             # Try to load sample features and labels from Step 2 artifacts
@@ -272,7 +271,11 @@ class AnalystEnsembleCreationStep:
             return None
 
     def _create_placeholder_ensemble(
-        self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any],
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
+        training_input: dict[str, Any],
     ) -> bool:
         """Create a placeholder ensemble when no enhanced models are available."""
         try:
@@ -293,7 +296,10 @@ class AnalystEnsembleCreationStep:
 
             # Save placeholder ensemble
             self._save_ensemble_summary(
-                placeholder_ensemble, symbol, exchange, data_dir,
+                placeholder_ensemble,
+                symbol,
+                exchange,
+                data_dir,
             )
 
             logger.info("✅ Placeholder ensemble created successfully")
@@ -304,7 +310,11 @@ class AnalystEnsembleCreationStep:
             return False
 
     def _save_ensemble_summary(
-        self, ensemble_result: dict[str, Any], symbol: str, exchange: str, data_dir: str,
+        self,
+        ensemble_result: dict[str, Any],
+        symbol: str,
+        exchange: str,
+        data_dir: str,
     ) -> None:
         """Save ensemble summary to file."""
         try:
@@ -314,15 +324,15 @@ class AnalystEnsembleCreationStep:
 
             # Save ensemble summary
             summary_file = os.path.join(
-                ensemble_dir, f"{exchange}_{symbol}_analyst_ensemble_summary.json",
+                ensemble_dir,
+                f"{exchange}_{symbol}_analyst_ensemble_summary.json",
             )
 
             # Convert to serializable format
             serializable_result = ensemble_result.copy()
             if "ensemble_models" in serializable_result:
                 serializable_result["ensemble_models"] = {
-                    regime: list(models.keys())
-                    for regime, models in ensemble_result["ensemble_models"].items()
+                    regime: list(models.keys()) for regime, models in ensemble_result["ensemble_models"].items()
                 }
 
             with open(summary_file, "w") as f:

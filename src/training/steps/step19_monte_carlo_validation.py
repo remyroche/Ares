@@ -1,5 +1,22 @@
 # src/training/steps/step19_*.py
 
+from src.utils.training_pipeline_decorators import (
+    artifact_versioning,
+    artifact_write_lock,
+    circuit_breaker_protection,
+    debug_training_step,
+    deterministic_seed,
+    idempotent_step,
+    memory_efficient,
+    nan_inf_and_constant_guard,
+    prevent_data_leakage,
+    quality_gate,
+    resource_monitor,
+    secure_data_processing,
+    time_budget_watchdog,
+    validate_step_output,
+    validate_step_prerequisites,
+)
 import asyncio
 import contextlib
 import json
@@ -12,8 +29,6 @@ from src.utils.logger import system_logger
 
 class MonteCarloValidationStep:
     """Step 14: Monte Carlo Validation using existing step7_monte_carlo_validation."""
-
-    
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""
@@ -37,9 +52,7 @@ class MonteCarloValidationStep:
             )
             raise
 
-    async def execute(
-        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def execute(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
         """Execute Monte Carlo validation.
 
         Args:
@@ -109,12 +122,8 @@ class MonteCarloValidationStep:
 
             # Persist Monte Carlo artifacts expected by validators
             mc_results_file = f"{data_dir}/{exchange}_{symbol}_monte_carlo_results.json"
-            mc_performance_file = (
-                f"{data_dir}/{exchange}_{symbol}_monte_carlo_performance.json"
-            )
-            mc_metadata_file = (
-                f"{data_dir}/{exchange}_{symbol}_monte_carlo_metadata.json"
-            )
+            mc_performance_file = f"{data_dir}/{exchange}_{symbol}_monte_carlo_performance.json"
+            mc_metadata_file = f"{data_dir}/{exchange}_{symbol}_monte_carlo_metadata.json"
 
             os.makedirs(data_dir, exist_ok=True)
             with open(mc_results_file, "w") as f:
@@ -190,32 +199,6 @@ class MonteCarloValidationStep:
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
-from src.utils.training_pipeline_decorators import (
-    artifact_versioning,
-    artifact_write_lock,
-    circuit_breaker_protection,
-    debug_training_step,
-    deterministic_seed,
-    idempotent_step,
-    memory_efficient,
-    nan_inf_and_constant_guard,
-    prevent_data_leakage,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    time_budget_watchdog,
-    validate_step_output,
-    validate_step_prerequisites,
-)
-
-from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
-)
 
 
 # For backward compatibility with existing step structure
@@ -237,7 +220,10 @@ from src.utils.enhanced_mlflow_integration import (
     context="Monte Carlo Validation",
 )
 @secure_data_processing(
-    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
+    backup_before=True,
+    integrity_checks=True,
+    memory_cleanup=True,
+    data_validation=True,
 )
 @prevent_data_leakage(
     temporal_validation=True,
@@ -253,7 +239,10 @@ from src.utils.enhanced_mlflow_integration import (
     auto_cleanup=True,
 )
 @memory_efficient(
-    chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=25,
+    chunk_size=10000,
+    streaming_processing=True,
+    memory_pool=True,
+    cleanup_frequency=25,
 )
 @debug_training_step(
     log_intermediate_results=True,

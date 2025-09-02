@@ -18,8 +18,8 @@ from src.training.steps.vectorized_advanced_feature_engineering import (
     VectorizedAdvancedFeatureEngineering,
     WaveletFeatureCache,
 )
-from src.utils.data_optimizer import ohlcv_columns
 from src.utils.centralized_decorators import validate_wavelet_data_quality
+from src.utils.data_optimizer import ohlcv_columns
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -86,7 +86,12 @@ class WaveletFeaturePrecomputer:
             return False
 
     async def precompute_dataset(
-        self, data_path: str, output_path: str | None = None, symbol: str | None = None, start_date: str | None = None, end_date: str | None = None
+        self,
+        data_path: str,
+        output_path: str | None = None,
+        symbol: str | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> bool:
         """Pre-compute wavelet features for an entire dataset.
 
@@ -141,18 +146,11 @@ class WaveletFeaturePrecomputer:
                     pdm, ParquetDatasetManager(logger=self.logger)
                     columns = ohlcv_columns()
                     if file_path.is_dir():
-                        dataset, pdm.scan_dataset(
-                            str(file_path), columns=columns, to_pandas=True
-                        )
+                        dataset, pdm.scan_dataset(str(file_path), columns=columns, to_pandas=True)
                     else:
                         from src.utils.logger import log_io_operation
 
-                        with log_io_operation(
-                            self.logger,
-                            "read_parquet",
-                            data_path,
-                            columns="ohlcv_columns"
-                        ):
+                        with log_io_operation(self.logger, "read_parquet", data_path, columns="ohlcv_columns"):
                             dataset, pd.read_parquet(data_path, columns=columns)
                 except Exception:
                     from src.utils.logger import log_io_operation
@@ -190,9 +188,7 @@ class WaveletFeaturePrecomputer:
             return None
 
     @validate_wavelet_data_quality
-    async def _process_dataset(
-        self, dataset: pd.DataFrame, output_path: str | None = None
-    ) -> bool:
+    async def _process_dataset(self, dataset: pd.DataFrame, output_path: str | None = None) -> bool:
         """Process dataset in batches."""
         try:
             total_rows = len(dataset)
@@ -237,7 +233,11 @@ class WaveletFeaturePrecomputer:
 
     @validate_wavelet_data_quality
     async def _process_batch(
-        self, batch_data: pd.DataFrame, batch_idx: int, total_batches: int, ) -> bool:
+        self,
+        batch_data: pd.DataFrame,
+        batch_idx: int,
+        total_batches: int,
+    ) -> bool:
         """Process a single batch of data."""
         try:
             # Extract price and volume data
@@ -249,11 +249,9 @@ class WaveletFeaturePrecomputer:
                 return True
 
             # Generate wavelet features
-            wavelet_features = (
-                await self.feature_engineer._get_wavelet_features_with_caching(
-                    price_data,
-                    volume_data,
-                )
+            wavelet_features = await self.feature_engineer._get_wavelet_features_with_caching(
+                price_data,
+                volume_data,
             )
 
             if not wavelet_features:
@@ -303,23 +301,22 @@ class WaveletFeaturePrecomputer:
         try:
             if "volume" in data.columns:
                 volume_data = data[["volume"]].copy()
-                volume_data["volume"] = pd.to_numeric(
-                    volume_data["volume"],
-                    errors="coerce"
-                )
+                volume_data["volume"] = pd.to_numeric(volume_data["volume"], errors="coerce")
                 return volume_data.dropna()
             # Create synthetic volume data if not available
-            return pd.DataFrame(
-                {"volume": np.random.uniform(1000, 10000, len(data))},
-                index=data.index
-            )
+            return pd.DataFrame({"volume": np.random.uniform(1000, 10000, len(data))}, index=data.index)
 
         except Exception:
             self.print(error("Error extracting volume data: {e}"))
             return pd.DataFrame()
 
     async def _save_batch_results(
-        self, batch_data: pd.DataFrame, wavelet_features: dict[str, Any], batch_idx: int, total_batches: int, ) -> bool:
+        self,
+        batch_data: pd.DataFrame,
+        wavelet_features: dict[str, Any],
+        batch_idx: int,
+        total_batches: int,
+    ) -> bool:
         """Save batch results to cache."""
         try:
             # Generate cache key for batch
@@ -354,7 +351,9 @@ class WaveletFeaturePrecomputer:
             return False
 
     async def precompute_multiple_datasets(
-        self, dataset_configs: list[dict[str, Any]], ) -> bool:
+        self,
+        dataset_configs: list[dict[str, Any]],
+    ) -> bool:
         """Pre-compute wavelet features for multiple datasets.
 
         Args:
@@ -401,9 +400,7 @@ class WaveletFeaturePrecomputer:
     def get_precomputation_stats(self) -> dict[str, Any]:
         """Get pre-computation statistics."""
         try:
-            cache_stats = (
-                self.wavelet_cache.get_cache_stats() if self.wavelet_cache else {}
-            )
+            cache_stats = self.wavelet_cache.get_cache_stats() if self.wavelet_cache else {}
 
             return {
                 "precomputation_config": {

@@ -29,9 +29,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
     def __init__(self, config: dict[str, Any]) -> None:
         super().__init__("step9_tactician_specialist_training", config)
 
-    async def validate(
-        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
-    ) -> bool:
+    async def validate(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> bool:
         """Validate the tactician specialist training step.
 
         Args:
@@ -114,9 +112,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         self.logger.info("✅ Tactician specialist training validation passed")
         return True
 
-    def _validate_tactician_model_files(
-        self, symbol: str, exchange: str, data_dir: str
-    ) -> bool:
+    def _validate_tactician_model_files(self, symbol: str, exchange: str, data_dir: str) -> bool:
         """Validate that tactician model files exist.
 
         Args:
@@ -155,9 +151,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             self.print(error(f"❌ Error validating tactician model files: {e}"))
             return False
 
-    def _validate_tactician_model_performance(
-        self, symbol: str, exchange: str, data_dir: str
-    ) -> bool:
+    def _validate_tactician_model_performance(self, symbol: str, exchange: str, data_dir: str) -> bool:
         """Validate tactician model performance metrics.
 
         Args:
@@ -170,9 +164,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         """
         try:
             # Load tactician training history
-            history_file = (
-                f"{data_dir}/{exchange}_{symbol}_tactician_training_history.json"
-            )
+            history_file = f"{data_dir}/{exchange}_{symbol}_tactician_training_history.json"
 
             if not os.path.exists(history_file):
                 self.logger.warning(
@@ -246,9 +238,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             )
             return False
 
-    def _validate_tactician_training_metrics(
-        self, symbol: str, exchange: str, data_dir: str
-    ) -> bool:
+    def _validate_tactician_training_metrics(self, symbol: str, exchange: str, data_dir: str) -> bool:
         """Validate tactician training metrics and convergence.
 
         Args:
@@ -260,9 +250,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             bool: True if training metrics are acceptable
         """
         try:
-            history_file = (
-                f"{data_dir}/{exchange}_{symbol}_tactician_training_history.json"
-            )
+            history_file = f"{data_dir}/{exchange}_{symbol}_tactician_training_history.json"
 
             if not os.path.exists(history_file):
                 self.logger.warning(
@@ -290,19 +278,12 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
                     self.print(error("⚠️ Tactician model did not converge"))
 
             # Check for overfitting indicators
-            if (
-                "train_accuracy" in training_history
-                and "val_accuracy" in training_history
-            ):
+            if "train_accuracy" in training_history and "val_accuracy" in training_history:
                 train_acc = training_history["train_accuracy"]
                 val_acc = training_history["val_accuracy"]
 
-                if (
-                    train_acc - val_acc > 0.1
-                ):  # Overfitting if train > val by more than 10%
-                    self.logger.warning(
-                        f"⚠️ Potential overfitting: train_acc={train_acc:.3f}, val_acc={val_acc:.3f}"
-                    )
+                if train_acc - val_acc > 0.1:  # Overfitting if train > val by more than 10%
+                    self.logger.warning(f"⚠️ Potential overfitting: train_acc={train_acc:.3f}, val_acc={val_acc:.3f}")
 
             # Check for training time
             if "training_time" in training_history:
@@ -338,9 +319,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             )
             return False
 
-    def _validate_tactician_model_quality(
-        self, symbol: str, exchange: str, data_dir: str
-    ) -> bool:
+    def _validate_tactician_model_quality(self, symbol: str, exchange: str, data_dir: str) -> bool:
         """Validate tactician model quality characteristics.
 
         Args:
@@ -353,9 +332,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
         """
         try:
             # Load tactician model metadata
-            metadata_file = (
-                f"{data_dir}/{exchange}_{symbol}_tactician_model_metadata.json"
-            )
+            metadata_file = f"{data_dir}/{exchange}_{symbol}_tactician_model_metadata.json"
 
             if os.path.exists(metadata_file):
                 import json
@@ -500,9 +477,7 @@ class Step9TacticianSpecialistTrainingValidator(BaseValidator):
             return artifact
 
 
-async def run_validator(
-    training_input: dict[str, Any], pipeline_state: dict[str, Any]
-) -> dict[str, Any]:
+async def run_validator(training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
     """Run the step9_tactician_specialist_training validator.
 
     Args:

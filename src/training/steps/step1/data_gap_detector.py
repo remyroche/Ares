@@ -4,6 +4,12 @@
 Detects missing data gaps in aggtrades, klines, and futures files.
 """
 
+from src.utils.centralized_decorators import (
+    comprehensive_data_validation,
+    handle_errors,
+    validate_data_structure,
+    with_tracing_span,
+)
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -16,12 +22,6 @@ from src.utils.logger import system_logger
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.centralized_decorators import (
-    comprehensive_data_validation,
-    handle_errors,
-    validate_data_structure,
-    with_tracing_span,
-)
 
 logger = system_logger.getChild("DataGapDetector")
 
@@ -38,6 +38,7 @@ class DataGapDetector:
             from .missing_data_downloader_and_gap_filler import (
                 MissingDataDownloaderAndGapFiller,
             )
+
             self.gap_filler = MissingDataDownloaderAndGapFiller(data_cache_path)
         except ImportError:
             logger.warning("⚠️ MissingDataDownloaderAndGapFiller not available - gap filling disabled")
@@ -58,11 +59,13 @@ class DataGapDetector:
             "missing_futures_months": [],
             "existing_aggtrades_days": [],
             "existing_klines_months": [],
-            "existing_futures_months": []
+            "existing_futures_months": [],
         },
-        context="data_gap_detector.detect_missing_data"
+        context="data_gap_detector.detect_missing_data",
     )
-    def detect_missing_data(self, symbol: str, exchange: str, start_date: datetime | None = None, end_date: datetime | None = None) -> dict:
+    def detect_missing_data(
+        self, symbol: str, exchange: str, start_date: datetime | None = None, end_date: datetime | None = None
+    ) -> dict:
         """Detect missing data for a specific symbol and exchange.
 
         Args:
@@ -76,9 +79,9 @@ class DataGapDetector:
 
         """
         detection_start = datetime.now()
-        
+
         if start_date is None:
-            start_date = datetime.now() - timedelta(days=365*2)
+            start_date = datetime.now() - timedelta(days=365 * 2)
             logger.info(f"📅 No start_date provided, using default: {start_date.date()} (2 years ago)")
         if end_date is None:
             end_date = datetime.now()
@@ -106,42 +109,52 @@ class DataGapDetector:
         logger.info("📊 DETECTING MISSING AGGTRADES (DAILY FILES)")
         aggtrades_results = self._detect_missing_aggtrades(symbol, exchange, start_date, end_date)
         results.update(aggtrades_results)
-        logger.info(f"📈 Aggtrades: {len(aggtrades_results['existing_aggtrades_days'])} existing, {len(aggtrades_results['missing_aggtrades_days'])} missing")
+        logger.info(
+            f"📈 Aggtrades: {len(aggtrades_results['existing_aggtrades_days'])} existing, {len(aggtrades_results['missing_aggtrades_days'])} missing"
+        )
 
         # Detect missing klines (monthly files)
         logger.info("📊 DETECTING MISSING KLINES (MONTHLY FILES)")
         klines_results = self._detect_missing_klines(symbol, exchange, start_date, end_date)
         results.update(klines_results)
-        logger.info(f"📈 Klines: {len(klines_results['existing_klines_months'])} existing, {len(klines_results['missing_klines_months'])} missing")
+        logger.info(
+            f"📈 Klines: {len(klines_results['existing_klines_months'])} existing, {len(klines_results['missing_klines_months'])} missing"
+        )
 
         # Detect missing futures (monthly files)
         logger.info("📊 DETECTING MISSING FUTURES (MONTHLY FILES)")
         futures_results = self._detect_missing_futures(symbol, exchange, start_date, end_date)
         results.update(futures_results)
-        logger.info(f"📈 Futures: {len(futures_results['existing_futures_months'])} existing, {len(futures_results['missing_futures_months'])} missing")
+        logger.info(
+            f"📈 Futures: {len(futures_results['existing_futures_months'])} existing, {len(futures_results['missing_futures_months'])} missing"
+        )
 
         # Summary
         total_missing = (
-            len(results["missing_aggtrades_days"]) +
-            len(results["missing_klines_months"]) +
-            len(results["missing_futures_months"])
+            len(results["missing_aggtrades_days"])
+            + len(results["missing_klines_months"])
+            + len(results["missing_futures_months"])
         )
         total_existing = (
-            len(results["existing_aggtrades_days"]) +
-            len(results["existing_klines_months"]) +
-            len(results["existing_futures_months"])
+            len(results["existing_aggtrades_days"])
+            + len(results["existing_klines_months"])
+            + len(results["existing_futures_months"])
         )
-        
+
         detection_end = datetime.now()
         detection_time = detection_end - detection_start
-        
+
         logger.info("-" * 60)
         logger.info("📊 MISSING DATA DETECTION SUMMARY")
         logger.info(f"⏱️  Detection time: {detection_time}")
         logger.info(f"📈 Total existing files: {total_existing}")
         logger.info(f"❌ Total missing files: {total_missing}")
-        logger.info(f"📊 Coverage: {total_existing/(total_existing + total_missing)*100:.1f}%" if (total_existing + total_missing) > 0 else "📊 Coverage: N/A")
-        
+        logger.info(
+            f"📊 Coverage: {total_existing / (total_existing + total_missing) * 100:.1f}%"
+            if (total_existing + total_missing) > 0
+            else "📊 Coverage: N/A"
+        )
+
         if total_missing > 0:
             logger.warning(f"⚠️  {total_missing} missing data files detected!")
         else:
@@ -305,7 +318,7 @@ class DataGapDetector:
     @handle_errors(
         exceptions=(OSError, ValueError, TypeError, KeyError, FileNotFoundError, PermissionError),
         default_return=[],
-        context="data_gap_detector.detect_aggtrades_gaps"
+        context="data_gap_detector.detect_aggtrades_gaps",
     )
     def detect_aggtrades_gaps(self, symbol: str, exchange: str, min_gap_seconds: int = 10) -> list[dict]:
         """Detect gaps within aggtrades files.
@@ -356,13 +369,15 @@ class DataGapDetector:
                         gap_end = row["timestamp"]
                         gap_duration = (gap_end - gap_start).total_seconds()
 
-                        gaps.append({
-                            "file": file_path.name,
-                            "gap_start": gap_start,
-                            "gap_end": gap_end,
-                            "gap_duration_seconds": gap_duration,
-                            "data_type": "aggtrades",
-                        })
+                        gaps.append(
+                            {
+                                "file": file_path.name,
+                                "gap_start": gap_start,
+                                "gap_end": gap_end,
+                                "gap_duration_seconds": gap_duration,
+                                "data_type": "aggtrades",
+                            }
+                        )
 
             except Exception as e:
                 logger.exception(f"❌ Error processing {file_path.name}: {e}")
@@ -388,7 +403,7 @@ class DataGapDetector:
 
         report = f"""
 🔍 MISSING DATA REPORT FOR {exchange}_{symbol}
-{'='*60}
+{'=' * 60}
 
 📅 ANALYSIS PERIOD:
 • Start Date: {missing_data['start_date'].date()}
@@ -436,7 +451,7 @@ class DataGapDetector:
             report += f"... and {len(missing_data['missing_futures_months']) - 10} more months\n"
 
         report += f"""
-{'='*60}
+{'=' * 60}
 """
 
         return report

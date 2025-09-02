@@ -71,9 +71,7 @@ class ComprehensiveGapFiller:
             df = df.sort_values("timestamp").reset_index(drop=True)
 
             # Calculate time differences
-            df["time_diff"] = (
-                pd.to_datetime(df["timestamp"]).diff().dt.total_seconds()
-            )
+            df["time_diff"] = pd.to_datetime(df["timestamp"]).diff().dt.total_seconds()
 
             # Find gaps larger than threshold
             gaps: list[dict[str, Any]] = []
@@ -81,9 +79,7 @@ class ComprehensiveGapFiller:
 
             for idx, row in gap_rows.iterrows():
                 if idx > 0:
-                    gap_start = pd.to_datetime(
-                        df.loc[idx - 1, "timestamp"]
-                    ).to_pydatetime()
+                    gap_start = pd.to_datetime(df.loc[idx - 1, "timestamp"]).to_pydatetime()
                     gap_end = pd.to_datetime(row["timestamp"]).to_pydatetime()
                     gap_duration = (gap_end - gap_start).total_seconds()
 
@@ -128,9 +124,7 @@ class ComprehensiveGapFiller:
             df = df.sort_values("timestamp").reset_index(drop=True)
 
             # Calculate time differences in hours
-            df["time_diff_hours"] = (
-                pd.to_datetime(df["timestamp"]).diff().dt.total_seconds() / 3600
-            )
+            df["time_diff_hours"] = pd.to_datetime(df["timestamp"]).diff().dt.total_seconds() / 3600
 
             # Find gaps larger than threshold
             # (futures typically have 8-hour funding intervals)
@@ -139,13 +133,9 @@ class ComprehensiveGapFiller:
 
             for idx, row in gap_rows.iterrows():
                 if idx > 0:
-                    gap_start = pd.to_datetime(
-                        df.loc[idx - 1, "timestamp"]
-                    ).to_pydatetime()
+                    gap_start = pd.to_datetime(df.loc[idx - 1, "timestamp"]).to_pydatetime()
                     gap_end = pd.to_datetime(row["timestamp"]).to_pydatetime()
-                    gap_duration_hours = (
-                        (gap_end - gap_start).total_seconds() / 3600
-                    )
+                    gap_duration_hours = (gap_end - gap_start).total_seconds() / 3600
 
                     gaps.append(
                         {
@@ -188,9 +178,7 @@ class ComprehensiveGapFiller:
             df = df.sort_values("timestamp").reset_index(drop=True)
 
             # Calculate time differences in minutes
-            df["time_diff_minutes"] = (
-                pd.to_datetime(df["timestamp"]).diff().dt.total_seconds() / 60
-            )
+            df["time_diff_minutes"] = pd.to_datetime(df["timestamp"]).diff().dt.total_seconds() / 60
 
             # Find gaps larger than threshold
             gaps: list[dict[str, Any]] = []
@@ -198,13 +186,9 @@ class ComprehensiveGapFiller:
 
             for idx, row in gap_rows.iterrows():
                 if idx > 0:
-                    gap_start = pd.to_datetime(
-                        df.loc[idx - 1, "timestamp"]
-                    ).to_pydatetime()
+                    gap_start = pd.to_datetime(df.loc[idx - 1, "timestamp"]).to_pydatetime()
                     gap_end = pd.to_datetime(row["timestamp"]).to_pydatetime()
-                    gap_duration_minutes = (
-                        (gap_end - gap_start).total_seconds() / 60
-                    )
+                    gap_duration_minutes = (gap_end - gap_start).total_seconds() / 60
 
                     gaps.append(
                         {
@@ -286,10 +270,7 @@ class ComprehensiveGapFiller:
 
         base_url = "https://data.binance.vision"
         date_str = gap_start.strftime("%Y-%m-%d")
-        path = (
-            f"data/futures/{market_segment}/daily/aggTrades/{symbol}/"
-            f"{symbol}-aggTrades-{date_str}.zip"
-        )
+        path = f"data/futures/{market_segment}/daily/aggTrades/{symbol}/" f"{symbol}-aggTrades-{date_str}.zip"
         url = f"{base_url}/{path}"
 
         try:
@@ -407,10 +388,7 @@ class ComprehensiveGapFiller:
 
         base_url = "https://data.binance.vision"
         date_str = gap_start.strftime("%Y-%m-%d")
-        path = (
-            f"data/futures/{market_segment}/daily/fundingRate/{symbol}/"
-            f"{symbol}-fundingRate-{date_str}.zip"
-        )
+        path = f"data/futures/{market_segment}/daily/fundingRate/{symbol}/" f"{symbol}-fundingRate-{date_str}.zip"
         url = f"{base_url}/{path}"
 
         try:
@@ -437,7 +415,8 @@ class ComprehensiveGapFiller:
             df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
             if "fundingRate" in df.columns:
                 df["fundingRate"] = pd.to_numeric(
-                    df["fundingRate"], errors="coerce",
+                    df["fundingRate"],
+                    errors="coerce",
                 )
 
             # Filter to gap period
@@ -505,10 +484,7 @@ class ComprehensiveGapFiller:
 
         base_url = "https://data.binance.vision"
         date_str = gap_start.strftime("%Y-%m-%d")
-        path = (
-            f"data/futures/{market_segment}/daily/klines/{symbol}/{interval}/"
-            f"{symbol}-{interval}-{date_str}.zip"
-        )
+        path = f"data/futures/{market_segment}/daily/klines/{symbol}/{interval}/" f"{symbol}-{interval}-{date_str}.zip"
         url = f"{base_url}/{path}"
 
         try:
@@ -545,11 +521,7 @@ class ComprehensiveGapFiller:
                 return []
 
             # Convert to list of dicts
-            keep_cols = [
-                c
-                for c in ["timestamp", "open", "high", "low", "close", "volume"]
-                if c in df.columns
-            ]
+            keep_cols = [c for c in ["timestamp", "open", "high", "low", "close", "volume"] if c in df.columns]
             return df[keep_cols].to_dict(orient="records")
 
         except Exception:
@@ -596,9 +568,7 @@ class ComprehensiveGapFiller:
         available_columns = [col for col in expected_columns if col in df.columns]
         return df[available_columns]
 
-    async def fill_gap_until_complete(
-        self, gap_info: dict[str, Any], symbol: str = "ETHUSDT"
-    ) -> dict[str, Any]:
+    async def fill_gap_until_complete(self, gap_info: dict[str, Any], symbol: str = "ETHUSDT") -> dict[str, Any]:
         """Fill a single gap using multiple API calls until gap is fully filled."""
         try:
             gap_start = gap_info["gap_start"]
@@ -645,9 +615,7 @@ class ComprehensiveGapFiller:
                         end_time_ms=end_time_ms,
                     )
                 elif data_type == "futures":
-                    missing_data = await self._fetch_futures_data(
-                        symbol=symbol, gap_start=gap_start, gap_end=gap_end
-                    )
+                    missing_data = await self._fetch_futures_data(symbol=symbol, gap_start=gap_start, gap_end=gap_end)
                 elif data_type == "klines":
                     missing_data = await self._fetch_klines_data(
                         symbol=symbol,
@@ -737,21 +705,15 @@ class ComprehensiveGapFiller:
                         }
 
                     # Combine data
-                    df_combined = pd.concat(
-                        [df_existing, df_missing], ignore_index=True
-                    )
+                    df_combined = pd.concat([df_existing, df_missing], ignore_index=True)
                     if "timestamp" in df_combined.columns:
-                        df_combined = (
-                            df_combined.sort_values("timestamp").drop_duplicates(
-                                subset=["timestamp"],
-                            )
+                        df_combined = df_combined.sort_values("timestamp").drop_duplicates(
+                            subset=["timestamp"],
                         )
 
                     # Save back in the same format
                     if file_path.suffix.lower() == ".parquet":
-                        df_combined.to_parquet(
-                            file_path, compression="zstd", index=False
-                        )
+                        df_combined.to_parquet(file_path, compression="zstd", index=False)
                     elif file_path.suffix.lower() == ".csv":
                         df_combined.to_csv(file_path, index=False)
 
@@ -835,7 +797,8 @@ class ComprehensiveGapFiller:
                 try:
                     # Resample to the target timeframe
                     resampled_df = self._resample_to_timeframe(
-                        combined_1m.copy(), timeframe,
+                        combined_1m.copy(),
+                        timeframe,
                     )
 
                     if len(resampled_df) == 0:
@@ -844,7 +807,10 @@ class ComprehensiveGapFiller:
 
                     # Save the resampled data
                     output_path = self._save_resampled_data(
-                        resampled_df, symbol, exchange, timeframe,
+                        resampled_df,
+                        symbol,
+                        exchange,
+                        timeframe,
                     )
 
                     if output_path:
@@ -893,13 +859,15 @@ class ComprehensiveGapFiller:
 
         resampled = (
             df.resample(freq)
-            .agg({
-                "open": "first",
-                "high": "max",
-                "low": "min",
-                "close": "last",
-                "volume": "sum",
-            })
+            .agg(
+                {
+                    "open": "first",
+                    "high": "max",
+                    "low": "min",
+                    "close": "last",
+                    "volume": "sum",
+                }
+            )
             .dropna()
         )
 
@@ -926,13 +894,12 @@ class ComprehensiveGapFiller:
         except Exception:
             return None
 
-    async def process_all_data_types(
-        self, symbol: str = "ETHUSDT", exchange: str = "BINANCE"
-    ) -> dict[str, Any] | None:
+    async def process_all_data_types(self, symbol: str = "ETHUSDT", exchange: str = "BINANCE") -> dict[str, Any] | None:
         """Process all gaps in all data types (aggtrades, futures, klines)."""
         from src.utils.logger import system_logger
+
         logger = system_logger.getChild("ComprehensiveGapFiller")
-        
+
         gap_filling_start = datetime.now()
         logger.info(f"🔧 COMPREHENSIVE GAP FILLING FOR {exchange}_{symbol}")
         logger.info(f"📁 Data cache path: {self.data_cache_path}")
@@ -940,7 +907,7 @@ class ComprehensiveGapFiller:
         logger.info(f"⏱️  Call delay: {self.call_delay}s")
         logger.info(f"⏱️  Max consecutive empty: {self.max_consecutive_empty}")
         logger.info("-" * 60)
-        
+
         # Find all files for each data type
         aggtrades_pattern = f"aggtrades_{exchange}_{symbol}_*.parquet"
         aggtrades_csv_pattern = f"aggtrades_{exchange}_{symbol}_*.csv"
@@ -1027,7 +994,8 @@ class ComprehensiveGapFiller:
                 # (only for aggtrades)
                 if data_type == "aggtrades" and total_gaps_filled > 0:
                     timeframe_results = await self.regenerate_timeframe_files(
-                        symbol, exchange,
+                        symbol,
+                        exchange,
                     )
                     if timeframe_results.get("success"):
                         # Count regenerated files as succeeded; no-op otherwise
@@ -1043,7 +1011,7 @@ class ComprehensiveGapFiller:
         # Summary
         gap_filling_end = datetime.now()
         gap_filling_time = gap_filling_end - gap_filling_start
-        
+
         logger.info("-" * 60)
         logger.info("📊 COMPREHENSIVE GAP FILLING SUMMARY")
         logger.info(f"⏱️  Total processing time: {gap_filling_time}")
@@ -1054,18 +1022,18 @@ class ComprehensiveGapFiller:
         logger.info(f"❌ Gaps failed: {total_gaps_failed}")
         logger.info(f"📡 API calls made: {total_api_calls}")
         logger.info(f"📡 Successful API calls: {total_successful_calls}")
-        
+
         if total_gaps_found > 0:
             success_rate = (total_gaps_filled / total_gaps_found) * 100
             logger.info(f"📊 Gap filling success rate: {success_rate:.1f}%")
-            
+
             if total_gaps_filled > 0:
                 logger.info("✅ GAP FILLING COMPLETED SUCCESSFULLY!")
             else:
                 logger.warning("⚠️  GAP FILLING COMPLETED WITH NO SUCCESSFUL FILLS!")
         else:
             logger.info("✅ NO GAPS FOUND - ALL DATA IS COMPLETE!")
-        
+
         if total_gaps_found > 0:
             return {
                 "files_processed": total_files_processed,

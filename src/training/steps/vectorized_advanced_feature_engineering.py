@@ -16,7 +16,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.utils.data_preprocessing import preprocess_data_for_multi_timeframe
+# Import fractional differentiation
+from src.training.steps.fractional_differentiation import FractionalFeatureGenerator
 from src.utils.centralized_decorators import (
     ValidationLevel,
     validate_data_quality,
@@ -26,6 +27,7 @@ from src.utils.centralized_decorators import (
     validate_ohlcv_data_quality,
     validate_wavelet_data_quality,
 )
+from src.utils.data_preprocessing import preprocess_data_for_multi_timeframe
 
 # Import optimization utilities
 from src.utils.data_type_optimizer import optimize_feature_engineering_pipeline
@@ -51,12 +53,6 @@ from src.utils.training_pipeline_decorators import (
     secure_data_processing,
     validate_step_output,
     validate_step_prerequisites,
-)
-
-# Import fractional differentiation
-from src.training.steps.fractional_differentiation import (
-    FractionalDifferentiation,
-    FractionalFeatureGenerator
 )
 
 # Feature Engineering Optimization Configuration
@@ -87,8 +83,8 @@ FEATURE_OPTIMIZATION_CONFIG = {
         "exclude_columns": ["timestamp", "datetime", "date"],
         "enable_batch_processing": True,
         "enable_parallel_processing": True,
-        "max_parallel_workers": 4
-    }
+        "max_parallel_workers": 4,
+    },
 }
 
 
@@ -105,9 +101,7 @@ class OptimizedResampler:
         """Generate cache key for resampled data."""
         try:
             # Create a hashable representation of the data
-            data_hash = hashlib.md5(
-                pd.util.hash_pandas_object(data, index=True).values
-            ).hexdigest()
+            data_hash = hashlib.md5(pd.util.hash_pandas_object(data, index=True).values).hexdigest()
             return f"{data_hash}_{timeframe}"
         except Exception:
             # Fallback to simple hash
@@ -138,7 +132,9 @@ class OptimizedResampler:
         return resampled
 
     def _resample_data_vectorized_fallback(
-        self, data: pd.DataFrame, timeframe: str,
+        self,
+        data: pd.DataFrame,
+        timeframe: str,
     ) -> pd.DataFrame:
         """Fallback resampling method."""
         # Convert timeframe string to pandas offset
@@ -159,18 +155,12 @@ class OptimizedResampler:
                     data.index = pd.to_datetime(data["timestamp"], errors="coerce")
                     data = data.sort_index()
                 except Exception:
-                    data.index = pd.date_range(
-                        start="1970-01-01", periods=len(data), freq="1min"
-                    )
+                    data.index = pd.date_range(start="1970-01-01", periods=len(data), freq="1min")
             else:
-                data.index = pd.date_range(
-                    start="1970-01-01", periods=len(data), freq="1min"
-                )
+                data.index = pd.date_range(start="1970-01-01", periods=len(data), freq="1min")
 
         # Resample OHLCV data
-        if all(
-            col in data.columns for col in ["open", "high", "low", "close", "volume"]
-        ):
+        if all(col in data.columns for col in ["open", "high", "low", "close", "volume"]):
             resampled = (
                 data.resample(offset)
                 .agg(
@@ -217,20 +207,23 @@ class WaveletFeatureCache:
         self.cache_enabled = self.cache_config.get("cache_enabled", True)
         self.cache_dir = self.cache_config.get("cache_dir", "data/wavelet_cache")
         self.cache_format = self.cache_config.get(
-            "cache_format", "parquet",
+            "cache_format",
+            "parquet",
         )  # parquet, feather, h5
         self.compression = self.cache_config.get("compression", "snappy")
         self.cache_metadata = self.cache_config.get("cache_metadata", True)
 
         # Cache validation
         self.validate_cache_integrity = self.cache_config.get(
-            "validate_cache_integrity", True,
+            "validate_cache_integrity",
+            True,
         )
         self.cache_expiry_days = self.cache_config.get("cache_expiry_days", 30)
 
         # Performance settings
         self.enable_parallel_caching = self.cache_config.get(
-            "enable_parallel_caching", False,
+            "enable_parallel_caching",
+            False,
         )
         self.chunk_size = self.cache_config.get("chunk_size", 10000)
 
@@ -254,7 +247,10 @@ class WaveletFeatureCache:
             self.logger.exception(f"🚨 Error initializing cache directory: {e}")
 
     def generate_cache_key(
-        self, price_data: pd.DataFrame, wavelet_config: dict[str, Any], additional_params: dict[str, Any] | None,
+        self,
+        price_data: pd.DataFrame,
+        wavelet_config: dict[str, Any],
+        additional_params: dict[str, Any] | None,
     ) -> str:
         """Generate a unique cache key based on data and configuration.
 
@@ -313,24 +309,18 @@ class WaveletFeatureCache:
         """
         try:
             cache_path = Path(self.cache_dir)
-            
+
             if self.cache_format == "parquet":
-                features_file = (
-                    cache_path / "features" / f"{cache_key}_features.parquet"
-                )
+                features_file = cache_path / "features" / f"{cache_key}_features.parquet"
                 metadata_file = cache_path / "metadata" / f"{cache_key}_metadata.json"
             elif self.cache_format == "feather":
-                features_file = (
-                    cache_path / "features" / f"{cache_key}_features.feather"
-                )
+                features_file = cache_path / "features" / f"{cache_key}_features.feather"
                 metadata_file = cache_path / "metadata" / f"{cache_key}_metadata.json"
             elif self.cache_format == "h5":
                 features_file = cache_path / "features" / f"{cache_key}_features.h5"
                 metadata_file = cache_path / "metadata" / f"{cache_key}_metadata.json"
             else:
-                features_file = (
-                    cache_path / "features" / f"{cache_key}_features.parquet"
-                )
+                features_file = cache_path / "features" / f"{cache_key}_features.parquet"
                 metadata_file = cache_path / "metadata" / f"{cache_key}_metadata.json"
 
             return features_file, metadata_file
@@ -416,7 +406,10 @@ class WaveletFeatureCache:
             return False
 
     def save_to_cache(
-        self, cache_key: str, features: dict[str, Any], metadata: dict[str, Any] | None,
+        self,
+        cache_key: str,
+        features: dict[str, Any],
+        metadata: dict[str, Any] | None,
     ) -> bool:
         """Save wavelet features to cache.
 
@@ -459,9 +452,7 @@ class WaveletFeatureCache:
 
             # Save features based on format
             if self.cache_format == "parquet":
-                features_df.to_parquet(
-                    features_file, compression=self.compression, index=True
-                )
+                features_df.to_parquet(features_file, compression=self.compression, index=True)
             elif self.cache_format == "feather":
                 features_df.to_feather(features_file)
             elif self.cache_format == "h5":
@@ -481,7 +472,8 @@ class WaveletFeatureCache:
         return False
 
     def load_from_cache(
-        self, cache_key: str,
+        self,
+        cache_key: str,
     ) -> tuple[dict[str, Any], dict[str, Any] | None]:
         """Load wavelet features from cache.
 
@@ -660,17 +652,17 @@ class WaveletFeatureCache:
 
                 if files:
                     stats["total_files"] = len(files)
-                    stats["total_size_mb"] = sum(f.stat().st_size for f in files) / (
-                        1024 * 1024
-                    )
+                    stats["total_size_mb"] = sum(f.stat().st_size for f in files) / (1024 * 1024)
 
                     # File timestamps
                     timestamps = [f.stat().st_mtime for f in files]
                     stats["oldest_file"] = time.strftime(
-                        "%Y-%m-%d %H:%M:%S", time.localtime(min(timestamps)),
+                        "%Y-%m-%d %H:%M:%S",
+                        time.localtime(min(timestamps)),
                     )
                     stats["newest_file"] = time.strftime(
-                        "%Y-%m-%d %H:%M:%S", time.localtime(max(timestamps)),
+                        "%Y-%m-%d %H:%M:%S",
+                        time.localtime(max(timestamps)),
                     )
 
             return stats
@@ -704,7 +696,9 @@ class VectorizedVolatilityRegimeModel:
             return False
 
     async def model_volatility_vectorized(
-        self, price_data: pd.DataFrame, volume_data: pd.DataFrame,
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
     ) -> dict[str, Any]:
         """Generate volatility regime features using vectorized operations."""
         try:
@@ -741,7 +735,7 @@ class VectorizedVolatilityRegimeModel:
                 # Use percentage change for change features to avoid perfect correlation
                 features[f"volatility_{window}_change"] = vol.pct_change().fillna(0)
 
-            # GARCH-like volatility clustering - OPTIMIZED: Balance between lookahead bias and predictive power
+                # GARCH-like volatility clustering - OPTIMIZED: Balance between lookahead bias and predictive power
                 vol_20 = returns.rolling(20, min_periods=1).std()
                 vol_persistence = vol_20.ewm(alpha=0.1).mean()
                 features["volatility_persistence"] = vol_persistence
@@ -773,7 +767,7 @@ class VectorizedVolatilityRegimeModel:
                 features["volatility_regime_strength"] = (vol_20 - vol_median) / (vol_median + 1e-8)
 
                 # Volatility clustering (GARCH-like)
-                vol_squared = returns ** 2
+                vol_squared = returns**2
                 features["volatility_clustering"] = vol_squared.rolling(10).mean()
 
                 # Volatility asymmetry (up vs down volatility)
@@ -825,7 +819,8 @@ class VectorizedCorrelationAnalyzer:
 
     @validate_feature_engineering_with_lookahead_bias_detection
     async def analyze_correlations_vectorized(
-        self, price_data: pd.DataFrame,
+        self,
+        price_data: pd.DataFrame,
     ) -> dict[str, Any]:
         """Analyze price-volume correlations using vectorized operations."""
         try:
@@ -847,9 +842,7 @@ class VectorizedCorrelationAnalyzer:
             high_vol = (volume > volume.rolling(20).quantile(0.8)).astype(int)
             low_vol = (volume < volume.rolling(20).quantile(0.2)).astype(int)
 
-            features["high_volume_price_impact"] = (
-                (returns * high_vol).rolling(10).mean()
-            )
+            features["high_volume_price_impact"] = (returns * high_vol).rolling(10).mean()
             features["low_volume_price_impact"] = (returns * low_vol).rolling(10).mean()
 
             return features
@@ -882,7 +875,9 @@ class VectorizedMomentumAnalyzer:
 
     @validate_feature_engineering_with_lookahead_bias_detection
     async def analyze_momentum_vectorized(
-        self, price_data: pd.DataFrame, volume_data: pd.DataFrame,
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
     ) -> dict[str, Any]:
         """Generate momentum features using vectorized operations."""
         try:
@@ -901,9 +896,7 @@ class VectorizedMomentumAnalyzer:
                 vol_weighted_momentum = (momentum * volume).rolling(
                     period,
                 ).sum() / volume.rolling(period).sum()
-                features[f"volume_weighted_momentum_{period}"] = (
-                    vol_weighted_momentum.fillna(0)
-                )
+                features[f"volume_weighted_momentum_{period}"] = vol_weighted_momentum.fillna(0)
 
             # RSI-like momentum - OPTIMIZED: Balance between lookahead bias and predictive power
             # Use shift(1) to avoid NaN in first row
@@ -918,27 +911,27 @@ class VectorizedMomentumAnalyzer:
                 rsi = 100 - (100 / (1 + rs))
                 features[f"rsi_{period}"] = rsi.fillna(50)
 
-        # Momentum divergence
+            # Momentum divergence
             price_momentum = close.pct_change(20)
             volume_momentum = volume.pct_change(20)
             momentum_divergence = price_momentum - volume_momentum
             features["momentum_divergence"] = momentum_divergence
 
-        # Additional momentum features
-        # Rate of change
+            # Additional momentum features
+            # Rate of change
             features["roc_5"] = close.pct_change(5).fillna(0)
             features["roc_10"] = close.pct_change(10).fillna(0)
             features["roc_20"] = close.pct_change(20).fillna(0)
 
-        # Price acceleration (second derivative)
+            # Price acceleration (second derivative)
             features["price_acceleration_5"] = features["roc_5"].diff().fillna(0)
             features["price_acceleration_10"] = features["roc_10"].diff().fillna(0)
 
-        # Volume acceleration
+            # Volume acceleration
             features["volume_acceleration_5"] = volume.pct_change(5).diff().fillna(0)
             features["volume_acceleration_10"] = volume.pct_change(10).diff().fillna(0)
 
-        # Momentum strength indicators
+            # Momentum strength indicators
             features["momentum_strength_5"] = abs(features["roc_5"])
             features["momentum_strength_10"] = abs(features["roc_10"])
             features["momentum_strength_20"] = abs(features["roc_20"])
@@ -972,7 +965,9 @@ class VectorizedLiquidityAnalyzer:
             return False
 
     async def analyze_liquidity_vectorized(
-        self, price_data: pd.DataFrame, volume_data: pd.DataFrame,
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
     ) -> dict[str, Any]:
         """Generate liquidity features using vectorized operations."""
         try:
@@ -1079,48 +1074,40 @@ class VectorizedCandlestickPatternAnalyzer:
             low = price_data["low"].astype(float)
             close = price_data["close"].astype(float)
 
-        # Basic candlestick properties
+            # Basic candlestick properties
             body_size = (close - open_price).abs()
             upper_shadow, high - np.maximum(open_price, close)
             lower_shadow, np.minimum(open_price, close) - low
             total_range = high - low
 
-        # Doji pattern
+            # Doji pattern
             doji_threshold = total_range * 0.1
             is_doji = (body_size <= doji_threshold).astype(int)
             features["doji_pattern"] = is_doji
 
-        # Hammer pattern
-            is_hammer = (
-                (lower_shadow > body_size * 2) & (upper_shadow < body_size * 0.5)
-            ).astype(int)
+            # Hammer pattern
+            is_hammer = ((lower_shadow > body_size * 2) & (upper_shadow < body_size * 0.5)).astype(int)
             features["hammer_pattern"] = is_hammer
 
-        # Shooting star pattern
-            is_shooting_star = (
-                (upper_shadow > body_size * 2) & (lower_shadow < body_size * 0.5)
-            ).astype(int)
+            # Shooting star pattern
+            is_shooting_star = ((upper_shadow > body_size * 2) & (lower_shadow < body_size * 0.5)).astype(int)
             features["shooting_star_pattern"] = is_shooting_star
 
-        # Engulfing patterns
+            # Engulfing patterns
             prev_open = open_price.shift(1)
             prev_close = close.shift(1)
 
             bullish_engulfing = (
-                (close > prev_open)
-                & (open_price < prev_close)
-                & (body_size > (prev_close - prev_open).abs())
+                (close > prev_open) & (open_price < prev_close) & (body_size > (prev_close - prev_open).abs())
             ).astype(int)
             features["bullish_engulfing"] = bullish_engulfing
 
             bearish_engulfing = (
-                (close < prev_open)
-                & (open_price > prev_close)
-                & (body_size > (prev_close - prev_open).abs())
+                (close < prev_open) & (open_price > prev_close) & (body_size > (prev_close - prev_open).abs())
             ).astype(int)
             features["bearish_engulfing"] = bearish_engulfing
 
-        # Body to range ratio
+            # Body to range ratio
             body_range_ratio = body_size / total_range.replace(0, np.nan)
             features["body_range_ratio"] = body_range_ratio.fillna(0)
 
@@ -1217,9 +1204,7 @@ class VectorizedWaveletTransformAnalyzer:
         try:
             self.logger.info("🚀 Initializing VectorizedWaveletTransformAnalyzer...")
             self.is_initialized = True
-            self.logger.info(
-                "✅ VectorizedWaveletTransformAnalyzer initialized successfully"
-            )
+            self.logger.info("✅ VectorizedWaveletTransformAnalyzer initialized successfully")
             return True
         except Exception as e:
             self.logger.exception(
@@ -1227,9 +1212,7 @@ class VectorizedWaveletTransformAnalyzer:
             )
         return False
 
-    async def analyze_wavelet_transforms(
-        self, price_data: pd.DataFrame, wavelet_type: str = "db4"
-    ) -> dict[str, Any]:
+    async def analyze_wavelet_transforms(self, price_data: pd.DataFrame, wavelet_type: str = "db4") -> dict[str, Any]:
         """Generate wavelet transform features with improved safety and performance."""
         try:
             features = {}
@@ -1270,9 +1253,7 @@ class VectorizedWaveletTransformAnalyzer:
                     # Rolling sum of squares (energy approximation) - IMPROVED: Better normalization
                     # Use normalized returns to prevent constant energy values
                     returns_normalized = returns / (returns.rolling(window=window, min_periods=1).std() + 1e-8)
-                    rolling_energy = (
-                        (returns_normalized**2).rolling(window=window, min_periods=1).sum()
-                    )
+                    rolling_energy = (returns_normalized**2).rolling(window=window, min_periods=1).sum()
                     features[f"wavelet_energy_{window}"] = rolling_energy.fillna(0)
 
             # 2. Simple frequency domain features (safe)
@@ -1286,9 +1267,7 @@ class VectorizedWaveletTransformAnalyzer:
                 features["wavelet_low_freq"] = low_freq.fillna(0)
 
                 # Frequency ratio
-                freq_ratio = high_freq / (
-                    low_freq.abs() + 1e-8
-                )  # Avoid division by zero
+                freq_ratio = high_freq / (low_freq.abs() + 1e-8)  # Avoid division by zero
                 features["wavelet_freq_ratio"] = freq_ratio.fillna(0)
 
             # 3. Simple volatility features (safe)
@@ -1308,10 +1287,7 @@ class VectorizedWaveletTransformAnalyzer:
             if len(returns) >= 16:
                 # Trend strength using linear regression approximation
                 trend_strength = returns.rolling(window=16, min_periods=1).apply(
-                    lambda x: np.corrcoef(x, np.arange(len(x)))[0, 1]
-                    if len(x) > 1
-                    else 0,
-                    raw=True
+                    lambda x: np.corrcoef(x, np.arange(len(x)))[0, 1] if len(x) > 1 else 0, raw=True
                 )
                 features["wavelet_trend_strength"] = trend_strength.fillna(0)
 
@@ -1358,7 +1334,9 @@ class VectorizedWaveletTransformAnalyzer:
                     non_constant_features[key] = value
 
             if constant_features:
-                self.logger.info(f"🗑️ Removed {len(constant_features)} constant features: {constant_features[:5]}... (showing first 5)")
+                self.logger.info(
+                    f"🗑️ Removed {len(constant_features)} constant features: {constant_features[:5]}... (showing first 5)"
+                )
 
             return non_constant_features
 
@@ -1379,26 +1357,33 @@ class VectorizedAdvancedFeatureEngineering:
         # Configuration
         self.feature_config = config.get("vectorized_advanced_features", {})
         self.enable_volatility_modeling = self.feature_config.get(
-            "enable_volatility_modeling", True,
+            "enable_volatility_modeling",
+            True,
         )
         self.enable_correlation_analysis = self.feature_config.get(
-            "enable_correlation_analysis", True,
+            "enable_correlation_analysis",
+            True,
         )
         self.enable_momentum_analysis = self.feature_config.get(
-            "enable_momentum_analysis", True,
+            "enable_momentum_analysis",
+            True,
         )
         self.enable_liquidity_analysis = self.feature_config.get(
-            "enable_liquidity_analysis", True,
+            "enable_liquidity_analysis",
+            True,
         )
         self.enable_candlestick_patterns = self.feature_config.get(
-            "enable_candlestick_patterns", True,
+            "enable_candlestick_patterns",
+            True,
         )
         self.enable_sr_distance = self.feature_config.get("enable_sr_distance", True)
         self.enable_wavelet_transforms = self.feature_config.get(
-            "enable_wavelet_transforms", True,
+            "enable_wavelet_transforms",
+            True,
         )  # Re-enabled
         self.enable_multi_timeframe = self.feature_config.get(
-            "enable_multi_timeframe", True,
+            "enable_multi_timeframe",
+            True,
         )
         # Meta-labeling deprecated: force disabled
         self.enable_meta_labeling = False
@@ -1407,7 +1392,8 @@ class VectorizedAdvancedFeatureEngineering:
 
         # Difference and acceleration features (enabled by default)
         self.enable_difference_acceleration_features = self.feature_config.get(
-            "enable_difference_acceleration_features", True,
+            "enable_difference_acceleration_features",
+            True,
         )
 
         # Multi-timeframe configuration
@@ -1415,7 +1401,8 @@ class VectorizedAdvancedFeatureEngineering:
 
         # CWT configuration
         self.cwt_method_preference = self.feature_config.get(
-            "cwt_method_preference", "auto",
+            "cwt_method_preference",
+            "auto",
         )
         self.cwt_fft_threshold = self.feature_config.get("cwt_fft_threshold", 1000)
 
@@ -1428,13 +1415,13 @@ class VectorizedAdvancedFeatureEngineering:
         self.sr_distance_calculator = None
         self.wavelet_analyzer = None
         self.wavelet_cache = None
-        
+
         # Initialize profit-based feature engineering
         self.profit_feature_engineer = None
 
         # Initialize optimized resampler
         self.optimized_resampler = OptimizedResampler()
-        
+
         # Initialize fractional differentiation
         self.fractional_feature_generator = None
         self.enable_fractional_diff = FEATURE_OPTIMIZATION_CONFIG.get("enable_fractional_differentiation", True)
@@ -1446,15 +1433,16 @@ class VectorizedAdvancedFeatureEngineering:
         # Configure joblib memory to prevent cache flushing warnings
         try:
             import joblib
+
             memory_location, FEATURE_OPTIMIZATION_CONFIG.get("joblib_memory_location", "data/joblib_cache")
             memory_verbose, FEATURE_OPTIMIZATION_CONFIG.get("joblib_memory_verbose", 0)
             memory_bytes, FEATURE_OPTIMIZATION_CONFIG.get("joblib_memory_bytes", 1024 * 1024 * 1024)
             memory_compress, FEATURE_OPTIMIZATION_CONFIG.get("joblib_memory_compress", 3)
 
-        # Create memory directory if it doesn't exist
+            # Create memory directory if it doesn't exist
             os.makedirs(memory_location, exist_ok=True)
 
-        # Configure joblib memory
+            # Configure joblib memory
             joblib.memory.Memory.location, memory_location
             joblib.memory.Memory.verbose, memory_verbose
             joblib.memory.Memory.bytes, memory_bytes
@@ -1466,7 +1454,8 @@ class VectorizedAdvancedFeatureEngineering:
 
         # Configuration for problematic features
         self.disable_problematic_wavelets = self.feature_config.get(
-            "disable_problematic_wavelets", True,
+            "disable_problematic_wavelets",
+            True,
         )
         self.wavelet_features_to_skip = {
             "volume_wavelet_approx_ts",
@@ -1493,9 +1482,7 @@ class VectorizedAdvancedFeatureEngineering:
         self.is_initialized = False
 
     @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="vectorized advanced feature engineering initialization"
+        exceptions=(Exception,), default_return=False, context="vectorized advanced feature engineering initialization"
     )
     async def initialize(self) -> bool:
         """Initialize vectorized advanced feature engineering components."""
@@ -1606,14 +1593,15 @@ class VectorizedAdvancedFeatureEngineering:
             # Initialize profit-based feature engineering
             try:
                 from src.training.steps.step4_analyst_labeling_feature_engineering_components.profit_based_feature_engineering import (
-                    ProfitBasedFeatureEngineering
+                    ProfitBasedFeatureEngineering,
                 )
+
                 self.profit_feature_engineer = ProfitBasedFeatureEngineering(
                     profit_column="potential_profit_pct",
                     volume_column="volume",
                     price_column="close",
                     use_numba=True,
-                    memory_efficient=True
+                    memory_efficient=True,
                 )
                 self.logger.info("✅ Profit-based feature engineering initialized successfully")
             except Exception as e:
@@ -1637,9 +1625,7 @@ class VectorizedAdvancedFeatureEngineering:
             )
             return False
 
-    def _calculate_price_impact_vectorized(
-        self, price_data: pd.DataFrame, volume_data: pd.DataFrame
-    ) -> pd.Series:
+    def _calculate_price_impact_vectorized(self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> pd.Series:
         """Calculate price impact using vectorized operations with improved NaN handling."""
         try:
             if "close" not in price_data.columns or "volume" not in volume_data.columns:
@@ -1767,7 +1753,8 @@ class VectorizedAdvancedFeatureEngineering:
             # Clean up infinite and NaN values with better strategy
             order_flow_imbalance = order_flow_imbalance.replace([np.inf, -np.inf], np.nan)
 
-            # For order flow imbalance, use 0 for the first row (no previous price) and forward fill for other NaN values
+            # For order flow imbalance, use 0 for the first row (no previous price)
+            # and forward fill for other NaN values
             return order_flow_imbalance.fillna(0)
 
         except Exception as e:
@@ -1791,9 +1778,7 @@ class VectorizedAdvancedFeatureEngineering:
             if not isinstance(price_data.index, pd.DatetimeIndex):
                 if "timestamp" in price_data.columns:
                     price_data = price_data.copy()
-                    price_data["timestamp"] = pd.to_datetime(
-                        price_data["timestamp"], errors="coerce"
-                    )
+                    price_data["timestamp"] = pd.to_datetime(price_data["timestamp"], errors="coerce")
                     price_data = price_data.dropna(subset=["timestamp"]).set_index(
                         "timestamp",
                     )
@@ -1848,7 +1833,8 @@ class VectorizedAdvancedFeatureEngineering:
                         # Pandas Series
                         cleaned_series = feature_value.copy()
                         cleaned_series = cleaned_series.fillna(0).replace(
-                            [np.inf, -np.inf], 0,
+                            [np.inf, -np.inf],
+                            0,
                         )
                         cleaned_features[feature_name] = cleaned_series
 
@@ -1877,13 +1863,13 @@ class VectorizedAdvancedFeatureEngineering:
         # Define minimum data requirements based on timeframe
         # Higher timeframes need more data to generate meaningful features
         requirements = {
-            "1m": 50,    # 1-minute needs at least 50 data points
-            "5m": 30,    # 5-minute needs at least 30 data points (2.5 hours)
-            "15m": 20,   # 15-minute needs at least 20 data points (5 hours)
-            "30m": 15,   # 30-minute needs at least 15 data points (7.5 hours)
-            "1h": 10,    # 1-hour needs at least 10 data points (10 hours)
-            "4h": 5,     # 4-hour needs at least 5 data points (20 hours)
-            "1d": 3,     # 1-day needs at least 3 data points (3 days)
+            "1m": 50,  # 1-minute needs at least 50 data points
+            "5m": 30,  # 5-minute needs at least 30 data points (2.5 hours)
+            "15m": 20,  # 15-minute needs at least 20 data points (5 hours)
+            "30m": 15,  # 30-minute needs at least 15 data points (7.5 hours)
+            "1h": 10,  # 1-hour needs at least 10 data points (10 hours)
+            "4h": 5,  # 4-hour needs at least 5 data points (20 hours)
+            "1d": 3,  # 1-day needs at least 3 data points (3 days)
         }
 
         return requirements.get(timeframe, 50)  # Default to 50 if timeframe not found
@@ -1948,7 +1934,9 @@ class VectorizedAdvancedFeatureEngineering:
 
                 if len(volume) >= 2:
                     features[f"simple_volume_ma_{timeframe}"] = volume.rolling(2, min_periods=1).mean().fillna(0)
-                    features[f"simple_volume_ratio_{timeframe}"] = volume / (volume.rolling(2, min_periods=1).mean() + 1e-8)
+                    features[f"simple_volume_ratio_{timeframe}"] = volume / (
+                        volume.rolling(2, min_periods=1).mean() + 1e-8
+                    )
 
             # OHLCV features if available
             if all(col in price_data.columns for col in ["open", "high", "low", "close"]):
@@ -2137,13 +2125,15 @@ class VectorizedAdvancedFeatureEngineering:
                                             f"🔍 Feature {feature_name}: Found {inf_count_series} inf values in Series",
                                         )
                                         cleaned_series = cleaned_series.replace(
-                                            [np.inf, -np.inf], 0,
+                                            [np.inf, -np.inf],
+                                            0,
                                         )
                                         inf_count += inf_count_series
                                 else:
                                     # Fallback for non-numeric data
                                     cleaned_series = cleaned_series.replace(
-                                        [np.inf, -np.inf], 0,
+                                        [np.inf, -np.inf],
+                                        0,
                                     )
                             except Exception as inf_error:
                                 # Fallback: use pandas method instead of numpy
@@ -2151,7 +2141,8 @@ class VectorizedAdvancedFeatureEngineering:
                                     f"🔍 Feature {feature_name}: Using pandas method for inf handling due to: {inf_error}",
                                 )
                                 cleaned_series = cleaned_series.replace(
-                                    [np.inf, -np.inf], 0,
+                                    [np.inf, -np.inf],
+                                    0,
                                 )
 
                             cleaned_features[feature_name] = cleaned_series
@@ -2163,9 +2154,7 @@ class VectorizedAdvancedFeatureEngineering:
                             # Fallback: convert to numpy array and handle
                             try:
                                 arr = np.asarray(feature_value, dtype=np.float64)
-                                arr = np.nan_to_num(
-                                    arr, nan=0.0, posinf=0.0, neginf=0.0
-                                )
+                                arr = np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
                                 cleaned_features[feature_name] = arr
                                 self.logger.info(
                                     f"🔧 Converted Series {feature_name} to numpy array as fallback",
@@ -2218,9 +2207,7 @@ class VectorizedAdvancedFeatureEngineering:
             return features
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="vectorized advanced feature engineering"
+        exceptions=(ValueError, AttributeError), default_return=None, context="vectorized advanced feature engineering"
     )
     # Temporarily disabled decorators for debugging
     # @validate_step_prerequisites(
@@ -2300,11 +2287,11 @@ class VectorizedAdvancedFeatureEngineering:
     #     context="vectorized advanced feature engineering",
     # )
     async def engineer_features(
-        self, 
-        price_data: pd.DataFrame, 
-        volume_data: pd.DataFrame, 
-        order_flow_data: pd.DataFrame | None = None, 
-        sr_levels: dict[str, Any] | None = None
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+        order_flow_data: pd.DataFrame | None = None,
+        sr_levels: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Engineer advanced features for improved prediction accuracy using vectorized operations.
 
@@ -2341,7 +2328,9 @@ class VectorizedAdvancedFeatureEngineering:
                 self.logger.info(f"🔍 Price data range: {price_data.min().min():.6f} to {price_data.max().max():.6f}")
                 self.logger.info(f"🔍 Price data NaN count: {price_data.isna().sum().sum()}")
             if not volume_data.empty:
-                self.logger.info(f"🔍 Volume data range: {volume_data.min().min():.6f} to {volume_data.max().max():.6f}")
+                self.logger.info(
+                    f"🔍 Volume data range: {volume_data.min().min():.6f} to {volume_data.max().max():.6f}"
+                )
                 self.logger.info(f"🔍 Volume data NaN count: {volume_data.isna().sum().sum()}")
 
             # Log order flow data if available
@@ -2401,7 +2390,7 @@ class VectorizedAdvancedFeatureEngineering:
                 exchange=exchange,
                 expected_interval_seconds=60,  # 1-minute intervals
                 max_forward_fill_seconds=10,  # Forward-fill gaps ≤10 seconds
-                download_missing_data=True,    # Download data for gaps >10 seconds
+                download_missing_data=True,  # Download data for gaps >10 seconds
             )
 
             preprocessed_price_data = enhanced_price_data
@@ -2439,7 +2428,7 @@ class VectorizedAdvancedFeatureEngineering:
                 exchange=exchange,
                 expected_interval_seconds=60,  # 1-minute intervals
                 max_forward_fill_seconds=10,  # Forward-fill gaps ≤10 seconds
-                download_missing_data=True,    # Download data for gaps >10 seconds
+                download_missing_data=True,  # Download data for gaps >10 seconds
             )
 
             # Update volume_data with enhanced preprocessed data
@@ -2469,13 +2458,16 @@ class VectorizedAdvancedFeatureEngineering:
                             volume_data = volume_data.reindex(price_data.index, method="ffill")
                             self.logger.info("✅ Aligned volume data with price data index")
                         else:
-                            self.logger.warning("⚠️ Cannot determine timestamp column for volume data, skipping preprocessing")
+                            self.logger.warning(
+                                "⚠️ Cannot determine timestamp column for volume data, skipping preprocessing"
+                            )
                     except Exception as e:
                         self.logger.warning(f"⚠️ Failed to fix volume data DatetimeIndex: {e}, skipping preprocessing")
 
         # Validate and transform data to ensure OHLCV structure
         price_data, volume_data = self._validate_and_transform_data(
-            price_data, volume_data,
+            price_data,
+            volume_data,
         )
 
         # Track NaN origins in input data
@@ -2494,7 +2486,10 @@ class VectorizedAdvancedFeatureEngineering:
         self.logger.info("🔍 Input data validation before feature generation:")
         self.logger.info(f"   Price data shape: {price_data.shape if price_data is not None else 'None'}")
         self.logger.info(f"   Volume data shape: {volume_data.shape if volume_data is not None else 'None'}")
-        self.logger.info(f"   Order flow data shape: {order_flow_data.shape if order_flow_data is not None else 'None'}")
+        self.logger.info(
+            f"   Order flow data shape: {
+                order_flow_data.shape if order_flow_data is not None else 'None'}"
+        )
 
         if price_data is not None and not price_data.empty:
             self.logger.info(f"   Price data index: {price_data.index.min()} to {price_data.index.max()}")
@@ -2561,12 +2556,10 @@ class VectorizedAdvancedFeatureEngineering:
 
         # Market microstructure features
         self.logger.info("🔍 Generating microstructure features...")
-        microstructure_features = (
-            await self._engineer_microstructure_features_vectorized(
-                price_data,
-                volume_data,
-                order_flow_data,
-            )
+        microstructure_features = await self._engineer_microstructure_features_vectorized(
+            price_data,
+            volume_data,
+            order_flow_data,
         )
         self.logger.info(f"🔍 Generated {len(microstructure_features)} microstructure features")
         if microstructure_features:
@@ -2588,16 +2581,13 @@ class VectorizedAdvancedFeatureEngineering:
                 # Use multi-period difference to reduce correlation with base feature
                 features["funding_rate_change"] = fr.diff(3).fillna(0)
                 with np.errstate(divide="ignore", invalid="ignore"):
-                    features["funding_rate_returns"] = (
-                        (fr.pct_change())
-                        .replace([np.inf, -np.inf], np.nan)
-                        .fillna(0)
-                    )
+                    features["funding_rate_returns"] = (fr.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
                 # z-score for stationarity
                 fr_roll = fr.rolling(50, min_periods=5)
                 fr_z = (fr - fr_roll.mean()) / fr_roll.std().replace(0, np.nan)
                 features["funding_rate_zscore"] = fr_z.replace(
-                    [np.inf, -np.inf], np.nan,
+                    [np.inf, -np.inf],
+                    np.nan,
                 ).fillna(0)
                 context_features_count += 3
             # volume_ratio
@@ -2606,11 +2596,7 @@ class VectorizedAdvancedFeatureEngineering:
                 # Use multi-period difference to reduce correlation with base feature
                 features["volume_ratio_change"] = vr.diff(3).fillna(0)
                 with np.errstate(divide="ignore", invalid="ignore"):
-                    features["volume_ratio_returns"] = (
-                        (vr.pct_change())
-                        .replace([np.inf, -np.inf], np.nan)
-                        .fillna(0)
-                    )
+                    features["volume_ratio_returns"] = (vr.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
                     context_features_count += 2
             # trade_count
             if "trade_count" in price_data.columns:
@@ -2618,11 +2604,7 @@ class VectorizedAdvancedFeatureEngineering:
                 # Use multi-period difference to reduce correlation with base feature
                 features["trade_count_change"] = tc.diff(3).fillna(0)
                 with np.errstate(divide="ignore", invalid="ignore"):
-                    features["trade_count_returns"] = (
-                        (tc.pct_change())
-                        .replace([np.inf, -np.inf], np.nan)
-                        .fillna(0)
-                    )
+                    features["trade_count_returns"] = (tc.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
                     context_features_count += 2
             # trade_volume
             if "trade_volume" in price_data.columns:
@@ -2630,11 +2612,7 @@ class VectorizedAdvancedFeatureEngineering:
                 # Use multi-period difference to reduce correlation with base feature
                 features["trade_volume_change"] = tv.diff(3).fillna(0)
                 with np.errstate(divide="ignore", invalid="ignore"):
-                    features["trade_volume_returns"] = (
-                        (tv.pct_change())
-                        .replace([np.inf, -np.inf], np.nan)
-                        .fillna(0)
-                    )
+                    features["trade_volume_returns"] = (tv.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
                     context_features_count += 2
         except Exception as _e:
             self.logger.warning(f"⚠️ Context dynamics generation failed: {_e}")
@@ -2645,11 +2623,9 @@ class VectorizedAdvancedFeatureEngineering:
         # Volatility regime features
         self.logger.info("🔍 Generating volatility regime features...")
         if self.volatility_model:
-            volatility_features = (
-                await self.volatility_model.model_volatility_vectorized(
-                    price_data,
-                    volume_data,
-                )
+            volatility_features = await self.volatility_model.model_volatility_vectorized(
+                price_data,
+                volume_data,
             )
             self.logger.info(f"🔍 Generated {len(volatility_features)} volatility features")
             if volatility_features:
@@ -2670,10 +2646,8 @@ class VectorizedAdvancedFeatureEngineering:
         # Correlation analysis features
         self.logger.info("🔍 Generating correlation analysis features...")
         if self.correlation_analyzer:
-            correlation_features = (
-                await self.correlation_analyzer.analyze_correlations_vectorized(
-                    price_data,
-                )
+            correlation_features = await self.correlation_analyzer.analyze_correlations_vectorized(
+                price_data,
             )
             self.logger.info(f"🔍 Generated {len(correlation_features)} correlation features")
             if correlation_features:
@@ -2688,11 +2662,9 @@ class VectorizedAdvancedFeatureEngineering:
         # Momentum analysis features
         self.logger.info("🔍 Generating momentum analysis features...")
         if self.momentum_analyzer:
-            momentum_features = (
-                await self.momentum_analyzer.analyze_momentum_vectorized(
-                    price_data,
-                    volume_data,
-                )
+            momentum_features = await self.momentum_analyzer.analyze_momentum_vectorized(
+                price_data,
+                volume_data,
             )
             self.logger.info(f"🔍 Generated {len(momentum_features)} momentum features")
             if momentum_features:
@@ -2707,11 +2679,9 @@ class VectorizedAdvancedFeatureEngineering:
         # Liquidity analysis features
         self.logger.info("🔍 Generating liquidity analysis features...")
         if self.liquidity_analyzer:
-            liquidity_features = (
-                await self.liquidity_analyzer.analyze_liquidity_vectorized(
-                    price_data,
-                    volume_data,
-                )
+            liquidity_features = await self.liquidity_analyzer.analyze_liquidity_vectorized(
+                price_data,
+                volume_data,
             )
             self.logger.info(f"🔍 Generated {len(liquidity_features)} liquidity features")
             if liquidity_features:
@@ -2764,16 +2734,16 @@ class VectorizedAdvancedFeatureEngineering:
                     for col in volume_data.columns:
                         if col not in combined_data.columns:
                             combined_data[col] = volume_data[col]
-                
+
                 # Generate fractional differentiation features
                 fractional_features = self.fractional_feature_generator.generate_features(combined_data)
-                
+
                 # Extract only the new fractional differentiation features
                 frac_diff_features = {}
                 for col in fractional_features.columns:
-                    if 'frac_diff' in col and col not in combined_data.columns:
+                    if "frac_diff" in col and col not in combined_data.columns:
                         frac_diff_features[col] = fractional_features[col].values
-                
+
                 self.logger.info(f"🔍 Generated {len(frac_diff_features)} fractional differentiation features")
                 if frac_diff_features:
                     self.logger.info(f"🔍 Fractional differentiation feature names: {list(frac_diff_features.keys())}")
@@ -2814,8 +2784,7 @@ class VectorizedAdvancedFeatureEngineering:
                                 vals = sr_levels[k]
                                 if isinstance(vals, list):
                                     sr_levels[k] = [
-                                        v["price"] if isinstance(v, dict) and "price" in v else float(v)
-                                        for v in vals
+                                        v["price"] if isinstance(v, dict) and "price" in v else float(v) for v in vals
                                     ]
                 except Exception as _e:
                     self.logger.warning(
@@ -2824,11 +2793,9 @@ class VectorizedAdvancedFeatureEngineering:
                     sr_levels = self._generate_sr_levels(price_data)
 
             if sr_levels:
-                sr_distance_features = (
-                    await self.sr_distance_calculator.calculate_sr_distances(
-                        price_data,
-                        sr_levels,
-                    )
+                sr_distance_features = await self.sr_distance_calculator.calculate_sr_distances(
+                    price_data,
+                    sr_levels,
                 )
                 self.logger.info(f"🔍 Generated {len(sr_distance_features)} S/R distance features")
                 if sr_distance_features:
@@ -2892,14 +2859,14 @@ class VectorizedAdvancedFeatureEngineering:
                 profit_data = price_data.copy()
                 if volume_data is not None and not volume_data.empty:
                     # Merge volume data if available
-                    profit_data = profit_data.join(volume_data, how='left')
-                
+                    profit_data = profit_data.join(volume_data, how="left")
+
                 profit_features = self.profit_feature_engineer.apply_all_features(profit_data)
-                
+
                 # Extract only the new profit-based features (excluding original columns)
                 original_columns = set(price_data.columns)
                 profit_feature_columns = [col for col in profit_features.columns if col not in original_columns]
-                
+
                 if profit_feature_columns:
                     profit_feature_dict = {col: profit_features[col] for col in profit_feature_columns}
                     self.logger.info(f"🔍 Generated {len(profit_feature_dict)} profit-based features")
@@ -2916,13 +2883,11 @@ class VectorizedAdvancedFeatureEngineering:
         # Add multi-timeframe features if enabled
         if self.enable_multi_timeframe:
             self.logger.info("🔍 Generating multi-timeframe features...")
-            multi_timeframe_features = (
-                await self._engineer_multi_timeframe_features_vectorized(
-                    price_data,
-                    volume_data,
-                    order_flow_data,
-                    sr_levels,
-                )
+            multi_timeframe_features = await self._engineer_multi_timeframe_features_vectorized(
+                price_data,
+                volume_data,
+                order_flow_data,
+                sr_levels,
             )
             self.logger.info(f"🔍 Generated {len(multi_timeframe_features)} multi-timeframe features")
             if multi_timeframe_features:
@@ -2973,7 +2938,7 @@ class VectorizedAdvancedFeatureEngineering:
                 + (" ..." if len(offenders) > 20 else ""),
             )
 
-        # Apply comprehensive NaN handling
+            # Apply comprehensive NaN handling
             sanitized = self._handle_nan_values_robust(sanitized)
 
         # Track NaN origins in final output
@@ -3038,7 +3003,7 @@ class VectorizedAdvancedFeatureEngineering:
                 target_series=pd.Series(
                     [0] * len(features_df),
                 ),  # Dummy target for feature-only check
-                timestamp_col=None
+                timestamp_col=None,
             )
 
             if bias_results.get("lookahead_bias_detected", False):
@@ -3063,8 +3028,9 @@ class VectorizedAdvancedFeatureEngineering:
 
         # Final summary logging
         self.logger.info(
-                f"✅ Engineered {len(sanitized)} vectorized advanced features including profit-based features and wavelet transforms",
-            )
+            f"✅ Engineered {
+                len(sanitized)} vectorized advanced features including profit-based features and wavelet transforms",
+        )
 
         # Log feature categories summary
         feature_categories = {}
@@ -3085,7 +3051,11 @@ class VectorizedAdvancedFeatureEngineering:
                 feature_categories["candlestick"] = feature_categories.get("candlestick", 0) + 1
             elif "microstructure" in feature_name.lower() or "impact" in feature_name.lower():
                 feature_categories["microstructure"] = feature_categories.get("microstructure", 0) + 1
-            elif "sr" in feature_name.lower() or "support" in feature_name.lower() or "resistance" in feature_name.lower():
+            elif (
+                "sr" in feature_name.lower()
+                or "support" in feature_name.lower()
+                or "resistance" in feature_name.lower()
+            ):
                 feature_categories["sr_distance"] = feature_categories.get("sr_distance", 0) + 1
             elif "meta" in feature_name.lower():
                 feature_categories["meta_labeling"] = feature_categories.get("meta_labeling", 0) + 1
@@ -3107,7 +3077,10 @@ class VectorizedAdvancedFeatureEngineering:
 
     @validate_wavelet_data_quality
     async def _get_wavelet_features_with_caching(
-        self, price_data: pd.DataFrame, volume_data: pd.DataFrame, ) -> dict[str, Any]:
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+    ) -> dict[str, Any]:
         """Get wavelet features with caching support.
 
         Args:
@@ -3121,9 +3094,7 @@ class VectorizedAdvancedFeatureEngineering:
         try:
             if not self.wavelet_cache:
                 # Fallback to direct computation if cache is not available
-                return await self.wavelet_analyzer.analyze_wavelet_transforms(
-                    price_data  # Only pass price_data
-                )
+                return await self.wavelet_analyzer.analyze_wavelet_transforms(price_data)  # Only pass price_data
 
             # Generate cache key
             wavelet_config = self.wavelet_analyzer.wavelet_config
@@ -3131,9 +3102,7 @@ class VectorizedAdvancedFeatureEngineering:
                 price_data,
                 wavelet_config,
                 {
-                    "volume_data_shape": volume_data.shape
-                    if volume_data is not None
-                    else None,
+                    "volume_data_shape": volume_data.shape if volume_data is not None else None,
                 },
             )
 
@@ -3156,14 +3125,14 @@ class VectorizedAdvancedFeatureEngineering:
             # Save to cache (only if non-empty)
             metadata = {
                 "data_shape": price_data.shape,
-                "volume_data_shape": volume_data.shape
-                if volume_data is not None
-                else None,
+                "volume_data_shape": volume_data.shape if volume_data is not None else None,
                 "computation_time": time.time(),
             }
 
             cache_success = self.wavelet_cache.save_to_cache(
-                cache_key, wavelet_features, metadata,
+                cache_key,
+                wavelet_features,
+                metadata,
             )
             if cache_success:
                 self.logger.info(f"💾 Cached wavelet features: {cache_key}")
@@ -3208,27 +3177,33 @@ class VectorizedAdvancedFeatureEngineering:
 
             # Price impact features (vectorized per-row)
             price_impact = self._calculate_price_impact_vectorized(
-                price_data, volume_data,
+                price_data,
+                volume_data,
             )
             self._track_nan_origins("price_impact", {"price_impact": price_impact})
             features["price_impact"] = price_impact
             self.logger.info(f"🔍 Added price_impact feature, total features: {len(features)}")
 
             volume_price_impact = self._calculate_volume_price_impact_vectorized(
-                price_data, volume_data,
+                price_data,
+                volume_data,
             )
             self._track_nan_origins(
-                "volume_price_impact", {"volume_price_impact": volume_price_impact},
+                "volume_price_impact",
+                {"volume_price_impact": volume_price_impact},
             )
             features["volume_price_impact"] = volume_price_impact
             self.logger.info(f"🔍 Added volume_price_impact feature, total features: {len(features)}")
 
             # Order-flow related features (proxies if book data not available)
             order_flow_imbalance = self._calculate_order_flow_imbalance_vectorized(
-                price_data, volume_data, order_flow_data,
+                price_data,
+                volume_data,
+                order_flow_data,
             )
             self._track_nan_origins(
-                "order_flow_imbalance", {"order_flow_imbalance": order_flow_imbalance},
+                "order_flow_imbalance",
+                {"order_flow_imbalance": order_flow_imbalance},
             )
             features["order_flow_imbalance"] = order_flow_imbalance
 
@@ -3239,7 +3214,8 @@ class VectorizedAdvancedFeatureEngineering:
             # Relative change (returns) and level as separate engineered metrics
             bas_returns = bas.pct_change().replace([np.inf, -np.inf], np.nan).fillna(0)
             self._track_nan_origins(
-                "bid_ask_spread_returns", {"bid_ask_spread_returns": bas_returns},
+                "bid_ask_spread_returns",
+                {"bid_ask_spread_returns": bas_returns},
             )
             features["bid_ask_spread_returns"] = bas_returns
             features["bid_ask_spread_level"] = bas  # bounded 0..0.05 already
@@ -3250,9 +3226,7 @@ class VectorizedAdvancedFeatureEngineering:
                     # Expect optional columns: bid_wall_price/size, ask_wall_price/size, mid
                     df = order_flow_data
                     if "mid" in df.columns:
-                        mid = pd.Series(df["mid"].values, index=df.index).reindex(
-                            price_data.index, method="ffill"
-                        )
+                        mid = pd.Series(df["mid"].values, index=df.index).reindex(price_data.index, method="ffill")
                     else:
                         mid = price_data["close"].astype(float)
                     # Distances to nearest walls in pct
@@ -3279,20 +3253,13 @@ class VectorizedAdvancedFeatureEngineering:
                             )
                             # Use diff/returns for stationarity
                             # Use shift(1) to avoid NaN in first row
-                            features[f"nearest_{side}_wall_size_change"] = (
-                                (wall_s - wall_s.shift(1)).fillna(0)
-                            )
+                            features[f"nearest_{side}_wall_size_change"] = (wall_s - wall_s.shift(1)).fillna(0)
                             with np.errstate(divide="ignore", invalid="ignore"):
                                 features[f"nearest_{side}_wall_size_returns"] = (
-                                    (wall_s.pct_change())
-                                    .replace([np.inf, -np.inf], np.nan)
-                                    .fillna(0)
+                                    (wall_s.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
                                 )
                     # Imbalance if total sizes available
-                    if (
-                        "total_bid_size" in df.columns
-                        and "total_ask_size" in df.columns
-                    ):
+                    if "total_bid_size" in df.columns and "total_ask_size" in df.columns:
                         tb = (
                             pd.Series(df["total_bid_size"].values, index=df.index)
                             .reindex(price_data.index, method="ffill")
@@ -3304,11 +3271,7 @@ class VectorizedAdvancedFeatureEngineering:
                             .fillna(0)
                         )
                         denom = (tb + ta).replace(0, np.nan)
-                        imb = (
-                            ((tb - ta) / denom)
-                            .replace([np.inf, -np.inf], np.nan)
-                            .fillna(0)
-                        )
+                        imb = ((tb - ta) / denom).replace([np.inf, -np.inf], np.nan).fillna(0)
                         features["orderbook_wall_imbalance"] = imb
                     # Depth profile slope proxy: difference between near/far depth (if available)
                     if "depth_near" in df.columns and "depth_far" in df.columns:
@@ -3362,14 +3325,10 @@ class VectorizedAdvancedFeatureEngineering:
                         features["weighted_mid_price_change"] = wmp.diff(3).fillna(0)
                         with np.errstate(divide="ignore", invalid="ignore"):
                             features["weighted_mid_price_returns"] = (
-                                (wmp.pct_change())
-                                .replace([np.inf, -np.inf], np.nan)
-                                .fillna(0)
+                                (wmp.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
                             )
                     # Aggregated orderbook pressure (if granular ladders available)
-                    if all(
-                        c in df.columns for c in ["sum_bid_size_5", "sum_ask_size_5"]
-                    ):
+                    if all(c in df.columns for c in ["sum_bid_size_5", "sum_ask_size_5"]):
                         sb = (
                             pd.Series(df["sum_bid_size_5"].values, index=df.index)
                             .reindex(price_data.index, method="ffill")
@@ -3381,11 +3340,7 @@ class VectorizedAdvancedFeatureEngineering:
                             .fillna(0)
                         )
                         denom2 = (sb + sa).replace(0, np.nan)
-                        press = (
-                            ((sb - sa) / denom2)
-                            .replace([np.inf, -np.inf], np.nan)
-                            .fillna(0)
-                        )
+                        press = ((sb - sa) / denom2).replace([np.inf, -np.inf], np.nan).fillna(0)
                         features["orderbook_pressure"] = press
                     # Trade-to-order ratio (if trades and orders counts provided)
                     if all(c in df.columns for c in ["trade_count", "order_count"]):
@@ -3400,11 +3355,7 @@ class VectorizedAdvancedFeatureEngineering:
                             .fillna(0)
                         )
                         with np.errstate(divide="ignore", invalid="ignore"):
-                            tor = (
-                                (tr / oc.replace(0, np.nan))
-                                .replace([np.inf, -np.inf], np.nan)
-                                .fillna(0)
-                            )
+                            tor = (tr / oc.replace(0, np.nan)).replace([np.inf, -np.inf], np.nan).fillna(0)
                         # Use multi-period difference to reduce correlation with base feature
                         features["trade_to_order_ratio"] = tor.diff(3).fillna(0)
             except Exception as _e:
@@ -3417,17 +3368,10 @@ class VectorizedAdvancedFeatureEngineering:
                 # Depth dynamics - use multi-period difference to reduce correlation
                 features["market_depth_change"] = md.diff(3).fillna(0)
                 with np.errstate(divide="ignore", invalid="ignore"):
-                    features["market_depth_returns"] = (
-                        (md.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
-                    )
+                    features["market_depth_returns"] = (md.pct_change()).replace([np.inf, -np.inf], np.nan).fillna(0)
                 # Depth imbalance proxy: short vs long window
                 short = volume_data["volume"].rolling(10, min_periods=1).mean()
-                long = (
-                    volume_data["volume"]
-                    .rolling(50, min_periods=1)
-                    .mean()
-                    .replace(0, np.nan)
-                )
+                long = volume_data["volume"].rolling(50, min_periods=1).mean().replace(0, np.nan)
                 features["market_depth_imbalance"] = (
                     ((short - long) / long).replace([np.inf, -np.inf], np.nan).fillna(0)
                 )
@@ -3440,9 +3384,7 @@ class VectorizedAdvancedFeatureEngineering:
                     std20 = close.rolling(20, min_periods=5).std().replace(0, np.nan)
                     with np.errstate(divide="ignore", invalid="ignore"):
                         features["bb_zscore_20"] = (
-                            ((close - sma20) / std20)
-                            .replace([np.inf, -np.inf], np.nan)
-                            .fillna(0)
+                            ((close - sma20) / std20).replace([np.inf, -np.inf], np.nan).fillna(0)
                         )
                     # MA slopes (first difference per bar)
                     ema20 = close.ewm(span=20, adjust=False).mean()
@@ -3462,8 +3404,7 @@ class VectorizedAdvancedFeatureEngineering:
 
         return features
 
-    def _calculate_market_depth_vectorized(
-        self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> pd.Series:
+    def _calculate_market_depth_vectorized(self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> pd.Series:
         """Calculate market depth using vectorized operations."""
         try:
             # Use volume as a proxy for market depth
@@ -3476,8 +3417,7 @@ class VectorizedAdvancedFeatureEngineering:
             self.logger.exception(f"Error calculating market depth: {e}")
             return pd.Series(0, index=price_data.index)
 
-    def _calculate_bid_ask_spread_vectorized(
-        self, price_data: pd.DataFrame) -> pd.Series:
+    def _calculate_bid_ask_spread_vectorized(self, price_data: pd.DataFrame) -> pd.Series:
         """Calculate bid-ask spread using aggtrades data for accurate spread estimation."""
         try:
             if "close" not in price_data.columns:
@@ -3499,10 +3439,7 @@ class VectorizedAdvancedFeatureEngineering:
             )
 
             # Use aggtrades data for accurate spread calculation when available
-            if all(
-                col in price_data.columns
-                for col in ["avg_price", "min_price", "max_price", "trade_count"]
-            ):
+            if all(col in price_data.columns for col in ["avg_price", "min_price", "max_price", "trade_count"]):
                 avg_price = price_data["avg_price"].astype(float)
                 min_price = price_data["min_price"].astype(float)
                 max_price = price_data["max_price"].astype(float)
@@ -3532,18 +3469,14 @@ class VectorizedAdvancedFeatureEngineering:
                 trade_count_ratio = trade_count / trade_count_ma.replace(0, 1)
 
                 # Lower trade count ratio increases spread
-                trade_adjustment = (
-                    1 - trade_count_ratio.clip(0, 1)
-                ) * 0.01  # Max 1% adjustment
+                trade_adjustment = (1 - trade_count_ratio.clip(0, 1)) * 0.01  # Max 1% adjustment
                 spread_pct += trade_adjustment
 
                 # Use volume ratio if available for additional adjustment
                 if "volume_ratio" in price_data.columns:
                     volume_ratio = price_data["volume_ratio"].astype(float)
                     # Lower volume ratio (less trade volume relative to kline volume) indicates wider spreads
-                    volume_adjustment = (
-                        1 - volume_ratio.clip(0, 1)
-                    ) * 0.005  # Max 0.5% adjustment
+                    volume_adjustment = (1 - volume_ratio.clip(0, 1)) * 0.005  # Max 0.5% adjustment
                     spread_pct += volume_adjustment
 
                 # Ensure spread is within reasonable bounds (0-5%)
@@ -3554,21 +3487,19 @@ class VectorizedAdvancedFeatureEngineering:
 
         except Exception as e:
             self.logger.warning(f"⚠️ Error calculating bid-ask spread from aggtrades: {e}")
-            
+
             # Fallback to volatility-based proxy if aggtrades data not available
             self.logger.info(
                 "📊 Using volatility-based spread proxy (aggtrades data not available)",
             )
 
             # Calculate spread proxy based on price volatility
-            volatility = (
-                close.rolling(20, min_periods=1).std()
-                / close.rolling(20, min_periods=1).mean()
-            )
+            volatility = close.rolling(20, min_periods=1).std() / close.rolling(20, min_periods=1).mean()
 
             # Track volatility calculation
             self._track_nan_origins(
-                "bid_ask_spread_volatility", {"volatility": volatility},
+                "bid_ask_spread_volatility",
+                {"volatility": volatility},
             )
 
             # Normalize volatility to a reasonable spread range (0-5%)
@@ -3580,12 +3511,10 @@ class VectorizedAdvancedFeatureEngineering:
                 volume_ma = volume.rolling(20, min_periods=1).mean()
                 volume_ratio = volume / volume_ma.replace(0, 1)
                 # Lower volume ratio increases spread
-                volume_adjustment = (
-                    1 - volume_ratio.clip(0, 1)
-                ) * 0.02  # Max 2% adjustment
+                volume_adjustment = (1 - volume_ratio.clip(0, 1)) * 0.02  # Max 2% adjustment
                 spread_proxy += volume_adjustment
 
-        # Ensure spread is within reasonable bounds (0-5%)
+            # Ensure spread is within reasonable bounds (0-5%)
             spread_proxy, spread_proxy.clip(0, 0.05)
 
             # Clean up infinite and NaN values
@@ -3616,12 +3545,8 @@ class VectorizedAdvancedFeatureEngineering:
                             "nan_count": nan_count,
                             "total_count": len(data),
                             "nan_percentage": (nan_count / len(data)) * 100,
-                            "first_nan_index": data.index[data.isna()].tolist()[:5]
-                            if nan_count > 0
-                            else [],
-                            "sample_values": data.dropna().head(3).tolist()
-                            if nan_count < len(data)
-                            else [],
+                            "first_nan_index": data.index[data.isna()].tolist()[:5] if nan_count > 0 else [],
+                            "sample_values": data.dropna().head(3).tolist() if nan_count < len(data) else [],
                         }
                         total_nans += nan_count
                 elif isinstance(data, pd.DataFrame):
@@ -3630,9 +3555,7 @@ class VectorizedAdvancedFeatureEngineering:
                         nan_report[name] = {
                             "nan_counts": nan_counts[nan_counts > 0].to_dict(),
                             "total_count": len(data),
-                            "columns_with_nans": nan_counts[
-                                nan_counts > 0
-                            ].index.tolist(),
+                            "columns_with_nans": nan_counts[nan_counts > 0].index.tolist(),
                         }
                         total_nans += nan_counts.sum()
                 elif isinstance(data, np.ndarray):
@@ -3683,8 +3606,7 @@ class VectorizedAdvancedFeatureEngineering:
             return "conv"
 
     @validate_ohlcv_data_quality
-    def _engineer_ohlcv_price_features_vectorized(
-        self, price_data: pd.DataFrame) -> dict[str, Any]:
+    def _engineer_ohlcv_price_features_vectorized(self, price_data: pd.DataFrame) -> dict[str, Any]:
         """Engineer basic OHLCV-based technical indicators using vectorized operations."""
         try:
             features = {}
@@ -3702,9 +3624,7 @@ class VectorizedAdvancedFeatureEngineering:
             high = price_data["high"].astype(float)
             low = price_data["low"].astype(float)
             open_price = price_data["open"].astype(float)
-            volume = price_data.get(
-                "volume", pd.Series(1.0, index=price_data.index)
-            ).astype(float)
+            volume = price_data.get("volume", pd.Series(1.0, index=price_data.index)).astype(float)
 
             # Basic price-based features
             # features["close_returns"] = close.pct_change().fillna(0)  # REMOVED: Duplicate feature
@@ -3722,19 +3642,14 @@ class VectorizedAdvancedFeatureEngineering:
 
             # Momentum indicators
             features["price_momentum_20"] = close / close.shift(20) - 1
-            features["volatility_5"] = (
-                close.rolling(5, min_periods=1).std()
-                / close.rolling(5, min_periods=1).mean()
-            )
+            features["volatility_5"] = close.rolling(5, min_periods=1).std() / close.rolling(5, min_periods=1).mean()
 
             # Volume-based features
             if "volume" in price_data.columns:
                 # features["volume_ma_5"] = volume.rolling(5, min_periods=1).mean()  # REMOVED: Duplicate feature
                 # features["volume_ma_20"] = volume.rolling(20, min_periods=1).mean()  # REMOVED: Duplicate feature
                 features["volume_momentum"] = volume / volume.shift(5) - 1
-                features["volume_ratio"] = (
-                    volume / volume.rolling(20, min_periods=1).mean()
-                )
+                features["volume_ratio"] = volume / volume.rolling(20, min_periods=1).mean()
 
             # RSI
             # Use shift(1) to avoid NaN in first row
@@ -3756,9 +3671,7 @@ class VectorizedAdvancedFeatureEngineering:
             std20 = close.rolling(20, min_periods=1).std()
             features["bb_upper"] = sma20 + (std20 * 2)
             features["bb_lower"] = sma20 - (std20 * 2)
-            features["bb_position"] = (close - features["bb_lower"]) / (
-                features["bb_upper"] - features["bb_lower"]
-            )
+            features["bb_position"] = (close - features["bb_lower"]) / (features["bb_upper"] - features["bb_lower"])
 
             # ATR (Average True Range)
             tr1 = high - low
@@ -3770,15 +3683,11 @@ class VectorizedAdvancedFeatureEngineering:
             # Stochastic Oscillator
             lowest_low = low.rolling(14, min_periods=1).min()
             highest_high = high.rolling(14, min_periods=1).max()
-            features["stoch_k"] = (
-                100 * (close - lowest_low) / (highest_high - lowest_low)
-            )
+            features["stoch_k"] = 100 * (close - lowest_low) / (highest_high - lowest_low)
             features["stoch_d"] = features["stoch_k"].rolling(3, min_periods=1).mean()
 
             # Williams %R
-            features["williams_r"] = (
-                -100 * (highest_high - close) / (highest_high - lowest_low)
-            )
+            features["williams_r"] = -100 * (highest_high - close) / (highest_high - lowest_low)
 
             # Commodity Channel Index
             typical_price = (high + low + close) / 3
@@ -3788,63 +3697,55 @@ class VectorizedAdvancedFeatureEngineering:
             )
             features["cci"] = (typical_price - sma_tp) / (0.015 * mad)
 
-        # Rate of Change
+            # Rate of Change
             features["roc"] = (close / close.shift(10) - 1) * 100
 
-        # Money Flow Index
+            # Money Flow Index
             typical_price = (high + low + close) / 3
             money_flow = typical_price * volume
-            positive_flow = (
-                money_flow.where(typical_price > typical_price.shift(1), 0)
-                .rolling(14, min_periods=1)
-                .sum()
-            )
-            negative_flow = (
-                money_flow.where(typical_price < typical_price.shift(1), 0)
-                .rolling(14, min_periods=1)
-                .sum()
-            )
+            positive_flow = money_flow.where(typical_price > typical_price.shift(1), 0).rolling(14, min_periods=1).sum()
+            negative_flow = money_flow.where(typical_price < typical_price.shift(1), 0).rolling(14, min_periods=1).sum()
             mfi_ratio, positive_flow / negative_flow.replace(0, np.nan)
             features["mfi"] = 100 - (100 / (1 + mfi_ratio)).fillna(50)
 
-        # Additional OHLCV features
-        # Price efficiency ratio
-            features["price_efficiency_20"] = abs(close - close.shift(20)) / (close.rolling(20).apply(lambda x: np.sum(np.abs(np.diff(x)))))
+            # Additional OHLCV features
+            # Price efficiency ratio
+            features["price_efficiency_20"] = abs(close - close.shift(20)) / (
+                close.rolling(20).apply(lambda x: np.sum(np.abs(np.diff(x))))
+            )
 
-        # Volume price trend
+            # Volume price trend
             features["volume_price_trend"] = (volume * close.pct_change()).cumsum()
 
-        # On-balance volume
+            # On-balance volume
             obv = (volume * np.sign(close.diff())).cumsum()
             features["on_balance_volume"] = obv
 
-        # Accumulation/distribution line
+            # Accumulation/distribution line
             clv = ((close - low) - (high - close)) / (high - low)
             features["accumulation_distribution"] = (clv * volume).cumsum()
 
-        # Chaikin money flow
+            # Chaikin money flow
             features["chaikin_money_flow"] = (clv * volume).rolling(20).sum() / volume.rolling(20).sum()
 
-        # Price momentum oscillator
+            # Price momentum oscillator
             features["price_momentum_oscillator"] = close - close.rolling(10).mean()
 
-        # Volume momentum oscillator
+            # Volume momentum oscillator
             features["volume_momentum_oscillator"] = volume - volume.rolling(10).mean()
 
-        # Price velocity (rate of change of price)
+            # Price velocity (rate of change of price)
             features["price_velocity_5"] = close.pct_change(5).fillna(0)
             features["price_velocity_10"] = close.pct_change(10).fillna(0)
 
-        # Volume velocity
+            # Volume velocity
             features["volume_velocity_5"] = volume.pct_change(5).fillna(0)
             features["volume_velocity_10"] = volume.pct_change(10).fillna(0)
 
             # Clean up any infinite or NaN values
             for key in list(features.keys()):
                 if isinstance(features[key], pd.Series):
-                    features[key] = (
-                        features[key].replace([np.inf, -np.inf], np.nan).fillna(0)
-                    )
+                    features[key] = features[key].replace([np.inf, -np.inf], np.nan).fillna(0)
 
             self.logger.info(f"✅ Generated {len(features)} OHLCV technical indicators")
             return features
@@ -3854,8 +3755,7 @@ class VectorizedAdvancedFeatureEngineering:
             return {}
 
     @validate_data_quality(validation_level=ValidationLevel.WARNING)
-    def _engineer_adaptive_indicators_vectorized(
-        self, price_data: pd.DataFrame) -> dict[str, Any]:
+    def _engineer_adaptive_indicators_vectorized(self, price_data: pd.DataFrame) -> dict[str, Any]:
         """Engineer adaptive indicators that adjust to market conditions."""
         try:
             features = {}
@@ -3878,17 +3778,10 @@ class VectorizedAdvancedFeatureEngineering:
                 self.logger.warning(
                     f"⚠️ Found {nan_count} NaN and {inf_count} inf values in close price",
                 )
-                close = (
-                    close.replace([np.inf, -np.inf], np.nan)
-                    .fillna(method="ffill")
-                    .fillna(method="bfill")
-                )
+                close = close.replace([np.inf, -np.inf], np.nan).fillna(method="ffill").fillna(method="bfill")
 
             # Adaptive moving averages
-            volatility = (
-                close.rolling(20, min_periods=1).std()
-                / close.rolling(20, min_periods=1).mean()
-            )
+            volatility = close.rolling(20, min_periods=1).std() / close.rolling(20, min_periods=1).mean()
 
             # Fix: Handle NaN and inf values before converting to int
             volatility = volatility.replace([np.inf, -np.inf], np.nan).fillna(
@@ -3971,9 +3864,7 @@ class VectorizedAdvancedFeatureEngineering:
             # Clean up any infinite or NaN values
             for key in list(features.keys()):
                 if isinstance(features[key], pd.Series):
-                    features[key] = (
-                        features[key].replace([np.inf, -np.inf], np.nan).fillna(0)
-                    )
+                    features[key] = features[key].replace([np.inf, -np.inf], np.nan).fillna(0)
 
             self.logger.info(
                 f"✅ Successfully engineered {len(features)} adaptive indicators",
@@ -3985,10 +3876,10 @@ class VectorizedAdvancedFeatureEngineering:
             self.logger.debug(f"🔍 Exception details: {type(e).__name__}: {e!s}")
             return {}
 
-
-
     def _select_optimal_features_vectorized(
-        self, features: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        features: dict[str, Any],
+    ) -> dict[str, Any]:
         """Select optimal features based on variance and correlation."""
         try:
             if not features:
@@ -4004,14 +3895,10 @@ class VectorizedAdvancedFeatureEngineering:
 
             # More lenient threshold for financial data - many features have small but meaningful variations
             # Use 1e-8 instead of 1e-12 to be less aggressive
-            non_constant = variance[
-                variance > 1e-8
-            ].index.tolist()
+            non_constant = variance[variance > 1e-8].index.tolist()
 
             if len(non_constant) < len(features):
-                constant_features = [
-                    col for col in features if col not in non_constant
-                ]
+                constant_features = [col for col in features if col not in non_constant]
 
                 # Only log if we're removing a significant number of features
                 if len(constant_features) > 5:
@@ -4040,10 +3927,7 @@ class VectorizedAdvancedFeatureEngineering:
                 )
 
             # Select non-constant features
-            return {
-                col: features[col] for col in non_constant if col in features
-            }
-
+            return {col: features[col] for col in non_constant if col in features}
 
         except Exception as e:
             self.logger.exception(f"🚨 Error selecting optimal features: {e}")
@@ -4052,28 +3936,33 @@ class VectorizedAdvancedFeatureEngineering:
     @validate_multi_timeframe_data_quality
     @cache_feature_engineering(max_memory_mb=2048)
     async def _engineer_multi_timeframe_features_vectorized(
-        self, price_data: pd.DataFrame, volume_data: pd.DataFrame, order_flow_data: pd.DataFrame | None = None, sr_levels: dict[str, Any] | None = None, ) -> dict[str, Any]:
+        self,
+        price_data: pd.DataFrame,
+        volume_data: pd.DataFrame,
+        order_flow_data: pd.DataFrame | None = None,
+        sr_levels: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Engineer multi-timeframe features with optimized lookback periods."""
         try:
             # Initialize Mac M1 optimizations
             optimize_for_m1_mac()
 
             # Use enhanced multi-timeframe optimizer by default
-            from src.training.enhanced_multi_timeframe_optimizer import (
-                EnhancedMultiTimeframeOptimizer, 
-                OptimizedTimeframeConfig
-            )
             from src.training.comprehensive_feature_optimizer import (
+                ComprehensiveFeatureConfig,
                 ComprehensiveFeatureOptimizer,
-                ComprehensiveFeatureConfig
+            )
+            from src.training.enhanced_multi_timeframe_optimizer import (
+                EnhancedMultiTimeframeOptimizer,
+                OptimizedTimeframeConfig,
             )
 
             # Check if matrix optimization results are available
             matrix_results = self._get_matrix_optimization_results()
-            
+
             if matrix_results and self._should_use_optimized_features():
                 self.logger.info("🚀 Using enhanced multi-timeframe optimizer with optimized lookback periods")
-                
+
                 # Configure enhanced optimizer
                 config = OptimizedTimeframeConfig(
                     base_timeframes=["1m", "5m", "15m", "30m", "1h"],
@@ -4083,24 +3972,24 @@ class VectorizedAdvancedFeatureEngineering:
                         "min_correlation": 0.2,
                         "max_correlation": 0.8,
                         "min_information_score": 0.03,
-                        "min_diversity_score": 0.15
-                    }
+                        "min_diversity_score": 0.15,
+                    },
                 )
-                
+
                 # Initialize enhanced optimizer
                 enhanced_optimizer = EnhancedMultiTimeframeOptimizer(config, matrix_results)
-                
+
                 # Generate optimized multi-timeframe features
                 features = await enhanced_optimizer.generate_optimized_multi_timeframe_features(
                     data=price_data,
                     target=self._create_target_variable(price_data),
-                    regime_labels=self._get_regime_labels()
+                    regime_labels=self._get_regime_labels(),
                 )
-                
+
                 # Also generate comprehensive features if enabled
                 if self._should_generate_comprehensive_features():
                     self.logger.info("🔧 Generating comprehensive optimized features")
-                    
+
                     comprehensive_config = ComprehensiveFeatureConfig(
                         interaction_features=True,
                         difference_acceleration_features=True,
@@ -4111,32 +4000,34 @@ class VectorizedAdvancedFeatureEngineering:
                         liquidity_features=True,
                         candlestick_patterns=True,
                         ohlcv_price_features=True,
-                        parallel_processing=True
+                        parallel_processing=True,
                     )
-                    
-                    comprehensive_optimizer = ComprehensiveFeatureOptimizer(
-                        comprehensive_config, 
-                        matrix_results
-                    )
-                    
+
+                    comprehensive_optimizer = ComprehensiveFeatureOptimizer(comprehensive_config, matrix_results)
+
                     comprehensive_features = await comprehensive_optimizer.generate_comprehensive_features(
                         data=price_data,
                         target=self._create_target_variable(price_data),
-                        regime_labels=self._get_regime_labels()
+                        regime_labels=self._get_regime_labels(),
                     )
-                    
+
                     # Merge features
                     features.update(comprehensive_features)
                     self.logger.info(f"✅ Generated {len(comprehensive_features)} comprehensive features")
-                
+
                 # Save optimization results
                 output_path = "data/optimization_results"
                 enhanced_optimizer.save_optimization_results(output_path)
-                
-                self.logger.info(f"✅ Generated {len(features)} optimized multi-timeframe features using enhanced system")
-                
+
+                self.logger.info(
+                    f"✅ Generated {
+                        len(features)} optimized multi-timeframe features using enhanced system"
+                )
+
             else:
-                self.logger.info("⚠️ Using traditional multi-timeframe features (no matrix optimization results available)")
+                self.logger.info(
+                    "⚠️ Using traditional multi-timeframe features (no matrix optimization results available)"
+                )
                 features = await self._generate_traditional_multi_timeframe_features(
                     price_data, volume_data, order_flow_data
                 )
@@ -4150,48 +4041,46 @@ class VectorizedAdvancedFeatureEngineering:
         except Exception as e:
             self.logger.error(f"❌ Error in enhanced multi-timeframe feature engineering: {e}")
             # Fallback to traditional method
-            return await self._generate_traditional_multi_timeframe_features(
-                price_data, volume_data, order_flow_data
-            )
-    
+            return await self._generate_traditional_multi_timeframe_features(price_data, volume_data, order_flow_data)
+
     def _get_matrix_optimization_results(self) -> Optional[Dict[str, Any]]:
         """Get matrix optimization results if available."""
         try:
             # Check for matrix optimization results in pipeline state or cache
             matrix_results_path = "data/optimization_results/matrix_diverse_lookback_optimization_results.json"
             if Path(matrix_results_path).exists():
-                with open(matrix_results_path, 'r') as f:
+                with open(matrix_results_path, "r") as f:
                     return json.load(f)
-            
+
             # Check for comprehensive optimization results
             comprehensive_results_path = "data/optimization_results/comprehensive_feature_optimization_results.json"
             if Path(comprehensive_results_path).exists():
-                with open(comprehensive_results_path, 'r') as f:
+                with open(comprehensive_results_path, "r") as f:
                     return json.load(f)
-            
+
             return None
         except Exception as e:
             self.logger.debug(f"⚠️ Could not load matrix optimization results: {e}")
             return None
-    
+
     def _should_use_optimized_features(self) -> bool:
         """Determine if optimized features should be used."""
         # Check environment variable or configuration
-        use_optimized = os.getenv('USE_OPTIMIZED_FEATURES', 'true').lower() == 'true'
+        use_optimized = os.getenv("USE_OPTIMIZED_FEATURES", "true").lower() == "true"
         return use_optimized
-    
+
     def _should_generate_comprehensive_features(self) -> bool:
         """Determine if comprehensive features should be generated."""
         # Check environment variable or configuration
-        generate_comprehensive = os.getenv('GENERATE_COMPREHENSIVE_FEATURES', 'true').lower() == 'true'
+        generate_comprehensive = os.getenv("GENERATE_COMPREHENSIVE_FEATURES", "true").lower() == "true"
         return generate_comprehensive
-    
+
     def _create_target_variable(self, data: pd.DataFrame) -> pd.Series:
         """Create target variable for optimization."""
         # Use future returns as target
-        target = data['close'].pct_change(5).shift(-5).fillna(0)
+        target = data["close"].pct_change(5).shift(-5).fillna(0)
         return target
-    
+
     def _get_regime_labels(self) -> Optional[pd.Series]:
         """Get regime labels if available."""
         try:
@@ -4203,12 +4092,9 @@ class VectorizedAdvancedFeatureEngineering:
         except Exception as e:
             self.logger.debug(f"⚠️ Could not load regime labels: {e}")
             return None
-    
+
     async def _generate_traditional_multi_timeframe_features(
-        self, 
-        price_data: pd.DataFrame, 
-        volume_data: pd.DataFrame, 
-        order_flow_data: pd.DataFrame | None = None
+        self, price_data: pd.DataFrame, volume_data: pd.DataFrame, order_flow_data: pd.DataFrame | None = None
     ) -> Dict[str, Any]:
         """Generate traditional multi-timeframe features (fallback method)."""
         try:
@@ -4219,7 +4105,9 @@ class VectorizedAdvancedFeatureEngineering:
 
             # Preprocess data to ensure regular timestamps
             processed_price, processed_volume, processed_order_flow = preprocess_data_for_multi_timeframe(
-                price_data, volume_data, order_flow_data,
+                price_data,
+                volume_data,
+                order_flow_data,
             )
 
             # Apply data type optimization to input data
@@ -4235,7 +4123,9 @@ class VectorizedAdvancedFeatureEngineering:
                 try:
                     # Resample price data to different timeframes
                     tf_price = self._resample_price_data(processed_price, tf)
-                    tf_volume = self._resample_volume_data(processed_volume, tf) if processed_volume is not None else None
+                    tf_volume = (
+                        self._resample_volume_data(processed_volume, tf) if processed_volume is not None else None
+                    )
 
                     if tf_price is not None and not tf_price.empty:
                         # Log data quality for debugging
@@ -4243,12 +4133,16 @@ class VectorizedAdvancedFeatureEngineering:
                         self.logger.debug(f"🔍 {tf} timeframe - Price data NaN count: {tf_price.isna().sum().sum()}")
                         if tf_volume is not None and not tf_volume.empty:
                             self.logger.debug(f"🔍 {tf} timeframe - Volume data shape: {tf_volume.shape}")
-                            self.logger.debug(f"🔍 {tf} timeframe - Volume data NaN count: {tf_volume.isna().sum().sum()}")
+                            self.logger.debug(
+                                f"🔍 {tf} timeframe - Volume data NaN count: {tf_volume.isna().sum().sum()}"
+                            )
 
                         # Check if we have sufficient data for this timeframe
                         min_required_data = self._get_minimum_data_requirement(tf)
                         if len(tf_price) < min_required_data:
-                            self.logger.info(f"ℹ️ Skipping {tf} timeframe - insufficient data: {len(tf_price)} rows (minimum required: {min_required_data})")
+                            self.logger.info(
+                                f"ℹ️ Skipping {tf} timeframe - insufficient data: {len(tf_price)} rows (minimum required: {min_required_data})"
+                            )
                             continue
 
                         # Generate features for this timeframe using existing comprehensive generator
@@ -4335,7 +4229,9 @@ class VectorizedAdvancedFeatureEngineering:
                     non_constant_features[key] = value
 
             if constant_features:
-                self.logger.info(f"🗑️ Removed {len(constant_features)} constant features: {constant_features[:5]}... (showing first 5)")
+                self.logger.info(
+                    f"🗑️ Removed {len(constant_features)} constant features: {constant_features[:5]}... (showing first 5)"
+                )
 
             return non_constant_features
 
@@ -4436,7 +4332,9 @@ class VectorizedAdvancedFeatureEngineering:
             self.logger.exception(f"🚨 Error resampling volume data to {timeframe}: {e}")
             return None
 
-    def _generate_timeframe_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame, timeframe: str) -> dict[str, Any]:
+    def _generate_timeframe_features(
+        self, price_data: pd.DataFrame, volume_data: pd.DataFrame, timeframe: str
+    ) -> dict[str, Any]:
         """Generate features for a specific timeframe with improved NaN handling."""
         try:
             features = {}
@@ -4444,7 +4342,10 @@ class VectorizedAdvancedFeatureEngineering:
             # Get minimum data requirement for this timeframe
             min_required_data = self._get_minimum_data_requirement(timeframe)
             if price_data.empty or len(price_data) < min_required_data:
-                self.logger.info(f"ℹ️ Insufficient data for {timeframe} timeframe: {len(price_data)} rows (minimum required: {min_required_data})")
+                self.logger.info(
+                    f"ℹ️ Insufficient data for {timeframe} timeframe: {
+                        len(price_data)} rows (minimum required: {min_required_data})"
+                )
                 return features
 
             # Basic price features for this timeframe
@@ -4492,10 +4393,10 @@ class VectorizedAdvancedFeatureEngineering:
                 if sma.var() > 1e-12:  # Check for meaningful variance
                     features[f"sma_{sma_window}_{timeframe}"] = sma
 
-                ema = close.ewm(span=min(12, len(close)//2), adjust=False).mean()
+                ema = close.ewm(span=min(12, len(close) // 2), adjust=False).mean()
                 ema = ema.fillna(method="ffill").fillna(method="bfill").fillna(0)
                 if ema.var() > 1e-12:
-                    features[f"ema_{min(12, len(close)//2)}_{timeframe}"] = ema
+                    features[f"ema_{min(12, len(close) // 2)}_{timeframe}"] = ema
 
             # Momentum indicators (only if we have enough data)
             if len(close) >= min_periods:
@@ -4572,7 +4473,9 @@ class VectorizedAdvancedFeatureEngineering:
             self.logger.exception(f"🚨 Error generating features for {timeframe}: {e}")
             return {}
 
-    def _generate_cross_timeframe_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None = None) -> dict[str, Any]:
+    def _generate_cross_timeframe_features(
+        self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None = None
+    ) -> dict[str, Any]:
         """Generate comprehensive cross-timeframe features."""
         try:
             features = {}
@@ -4584,7 +4487,7 @@ class VectorizedAdvancedFeatureEngineering:
             close = price_data["close"].astype(float)
             high = price_data["high"].astype(float)
             low = price_data["low"].astype(float)
-            open_price = price_data["open"].astype(float)
+            price_data["open"].astype(float)
 
             # Validate input data
             if close.isna().all() or close.std() == 0:
@@ -4596,7 +4499,7 @@ class VectorizedAdvancedFeatureEngineering:
 
             # 1. Cross-timeframe momentum features (with validation)
             for i, tf1 in enumerate(timeframes[:4]):  # Use first 4 timeframes
-                for tf2 in timeframes[i+1:5]:  # Compare with next timeframes
+                for tf2 in timeframes[i + 1 : 5]:  # Compare with next timeframes
                     if tf1 < len(close) and tf2 < len(close):
                         # Price momentum differences
                         momentum_diff = close.pct_change(tf1) - close.pct_change(tf2)
@@ -4610,19 +4513,25 @@ class VectorizedAdvancedFeatureEngineering:
 
                         # High-Low momentum differences (only if we have enough data)
                         if len(close) >= max(tf1, tf2) * 2:
-                            hl_momentum_1 = (high.rolling(tf1, min_periods=tf1//2).max() - low.rolling(tf1, min_periods=tf1//2).min()) / (close.rolling(tf1, min_periods=tf1//2).mean() + 1e-8)
-                            hl_momentum_2 = (high.rolling(tf2, min_periods=tf2//2).max() - low.rolling(tf2, min_periods=tf2//2).min()) / (close.rolling(tf2, min_periods=tf2//2).mean() + 1e-8)
+                            hl_momentum_1 = (
+                                high.rolling(tf1, min_periods=tf1 // 2).max()
+                                - low.rolling(tf1, min_periods=tf1 // 2).min()
+                            ) / (close.rolling(tf1, min_periods=tf1 // 2).mean() + 1e-8)
+                            hl_momentum_2 = (
+                                high.rolling(tf2, min_periods=tf2 // 2).max()
+                                - low.rolling(tf2, min_periods=tf2 // 2).min()
+                            ) / (close.rolling(tf2, min_periods=tf2 // 2).mean() + 1e-8)
                             hl_diff = hl_momentum_1 - hl_momentum_2
                             if hl_diff.var() > 1e-12:
                                 features[f"hl_momentum_{tf1}m_{tf2}m"] = hl_diff
 
             # 2. Cross-timeframe volatility features (with validation)
             for i, tf1 in enumerate(timeframes[:3]):
-                for tf2 in timeframes[i+1:4]:
+                for tf2 in timeframes[i + 1 : 4]:
                     if tf1 < len(close) and tf2 < len(close):
                         returns = close.pct_change().fillna(method="ffill").fillna(method="bfill").fillna(0)
-                        returns_1 = returns.rolling(tf1, min_periods=tf1//2).std()
-                        returns_2 = returns.rolling(tf2, min_periods=tf2//2).std()
+                        returns_1 = returns.rolling(tf1, min_periods=tf1 // 2).std()
+                        returns_2 = returns.rolling(tf2, min_periods=tf2 // 2).std()
 
                         # Volatility ratio with safety check
                         vol_ratio = returns_1 / (returns_2 + 1e-8)
@@ -4641,14 +4550,19 @@ class VectorizedAdvancedFeatureEngineering:
                                 features[f"volatility_std_{tf1}m_{tf2}m"] = vol_std
 
             # 3. Cross-timeframe volume features (with validation)
-            if volume_data is not None and isinstance(volume_data, pd.DataFrame) and not volume_data.empty and "volume" in volume_data.columns:
+            if (
+                volume_data is not None
+                and isinstance(volume_data, pd.DataFrame)
+                and not volume_data.empty
+                and "volume" in volume_data.columns
+            ):
                 volume = volume_data["volume"].astype(float)
                 if volume.var() > 1e-12:  # Only if volume has meaningful variance
                     for i, tf1 in enumerate(timeframes[:3]):
-                        for tf2 in timeframes[i+1:4]:
+                        for tf2 in timeframes[i + 1 : 4]:
                             if tf1 < len(volume) and tf2 < len(volume):
-                                vol_1 = volume.rolling(tf1, min_periods=tf1//2).mean()
-                                vol_2 = volume.rolling(tf2, min_periods=tf2//2).mean()
+                                vol_1 = volume.rolling(tf1, min_periods=tf1 // 2).mean()
+                                vol_2 = volume.rolling(tf2, min_periods=tf2 // 2).mean()
 
                                 # Volume ratio with safety check
                                 vol_ratio = vol_1 / (vol_2 + 1e-8)
@@ -4667,10 +4581,14 @@ class VectorizedAdvancedFeatureEngineering:
 
             # 4. Cross-timeframe price range features (with validation)
             for i, tf1 in enumerate(timeframes[:3]):
-                for tf2 in timeframes[i+1:4]:
+                for tf2 in timeframes[i + 1 : 4]:
                     if tf1 < len(close) and tf2 < len(close):
-                        range_1 = (high.rolling(tf1, min_periods=tf1//2).max() - low.rolling(tf1, min_periods=tf1//2).min()) / (close.rolling(tf1, min_periods=tf1//2).mean() + 1e-8)
-                        range_2 = (high.rolling(tf2, min_periods=tf2//2).max() - low.rolling(tf2, min_periods=tf2//2).min()) / (close.rolling(tf2, min_periods=tf2//2).mean() + 1e-8)
+                        range_1 = (
+                            high.rolling(tf1, min_periods=tf1 // 2).max() - low.rolling(tf1, min_periods=tf1 // 2).min()
+                        ) / (close.rolling(tf1, min_periods=tf1 // 2).mean() + 1e-8)
+                        range_2 = (
+                            high.rolling(tf2, min_periods=tf2 // 2).max() - low.rolling(tf2, min_periods=tf2 // 2).min()
+                        ) / (close.rolling(tf2, min_periods=tf2 // 2).mean() + 1e-8)
 
                         # Price range ratio with safety check
                         range_ratio = range_1 / (range_2 + 1e-8)
@@ -4704,7 +4622,7 @@ class VectorizedAdvancedFeatureEngineering:
                 for slow in [10, 15, 20]:
                     if fast < slow and fast < len(close) and slow < len(close):
                         macd_1 = self._calculate_macd(close, fast, slow)
-                        macd_2 = self._calculate_macd(close, fast*2, slow*2)
+                        macd_2 = self._calculate_macd(close, fast * 2, slow * 2)
 
                         # MACD difference
                         macd_diff = macd_1 - macd_2
@@ -4721,7 +4639,7 @@ class VectorizedAdvancedFeatureEngineering:
                 for std in [1, 1.5, 2]:
                     if window < len(close):
                         bb_1 = self._calculate_bollinger_bands(close, window, std)
-                        bb_2 = self._calculate_bollinger_bands(close, window*2, std)
+                        bb_2 = self._calculate_bollinger_bands(close, window * 2, std)
 
                         if bb_1 is not None and bb_2 is not None:
                             bb_diff = bb_1 - bb_2
@@ -4733,7 +4651,7 @@ class VectorizedAdvancedFeatureEngineering:
                 for d_period in [3, 5, 7]:
                     if k_period < len(close) and d_period < len(close):
                         stoch_1 = self._calculate_stochastic(high, low, close, k_period, d_period)
-                        stoch_2 = self._calculate_stochastic(high, low, close, k_period*2, d_period*2)
+                        stoch_2 = self._calculate_stochastic(high, low, close, k_period * 2, d_period * 2)
 
                         if stoch_1 is not None and stoch_2 is not None:
                             stoch_diff = stoch_1 - stoch_2
@@ -4793,7 +4711,9 @@ class VectorizedAdvancedFeatureEngineering:
         except Exception:
             return None
 
-    def _calculate_stochastic(self, high: pd.Series, low: pd.Series, close: pd.Series, k_period: int, d_period: int) -> pd.Series | None:
+    def _calculate_stochastic(
+        self, high: pd.Series, low: pd.Series, close: pd.Series, k_period: int, d_period: int
+    ) -> pd.Series | None:
         """Calculate Stochastic oscillator."""
         try:
             lowest_low = low.rolling(window=k_period).min()
@@ -4803,7 +4723,9 @@ class VectorizedAdvancedFeatureEngineering:
         except Exception:
             return None
 
-    async def _generate_regime_aware_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None = None) -> dict[str, Any]:
+    async def _generate_regime_aware_features(
+        self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None = None
+    ) -> dict[str, Any]:
         """Generate regime-aware features if HMM data is available."""
         try:
             features = {}
@@ -4879,7 +4801,9 @@ class VectorizedAdvancedFeatureEngineering:
                         # Check for near-constant features (very low variance) - more lenient
                         if feature_value.var() < 1e-10:  # Increased threshold from 1e-12
                             constant_count += 1
-                            self.logger.warning(f"🚨 BUG: Near-constant feature detected: {feature_name} (variance: {feature_value.var()})")
+                            self.logger.warning(
+                                f"🚨 BUG: Near-constant feature detected: {feature_name} (variance: {feature_value.var()})"
+                            )
 
                             # Skip near-constant features
                             continue
@@ -4908,7 +4832,9 @@ class VectorizedAdvancedFeatureEngineering:
                 self.logger.info(f"🔍 Removed {duplicate_count} duplicate features during cleaning")
 
             if constant_count > 0:
-                self.logger.warning(f"🚨 BUG SUMMARY: Removed {constant_count} constant features due to calculation bugs")
+                self.logger.warning(
+                    f"🚨 BUG SUMMARY: Removed {constant_count} constant features due to calculation bugs"
+                )
 
             self.logger.debug(f"✅ Cleaned {len(cleaned_features)} features")
             return cleaned_features
@@ -4934,7 +4860,9 @@ class VectorizedAdvancedFeatureEngineering:
                     # Check if the value contains any async objects
                     if isinstance(feature_value, (list, tuple, dict)):
                         # For now, just skip complex objects that might contain async objects
-                        if hasattr(feature_value, "__iter__") and any(hasattr(item, "__await__") for item in feature_value):
+                        if hasattr(feature_value, "__iter__") and any(
+                            hasattr(item, "__await__") for item in feature_value
+                        ):
                             self.logger.warning(f"⚠️ Removing feature {feature_name} containing async objects")
                             removed_count += 1
                             continue
@@ -4993,7 +4921,7 @@ class VectorizedAdvancedFeatureEngineering:
             for i in range(1, len(cluster_ids)):
                 # Count how many times the regime changes in a window
                 window_size = min(20, i)
-                recent_clusters = cluster_ids[max(0, i-window_size):i+1]
+                recent_clusters = cluster_ids[max(0, i - window_size) : i + 1]
                 unique_clusters = len(np.unique(recent_clusters))
                 stability[i] = 1.0 / (unique_clusters + 1)  # Higher stability, fewer unique clusters
 
@@ -5009,7 +4937,7 @@ class VectorizedAdvancedFeatureEngineering:
             transitions = np.zeros(len(cluster_ids))
 
             for i in range(1, len(cluster_ids)):
-                if cluster_ids[i] != cluster_ids[i-1]:
+                if cluster_ids[i] != cluster_ids[i - 1]:
                     transitions[i] = 1.0
 
             return transitions
@@ -5017,10 +4945,6 @@ class VectorizedAdvancedFeatureEngineering:
         except Exception as e:
             self.logger.exception(f"🚨 Error calculating regime transitions: {e}")
             return np.zeros(len(cluster_ids))
-
-
-
-
 
     async def _generate_meta_labels_vectorized(
         self, price_data: pd.DataFrame, volume_data: pd.DataFrame, order_flow_data: pd.DataFrame | None = None
@@ -5064,15 +4988,11 @@ class VectorizedAdvancedFeatureEngineering:
                 # Price position relative to recent range
                 high_20 = close.rolling(20, min_periods=1).max()
                 low_20 = close.rolling(20, min_periods=1).min()
-                features[f"price_position_{timeframe}"] = (close - low_20) / (
-                    high_20 - low_20
-                )
+                features[f"price_position_{timeframe}"] = (close - low_20) / (high_20 - low_20)
 
                 # Momentum strength
                 returns = close.pct_change().fillna(0)
-                features[f"momentum_strength_{timeframe}"] = returns.rolling(
-                    10, min_periods=1
-                ).mean()
+                features[f"momentum_strength_{timeframe}"] = returns.rolling(10, min_periods=1).mean()
 
             return features
 
@@ -5089,44 +5009,31 @@ class VectorizedAdvancedFeatureEngineering:
             "min_rows": 100,
             "required_columns": ["timestamp", "open", "high", "low", "close", "volume"],
         },
-        context="Difference and Acceleration Feature Engineering"
+        context="Difference and Acceleration Feature Engineering",
     )
-    @secure_data_processing(
-        backup_before=True,
-        integrity_checks=True,
-        memory_cleanup=True,
-        data_validation=True
-    )
+    @secure_data_processing(backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True)
     @prevent_data_leakage(
         temporal_validation=True,
         feature_leakage_detection=True,
         cross_validation_isolation=True,
-        lookahead_bias_prevention=True
+        lookahead_bias_prevention=True,
     )
     @resource_monitor(
         memory_threshold_gb=16.0,
         cpu_threshold_percent=90.0,
         disk_threshold_gb=10.0,
         monitor_interval=30.0,
-        auto_cleanup=True
+        auto_cleanup=True,
     )
-    @memory_efficient(
-        chunk_size=5000,
-        streaming_processing=True,
-        memory_pool=True,
-        cleanup_frequency=20
-    )
+    @memory_efficient(chunk_size=5000, streaming_processing=True, memory_pool=True, cleanup_frequency=20)
     @debug_training_step(
         log_intermediate_results=True,
         save_debug_artifacts=True,
         performance_profiling=True,
-        error_context_preservation=True
+        error_context_preservation=True,
     )
     @circuit_breaker_protection(
-        failure_threshold=3,
-        recovery_timeout=300.0,
-        expected_exception=Exception,
-        monitor_interval=60.0
+        failure_threshold=3, recovery_timeout=300.0, expected_exception=Exception, monitor_interval=60.0
     )
     @validate_step_output(
         required_files=["data/feature_cache/*.parquet"],
@@ -5138,7 +5045,7 @@ class VectorizedAdvancedFeatureEngineering:
             "feature_engineering_time_minutes": 30.0,
             "memory_usage_gb": 8.0,
         },
-        format_validation=True
+        format_validation=True,
     )
     @quality_gate(
         model_performance_thresholds={
@@ -5148,15 +5055,16 @@ class VectorizedAdvancedFeatureEngineering:
         data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
         convergence_checks=True,
         overfitting_detection=True,
-        validation_score_requirements={"feature_engineering_score": 0.8}
+        validation_score_requirements={"feature_engineering_score": 0.8},
     )
     @handle_errors(
         exceptions=(ValueError, AttributeError, MemoryError),
         default_return={},
-        context="difference and acceleration feature engineering"
+        context="difference and acceleration feature engineering",
     )
     async def _engineer_difference_and_acceleration_features(
-        self, features: dict[str, Any], price_data: pd.DataFrame) -> dict[str, Any]:
+        self, features: dict[str, Any], price_data: pd.DataFrame
+    ) -> dict[str, Any]:
         """Engineer difference and acceleration features with proper normalization and interaction features.
 
         Args:
@@ -5178,45 +5086,36 @@ class VectorizedAdvancedFeatureEngineering:
                 "rsi": {"priority": "high", "timeframes": ["1m", "5m", "15m", "30m"]},
                 "rsi_20": {"priority": "high", "timeframes": ["1m", "5m", "15m", "30m"]},
                 "adaptive_rsi": {"priority": "high", "timeframes": ["1m", "5m", "15m", "30m"]},
-
                 # MACD features
                 "macd": {"priority": "high", "timeframes": ["5m", "15m", "30m"]},
                 "macd_signal": {"priority": "high", "timeframes": ["5m", "15m", "30m"]},
                 "macd_histogram": {"priority": "high", "timeframes": ["5m", "15m", "30m"]},
-
                 # Bollinger Bands
                 "bb_position": {"priority": "medium", "timeframes": ["1m", "5m", "15m", "30m"]},
                 "bb_zscore_20": {"priority": "medium", "timeframes": ["1m", "5m", "15m", "30m"]},
-
                 # Price momentum
                 "price_momentum_5": {"priority": "high", "timeframes": ["1m", "5m", "15m"]},
                 "price_momentum_20": {"priority": "high", "timeframes": ["15m", "30m"]},
                 "volume_weighted_momentum_5": {"priority": "high", "timeframes": ["1m", "5m", "15m"]},
                 "volume_weighted_momentum_10": {"priority": "high", "timeframes": ["5m", "15m", "30m"]},
-
                 # Volume features
                 "volume_momentum": {"priority": "high", "timeframes": ["1m", "5m", "15m"]},
                 "volume_ma_5": {"priority": "medium", "timeframes": ["1m", "5m", "15m"]},
                 "volume_ma_20": {"priority": "medium", "timeframes": ["5m", "15m", "30m"]},
-
                 # Volatility features
                 "volatility_5": {"priority": "high", "timeframes": ["1m", "5m", "15m"]},
                 "volatility_20": {"priority": "high", "timeframes": ["15m", "30m"]},
                 "volatility_persistence": {"priority": "medium", "timeframes": ["15m", "30m"]},
                 "volatility_of_volatility": {"priority": "medium", "timeframes": ["15m", "30m"]},
-
                 # Technical indicators
                 "cci": {"priority": "medium", "timeframes": ["5m", "15m", "30m"]},
                 "roc": {"priority": "high", "timeframes": ["5m", "15m", "30m"]},
                 "mfi": {"priority": "medium", "timeframes": ["5m", "15m", "30m"]},
-
                 # Microstructure features
                 "order_flow_imbalance": {"priority": "high", "timeframes": ["1m", "5m", "15m"]},
-
                 # Adaptive features
                 "adaptive_sma": {"priority": "medium", "timeframes": ["15m", "30m"]},
                 "adaptive_sma_slope": {"priority": "medium", "timeframes": ["5m", "15m", "30m"]},
-
                 # Moving averages
                 "sma_5": {"priority": "low", "timeframes": ["1m", "5m", "15m"]},
                 "sma_20": {"priority": "low", "timeframes": ["5m", "15m", "30m"]},
@@ -5240,11 +5139,19 @@ class VectorizedAdvancedFeatureEngineering:
 
             # Exclude features that are already difference-based or should be treated as data
             exclude_features = {
-                "close_returns", "price_impact", "bid_ask_spread_returns",
-                "market_depth_change", "market_depth_returns", "volume_ratio_change",
-                "funding_rate_change", "trade_count_change", "trade_volume_change",
-                "nearest_bid_wall_size_change", "nearest_ask_wall_size_change",
-                "weighted_mid_price_change", "trade_to_order_ratio",
+                "close_returns",
+                "price_impact",
+                "bid_ask_spread_returns",
+                "market_depth_change",
+                "market_depth_returns",
+                "volume_ratio_change",
+                "funding_rate_change",
+                "trade_count_change",
+                "trade_volume_change",
+                "nearest_bid_wall_size_change",
+                "nearest_ask_wall_size_change",
+                "weighted_mid_price_change",
+                "trade_to_order_ratio",
             }
 
             # Process difference features
@@ -5267,7 +5174,7 @@ class VectorizedAdvancedFeatureEngineering:
                 # Get candidate info
                 candidate_info = difference_candidates[feature_name]
                 priority = candidate_info["priority"]
-                timeframes = candidate_info["timeframes"]
+                candidate_info["timeframes"]
 
                 # Select lookback periods based on priority (tightened to reduce feature count)
                 if priority == "high":
@@ -5312,7 +5219,9 @@ class VectorizedAdvancedFeatureEngineering:
 
             # Generate interaction features for high-priority combinations
             try:
-                interaction_features = await self._generate_interaction_features(valid_enhanced_features, features, price_data)
+                interaction_features = await self._generate_interaction_features(
+                    valid_enhanced_features, features, price_data
+                )
                 if isinstance(interaction_features, dict):
                     # Filter out any coroutine features from interaction_features before updating
                     valid_interaction_features = {}
@@ -5325,7 +5234,9 @@ class VectorizedAdvancedFeatureEngineering:
                         valid_interaction_features[key] = value
 
                     if coroutine_count > 0:
-                        self.logger.info(f"⚠️ Filtered out {coroutine_count} coroutine features from interaction generation")
+                        self.logger.info(
+                            f"⚠️ Filtered out {coroutine_count} coroutine features from interaction generation"
+                        )
 
                     enhanced_features.update(valid_interaction_features)
                 else:
@@ -5356,7 +5267,9 @@ class VectorizedAdvancedFeatureEngineering:
                     valid_cross_timeframe_features[key] = value
 
                 if coroutine_count > 0:
-                    self.logger.info(f"⚠️ Filtered out {coroutine_count} coroutine features from cross-timeframe generation")
+                    self.logger.info(
+                        f"⚠️ Filtered out {coroutine_count} coroutine features from cross-timeframe generation"
+                    )
 
                 enhanced_features.update(valid_cross_timeframe_features)
             else:
@@ -5382,25 +5295,43 @@ class VectorizedAdvancedFeatureEngineering:
                 accel_raw = [k for k in final_enhanced_features if "_accel_" in k and not k.endswith("_norm")]
                 # Cross-timeframe raw diff features (e.g., rsi_diff_5m_1m)
                 cross_time_raw = [
-                    k for k in final_enhanced_features
+                    k
+                    for k in final_enhanced_features
                     if "_diff_" in k and not k.endswith("_norm") and ("m_" in k or "h_" in k)
                 ]
                 # Non-cross-time raw difference features (exclude acceleration)
                 diff_raw = [
-                    k for k in final_enhanced_features
+                    k
+                    for k in final_enhanced_features
                     if "_diff_" in k and not k.endswith("_norm") and "_accel_" not in k and not ("m_" in k or "h_" in k)
                 ]
 
                 # Priority patterns (keep strongest first)
                 accel_priority = [
-                    "rsi_accel", "macd_histogram_accel", "macd_accel", "price_momentum_", "volatility_20_accel",
+                    "rsi_accel",
+                    "macd_histogram_accel",
+                    "macd_accel",
+                    "price_momentum_",
+                    "volatility_20_accel",
                 ]
                 diff_priority = [
-                    "rsi_diff_", "macd_histogram_diff_", "macd_diff_", "price_momentum_", "volume_momentum",
-                    "volatility_20_diff_", "roc_diff_", "cci_diff_", "bb_position_diff_", "order_flow_imbalance_diff_",
+                    "rsi_diff_",
+                    "macd_histogram_diff_",
+                    "macd_diff_",
+                    "price_momentum_",
+                    "volume_momentum",
+                    "volatility_20_diff_",
+                    "roc_diff_",
+                    "cci_diff_",
+                    "bb_position_diff_",
+                    "order_flow_imbalance_diff_",
                 ]
                 cross_priority = [
-                    "rsi_diff_", "volatility_diff_", "price_range_diff_", "momentum_", "volume_diff_",
+                    "rsi_diff_",
+                    "volatility_diff_",
+                    "price_range_diff_",
+                    "momentum_",
+                    "volume_diff_",
                 ]
 
                 def rank_keys(keys, patterns):
@@ -5409,6 +5340,7 @@ class VectorizedAdvancedFeatureEngineering:
                             if p in k:
                                 return idx
                         return len(patterns) + 1
+
                     return sorted(keys, key=score)
 
                 accel_ranked = rank_keys(accel_raw, accel_priority)
@@ -5416,8 +5348,8 @@ class VectorizedAdvancedFeatureEngineering:
                 cross_ranked = rank_keys(cross_time_raw, cross_priority)
 
                 # Caps (tightened further to meet target totals)
-                max_accel = 10   # ~20 with norms
-                max_diff = 25    # ~50 with norms
+                max_accel = 10  # ~20 with norms
+                max_diff = 25  # ~50 with norms
                 max_cross_time = 50  # ~100 with norms
 
                 kept_accel_raw = set(accel_ranked[:max_accel])
@@ -5464,16 +5396,9 @@ class VectorizedAdvancedFeatureEngineering:
             return {}
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=pd.Series(),
-        context="rolling z-score normalization"
+        exceptions=(ValueError, AttributeError), default_return=pd.Series(), context="rolling z-score normalization"
     )
-    @memory_efficient(
-        chunk_size=1000,
-        streaming_processing=False,
-        memory_pool=True,
-        cleanup_frequency=10
-    )
+    @memory_efficient(chunk_size=1000, streaming_processing=False, memory_pool=True, cleanup_frequency=10)
     def _normalize_with_rolling_zscore(self, series: pd.Series, window: int = 20) -> pd.Series:
         """Normalize series using rolling Z-score to ensure consistent scale.
 
@@ -5505,7 +5430,6 @@ class VectorizedAdvancedFeatureEngineering:
             # Fill NaN values
             return z_score.fillna(0)
 
-
         except Exception as e:
             self.logger.exception(f"🚨 Error in rolling Z-score normalization: {e}")
             return series.fillna(0)
@@ -5513,22 +5437,18 @@ class VectorizedAdvancedFeatureEngineering:
     @handle_errors(
         exceptions=(ValueError, AttributeError, MemoryError),
         default_return={},
-        context="interaction feature generation"
+        context="interaction feature generation",
     )
-    @memory_efficient(
-        chunk_size=2000,
-        streaming_processing=True,
-        memory_pool=True,
-        cleanup_frequency=15
-    )
+    @memory_efficient(chunk_size=2000, streaming_processing=True, memory_pool=True, cleanup_frequency=15)
     @debug_training_step(
         log_intermediate_results=True,
         save_debug_artifacts=False,
         performance_profiling=True,
-        error_context_preservation=True
+        error_context_preservation=True,
     )
     async def _generate_interaction_features(
-        self, enhanced_features: dict[str, Any], original_features: dict[str, Any], price_data: pd.DataFrame) -> dict[str, Any]:
+        self, enhanced_features: dict[str, Any], original_features: dict[str, Any], price_data: pd.DataFrame
+    ) -> dict[str, Any]:
         """Generate comprehensive interaction features between difference/acceleration features.
 
         Args:
@@ -5570,7 +5490,7 @@ class VectorizedAdvancedFeatureEngineering:
             macd_features = [f for f in all_feature_names if "macd" in f.lower()]
             bb_features = [f for f in all_feature_names if "bb" in f.lower() or "bollinger" in f.lower()]
             stoch_features = [f for f in all_feature_names if "stoch" in f.lower()]
-            price_features = [f for f in all_feature_names if "price" in f.lower()]
+            [f for f in all_feature_names if "price" in f.lower()]
             diff_features = [f for f in all_feature_names if "diff" in f.lower()]
             accel_features = [f for f in all_feature_names if "accel" in f.lower()]
 
@@ -5578,28 +5498,20 @@ class VectorizedAdvancedFeatureEngineering:
             high_value_combinations = [
                 # RSI + Volume interactions (10+ features)
                 *[(f1, f2) for f1 in rsi_features[:3] for f2 in volume_features[:3]],
-
                 # Price momentum + Volume interactions (15+ features)
                 *[(f1, f2) for f1 in momentum_features[:5] for f2 in volume_features[:3]],
-
                 # MACD + Volume interactions (8+ features)
                 *[(f1, f2) for f1 in macd_features[:2] for f2 in volume_features[:4]],
-
                 # Volatility + Volume interactions (10+ features)
                 *[(f1, f2) for f1 in volatility_features[:5] for f2 in volume_features[:2]],
-
                 # RSI + Price momentum interactions (12+ features)
                 *[(f1, f2) for f1 in rsi_features[:3] for f2 in momentum_features[:4]],
-
                 # MACD + Price momentum interactions (8+ features)
                 *[(f1, f2) for f1 in macd_features[:2] for f2 in momentum_features[:4]],
-
                 # Bollinger Bands + Volume interactions (6+ features)
                 *[(f1, f2) for f1 in bb_features[:3] for f2 in volume_features[:2]],
-
                 # Stochastic + Volume interactions (6+ features)
                 *[(f1, f2) for f1 in stoch_features[:3] for f2 in volume_features[:2]],
-
                 # Difference + Acceleration interactions (20+ features)
                 *[(f1, f2) for f1 in diff_features[:5] for f2 in accel_features[:4]],
             ]
@@ -5632,10 +5544,10 @@ class VectorizedAdvancedFeatureEngineering:
 
             # Combine all interaction combinations with stricter caps
             all_combinations = (
-                high_value_combinations +
-                cross_timeframe_combinations[:8] +  # further limited
-                polynomial_combinations[:6] +
-                volatility_regime_combinations[:6]
+                high_value_combinations
+                + cross_timeframe_combinations[:8]  # further limited
+                + polynomial_combinations[:6]
+                + volatility_regime_combinations[:6]
             )
 
             # Strict cap on total interaction pairs to control explosion
@@ -5650,7 +5562,9 @@ class VectorizedAdvancedFeatureEngineering:
 
                     # Additional validation to ensure features are not coroutines
                     if hasattr(feat1, "__await__") or hasattr(feat2, "__await__"):
-                        self.logger.warning(f"⚠️ Skipping interaction for coroutine features: {feat1_name}, {feat2_name}")
+                        self.logger.warning(
+                            f"⚠️ Skipping interaction for coroutine features: {feat1_name}, {feat2_name}"
+                        )
                         continue
 
                     # Convert to pandas Series if needed
@@ -5676,15 +5590,22 @@ class VectorizedAdvancedFeatureEngineering:
                     interaction_mult = feat1_series * feat2_series
                     interaction_name = f"{feat1_name}_x_{feat2_name}"
                     interaction_features[interaction_name] = interaction_mult
-                    interaction_features[f"{interaction_name}_norm"] = self._normalize_with_rolling_zscore(interaction_mult, window=20)
+                    interaction_features[f"{interaction_name}_norm"] = self._normalize_with_rolling_zscore(
+                        interaction_mult, window=20
+                    )
 
                     # 2. Division interaction (with safety check)
                     if (feat2_series != 0).any():
                         interaction_div = feat1_series / (feat2_series + 1e-8)
                         interaction_features[f"{interaction_name}_div"] = interaction_div
-                        interaction_features[f"{interaction_name}_div_norm"] = self._normalize_with_rolling_zscore(interaction_div, window=20)
+                        interaction_features[f"{interaction_name}_div_norm"] = self._normalize_with_rolling_zscore(
+                            interaction_div, window=20
+                        )
 
-            self.logger.info(f"✅ Generated {len(interaction_features)} comprehensive interaction features (capped to {MAX_INTERACTION_PAIRS} pairs)")
+            self.logger.info(
+                f"✅ Generated {
+                    len(interaction_features)} comprehensive interaction features (capped to {MAX_INTERACTION_PAIRS} pairs)"
+            )
             return interaction_features
 
         except Exception as e:
@@ -5694,22 +5615,18 @@ class VectorizedAdvancedFeatureEngineering:
     @handle_errors(
         exceptions=(ValueError, AttributeError, MemoryError),
         default_return={},
-        context="cross-timeframe feature generation"
+        context="cross-timeframe feature generation",
     )
-    @memory_efficient(
-        chunk_size=2000,
-        streaming_processing=True,
-        memory_pool=True,
-        cleanup_frequency=15
-    )
+    @memory_efficient(chunk_size=2000, streaming_processing=True, memory_pool=True, cleanup_frequency=15)
     @debug_training_step(
         log_intermediate_results=True,
         save_debug_artifacts=False,
         performance_profiling=True,
-        error_context_preservation=True
+        error_context_preservation=True,
     )
     async def _generate_cross_timeframe_features(
-        self, features: dict[str, Any], price_data: pd.DataFrame) -> dict[str, Any]:
+        self, features: dict[str, Any], price_data: pd.DataFrame
+    ) -> dict[str, Any]:
         """Generate cross-timeframe difference features.
 
         Args:
@@ -5745,8 +5662,8 @@ class VectorizedAdvancedFeatureEngineering:
                 self.logger.warning("⚠️ No valid features found for cross-timeframe generation")
                 return {}
 
-        # For now, we'll create cross-timeframe features based on different lookback periods
-        # simulating different timeframes with the same data
+            # For now, we'll create cross-timeframe features based on different lookback periods
+            # simulating different timeframes with the same data
 
             # Define cross-timeframe combinations
             cross_combinations = [
@@ -5754,20 +5671,16 @@ class VectorizedAdvancedFeatureEngineering:
                 ("rsi", 3, 1, "rsi_diff_3m_1m"),
                 ("rsi", 5, 1, "rsi_diff_5m_1m"),
                 ("rsi", 10, 3, "rsi_diff_10m_3m"),
-
                 # Price momentum cross-timeframe differences
                 ("price_momentum_5", 3, 1, "momentum_5_diff_3m_1m"),
                 ("price_momentum_10", 5, 1, "momentum_10_diff_5m_1m"),
                 ("price_momentum_20", 10, 3, "momentum_20_diff_10m_3m"),
-
                 # Volume momentum cross-timeframe differences
                 ("volume_momentum", 3, 1, "volume_momentum_diff_3m_1m"),
                 ("volume_momentum", 5, 1, "volume_momentum_diff_5m_1m"),
-
                 # Volatility cross-timeframe differences
                 ("volatility_20", 10, 3, "volatility_20_diff_10m_3m"),
                 ("volatility_10", 5, 1, "volatility_10_diff_5m_1m"),
-
                 # MACD cross-timeframe differences
                 ("macd", 5, 1, "macd_diff_5m_1m"),
                 ("macd_signal", 5, 1, "macd_signal_diff_5m_1m"),
@@ -5804,7 +5717,9 @@ class VectorizedAdvancedFeatureEngineering:
 
                         # Additional validation to ensure normalized feature is not a coroutine
                         if hasattr(cross_diff_norm, "__await__"):
-                            self.logger.warning(f"⚠️ Skipping coroutine normalized feature for cross-timeframe: {output_name}")
+                            self.logger.warning(
+                                f"⚠️ Skipping coroutine normalized feature for cross-timeframe: {output_name}"
+                            )
                             continue
 
                         # Store features
@@ -5822,7 +5737,9 @@ class VectorizedAdvancedFeatureEngineering:
                 final_cross_timeframe_features[key] = value
 
             if coroutine_count > 0:
-                self.logger.info(f"⚠️ Filtered out {coroutine_count} coroutine features from final cross-timeframe output")
+                self.logger.info(
+                    f"⚠️ Filtered out {coroutine_count} coroutine features from final cross-timeframe output"
+                )
 
             self.logger.info(f"✅ Generated {len(final_cross_timeframe_features)} cross-timeframe features")
             return final_cross_timeframe_features
@@ -5831,8 +5748,7 @@ class VectorizedAdvancedFeatureEngineering:
             self.logger.exception(f"🚨 Error generating cross-timeframe features: {e}")
             return {}
 
-    def _validate_difference_engineering_inputs(
-        self, features: dict[str, Any], price_data: pd.DataFrame) -> None:
+    def _validate_difference_engineering_inputs(self, features: dict[str, Any], price_data: pd.DataFrame) -> None:
         """Validate inputs before difference and acceleration feature engineering.
 
         Args:
@@ -5931,8 +5847,7 @@ class VectorizedAdvancedFeatureEngineering:
             self.logger.exception(f"❌ Validation failed for enhanced features: {e}")
             raise
 
-    def _log_feature_engineering_summary(
-        self, all_features: dict[str, Any], enhanced_features: dict[str, Any]) -> None:
+    def _log_feature_engineering_summary(self, all_features: dict[str, Any], enhanced_features: dict[str, Any]) -> None:
         """Log a summary of the feature engineering process.
 
         Args:
@@ -5987,6 +5902,7 @@ class VectorizedAdvancedFeatureEngineering:
             # Log memory usage
             try:
                 import psutil
+
                 memory_usage = psutil.Process().memory_info().rss / 1024 / 1024  # MB
                 self.logger.info(f"  - Memory usage: {memory_usage:.1f} MB")
             except ImportError:
@@ -6005,13 +5921,19 @@ class VectorizedAdvancedFeatureEngineering:
                 return {}
 
             # Calculate daily data for SR levels
-            daily_data = price_data.resample("D").agg({
-                "open": "first",
-                "high": "max",
-                "low": "min",
-                "close": "last",
-                "volume": "sum",
-            }).dropna()
+            daily_data = (
+                price_data.resample("D")
+                .agg(
+                    {
+                        "open": "first",
+                        "high": "max",
+                        "low": "min",
+                        "close": "last",
+                        "volume": "sum",
+                    }
+                )
+                .dropna()
+            )
 
             if daily_data.empty:
                 self.logger.warning("⚠️ No daily data available for S/R level generation")
@@ -6027,21 +5949,25 @@ class VectorizedAdvancedFeatureEngineering:
             current_price = price_data["close"].iloc[-1]
 
             # Add multiple support levels
-            support_levels.extend([
-                recent_low * 0.95,  # 5% below recent low
-                recent_low * 0.98,  # 2% below recent low
-                recent_low,  # Recent low
-                current_price * 0.95,  # 5% below current price
-            ])
+            support_levels.extend(
+                [
+                    recent_low * 0.95,  # 5% below recent low
+                    recent_low * 0.98,  # 2% below recent low
+                    recent_low,  # Recent low
+                    current_price * 0.95,  # 5% below current price
+                ]
+            )
 
             # Add multiple resistance levels
-            resistance_levels.extend([
-                current_price * 1.02,  # 2% above current price
-                current_price * 1.05,  # 5% above current price
-                recent_high,  # Recent high
-                recent_high * 1.02,    # 2% above recent high
-                recent_high * 1.05,    # 5% above recent high
-            ])
+            resistance_levels.extend(
+                [
+                    current_price * 1.02,  # 2% above current price
+                    current_price * 1.05,  # 5% above current price
+                    recent_high,  # Recent high
+                    recent_high * 1.02,  # 2% above recent high
+                    recent_high * 1.05,  # 5% above recent high
+                ]
+            )
 
             # Remove duplicates and sort
             support_levels = sorted({level for level in support_levels if level > 0})
@@ -6052,7 +5978,11 @@ class VectorizedAdvancedFeatureEngineering:
                 "resistance": resistance_levels,
             }
 
-            self.logger.info(f"✅ Generated {len(support_levels)} support levels and {len(resistance_levels)} resistance levels")
+            self.logger.info(
+                f"✅ Generated {
+                    len(support_levels)} support levels and {
+                    len(resistance_levels)} resistance levels"
+            )
             return sr_levels
 
         except Exception as e:
@@ -6091,7 +6021,7 @@ class VectorizedAdvancedFeatureEngineering:
                 "5m": pd.Timedelta(minutes=5),
                 "15m": pd.Timedelta(minutes=15),
                 "30m": pd.Timedelta(minutes=30),
-                "1h": pd.Timedelta(hours=1)
+                "1h": pd.Timedelta(hours=1),
             }
 
             expected_interval = timeframe_map.get(timeframe, pd.Timedelta(minutes=1))
@@ -6104,7 +6034,10 @@ class VectorizedAdvancedFeatureEngineering:
             if irregular_ratio < 0.05:  # Less than 5% irregular
                 return data
 
-            self.logger.info(f"🔧 Handling irregular time intervals for {timeframe} timeframe (irregularity: {irregular_ratio:.3f})")
+            self.logger.info(
+                f"🔧 Handling irregular time intervals for {timeframe} timeframe (irregularity: {
+                    irregular_ratio:.3f})"
+            )
 
             # Strategy 1: Forward fill small gaps
             if irregular_ratio < 0.15:  # Less than 15% irregular
@@ -6150,30 +6083,30 @@ class VectorizedAdvancedFeatureEngineering:
         try:
             if data.empty:
                 return "Input data is empty"
-            
+
             if len(data) < min_records:
                 return f"Insufficient data: {len(data)} records (minimum: {min_records})"
-            
+
             # Check for required columns
             required_columns = ["open", "high", "low", "close"]
             missing_columns = [col for col in required_columns if col not in data.columns]
             if missing_columns:
                 return f"Missing required columns: {missing_columns}"
-            
+
             # Check for price data quality
             price_data = data[required_columns].dropna()
             if len(price_data) < min_records:
                 return f"Insufficient price data: {len(price_data)} records (minimum: {min_records})"
-            
+
             # Check for volume data if available
             if "volume" in data.columns:
                 volume_data = data["volume"].dropna()
                 if len(volume_data) < min_records:
                     return f"Insufficient volume data: {len(volume_data)} records (minimum: {min_records})"
-            
+
             self.logger.info("✅ Input data validation passed")
             return None
-            
+
         except Exception as e:
             return f"Validation error: {e}"
 
@@ -6186,9 +6119,5 @@ class VectorizedAdvancedFeatureEngineering:
             "range_features": {},
             "regime_features": {},
             "cross_timeframe_features": {},
-            "metadata": {
-                "generation_timestamp": pd.Timestamp.now(),
-                "total_features": 0,
-                "feature_types": []
-            }
+            "metadata": {"generation_timestamp": pd.Timestamp.now(), "total_features": 0, "feature_types": []},
         }

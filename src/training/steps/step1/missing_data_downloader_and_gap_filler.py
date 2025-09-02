@@ -17,19 +17,19 @@ sys.path.insert(0, str(project_root))
 
 # Try to import required modules
 try:
+    from src.exchange.binance_exchange import BinanceExchange
+    from src.training.steps.step01.data_gap_detector import DataGapDetector
     from src.utils.centralized_decorators import (
+        comprehensive_data_validation,
+        guard_dataframe_nulls,
         handle_errors,
+        optimize_memory_usage,
+        secure_data_processing,
         validate_data_quality,
         validate_data_structure,
-        guard_dataframe_nulls,
-        optimize_memory_usage,
-        comprehensive_data_validation,
-        secure_data_processing,
         with_tracing_span,
     )
     from src.utils.logger import system_logger
-    from src.training.steps.step01.data_gap_detector import DataGapDetector
-    from src.exchange.binance_exchange import BinanceExchange
 
     # Configuration for Binance
     CONFIG = {
@@ -41,49 +41,58 @@ try:
 except ImportError as e:
     # Fallback logger
     import logging
+
     logging.basicConfig(level=logging.INFO)
     system_logger = logging.getLogger("MissingDataDownloaderFallback")
     system_logger.warning(f"⚠️ Some imports failed: {e}")
-    
+
     # Fallback decorators
     def handle_errors(*args, **kwargs):
         def decorator(func):
             return func
+
         return decorator
 
     def with_tracing_span(*args, **kwargs):
         def decorator(func):
             return func
+
         return decorator
 
     def validate_data_quality(*args, **kwargs):
         def decorator(func):
             return func
+
         return decorator
 
     def validate_data_structure(*args, **kwargs):
         def decorator(func):
             return func
+
         return decorator
 
     def guard_dataframe_nulls(*args, **kwargs):
         def decorator(func):
             return func
+
         return decorator
 
     def optimize_memory_usage(*args, **kwargs):
         def decorator(func):
             return func
+
         return decorator
 
     def comprehensive_data_validation(*args, **kwargs):
         def decorator(func):
             return func
+
         return decorator
 
     def secure_data_processing(*args, **kwargs):
         def decorator(func):
             return func
+
         return decorator
 
     DataGapDetector = None
@@ -91,6 +100,7 @@ except ImportError as e:
 
     # Fallback logger
     import logging
+
     logging.basicConfig(level=logging.INFO)
     system_logger = logging.getLogger("MissingDataDownloaderFallback")
 
@@ -128,7 +138,7 @@ class MissingDataDownloaderAndGapFiller:
     @handle_errors(
         exceptions=(OSError, ValueError, TypeError, KeyError),
         default_return=False,
-        context="missing_data_downloader.ensure_exchange_initialized"
+        context="missing_data_downloader.ensure_exchange_initialized",
     )
     async def _ensure_exchange_initialized(self) -> bool:
         """Ensure the exchange is properly initialized."""
@@ -156,7 +166,7 @@ class MissingDataDownloaderAndGapFiller:
     @handle_errors(
         exceptions=(OSError, ValueError, TypeError, KeyError),
         default_return={"success": False, "error": "Download failed"},
-        context="missing_data_downloader.download_aggtrades_data"
+        context="missing_data_downloader.download_aggtrades_data",
     )
     async def download_aggtrades_data(
         self, symbol: str, exchange: str, start_date: datetime, end_date: datetime
@@ -232,9 +242,7 @@ class MissingDataDownloaderAndGapFiller:
 
         return results
 
-    async def _download_single_aggtrades_day(
-        self, symbol: str, exchange: str, date: datetime.date
-    ) -> bool:
+    async def _download_single_aggtrades_day(self, symbol: str, exchange: str, date: datetime.date) -> bool:
         """Download aggtrades data for a single day."""
         try:
             # Create filename
@@ -243,7 +251,7 @@ class MissingDataDownloaderAndGapFiller:
 
             # Convert date to datetime for API calls
             start_time = datetime.combine(date, datetime.min.time())
-            end_time = datetime.combine(date, datetime.max.time())
+            datetime.combine(date, datetime.max.time())
 
             # Download data using exchange API
             if self.exchange:
@@ -256,7 +264,7 @@ class MissingDataDownloaderAndGapFiller:
                 if data:
                     # Convert to DataFrame
                     df = pd.DataFrame(data)
-                    
+
                     # Standardize column names
                     column_mapping = {
                         "a": "agg_trade_id",
@@ -267,7 +275,7 @@ class MissingDataDownloaderAndGapFiller:
                         "T": "timestamp",
                         "m": "is_buyer_maker",
                     }
-                    
+
                     if list(df.columns) != list(column_mapping.values()):
                         df = df.rename(columns=column_mapping)
 
@@ -276,7 +284,7 @@ class MissingDataDownloaderAndGapFiller:
 
                     # Save to parquet
                     df.to_parquet(file_path, compression="zstd", index=False)
-                    
+
                     logger.info(f"✅ Downloaded {filename}: {len(df)} rows")
                     return True
                 else:
@@ -295,12 +303,12 @@ class MissingDataDownloaderAndGapFiller:
         try:
             pattern = f"aggtrades_{exchange}_{symbol}_*.parquet"
             files = list(self.data_cache_path.glob(pattern))
-            
+
             total_rows = 0
             for file_path in files:
                 df = pd.read_parquet(file_path)
                 total_rows += len(df)
-            
+
             return total_rows
         except Exception as e:
             logger.exception(f"❌ Error counting rows: {e}")
@@ -310,11 +318,9 @@ class MissingDataDownloaderAndGapFiller:
     @handle_errors(
         exceptions=(OSError, ValueError, TypeError, KeyError),
         default_return={"success": False, "error": "Download failed"},
-        context="missing_data_downloader.download_klines_data"
+        context="missing_data_downloader.download_klines_data",
     )
-    async def download_klines_data(
-        self, symbol: str, exchange: str, start_date: datetime, end_date: datetime
-    ) -> dict:
+    async def download_klines_data(self, symbol: str, exchange: str, start_date: datetime, end_date: datetime) -> dict:
         """Download klines data for a specific date range.
 
         Args:
@@ -390,9 +396,7 @@ class MissingDataDownloaderAndGapFiller:
 
         return results
 
-    async def _download_single_klines_month(
-        self, symbol: str, exchange: str, month: datetime
-    ) -> bool:
+    async def _download_single_klines_month(self, symbol: str, exchange: str, month: datetime) -> bool:
         """Download klines data for a single month."""
         try:
             # Create filename
@@ -418,13 +422,13 @@ class MissingDataDownloaderAndGapFiller:
                 if data:
                     # Convert to DataFrame
                     df = pd.DataFrame(data, columns=["timestamp", "open", "high", "low", "close", "volume"])
-                    
+
                     # Convert timestamp
                     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
 
                     # Save to parquet
                     df.to_parquet(file_path, compression="zstd", index=False)
-                    
+
                     logger.info(f"✅ Downloaded {filename}: {len(df)} rows")
                     return True
                 else:
@@ -443,12 +447,12 @@ class MissingDataDownloaderAndGapFiller:
         try:
             pattern = f"klines_{exchange}_{symbol}_1m_*.parquet"
             files = list(self.data_cache_path.glob(pattern))
-            
+
             total_rows = 0
             for file_path in files:
                 df = pd.read_parquet(file_path)
                 total_rows += len(df)
-            
+
             return total_rows
         except Exception as e:
             logger.exception(f"❌ Error counting rows: {e}")
@@ -458,11 +462,9 @@ class MissingDataDownloaderAndGapFiller:
     @handle_errors(
         exceptions=(OSError, ValueError, TypeError, KeyError),
         default_return={"success": False, "error": "Download failed"},
-        context="missing_data_downloader.download_futures_data"
+        context="missing_data_downloader.download_futures_data",
     )
-    async def download_futures_data(
-        self, symbol: str, exchange: str, start_date: datetime, end_date: datetime
-    ) -> dict:
+    async def download_futures_data(self, symbol: str, exchange: str, start_date: datetime, end_date: datetime) -> dict:
         """Download futures data for a specific date range.
 
         Args:
@@ -538,9 +540,7 @@ class MissingDataDownloaderAndGapFiller:
 
         return results
 
-    async def _download_single_futures_month(
-        self, symbol: str, exchange: str, month: datetime
-    ) -> bool:
+    async def _download_single_futures_month(self, symbol: str, exchange: str, month: datetime) -> bool:
         """Download futures data for a single month."""
         try:
             # Create filename
@@ -565,17 +565,17 @@ class MissingDataDownloaderAndGapFiller:
                 if data:
                     # Convert to DataFrame
                     df = pd.DataFrame(data)
-                    
+
                     # Ensure required columns
                     if "timestamp" not in df.columns and "fundingTime" in df.columns:
                         df["timestamp"] = df["fundingTime"]
-                    
+
                     # Convert timestamp
                     df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
 
                     # Save to parquet
                     df.to_parquet(file_path, compression="zstd", index=False)
-                    
+
                     logger.info(f"✅ Downloaded {filename}: {len(df)} rows")
                     return True
                 else:
@@ -594,12 +594,12 @@ class MissingDataDownloaderAndGapFiller:
         try:
             pattern = f"futures_{exchange}_{symbol}_*.parquet"
             files = list(self.data_cache_path.glob(pattern))
-            
+
             total_rows = 0
             for file_path in files:
                 df = pd.read_parquet(file_path)
                 total_rows += len(df)
-            
+
             return total_rows
         except Exception as e:
             logger.exception(f"❌ Error counting rows: {e}")
@@ -609,11 +609,9 @@ class MissingDataDownloaderAndGapFiller:
     @handle_errors(
         exceptions=(OSError, ValueError, TypeError, KeyError),
         default_return={"success": False, "error": "Download failed"},
-        context="missing_data_downloader.download_all_missing_data"
+        context="missing_data_downloader.download_all_missing_data",
     )
-    async def download_all_missing_data(
-        self, symbol: str, exchange: str, end_date: datetime | None = None
-    ) -> dict:
+    async def download_all_missing_data(self, symbol: str, exchange: str, end_date: datetime | None = None) -> dict:
         """Download all missing data for a symbol and exchange.
 
         Args:
@@ -626,7 +624,7 @@ class MissingDataDownloaderAndGapFiller:
 
         """
         download_start = datetime.now()
-        
+
         if end_date is None:
             end_date = datetime.now()
             logger.info(f"📅 No end_date provided, using default: {end_date.date()} (today)")
@@ -675,7 +673,7 @@ class MissingDataDownloaderAndGapFiller:
 
         download_end = datetime.now()
         download_time = download_end - download_start
-        
+
         logger.info("-" * 60)
         logger.info("📊 COMPREHENSIVE DOWNLOAD SUMMARY")
         logger.info(f"⏱️  Total download time: {download_time}")
@@ -683,22 +681,22 @@ class MissingDataDownloaderAndGapFiller:
         logger.info(f"📅 Period: {start_date.date()} to {end_date.date()}")
         logger.info(f"✅ Success: {results['success']}")
         logger.info(f"❌ Errors: {len(results['errors'])}")
-        
+
         # Log individual download results
         for data_type, download_result in results["download_results"].items():
             if download_result.get("success"):
                 logger.info(f"✅ {data_type.title()}: Downloaded successfully")
             else:
                 logger.error(f"❌ {data_type.title()}: Download failed")
-        
+
         if results["errors"]:
             logger.error("❌ DOWNLOAD ERRORS:")
             for i, error in enumerate(results["errors"], 1):
                 logger.error(f"  {i}. {error}")
-        
+
         if results["success"]:
             logger.info("🎉 COMPREHENSIVE DOWNLOAD COMPLETED SUCCESSFULLY!")
         else:
             logger.error("❌ COMPREHENSIVE DOWNLOAD COMPLETED WITH ERRORS!")
-        
+
         return results

@@ -8,7 +8,6 @@ Coordinates data collection processes for step01. This orchestrator focuses on:
 Note: Data conversion and formatting is handled by step1_5_data_converter.py
 """
 
-import asyncio
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -65,10 +64,15 @@ class Step1Orchestrator:
             "warnings": [],
             "step1_5_ready": False,
         },
-        context="step1_orchestrator.run_complete_step1"
+        context="step1_orchestrator.run_complete_step1",
     )
     async def run_complete_step1(
-        self, symbol: str, exchange: str, start_date: datetime | None = None, end_date: datetime | None = None, auto_fix: bool = True
+        self,
+        symbol: str,
+        exchange: str,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+        auto_fix: bool = True,
     ) -> dict:
         """Run complete step01 data collection process including:
         1. Detect missing data gaps (aggtrades, klines, futures)
@@ -127,7 +131,10 @@ class Step1Orchestrator:
             logger.info("-" * 60)
 
             missing_data = self.gap_detector.detect_missing_data(
-                symbol, exchange, start_date, end_date,
+                symbol,
+                exchange,
+                start_date,
+                end_date,
             )
             results["missing_data"] = missing_data
 
@@ -151,7 +158,9 @@ class Step1Orchestrator:
 
                 # Run async download process
                 download_results = await self.data_downloader.download_all_missing_data(
-                    symbol, exchange, end_date,
+                    symbol,
+                    exchange,
+                    end_date,
                 )
                 results["download_results"] = download_results
 
@@ -178,9 +187,7 @@ class Step1Orchestrator:
             logger.info("📊 STEP 1.4: AGGTRADES VALIDATION AND FIXING")
             logger.info("-" * 60)
 
-            aggtrades_validation = self.aggtrades_validator.validate_all_aggtrades(
-                symbol, exchange, auto_fix=auto_fix
-            )
+            aggtrades_validation = self.aggtrades_validator.validate_all_aggtrades(symbol, exchange, auto_fix=auto_fix)
             results["aggtrades_validation"] = aggtrades_validation
 
             if aggtrades_validation["invalid_files"] > 0:
@@ -198,7 +205,8 @@ class Step1Orchestrator:
             logger.info("-" * 60)
 
             conversion_results = self.aggtrades_validator.convert_to_parquet(
-                symbol, exchange,
+                symbol,
+                exchange,
             )
             results["parquet_conversion"] = conversion_results
 
@@ -212,7 +220,8 @@ class Step1Orchestrator:
             logger.info("-" * 60)
 
             consolidation_results = self.data_preparation.create_1m_consolidated_data(
-                symbol, exchange,
+                symbol,
+                exchange,
             )
             results["1m_consolidation"] = consolidation_results
 
@@ -232,7 +241,7 @@ class Step1Orchestrator:
                 timeframes=["5m", "15m", "30m"],
                 start_date=start_date,
                 end_date=end_date,
-                create_partitions=True
+                create_partitions=True,
             )
             results["resampling"] = resampling_results
 
@@ -249,7 +258,8 @@ class Step1Orchestrator:
             logger.info("-" * 60)
 
             preparation_results = self.data_preparation.prepare_for_step1_5(
-                symbol, exchange,
+                symbol,
+                exchange,
             )
             results["data_preparation"] = preparation_results
 
@@ -281,7 +291,7 @@ class Step1Orchestrator:
             # Calculate execution time
             end_time = datetime.now()
             execution_time = end_time - start_time
-            
+
             logger.info("=" * 80)
             logger.info("📊 STEP1 EXECUTION SUMMARY")
             logger.info(f"⏱️  Total execution time: {execution_time}")
@@ -291,17 +301,17 @@ class Step1Orchestrator:
             logger.info(f"❌ Errors: {len(results['errors'])}")
             logger.info(f"⚠️  Warnings: {len(results['warnings'])}")
             logger.info(f"🎯 Step1_5 ready: {results['step1_5_ready']}")
-            
+
             if results["errors"]:
                 logger.error("❌ ERRORS ENCOUNTERED:")
                 for i, error in enumerate(results["errors"], 1):
                     logger.error(f"  {i}. {error}")
-            
+
             if results["warnings"]:
                 logger.warning("⚠️  WARNINGS ENCOUNTERED:")
                 for i, warning in enumerate(results["warnings"], 1):
                     logger.warning(f"  {i}. {warning}")
-            
+
             if results["success"]:
                 logger.info("🎉 STEP1 PROCESS COMPLETED SUCCESSFULLY!")
                 logger.info(f"📈 Ready for step1_5: {'Yes' if results['step1_5_ready'] else 'No'}")
@@ -335,7 +345,7 @@ class Step1Orchestrator:
             "required_files": [],
             "missing_files": [],
         },
-        context="step1_orchestrator.validate_step1_5_readiness"
+        context="step1_orchestrator.validate_step1_5_readiness",
     )
     def validate_step1_5_readiness(self, symbol: str, exchange: str) -> dict:
         """Validate that the data is ready for step1_5_data_converter.py processing.
@@ -385,9 +395,7 @@ class Step1Orchestrator:
 
         # Check for 1m consolidated data (should be created by step01)
         data_cache_path = Path("data_cache")
-        consolidated_1m_path = (
-            data_cache_path / f"klines_{exchange}_{symbol}_1m_consolidated.parquet"
-        )
+        consolidated_1m_path = data_cache_path / f"klines_{exchange}_{symbol}_1m_consolidated.parquet"
 
         if not consolidated_1m_path.exists():
             readiness_result["ready"] = False
@@ -409,11 +417,9 @@ class Step1Orchestrator:
     @handle_errors(
         exceptions=(OSError, ValueError, TypeError, KeyError, AttributeError),
         default_return="❌ ERROR: Failed to generate comprehensive report",
-        context="step1_orchestrator.generate_comprehensive_report"
+        context="step1_orchestrator.generate_comprehensive_report",
     )
-    def generate_comprehensive_report(
-        self, symbol: str, exchange: str, results: dict
-    ) -> str:
+    def generate_comprehensive_report(self, symbol: str, exchange: str, results: dict) -> str:
         """Generate a comprehensive report of the step01 process.
 
         Args:
@@ -427,7 +433,7 @@ class Step1Orchestrator:
         """
         report = f"""
 🎯 COMPREHENSIVE STEP1 REPORT FOR {exchange}_{symbol}
-{'='*80}
+{'=' * 80}
 
 📊 PROCESS SUMMARY:
 • Status: {'✅ SUCCESS' if results['success'] else '❌ FAILED'}
@@ -534,7 +540,7 @@ class Step1Orchestrator:
 """
 
         report += f"""
-{'='*80}
+{'=' * 80}
 """
 
         return report
@@ -542,8 +548,12 @@ class Step1Orchestrator:
     @with_tracing_span("quick_health_check")
     @handle_errors(
         exceptions=(OSError, ValueError, TypeError, KeyError, FileNotFoundError, PermissionError),
-        default_return={"healthy": False, "issues": ["Health check failed"], "recommendations": ["Check system status"]},
-        context="step1_orchestrator.quick_health_check"
+        default_return={
+            "healthy": False,
+            "issues": ["Health check failed"],
+            "recommendations": ["Check system status"],
+        },
+        context="step1_orchestrator.quick_health_check",
     )
     def quick_health_check(self, symbol: str, exchange: str) -> dict:
         """Perform a quick health check of the data.
@@ -639,10 +649,7 @@ class Step1Orchestrator:
             and all(status["resampled_data"].values())
         ):
             status["overall_status"] = "complete"
-        elif (
-            status["data_available"]["aggtrades"] > 0
-            or status["data_available"]["klines"] > 0
-        ):
+        elif status["data_available"]["aggtrades"] > 0 or status["data_available"]["klines"] > 0:
             status["overall_status"] = "partial"
         else:
             status["overall_status"] = "missing"

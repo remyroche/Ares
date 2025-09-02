@@ -1,23 +1,18 @@
 """Validator for Step 11: Confidence Calibration."""
 
-import asyncio
+from src.utils.base_validator import BaseValidator
 import os
 import sys
 from pathlib import Path
 from typing import Any
 
 from src.utils.warning_symbols import (
-    error,
-    failed,
     missing,
 )
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
-
-from src.config import CONFIG
-from src.utils.base_validator import BaseValidator
 
 
 class Step11ConfidenceCalibrationValidator(BaseValidator):
@@ -95,7 +90,10 @@ class Step11ConfidenceCalibrationValidator(BaseValidator):
         return True
 
     def _validate_calibration_files(
-        self, symbol: str, exchange: str, data_dir: str,
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
     ) -> bool:
         """Validate that calibration files exist.
 

@@ -102,12 +102,7 @@ class DataFileReformatter:
         try:
             with (
                 open(self.input_path, encoding="utf-8") as infile,
-                open(
-                    self.output_path,
-                    "w",
-                    newline="",
-                    encoding="utf-8"
-                ) as outfile,
+                open(self.output_path, "w", newline="", encoding="utf-8") as outfile,
             ):
                 writer = csv.writer(outfile)
                 return processor(infile, writer)
@@ -176,7 +171,6 @@ class DataFileReformatter:
                 agg_trade_id = other_cols[3] if len(other_cols) > 3 else f"agg_{timestamp}_{price}_{quantity}"
 
                 writer.writerow([timestamp, price, quantity, is_buyer_maker, agg_trade_id])
-
 
             return True
         except Exception:
@@ -266,7 +260,6 @@ def auto_reformat_aggtrades_files() -> None:
             shutil.copy2(backup_path, file_path)
 
 
-
 def auto_reformat_aggtrades_files_for_exchange(exchange: str, symbol: str) -> None:
     """Automatically detect and reformat aggtrades CSV files for a specific exchange and symbol.
     This is a targeted version that only processes files for the specified exchange/symbol.
@@ -316,7 +309,6 @@ def auto_reformat_aggtrades_files_for_exchange(exchange: str, symbol: str) -> No
             shutil.copy2(backup_path, file_path)
 
 
-
 def create_dummy_files(input_dir) -> None:
     """Creates a set of dummy CSV files for demonstration purposes.
     This function simulates the two different formats you provided.
@@ -350,9 +342,7 @@ def create_dummy_files(input_dir) -> None:
 class CSVNormalizer:
     """Class to handle normalization of CSV files with different formats."""
 
-    def __init__(
-        self, input_directory: str, output_directory: str, write_header: bool = True
-    ) -> None:
+    def __init__(self, input_directory: str, output_directory: str, write_header: bool = True) -> None:
         self.input_directory = input_directory
         self.output_directory = output_directory
         self.write_header = write_header

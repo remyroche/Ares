@@ -8,6 +8,15 @@ Prepares data for step1_5_data_converter.py processing. This module focuses on:
 Note: Actual resampling is handled by step1_5_data_converter.py
 """
 
+from src.utils.centralized_decorators import (
+    comprehensive_data_validation,
+    guard_dataframe_nulls,
+    handle_errors,
+    optimize_memory_usage,
+    validate_data_quality,
+    validate_data_structure,
+    with_tracing_span,
+)
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -20,16 +29,6 @@ from src.utils.logger import system_logger
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.centralized_decorators import (
-    ValidationLevel,
-    comprehensive_data_validation,
-    guard_dataframe_nulls,
-    handle_errors,
-    optimize_memory_usage,
-    validate_data_quality,
-    validate_data_structure,
-    with_tracing_span,
-)
 
 logger = system_logger.getChild("DataPreparation")
 
@@ -68,9 +67,7 @@ class DataPreparation:
         self.data_cache_path.mkdir(exist_ok=True)
 
     @with_tracing_span("get_klines_files")
-    def get_klines_files(
-        self, symbol: str, exchange: str, interval: str = "1m"
-    ) -> list[Path]:
+    def get_klines_files(self, symbol: str, exchange: str, interval: str = "1m") -> list[Path]:
         """Get all klines files for a symbol and exchange."""
         pattern = f"klines_{exchange}_{symbol}_{interval}_*.csv"
         csv_files = list(self.data_cache_path.glob(pattern))
@@ -96,7 +93,7 @@ class DataPreparation:
             pd.errors.ParserError,
         ),
         default_return=pd.DataFrame(),
-        context="data_resampler.load_klines_data"
+        context="data_resampler.load_klines_data",
     )
     def load_klines_data(
         self, symbol: str, exchange: str, start_date: datetime | None = None, end_date: datetime | None = None
@@ -153,9 +150,7 @@ class DataPreparation:
         combined_df = pd.concat(dataframes, ignore_index=True)
 
         # Sort by timestamp and remove duplicates
-        combined_df = combined_df.sort_values("timestamp").drop_duplicates(
-            subset=["timestamp"]
-        )
+        combined_df = combined_df.sort_values("timestamp").drop_duplicates(subset=["timestamp"])
 
         logger.info(
             f"📊 Combined klines data: {len(combined_df)} rows from {start_date} to {end_date}",
@@ -183,7 +178,7 @@ class DataPreparation:
             "issues": ["Data preparation failed"],
             "data_summary": {},
         },
-        context="data_resampler.prepare_for_step1_5"
+        context="data_resampler.prepare_for_step1_5",
     )
     def prepare_for_step1_5(self, symbol: str, exchange: str) -> dict:
         """Prepare data for step1_5_data_converter.py processing.
@@ -260,7 +255,7 @@ class DataPreparation:
             PermissionError,
         ),
         default_return=Path(),
-        context="data_resampler.save_resampled_data"
+        context="data_resampler.save_resampled_data",
     )
     def save_resampled_data(
         self, df: pd.DataFrame, symbol: str, exchange: str, timeframe: str, output_format: str = "parquet"
@@ -334,10 +329,15 @@ class DataPreparation:
     @handle_errors(
         exceptions=(OSError, ValueError, TypeError, KeyError, FileNotFoundError, PermissionError),
         default_return=None,
-        context="data_resampler.create_partitioned_dataset"
+        context="data_resampler.create_partitioned_dataset",
     )
     def create_partitioned_dataset(
-        self, df: pd.DataFrame, symbol: str, exchange: str, timeframe: str, ) -> Path:
+        self,
+        df: pd.DataFrame,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+    ) -> Path:
         """Create partitioned Parquet dataset for efficient querying.
 
         Args:
@@ -355,9 +355,7 @@ class DataPreparation:
             return None
 
         # Create partitioned dataset directory
-        dataset_dir = (
-            self.data_cache_path / "partitioned" / exchange / symbol / timeframe
-        )
+        dataset_dir = self.data_cache_path / "partitioned" / exchange / symbol / timeframe
         dataset_dir.mkdir(parents=True, exist_ok=True)
 
         # Add partitioning columns
@@ -369,10 +367,7 @@ class DataPreparation:
         # Save as partitioned dataset
         try:
             df_partitioned.to_parquet(
-                dataset_dir,
-                partition_cols=["year", "month", "day"],
-                compression="zstd",
-                index=False
+                dataset_dir, partition_cols=["year", "month", "day"], compression="zstd", index=False
             )
 
             logger.info(
@@ -408,10 +403,16 @@ class DataPreparation:
             "success": False,
             "error": "Resampling failed",
         },
-        context="data_resampler.resample_all_timeframes"
+        context="data_resampler.resample_all_timeframes",
     )
     def resample_all_timeframes(
-        self, symbol: str, exchange: str, timeframes: list[str] | None = None, start_date: datetime | None = None, end_date: datetime | None = None, create_partitions: bool = True
+        self,
+        symbol: str,
+        exchange: str,
+        timeframes: list[str] | None = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+        create_partitions: bool = True,
     ) -> dict:
         """Resample data to all specified timeframes.
 
@@ -428,7 +429,7 @@ class DataPreparation:
 
         """
         resampling_start = datetime.now()
-        
+
         if timeframes is None:
             timeframes = ["5m", "15m", "30m"]
 
@@ -477,7 +478,10 @@ class DataPreparation:
 
                 # Save resampled data
                 output_path = self.save_resampled_data(
-                    resampled_df, symbol, exchange, timeframe,
+                    resampled_df,
+                    symbol,
+                    exchange,
+                    timeframe,
                 )
 
                 if output_path:
@@ -486,7 +490,10 @@ class DataPreparation:
                 # Create partitioned dataset if requested
                 if create_partitions:
                     partition_path = self.create_partitioned_dataset(
-                        resampled_df, symbol, exchange, timeframe,
+                        resampled_df,
+                        symbol,
+                        exchange,
+                        timeframe,
                     )
                     if partition_path:
                         results["partitioned_datasets"][timeframe] = str(partition_path)
@@ -503,7 +510,7 @@ class DataPreparation:
 
         resampling_end = datetime.now()
         resampling_time = resampling_end - resampling_start
-        
+
         logger.info("-" * 60)
         logger.info("📊 RESAMPLING SUMMARY")
         logger.info(f"⏱️  Total resampling time: {resampling_time}")
@@ -511,22 +518,22 @@ class DataPreparation:
         logger.info(f"📁 Resampled files created: {len(results.get('resampled_files', {}))}")
         logger.info(f"📁 Partitioned datasets created: {len(results.get('partitioned_datasets', {}))}")
         logger.info(f"✅ Success: {results.get('success', False)}")
-        
-        if results.get('resampled_files'):
+
+        if results.get("resampled_files"):
             logger.info("📊 RESAMPLED FILES CREATED:")
-            for timeframe, file_path in results['resampled_files'].items():
+            for timeframe, file_path in results["resampled_files"].items():
                 logger.info(f"  • {timeframe}: {file_path}")
-        
-        if results.get('partitioned_datasets'):
+
+        if results.get("partitioned_datasets"):
             logger.info("📁 PARTITIONED DATASETS CREATED:")
-            for timeframe, dataset_path in results['partitioned_datasets'].items():
+            for timeframe, dataset_path in results["partitioned_datasets"].items():
                 logger.info(f"  • {timeframe}: {dataset_path}")
-        
-        if results.get('success'):
+
+        if results.get("success"):
             logger.info("✅ RESAMPLING COMPLETED SUCCESSFULLY!")
         else:
             logger.error(f"❌ RESAMPLING FAILED: {results.get('error', 'Unknown error')}")
-        
+
         return results
 
     @validate_data_quality()
@@ -551,10 +558,14 @@ class DataPreparation:
             "date_range": {},
             "issues": [],
         },
-        context="data_resampler.validate_resampled_data"
+        context="data_resampler.validate_resampled_data",
     )
     def validate_resampled_data(
-        self, symbol: str, exchange: str, timeframe: str, ) -> dict:
+        self,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+    ) -> dict:
         """Validate resampled data quality.
 
         Args:
@@ -646,7 +657,7 @@ class DataPreparation:
     @handle_errors(
         exceptions=(ValueError, TypeError, KeyError, pd.errors.EmptyDataError),
         default_return=pd.DataFrame(),
-        context="data_resampler.resample_to_timeframe"
+        context="data_resampler.resample_to_timeframe",
     )
     def resample_to_timeframe(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
         """Resample DataFrame to specified timeframe.
@@ -709,8 +720,14 @@ class DataPreparation:
     @with_tracing_span("validate_resampled_data_quality")
     @handle_errors(
         exceptions=(ValueError, TypeError, KeyError),
-        default_return={"valid": False, "issues": ["Validation failed"], "warnings": [], "row_count": 0, "timeframe": "unknown"},
-        context="data_resampler.validate_resampled_data_quality"
+        default_return={
+            "valid": False,
+            "issues": ["Validation failed"],
+            "warnings": [],
+            "row_count": 0,
+            "timeframe": "unknown",
+        },
+        context="data_resampler.validate_resampled_data_quality",
     )
     def validate_resampled_data_quality(self, df: pd.DataFrame, timeframe: str) -> dict:
         """Validate quality of resampled data.
@@ -789,7 +806,7 @@ class DataPreparation:
         """Generate a comprehensive resampling report."""
         report = f"""
 🔄 RESAMPLING REPORT FOR {exchange}_{symbol}
-{'='*60}
+{'=' * 60}
 
 📊 AVAILABLE TIMEFRAMES:
     pass
@@ -805,13 +822,13 @@ class DataPreparation:
                 try:
                     df = pd.read_parquet(file_path)
                     report += f"• {timeframe}: ✅ Available ({len(df)} rows)\n"
-                except:
+                except BaseException:
                     report += f"• {timeframe}: ❌ Corrupted\n"
             else:
                 report += f"• {timeframe}: ❌ Not available\n"
 
         report += f"""
-{'='*60}
+{'=' * 60}
 """
 
         return report
@@ -836,7 +853,7 @@ class DataPreparation:
             "file_path": "",
             "row_count": 0,
         },
-        context="data_resampler.create_1m_consolidated_data"
+        context="data_resampler.create_1m_consolidated_data",
     )
     def create_1m_consolidated_data(self, symbol: str, exchange: str) -> dict:
         """Create 1m consolidated data from klines files.
@@ -895,10 +912,7 @@ class DataPreparation:
             klines_df = klines_df.drop_duplicates(subset=["timestamp"])
 
             # Create output path
-            output_path = (
-                self.data_cache_path
-                / f"klines_{exchange}_{symbol}_1m_consolidated.parquet"
-            )
+            output_path = self.data_cache_path / f"klines_{exchange}_{symbol}_1m_consolidated.parquet"
 
             # Save consolidated data
             klines_df.to_parquet(output_path, compression="zstd", index=False)

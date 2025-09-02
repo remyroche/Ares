@@ -89,17 +89,23 @@ class HMMFeatureEnhancer:
             # Regime consistency over different timeframes
             if "composite_cluster_id" in df.columns:
                 # Rolling regime consistency
-                df["regime_consistency_5"] = df["composite_cluster_id"].rolling(5).apply(
-                    lambda x: len(x.unique()) == 1, raw=False
-                ).astype(float)
+                df["regime_consistency_5"] = (
+                    df["composite_cluster_id"].rolling(5).apply(lambda x: len(x.unique()) == 1, raw=False).astype(float)
+                )
 
-                df["regime_consistency_10"] = df["composite_cluster_id"].rolling(10).apply(
-                    lambda x: len(x.unique()) == 1, raw=False
-                ).astype(float)
+                df["regime_consistency_10"] = (
+                    df["composite_cluster_id"]
+                    .rolling(10)
+                    .apply(lambda x: len(x.unique()) == 1, raw=False)
+                    .astype(float)
+                )
 
-                df["regime_consistency_20"] = df["composite_cluster_id"].rolling(20).apply(
-                    lambda x: len(x.unique()) == 1, raw=False
-                ).astype(float)
+                df["regime_consistency_20"] = (
+                    df["composite_cluster_id"]
+                    .rolling(20)
+                    .apply(lambda x: len(x.unique()) == 1, raw=False)
+                    .astype(float)
+                )
 
             # State probability stability
             state_columns = [col for col in df.columns if col.endswith("_p_state_")]
@@ -108,7 +114,9 @@ class HMMFeatureEnhancer:
                 df["state_prob_volatility"] = df["dominant_state_prob"].rolling(10).std()
 
                 # State probability trend
-                df["state_prob_trend"] = df["dominant_state_prob"].rolling(5).mean() - df["dominant_state_prob"].rolling(20).mean()
+                df["state_prob_trend"] = (
+                    df["dominant_state_prob"].rolling(5).mean() - df["dominant_state_prob"].rolling(20).mean()
+                )
 
             self.logger.info("✅ Added regime stability features")
             return df
@@ -123,25 +131,37 @@ class HMMFeatureEnhancer:
             # Regime-momentum interactions
             if "composite_cluster_id" in df.columns and "momentum_strength" in df.columns:
                 df["regime_momentum_interaction"] = df["composite_cluster_id"] * df["momentum_strength"]
-                df["regime_momentum_divergence"] = df["momentum_strength"] - df.groupby("composite_cluster_id")["momentum_strength"].transform("mean")
+                df["regime_momentum_divergence"] = df["momentum_strength"] - df.groupby("composite_cluster_id")[
+                    "momentum_strength"
+                ].transform("mean")
 
             # Regime-volatility interactions
             if "composite_cluster_id" in df.columns and "volume_volatility" in df.columns:
                 df["regime_volatility_interaction"] = df["composite_cluster_id"] * df["volume_volatility"]
-                df["regime_volatility_divergence"] = df["volume_volatility"] - df.groupby("composite_cluster_id")["volume_volatility"].transform("mean")
+                df["regime_volatility_divergence"] = df["volume_volatility"] - df.groupby("composite_cluster_id")[
+                    "volume_volatility"
+                ].transform("mean")
 
             # Regime-liquidity interactions
             if "composite_cluster_id" in df.columns and "liquidity_score" in df.columns:
                 df["regime_liquidity_interaction"] = df["composite_cluster_id"] * df["liquidity_score"]
-                df["regime_liquidity_divergence"] = df["liquidity_score"] - df.groupby("composite_cluster_id")["liquidity_score"].transform("mean")
+                df["regime_liquidity_divergence"] = df["liquidity_score"] - df.groupby("composite_cluster_id")[
+                    "liquidity_score"
+                ].transform("mean")
 
             # Cross-regime correlations
             state_columns = [col for col in df.columns if col.endswith("_p_state_")]
             if len(state_columns) >= 2:
                 # Create interaction features between different state probabilities
                 for i, col1 in enumerate(state_columns[:3]):  # Limit to first 3 to avoid explosion
-                    for col2 in state_columns[i + 1:4]:
-                        interaction_name = f"{col1.replace('_p_state_', '')}_{col2.replace('_p_state_', '')}_interaction"
+                    for col2 in state_columns[i + 1 : 4]:
+                        interaction_name = f"{
+                            col1.replace(
+                                '_p_state_',
+                                '')}_{
+                            col2.replace(
+                                '_p_state_',
+                                '')}_interaction"
                         df[interaction_name] = df[col1] * df[col2]
 
             self.logger.info("✅ Added regime interaction features")
@@ -226,7 +246,9 @@ class HMMFeatureEnhancer:
 
             # Regime momentum divergence
             if "momentum_strength" in df.columns and "regime_momentum_divergence" in df.columns:
-                df["regime_momentum_extreme"] = np.abs(df["regime_momentum_divergence"]) > df["regime_momentum_divergence"].rolling(20).std() * 2
+                df["regime_momentum_extreme"] = (
+                    np.abs(df["regime_momentum_divergence"]) > df["regime_momentum_divergence"].rolling(20).std() * 2
+                )
 
             self.logger.info("✅ Added regime-enhanced features")
             return df
@@ -312,7 +334,9 @@ class HMMFeatureEnhancer:
         mad = typical_price.rolling(period).apply(lambda x: np.mean(np.abs(x - x.mean())))
         return (typical_price - sma_tp) / (0.015 * mad)
 
-    def _calculate_mfi(self, high: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series, period: int = 14) -> pd.Series:
+    def _calculate_mfi(
+        self, high: pd.Series, low: pd.Series, close: pd.Series, volume: pd.Series, period: int = 14
+    ) -> pd.Series:
         """Calculate MFI."""
         typical_price = (high + low + close) / 3
         money_flow = typical_price * volume

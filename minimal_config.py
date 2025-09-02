@@ -1,57 +1,26 @@
 """
-Minimal configuration module for code quality analysis.
+Minimal configuration for code quality tools.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 
 
 @dataclass
-class AnalysisConfig:
-    """Configuration for analysis operations."""
-    exclude_patterns: List[str]
-    include_patterns: List[str]
-    max_file_size: int
-    timeout: int
-
-
-@dataclass
 class CodeQualityConfig:
-    """Main configuration for code quality analysis."""
-    analysis: AnalysisConfig
-    output: Dict[str, Any]
-    logging: Dict[str, Any]
+    """Configuration for code quality tools."""
+    auto_fix: bool = True
+    linters: List[str] = field(default_factory=lambda: ["flake8", "pylint"])
+    complexity_threshold: int = 10
+    exclude_patterns: List[str] = field(default_factory=lambda: ["__pycache__", "*.pyc", ".git", "venv", "env"])
+    output_format: str = "terminal"
+    verbose: bool = False
+    
+    def __post_init__(self):
+        """Validate configuration after initialization."""
+        pass
 
 
 def get_default_config() -> CodeQualityConfig:
-    """Get default configuration."""
-    return CodeQualityConfig(
-        analysis=AnalysisConfig(
-            exclude_patterns=[
-                "__pycache__",
-                "*.pyc",
-                "*.pyo",
-                "*.pyd",
-                ".git",
-                ".svn",
-                ".hg",
-                "venv",
-                "env",
-                "node_modules",
-                ".tox",
-                ".pytest_cache"
-            ],
-            include_patterns=["*.py"],
-            max_file_size=10 * 1024 * 1024,  # 10MB
-            timeout=30
-        ),
-        output={
-            "format": "json",
-            "include_details": True,
-            "include_metrics": True
-        },
-        logging={
-            "level": "INFO",
-            "format": "%(asctime)s - %(levelname)s - %(message)s"
-        }
-    )
+    """Get the default configuration."""
+    return CodeQualityConfig()

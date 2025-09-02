@@ -7,14 +7,11 @@ produces valid outputs and meets quality standards.
 """
 
 import json
-import os
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict
 
-import pandas as pd
-
-from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
+from src.utils.logger import system_logger
 from src.utils.validator_base import BaseValidator
 
 
@@ -68,12 +65,12 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
 
             # Check 1: Validate ensemble model files exist
             models_dir = Path("models") / "multi_timeframe_hmm_ensemble" / f"{exchange}_{symbol}"
-            
+
             required_files = [
                 "ensemble_metadata.json",
                 "meta_learner.joblib",
             ]
-            
+
             for file in required_files:
                 file_path = models_dir / file
                 if file_path.exists():
@@ -88,13 +85,13 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
             metadata_path = models_dir / "ensemble_metadata.json"
             if metadata_path.exists():
                 try:
-                    with open(metadata_path, 'r') as f:
+                    with open(metadata_path, "r") as f:
                         metadata = json.load(f)
-                    
+
                     # Validate metadata structure
                     required_keys = ["trained", "ensemble_weights", "symbol", "exchange"]
                     missing_keys = [key for key in required_keys if key not in metadata]
-                    
+
                     if not missing_keys:
                         validation_results["checks_passed"] += 1
                         self.logger.info("✅ Ensemble metadata structure is valid")
@@ -102,7 +99,7 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
                         validation_results["checks_failed"] += 1
                         validation_results["errors"].append(f"Missing metadata keys: {missing_keys}")
                         self.logger.error(f"❌ Missing metadata keys: {missing_keys}")
-                    
+
                     # Validate training status
                     if metadata.get("trained", False):
                         validation_results["checks_passed"] += 1
@@ -111,7 +108,7 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
                         validation_results["checks_failed"] += 1
                         validation_results["errors"].append("Ensemble not marked as trained")
                         self.logger.error("❌ Ensemble not marked as trained")
-                    
+
                     # Validate ensemble weights
                     ensemble_weights = metadata.get("ensemble_weights", {})
                     if ensemble_weights:
@@ -127,7 +124,7 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
                         validation_results["checks_failed"] += 1
                         validation_results["errors"].append("No ensemble weights found")
                         self.logger.error("❌ No ensemble weights found")
-                        
+
                 except Exception as e:
                     validation_results["checks_failed"] += 1
                     validation_results["errors"].append(f"Failed to parse metadata: {str(e)}")
@@ -138,17 +135,18 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
             if meta_learner_path.exists():
                 try:
                     import joblib
+
                     meta_learner = joblib.load(meta_learner_path)
-                    
+
                     # Check if it has required methods
-                    if hasattr(meta_learner, 'predict') and hasattr(meta_learner, 'predict_proba'):
+                    if hasattr(meta_learner, "predict") and hasattr(meta_learner, "predict_proba"):
                         validation_results["checks_passed"] += 1
                         self.logger.info("✅ Meta-learner has required methods")
                     else:
                         validation_results["checks_failed"] += 1
                         validation_results["errors"].append("Meta-learner missing required methods")
                         self.logger.error("❌ Meta-learner missing required methods")
-                        
+
                 except Exception as e:
                     validation_results["checks_failed"] += 1
                     validation_results["errors"].append(f"Failed to load meta-learner: {str(e)}")
@@ -159,10 +157,10 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
                 from src.config.multi_timeframe_hmm_ensemble_config import (
                     get_multi_timeframe_hmm_ensemble_config,
                 )
-                
+
                 config = get_multi_timeframe_hmm_ensemble_config()
                 ensemble_config = config.get("MULTI_TIMEFRAME_HMM_ENSEMBLE", {})
-                
+
                 if ensemble_config.get("enabled", False):
                     validation_results["checks_passed"] += 1
                     self.logger.info("✅ Multi-timeframe HMM ensemble is enabled in config")
@@ -170,7 +168,7 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
                     validation_results["checks_failed"] += 1
                     validation_results["warnings"].append("Multi-timeframe HMM ensemble is disabled in config")
                     self.logger.warning("⚠️ Multi-timeframe HMM ensemble is disabled in config")
-                    
+
             except Exception as e:
                 validation_results["checks_failed"] += 1
                 validation_results["errors"].append(f"Failed to load configuration: {str(e)}")
@@ -243,7 +241,7 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
             # Check 2: Validate regime forecasting files exist for expected timeframes
             expected_timeframes = ["5m", "15m", "30m", "1h"]
             found_timeframes = []
-            
+
             for tf in expected_timeframes:
                 rf_file = rf_dir / f"{exchange}_{symbol}_{tf}_regime_forecasting.json"
                 if rf_file.exists():
@@ -259,13 +257,13 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
             for tf in found_timeframes:
                 rf_file = rf_dir / f"{exchange}_{symbol}_{tf}_regime_forecasting.json"
                 try:
-                    with open(rf_file, 'r') as f:
+                    with open(rf_file, "r") as f:
                         rf_data = json.load(f)
-                    
+
                     # Check required keys
                     required_keys = ["timeframe", "current_regime", "next_regime_probabilities"]
                     missing_keys = [key for key in required_keys if key not in rf_data]
-                    
+
                     if not missing_keys:
                         validation_results["checks_passed"] += 1
                         self.logger.info(f"✅ Regime forecasting file structure valid for {tf}")
@@ -273,7 +271,7 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
                         validation_results["checks_failed"] += 1
                         validation_results["errors"].append(f"Missing keys in {tf} regime forecasting: {missing_keys}")
                         self.logger.error(f"❌ Missing keys in {tf} regime forecasting: {missing_keys}")
-                        
+
                 except Exception as e:
                     validation_results["checks_failed"] += 1
                     validation_results["errors"].append(f"Failed to parse {tf} regime forecasting: {str(e)}")
@@ -291,10 +289,16 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
             # Determine overall validation result
             if validation_results["checks_failed"] == 0:
                 validation_results["validation_passed"] = True
-                self.logger.info(f"✅ Step 9.5 input validation passed: {validation_results['checks_passed']} checks passed")
+                self.logger.info(
+                    f"✅ Step 9.5 input validation passed: {
+                        validation_results['checks_passed']} checks passed"
+                )
             else:
                 validation_results["validation_passed"] = False
-                self.logger.error(f"❌ Step 9.5 input validation failed: {validation_results['checks_failed']} checks failed")
+                self.logger.error(
+                    f"❌ Step 9.5 input validation failed: {
+                        validation_results['checks_failed']} checks failed"
+                )
 
             return validation_results
 
@@ -346,12 +350,12 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
             # Check 1: Validate ensemble model performance
             models_dir = Path("models") / "multi_timeframe_hmm_ensemble" / f"{exchange}_{symbol}"
             metadata_path = models_dir / "ensemble_metadata.json"
-            
+
             if metadata_path.exists():
                 try:
-                    with open(metadata_path, 'r') as f:
+                    with open(metadata_path, "r") as f:
                         metadata = json.load(f)
-                    
+
                     # Check training time
                     training_time = metadata.get("training_time", 0)
                     if training_time > 0 and training_time < 3600:  # Less than 1 hour
@@ -362,14 +366,14 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
                         validation_results["checks_failed"] += 1
                         validation_results["warnings"].append(f"Training time may be too long: {training_time:.2f}s")
                         self.logger.warning(f"⚠️ Training time may be too long: {training_time:.2f}s")
-                    
+
                     # Check ensemble weights distribution
                     ensemble_weights = metadata.get("ensemble_weights", {})
                     if ensemble_weights:
                         weight_values = list(ensemble_weights.values())
                         min_weight = min(weight_values)
                         max_weight = max(weight_values)
-                        
+
                         if max_weight - min_weight < 0.5:  # Reasonable weight distribution
                             validation_results["checks_passed"] += 1
                             validation_results["performance_metrics"]["weight_distribution"] = {
@@ -377,12 +381,18 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
                                 "max": max_weight,
                                 "range": max_weight - min_weight,
                             }
-                            self.logger.info(f"✅ Weight distribution is reasonable: {min_weight:.3f} - {max_weight:.3f}")
+                            self.logger.info(
+                                f"✅ Weight distribution is reasonable: {min_weight:.3f} - {max_weight:.3f}"
+                            )
                         else:
                             validation_results["checks_failed"] += 1
-                            validation_results["warnings"].append(f"Weight distribution may be imbalanced: {min_weight:.3f} - {max_weight:.3f}")
-                            self.logger.warning(f"⚠️ Weight distribution may be imbalanced: {min_weight:.3f} - {max_weight:.3f}")
-                            
+                            validation_results["warnings"].append(
+                                f"Weight distribution may be imbalanced: {min_weight:.3f} - {max_weight:.3f}"
+                            )
+                            self.logger.warning(
+                                f"⚠️ Weight distribution may be imbalanced: {min_weight:.3f} - {max_weight:.3f}"
+                            )
+
                 except Exception as e:
                     validation_results["checks_failed"] += 1
                     validation_results["errors"].append(f"Failed to validate performance: {str(e)}")
@@ -391,10 +401,16 @@ class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):
             # Determine overall validation result
             if validation_results["checks_failed"] == 0:
                 validation_results["validation_passed"] = True
-                self.logger.info(f"✅ Step 9.5 performance validation passed: {validation_results['checks_passed']} checks passed")
+                self.logger.info(
+                    f"✅ Step 9.5 performance validation passed: {
+                        validation_results['checks_passed']} checks passed"
+                )
             else:
                 validation_results["validation_passed"] = False
-                self.logger.error(f"❌ Step 9.5 performance validation failed: {validation_results['checks_failed']} checks failed")
+                self.logger.error(
+                    f"❌ Step 9.5 performance validation failed: {
+                        validation_results['checks_failed']} checks failed"
+                )
 
             return validation_results
 

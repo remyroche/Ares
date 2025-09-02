@@ -1,5 +1,22 @@
 # src/training/steps/step17_*.py
 
+from src.utils.training_pipeline_decorators import (
+    artifact_versioning,
+    artifact_write_lock,
+    circuit_breaker_protection,
+    debug_training_step,
+    deterministic_seed,
+    idempotent_step,
+    memory_efficient,
+    nan_inf_and_constant_guard,
+    prevent_data_leakage,
+    quality_gate,
+    resource_monitor,
+    secure_data_processing,
+    time_budget_watchdog,
+    validate_step_output,
+    validate_step_prerequisites,
+)
 import asyncio
 import contextlib
 import json
@@ -26,8 +43,6 @@ from src.utils.warning_symbols import (
 
 class FinalParametersOptimizationStep:
     """Step 12: Final Parameters Optimization using Optuna with advanced features."""
-
-    
 
     def _validate_environment(self) -> None:
         """Validate environment dependencies and configuration."""
@@ -71,7 +86,10 @@ class FinalParametersOptimizationStep:
         context="final parameters optimization step execution",
     )
     async def execute(
-        self, training_input: dict[str, Any], pipeline_state: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        training_input: dict[str, Any],
+        pipeline_state: dict[str, Any],
+    ) -> dict[str, Any]:
         """Execute final parameters optimization with advanced features.
 
         Args:
@@ -124,6 +142,7 @@ class FinalParametersOptimizationStep:
                     data_dir,
                 )
             try:
+
                 def _summ(obj):
                     try:
                         return len(obj)  # type: ignore[arg-type]
@@ -131,7 +150,11 @@ class FinalParametersOptimizationStep:
                         return "n/a"
 
                 self.logger.info(
-                    f"Inputs summary — calibration_results: type={type(calibration_results).__name__}, size={_summ(calibration_results)}; previous_results: type={type(previous_results).__name__}, size={_summ(previous_results)}"
+                    f"Inputs summary — calibration_results: type={
+                        type(calibration_results).__name__}, size={
+                        _summ(calibration_results)}; previous_results: type={
+                        type(previous_results).__name__}, size={
+                        _summ(previous_results)}"
                 )
             except Exception:
                 pass
@@ -147,11 +170,7 @@ class FinalParametersOptimizationStep:
                     previous_results,
                 )
             try:
-                keys = (
-                    list(optimization_results.keys())
-                    if isinstance(optimization_results, dict)
-                    else []
-                )
+                keys = list(optimization_results.keys()) if isinstance(optimization_results, dict) else []
                 self.logger.info(
                     f"Optimization finished. Result keys: {keys[:20]} (total={len(keys) if keys else 'n/a'})"
                 )
@@ -223,7 +242,11 @@ class FinalParametersOptimizationStep:
             return {"status": "FAILED", "error": str(e), "duration": 0.0}
 
     async def _load_calibration_results(
-        self, symbol: str, exchange: str, data_dir: str, ) -> dict[str, Any] | None:
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
+    ) -> dict[str, Any] | None:
         """Load calibration results from previous step."""
         try:
             calibration_dir = f"{data_dir}/calibration_results"
@@ -240,7 +263,11 @@ class FinalParametersOptimizationStep:
             return None
 
     async def _load_previous_optimization_results(
-        self, symbol: str, exchange: str, data_dir: str, ) -> dict[str, Any] | None:
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
+    ) -> dict[str, Any] | None:
         """Load previous optimization results for warm start."""
         try:
             optimization_dir = f"{data_dir}/optimization_results"
@@ -255,7 +282,10 @@ class FinalParametersOptimizationStep:
             return None
 
     async def _optimize_all_parameters(
-        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None, ) -> dict[str, Any]:
+        self,
+        calibration_results: dict[str, Any],
+        previous_results: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Optimize all parameters using advanced Optuna features.
 
         Args:
@@ -272,10 +302,9 @@ class FinalParametersOptimizationStep:
             optimization_results = {}
 
             # 1. Multi-objective optimization for confidence thresholds
-            confidence_results = (await self._optimize_confidence_thresholds_multi_objective(
-                    calibration_results,
-                    previous_results,
-                )
+            confidence_results = await self._optimize_confidence_thresholds_multi_objective(
+                calibration_results,
+                previous_results,
             )
             optimization_results["confidence_thresholds"] = confidence_results
 
@@ -328,7 +357,10 @@ class FinalParametersOptimizationStep:
             raise
 
     async def _optimize_confidence_thresholds_multi_objective(
-        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None, ) -> dict[str, Any]:
+        self,
+        calibration_results: dict[str, Any],
+        previous_results: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Optimize confidence thresholds using multi-objective optimization."""
         try:
             import optuna
@@ -440,20 +472,21 @@ class FinalParametersOptimizationStep:
                     ),
                 }
 
-            # Evaluate with calibrated analyst + ensemble if available
+                # Evaluate with calibrated analyst + ensemble if available
                 metrics, self._evaluate_predictions(
                     calibration_results,
                     val_df,
                     params,
                 )
+
             return (
-                    metrics.get("win_rate", 0.5),
-                    metrics.get("avg_win", 0.01),
-                    -metrics.get("avg_loss", 0.01),
-                    metrics.get("sharpe_ratio", 1.0),
-                    -metrics.get("max_drawdown", 0.1),
-                    metrics.get("enhanced_prediction_performance", 0.6),
-                )
+                metrics.get("win_rate", 0.5),
+                metrics.get("avg_win", 0.01),
+                -metrics.get("avg_loss", 0.01),
+                metrics.get("sharpe_ratio", 1.0),
+                -metrics.get("max_drawdown", 0.1),
+                metrics.get("enhanced_prediction_performance", 0.6),
+            )
 
             self.logger.info(
                 "Step12: Starting Optuna study for confidence thresholds (multi-objective)",
@@ -494,7 +527,10 @@ class FinalParametersOptimizationStep:
             return self._get_default_confidence_thresholds()
 
     async def _optimize_volatility_parameters_advanced(
-        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None, ) -> dict[str, Any]:
+        self,
+        calibration_results: dict[str, Any],
+        previous_results: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Optimize volatility parameters with advanced features."""
         try:
             import optuna
@@ -539,9 +575,9 @@ class FinalParametersOptimizationStep:
                 }
 
             return self._evaluate_volatility_performance(
-                    params,
-                    calibration_results,
-                )
+                params,
+                calibration_results,
+            )
 
             self.logger.info("Step12: Starting Optuna study for volatility parameters")
             study, optuna.create_study(direction="maximize")
@@ -570,7 +606,10 @@ class FinalParametersOptimizationStep:
             return self._get_default_volatility_parameters()
 
     async def _optimize_position_sizing_advanced(
-        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None, ) -> dict[str, Any]:
+        self,
+        calibration_results: dict[str, Any],
+        previous_results: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Optimize position sizing parameters with advanced features."""
         try:
             import optuna
@@ -628,9 +667,9 @@ class FinalParametersOptimizationStep:
                 }
 
             return self._evaluate_position_sizing_performance(
-                    params,
-                    calibration_results,
-                )
+                params,
+                calibration_results,
+            )
 
             self.logger.info(
                 "Step12: Starting Optuna study for position sizing parameters",
@@ -645,9 +684,7 @@ class FinalParametersOptimizationStep:
                 study.enqueue_trial(prev_params)
             # Get trials from training input or use default
             position_sizing_trials = self.training_input.get("position_sizing_trials", 60)
-            self.logger.info(
-                f"Step12: Optimizing position sizing parameters (n_trials={position_sizing_trials})"
-            )
+            self.logger.info(f"Step12: Optimizing position sizing parameters (n_trials={position_sizing_trials})")
             study.optimize(objective, n_trials=position_sizing_trials)
 
             return {
@@ -663,7 +700,10 @@ class FinalParametersOptimizationStep:
             return self._get_default_position_sizing_parameters()
 
     async def _optimize_risk_management_advanced(
-        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None, ) -> dict[str, Any]:
+        self,
+        calibration_results: dict[str, Any],
+        previous_results: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Optimize risk management parameters with advanced features."""
         try:
             import optuna
@@ -716,9 +756,9 @@ class FinalParametersOptimizationStep:
                 }
 
             return self._evaluate_risk_management_performance(
-                    params,
-                    calibration_results,
-                )
+                params,
+                calibration_results,
+            )
 
             self.logger.info(
                 "Step12: Starting Optuna study for risk management parameters",
@@ -733,9 +773,7 @@ class FinalParametersOptimizationStep:
                 study.enqueue_trial(prev_params)
             # Get trials from training input or use default
             risk_management_trials = self.training_input.get("risk_management_trials", 50)
-            self.logger.info(
-                f"Step12: Optimizing risk management parameters (n_trials={risk_management_trials})"
-            )
+            self.logger.info(f"Step12: Optimizing risk management parameters (n_trials={risk_management_trials})")
             study.optimize(objective, n_trials=risk_management_trials)
 
             return {
@@ -751,7 +789,10 @@ class FinalParametersOptimizationStep:
             return self._get_default_risk_management_parameters()
 
     async def _optimize_ensemble_parameters(
-        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None, ) -> dict[str, Any]:
+        self,
+        calibration_results: dict[str, Any],
+        previous_results: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Optimize ensemble parameters with advanced features."""
         try:
             import optuna
@@ -824,7 +865,10 @@ class FinalParametersOptimizationStep:
             return self._get_default_ensemble_parameters()
 
     async def _optimize_regime_specific_parameters(
-        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None, ) -> dict[str, Any]:
+        self,
+        calibration_results: dict[str, Any],
+        previous_results: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Optimize regime-specific parameters with advanced features."""
         try:
             import optuna
@@ -883,9 +927,7 @@ class FinalParametersOptimizationStep:
                 study.enqueue_trial(prev_params)
             # Get trials from training input or use default
             regime_specific_trials = self.training_input.get("regime_specific_trials", 30)
-            self.logger.info(
-                f"Step12: Optimizing regime-specific parameters (n_trials={regime_specific_trials})"
-            )
+            self.logger.info(f"Step12: Optimizing regime-specific parameters (n_trials={regime_specific_trials})")
             study.optimize(objective, n_trials=regime_specific_trials)
 
             return {
@@ -901,7 +943,10 @@ class FinalParametersOptimizationStep:
             return self._get_default_regime_parameters()
 
     async def _optimize_timing_parameters(
-        self, calibration_results: dict[str, Any], previous_results: dict[str, Any] | None, ) -> dict[str, Any]:
+        self,
+        calibration_results: dict[str, Any],
+        previous_results: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         """Optimize timing parameters with advanced features."""
         try:
             import optuna
@@ -1035,7 +1080,12 @@ class FinalParametersOptimizationStep:
             return False
 
     async def _save_optimization_results(
-        self, results: dict[str, Any], symbol: str, exchange: str, data_dir: str, ) -> None:
+        self,
+        results: dict[str, Any],
+        symbol: str,
+        exchange: str,
+        data_dir: str,
+    ) -> None:
         """Save optimization results to files."""
         try:
             optimization_dir = f"{data_dir}/optimization_results"
@@ -1047,8 +1097,7 @@ class FinalParametersOptimizationStep:
                 pickle.dump(results, f)
 
             # Save JSON summary
-            summary_file = (f"{data_dir}/{exchange}_{symbol}_final_parameters_summary.json"
-            )
+            summary_file = f"{data_dir}/{exchange}_{symbol}_final_parameters_summary.json"
             with open(summary_file, "w") as f:
                 json.dump(results, f, indent=2, default=str)
 
@@ -1063,7 +1112,10 @@ class FinalParametersOptimizationStep:
             self.print(error("Error saving optimization results: {e}"))
 
     async def _generate_optimization_report(
-        self, results: dict[str, Any], start_time: datetime, ) -> dict[str, Any]:
+        self,
+        results: dict[str, Any],
+        start_time: datetime,
+    ) -> dict[str, Any]:
         """Generate comprehensive optimization report."""
         try:
             report = {
@@ -1072,8 +1124,7 @@ class FinalParametersOptimizationStep:
                     "end_time": datetime.now().isoformat(),
                     "duration_seconds": (datetime.now() - start_time).total_seconds(),
                     "total_parameters_optimized": sum(
-                        len(section.get("optimized_parameters", {}))
-                        for section in results.values()
+                        len(section.get("optimized_parameters", {})) for section in results.values()
                     ),
                 },
                 "optimization_summary": {},
@@ -1108,7 +1159,9 @@ class FinalParametersOptimizationStep:
             return {"error": str(e)}
 
     def _generate_optimization_recommendations(
-        self, results: dict[str, Any], ) -> list[str]:
+        self,
+        results: dict[str, Any],
+    ) -> list[str]:
         """Generate optimization recommendations."""
         recommendations = []
 
@@ -1194,7 +1247,10 @@ class FinalParametersOptimizationStep:
 
     # Evaluation methods for different parameter categories
     def _evaluate_win_rate(
-        self, params: dict[str, Any], calibration_results: dict[str, Any], ) -> float:
+        self,
+        params: dict[str, Any],
+        calibration_results: dict[str, Any],
+    ) -> float:
         """Evaluate win rate based on parameters."""
         try:
             # Simulate win rate evaluation using calibration data
@@ -1208,7 +1264,10 @@ class FinalParametersOptimizationStep:
             return 0.5
 
     def _evaluate_profit_factor(
-        self, params: dict[str, Any], calibration_results: dict[str, Any], ) -> float:
+        self,
+        params: dict[str, Any],
+        calibration_results: dict[str, Any],
+    ) -> float:
         """Evaluate profit factor based on parameters."""
         try:
             # Simulate profit factor evaluation
@@ -1221,7 +1280,10 @@ class FinalParametersOptimizationStep:
             return 1.0
 
     def _evaluate_sharpe_ratio(
-        self, params: dict[str, Any], calibration_results: dict[str, Any], ) -> float:
+        self,
+        params: dict[str, Any],
+        calibration_results: dict[str, Any],
+    ) -> float:
         """Evaluate Sharpe ratio based on parameters."""
         try:
             # Simulate Sharpe ratio evaluation
@@ -1234,7 +1296,10 @@ class FinalParametersOptimizationStep:
             return 1.0
 
     def _evaluate_max_drawdown(
-        self, params: dict[str, Any], calibration_results: dict[str, Any], ) -> float:
+        self,
+        params: dict[str, Any],
+        calibration_results: dict[str, Any],
+    ) -> float:
         """Evaluate maximum drawdown based on parameters."""
         try:
             # Simulate max drawdown evaluation
@@ -1247,52 +1312,66 @@ class FinalParametersOptimizationStep:
             return 0.2
 
     def _evaluate_enhanced_prediction_performance(
-        self, params: dict[str, Any], calibration_results: dict[str, Any], ) -> float:
+        self,
+        params: dict[str, Any],
+        calibration_results: dict[str, Any],
+    ) -> float:
         """Evaluate enhanced prediction integrator performance."""
         try:
             # Simulate enhanced prediction performance evaluation
             base_performance = 0.6
-            
+
             # Enhanced prediction confidence threshold impact
             confidence_threshold = params.get("enhanced_prediction_confidence_threshold", 0.7)
             confidence_factor = confidence_threshold * 0.2
-            
+
             # Price prediction threshold impact
             price_threshold = params.get("enhanced_prediction_price_threshold", 0.6)
             price_factor = price_threshold * 0.15
-            
+
             # ML weight balance between different ML model types
             analyst_ml_weight = params.get("analyst_ml_weight", 0.6)
             tactician_ml_weight = params.get("tactician_ml_weight", 0.4)
             weight_balance = min(analyst_ml_weight, tactician_ml_weight) * 0.1
-            
+
             # Position sizing enhancement
             position_multiplier = params.get("position_sizing_confidence_multiplier", 1.5)
             position_factor = min(position_multiplier, 2.0) * 0.05
-            
+
             # Leverage sizing enhancement
             leverage_multiplier = params.get("leverage_sizing_risk_multiplier", 1.0)
             leverage_factor = (2.0 - leverage_multiplier) * 0.05  # Lower risk = better
-            
+
             # Base position and leverage sizes
             base_position = params.get("base_position_size", 0.1)
             max_position = params.get("max_position_size", 0.2)
             base_leverage = params.get("base_leverage", 50.0)
             max_leverage = params.get("max_leverage", 100.0)
-            
+
             size_factor = (base_position + max_position) * 0.1
             leverage_factor += (base_leverage + max_leverage) / 200.0 * 0.05
-            
-            total_performance = base_performance + confidence_factor + price_factor + weight_balance + position_factor + leverage_factor + size_factor
-            
+
+            total_performance = (
+                base_performance
+                + confidence_factor
+                + price_factor
+                + weight_balance
+                + position_factor
+                + leverage_factor
+                + size_factor
+            )
+
             return min(0.95, max(0.3, total_performance))
-            
+
         except Exception:
             self.print(error("Error evaluating enhanced prediction performance: {e}"))
             return 0.6
 
     def _evaluate_average_win(
-        self, params: dict[str, Any], calibration_results: dict[str, Any], ) -> float:
+        self,
+        params: dict[str, Any],
+        calibration_results: dict[str, Any],
+    ) -> float:
         """Evaluate average win amount based on parameters."""
         try:
             # Simulate average win evaluation
@@ -1302,18 +1381,17 @@ class FinalParametersOptimizationStep:
             volatility_factor, params.get("target_volatility", 0.15) * 0.1
 
             # Higher confidence and position size should lead to larger wins
-            avg_win = (base_avg_win
-                + confidence_factor
-                + position_size_factor
-                + volatility_factor
-            )
+            avg_win = base_avg_win + confidence_factor + position_size_factor + volatility_factor
             return max(0.005, avg_win)  # Minimum 0.5% win
         except Exception:
             self.print(error("Error evaluating average win: {e}"))
             return 0.02
 
     def _evaluate_average_loss(
-        self, params: dict[str, Any], calibration_results: dict[str, Any], ) -> float:
+        self,
+        params: dict[str, Any],
+        calibration_results: dict[str, Any],
+    ) -> float:
         """Evaluate average loss amount based on parameters."""
         try:
             # Simulate average loss evaluation
@@ -1323,15 +1401,17 @@ class FinalParametersOptimizationStep:
             risk_factor, params.get("max_position_size", 0.25) * 0.1
 
             # Tighter stop losses should lead to smaller losses
-            avg_loss = (base_avg_loss + stop_loss_factor + position_size_factor + risk_factor
-            )
+            avg_loss = base_avg_loss + stop_loss_factor + position_size_factor + risk_factor
             return max(0.005, avg_loss)  # Minimum 0.5% loss
         except Exception:
             self.print(error("Error evaluating average loss: {e}"))
             return 0.015
 
     def _evaluate_volatility_performance(
-        self, params: dict[str, Any], calibration_results: dict[str, Any], ) -> float:
+        self,
+        params: dict[str, Any],
+        calibration_results: dict[str, Any],
+    ) -> float:
         """Evaluate volatility parameter performance."""
         try:
             # Simulate volatility performance evaluation
@@ -1343,23 +1423,26 @@ class FinalParametersOptimizationStep:
             return 0.0
 
     def _evaluate_position_sizing_performance(
-        self, params: dict[str, Any], calibration_results: dict[str, Any], ) -> float:
+        self,
+        params: dict[str, Any],
+        calibration_results: dict[str, Any],
+    ) -> float:
         """Evaluate position sizing performance."""
         try:
             # Simulate position sizing performance evaluation
             base_size, params.get("base_position_size", 0.05)
             kelly_mult, params.get("kelly_multiplier", 0.25)
-            confidence_scaling = (1.0 if params.get("confidence_based_scaling", True) else 0.8
-            )
-            return (
-                base_size * kelly_mult * confidence_scaling * 20
-            )  # Scale for optimization
+            confidence_scaling = 1.0 if params.get("confidence_based_scaling", True) else 0.8
+            return base_size * kelly_mult * confidence_scaling * 20  # Scale for optimization
         except Exception:
             self.print(error("Error evaluating position sizing performance: {e}"))
             return 0.0
 
     def _evaluate_risk_management_performance(
-        self, params: dict[str, Any], calibration_results: dict[str, Any], ) -> float:
+        self,
+        params: dict[str, Any],
+        calibration_results: dict[str, Any],
+    ) -> float:
         """Evaluate risk management performance."""
         try:
             # Simulate risk management performance evaluation
@@ -1372,7 +1455,10 @@ class FinalParametersOptimizationStep:
             return 0.0
 
     def _evaluate_ensemble_performance(
-        self, params: dict[str, Any], calibration_results: dict[str, Any], ) -> float:
+        self,
+        params: dict[str, Any],
+        calibration_results: dict[str, Any],
+    ) -> float:
         """Evaluate ensemble performance."""
         try:
             # Simulate ensemble performance evaluation
@@ -1385,7 +1471,10 @@ class FinalParametersOptimizationStep:
             return 0.0
 
     def _evaluate_regime_performance(
-        self, params: dict[str, Any], calibration_results: dict[str, Any], ) -> float:
+        self,
+        params: dict[str, Any],
+        calibration_results: dict[str, Any],
+    ) -> float:
         """Evaluate regime-specific performance."""
         try:
             # Simulate regime performance evaluation
@@ -1398,15 +1487,16 @@ class FinalParametersOptimizationStep:
             return 0.0
 
     def _evaluate_timing_performance(
-        self, params: dict[str, Any], calibration_results: dict[str, Any], ) -> float:
+        self,
+        params: dict[str, Any],
+        calibration_results: dict[str, Any],
+    ) -> float:
         """Evaluate timing performance."""
         try:
             # Simulate timing performance evaluation
             base_cooldown, params.get("base_cooldown_minutes", 30)
             high_conf_cooldown, params.get("high_confidence_cooldown", 15)
-            return (
-                1.0 / (base_cooldown + high_conf_cooldown) * 100
-            )  # Inverse relationship
+            return 1.0 / (base_cooldown + high_conf_cooldown) * 100  # Inverse relationship
         except Exception:
             self.print(error("Error evaluating timing performance: {e}"))
             return 0.0
@@ -1434,7 +1524,8 @@ class FinalParametersOptimizationStep:
             best_solution = None
             best_score = -float("inf")
             for solution in pareto_front:
-                composite_score = (solution.values[0] * weights.get("win_rate", 0.25)
+                composite_score = (
+                    solution.values[0] * weights.get("win_rate", 0.25)
                     + solution.values[1] * weights.get("profit_factor", 0.25)
                     + solution.values[2] * weights.get("sharpe_ratio", 0.25)
                     + solution.values[3] * weights.get("max_drawdown", 0.1)
@@ -1591,7 +1682,7 @@ class FinalParametersOptimizationStep:
                     df = pickle.load(f)
                 if isinstance(df, pd.DataFrame):
                     return df
-        except Exception as e:
+        except Exception:
             self.logger.warning("⚠️ Validation frame load failed from step 4")
 
             # No fallback - step should fail if validation data is missing
@@ -1599,7 +1690,11 @@ class FinalParametersOptimizationStep:
             raise FileNotFoundError(msg)
 
     def _evaluate_predictions(
-        self, calibration_results: dict[str, Any], val_df: pd.DataFrame, params: dict[str, Any], ) -> dict[str, float]:
+        self,
+        calibration_results: dict[str, Any],
+        val_df: pd.DataFrame,
+        params: dict[str, Any],
+    ) -> dict[str, float]:
         """Compute metrics by applying confidence thresholds to calibrated ensembles/models on validation data.
         This approximates trading performance with simple proxies: win rate and returns from label correctness.
         """
@@ -1613,25 +1708,18 @@ class FinalParametersOptimizationStep:
             if analyst_ensembles:
                 # Pick any regime with calibrated ensemble
                 for payload in analyst_ensembles.values():
-                    ce = (payload.get("calibrated_ensemble")
-                        if isinstance(payload, dict)
-                        else None
-                    )
+                    ce = payload.get("calibrated_ensemble") if isinstance(payload, dict) else None
                     if ce is not None:
                         ens = ce
                         break
-            X = (val_df.drop(columns=["label"], errors="ignore")
-                .select_dtypes(include=[np.number])
-                .fillna(0)
-            )
+            X = val_df.drop(columns=["label"], errors="ignore").select_dtypes(include=[np.number]).fillna(0)
             y = val_df["label"].astype(int)
 
             if ens is not None and hasattr(ens, "predict_proba"):
                 proba = ens.predict_proba(X)
                 # Binary simplification: class 1 probability
                 pos_proba = proba[:, -1] if proba.shape[1] > 1 else proba[:, 0]
-                preds = (pos_proba >= params.get("ensemble_confidence_threshold", 0.7)
-                ).astype(int)
+                preds = (pos_proba >= params.get("ensemble_confidence_threshold", 0.7)).astype(int)
             else:
                 # Fallback: majority default
                 preds = np.zeros(len(y), dtype=int)
@@ -1648,10 +1736,12 @@ class FinalParametersOptimizationStep:
             drawdown = cum - np.maximum.accumulate(cum)
             max_drawdown = float(-drawdown.min()) if len(drawdown) else 0.0
             sharpe = float(pnl.mean() / (pnl.std() + 1e-9))
-            
+
             # Add enhanced prediction performance evaluation
-            enhanced_prediction_performance = self._evaluate_enhanced_prediction_performance(params, calibration_results)
-            
+            enhanced_prediction_performance = self._evaluate_enhanced_prediction_performance(
+                params, calibration_results
+            )
+
             return {
                 "accuracy": acc,
                 "win_rate": win_rate,
@@ -1674,31 +1764,6 @@ class FinalParametersOptimizationStep:
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
-from src.utils.training_pipeline_decorators import (
-    artifact_versioning,
-    artifact_write_lock,
-    circuit_breaker_protection,
-    debug_training_step,
-    deterministic_seed,
-    idempotent_step,
-    memory_efficient,
-    nan_inf_and_constant_guard,
-    prevent_data_leakage,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    time_budget_watchdog,
-    validate_step_output,
-    validate_step_prerequisites,
-)
-from src.utils.enhanced_mlflow_integration import (
-    with_enhanced_mlflow_logging,
-    log_step_report,
-    create_detailed_step_report,
-    log_step_metrics,
-    log_step_dataframe_with_standardized_name,
-    log_step_artifact_with_standardized_name
-)
 
 
 # For backward compatibility with existing step structure
@@ -1720,7 +1785,10 @@ from src.utils.enhanced_mlflow_integration import (
     context="Final Parameters Optimization",
 )
 @secure_data_processing(
-    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
+    backup_before=True,
+    integrity_checks=True,
+    memory_cleanup=True,
+    data_validation=True,
 )
 @prevent_data_leakage(
     temporal_validation=True,
@@ -1736,7 +1804,10 @@ from src.utils.enhanced_mlflow_integration import (
     auto_cleanup=True,
 )
 @memory_efficient(
-    chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=25,
+    chunk_size=10000,
+    streaming_processing=True,
+    memory_pool=True,
+    cleanup_frequency=25,
 )
 @debug_training_step(
     log_intermediate_results=True,
@@ -1766,8 +1837,12 @@ from src.utils.enhanced_mlflow_integration import (
     overfitting_detection=True,
     validation_score_requirements={"optimization_score": 0.6},
 )
-async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data/training", force_rerun: bool = False
-    **kwargs, ) -> bool:
+async def run_step(
+    symbol: str,
+    exchange: str = "BINANCE",
+    data_dir: str = "data/training",
+    force_rerun: bool = False**kwargs,
+) -> bool:
     """Run the final parameters optimization step.
 
     Args:

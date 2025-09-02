@@ -1,16 +1,12 @@
 # src/training/steps/step11_*.py
 
 import json
-import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-
-import pandas as pd
+from typing import Any
 
 from src.utils.logger import system_logger
 from src.utils.validation_decorators import (
     validate_file_operation,
-    validate_dataframe_operation,
     validate_step2_operation,
 )
 
@@ -45,9 +41,7 @@ class Step11AnalystCreationValidator:
             # Check if analyst models directory exists
             analyst_models_dir = Path(data_dir) / "analyst_models"
             if not analyst_models_dir.exists():
-                self.logger.warning(
-                    f"⚠️ Analyst models directory not found: {analyst_models_dir}"
-                )
+                self.logger.warning(f"⚠️ Analyst models directory not found: {analyst_models_dir}")
                 return False
 
             # Validate regime-specific analyst model directories
@@ -64,9 +58,7 @@ class Step11AnalystCreationValidator:
                 # Check for model files
                 model_files = list(regime_dir.glob("*.joblib"))
                 if not model_files:
-                    self.logger.warning(
-                        f"⚠️ No analyst model files found for regime: {regime_name}"
-                    )
+                    self.logger.warning(f"⚠️ No analyst model files found for regime: {regime_name}")
                     continue
 
                 # Validate each model file
@@ -77,9 +69,7 @@ class Step11AnalystCreationValidator:
                 # Check for metadata files
                 metadata_files = list(regime_dir.glob("*_metadata.json"))
                 if not metadata_files:
-                    self.logger.warning(
-                        f"⚠️ No metadata files found for regime: {regime_name}"
-                    )
+                    self.logger.warning(f"⚠️ No metadata files found for regime: {regime_name}")
                     continue
 
                 # Validate metadata files
@@ -109,11 +99,12 @@ class Step11AnalystCreationValidator:
             # Try to load the model to ensure it's valid
             try:
                 import joblib
+
                 model = joblib.load(model_file)
                 if model is None:
                     self.logger.warning(f"⚠️ Model file is empty: {model_file.name}")
                     return False
-                
+
                 self.logger.info(f"✅ Model file validated: {model_file.name} ({file_size} bytes)")
                 return True
             except Exception as e:
@@ -138,26 +129,20 @@ class Step11AnalystCreationValidator:
             required_fields = ["accuracy", "model_type", "creation_date"]
             missing_fields = [field for field in required_fields if field not in metadata]
             if missing_fields:
-                self.logger.warning(
-                    f"⚠️ Missing required fields in {metadata_file.name}: {missing_fields}"
-                )
+                self.logger.warning(f"⚠️ Missing required fields in {metadata_file.name}: {missing_fields}")
                 return False
 
             # Validate accuracy (should be between 0 and 1)
             accuracy = metadata.get("accuracy", 0.0)
             if not (0.0 <= accuracy <= 1.0):
-                self.logger.warning(
-                    f"⚠️ Invalid accuracy value in {metadata_file.name}: {accuracy}"
-                )
+                self.logger.warning(f"⚠️ Invalid accuracy value in {metadata_file.name}: {accuracy}")
                 return False
 
             # Validate model type
             model_type = metadata.get("model_type", "")
             valid_types = ["lightgbm", "xgboost", "random_forest", "neural_network"]
             if model_type not in valid_types:
-                self.logger.warning(
-                    f"⚠️ Invalid model type in {metadata_file.name}: {model_type}"
-                )
+                self.logger.warning(f"⚠️ Invalid model type in {metadata_file.name}: {model_type}")
                 return False
 
             self.logger.info(
@@ -190,9 +175,7 @@ def step11_analyst_creation_validator(
 
     try:
         validator = Step11AnalystCreationValidator(config)
-        result = validator.validate_step11_analyst_creation(
-            symbol, exchange, data_dir, training_input
-        )
+        result = validator.validate_step11_analyst_creation(symbol, exchange, data_dir, training_input)
 
         if result:
             logger.info("✅ Step 11: Analyst Creation validation passed")

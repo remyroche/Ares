@@ -3,6 +3,8 @@
 """Validator for Step 5: HMM-Based Training."""
 
 from __future__ import annotations
+from src.utils.base_validator import BaseValidator
+from src.config import CONFIG
 
 import json
 import os
@@ -25,8 +27,6 @@ project_root = Path(__file__).parent.parent.parent
 
 # NOTE: Path injection kept for compatibility if needed by downstream imports
 # Import after potential path update
-from src.config import CONFIG
-from src.utils.base_validator import BaseValidator
 
 
 class Step5HMMBasedTrainingValidator(BaseValidator):
@@ -139,9 +139,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
                     "performance_metrics_keys": list(
                         outcome_metrics.get("performance_metrics", {}).keys(),
                     ),
-                    "error_message": (
-                        str(error_value)[:500] if error_value is not None else None
-                    ),
+                    "error_message": (str(error_value)[:500] if error_value is not None else None),
                 },
             )
 
@@ -165,10 +163,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
                         "status": status_value,
                         "blank_mode": True,
                         "expected_in_blank_mode": True,
-                        "guidance": (
-                            "No action required for blank mode; run full mode for"
-                            " strict validation."
-                        ),
+                        "guidance": ("No action required for blank mode; run full mode for" " strict validation."),
                     },
                 )
                 return True
@@ -244,9 +239,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
                     "model_files",
                 )
                 # Track per-file validation
-                self.validation_results[
-                    f"exists::{Path(file_path).name}"
-                ] = file_metrics
+                self.validation_results[f"exists::{Path(file_path).name}"] = file_metrics
                 if not file_passed:
                     missing_files.append(file_path)
 
@@ -342,9 +335,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
                         metric_name,
                         "hmm_model",
                     )
-                    self.validation_results[f"custom_metric::{metric_name}"] = (
-                        custom_metrics
-                    )
+                    self.validation_results[f"custom_metric::{metric_name}"] = custom_metrics
 
             self.logger.info("✅ HMM model performance validation passed")
             return True
@@ -374,9 +365,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
             bool: True if training metrics are acceptable
         """
         try:
-            history_file = (
-                f"{data_dir}/hmm_models/{exchange}_{symbol}_hmm_training_history.json"
-            )
+            history_file = f"{data_dir}/hmm_models/{exchange}_{symbol}_hmm_training_history.json"
 
             if not os.path.exists(history_file):
                 self.logger.warning(
@@ -402,18 +391,12 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
                     self.logger.warning("⚠️ HMM model did not converge")
 
             # Check for overfitting indicators
-            if (
-                "train_accuracy" in training_history
-                and "val_accuracy" in training_history
-            ):
+            if "train_accuracy" in training_history and "val_accuracy" in training_history:
                 train_acc = float(training_history["train_accuracy"])
                 val_acc = float(training_history["val_accuracy"])
                 if train_acc - val_acc > 0.1:
                     self.logger.warning(
-                        (
-                            "⚠️ Potential HMM overfitting: "
-                            f"train_acc={train_acc:.3f}, val_acc={val_acc:.3f}"
-                        ),
+                        ("⚠️ Potential HMM overfitting: " f"train_acc={train_acc:.3f}, val_acc={val_acc:.3f}"),
                     )
 
             # Check for training time
@@ -448,9 +431,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
         """Validate HMM model quality characteristics."""
         try:
             # Load model metadata
-            metadata_file = (
-                f"{data_dir}/hmm_models/{exchange}_{symbol}_hmm_model_metadata.json"
-            )
+            metadata_file = f"{data_dir}/hmm_models/{exchange}_{symbol}_hmm_model_metadata.json"
 
             if os.path.exists(metadata_file):
                 with open(metadata_file, "r", encoding="utf-8") as f:
@@ -490,21 +471,15 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
                 feature_importance = metadata.get("feature_importance")
                 if isinstance(feature_importance, dict):
                     try:
-                        top_features = sorted(
-                            feature_importance.items(), key=lambda x: x[1], reverse=True
-                        )[:5]
+                        top_features = sorted(feature_importance.items(), key=lambda x: x[1], reverse=True)[:5]
                         self.logger.info(f"Top 5 HMM features: {top_features}")
                     except Exception:  # pragma: no cover - defensive
                         pass
 
             # Validate existence of a concrete model artifact
             # Prefer a model pickle if present, otherwise validate parquet artifact
-            model_pkl = (
-                f"{data_dir}/hmm_models/{exchange}_{symbol}_hmm_model.pkl"
-            )
-            clusters_parquet = (
-                f"{data_dir}/{exchange}_{symbol}_hmm_composite_clusters_1m.parquet"
-            )
+            model_pkl = f"{data_dir}/hmm_models/{exchange}_{symbol}_hmm_model.pkl"
+            clusters_parquet = f"{data_dir}/{exchange}_{symbol}_hmm_composite_clusters_1m.parquet"
 
             if os.path.exists(model_pkl):
                 try:
@@ -532,10 +507,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
                             non_zero_features = int(np.sum(np.array(importances) > 0))
                             if non_zero_features < 5:
                                 self.logger.warning(
-                                    (
-                                        "⚠️ Few non-zero HMM feature importances: "
-                                        f"{non_zero_features}"
-                                    ),
+                                    ("⚠️ Few non-zero HMM feature importances: " f"{non_zero_features}"),
                                 )
                         except Exception:  # pragma: no cover - defensive
                             pass
@@ -557,8 +529,7 @@ class Step5HMMBasedTrainingValidator(BaseValidator):
                     if file_size <= 0:
                         self.logger.error(
                             missing(
-                                "❌ HMM clusters artifact is empty: "
-                                f"{clusters_parquet}",
+                                "❌ HMM clusters artifact is empty: " f"{clusters_parquet}",
                             ),
                         )
                         return False

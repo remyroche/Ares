@@ -33,7 +33,9 @@ class Step8TacticianLabelingValidator(BaseValidator):
         super().__init__("step8_tactician_labeling", config)
 
     async def validate(
-        self, training_input: dict[str, Any], pipeline_state: dict[str, Any],
+        self,
+        training_input: dict[str, Any],
+        pipeline_state: dict[str, Any],
     ) -> bool:
         """Validate the tactician labeling step.
 
@@ -117,7 +119,10 @@ class Step8TacticianLabelingValidator(BaseValidator):
         return True
 
     def _validate_labeling_files_existence(
-        self, symbol: str, exchange: str, data_dir: str,
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
     ) -> bool:
         """Validate that tactician labeling files exist.
 
@@ -161,7 +166,10 @@ class Step8TacticianLabelingValidator(BaseValidator):
             return False
 
     def _validate_signal_quality(
-        self, symbol: str, exchange: str, data_dir: str,
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
     ) -> bool:
         """Validate the quality of generated trading signals.
 
@@ -176,9 +184,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
         """
         try:
             # Load tactician signals (prefer Parquet)
-            signals_parquet = (
-                f"{data_dir}/{exchange}_{symbol}_tactician_signals.parquet"
-            )
+            signals_parquet = f"{data_dir}/{exchange}_{symbol}_tactician_signals.parquet"
             signals_pickle = f"{data_dir}/{exchange}_{symbol}_tactician_signals.pkl"
 
             signals_data: pd.DataFrame | Any
@@ -229,13 +235,17 @@ class Step8TacticianLabelingValidator(BaseValidator):
                                 )
                             with contextlib.suppress(Exception):
                                 log_dataframe_overview(
-                                    self.logger, signals_data, name="signals_data",
+                                    self.logger,
+                                    signals_data,
+                                    name="signals_data",
                                 )
                     except Exception:
                         from src.utils.logger import log_io_operation
 
                         with log_io_operation(
-                            self.logger, "read_parquet", signals_parquet,
+                            self.logger,
+                            "read_parquet",
+                            signals_parquet,
                         ):
                             signals_data = pd.read_parquet(signals_parquet)
                 else:
@@ -247,9 +257,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
                 # Check for required signal columns
                 required_columns = ["signal", "confidence", "timestamp"]
-                missing_columns = [
-                    col for col in required_columns if col not in signals_data.columns
-                ]
+                missing_columns = [col for col in required_columns if col not in signals_data.columns]
 
                 if missing_columns:
                     self.logger.error(
@@ -276,9 +284,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                 # Check for signal balance
                 max_signal_count = signal_counts.max()
                 min_signal_count = signal_counts.min()
-                balance_ratio = (
-                    min_signal_count / max_signal_count if max_signal_count > 0 else 0
-                )
+                balance_ratio = min_signal_count / max_signal_count if max_signal_count > 0 else 0
 
                 if balance_ratio < 0.1:  # Very imbalanced signals
                     self.logger.warning(
@@ -331,7 +337,10 @@ class Step8TacticianLabelingValidator(BaseValidator):
             return False
 
     def _validate_labeling_consistency(
-        self, symbol: str, exchange: str, data_dir: str,
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
     ) -> bool:
         """Validate consistency of tactician labeling.
 
@@ -390,17 +399,22 @@ class Step8TacticianLabelingValidator(BaseValidator):
                                 columns=True,
                             ):
                                 labels_data = pd.read_parquet(
-                                    labels_parquet, columns=["timestamp", "label"],
+                                    labels_parquet,
+                                    columns=["timestamp", "label"],
                                 )
                             with contextlib.suppress(Exception):
                                 log_dataframe_overview(
-                                    self.logger, labels_data, name="labels_data",
+                                    self.logger,
+                                    labels_data,
+                                    name="labels_data",
                                 )
                     except Exception:
                         from src.utils.logger import log_io_operation
 
                         with log_io_operation(
-                            self.logger, "read_parquet", labels_parquet,
+                            self.logger,
+                            "read_parquet",
+                            labels_parquet,
                         ):
                             labels_data = pd.read_parquet(labels_parquet)
                 else:
@@ -425,9 +439,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
                     return False
 
                 # Check for label consistency with signals
-                signals_parquet = (
-                    f"{data_dir}/{exchange}_{symbol}_tactician_signals.parquet"
-                )
+                signals_parquet = f"{data_dir}/{exchange}_{symbol}_tactician_signals.parquet"
                 signals_pickle = f"{data_dir}/{exchange}_{symbol}_tactician_signals.pkl"
 
                 signals_data: pd.DataFrame | Any
@@ -450,7 +462,9 @@ class Step8TacticianLabelingValidator(BaseValidator):
                             from src.utils.logger import log_io_operation
 
                             with log_io_operation(
-                                self.logger, "read_parquet", signals_parquet,
+                                self.logger,
+                                "read_parquet",
+                                signals_parquet,
                             ):
                                 signals_data = pd.read_parquet(signals_parquet)
                     else:
@@ -497,9 +511,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
                 min_label_count = label_counts.min()
                 max_label_count = label_counts.max()
-                balance_ratio = (
-                    min_label_count / max_label_count if max_label_count > 0 else 0
-                )
+                balance_ratio = min_label_count / max_label_count if max_label_count > 0 else 0
 
                 if balance_ratio < 0.1:
                     self.logger.warning(
@@ -526,7 +538,10 @@ class Step8TacticianLabelingValidator(BaseValidator):
             return False
 
     def _validate_signal_distribution(
-        self, symbol: str, exchange: str, data_dir: str,
+        self,
+        symbol: str,
+        exchange: str,
+        data_dir: str,
     ) -> bool:
         """Validate the distribution of trading signals.
 
@@ -541,9 +556,7 @@ class Step8TacticianLabelingValidator(BaseValidator):
         """
         try:
             # Load tactician labeling metadata
-            metadata_file = (
-                f"{data_dir}/{exchange}_{symbol}_tactician_labeling_metadata.json"
-            )
+            metadata_file = f"{data_dir}/{exchange}_{symbol}_tactician_labeling_metadata.json"
 
             if os.path.exists(metadata_file):
                 import json
@@ -650,7 +663,8 @@ class Step8TacticianLabelingValidator(BaseValidator):
 
 
 async def run_validator(
-    training_input: dict[str, Any], pipeline_state: dict[str, Any],
+    training_input: dict[str, Any],
+    pipeline_state: dict[str, Any],
 ) -> dict[str, Any]:
     """Run the step8_tactician_labeling validator.
 

@@ -6,21 +6,38 @@ This step performs HMM-based model training with timeframe-specific architecture
 and S/R integration, using standardized data quality management patterns.
 """
 
+from src.utils.training_pipeline_decorators import (
+    artifact_versioning,
+    artifact_write_lock,
+    circuit_breaker_protection,
+    debug_training_step,
+    deterministic_seed,
+    idempotent_step,
+    memory_efficient,
+    nan_inf_and_constant_guard,
+    prevent_data_leakage,
+    quality_gate,
+    resource_monitor,
+    secure_data_processing,
+    time_budget_watchdog,
+    validate_step_output,
+    validate_step_prerequisites,
+)
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 import json
 import os
 import pickle
 import sys
 import warnings
 from datetime import datetime
-from typing import Any
 from pathlib import Path
+from typing import Any
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import pipeline standards
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 # Standardized import management
 REQUIRED_MODULES = [
@@ -34,7 +51,7 @@ REQUIRED_MODULES = [
     "src.utils.logger",
     "src.utils.enhanced_mlflow_integration",
     "src.training.model_probability_generator",
-    "src.training.model_saving_utils"
+    "src.training.model_saving_utils",
 ]
 
 # Validate environment dependencies
@@ -54,15 +71,21 @@ torch = PipelineStandards.safe_import("torch", None)
 sklearn = PipelineStandards.safe_import("sklearn", None)
 
 # Fallback functions if imports fail
+
+
 def create_fallback_logger():
     import logging
+
     logging.basicConfig(level=logging.INFO)
     return logging.getLogger(__name__)
+
 
 def create_fallback_decorator():
     def decorator(func):
         return func
+
     return decorator
+
 
 # Initialize fallbacks
 if system_logger is None:
@@ -89,7 +112,9 @@ else:
     model_validation = centralized_decorators.model_validation
     performance_monitor = centralized_decorators.performance_monitor
     pipeline_checkpoint = centralized_decorators.pipeline_checkpoint
-    validate_feature_engineering_with_lookahead_bias_detection = centralized_decorators.validate_feature_engineering_with_lookahead_bias_detection
+    validate_feature_engineering_with_lookahead_bias_detection = (
+        centralized_decorators.validate_feature_engineering_with_lookahead_bias_detection
+    )
 
 if enhanced_mlflow is None:
     with_enhanced_mlflow_logging = create_fallback_decorator()
@@ -125,7 +150,7 @@ class HMMBasedTrainingStep:
         self.models = {}
         self.scalers = {}
         self.label_encoders = {}
-        
+
         # Validate environment on initialization
         self._validate_environment()
 
@@ -146,7 +171,7 @@ class HMMBasedTrainingStep:
         # Initialize S/R outcome model trainer
         self.sr_outcome_trainer = None
         self.sr_outcome_model_trained = False
-        
+
         # Initialize probability generator for enhanced prediction service
         if model_probability_generator is not None:
             self.probability_generator = model_probability_generator.ModelProbabilityGenerator()
@@ -157,7 +182,7 @@ class HMMBasedTrainingStep:
     def _validate_environment(self) -> None:
         """Validate environment dependencies."""
         self.logger.info("🔍 Validating environment dependencies...")
-        
+
         missing_modules = [module for module, available in dependency_status.items() if not available]
         if missing_modules:
             self.logger.warning(f"⚠️ Missing optional modules: {missing_modules}")
@@ -172,7 +197,8 @@ class HMMBasedTrainingStep:
         self.model_architectures = {}
         for timeframe, model_config in specialist_config.items():
             self.model_architectures[timeframe] = model_config.get(
-                "architecture", "LightGBM",
+                "architecture",
+                "LightGBM",
             )
 
         # Fallback to default if config not available
@@ -207,7 +233,7 @@ class HMMBasedTrainingStep:
             "intensity_cluster_17",
             "intensity_cluster_18",
             "intensity_cluster_19",
-        # Regime probability features
+            # Regime probability features
             "momentum_p_state_0",
             "momentum_p_state_1",
             "momentum_p_state_2",
@@ -236,6 +262,7 @@ class HMMBasedTrainingStep:
         self.enhanced_lm_optimizer = None
         try:
             from src.training.enhanced_lm_optimizer import EnhancedLMOptimizer
+
             self.enhanced_lm_optimizer = EnhancedLMOptimizer(config)
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to initialize enhanced LM optimizer: {e}")
@@ -246,6 +273,7 @@ class HMMBasedTrainingStep:
             from src.training.optimized_feature_selection_manager import (
                 OptimizedFeatureSelectionManager,
             )
+
             self.optimized_feature_selection = OptimizedFeatureSelectionManager(config)
         except Exception as e:
             self.logger.warning(f"⚠️ Failed to initialize optimized feature selection: {e}")
@@ -253,7 +281,7 @@ class HMMBasedTrainingStep:
         # All available features - will be optimized by feature selection
         # Note: These should be returns-based features, not raw data
         self.all_features = [
-        # Technical indicators (already returns-based or normalized)
+            # Technical indicators (already returns-based or normalized)
             "momentum_strength",
             "momentum_5",
             "momentum_10",
@@ -269,14 +297,14 @@ class HMMBasedTrainingStep:
             "cci",
             "mfi",
             "roc",
-        # Volatility measures (returns-based)
+            # Volatility measures (returns-based)
             "volume_volatility",
             "parkinson_volatility",
             "garman_klass_volatility",
             "adaptive_atr",
             "1m_price_volatility",
             "ewma_volatility",
-        # Liquidity measures (returns-based or normalized)
+            # Liquidity measures (returns-based or normalized)
             "liquidity_score",
             "bid_ask_spread",
             "market_depth",
@@ -285,7 +313,7 @@ class HMMBasedTrainingStep:
             "tick_size",
             "spread_tightness",
             "price_impact",
-        # Order flow measures (returns-based or normalized)
+            # Order flow measures (returns-based or normalized)
             "trade_frequency",
             "order_flow_imbalance",
             "order_flow_vpin_50",
@@ -295,7 +323,7 @@ class HMMBasedTrainingStep:
             "order_flow_taker_imbalance",
             "order_flow_avg_trade_size",
             "order_flow_trade_size_volatility",
-        # Normalized/returns-based features
+            # Normalized/returns-based features
             "momentum_strength_z_score",
             "rsi_change",
             "volume_pct_change",
@@ -303,13 +331,13 @@ class HMMBasedTrainingStep:
             "liquidity_bounded",
             "price_log",
             "spread_normalized",
-        # Interaction features
+            # Interaction features
             "momentum_x_volume",
             "volatility_x_liquidity",
             "price_x_volume",
             "rsi_div_volatility",
             "momentum_div_liquidity",
-        # Lagged features
+            # Lagged features
             "momentum_lag_1",
             "volume_lag_1",
             "rsi_lag_1",
@@ -318,7 +346,7 @@ class HMMBasedTrainingStep:
             "volume_lag_5",
             "rsi_lag_5",
             "volatility_lag_5",
-        # Causality features
+            # Causality features
             "momentum_predicts_volume",
             "volatility_causality",
             "liquidity_divergence",
@@ -373,9 +401,7 @@ class HMMBasedTrainingStep:
             ]
 
             # Get all available features
-            available_features = [
-                col for col in data.columns if col not in exclude_columns
-            ]
+            available_features = [col for col in data.columns if col not in exclude_columns]
 
             self.logger.info(f"✅ Found {len(available_features)} available features")
             return available_features
@@ -385,7 +411,12 @@ class HMMBasedTrainingStep:
             return []
 
     async def _apply_enhanced_optimization(
-        self, features_df: pd.DataFrame, target: pd.Series, timeframe: str, architecture: str, ) -> tuple[pd.DataFrame, dict[str, Any]]:
+        self,
+        features_df: pd.DataFrame,
+        target: pd.Series,
+        timeframe: str,
+        architecture: str,
+    ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Apply enhanced optimization for Step 6 models including feature selection, regularization, and hyperparameter optimization.
 
         Args:
@@ -419,13 +450,23 @@ class HMMBasedTrainingStep:
             )
 
             # Use optimized features directly from the optimizer
-            self.logger.info(f"✅ Applied feature selection: {len(features_df.columns)} -> {len(optimized_features.columns)} features")
+            self.logger.info(
+                f"✅ Applied feature selection: {len(features_df.columns)} -> {len(optimized_features.columns)} features"
+            )
 
             self.logger.info(f"✅ Enhanced optimization completed for {timeframe} {architecture}")
             self.logger.info("📊 Optimization metrics:")
-            self.logger.info(f"   - Feature selection: {optimization_results.get('feature_selection', {}).get('final_features', len(features_df.columns))} features")
+            self.logger.info(
+                f"   - Feature selection: {
+                    optimization_results.get(
+                        'feature_selection', {}).get(
+                        'final_features', len(
+                            features_df.columns))} features"
+            )
             self.logger.info(f"   - Regularization: {optimization_results.get('regularization', {})}")
-            self.logger.info(f"   - Hyperparameter optimization: {optimization_results.get('hyperparameter_optimization', {})}")
+            self.logger.info(
+                f"   - Hyperparameter optimization: {optimization_results.get('hyperparameter_optimization', {})}"
+            )
 
             return optimized_features, optimization_results
 
@@ -442,7 +483,10 @@ class HMMBasedTrainingStep:
     )
     @validate_feature_engineering_with_lookahead_bias_detection
     async def execute(
-        self, training_input: dict[str, Any], pipeline_state: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        training_input: dict[str, Any],
+        pipeline_state: dict[str, Any],
+    ) -> dict[str, Any]:
         """Execute HMM-based model training.
 
         Args:
@@ -470,13 +514,14 @@ class HMMBasedTrainingStep:
 
             # Load feature data
             feature_data = await self._load_feature_data(
-                exchange, symbol, data_dir, timeframes,
+                exchange,
+                symbol,
+                data_dir,
+                timeframes,
             )
 
             # Check if we have data for all timeframes
-            missing_timeframes = [
-                tf for tf in timeframes if tf not in feature_data or feature_data[tf].empty
-            ]
+            missing_timeframes = [tf for tf in timeframes if tf not in feature_data or feature_data[tf].empty]
 
             if missing_timeframes:
                 self.logger.info(
@@ -486,10 +531,16 @@ class HMMBasedTrainingStep:
                     "🔄 Attempting to create timeframe-specific feature files...",
                 )
                 await self._create_timeframe_specific_features(
-                    exchange, symbol, data_dir, timeframes,
+                    exchange,
+                    symbol,
+                    data_dir,
+                    timeframes,
                 )
                 feature_data = await self._load_feature_data(
-                    exchange, symbol, data_dir, timeframes,
+                    exchange,
+                    symbol,
+                    data_dir,
+                    timeframes,
                 )
 
             if not feature_data:
@@ -500,7 +551,9 @@ class HMMBasedTrainingStep:
             regime_weights = None
             if self.data_source_config["load_regime_weights"]:
                 regime_weights = await self._load_regime_weights(
-                    exchange, symbol, data_dir,
+                    exchange,
+                    symbol,
+                    data_dir,
                 )
 
             # Train models for each timeframe - BOTH regime-specific AND combined models are required
@@ -529,13 +582,12 @@ class HMMBasedTrainingStep:
 
                 # Prepare data for this timeframe
                 tf_data = await self._prepare_timeframe_data(
-                    hmm_data[timeframe], feature_data[timeframe], timeframe,
+                    hmm_data[timeframe],
+                    feature_data[timeframe],
+                    timeframe,
                 )
 
-                if (
-                    tf_data is None
-                    or len(tf_data) < self.validation_config["min_samples_per_split"]
-                ):
+                if tf_data is None or len(tf_data) < self.validation_config["min_samples_per_split"]:
                     self.logger.error(
                         f"❌ Insufficient data for combined model training for {timeframe}",
                     )
@@ -545,12 +597,15 @@ class HMMBasedTrainingStep:
                 # Add regime weights if available
                 if regime_weights is not None:
                     tf_data = await self._add_regime_weights(
-                        tf_data, regime_weights, timeframe,
+                        tf_data,
+                        regime_weights,
+                        timeframe,
                     )
 
                 # Train combined model based on architecture
                 combined_model_result = await self._train_timeframe_model(
-                    tf_data, timeframe,
+                    tf_data,
+                    timeframe,
                 )
                 if not combined_model_result:
                     self.logger.error(
@@ -588,7 +643,6 @@ class HMMBasedTrainingStep:
             try:
                 import json
                 import os
-                import pandas as _pd
 
                 rf_dir = os.path.join(data_dir, "regime_forecasting")
                 os.makedirs(rf_dir, exist_ok=True)
@@ -623,7 +677,7 @@ class HMMBasedTrainingStep:
                         next_probs = trans_prob.get(current_cid, {})
                         p_stay = float(next_probs.get(current_cid, 0.0))
                         H = 20
-                        exit_within_H = 1.0 - (p_stay ** H)
+                        exit_within_H = 1.0 - (p_stay**H)
 
                         artifact = {
                             "timeframe": tf,
@@ -635,7 +689,8 @@ class HMMBasedTrainingStep:
                         regime_forecasting_summary[tf] = artifact
 
                         rf_path = os.path.join(
-                            rf_dir, f"{exchange}_{symbol}_{tf}_regime_forecasting.json",
+                            rf_dir,
+                            f"{exchange}_{symbol}_{tf}_regime_forecasting.json",
                         )
                         with open(rf_path, "w") as f:
                             json.dump(artifact, f, indent=2)
@@ -666,7 +721,11 @@ class HMMBasedTrainingStep:
             return {"status": "FAILED", "error": str(e)}
 
     async def _load_hmm_data(
-        self, exchange: str, symbol: str, data_dir: str, timeframes: list[str],
+        self,
+        exchange: str,
+        symbol: str,
+        data_dir: str,
+        timeframes: list[str],
     ) -> dict[str, pd.DataFrame]:
         """Load HMM cluster data for all timeframes using centralized HMM composite manager."""
         hmm_data: dict[str, pd.DataFrame] = {}
@@ -684,7 +743,10 @@ class HMMBasedTrainingStep:
             try:
                 # Load composite clusters using the manager
                 clusters_df = hmm_manager.load_composite_clusters(
-                    exchange=exchange, symbol=symbol, timeframe=timeframe, data_dir=data_dir,
+                    exchange=exchange,
+                    symbol=symbol,
+                    timeframe=timeframe,
+                    data_dir=data_dir,
                 )
 
                 if clusters_df is None:
@@ -711,15 +773,11 @@ class HMMBasedTrainingStep:
                                 intensity_df["timestamp"],
                             )
                             # Normalize timestamps to remove microseconds for consistency
-                            intensity_df["timestamp"] = intensity_df[
-                                "timestamp"
-                            ].dt.floor("1T")
+                            intensity_df["timestamp"] = intensity_df["timestamp"].dt.floor("1T")
                             intensity_df = intensity_df.set_index("timestamp")
 
                         # Merge cluster assignments with intensity scores
-                        hmm_df = clusters_df.merge(
-                            intensity_df, left_index=True, right_index=True, how="inner"
-                        )
+                        hmm_df = clusters_df.merge(intensity_df, left_index=True, right_index=True, how="inner")
                         hmm_data[timeframe] = hmm_df
                         self.logger.info(
                             f"✅ Loaded complete HMM data for {timeframe}: {hmm_df.shape}",
@@ -744,7 +802,11 @@ class HMMBasedTrainingStep:
         return hmm_data
 
     async def _load_feature_data(
-        self, exchange: str, symbol: str, data_dir: str, timeframes: list[str],
+        self,
+        exchange: str,
+        symbol: str,
+        data_dir: str,
+        timeframes: list[str],
     ) -> dict[str, pd.DataFrame]:
         """Load feature data for all timeframes with multiple source support and validation.
 
@@ -758,13 +820,16 @@ class HMMBasedTrainingStep:
             from src.training.steps.feature_artifact_loader import (
                 load_features_for_step,
             )
+
             self.logger.info("🔍 Using centralized feature_artifact_loader for 1m features (Step 6)")
             loaded = load_features_for_step(symbol, exchange, data_dir, step_name="Step6.HMMTraining")
             # Use train split as canonical for resampling; index must be timestamp
             base_df = loaded.get("train")
             if isinstance(base_df, pd.DataFrame) and not base_df.empty:
                 if "timestamp" in base_df.columns:
-                    base_df = base_df.set_index(pd.to_datetime(base_df["timestamp"]).dt.floor("1T")).drop(columns=["timestamp"], errors="ignore")
+                    base_df = base_df.set_index(pd.to_datetime(base_df["timestamp"]).dt.floor("1T")).drop(
+                        columns=["timestamp"], errors="ignore"
+                    )
                 elif not isinstance(base_df.index, pd.DatetimeIndex):
                     # Create synthetic timestamp if needed
                     start_time = pd.Timestamp.now() - pd.Timedelta(days=60)
@@ -782,14 +847,20 @@ class HMMBasedTrainingStep:
                         feature_data[timeframe] = resampled
                         self.logger.info(f"✅ Resampled features for {timeframe}: {resampled.shape}")
             else:
-                self.logger.info("ℹ️ Centralized loader returned empty or invalid 1m features; falling back to legacy loaders")
+                self.logger.info(
+                    "ℹ️ Centralized loader returned empty or invalid 1m features; falling back to legacy loaders"
+                )
         except Exception as e:
             self.logger.info(f"ℹ️ Centralized loader unavailable or failed: {e}. Falling back to legacy loaders")
 
         # 2) Fallback: legacy multi-source loading per timeframe if not already loaded
         for timeframe in timeframes:
             try:
-                if timeframe in feature_data and isinstance(feature_data[timeframe], pd.DataFrame) and not feature_data[timeframe].empty:
+                if (
+                    timeframe in feature_data
+                    and isinstance(feature_data[timeframe], pd.DataFrame)
+                    and not feature_data[timeframe].empty
+                ):
                     # Already populated from centralized path
                     continue
 
@@ -809,10 +880,7 @@ class HMMBasedTrainingStep:
                             raise ValueError(f"Invalid pickle format for {timeframe}")
 
                 # Try to load from combined parquet file
-                if (
-                    features_df is None
-                    and self.data_source_config["fallback_to_parquet"]
-                ):
+                if features_df is None and self.data_source_config["fallback_to_parquet"]:
                     feature_path = f"{data_dir}/{exchange}_{symbol}_features_{timeframe}.parquet"
                     if os.path.exists(feature_path):
                         features_df = pd.read_parquet(feature_path)
@@ -823,7 +891,10 @@ class HMMBasedTrainingStep:
                 # Try to load from split parquet files and combine them
                 if features_df is None:
                     features_df = await self._load_and_combine_split_features(
-                        exchange, symbol, data_dir, timeframe,
+                        exchange,
+                        symbol,
+                        data_dir,
+                        timeframe,
                     )
                     if features_df is not None:
                         self.logger.info(
@@ -833,7 +904,10 @@ class HMMBasedTrainingStep:
                 # Try to load from legacy train/test/validation pickle files
                 if features_df is None:
                     features_df = await self._load_and_combine_legacy_features(
-                        exchange, symbol, data_dir, timeframe,
+                        exchange,
+                        symbol,
+                        data_dir,
+                        timeframe,
                     )
                     if features_df is not None:
                         self.logger.info(
@@ -858,7 +932,10 @@ class HMMBasedTrainingStep:
                     )
                     start_time = pd.Timestamp.now() - pd.Timedelta(days=60)  # 60 days ago
                     timestamps = pd.date_range(
-                        start=start_time, periods=len(features_df), freq="1T", tz="UTC",
+                        start=start_time,
+                        periods=len(features_df),
+                        freq="1T",
+                        tz="UTC",
                     )
                     features_df = features_df.copy()
                     features_df.index = timestamps
@@ -869,7 +946,8 @@ class HMMBasedTrainingStep:
                 # Data quality validation
                 if self.data_source_config["validate_data_quality"]:
                     features_df = await self._validate_and_clean_data(
-                        features_df, timeframe,
+                        features_df,
+                        timeframe,
                     )
 
                 feature_data[timeframe] = features_df
@@ -883,7 +961,9 @@ class HMMBasedTrainingStep:
         return feature_data
 
     async def _validate_and_clean_data(
-        self, df: pd.DataFrame, timeframe: str,
+        self,
+        df: pd.DataFrame,
+        timeframe: str,
     ) -> pd.DataFrame:
         """Validate and clean feature data."""
         try:
@@ -913,12 +993,18 @@ class HMMBasedTrainingStep:
             return df
 
     async def _load_and_combine_split_features(
-        self, exchange: str, symbol: str, data_dir: str, timeframe: str,
+        self,
+        exchange: str,
+        symbol: str,
+        data_dir: str,
+        timeframe: str,
     ) -> pd.DataFrame | None:
         """Load and combine split parquet features for a specific timeframe."""
         try:
             # Path to the split features directory
-            split_features_dir = f"{data_dir}/parquet/features/exchange={exchange}/symbol={symbol}/timeframe={timeframe}"
+            split_features_dir = (
+                f"{data_dir}/parquet/features/exchange={exchange}/symbol={symbol}/timeframe={timeframe}"
+            )
 
             if not os.path.exists(split_features_dir):
                 self.logger.debug(
@@ -932,9 +1018,7 @@ class HMMBasedTrainingStep:
                 split_dir = os.path.join(split_features_dir, f"split={split_name}")
                 if os.path.exists(split_dir):
                     # Find all parquet files in the split directory
-                    parquet_files = [
-                        f for f in os.listdir(split_dir) if f.endswith(".parquet")
-                    ]
+                    parquet_files = [f for f in os.listdir(split_dir) if f.endswith(".parquet")]
                     if parquet_files:
                         split_file = os.path.join(split_dir, parquet_files[0])
                         split_df = pd.read_parquet(split_file)
@@ -972,7 +1056,11 @@ class HMMBasedTrainingStep:
             return None
 
     async def _load_and_combine_legacy_features(
-        self, exchange: str, symbol: str, data_dir: str, timeframe: str,
+        self,
+        exchange: str,
+        symbol: str,
+        data_dir: str,
+        timeframe: str,
     ) -> pd.DataFrame | None:
         """Load and combine legacy train/test/validation pickle features."""
         try:  # Try to load train, test, and validation pickle files
@@ -1017,7 +1105,11 @@ class HMMBasedTrainingStep:
             return None
 
     async def _create_timeframe_specific_features(
-        self, exchange: str, symbol: str, data_dir: str, timeframes: list[str],
+        self,
+        exchange: str,
+        symbol: str,
+        data_dir: str,
+        timeframes: list[str],
     ) -> None:
         """Create timeframe-specific feature files from available data."""
         try:  # First, try to get combined feature data from any available source
@@ -1027,7 +1119,10 @@ class HMMBasedTrainingStep:
             split_features_dir = f"{data_dir}/parquet/features/exchange={exchange}/symbol={symbol}/timeframe=1m"
             if os.path.exists(split_features_dir):
                 combined_features = await self._load_and_combine_split_features(
-                    exchange, symbol, data_dir, "1m",
+                    exchange,
+                    symbol,
+                    data_dir,
+                    "1m",
                 )
             if combined_features is not None:
                 self.logger.info(
@@ -1037,7 +1132,10 @@ class HMMBasedTrainingStep:
             # If no split files, try legacy pickle files
             if combined_features is None:
                 combined_features = await self._load_and_combine_legacy_features(
-                    exchange, symbol, data_dir, "1m",
+                    exchange,
+                    symbol,
+                    data_dir,
+                    "1m",
                 )
             if combined_features is not None:
                 self.logger.info(
@@ -1062,7 +1160,8 @@ class HMMBasedTrainingStep:
                 else:
                     # Resample to other timeframes
                     resampled_features = await self._resample_features_to_timeframe(
-                        combined_features, timeframe,
+                        combined_features,
+                        timeframe,
                     )
                     if resampled_features is not None:
                         output_path = f"{data_dir}/{exchange}_{symbol}_features_{timeframe}.parquet"
@@ -1084,7 +1183,9 @@ class HMMBasedTrainingStep:
             self.logger.exception(f"❌ Failed to create timeframe-specific features: {e}")
 
     async def _resample_features_to_timeframe(
-        self, features_df: pd.DataFrame, target_timeframe: str,
+        self,
+        features_df: pd.DataFrame,
+        target_timeframe: str,
     ) -> pd.DataFrame | None:
         """Resample 1m features to target timeframe."""
         try:
@@ -1128,7 +1229,9 @@ class HMMBasedTrainingStep:
                 # Create a proper timestamp index starting from a reasonable date
                 start_date = pd.Timestamp.now() - pd.Timedelta(days=180)
                 timestamps = pd.date_range(
-                    start=start_date, periods=len(features_df), freq=freq,
+                    start=start_date,
+                    periods=len(features_df),
+                    freq=freq,
                 )
                 features_df = features_df.copy()
                 features_df.index = timestamps
@@ -1170,7 +1273,10 @@ class HMMBasedTrainingStep:
             return None
 
     async def _prepare_timeframe_data(
-        self, hmm_df: pd.DataFrame, features_df: pd.DataFrame, timeframe: str,
+        self,
+        hmm_df: pd.DataFrame,
+        features_df: pd.DataFrame,
+        timeframe: str,
     ) -> pd.DataFrame | None:
         """Prepare data for a specific timeframe with regime-specific splitting and feature selection."""
         try:
@@ -1196,12 +1302,8 @@ class HMMBasedTrainingStep:
             common_start = common_end - pd.Timedelta(days=180)
 
             # Filter both datasets to the common range
-            hmm_df_filtered = hmm_df[
-                (hmm_df.index >= common_start) & (hmm_df.index <= common_end)
-            ]
-            features_df_filtered = features_df[
-                (features_df.index >= common_start) & (features_df.index <= common_end)
-            ]
+            hmm_df_filtered = hmm_df[(hmm_df.index >= common_start) & (hmm_df.index <= common_end)]
+            features_df_filtered = features_df[(features_df.index >= common_start) & (features_df.index <= common_end)]
 
             self.logger.info(f"📊 Data range alignment for {timeframe}:")
             self.logger.info(
@@ -1217,9 +1319,7 @@ class HMMBasedTrainingStep:
             )
 
             # Merge HMM data with features on timestamp index
-            merged_df = hmm_df_filtered.merge(
-                features_df_filtered, left_index=True, right_index=True, how="inner"
-            )
+            merged_df = hmm_df_filtered.merge(features_df_filtered, left_index=True, right_index=True, how="inner")
 
             if merged_df.empty:
                 self.logger.warning(
@@ -1288,70 +1388,65 @@ class HMMBasedTrainingStep:
             return None
 
     async def _load_hmm_composite_regime_data(
-        self, timeframe: str,
+        self,
+        timeframe: str,
     ) -> dict[str, pd.DataFrame]:
         """Load unified HMM composite regime dataset with labels."""
         try:
             data_dir = self.config.get("data_dir", "data/training")
             symbol = self.config.get("symbol", "ETHUSDT")
             exchange = self.config.get("exchange", "BINANCE")
-            
+
             # Try to load unified regime dataset first (new approach)
-            unified_regime_file = os.path.join(
-                data_dir, 
-                f"{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet"
-            )
-            
+            unified_regime_file = os.path.join(data_dir, f"{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet")
+
             if os.path.exists(unified_regime_file):
                 self.logger.info(f"✅ Loading unified regime dataset: {unified_regime_file}")
                 unified_data = pd.read_parquet(unified_regime_file)
-                
+
                 # Load regime labels mapping
-                labels_file = os.path.join(
-                    data_dir, 
-                    f"{exchange}_{symbol}_{timeframe}_regime_labels.json"
-                )
-                
+                labels_file = os.path.join(data_dir, f"{exchange}_{symbol}_{timeframe}_regime_labels.json")
+
                 if os.path.exists(labels_file):
                     with open(labels_file) as f:
                         regime_labels = json.load(f)
-                    
+
                     regime_ids = regime_labels.get("regime_ids", [])
                     self.logger.info(f"📊 Found {len(regime_ids)} regimes in unified dataset")
-                    
+
                     # Create regime splits from unified dataset
                     regime_splits = {}
                     for regime_id in regime_ids:
                         regime_data = unified_data[unified_data["composite_cluster_id"] == regime_id].copy()
-                        
+
                         if len(regime_data) > 0:
                             # Split into train/validation/test (80/10/10)
                             total_len = len(regime_data)
                             train_end = int(total_len * 0.8)
                             val_end = int(total_len * 0.9)
-                            
+
                             regime_splits[f"regime_{regime_id}"] = {
                                 "data": {
                                     "train": regime_data.iloc[:train_end],
                                     "validation": regime_data.iloc[train_end:val_end],
-                                    "test": regime_data.iloc[val_end:]
+                                    "test": regime_data.iloc[val_end:],
                                 },
                                 "description": f"Regime {regime_id} from unified dataset",
-                                "total_samples": total_len
+                                "total_samples": total_len,
                             }
-                            
+
                             self.logger.info(
                                 f"✅ Created splits for regime {regime_id}: "
                                 f"train={len(regime_data.iloc[:train_end])}, "
                                 f"val={len(regime_data.iloc[train_end:val_end])}, "
                                 f"test={len(regime_data.iloc[val_end:])}"
                             )
-                    
+
                     self.logger.info(f"📊 Created {len(regime_splits)} regime splits from unified dataset")
                     return regime_splits
                 else:
                     self.logger.warning(f"⚠️ Regime labels file not found: {labels_file}")
-            
+
             # Fallback to legacy approach for backward compatibility
             self.logger.warning("⚠️ Falling back to legacy regime data loading approach")
             regime_data_dir = os.path.join(data_dir, "regime_data")
@@ -1401,7 +1496,8 @@ class HMMBasedTrainingStep:
                     regime_splits[regime_key] = {
                         "data": regime_data,
                         "description": regime_info.get(
-                            "description", f"Regime {regime_key}",
+                            "description",
+                            f"Regime {regime_key}",
                         ),
                     }
 
@@ -1415,7 +1511,9 @@ class HMMBasedTrainingStep:
             return {}
 
     async def _add_regime_change_features(
-        self, data: pd.DataFrame, timeframe: str,
+        self,
+        data: pd.DataFrame,
+        timeframe: str,
     ) -> pd.DataFrame:
         """Add regime change prediction features."""
         try:
@@ -1424,9 +1522,7 @@ class HMMBasedTrainingStep:
             data["regime_change_abs"] = data["regime_change"].abs()
 
             # Add regime stability features
-            data["regime_duration"] = data.groupby(
-                (data["target"] != data["target"].shift()).cumsum()
-            ).cumcount()
+            data["regime_duration"] = data.groupby((data["target"] != data["target"].shift()).cumsum()).cumcount()
 
             # Add regime transition probabilities (simplified)
             regime_counts = data["target"].value_counts()
@@ -1443,7 +1539,9 @@ class HMMBasedTrainingStep:
             return data
 
     async def _train_timeframe_model(
-        self, data: pd.DataFrame, timeframe: str,
+        self,
+        data: pd.DataFrame,
+        timeframe: str,
     ) -> dict[str, Any] | None:
         """Train model for a specific timeframe with extensive validation and cross-validation."""
         try:
@@ -1454,16 +1552,17 @@ class HMMBasedTrainingStep:
 
             # Prepare features and target
             feature_columns = [
-                col
-                for col in data.columns
-                if col not in ["target", "timeframe", "composite_cluster_id"]
+                col for col in data.columns if col not in ["target", "timeframe", "composite_cluster_id"]
             ]
             X = data[feature_columns]
             y = data["target"]
 
             # Apply enhanced optimization based on model architecture
             X_optimized, optimization_metadata = await self._apply_enhanced_optimization(
-                X, y, timeframe, architecture,
+                X,
+                y,
+                timeframe,
+                architecture,
             )
 
             # Update feature columns after optimization
@@ -1554,7 +1653,8 @@ class HMMBasedTrainingStep:
             # Aggregate cross-validation results
             if cv_results:
                 return await self._aggregate_cv_results(
-                    cv_results=timeframe, architecture=architecture,
+                    cv_results=timeframe,
+                    architecture=architecture,
                 )
             self.logger.error(
                 f"❌ No successful cross-validation results for {timeframe}",
@@ -1582,7 +1682,7 @@ class HMMBasedTrainingStep:
                 self.logger.error(
                     "💡 Please run step3_hmm_regime_discovery first to create regime splits",
                 )
-                msg = f"Missing regime splits for {timeframe}. Run step3_hmm_regime_discovery first.",
+                msg = (f"Missing regime splits for {timeframe}. Run step3_hmm_regime_discovery first.",)
                 raise ValueError(
                     msg,
                 )
@@ -1599,12 +1699,10 @@ class HMMBasedTrainingStep:
                 val_data = regime_data.get("validation")
                 test_data = regime_data.get("test")
 
-                if (
-                    train_data is None
-                    or len(train_data) < self.validation_config["min_samples_per_split"]
-                ):
+                if train_data is None or len(train_data) < self.validation_config["min_samples_per_split"]:
                     self.logger.warning(
-                        f"⚠️ Insufficient training data for regime {regime_key}: {len(train_data) if train_data is not None else 0} rows",
+                        f"⚠️ Insufficient training data for regime {regime_key}: {
+                            len(train_data) if train_data is not None else 0} rows",
                     )
                     continue
 
@@ -1612,7 +1710,10 @@ class HMMBasedTrainingStep:
                     f"🎯 Training {architecture} model for regime {regime_key}: {regime_desc}",
                 )
                 self.logger.info(
-                    f"   📊 Data: train={len(train_data)}, val={len(val_data) if val_data is not None else 0}, test={len(test_data) if test_data is not None else 0}"
+                    f"   📊 Data: train={
+                        len(train_data)}, val={
+                        len(val_data) if val_data is not None else 0}, test={
+                        len(test_data) if test_data is not None else 0}"
                 )
 
                 # Prepare features and target
@@ -1714,7 +1815,16 @@ class HMMBasedTrainingStep:
 
     @validate_feature_engineering_with_lookahead_bias_detection
     async def _train_lightgbm_model_regime(
-        self, X_train: pd.DataFrame, X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series, y_val: pd.Series, y_test: pd.Series, timeframe: str, regime_key: str, ) -> dict[str, Any] | None:
+        self,
+        X_train: pd.DataFrame,
+        X_val: pd.DataFrame,
+        X_test: pd.DataFrame,
+        y_train: pd.Series,
+        y_val: pd.Series,
+        y_test: pd.Series,
+        timeframe: str,
+        regime_key: str,
+    ) -> dict[str, Any] | None:
         """Train LightGBM model for a specific regime."""
         try:
             self.logger.info(f"   🌳 Training LightGBM model for regime {regime_key}")
@@ -1748,9 +1858,7 @@ class HMMBasedTrainingStep:
             test_score, model.score(X_test_clean, y_test)
 
             # Feature importance
-            feature_importance, dict(
-                zip(X_train_clean.columns, model.feature_importances_, strict=False)
-            )
+            feature_importance, dict(zip(X_train_clean.columns, model.feature_importances_, strict=False))
 
             result = {
                 "model": model,
@@ -1767,7 +1875,10 @@ class HMMBasedTrainingStep:
             }
 
             self.logger.info(
-                f"   ✅ LightGBM regime {regime_key}: train={train_score:.3f}, val={val_score:.3f}, test={test_score:.3f}"
+                f"   ✅ LightGBM regime {regime_key}: train={
+                    train_score:.3f}, val={
+                    val_score:.3f}, test={
+                    test_score:.3f}"
             )
             return result
 
@@ -1778,7 +1889,16 @@ class HMMBasedTrainingStep:
             return None
 
     async def _train_cnn_model_regime(
-        self, X_train: pd.DataFrame, X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series, y_val: pd.Series, y_test: pd.Series, timeframe: str, regime_key: str, ) -> dict[str, Any] | None:
+        self,
+        X_train: pd.DataFrame,
+        X_val: pd.DataFrame,
+        X_test: pd.DataFrame,
+        y_train: pd.Series,
+        y_val: pd.Series,
+        y_test: pd.Series,
+        timeframe: str,
+        regime_key: str,
+    ) -> dict[str, Any] | None:
         """Train CNN model for a specific regime."""
         try:
             self.logger.info(f"   🧠 Training CNN model for regime {regime_key}")
@@ -1796,7 +1916,16 @@ class HMMBasedTrainingStep:
             return None
 
     async def _train_tcn_model_regime(
-        self, X_train: pd.DataFrame, X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series, y_val: pd.Series, y_test: pd.Series, timeframe: str, regime_key: str, ) -> dict[str, Any] | None:
+        self,
+        X_train: pd.DataFrame,
+        X_val: pd.DataFrame,
+        X_test: pd.DataFrame,
+        y_train: pd.Series,
+        y_val: pd.Series,
+        y_test: pd.Series,
+        timeframe: str,
+        regime_key: str,
+    ) -> dict[str, Any] | None:
         """Train TCN model for a specific regime."""
         try:
             self.logger.info(f"   🔄 Training TCN model for regime {regime_key}")
@@ -1814,7 +1943,16 @@ class HMMBasedTrainingStep:
             return None
 
     async def _train_transformer_model_regime(
-        self, X_train: pd.DataFrame, X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series, y_val: pd.Series, y_test: pd.Series, timeframe: str, regime_key: str, ) -> dict[str, Any] | None:
+        self,
+        X_train: pd.DataFrame,
+        X_val: pd.DataFrame,
+        X_test: pd.DataFrame,
+        y_train: pd.Series,
+        y_val: pd.Series,
+        y_test: pd.Series,
+        timeframe: str,
+        regime_key: str,
+    ) -> dict[str, Any] | None:
         """Train Transformer model for a specific regime."""
         try:
             self.logger.info(
@@ -1834,7 +1972,10 @@ class HMMBasedTrainingStep:
             return None
 
     async def _add_regime_change_features(
-        self, data: pd.DataFrame, timeframe: str, ) -> pd.DataFrame:
+        self,
+        data: pd.DataFrame,
+        timeframe: str,
+    ) -> pd.DataFrame:
         """Add regime change prediction features to the dataset."""
         try:
             # Create regime change targets
@@ -1847,11 +1988,7 @@ class HMMBasedTrainingStep:
                 prev_regime = regimes.iloc[i - 1]
                 curr_regime = regimes.iloc[i]
 
-                if (
-                    prev_regime != curr_regime
-                    and prev_regime >= 0
-                    and curr_regime >= 0
-                ):
+                if prev_regime != curr_regime and prev_regime >= 0 and curr_regime >= 0:
                     regime_changes.append(1)  # Regime change detected
                 else:
                     regime_changes.append(0)  # No change
@@ -1865,16 +2002,13 @@ class HMMBasedTrainingStep:
             data["regime_change_prev"] = data["regime_change"].shift(1).fillna(0)
 
             # Add regime stability features
-            data["regime_stability"] = (
-                data["regime_change"].rolling(window=10).sum()
-            )
-            data["regime_volatility"] = (
-                data["regime_change"].rolling(window=20).std()
-            )
+            data["regime_stability"] = data["regime_change"].rolling(window=10).sum()
+            data["regime_volatility"] = data["regime_change"].rolling(window=20).std()
 
             # HMM stay/switch risk (leak-free, trailing)
             stay_prob, 1.0 - data["regime_change"].rolling(
-                window=20, min_periods=1,
+                window=20,
+                min_periods=1,
             ).mean()
             data["hmm_stay_prob_w20"] = stay_prob.fillna(0.5)
             data["hmm_switch_risk_w20"] = 1.0 - data["hmm_stay_prob_w20"]
@@ -1904,9 +2038,7 @@ class HMMBasedTrainingStep:
             ]
             kept = [c for c in hmm_cols if c in data.columns]
             if len(kept) != len(hmm_cols):
-                self.logger.debug(
-                    f"ℹ️ HMM feature cap/availability: kept={kept}"
-                )
+                self.logger.debug(f"ℹ️ HMM feature cap/availability: kept={kept}")
 
             self.logger.info(
                 f"✅ Added regime change + HMM features for {timeframe} (kept {len(kept)})",
@@ -1919,7 +2051,10 @@ class HMMBasedTrainingStep:
             return data
 
     async def _create_regime_aware_splits(
-        self, data: pd.DataFrame, timeframe: str, ) -> tuple[list, list, list]:
+        self,
+        data: pd.DataFrame,
+        timeframe: str,
+    ) -> tuple[list, list, list]:
         """Create regime-aware time series splits."""
         try:
             n_splits = self.validation_config["n_splits"]
@@ -1955,7 +2090,10 @@ class HMMBasedTrainingStep:
                 # Ensure regime balance in splits
                 if self.validation_config["regime_aware_splitting"]:
                     train_idx, val_idx, test_idx = self._balance_regimes_in_splits(
-                        data, train_idx, val_idx, test_idx,
+                        data,
+                        train_idx,
+                        val_idx,
+                        test_idx,
                     )
 
                 train_splits.append(train_idx)
@@ -1973,21 +2111,23 @@ class HMMBasedTrainingStep:
             return self._create_simple_splits(data)
 
     def _balance_regimes_in_splits(
-        self, data: pd.DataFrame, train_idx: list, val_idx: list, test_idx: list, ) -> tuple[list, list, list]:
+        self,
+        data: pd.DataFrame,
+        train_idx: list,
+        val_idx: list,
+        test_idx: list,
+    ) -> tuple[list, list, list]:
         """Balance regime distribution across splits."""
         try:
             # Get regime distribution
-            all_regimes = (data["target"].iloc[train_idx + val_idx + test_idx].value_counts()
-            )
+            all_regimes = data["target"].iloc[train_idx + val_idx + test_idx].value_counts()
 
             # Ensure each split has representation from all regimes
             balanced_train, balanced_val, balanced_test = [], [], []
 
             for regime in all_regimes.index:
                 regime_indices, data[data["target"] == regime].index
-                regime_indices = [
-                    i for i in regime_indices if i in train_idx + val_idx + test_idx
-                ]
+                regime_indices = [i for i in regime_indices if i in train_idx + val_idx + test_idx]
 
             if len(regime_indices) >= 3:  # Need at least 3 samples for 3 splits
                 # Distribute regime samples across splits
@@ -2032,7 +2172,11 @@ class HMMBasedTrainingStep:
             return [], [], []
 
     async def _aggregate_cv_results(
-        self, cv_results: list[dict], timeframe: str, architecture: str, ) -> dict[str, Any]:
+        self,
+        cv_results: list[dict],
+        timeframe: str,
+        architecture: str,
+    ) -> dict[str, Any]:
         """Aggregate cross-validation results."""
         try:
             # Calculate average metrics
@@ -2066,14 +2210,17 @@ class HMMBasedTrainingStep:
             return cv_results[0] if cv_results else {}
 
     async def _train_cnn_model(
-        self, data: pd.DataFrame, timeframe: str, ) -> dict[str, Any]:
+        self,
+        data: pd.DataFrame,
+        timeframe: str,
+    ) -> dict[str, Any]:
         """Train CNN model for 1m timeframe (Tactician)."""
         try:
             self.logger.info(f"🔄 Training CNN for {timeframe}")
 
             # Prepare features
             X, y, scaler, label_encoder, self._prepare_features(
-                data = self.specialist_features,
+                data=self.specialist_features,
             )
 
             # Reshape for CNN (samples, channels, sequence_length)
@@ -2083,7 +2230,11 @@ class HMMBasedTrainingStep:
 
             # Split data
             split_idx = int(0.8 * len(X_sequences))
-            X_train = X_test, X_sequences[:split_idx], X_sequences[split_idx:],
+            X_train = (
+                X_test,
+                X_sequences[:split_idx],
+                X_sequences[split_idx:],
+            )
             y_train, y_test = (
                 y[sequence_length : split_idx + sequence_length],
                 y[split_idx + sequence_length :],
@@ -2119,14 +2270,17 @@ class HMMBasedTrainingStep:
             return None
 
     async def _train_tcn_model(
-        self, data: pd.DataFrame, timeframe: str, ) -> dict[str, Any]:
+        self,
+        data: pd.DataFrame,
+        timeframe: str,
+    ) -> dict[str, Any]:
         """Train Temporal Convolutional Network for 5m timeframe (Analyst)."""
         try:
             self.logger.info(f"🔄 Training TCN for {timeframe}")
 
             # Prepare features
             X, y, scaler, label_encoder, self._prepare_features(
-                data = self.specialist_features,
+                data=self.specialist_features,
             )
 
             # Create sequences for TCN
@@ -2135,7 +2289,11 @@ class HMMBasedTrainingStep:
 
             # Split data
             split_idx = int(0.8 * len(X_sequences))
-            X_train = X_test, X_sequences[:split_idx], X_sequences[split_idx:],
+            X_train = (
+                X_test,
+                X_sequences[:split_idx],
+                X_sequences[split_idx:],
+            )
             y_train, y_test = (
                 y[sequence_length : split_idx + sequence_length],
                 y[split_idx + sequence_length :],
@@ -2172,14 +2330,17 @@ class HMMBasedTrainingStep:
             return None
 
     async def _train_transformer_model(
-        self, data: pd.DataFrame, timeframe: str, ) -> dict[str, Any]:
+        self,
+        data: pd.DataFrame,
+        timeframe: str,
+    ) -> dict[str, Any]:
         """Train Transformer model for 15m timeframe (Analyst)."""
         try:
             self.logger.info(f"🔄 Training Transformer for {timeframe}")
 
             # Prepare features
             X, y, scaler, label_encoder, self._prepare_features(
-                data = self.specialist_features,
+                data=self.specialist_features,
             )
 
             # Create sequences for Transformer
@@ -2188,7 +2349,11 @@ class HMMBasedTrainingStep:
 
             # Split data
             split_idx = int(0.8 * len(X_sequences))
-            X_train = X_test, X_sequences[:split_idx], X_sequences[split_idx:],
+            X_train = (
+                X_test,
+                X_sequences[:split_idx],
+                X_sequences[split_idx:],
+            )
             y_train, y_test = (
                 y[sequence_length : split_idx + sequence_length],
                 y[split_idx + sequence_length :],
@@ -2226,14 +2391,18 @@ class HMMBasedTrainingStep:
             return None
 
     async def _train_lightgbm_model(
-        self, data: pd.DataFrame, timeframe: str, ) -> dict[str, Any]:
+        self,
+        data: pd.DataFrame,
+        timeframe: str,
+    ) -> dict[str, Any]:
         """Train LightGBM model with multi-output probability training for 30m timeframe (Analyst)."""
         try:
             self.logger.info(f"🔄 Training LightGBM with multi-output probability training for {timeframe}")
 
             # Prepare features
             X, y, scaler, label_encoder = self._prepare_features(
-                data=data, feature_columns=self.specialist_features,
+                data=data,
+                feature_columns=self.specialist_features,
             )
 
             # Split data
@@ -2242,14 +2411,16 @@ class HMMBasedTrainingStep:
             y_train, y_test = y[:split_idx], y[split_idx:]
 
             # Create market data DataFrame for probability calculations
-            market_data = pd.DataFrame({
-                'close': data.get('close', np.random.randn(len(data))),
-                'volume': data.get('volume', np.random.randn(len(data)))
-            })
+            market_data = pd.DataFrame(
+                {
+                    "close": data.get("close", np.random.randn(len(data))),
+                    "volume": data.get("volume", np.random.randn(len(data))),
+                }
+            )
 
             # Initialize multi-output probability trainer
             from ..multi_output_probability_trainer import MultiOutputProbabilityTrainer
-            
+
             # Configure multi-output training with advanced models
             multi_output_config = {
                 "use_lightgbm": True,
@@ -2265,11 +2436,11 @@ class HMMBasedTrainingStep:
                 # Advanced model configuration
                 "timeframe": "5m",  # Use TCN for 5-minute data
                 "model_architectures": {
-                    "1m": "cnn",      # CNN for 1-minute data (Tactician)
-                    "5m": "tcn",      # TCN for 5-minute data (Analyst)
-                    "15m": "transformer", # Transformer for 15-minute data (Enhanced)
-                    "30m": "lightgbm",    # LightGBM for 30-minute data (Analyst)
-                    "1h": "hmm_regime"    # HMM regime definition only
+                    "1m": "cnn",  # CNN for 1-minute data (Tactician)
+                    "5m": "tcn",  # TCN for 5-minute data (Analyst)
+                    "15m": "transformer",  # Transformer for 15-minute data (Enhanced)
+                    "30m": "lightgbm",  # LightGBM for 30-minute data (Analyst)
+                    "1h": "hmm_regime",  # HMM regime definition only
                 },
                 "neural_config": {
                     "tcn": {
@@ -2278,7 +2449,7 @@ class HMMBasedTrainingStep:
                         "dropout": 0.2,
                         "batch_size": 32,
                         "epochs": 50,
-                        "learning_rate": 0.001
+                        "learning_rate": 0.001,
                     },
                     "cnn": {
                         "num_filters": [64, 128, 256],
@@ -2286,7 +2457,7 @@ class HMMBasedTrainingStep:
                         "dropout": 0.2,
                         "batch_size": 32,
                         "epochs": 50,
-                        "learning_rate": 0.001
+                        "learning_rate": 0.001,
                     },
                     "transformer": {
                         "d_model": 128,
@@ -2295,7 +2466,7 @@ class HMMBasedTrainingStep:
                         "dropout": 0.1,
                         "batch_size": 32,
                         "epochs": 50,
-                        "learning_rate": 0.001
+                        "learning_rate": 0.001,
                     },
                     "lstm": {
                         "hidden_size": 128,
@@ -2304,7 +2475,7 @@ class HMMBasedTrainingStep:
                         "dropout": 0.2,
                         "batch_size": 32,
                         "epochs": 50,
-                        "learning_rate": 0.001
+                        "learning_rate": 0.001,
                     },
                     "gru": {
                         "hidden_size": 128,
@@ -2313,37 +2484,35 @@ class HMMBasedTrainingStep:
                         "dropout": 0.2,
                         "batch_size": 32,
                         "epochs": 50,
-                        "learning_rate": 0.001
-                    }
-                }
+                        "learning_rate": 0.001,
+                    },
+                },
             }
-            
+
             multi_output_trainer = MultiOutputProbabilityTrainer(multi_output_config)
-            
+
             # Generate multi-output targets
             y_train_multi = multi_output_trainer.prepare_multi_output_targets(
-                X_train, y_train, market_data.iloc[:len(X_train)]
+                X_train, y_train, market_data.iloc[: len(X_train)]
             )
             y_test_multi = multi_output_trainer.prepare_multi_output_targets(
-                X_test, y_test, market_data.iloc[len(X_train):]
+                X_test, y_test, market_data.iloc[len(X_train) :]
             )
-            
+
             # Train multi-output model
-            trained_models = multi_output_trainer.train_multi_output_model(
-                X_train, y_train_multi, X_test, y_test_multi
-            )
-            
+            trained_models = multi_output_trainer.train_multi_output_model(X_train, y_train_multi, X_test, y_test_multi)
+
             # Generate probability outputs
             price_action_probabilities = multi_output_trainer.predict_probabilities(
-                X_test, market_data.iloc[len(X_train):]
+                X_test, market_data.iloc[len(X_train) :]
             )
-            
+
             # Calculate overall metrics
             overall_metrics = {}
             for prob_type, prob_value in price_action_probabilities.items():
                 if prob_type != "generation_timestamp" and prob_type != "model_type":
                     overall_metrics[f"{prob_type}_value"] = prob_value
-            
+
             # Prepare model data for saving
             model_data = {
                 "multi_output_trainer": multi_output_trainer,
@@ -2357,19 +2526,18 @@ class HMMBasedTrainingStep:
                 "training_date": datetime.now().isoformat(),
                 "hyperparameters": multi_output_config,
                 "metrics": overall_metrics,
-                "price_action_probabilities": price_action_probabilities
+                "price_action_probabilities": price_action_probabilities,
             }
 
             # Save model with probabilities using multi-output format
             model_path = f"models/{timeframe}_multi_output_lightgbm_model.pkl"
             try:
                 from ..model_saving_utils import save_multi_output_model_with_probabilities
-                save_multi_output_model_with_probabilities(
-                    model_data, model_path, save_format="joblib"
-                )
+
+                save_multi_output_model_with_probabilities(model_data, model_path, save_format="joblib")
                 self.logger.info(f"✅ Saved multi-output LightGBM model with probabilities to {model_path}")
                 self.logger.info(f"   Probability outputs: {probability_outputs}")
-                
+
             except Exception as save_error:
                 self.logger.error(f"❌ Failed to save multi-output model: {save_error}")
                 # Fallback to simple save
@@ -2392,7 +2560,10 @@ class HMMBasedTrainingStep:
             return None
 
     def _prepare_features(
-        self, data: pd.DataFrame, feature_columns: list[str], ) -> tuple[np.ndarray, np.ndarray, StandardScaler, LabelEncoder]:
+        self,
+        data: pd.DataFrame,
+        feature_columns: list[str],
+    ) -> tuple[np.ndarray, np.ndarray, StandardScaler, LabelEncoder]:
         """Prepare features and targets for training."""
         # Select available features
         available_features = [f for f in feature_columns if f in data.columns]
@@ -2424,7 +2595,12 @@ class HMMBasedTrainingStep:
         return np.array(sequences)
 
     async def _save_models(
-        self, training_results: dict[str, Any], exchange: str, symbol: str, data_dir: str, ) -> None:
+        self,
+        training_results: dict[str, Any],
+        exchange: str,
+        symbol: str,
+        data_dir: str,
+    ) -> None:
         """Save trained models and comprehensive metadata."""
         try:
             # Create models directory
@@ -2433,10 +2609,9 @@ class HMMBasedTrainingStep:
 
             # Save each model with enhanced metadata
             for timeframe, result in training_results.items():
-                model_path = (f"{models_dir}/{exchange}_{symbol}_{timeframe}_hmm_model.pkl"
-                )
+                model_path = f"{models_dir}/{exchange}_{symbol}_{timeframe}_hmm_model.pkl"
 
-            # Enhanced model data with comprehensive metadata
+                # Enhanced model data with comprehensive metadata
                 model_data = {
                     "model": result.get("best_model"),
                     "architecture": result.get("architecture"),
@@ -2462,7 +2637,7 @@ class HMMBasedTrainingStep:
                 pickle.dump(model_data, f)
 
             self.logger.info(f"✅ Saved {timeframe} model to {model_path}")
-            
+
             # Log model to MLflow
             try:
                 if result.get("best_model"):
@@ -2477,8 +2652,8 @@ class HMMBasedTrainingStep:
                             "architecture": result.get("architecture", "unknown"),
                             "avg_accuracy": result.get("avg_accuracy", 0.0),
                             "avg_f1_score": result.get("avg_f1_score", 0.0),
-                            "training_algorithm": getattr(result["best_model"], '__class__.__name__', 'Unknown'),
-                        }
+                            "training_algorithm": getattr(result["best_model"], "__class__.__name__", "Unknown"),
+                        },
                     )
             except Exception as e:
                 self.logger.warning(f"⚠️ Failed to log {timeframe} model to MLflow: {e}")
@@ -2505,7 +2680,7 @@ class HMMBasedTrainingStep:
                         "cv_splits": len(result.get("cv_results", [])),
                         "regime_performance": result.get("regime_performance", {}),
                     }
-                for timeframe, result in training_results.items()
+                    for timeframe, result in training_results.items()
                 },
                 "system_info": {
                     "python_version": sys.version,
@@ -2521,7 +2696,7 @@ class HMMBasedTrainingStep:
             self.logger.info(
                 f"✅ Saved comprehensive training summary to {summary_path}",
             )
-            
+
             # Log training summary to MLflow with standardized naming
             try:
                 summary_artifact_name = log_step_artifact_with_standardized_name(
@@ -2533,10 +2708,10 @@ class HMMBasedTrainingStep:
                         "models_trained": len(training_results),
                         "timeframes": list(training_results.keys()),
                         "summary_type": "comprehensive_training_summary",
-                    }
+                    },
                 )
                 self.logger.info(f"✅ Logged training summary: {summary_artifact_name}")
-                
+
                 # Log comprehensive training report
                 report_data = {
                     "training_summary": summary,
@@ -2546,7 +2721,7 @@ class HMMBasedTrainingStep:
                     "training_results": training_results,
                     "execution_timestamp": datetime.now().isoformat(),
                 }
-                
+
                 report_name = log_step_report(
                     config=self.config,
                     step_name="step9_hmm_based_training",
@@ -2556,10 +2731,10 @@ class HMMBasedTrainingStep:
                         "models_trained": len(training_results),
                         "timeframes": list(training_results.keys()),
                         "model_architectures": list(self.model_architectures.keys()),
-                    }
+                    },
                 )
                 self.logger.info(f"✅ Logged HMM training report: {report_name}")
-                
+
                 # Log training metrics
                 all_metrics = {}
                 for timeframe, result in training_results.items():
@@ -2571,7 +2746,7 @@ class HMMBasedTrainingStep:
                         all_metrics[f"step9_{timeframe}_avg_precision"] = result["avg_precision"]
                     if "avg_recall" in result:
                         all_metrics[f"step9_{timeframe}_avg_recall"] = result["avg_recall"]
-                
+
                 if all_metrics:
                     log_step_metrics(
                         config=self.config,
@@ -2580,9 +2755,9 @@ class HMMBasedTrainingStep:
                         additional_metadata={
                             "metrics_type": "hmm_training_performance",
                             "models_trained": len(training_results),
-                        }
+                        },
                     )
-                    
+
             except Exception as e:
                 self.logger.warning(f"⚠️ Failed to log training summary to MLflow: {e}")
 
@@ -2593,8 +2768,7 @@ class HMMBasedTrainingStep:
                     feature_summary[timeframe] = result["feature_importance"]
 
             if feature_summary:
-                feature_path = (f"{models_dir}/{exchange}_{symbol}_feature_importance.json"
-                )
+                feature_path = f"{models_dir}/{exchange}_{symbol}_feature_importance.json"
                 with open(feature_path, "w") as f:
                     json.dump(feature_summary, f, indent=2, default=str)
                 self.logger.info(
@@ -2605,7 +2779,14 @@ class HMMBasedTrainingStep:
             self.logger.exception(f"❌ Failed to save models: {e}")
 
     async def _save_enhanced_artifacts(
-        self, training_results: dict[str, Any], data_dir: str, exchange: str, symbol: str, combined_data: pd.DataFrame, feature_columns: list, ) -> dict[str, Any]:
+        self,
+        training_results: dict[str, Any],
+        data_dir: str,
+        exchange: str,
+        symbol: str,
+        combined_data: pd.DataFrame,
+        feature_columns: list,
+    ) -> dict[str, Any]:
         """Save enhanced artifacts with comprehensive metadata and training history.
 
         Args:
@@ -2645,8 +2826,7 @@ class HMMBasedTrainingStep:
                 main_estimator, self._extract_estimator_from_artifact(
                     main_model_artifact,
                 )
-                main_model_file = (f"{artifacts_dir}/{exchange}_{symbol}_hmm_main_model.pkl"
-                )
+                main_model_file = f"{artifacts_dir}/{exchange}_{symbol}_hmm_main_model.pkl"
 
             with open(main_model_file, "wb") as f:
                 pickle.dump(main_estimator, f)
@@ -2664,8 +2844,7 @@ class HMMBasedTrainingStep:
             )
 
             # Save model metadata
-            metadata_file = (f"{artifacts_dir}/{exchange}_{symbol}_hmm_model_metadata.json"
-            )
+            metadata_file = f"{artifacts_dir}/{exchange}_{symbol}_hmm_model_metadata.json"
             with open(metadata_file, "w") as f:
                 json.dump(model_metadata, f, indent=2)
 
@@ -2688,12 +2867,15 @@ class HMMBasedTrainingStep:
 
             # Create training history
             training_history = await self._create_training_history(
-                training_results, exchange, symbol, combined_data, feature_columns,
+                training_results,
+                exchange,
+                symbol,
+                combined_data,
+                feature_columns,
             )
 
             # Save training history
-            history_file = (f"{artifacts_dir}/{exchange}_{symbol}_hmm_training_history.json"
-            )
+            history_file = f"{artifacts_dir}/{exchange}_{symbol}_hmm_training_history.json"
             with open(history_file, "w") as f:
                 json.dump(training_history, f, indent=2)
 
@@ -2701,22 +2883,26 @@ class HMMBasedTrainingStep:
 
             # Create feature analysis report
             feature_report = await self._create_feature_analysis_report(
-                combined_data, feature_columns, training_results,
+                combined_data,
+                feature_columns,
+                training_results,
             )
 
             # Save feature report
-            feature_file = (f"{artifacts_dir}/{exchange}_{symbol}_hmm_feature_report.json"
-            )
+            feature_file = f"{artifacts_dir}/{exchange}_{symbol}_hmm_feature_report.json"
             with open(feature_file, "w") as f:
                 json.dump(feature_report, f, indent=2)
 
             self.logger.info(f"✅ Saved feature analysis report to {feature_file}")
 
             # Create training summary
-            summary_file = (f"{artifacts_dir}/{exchange}_{symbol}_hmm_training_summary.json"
-            )
+            summary_file = f"{artifacts_dir}/{exchange}_{symbol}_hmm_training_summary.json"
             summary_data = await self._create_training_summary(
-                training_results, exchange, symbol, combined_data, feature_columns,
+                training_results,
+                exchange,
+                symbol,
+                combined_data,
+                feature_columns,
             )
 
             with open(summary_file, "w") as f:
@@ -2738,7 +2924,14 @@ class HMMBasedTrainingStep:
             return {}
 
     async def _create_model_metadata(
-        self, model_artifact: dict[str, Any], model_name: str, exchange: str, symbol: str, feature_columns: list, model_file: str, ) -> dict[str, Any]:
+        self,
+        model_artifact: dict[str, Any],
+        model_name: str,
+        exchange: str,
+        symbol: str,
+        feature_columns: list,
+        model_file: str,
+    ) -> dict[str, Any]:
         """Create comprehensive model metadata."""
         try:
             metadata = {
@@ -2747,9 +2940,7 @@ class HMMBasedTrainingStep:
                 "symbol": symbol,
                 "exchange": exchange,
                 "model_file": os.path.basename(model_file),
-                "model_size_mb": os.path.getsize(model_file) / (1024 * 1024)
-            if os.path.exists(model_file)
-                else 0,
+                "model_size_mb": os.path.getsize(model_file) / (1024 * 1024) if os.path.exists(model_file) else 0,
                 "feature_count": len(feature_columns),
                 "feature_columns": feature_columns,
                 "model_architectures": self.model_architectures,
@@ -2781,9 +2972,7 @@ class HMMBasedTrainingStep:
                 ]:
                     if mapping_key in model_artifact:
                         metadata["label_mapping"] = model_artifact[mapping_key]
-                        metadata["label_encoding_scheme"] = (
-                            f"{model_name}_contiguous_0_to_K_minus_1"
-                        )
+                        metadata["label_encoding_scheme"] = f"{model_name}_contiguous_0_to_K_minus_1"
                         break
 
             return metadata
@@ -2793,7 +2982,13 @@ class HMMBasedTrainingStep:
             return {"error": str(e)}
 
     async def _create_training_history(
-        self, training_results: dict[str, Any], exchange: str, symbol: str, combined_data: pd.DataFrame, feature_columns: list, ) -> dict[str, Any]:
+        self,
+        training_results: dict[str, Any],
+        exchange: str,
+        symbol: str,
+        combined_data: pd.DataFrame,
+        feature_columns: list,
+    ) -> dict[str, Any]:
         """Create comprehensive training history."""
         try:
             history = {
@@ -2802,8 +2997,7 @@ class HMMBasedTrainingStep:
                 "exchange": exchange,
                 "timeframes_trained": list(training_results.keys()),
                 "total_models": sum(
-                    len(models) if isinstance(models, dict) else 0
-        for models in training_results.values()
+                    len(models) if isinstance(models, dict) else 0 for models in training_results.values()
                 ),
                 "data_statistics": {
                     "total_samples": len(combined_data),
@@ -2811,8 +3005,7 @@ class HMMBasedTrainingStep:
                     "data_columns": list(combined_data.columns),
                     "data_types": combined_data.dtypes.astype(str).to_dict(),
                     "missing_values": combined_data.isnull().sum().to_dict(),
-                    "memory_usage_mb": combined_data.memory_usage(deep=True).sum()
-                    / (1024 * 1024),
+                    "memory_usage_mb": combined_data.memory_usage(deep=True).sum() / (1024 * 1024),
                 },
                 "model_performance": {},
                 "training_configuration": {
@@ -2841,7 +3034,11 @@ class HMMBasedTrainingStep:
             return {"error": str(e)}
 
     async def _create_feature_analysis_report(
-        self, combined_data: pd.DataFrame, feature_columns: list, training_results: dict[str, Any], ) -> dict[str, Any]:
+        self,
+        combined_data: pd.DataFrame,
+        feature_columns: list,
+        training_results: dict[str, Any],
+    ) -> dict[str, Any]:
         """Create comprehensive feature analysis report."""
         try:
             report = {
@@ -2866,11 +3063,7 @@ class HMMBasedTrainingStep:
                             "p50": float(feature_data.quantile(0.50)),
                             "p75": float(feature_data.quantile(0.75)),
                             "missing_pct": float(
-                                (
-                                    combined_data[feature].isnull().sum()
-                                    / len(combined_data)
-                                )
-                                * 100,
+                                (combined_data[feature].isnull().sum() / len(combined_data)) * 100,
                             ),
                         }
 
@@ -2879,13 +3072,8 @@ class HMMBasedTrainingStep:
             for models in training_results.values():
                 if isinstance(models, dict):
                     for model_data in models.values():
-                        if (
-                            isinstance(model_data, dict)
-                            and "feature_importance" in model_data
-                        ):
-                            for feature, importance in model_data[
-                                "feature_importance"
-                            ].items():
+                        if isinstance(model_data, dict) and "feature_importance" in model_data:
+                            for feature, importance in model_data["feature_importance"].items():
                                 if feature not in all_importances:
                                     all_importances[feature] = []
                                 all_importances[feature].append(float(importance))
@@ -2917,9 +3105,7 @@ class HMMBasedTrainingStep:
                                 },
                             )
 
-                report["feature_correlations"]["high_correlation_pairs"] = (
-                    high_corr_pairs
-                )
+                report["feature_correlations"]["high_correlation_pairs"] = high_corr_pairs
 
             # Feature quality metrics
             for feature in feature_columns:
@@ -2927,10 +3113,7 @@ class HMMBasedTrainingStep:
                     feature_data = combined_data[feature].dropna()
                     if len(feature_data) > 0:
                         # Calculate coefficient of variation
-                        cv = (feature_data.std() / abs(feature_data.mean())
-                        if feature_data.mean() != 0
-                            else 0
-                        )
+                        cv = feature_data.std() / abs(feature_data.mean()) if feature_data.mean() != 0 else 0
 
                         # Calculate zero variance
                         zero_var, feature_data.nunique() <= 1
@@ -2949,27 +3132,30 @@ class HMMBasedTrainingStep:
             return {"error": str(e)}
 
     async def _create_training_summary(
-        self, training_results: dict[str, Any], exchange: str, symbol: str, combined_data: pd.DataFrame, feature_columns: list, ) -> dict[str, Any]:
+        self,
+        training_results: dict[str, Any],
+        exchange: str,
+        symbol: str,
+        combined_data: pd.DataFrame,
+        feature_columns: list,
+    ) -> dict[str, Any]:
         """Create training summary with key metrics and insights."""
         try:
             summary = {
                 "training_summary": {
                     "total_timeframes": len(training_results),
                     "total_models_trained": sum(
-                        len(models) if isinstance(models, dict) else 0
-        for models in training_results.values()
+                        len(models) if isinstance(models, dict) else 0 for models in training_results.values()
                     ),
                     "successful_timeframes": [
                         tf
-        for tf, models in training_results.items()
-        if models and isinstance(models, dict) and len(models) > 0
+                        for tf, models in training_results.items()
+                        if models and isinstance(models, dict) and len(models) > 0
                     ],
                     "failed_timeframes": [
                         tf
-        for tf, models in training_results.items()
-        if not models
-                        or not isinstance(models, dict)
-                        or len(models) == 0
+                        for tf, models in training_results.items()
+                        if not models or not isinstance(models, dict) or len(models) == 0
                     ],
                 },
                 "performance_summary": {
@@ -3004,14 +3190,12 @@ class HMMBasedTrainingStep:
 
             if acc > summary["performance_summary"]["best_accuracy"]:
                 summary["performance_summary"]["best_accuracy"] = acc
-                summary["performance_summary"]["best_model"] = (
-                    model_name
-                )
-                summary["performance_summary"]["best_timeframe"] = (
-                    timeframe
-                )
+                summary["performance_summary"]["best_model"] = model_name
+                summary["performance_summary"]["best_timeframe"] = timeframe
 
-            summary["performance_summary"]["worst_accuracy"] = min(summary["performance_summary"]["worst_accuracy"], acc)
+            summary["performance_summary"]["worst_accuracy"] = min(
+                summary["performance_summary"]["worst_accuracy"], acc
+            )
 
             if accuracies:
                 summary["performance_summary"]["average_accuracy"] = float(
@@ -3024,13 +3208,13 @@ class HMMBasedTrainingStep:
                     timestamps = pd.to_datetime(combined_data["timestamp"])
                     data_span = timestamps.max() - timestamps.min()
                     summary["data_summary"]["data_span_days"] = data_span.days
-                except:
+                except BaseException:
                     pass
 
             # Calculate data completeness
             if feature_columns:
-                completeness = (combined_data[feature_columns].notnull().sum().sum()
-                    / (len(combined_data) * len(feature_columns))
+                completeness = (
+                    combined_data[feature_columns].notnull().sum().sum() / (len(combined_data) * len(feature_columns))
                 ) * 100
                 summary["data_summary"]["data_completeness"] = float(completeness)
 
@@ -3129,23 +3313,21 @@ class CNNModel(nn.Module):
         return self.fc2(x)
 
 
-
 class TCNModel(nn.Module):
     """Temporal Convolutional Network for 5m timeframe."""
 
     def __init__(
-        self, input_size: int, num_channels: list[int], kernel_size: int, num_classes: int, ) -> None:
+        self,
+        input_size: int,
+        num_channels: list[int],
+        kernel_size: int,
+        num_classes: int,
+    ) -> None:
         super().__init__()
 
-        self.tcn = TemporalBlock(
-            input_size, num_channels[0], kernel_size, stride=1, dilation=1
-        )
-        self.tcn2 = TemporalBlock(
-            num_channels[0], num_channels[1], kernel_size, stride=1, dilation=2
-        )
-        self.tcn3 = TemporalBlock(
-            num_channels[1], num_channels[2], kernel_size, stride=1, dilation=4
-        )
+        self.tcn = TemporalBlock(input_size, num_channels[0], kernel_size, stride=1, dilation=1)
+        self.tcn2 = TemporalBlock(num_channels[0], num_channels[1], kernel_size, stride=1, dilation=2)
+        self.tcn3 = TemporalBlock(num_channels[1], num_channels[2], kernel_size, stride=1, dilation=4)
 
         self.dropout = nn.Dropout(0.3)
         self.fc = nn.Linear(num_channels[2], num_classes)
@@ -3164,12 +3346,17 @@ class TCNModel(nn.Module):
         return self.fc(x)
 
 
-
 class TemporalBlock(nn.Module):
     """Temporal block for TCN."""
 
     def __init__(
-        self, in_channels: int, out_channels: int, kernel_size: int, stride: int, dilation: int, ) -> None:
+        self,
+        in_channels: int,
+        out_channels: int,
+        kernel_size: int,
+        stride: int,
+        dilation: int,
+    ) -> None:
         super().__init__()
 
         self.conv1 = nn.Conv1d(
@@ -3216,7 +3403,13 @@ class TransformerModel(nn.Module):
     """Transformer model for 15m timeframe."""
 
     def __init__(
-        self, input_size: int, d_model: int, nhead: int, num_layers: int, num_classes: int, ) -> None:
+        self,
+        input_size: int,
+        d_model: int,
+        nhead: int,
+        num_layers: int,
+        num_classes: int,
+    ) -> None:
         super().__init__()
 
         self.input_projection = nn.Linear(input_size, d_model)
@@ -3243,7 +3436,6 @@ class TransformerModel(nn.Module):
         x = x[:, -1, :]  # Take last timestep,
         x = self.dropout(x)
         return self.fc(x)
-
 
 
 class PositionalEncoding(nn.Module):
@@ -3275,7 +3467,10 @@ class CNNTrainer:
     """Trainer for CNN model."""
 
     def __init__(
-        self, model: nn.Module, learning_rate: float = 0.001, batch_size: int = 32,
+        self,
+        model: nn.Module,
+        learning_rate: float = 0.001,
+        batch_size: int = 32,
     ) -> None:
         self.model = model
         self.optimizer = optim.Adam(model.parameters(), lr=learning_rate)
@@ -3297,9 +3492,7 @@ class CNNTrainer:
 
         # Create data loaders
         train_dataset = TensorDataset(X_train, y_train)
-        train_loader = DataLoader(
-            train_dataset, batch_size=self.batch_size, shuffle=True
-        )
+        train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
 
         history: dict[str, list[float]] = {"train_loss": [], "test_loss": [], "train_acc": [], "test_acc": []}
 
@@ -3345,7 +3538,10 @@ class TCNTrainer:
     """Trainer for TCN model."""
 
     def __init__(
-        self, model: nn.Module, learning_rate: float = 0.001, batch_size: int = 64,
+        self,
+        model: nn.Module,
+        learning_rate: float = 0.001,
+        batch_size: int = 64,
     ) -> None:
         self.model = model
         self.optimizer = optim.Adam(model.parameters(), lr=learning_rate)
@@ -3366,9 +3562,7 @@ class TCNTrainer:
 
         # Create data loaders
         train_dataset = TensorDataset(X_train, y_train)
-        train_loader = DataLoader(
-            train_dataset, batch_size=self.batch_size, shuffle=True
-        )
+        train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
 
         history: dict[str, list[float]] = {"train_loss": [], "test_loss": [], "train_acc": [], "test_acc": []}
 
@@ -3411,7 +3605,16 @@ class TCNTrainer:
 
     # Cross-validation training methods
     async def _train_cnn_model_cv(
-        self, X_train: pd.DataFrame, X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series, y_val: pd.Series, y_test: pd.Series, timeframe: str, split_idx: int, ) -> dict[str, Any] | None:
+        self,
+        X_train: pd.DataFrame,
+        X_val: pd.DataFrame,
+        X_test: pd.DataFrame,
+        y_train: pd.Series,
+        y_val: pd.Series,
+        y_test: pd.Series,
+        timeframe: str,
+        split_idx: int,
+    ) -> dict[str, Any] | None:
         """Train CNN model with cross-validation."""
         try:
             from sklearn.metrics import (
@@ -3421,7 +3624,7 @@ class TCNTrainer:
                 recall_score,
             )
 
-        # Prepare data
+            # Prepare data
             X_train_np, X_val_np, X_test_np = (
                 X_train.values,
                 X_val.values,
@@ -3433,18 +3636,18 @@ class TCNTrainer:
                 y_test.values,
             )
 
-        # Create sequences for CNN
-            sequence_length = 60,
+            # Create sequences for CNN
+            sequence_length = (60,)
             X_train_seq, self._create_sequences(X_train_np, sequence_length)
             X_val_seq, self._create_sequences(X_val_np, sequence_length)
             X_test_seq, self._create_sequences(X_test_np, sequence_length)
 
-        # Adjust targets for sequences
-            y_train_seq = y_train_np[sequence_length:],
-            y_val_seq = y_val_np[sequence_length:],
-            y_test_seq = y_test_np[sequence_length:],
+            # Adjust targets for sequences
+            y_train_seq = (y_train_np[sequence_length:],)
+            y_val_seq = (y_val_np[sequence_length:],)
+            y_test_seq = (y_test_np[sequence_length:],)
 
-        # Create and train model
+            # Create and train model
             model, CNNModel(
                 input_channels=X_train.shape[1],
                 sequence_length=sequence_length,
@@ -3452,9 +3655,7 @@ class TCNTrainer:
             )
 
             trainer = CNNTrainer(model, learning_rate=0.001, batch_size=32)
-            history = await trainer.train(
-                X_train_seq, y_train_seq, X_val_seq, y_val_seq, epochs=50
-            )
+            history = await trainer.train(X_train_seq, y_train_seq, X_val_seq, y_val_seq, epochs=50)
 
             # Evaluate
             model.eval()
@@ -3486,7 +3687,16 @@ class TCNTrainer:
             return None
 
     async def _train_tcn_model_cv(
-        self, X_train: pd.DataFrame, X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series, y_val: pd.Series, y_test: pd.Series, timeframe: str, split_idx: int, ) -> dict[str, Any] | None:
+        self,
+        X_train: pd.DataFrame,
+        X_val: pd.DataFrame,
+        X_test: pd.DataFrame,
+        y_train: pd.Series,
+        y_val: pd.Series,
+        y_test: pd.Series,
+        timeframe: str,
+        split_idx: int,
+    ) -> dict[str, Any] | None:
         """Train TCN model with cross-validation."""
         try:
             from sklearn.metrics import (
@@ -3496,7 +3706,7 @@ class TCNTrainer:
                 recall_score,
             )
 
-        # Prepare data
+            # Prepare data
             X_train_np, X_val_np, X_test_np = (
                 X_train.values,
                 X_val.values,
@@ -3508,18 +3718,18 @@ class TCNTrainer:
                 y_test.values,
             )
 
-        # Create sequences for TCN
-            sequence_length = 100,
+            # Create sequences for TCN
+            sequence_length = (100,)
             X_train_seq, self._create_sequences(X_train_np, sequence_length)
             X_val_seq, self._create_sequences(X_val_np, sequence_length)
             X_test_seq, self._create_sequences(X_test_np, sequence_length)
 
-        # Adjust targets for sequences
-            y_train_seq = y_train_np[sequence_length:],
-            y_val_seq = y_val_np[sequence_length:],
-            y_test_seq = y_test_np[sequence_length:],
+            # Adjust targets for sequences
+            y_train_seq = (y_train_np[sequence_length:],)
+            y_val_seq = (y_val_np[sequence_length:],)
+            y_test_seq = (y_test_np[sequence_length:],)
 
-        # Create and train model
+            # Create and train model
             model, TCNModel(
                 input_size=X_train.shape[1],
                 num_channels=[64, 128, 256],
@@ -3528,9 +3738,7 @@ class TCNTrainer:
             )
 
             trainer = TCNTrainer(model, learning_rate=0.001, batch_size=32)
-            history = await trainer.train(
-                X_train_seq, y_train_seq, X_val_seq, y_val_seq, epochs=100
-            )
+            history = await trainer.train(X_train_seq, y_train_seq, X_val_seq, y_val_seq, epochs=100)
 
             # Evaluate
             model.eval()
@@ -3562,7 +3770,16 @@ class TCNTrainer:
             return None
 
     async def _train_transformer_model_cv(
-        self, X_train: pd.DataFrame, X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series, y_val: pd.Series, y_test: pd.Series, timeframe: str, split_idx: int, ) -> dict[str, Any] | None:
+        self,
+        X_train: pd.DataFrame,
+        X_val: pd.DataFrame,
+        X_test: pd.DataFrame,
+        y_train: pd.Series,
+        y_val: pd.Series,
+        y_test: pd.Series,
+        timeframe: str,
+        split_idx: int,
+    ) -> dict[str, Any] | None:
         """Train Transformer model with cross-validation."""
         try:
             from sklearn.metrics import (
@@ -3572,7 +3789,7 @@ class TCNTrainer:
                 recall_score,
             )
 
-        # Prepare data
+            # Prepare data
             X_train_np, X_val_np, X_test_np = (
                 X_train.values,
                 X_val.values,
@@ -3584,18 +3801,18 @@ class TCNTrainer:
                 y_test.values,
             )
 
-        # Create sequences for Transformer
-            sequence_length = 50,
+            # Create sequences for Transformer
+            sequence_length = (50,)
             X_train_seq, self._create_sequences(X_train_np, sequence_length)
             X_val_seq, self._create_sequences(X_val_np, sequence_length)
             X_test_seq, self._create_sequences(X_test_np, sequence_length)
 
-        # Adjust targets for sequences
-            y_train_seq = y_train_np[sequence_length:],
-            y_val_seq = y_val_np[sequence_length:],
-            y_test_seq = y_test_np[sequence_length:],
+            # Adjust targets for sequences
+            y_train_seq = (y_train_np[sequence_length:],)
+            y_val_seq = (y_val_np[sequence_length:],)
+            y_test_seq = (y_test_np[sequence_length:],)
 
-        # Create and train model
+            # Create and train model
             model, TransformerModel(
                 input_size=X_train.shape[1],
                 d_model=128,
@@ -3605,9 +3822,7 @@ class TCNTrainer:
             )
 
             trainer = TransformerTrainer(model, learning_rate=0.0001, batch_size=32)
-            history = await trainer.train(
-                X_train_seq, y_train_seq, X_val_seq, y_val_seq, epochs=150
-            )
+            history = await trainer.train(X_train_seq, y_train_seq, X_val_seq, y_val_seq, epochs=150)
 
             # Evaluate
             model.eval()
@@ -3639,7 +3854,16 @@ class TCNTrainer:
             return None
 
     async def _train_lightgbm_model_cv(
-        self, X_train: pd.DataFrame, X_val: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series, y_val: pd.Series, y_test: pd.Series, timeframe: str, split_idx: int, ) -> dict[str, Any] | None:
+        self,
+        X_train: pd.DataFrame,
+        X_val: pd.DataFrame,
+        X_test: pd.DataFrame,
+        y_train: pd.Series,
+        y_val: pd.Series,
+        y_test: pd.Series,
+        timeframe: str,
+        split_idx: int,
+    ) -> dict[str, Any] | None:
         """Train LightGBM model with cross-validation."""
         try:
             from sklearn.metrics import (
@@ -3649,7 +3873,7 @@ class TCNTrainer:
                 recall_score,
             )
 
-        # Prepare data
+            # Prepare data
             X_train_np, X_val_np, X_test_np = (
                 X_train.values,
                 X_val.values,
@@ -3661,7 +3885,7 @@ class TCNTrainer:
                 y_test.values,
             )
 
-        # Create and train model
+            # Create and train model
             model, lgb.LGBMClassifier(
                 n_estimators=100,
                 learning_rate=0.1,
@@ -3679,10 +3903,10 @@ class TCNTrainer:
                 verbose=False,
             )
 
-        # Evaluate
-            test_preds = model.predict(X_test_np),
+            # Evaluate
+            test_preds = (model.predict(X_test_np),)
 
-        # Calculate metrics
+            # Calculate metrics
             accuracy = accuracy_score(y_test_np, test_preds)
             f1 = f1_score(y_test_np, test_preds, average="weighted")
             precision = precision_score(y_test_np, test_preds, average="weighted")
@@ -3716,7 +3940,10 @@ class TCNTrainer:
         return np.array(sequences)
 
     async def _load_regime_weights(
-        self, exchange: str, symbol: str, data_dir: str,
+        self,
+        exchange: str,
+        symbol: str,
+        data_dir: str,
     ) -> pd.DataFrame | None:
         """Load regime weights for sample weighting."""
         try:
@@ -3750,7 +3977,10 @@ class TCNTrainer:
             return None
 
     async def _add_regime_weights(
-        self, data: pd.DataFrame, regime_weights: pd.DataFrame, timeframe: str,
+        self,
+        data: pd.DataFrame,
+        regime_weights: pd.DataFrame,
+        timeframe: str,
     ) -> pd.DataFrame:
         """Add regime weights to the dataset for sample weighting with S/R level integration."""
         try:
@@ -3758,7 +3988,7 @@ class TCNTrainer:
             if "timestamp" in regime_weights.columns:
                 merged_data = data.merge(regime_weights, on="timestamp", how="left")
 
-        # Initialize SR predictor if not already done
+            # Initialize SR predictor if not already done
             if not hasattr(self, "sr_predictor_initialized"):
                 try:
                     await self.sr_predictor.initialize()
@@ -3772,7 +4002,7 @@ class TCNTrainer:
                     )
                     self.sr_predictor_initialized = False
 
-        # Create base sample weights based on regime confidence
+            # Create base sample weights based on regime confidence
             if "confidence" in merged_data.columns:
                 base_weights = merged_data["confidence"].fillna(0.5).clip(0.1, 1.0)
             elif "regime_weight" in merged_data.columns:
@@ -3784,7 +4014,8 @@ class TCNTrainer:
             sr_weights = None
             if self.sr_predictor_initialized and len(merged_data) > 0:
                 sr_weights = await self._calculate_sr_sample_weights(
-                    merged_data, timeframe,
+                    merged_data,
+                    timeframe,
                 )
             if sr_weights is not None:
                 # Combine regime weights with S/R weights
@@ -3805,16 +4036,17 @@ class TCNTrainer:
             return data
 
     async def _calculate_sr_sample_weights(
-        self, data: pd.DataFrame, timeframe: str, ) -> pd.Series | None:
+        self,
+        data: pd.DataFrame,
+        timeframe: str,
+    ) -> pd.Series | None:
         """Calculate S/R-aware sample weights for training data."""
         try:
             if len(data) == 0:
                 return None
 
             # Prepare market data for S/R analysis
-            if not all(
-                col in data.columns for col in ["open", "high", "low", "close", "volume"]
-            ):
+            if not all(col in data.columns for col in ["open", "high", "low", "close", "volume"]):
                 self.logger.warning(
                     f"⚠️ Missing OHLCV columns for S/R analysis in {timeframe}",
                 )
@@ -3838,12 +4070,14 @@ class TCNTrainer:
                         continue
 
                     sr_context = await self.sr_predictor.get_sr_context(
-                        market_data=market_slice, current_price=current_price,
+                        market_data=market_slice,
+                        current_price=current_price,
                     )
 
                     # Check if near S/R level
                     is_near_sr = self.sr_predictor.is_near_sr_level(
-                        current_price, sr_context,
+                        current_price,
+                        sr_context,
                     )
 
                     if is_near_sr:
@@ -3862,7 +4096,11 @@ class TCNTrainer:
 
                 # Interpolate to all data points
                 return (
-                    weight_series.reindex(data.index).interpolate(method="time").fillna(method="bfill").fillna(method="ffill").clip(0.1, 1.0)
+                    weight_series.reindex(data.index)
+                    .interpolate(method="time")
+                    .fillna(method="bfill")
+                    .fillna(method="ffill")
+                    .clip(0.1, 1.0)
                 )
 
             return None
@@ -3871,33 +4109,22 @@ class TCNTrainer:
             return None
 
     def _derive_sample_weight(
-        self, df: pd.DataFrame, regime_key: str | None, ) -> pd.Series | None:
+        self,
+        df: pd.DataFrame,
+        regime_key: str | None,
+    ) -> pd.Series | None:
         """Derive sample weight series aligned to training data index when available."""
         try:
             # Check for explicit sample weight column
             if "sample_weight" in df.columns:
-                return (
-                    df["sample_weight"]
-                    .astype(float)
-                    .clip(0.0, 1.0)
-                    .reindex(df.index)
-                    .fillna(0.0)
-                )
+                return df["sample_weight"].astype(float).clip(0.0, 1.0).reindex(df.index).fillna(0.0)
 
             # Check for regime confidence
             if "confidence" in df.columns:
-                return (
-                    df["confidence"]
-                    .astype(float)
-                    .clip(0.0, 1.0)
-                    .reindex(df.index)
-                    .fillna(0.0)
-                )
+                return df["confidence"].astype(float).clip(0.0, 1.0).reindex(df.index).fillna(0.0)
 
             # Check for intensity-based weights (HMM-specific)
-            intensity_cols = [
-                col for col in df.columns if col.startswith("intensity_cluster_")
-            ]
+            intensity_cols = [col for col in df.columns if col.startswith("intensity_cluster_")]
             if intensity_cols:
                 # Use average intensity as sample weight
                 intensity_weights = df[intensity_cols].mean(axis=1).clip(0.0, 1.0)
@@ -3918,12 +4145,19 @@ class TCNTrainer:
             return X.iloc[:cut], X.iloc[cut:], y.iloc[:cut], y.iloc[cut:]
         from sklearn.model_selection import train_test_split
 
-        return train_test_split(
-            X, y, test_size=test_frac, random_state=42, stratify=y
-        )
+        return train_test_split(X, y, test_size=test_frac, random_state=42, stratify=y)
 
     async def _train_and_optionally_refit(
-        self, model_key: str, train_coro, X_train: pd.DataFrame, X_test: pd.DataFrame, y_train: pd.Series, y_test: pd.Series, regime_name: str, sample_weight: pd.Series | None, ) -> tuple[str, dict[str, Any] | None]:
+        self,
+        model_key: str,
+        train_coro,
+        X_train: pd.DataFrame,
+        X_test: pd.DataFrame,
+        y_train: pd.Series,
+        y_test: pd.Series,
+        regime_name: str,
+        sample_weight: pd.Series | None,
+    ) -> tuple[str, dict[str, Any] | None]:
         """Train a model using provided coroutine, then optionally refit with sample weights.
         Returns (model_key, model_package_or_None).
         """
@@ -4002,12 +4236,14 @@ class TCNTrainer:
 
             # Step 2: Calculate comprehensive feature scores
             feature_scores = await self._calculate_comprehensive_scores(
-                X[pre_filtered], y,
+                X[pre_filtered],
+                y,
             )
 
             # Step 3: Category-based selection
             category_selected = await self._select_features_by_category(
-                pre_filtered, feature_scores,
+                pre_filtered,
+                feature_scores,
             )
             self.logger.info(
                 f"   ✅ Category selection: {len(category_selected)} features",
@@ -4015,7 +4251,10 @@ class TCNTrainer:
 
             # Step 4: Final selection and validation
             final_selected = await self._final_feature_selection(
-                X[category_selected], y, category_selected, max_features,
+                X[category_selected],
+                y,
+                category_selected,
+                max_features,
             )
 
             self.logger.info(f"   ✅ Final selection: {len(final_selected)} features")
@@ -4028,7 +4267,10 @@ class TCNTrainer:
             return feature_columns  # Return original features if selection fails
 
     async def _calculate_mutual_information(
-        self, X: pd.DataFrame, y: pd.Series, ) -> np.ndarray:
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+    ) -> np.ndarray:
         """Calculate mutual information between features and target."""
         try:
             from sklearn.feature_selection import (
@@ -4052,33 +4294,26 @@ class TCNTrainer:
             return np.ones(len(X.columns))
 
     async def _remove_collinear_features(
-        self, X: pd.DataFrame, threshold: float = 0.95, ) -> list[str]:
+        self,
+        X: pd.DataFrame,
+        threshold: float = 0.95,
+    ) -> list[str]:
         """Remove collinear features using correlation analysis and PCA."""
         try:
             # Calculate correlation matrix
             corr_matrix = X.corr().abs()
 
             # Find highly correlated features
-            upper_tri = corr_matrix.where(
-                np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
-            )
-            high_corr_features = [
-                column
-                for column in upper_tri.columns
-                if any(upper_tri[column] > threshold)
-            ]
+            upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+            high_corr_features = [column for column in upper_tri.columns if any(upper_tri[column] > threshold)]
 
             # Remove highly correlated features
-            low_corr_features = [
-                col for col in X.columns if col not in high_corr_features
-            ]
+            low_corr_features = [col for col in X.columns if col not in high_corr_features]
 
             # If too many features removed, use PCA for dimensionality reduction
             if len(low_corr_features) < len(X.columns) * 0.5:
                 self.logger.info("   🔧 Too many collinear features, applying PCA...")
-                return await self._apply_pca_dimensionality_reduction(
-                    X, target_variance=0.95
-                )
+                return await self._apply_pca_dimensionality_reduction(X, target_variance=0.95)
 
             return low_corr_features
 
@@ -4087,7 +4322,10 @@ class TCNTrainer:
             return list(X.columns)
 
     async def _apply_pca_dimensionality_reduction(
-        self, X: pd.DataFrame, target_variance: float = 0.95, ) -> list[str]:
+        self,
+        X: pd.DataFrame,
+        target_variance: float = 0.95,
+    ) -> list[str]:
         """Apply PCA for dimensionality reduction while preserving variance."""
         try:
             from sklearn.decomposition import PCA
@@ -4123,7 +4361,11 @@ class TCNTrainer:
             return list(X.columns)
 
     async def _select_by_random_forest_importance(
-        self, X: pd.DataFrame, y: pd.Series, max_features: int, ) -> list[str]:
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        max_features: int,
+    ) -> list[str]:
         """Select features based on Random Forest importance scores."""
         try:
             from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
@@ -4131,7 +4373,9 @@ class TCNTrainer:
             # Determine if classification or regression
             if y.dtype in ["object", "category"] or len(y.unique()) < 10:
                 rf = RandomForestClassifier(
-                    n_estimators=100, random_state=42, n_jobs=-1,
+                    n_estimators=100,
+                    random_state=42,
+                    n_jobs=-1,
                 )
             else:
                 rf = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
@@ -4154,7 +4398,11 @@ class TCNTrainer:
             return list(X.columns)[:max_features]
 
     async def _validate_with_shap(
-        self, X: pd.DataFrame, y: pd.Series, max_features: int, ) -> list[str]:
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        max_features: int,
+    ) -> list[str]:
         """Validate feature selection using SHAP values."""
         try:
             # Use LightGBM for SHAP analysis (faster than Random Forest for SHAP)
@@ -4195,176 +4443,168 @@ class TCNTrainer:
             return list(X.columns)[:max_features]
 
     async def _pre_filter_features(
-        self, X: pd.DataFrame, feature_columns: list, ) -> list:
+        self,
+        X: pd.DataFrame,
+        feature_columns: list,
+    ) -> list:
         """Enhanced pre-filter features using data-driven methods (VIF, MI, SHAP, RF)."""
         try:
             self.logger.info(f"🔍 Enhanced pre-filtering: {len(feature_columns)} features")
-            
+
             # Stage 1: Data quality filtering
             X_clean = X[feature_columns].copy()
-            
+
             # Remove features with too many NaN values (>10%)
             nan_ratio = X_clean.isna().sum() / len(X_clean)
             high_nan_features = nan_ratio[nan_ratio > 0.1].index.tolist()
             X_clean = X_clean.drop(columns=high_nan_features)
-            
+
             # Remove features with infinite values
             inf_features = []
             for col in X_clean.columns:
                 if np.isinf(X_clean[col]).any():
                     inf_features.append(col)
             X_clean = X_clean.drop(columns=inf_features)
-            
+
             # Fill remaining NaN values
             X_clean = X_clean.fillna(method="ffill").fillna(method="bfill").fillna(0)
-            
+
             self.logger.info(
                 f"   Data quality filtering: {len(feature_columns)} -> {len(X_clean.columns)} features",
             )
-            
+
             # Stage 2: Variance filtering
             variance = X_clean.var()
             high_variance_mask = variance > 1e-6
-            high_variance_features = [
-                col for col in X_clean.columns if high_variance_mask[col]
-            ]
-            
+            high_variance_features = [col for col in X_clean.columns if high_variance_mask[col]]
+
             self.logger.info(
                 f"   Variance filtering: {len(X_clean.columns)} -> {len(high_variance_features)} features",
             )
-            
+
             # Stage 3: VIF filtering (multicollinearity)
             try:
                 from src.utils.vif_calculator import calculate_vif_robust
-                
+
                 X_vif = X_clean[high_variance_features]
                 vif_scores = calculate_vif_robust(X_vif)
-                
+
                 # Remove features with high VIF (>10)
                 low_vif_features = vif_scores[vif_scores <= 10.0].index.tolist()
-                
+
                 self.logger.info(
                     f"   VIF filtering: {len(high_variance_features)} -> {len(low_vif_features)} features",
                 )
-                
+
             except Exception as e:
                 self.logger.warning(f"VIF filtering failed: {e}, skipping")
                 low_vif_features = high_variance_features
-            
+
             # Stage 4: Correlation filtering
             uncorr_features = low_vif_features
             if len(low_vif_features) > 1:
                 X_corr = X_clean[low_vif_features]
                 corr_matrix = X_corr.corr().abs()
-                upper_tri = corr_matrix.where(
-                    np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
-                )
-                
+                upper_tri = corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
+
                 # Find features to drop
-                to_drop = [
-                    column for column in upper_tri.columns
-                    if any(upper_tri[column] > 0.95)
-                ]
-                uncorr_features = [
-                    col for col in low_vif_features if col not in to_drop
-                ]
-            
+                to_drop = [column for column in upper_tri.columns if any(upper_tri[column] > 0.95)]
+                uncorr_features = [col for col in low_vif_features if col not in to_drop]
+
             self.logger.info(
                 f"   Correlation filtering: {len(low_vif_features)} -> {len(uncorr_features)} features",
             )
-            
+
             # Stage 5: Mutual Information filtering (if target available)
             try:
                 # Try to get target from the data
                 target_col = None
                 for col in X.columns:
-                    if col.lower() in ['label', 'target', 'direction', 'y']:
+                    if col.lower() in ["label", "target", "direction", "y"]:
                         target_col = col
                         break
-                
+
                 if target_col and target_col in X.columns:
                     y = X[target_col]
-                    
+
                     # Calculate mutual information
                     from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
-                    
+
                     # Determine task type
                     task_type = "classification" if len(y.unique()) < 10 else "regression"
-                    
+
                     if task_type == "classification":
                         mi_scores = mutual_info_classif(X_clean[uncorr_features], y, random_state=42)
                     else:
                         mi_scores = mutual_info_regression(X_clean[uncorr_features], y, random_state=42)
-                    
+
                     # Remove features with low MI (<0.01)
                     mi_series = pd.Series(mi_scores, index=uncorr_features)
                     high_mi_features = mi_series[mi_scores >= 0.01].index.tolist()
-                    
+
                     self.logger.info(
                         f"   MI filtering: {len(uncorr_features)} -> {len(high_mi_features)} features",
                     )
-                    
+
                     uncorr_features = high_mi_features
-                    
+
             except Exception as e:
                 self.logger.warning(f"MI filtering failed: {e}, skipping")
-            
+
             # Stage 6: SHAP-based filtering (if target available)
             try:
                 if target_col and target_col in X.columns and len(uncorr_features) > 50:
                     from src.analyst.meta_label_relevance import compute_shap_importance
-                    
+
                     # Calculate SHAP importance
-                    shap_scores = compute_shap_importance(
-                        X_clean[uncorr_features], y, task=task_type
-                    )
-                    
+                    shap_scores = compute_shap_importance(X_clean[uncorr_features], y, task=task_type)
+
                     if shap_scores:
                         # Remove bottom 20% of features by SHAP importance
                         shap_series = pd.Series(shap_scores)
                         threshold = shap_series.quantile(0.2)
                         high_shap_features = shap_series[shap_series >= threshold].index.tolist()
-                        
+
                         self.logger.info(
                             f"   SHAP filtering: {len(uncorr_features)} -> {len(high_shap_features)} features",
                         )
-                        
+
                         uncorr_features = high_shap_features
-                        
+
             except Exception as e:
                 self.logger.warning(f"SHAP filtering failed: {e}, skipping")
-            
+
             # Stage 7: RandomForest importance filtering (if target available)
             try:
                 if target_col and target_col in X.columns and len(uncorr_features) > 30:
                     from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-                    
+
                     # Train RF for feature importance
                     if task_type == "classification":
                         rf = RandomForestClassifier(n_estimators=100, random_state=42, n_jobs=-1)
                     else:
                         rf = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
-                    
+
                     rf.fit(X_clean[uncorr_features], y)
                     rf_importance = pd.Series(rf.feature_importances_, index=uncorr_features)
-                    
+
                     # Remove bottom 20% of features by RF importance
                     threshold = rf_importance.quantile(0.2)
                     high_rf_features = rf_importance[rf_importance >= threshold].index.tolist()
-                    
+
                     self.logger.info(
                         f"   RF filtering: {len(uncorr_features)} -> {len(high_rf_features)} features",
                     )
-                    
+
                     uncorr_features = high_rf_features
-                    
+
             except Exception as e:
                 self.logger.warning(f"RF filtering failed: {e}, skipping")
-            
+
             self.logger.info(
                 f"✅ Enhanced pre-filtering completed: {len(feature_columns)} -> {len(uncorr_features)} features",
             )
-            
+
             return uncorr_features
 
         except Exception as e:
@@ -4372,7 +4612,10 @@ class TCNTrainer:
             return feature_columns
 
     async def _calculate_comprehensive_scores(
-        self, X: pd.DataFrame, y: pd.Series, ) -> dict:
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+    ) -> dict:
         """Calculate feature importance scores using multiple methods."""
         try:
             feature_scores = {}
@@ -4395,7 +4638,9 @@ class TCNTrainer:
             # 2. Random Forest importance
             if task_type == "classification":
                 rf = RandomForestClassifier(
-                    n_estimators=100, random_state=42, n_jobs=-1,
+                    n_estimators=100,
+                    random_state=42,
+                    n_jobs=-1,
                 )
             else:
                 rf = RandomForestRegressor(n_estimators=100, random_state=42, n_jobs=-1)
@@ -4407,7 +4652,8 @@ class TCNTrainer:
             # 3. F-statistics
             if task_type == "classification":
                 f_scores, _, f_classif(X_clean, y_clean)
-            else: f_scores = _, f_regression(X_clean, y_clean)
+            else:
+                f_scores = _, f_regression(X_clean, y_clean)
 
             for i, feature in enumerate(X_clean.columns):
                 feature_scores[feature]["f_statistic"] = f_scores[i]
@@ -4415,14 +4661,19 @@ class TCNTrainer:
             # 4. LightGBM importance
             if task_type == "classification":
                 lgb_model, lgb.LGBMClassifier(
-                    n_estimators=100, random_state=42, verbose=-1,
+                    n_estimators=100,
+                    random_state=42,
+                    verbose=-1,
                 )
-            else: lgb_model = lgb.LGBMRegressor(
-                    n_estimators=100, random_state=42, verbose=-1,
+            else:
+                lgb_model = lgb.LGBMRegressor(
+                    n_estimators=100,
+                    random_state=42,
+                    verbose=-1,
                 )
 
             lgb_model.fit(X_clean, y_clean)
-            lgb_importance = lgb_model.feature_importances_,
+            lgb_importance = (lgb_model.feature_importances_,)
 
             for i, feature in enumerate(X_clean.columns):
                 feature_scores[feature]["lgb_importance"] = lgb_importance[i]
@@ -4466,7 +4717,10 @@ class TCNTrainer:
             return {}
 
     async def _select_features_by_category(
-        self, all_features: list, feature_scores: dict, ) -> list:
+        self,
+        all_features: list,
+        feature_scores: dict,
+    ) -> list:
         """Select features by category ensuring minimum per category."""
         try:
             # Define feature categories
@@ -4598,7 +4852,12 @@ class TCNTrainer:
         return "other"
 
     async def _final_feature_selection(
-        self, X: pd.DataFrame, y: pd.Series, selected_features: list, max_features: int, ) -> list:
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        selected_features: list,
+        max_features: int,
+    ) -> list:
         """Final feature selection and validation."""
         try:
             if len(selected_features) <= max_features:
@@ -4711,7 +4970,10 @@ class TransformerTrainer:
     """Trainer for Transformer model."""
 
     def __init__(
-        self, model: nn.Module, learning_rate: float = 0.0001, batch_size: int = 32,
+        self,
+        model: nn.Module,
+        learning_rate: float = 0.0001,
+        batch_size: int = 32,
     ) -> None:
         self.model = model
         self.optimizer = optim.Adam(model.parameters(), lr=learning_rate)
@@ -4732,9 +4994,7 @@ class TransformerTrainer:
 
         # Create data loaders
         train_dataset = TensorDataset(X_train, y_train)
-        train_loader = DataLoader(
-            train_dataset, batch_size=self.batch_size, shuffle=True
-        )
+        train_loader = DataLoader(train_dataset, batch_size=self.batch_size, shuffle=True)
 
         history = {"train_loss": [], "test_loss": [], "train_acc": [], "test_acc": []}
 
@@ -4782,7 +5042,9 @@ class TransformerTrainer:
         return history
 
     async def _train_sr_outcome_model(
-        self, training_data: dict[str, pd.DataFrame], ) -> bool:
+        self,
+        training_data: dict[str, pd.DataFrame],
+    ) -> bool:
         """Train S/R outcome model using all available features from step04.
         Trains specifically on data near S/R levels using the pruning logic from step05.
         """
@@ -4822,7 +5084,9 @@ class TransformerTrainer:
             return False
 
     async def _prepare_sr_training_data(
-        self, training_data: dict[str, pd.DataFrame], ) -> dict[str, pd.DataFrame] | None:
+        self,
+        training_data: dict[str, pd.DataFrame],
+    ) -> dict[str, pd.DataFrame] | None:
         """Prepare training data specifically for S/R outcome prediction.
         Uses all available features from step04 and filters for data near S/R levels.
         """
@@ -4840,11 +5104,11 @@ class TransformerTrainer:
                 )
 
                 # Get all available features from step04 (comprehensive feature set)
-                all_features = self._get_all_available_features(data, timeframe)
+                self._get_all_available_features(data, timeframe)
 
                 # Filter for data near S/R levels
                 sr_filtered_data, await self._filter_sr_proximity_data(
-                    all_features = timeframe,
+                    all_features=timeframe,
                 )
 
                 if not sr_filtered_data.empty:
@@ -4873,7 +5137,10 @@ class TransformerTrainer:
             return None
 
     def _get_all_available_features(
-        self, data: pd.DataFrame, timeframe: str, ) -> pd.DataFrame:
+        self,
+        data: pd.DataFrame,
+        timeframe: str,
+    ) -> pd.DataFrame:
         """Get all available features from step04 for comprehensive S/R analysis.
         Uses the same feature engineering logic as the main HMM training.
         """
@@ -4905,9 +5172,7 @@ class TransformerTrainer:
             features_df["price_volatility"] = features_df["close"].rolling(20).std()
 
             # Add volume-based features
-            features_df["volume_ratio"] = (
-                features_df["volume"] / features_df["volume"].rolling(20).mean()
-            )
+            features_df["volume_ratio"] = features_df["volume"] / features_df["volume"].rolling(20).mean()
             features_df["volume_momentum"] = features_df["volume"].pct_change()
             features_df["volume_volatility"] = features_df["volume"].rolling(10).std()
 
@@ -4932,7 +5197,10 @@ class TransformerTrainer:
             return data
 
     async def _filter_sr_proximity_data(
-        self, data: pd.DataFrame, timeframe: str, ) -> pd.DataFrame:
+        self,
+        data: pd.DataFrame,
+        timeframe: str,
+    ) -> pd.DataFrame:
         """Filter data for samples near S/R levels using the SRBreakoutPredictor."""
         try:
             if data.empty:
@@ -4940,7 +5208,8 @@ class TransformerTrainer:
 
             # Sample data for efficiency (process every 5th row for large datasets)
             sample_interval = max(
-                1, len(data) // 2000,
+                1,
+                len(data) // 2000,
             )  # Sample up to 2000 points per timeframe
             sample_data = data.iloc[::sample_interval].copy()
 
@@ -4957,10 +5226,12 @@ class TransformerTrainer:
 
                     # Get S/R context and check proximity using centralized logic
                     sr_context = await self.sr_predictor.get_sr_context(
-                        market_data=market_slice, current_price=current_price,
+                        market_data=market_slice,
+                        current_price=current_price,
                     )
                     is_near_sr = self.sr_predictor.is_near_sr_level(
-                        current_price=current_price, sr_context=sr_context,
+                        current_price=current_price,
+                        sr_context=sr_context,
                     )
 
                     if is_near_sr:
@@ -4969,23 +5240,23 @@ class TransformerTrainer:
 
                         # Add S/R-specific features
                         nearest_support, sr_context.get(
-                            "nearest_support", current_price,
+                            "nearest_support",
+                            current_price,
                         )
                         nearest_resistance, sr_context.get(
-                            "nearest_resistance", current_price,
+                            "nearest_resistance",
+                            current_price,
                         )
 
-                        sample["distance_to_support"] = (
-                            current_price - nearest_support
-                        ) / current_price
-                        sample["distance_to_resistance"] = (
-                            nearest_resistance - current_price
-                        ) / current_price
+                        sample["distance_to_support"] = (current_price - nearest_support) / current_price
+                        sample["distance_to_resistance"] = (nearest_resistance - current_price) / current_price
                         sample["support_strength"] = sr_context.get(
-                            "support_strength", 0.5,
+                            "support_strength",
+                            0.5,
                         )
                         sample["resistance_strength"] = sr_context.get(
-                            "resistance_strength", 0.5,
+                            "resistance_strength",
+                            0.5,
                         )
                         sample["is_near_sr_level"] = True
                         sample["sr_context"] = sr_context
@@ -5016,9 +5287,9 @@ class TransformerTrainer:
             # This uses the same logic as in step5_hmm_based_training.py
 
             # Remove features with too many NaN values
-            nan_threshold = 0.5,
-            nan_counts = data.isnull().sum() / len(data),
-            data = data.loc[:, nan_counts < nan_threshold],
+            nan_threshold = (0.5,)
+            nan_counts = (data.isnull().sum() / len(data),)
+            data = (data.loc[:, nan_counts < nan_threshold],)
 
             # Remove constant features
             constant_features = []
@@ -5029,15 +5300,11 @@ class TransformerTrainer:
 
             # Remove highly correlated features (simplified version)
             # In practice, this would use VIF analysis from step05
-            correlation_threshold = 0.95,
-            corr_matrix = data.corr().abs(),
-            upper_tri, corr_matrix.where(
-                np.triu(np.ones(corr_matrix.shape), k=1).astype(bool)
-            )
+            correlation_threshold = (0.95,)
+            corr_matrix = (data.corr().abs(),)
+            upper_tri, corr_matrix.where(np.triu(np.ones(corr_matrix.shape), k=1).astype(bool))
             high_corr_features = [
-                column
-                for column in upper_tri.columns
-                if any(upper_tri[column] > correlation_threshold)
+                column for column in upper_tri.columns if any(upper_tri[column] > correlation_threshold)
             ]
             data, data.drop(columns=high_corr_features)
 
@@ -5052,8 +5319,12 @@ class TransformerTrainer:
             return data
 
     async def run_step(
-        self, symbol: str = "ETHUSDT", data_dir: str = None, method_a_mixture_of_experts: dict | None = None,
-        **kwargs, ) -> bool:
+        self,
+        symbol: str = "ETHUSDT",
+        data_dir: str = None,
+        method_a_mixture_of_experts: dict | None = None,
+        **kwargs,
+    ) -> bool:
         """Run the HMM-based training step with standardized data quality management.
 
         Args:
@@ -5111,23 +5382,6 @@ class TransformerTrainer:
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
-from src.utils.training_pipeline_decorators import (
-    artifact_versioning,
-    artifact_write_lock,
-    circuit_breaker_protection,
-    debug_training_step,
-    deterministic_seed,
-    idempotent_step,
-    memory_efficient,
-    nan_inf_and_constant_guard,
-    prevent_data_leakage,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    time_budget_watchdog,
-    validate_step_output,
-    validate_step_prerequisites,
-)
 
 
 @deterministic_seed(42)
@@ -5185,7 +5439,10 @@ from src.utils.training_pipeline_decorators import (
     context="HMM-Based Training",
 )
 @secure_data_processing(
-    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
+    backup_before=True,
+    integrity_checks=True,
+    memory_cleanup=True,
+    data_validation=True,
 )
 @prevent_data_leakage(
     temporal_validation=True,
@@ -5201,7 +5458,10 @@ from src.utils.training_pipeline_decorators import (
     auto_cleanup=True,
 )
 @memory_efficient(
-    chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=25,
+    chunk_size=10000,
+    streaming_processing=True,
+    memory_pool=True,
+    cleanup_frequency=25,
 )
 @debug_training_step(
     log_intermediate_results=True,
@@ -5231,8 +5491,11 @@ from src.utils.training_pipeline_decorators import (
     overfitting_detection=True,
     validation_score_requirements={"cross_validation_score": 0.6},
 )
-async def run_step(symbol: str = "ETHUSDT", data_dir: str = "data/training", method_a_mixture_of_experts: dict | None = None
-    **kwargs, ) -> bool:
+async def run_step(
+    symbol: str = "ETHUSDT",
+    data_dir: str = "data/training",
+    method_a_mixture_of_experts: dict | None = None**kwargs,
+) -> bool:
     """Run the HMM-based training step.
 
     Args:

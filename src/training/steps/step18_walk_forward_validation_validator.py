@@ -1,5 +1,7 @@
 """Validator for Step 13: Walk Forward Validation."""
 
+from src.utils.base_validator import BaseValidator
+from src.config import CONFIG
 import asyncio
 import os
 import sys
@@ -8,20 +10,17 @@ from typing import Any, Tuple
 
 import numpy as np
 
+from src.utils.error_handler import handle_errors
 from src.utils.warning_symbols import (
     error,
     failed,
     validation_error,
 )
-from src.utils.error_handler import handle_errors
 
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
-
-from src.config import CONFIG
-from src.utils.base_validator import BaseValidator
 
 
 class Step13WalkForwardValidationValidator(BaseValidator):
@@ -31,9 +30,7 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         super().__init__("step13_walk_forward_validation", config)
 
     @handle_errors(exceptions=(Exception,), default_return=False, context="Step13.validate")
-    async def validate(
-        self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
-    ) -> bool:
+    async def validate(self, training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> bool:
         """Validate the walk forward validation step.
 
         Args:
@@ -122,9 +119,7 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         return True
 
     @handle_errors(exceptions=(Exception,), default_return=(False, {}), context="Step13._validate_walk_forward_files")
-    def _validate_walk_forward_files(
-        self, symbol: str, exchange: str, data_dir: str
-    ) -> Tuple[bool, dict[str, Any]]:
+    def _validate_walk_forward_files(self, symbol: str, exchange: str, data_dir: str) -> Tuple[bool, dict[str, Any]]:
         """Validate that walk forward validation files exist.
 
         Args:
@@ -163,7 +158,9 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         self.logger.info("✅ All walk forward validation files exist")
         return True, {"missing_files": [], "files": file_details}
 
-    @handle_errors(exceptions=(Exception,), default_return=(False, {}), context="Step13._validate_walk_forward_performance")
+    @handle_errors(
+        exceptions=(Exception,), default_return=(False, {}), context="Step13._validate_walk_forward_performance"
+    )
     def _validate_walk_forward_performance(
         self, symbol: str, exchange: str, data_dir: str
     ) -> Tuple[bool, dict[str, Any]]:
@@ -181,9 +178,7 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         import json
 
         # Load walk forward performance results
-        performance_file = (
-            f"{data_dir}/{exchange}_{symbol}_walk_forward_performance.json"
-        )
+        performance_file = f"{data_dir}/{exchange}_{symbol}_walk_forward_performance.json"
 
         metrics: dict[str, Any] = {}
         if os.path.exists(performance_file):
@@ -253,7 +248,9 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         self.logger.error(f"Performance file not found: {performance_file}")
         return False, {"missing_file": performance_file}
 
-    @handle_errors(exceptions=(Exception,), default_return=(False, {}), context="Step13._validate_walk_forward_stability")
+    @handle_errors(
+        exceptions=(Exception,), default_return=(False, {}), context="Step13._validate_walk_forward_stability"
+    )
     def _validate_walk_forward_stability(
         self, symbol: str, exchange: str, data_dir: str
     ) -> Tuple[bool, dict[str, Any]]:
@@ -328,7 +325,9 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         self.logger.error(f"Metadata file not found: {metadata_file}")
         return False, {"missing_file": metadata_file}
 
-    @handle_errors(exceptions=(Exception,), default_return=(False, {}), context="Step13._validate_walk_forward_consistency")
+    @handle_errors(
+        exceptions=(Exception,), default_return=(False, {}), context="Step13._validate_walk_forward_consistency"
+    )
     def _validate_walk_forward_consistency(
         self, symbol: str, exchange: str, data_dir: str
     ) -> Tuple[bool, dict[str, Any]]:
@@ -400,9 +399,7 @@ class Step13WalkForwardValidationValidator(BaseValidator):
         return False, {"missing_file": results_file}
 
 
-async def run_validator(
-    training_input: dict[str, Any], pipeline_state: dict[str, Any]
-) -> dict[str, Any]:
+async def run_validator(training_input: dict[str, Any], pipeline_state: dict[str, Any]) -> dict[str, Any]:
     """Run the step13_walk_forward_validation validator.
 
     Args:

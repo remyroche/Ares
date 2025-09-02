@@ -117,18 +117,17 @@ class RegimeAwareTacticianSpecialistTrainingStep:
                 sr_config = config.copy()
                 sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
                 sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
-        self.sr_predictor, sr_breakout_predictor.SRBreakoutPredictor(sr_config)
-        except Exception as e:
-        self.logger.warning(f"⚠️ Failed to initialize SRBreakoutPredictor: {e}")
-        
+                self.sr_predictor = sr_breakout_predictor.SRBreakoutPredictor(sr_config)
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to initialize SRBreakoutPredictor: {e}")
+        else:
+            self.logger.warning("⚠️ SRBreakoutPredictor not available")
+            self.sr_predictor = None
+
         # Regime-specific state storage
         self.regime_specialist_models: dict[str, dict[str, Any]] = {}
         self.regime_training_results: dict[str, dict[str, Any]] = {}
         self.regime_validation_results: dict[str, dict[str, Any]] = {}
-        self.sr_predictor, None
-        else:
-            self.logger.warning("⚠️ SRBreakoutPredictor not available")
-            self.sr_predictor = None
 
     def _initialize_regime_config(self) -> dict[str, Any]:
         """Initialize regime-specific configuration for tactician specialist training."""
@@ -378,8 +377,8 @@ class RegimeAwareTacticianSpecialistTrainingStep:
     ) -> dict[str, Any]:
         """Execute regime-aware tactician specialist models training."""
         try:
-        self.logger.info("🔄 Executing Regime-Aware Tactician Specialist Training...")
-        self.logger.info(f"📊 Regime configuration: {self.regime_config}")
+            self.logger.info("🔄 Executing Regime-Aware Tactician Specialist Training...")
+            self.logger.info(f"📊 Regime configuration: {self.regime_config}")
 
             # Extract parameters
             symbol = training_input.get("symbol", "ETHUSDT")

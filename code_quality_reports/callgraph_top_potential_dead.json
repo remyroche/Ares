@@ -1,0 +1,1202 @@
+[
+  {
+    "name": "DataCollectionQualityAnalyzer.__init__",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 42,
+    "node_type": "method"
+  },
+  {
+    "name": "DataCollectionQualityAnalyzer.load_data",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 48,
+    "node_type": "method"
+  },
+  {
+    "name": "load_data",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 48,
+    "node_type": "function"
+  },
+  {
+    "name": "DataCollectionQualityAnalyzer._load_from_directory",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 70,
+    "node_type": "method"
+  },
+  {
+    "name": "_load_from_directory",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 70,
+    "node_type": "function"
+  },
+  {
+    "name": "DataCollectionQualityAnalyzer.analyze_data_quality",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 91,
+    "node_type": "method"
+  },
+  {
+    "name": "analyze_data_quality",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 91,
+    "node_type": "function"
+  },
+  {
+    "name": "DataCollectionQualityAnalyzer._analyze_data_completeness",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 126,
+    "node_type": "method"
+  },
+  {
+    "name": "_analyze_data_completeness",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 126,
+    "node_type": "function"
+  },
+  {
+    "name": "DataCollectionQualityAnalyzer._estimate_expected_rows",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 179,
+    "node_type": "method"
+  },
+  {
+    "name": "_estimate_expected_rows",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 179,
+    "node_type": "function"
+  },
+  {
+    "name": "DataCollectionQualityAnalyzer._analyze_data_freshness",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 196,
+    "node_type": "method"
+  },
+  {
+    "name": "_analyze_data_freshness",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 196,
+    "node_type": "function"
+  },
+  {
+    "name": "DataCollectionQualityAnalyzer._validate_data_formats",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 285,
+    "node_type": "method"
+  },
+  {
+    "name": "_validate_data_formats",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 285,
+    "node_type": "function"
+  },
+  {
+    "name": "DataCollectionQualityAnalyzer._analyze_data_source_reliability",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 372,
+    "node_type": "method"
+  },
+  {
+    "name": "_analyze_data_source_reliability",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 372,
+    "node_type": "function"
+  },
+  {
+    "name": "DataCollectionQualityAnalyzer._check_data_consistency",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 462,
+    "node_type": "method"
+  },
+  {
+    "name": "_check_data_consistency",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 462,
+    "node_type": "function"
+  },
+  {
+    "name": "DataCollectionQualityAnalyzer._calculate_quality_metrics",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 545,
+    "node_type": "method"
+  },
+  {
+    "name": "_calculate_quality_metrics",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 545,
+    "node_type": "function"
+  },
+  {
+    "name": "DataCollectionQualityAnalyzer._generate_recommendations",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 602,
+    "node_type": "method"
+  },
+  {
+    "name": "_generate_recommendations",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 602,
+    "node_type": "function"
+  },
+  {
+    "name": "DataCollectionQualityAnalyzer._create_visualizations",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 649,
+    "node_type": "method"
+  },
+  {
+    "name": "_create_visualizations",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 649,
+    "node_type": "function"
+  },
+  {
+    "name": "DataCollectionQualityAnalyzer.save_report",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 712,
+    "node_type": "method"
+  },
+  {
+    "name": "save_report",
+    "file_path": "/workspace/analysis/data_collection_quality_analysis.py",
+    "line": 712,
+    "node_type": "function"
+  },
+  {
+    "name": "DataPreparationQualityAnalyzer.__init__",
+    "file_path": "/workspace/analysis/data_preparation_quality_analysis.py",
+    "line": 38,
+    "node_type": "method"
+  },
+  {
+    "name": "DataPreparationQualityAnalyzer.load_data",
+    "file_path": "/workspace/analysis/data_preparation_quality_analysis.py",
+    "line": 43,
+    "node_type": "method"
+  },
+  {
+    "name": "load_data",
+    "file_path": "/workspace/analysis/data_preparation_quality_analysis.py",
+    "line": 43,
+    "node_type": "function"
+  },
+  {
+    "name": "DataPreparationQualityAnalyzer._load_from_directory",
+    "file_path": "/workspace/analysis/data_preparation_quality_analysis.py",
+    "line": 65,
+    "node_type": "method"
+  },
+  {
+    "name": "_load_from_directory",
+    "file_path": "/workspace/analysis/data_preparation_quality_analysis.py",
+    "line": 65,
+    "node_type": "function"
+  },
+  {
+    "name": "DataPreparationQualityAnalyzer.analyze_preparation_quality",
+    "file_path": "/workspace/analysis/data_preparation_quality_analysis.py",
+    "line": 79,
+    "node_type": "method"
+  },
+  {
+    "name": "analyze_preparation_quality",
+    "file_path": "/workspace/analysis/data_preparation_quality_analysis.py",
+    "line": 79,
+    "node_type": "function"
+  },
+  {
+    "name": "DataPreparationQualityAnalyzer._analyze_feature_engineering_quality",
+    "file_path": "/workspace/analysis/data_preparation_quality_analysis.py",
+    "line": 108,
+    "node_type": "method"
+  },
+  {
+    "name": "_analyze_feature_engineering_quality",
+    "file_path": "/workspace/analysis/data_preparation_quality_analysis.py",
+    "line": 108,
+    "node_type": "function"
+  },
+  {
+    "name": "DataPreparationQualityAnalyzer._analyze_data_cleaning_effectiveness",
+    "file_path": "/workspace/analysis/data_preparation_quality_analysis.py",
+    "line": 168,
+    "node_type": "method"
+  },
+  {
+    "name": "_analyze_data_cleaning_effectiveness",
+    "file_path": "/workspace/analysis/data_preparation_quality_analysis.py",
+    "line": 168,
+    "node_type": "function"
+  },
+  {
+    "name": "DataPreparationQualityAnalyzer._analyze_feature_correlations",
+    "file_path": "/workspace/analysis/data_preparation_quality_analysis.py",
+    "line": 211,
+    "node_type": "method"
+  },
+  {
+    "name": "_analyze_feature_correlations",
+    "file_path": "/workspace/analysis/data_preparation_quality_analysis.py",
+    "line": 211,
+    "node_type": "function"
+  },
+  {
+    "name": "DataPreparationQualityAnalyzer._calculate_preparation_quality_metrics",
+    "file_path": "/workspace/analysis/data_preparation_quality_analysis.py",
+    "line": 270,
+    "node_type": "method"
+  },
+  {
+    "name": "_calculate_preparation_quality_metrics",
+    "file_path": "/workspace/analysis/data_preparation_quality_analysis.py",
+    "line": 270,
+    "node_type": "function"
+  },
+  {
+    "name": "DataPreparationQualityAnalyzer._generate_preparation_recommendations",
+    "file_path": "/workspace/analysis/data_preparation_quality_analysis.py",
+    "line": 323,
+    "node_type": "method"
+  },
+  {
+    "name": "_generate_preparation_recommendations",
+    "file_path": "/workspace/analysis/data_preparation_quality_analysis.py",
+    "line": 323,
+    "node_type": "function"
+  },
+  {
+    "name": "DataPreparationQualityAnalyzer._create_preparation_visualizations",
+    "file_path": "/workspace/analysis/data_preparation_quality_analysis.py",
+    "line": 363,
+    "node_type": "method"
+  },
+  {
+    "name": "_create_preparation_visualizations",
+    "file_path": "/workspace/analysis/data_preparation_quality_analysis.py",
+    "line": 363,
+    "node_type": "function"
+  },
+  {
+    "name": "DataPreparationQualityAnalyzer.save_report",
+    "file_path": "/workspace/analysis/data_preparation_quality_analysis.py",
+    "line": 436,
+    "node_type": "method"
+  },
+  {
+    "name": "save_report",
+    "file_path": "/workspace/analysis/data_preparation_quality_analysis.py",
+    "line": 436,
+    "node_type": "function"
+  },
+  {
+    "name": "MissingValuesAnalyzer.__init__",
+    "file_path": "/workspace/analysis/missing_values_analysis.py",
+    "line": 37,
+    "node_type": "method"
+  },
+  {
+    "name": "MissingValuesAnalyzer.load_data",
+    "file_path": "/workspace/analysis/missing_values_analysis.py",
+    "line": 42,
+    "node_type": "method"
+  },
+  {
+    "name": "load_data",
+    "file_path": "/workspace/analysis/missing_values_analysis.py",
+    "line": 42,
+    "node_type": "function"
+  },
+  {
+    "name": "MissingValuesAnalyzer.analyze_missing_values",
+    "file_path": "/workspace/analysis/missing_values_analysis.py",
+    "line": 53,
+    "node_type": "method"
+  },
+  {
+    "name": "analyze_missing_values",
+    "file_path": "/workspace/analysis/missing_values_analysis.py",
+    "line": 53,
+    "node_type": "function"
+  },
+  {
+    "name": "MissingValuesAnalyzer._overall_summary",
+    "file_path": "/workspace/analysis/missing_values_analysis.py",
+    "line": 85,
+    "node_type": "method"
+  },
+  {
+    "name": "_overall_summary",
+    "file_path": "/workspace/analysis/missing_values_analysis.py",
+    "line": 85,
+    "node_type": "function"
+  },
+  {
+    "name": "MissingValuesAnalyzer._column_analysis",
+    "file_path": "/workspace/analysis/missing_values_analysis.py",
+    "line": 110,
+    "node_type": "method"
+  },
+  {
+    "name": "_column_analysis",
+    "file_path": "/workspace/analysis/missing_values_analysis.py",
+    "line": 110,
+    "node_type": "function"
+  },
+  {
+    "name": "MissingValuesAnalyzer._temporal_analysis",
+    "file_path": "/workspace/analysis/missing_values_analysis.py",
+    "line": 143,
+    "node_type": "method"
+  },
+  {
+    "name": "_temporal_analysis",
+    "file_path": "/workspace/analysis/missing_values_analysis.py",
+    "line": 143,
+    "node_type": "function"
+  },
+  {
+    "name": "MissingValuesAnalyzer._pattern_analysis",
+    "file_path": "/workspace/analysis/missing_values_analysis.py",
+    "line": 194,
+    "node_type": "method"
+  },
+  {
+    "name": "_pattern_analysis",
+    "file_path": "/workspace/analysis/missing_values_analysis.py",
+    "line": 194,
+    "node_type": "function"
+  },
+  {
+    "name": "MissingValuesAnalyzer._feature_category_analysis",
+    "file_path": "/workspace/analysis/missing_values_analysis.py",
+    "line": 249,
+    "node_type": "method"
+  },
+  {
+    "name": "_feature_category_analysis",
+    "file_path": "/workspace/analysis/missing_values_analysis.py",
+    "line": 249,
+    "node_type": "function"
+  },
+  {
+    "name": "MissingValuesAnalyzer._generate_recommendations",
+    "file_path": "/workspace/analysis/missing_values_analysis.py",
+    "line": 294,
+    "node_type": "method"
+  },
+  {
+    "name": "_generate_recommendations",
+    "file_path": "/workspace/analysis/missing_values_analysis.py",
+    "line": 294,
+    "node_type": "function"
+  },
+  {
+    "name": "MissingValuesAnalyzer._create_visualizations",
+    "file_path": "/workspace/analysis/missing_values_analysis.py",
+    "line": 340,
+    "node_type": "method"
+  },
+  {
+    "name": "_create_visualizations",
+    "file_path": "/workspace/analysis/missing_values_analysis.py",
+    "line": 340,
+    "node_type": "function"
+  },
+  {
+    "name": "MissingValuesAnalyzer.save_report",
+    "file_path": "/workspace/analysis/missing_values_analysis.py",
+    "line": 404,
+    "node_type": "method"
+  },
+  {
+    "name": "save_report",
+    "file_path": "/workspace/analysis/missing_values_analysis.py",
+    "line": 404,
+    "node_type": "function"
+  },
+  {
+    "name": "ModelTrainingQualityAnalyzer.__init__",
+    "file_path": "/workspace/analysis/model_training_quality_analysis.py",
+    "line": 40,
+    "node_type": "method"
+  },
+  {
+    "name": "ModelTrainingQualityAnalyzer.load_training_data",
+    "file_path": "/workspace/analysis/model_training_quality_analysis.py",
+    "line": 46,
+    "node_type": "method"
+  },
+  {
+    "name": "load_training_data",
+    "file_path": "/workspace/analysis/model_training_quality_analysis.py",
+    "line": 46,
+    "node_type": "function"
+  },
+  {
+    "name": "ModelTrainingQualityAnalyzer._load_from_directory",
+    "file_path": "/workspace/analysis/model_training_quality_analysis.py",
+    "line": 72,
+    "node_type": "method"
+  },
+  {
+    "name": "_load_from_directory",
+    "file_path": "/workspace/analysis/model_training_quality_analysis.py",
+    "line": 72,
+    "node_type": "function"
+  },
+  {
+    "name": "ModelTrainingQualityAnalyzer.analyze_training_quality",
+    "file_path": "/workspace/analysis/model_training_quality_analysis.py",
+    "line": 106,
+    "node_type": "method"
+  },
+  {
+    "name": "analyze_training_quality",
+    "file_path": "/workspace/analysis/model_training_quality_analysis.py",
+    "line": 106,
+    "node_type": "function"
+  },
+  {
+    "name": "ModelTrainingQualityAnalyzer._analyze_training_metrics",
+    "file_path": "/workspace/analysis/model_training_quality_analysis.py",
+    "line": 141,
+    "node_type": "method"
+  },
+  {
+    "name": "_analyze_training_metrics",
+    "file_path": "/workspace/analysis/model_training_quality_analysis.py",
+    "line": 141,
+    "node_type": "function"
+  },
+  {
+    "name": "ModelTrainingQualityAnalyzer._analyze_model_performance",
+    "file_path": "/workspace/analysis/model_training_quality_analysis.py",
+    "line": 233,
+    "node_type": "method"
+  },
+  {
+    "name": "_analyze_model_performance",
+    "file_path": "/workspace/analysis/model_training_quality_analysis.py",
+    "line": 233,
+    "node_type": "function"
+  },
+  {
+    "name": "ModelTrainingQualityAnalyzer._analyze_training_convergence",
+    "file_path": "/workspace/analysis/model_training_quality_analysis.py",
+    "line": 300,
+    "node_type": "method"
+  },
+  {
+    "name": "_analyze_training_convergence",
+    "file_path": "/workspace/analysis/model_training_quality_analysis.py",
+    "line": 300,
+    "node_type": "function"
+  },
+  {
+    "name": "ModelTrainingQualityAnalyzer._analyze_model_stability",
+    "file_path": "/workspace/analysis/model_training_quality_analysis.py",
+    "line": 381,
+    "node_type": "method"
+  },
+  {
+    "name": "_analyze_model_stability",
+    "file_path": "/workspace/analysis/model_training_quality_analysis.py",
+    "line": 381,
+    "node_type": "function"
+  },
+  {
+    "name": "ModelTrainingQualityAnalyzer._detect_overfitting_underfitting",
+    "file_path": "/workspace/analysis/model_training_quality_analysis.py",
+    "line": 453,
+    "node_type": "method"
+  },
+  {
+    "name": "_detect_overfitting_underfitting",
+    "file_path": "/workspace/analysis/model_training_quality_analysis.py",
+    "line": 453,
+    "node_type": "function"
+  },
+  {
+    "name": "ModelTrainingQualityAnalyzer._calculate_training_quality_metrics",
+    "file_path": "/workspace/analysis/model_training_quality_analysis.py",
+    "line": 554,
+    "node_type": "method"
+  },
+  {
+    "name": "_calculate_training_quality_metrics",
+    "file_path": "/workspace/analysis/model_training_quality_analysis.py",
+    "line": 554,
+    "node_type": "function"
+  },
+  {
+    "name": "ModelTrainingQualityAnalyzer._generate_training_recommendations",
+    "file_path": "/workspace/analysis/model_training_quality_analysis.py",
+    "line": 634,
+    "node_type": "method"
+  },
+  {
+    "name": "_generate_training_recommendations",
+    "file_path": "/workspace/analysis/model_training_quality_analysis.py",
+    "line": 634,
+    "node_type": "function"
+  },
+  {
+    "name": "ModelTrainingQualityAnalyzer._create_training_visualizations",
+    "file_path": "/workspace/analysis/model_training_quality_analysis.py",
+    "line": 678,
+    "node_type": "method"
+  },
+  {
+    "name": "_create_training_visualizations",
+    "file_path": "/workspace/analysis/model_training_quality_analysis.py",
+    "line": 678,
+    "node_type": "function"
+  },
+  {
+    "name": "ModelTrainingQualityAnalyzer.save_report",
+    "file_path": "/workspace/analysis/model_training_quality_analysis.py",
+    "line": 747,
+    "node_type": "method"
+  },
+  {
+    "name": "save_report",
+    "file_path": "/workspace/analysis/model_training_quality_analysis.py",
+    "line": 747,
+    "node_type": "function"
+  },
+  {
+    "name": "FileAnalysis.__init__",
+    "file_path": "/workspace/analyst_scanner.py",
+    "line": 25,
+    "node_type": "method"
+  },
+  {
+    "name": "FileAnalysis.visit_FunctionDef",
+    "file_path": "/workspace/analyst_scanner.py",
+    "line": 35,
+    "node_type": "method"
+  },
+  {
+    "name": "visit_FunctionDef",
+    "file_path": "/workspace/analyst_scanner.py",
+    "line": 35,
+    "node_type": "function"
+  },
+  {
+    "name": "FileAnalysis.visit_ClassDef",
+    "file_path": "/workspace/analyst_scanner.py",
+    "line": 79,
+    "node_type": "method"
+  },
+  {
+    "name": "visit_ClassDef",
+    "file_path": "/workspace/analyst_scanner.py",
+    "line": 79,
+    "node_type": "function"
+  },
+  {
+    "name": "FileAnalysis.visit_ExceptHandler",
+    "file_path": "/workspace/analyst_scanner.py",
+    "line": 98,
+    "node_type": "method"
+  },
+  {
+    "name": "visit_ExceptHandler",
+    "file_path": "/workspace/analyst_scanner.py",
+    "line": 98,
+    "node_type": "function"
+  },
+  {
+    "name": "FileAnalysis.visit_Name",
+    "file_path": "/workspace/analyst_scanner.py",
+    "line": 112,
+    "node_type": "method"
+  },
+  {
+    "name": "visit_Name",
+    "file_path": "/workspace/analyst_scanner.py",
+    "line": 112,
+    "node_type": "function"
+  },
+  {
+    "name": "FileAnalysis.analyze",
+    "file_path": "/workspace/analyst_scanner.py",
+    "line": 116,
+    "node_type": "method"
+  },
+  {
+    "name": "analyze",
+    "file_path": "/workspace/analyst_scanner.py",
+    "line": 116,
+    "node_type": "function"
+  },
+  {
+    "name": "generate_detailed_validation_report",
+    "file_path": "/workspace/analyze_validation_issues.py",
+    "line": 78,
+    "node_type": "function"
+  },
+  {
+    "name": "create_feature_analysis_script",
+    "file_path": "/workspace/analyze_validation_issues.py",
+    "line": 178,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher.__init__",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 125,
+    "node_type": "method"
+  },
+  {
+    "name": "AresLauncher.setup_logging",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 161,
+    "node_type": "method"
+  },
+  {
+    "name": "AresLauncher.setup_signal_handling",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 191,
+    "node_type": "method"
+  },
+  {
+    "name": "setup_signal_handling",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 191,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher.cleanup",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 198,
+    "node_type": "method"
+  },
+  {
+    "name": "AresLauncher.launch_gui",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 233,
+    "node_type": "method"
+  },
+  {
+    "name": "launch_gui",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 233,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher.launch_portfolio_manager",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 296,
+    "node_type": "method"
+  },
+  {
+    "name": "launch_portfolio_manager",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 296,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher._normalize_step_name",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 312,
+    "node_type": "method"
+  },
+  {
+    "name": "_normalize_step_name",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 312,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher._clear_checkpoint_files",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 329,
+    "node_type": "method"
+  },
+  {
+    "name": "_clear_checkpoint_files",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 329,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher._force_fresh_start_from_step",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 349,
+    "node_type": "method"
+  },
+  {
+    "name": "_force_fresh_start_from_step",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 349,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher._run_unified_training",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 382,
+    "node_type": "method"
+  },
+  {
+    "name": "_run_unified_training",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 382,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher.run_enhanced_blank_training",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 583,
+    "node_type": "method"
+  },
+  {
+    "name": "run_enhanced_blank_training",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 583,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher.run_light_training",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 605,
+    "node_type": "method"
+  },
+  {
+    "name": "run_light_training",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 605,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher.show_training_modes",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 625,
+    "node_type": "method"
+  },
+  {
+    "name": "show_training_modes",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 625,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher.run_full_training",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 693,
+    "node_type": "method"
+  },
+  {
+    "name": "run_full_training",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 693,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher.resume_training",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 713,
+    "node_type": "method"
+  },
+  {
+    "name": "resume_training",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 713,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher.precompute_wavelet_features",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 759,
+    "node_type": "method"
+  },
+  {
+    "name": "precompute_wavelet_features",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 759,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher.run_backtesting",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 834,
+    "node_type": "method"
+  },
+  {
+    "name": "run_backtesting",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 834,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher._run_unified_trading",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 963,
+    "node_type": "method"
+  },
+  {
+    "name": "_run_unified_trading",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 963,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher.run_paper_trading",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1033,
+    "node_type": "method"
+  },
+  {
+    "name": "run_paper_trading",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1033,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher.run_live_trading",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1047,
+    "node_type": "method"
+  },
+  {
+    "name": "run_live_trading",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1047,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher.run_portfolio_trading",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1063,
+    "node_type": "method"
+  },
+  {
+    "name": "run_portfolio_trading",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1063,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher.run_gui_only",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1104,
+    "node_type": "method"
+  },
+  {
+    "name": "run_gui_only",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1104,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher.run_gui_with_mode",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1114,
+    "node_type": "method"
+  },
+  {
+    "name": "run_gui_with_mode",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1114,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher.wait_for_user_input",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1124,
+    "node_type": "method"
+  },
+  {
+    "name": "wait_for_user_input",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1124,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher.run_challenger_trading",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1139,
+    "node_type": "method"
+  },
+  {
+    "name": "run_challenger_trading",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1139,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher.run_comprehensive_training",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1179,
+    "node_type": "method"
+  },
+  {
+    "name": "run_comprehensive_training",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1179,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher.run_multi_timeframe_training",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1250,
+    "node_type": "method"
+  },
+  {
+    "name": "AresLauncher.run_blank_training",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1327,
+    "node_type": "method"
+  },
+  {
+    "name": "run_blank_training",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1327,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher.run_step_based_training",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1393,
+    "node_type": "method"
+  },
+  {
+    "name": "run_step_based_training",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1393,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher.run_step_based_full_training",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1419,
+    "node_type": "method"
+  },
+  {
+    "name": "run_step_based_full_training",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1419,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher._get_required_steps",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1648,
+    "node_type": "method"
+  },
+  {
+    "name": "_get_required_steps",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1648,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher._print_validation_report",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1691,
+    "node_type": "method"
+  },
+  {
+    "name": "_print_validation_report",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1691,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher._print_step2_validation_report",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1718,
+    "node_type": "method"
+  },
+  {
+    "name": "_print_step2_validation_report",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1718,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher.run_data_loading",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1768,
+    "node_type": "method"
+  },
+  {
+    "name": "run_data_loading",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 1768,
+    "node_type": "function"
+  },
+  {
+    "name": "AresLauncher._run_step_pipeline",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 2056,
+    "node_type": "method"
+  },
+  {
+    "name": "_run_step_pipeline",
+    "file_path": "/workspace/ares_launcher.py",
+    "line": 2056,
+    "node_type": "function"
+  },
+  {
+    "name": "SyntaxFixer.__init__",
+    "file_path": "/workspace/automated_syntax_fixer.py",
+    "line": 31,
+    "node_type": "method"
+  },
+  {
+    "name": "SyntaxFixer.fix_file",
+    "file_path": "/workspace/automated_syntax_fixer.py",
+    "line": 36,
+    "node_type": "method"
+  },
+  {
+    "name": "fix_file",
+    "file_path": "/workspace/automated_syntax_fixer.py",
+    "line": 36,
+    "node_type": "function"
+  },
+  {
+    "name": "SyntaxFixer._fix_malformed_try_except_blocks",
+    "file_path": "/workspace/automated_syntax_fixer.py",
+    "line": 74,
+    "node_type": "method"
+  },
+  {
+    "name": "_fix_malformed_try_except_blocks",
+    "file_path": "/workspace/automated_syntax_fixer.py",
+    "line": 74,
+    "node_type": "function"
+  },
+  {
+    "name": "SyntaxFixer._fix_missing_indented_blocks",
+    "file_path": "/workspace/automated_syntax_fixer.py",
+    "line": 98,
+    "node_type": "method"
+  },
+  {
+    "name": "_fix_missing_indented_blocks",
+    "file_path": "/workspace/automated_syntax_fixer.py",
+    "line": 98,
+    "node_type": "function"
+  },
+  {
+    "name": "SyntaxFixer._fix_invalid_syntax_patterns",
+    "file_path": "/workspace/automated_syntax_fixer.py",
+    "line": 138,
+    "node_type": "method"
+  },
+  {
+    "name": "_fix_invalid_syntax_patterns",
+    "file_path": "/workspace/automated_syntax_fixer.py",
+    "line": 138,
+    "node_type": "function"
+  },
+  {
+    "name": "SyntaxFixer._fix_indentation_issues",
+    "file_path": "/workspace/automated_syntax_fixer.py",
+    "line": 158,
+    "node_type": "method"
+  },
+  {
+    "name": "_fix_indentation_issues",
+    "file_path": "/workspace/automated_syntax_fixer.py",
+    "line": 158,
+    "node_type": "function"
+  },
+  {
+    "name": "SyntaxFixer.scan_and_fix_directory",
+    "file_path": "/workspace/automated_syntax_fixer.py",
+    "line": 180,
+    "node_type": "method"
+  },
+  {
+    "name": "scan_and_fix_directory",
+    "file_path": "/workspace/automated_syntax_fixer.py",
+    "line": 180,
+    "node_type": "function"
+  },
+  {
+    "name": "check_file_syntax",
+    "file_path": "/workspace/check_syntax.py",
+    "line": 11,
+    "node_type": "function"
+  },
+  {
+    "name": "auto_fix",
+    "file_path": "/workspace/code_quality/__init__.py",
+    "line": 129,
+    "node_type": "function"
+  },
+  {
+    "name": "sequential_fix",
+    "file_path": "/workspace/code_quality/__init__.py",
+    "line": 149,
+    "node_type": "function"
+  },
+  {
+    "name": "analyze_imports",
+    "file_path": "/workspace/code_quality/__init__.py",
+    "line": 164,
+    "node_type": "function"
+  },
+  {
+    "name": "analyze_signatures",
+    "file_path": "/workspace/code_quality/__init__.py",
+    "line": 184,
+    "node_type": "function"
+  },
+  {
+    "name": "generate_error_report",
+    "file_path": "/workspace/code_quality/__init__.py",
+    "line": 244,
+    "node_type": "function"
+  },
+  {
+    "name": "track_quality_trends",
+    "file_path": "/workspace/code_quality/__init__.py",
+    "line": 285,
+    "node_type": "function"
+  },
+  {
+    "name": "ASTPattern.__init__",
+    "file_path": "/workspace/code_quality/analyzers/advanced_ast_analyzer.py",
+    "line": 23,
+    "node_type": "method"
+  },
+  {
+    "name": "ASTPattern.to_dict",
+    "file_path": "/workspace/code_quality/analyzers/advanced_ast_analyzer.py",
+    "line": 31,
+    "node_type": "method"
+  },
+  {
+    "name": "CodeStructure.__init__",
+    "file_path": "/workspace/code_quality/analyzers/advanced_ast_analyzer.py",
+    "line": 45,
+    "node_type": "method"
+  },
+  {
+    "name": "CodeStructure.to_dict",
+    "file_path": "/workspace/code_quality/analyzers/advanced_ast_analyzer.py",
+    "line": 55,
+    "node_type": "method"
+  },
+  {
+    "name": "to_dict",
+    "file_path": "/workspace/code_quality/analyzers/advanced_ast_analyzer.py",
+    "line": 55,
+    "node_type": "function"
+  },
+  {
+    "name": "AdvancedASTAnalyzer.__init__",
+    "file_path": "/workspace/code_quality/analyzers/advanced_ast_analyzer.py",
+    "line": 80,
+    "node_type": "method"
+  },
+  {
+    "name": "AdvancedASTAnalyzer.analyze_file",
+    "file_path": "/workspace/code_quality/analyzers/advanced_ast_analyzer.py",
+    "line": 88,
+    "node_type": "method"
+  }
+]

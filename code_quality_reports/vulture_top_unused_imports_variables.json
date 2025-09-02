@@ -1,0 +1,860 @@
+[
+  {
+    "file": "ares_launcher.py",
+    "line": 92,
+    "desc": "unused import 'short_blank_lookback_days'",
+    "conf": 90
+  },
+  {
+    "file": "ares_launcher.py",
+    "line": 97,
+    "desc": "unused import 'validate_mode_parameters'",
+    "conf": 90
+  },
+  {
+    "file": "code_quality/analyzers/complexity_analyzer.py",
+    "line": 12,
+    "desc": "unused import 'radon_complexity'",
+    "conf": 90
+  },
+  {
+    "file": "code_quality/analyzers/signature_analyzer.py",
+    "line": 11,
+    "desc": "unused import 'difflib'",
+    "conf": 90
+  },
+  {
+    "file": "code_quality/comprehensive_code_review.py",
+    "line": 17,
+    "desc": "unused import 'astroid'",
+    "conf": 90
+  },
+  {
+    "file": "code_quality/comprehensive_code_review.py",
+    "line": 35,
+    "desc": "unused import 'astroid'",
+    "conf": 90
+  },
+  {
+    "file": "code_quality/comprehensive_code_review.py",
+    "line": 41,
+    "desc": "unused import 'mypy'",
+    "conf": 90
+  },
+  {
+    "file": "code_quality/comprehensive_code_review.py",
+    "line": 47,
+    "desc": "unused import 'bandit'",
+    "conf": 90
+  },
+  {
+    "file": "code_quality/utils/progress.py",
+    "line": 21,
+    "desc": "unused import 'text'",
+    "conf": 90
+  },
+  {
+    "file": "code_quality/utils/progress.py",
+    "line": 24,
+    "desc": "unused import 'columns'",
+    "conf": 90
+  },
+  {
+    "file": "example_enhanced_multi_timeframe_optimization.py",
+    "line": 36,
+    "desc": "unused import 'get_cross_timeframe_period_pairs'",
+    "conf": 90
+  },
+  {
+    "file": "minimal_file_utils.py",
+    "line": 7,
+    "desc": "unused import 'pattern'",
+    "conf": 90
+  },
+  {
+    "file": "optimize_hmm_regime_parameters_advanced.py",
+    "line": 39,
+    "desc": "unused import 'ellipticenvelope'",
+    "conf": 90
+  },
+  {
+    "file": "optimize_hmm_regime_parameters_advanced.py",
+    "line": 42,
+    "desc": "unused import 'pdist'",
+    "conf": 90
+  },
+  {
+    "file": "scripts/assess_data_quality.py",
+    "line": 22,
+    "desc": "unused import 'vectorizedlabellingorchestrator'",
+    "conf": 90
+  },
+  {
+    "file": "scripts/unified_optuna_optimization_demo.py",
+    "line": 314,
+    "desc": "unused variable 'x_df'",
+    "conf": 100
+  },
+  {
+    "file": "src/analyst/data_utils.py",
+    "line": 1551,
+    "desc": "unused variable 'num_records'",
+    "conf": 100
+  },
+  {
+    "file": "src/analyst/decision_aggregator.py",
+    "line": 32,
+    "desc": "unused variable 'specialized_candidates'",
+    "conf": 100
+  },
+  {
+    "file": "src/analyst/decision_aggregator.py",
+    "line": 33,
+    "desc": "unused variable 'generalist_score'",
+    "conf": 100
+  },
+  {
+    "file": "src/analyst/meta_label_relevance.py",
+    "line": 59,
+    "desc": "unused variable 'xj'",
+    "conf": 100
+  },
+  {
+    "file": "src/analyst/predictive_ensembles/regime_ensembles/base_ensemble.py",
+    "line": 1339,
+    "desc": "unused variable 'is_live'",
+    "conf": 100
+  },
+  {
+    "file": "src/config/constants.py",
+    "line": 21,
+    "desc": "unused import 'light_training_lookback_days'",
+    "conf": 90
+  },
+  {
+    "file": "src/config/constants.py",
+    "line": 21,
+    "desc": "unused import 'short_blank_lookback_days'",
+    "conf": 90
+  },
+  {
+    "file": "src/custom_types/protocol_types.py",
+    "line": 72,
+    "desc": "unused variable 'trade_decision'",
+    "conf": 100
+  },
+  {
+    "file": "src/interfaces/base_interfaces.py",
+    "line": 272,
+    "desc": "unused variable 'model_version'",
+    "conf": 100
+  },
+  {
+    "file": "src/launcher/enhanced_trading_launcher.py",
+    "line": 36,
+    "desc": "unused import 'enhancedbacktester'",
+    "conf": 90
+  },
+  {
+    "file": "src/protocols/trading_protocols.py",
+    "line": 81,
+    "desc": "unused variable 'trade_decision'",
+    "conf": 100
+  },
+  {
+    "file": "src/protocols/trading_protocols.py",
+    "line": 86,
+    "desc": "unused variable 'risk_parameters'",
+    "conf": 100
+  },
+  {
+    "file": "src/protocols/trading_protocols.py",
+    "line": 95,
+    "desc": "unused variable 'position_side'",
+    "conf": 100
+  },
+  {
+    "file": "src/supervisor/optimizer.py",
+    "line": 193,
+    "desc": "unused variable 'historical_pnl_data'",
+    "conf": 100
+  },
+  {
+    "file": "src/supervisor/optimizer.py",
+    "line": 194,
+    "desc": "unused variable 'checkpoint_file_path'",
+    "conf": 100
+  },
+  {
+    "file": "src/supervisor/optimizer.py",
+    "line": 194,
+    "desc": "unused variable 'strategy_breakdown_data'",
+    "conf": 100
+  },
+  {
+    "file": "src/supervisor/optimizer.py",
+    "line": 195,
+    "desc": "unused variable 'hpo_ranges'",
+    "conf": 100
+  },
+  {
+    "file": "src/tactician/ml_tactics_manager.py",
+    "line": 1565,
+    "desc": "unused variable 'position_context'",
+    "conf": 100
+  },
+  {
+    "file": "src/tactician/sr_data_integration.py",
+    "line": 30,
+    "desc": "unused import 'light_training_lookback_days'",
+    "conf": 90
+  },
+  {
+    "file": "src/tactician/sr_data_integration.py",
+    "line": 30,
+    "desc": "unused import 'short_blank_lookback_days'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/diverse_lookback_optimizer.py",
+    "line": 28,
+    "desc": "unused import 'pdist'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/diverse_lookback_optimizer.py",
+    "line": 571,
+    "desc": "unused variable 'global_periods'",
+    "conf": 100
+  },
+  {
+    "file": "src/training/enhanced_coarse_optimizer.py",
+    "line": 31,
+    "desc": "unused import 'automodelforsequenceclassification'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/enhanced_dynamic_feature_selection.py",
+    "line": 17,
+    "desc": "unused import 'pdist'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/enhanced_training_manager.py",
+    "line": 2385,
+    "desc": "unused import 'step9_hmm_based_training_enhanced'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/enhanced_training_manager.py",
+    "line": 3773,
+    "desc": "unused variable 'is_fatal'",
+    "conf": 100
+  },
+  {
+    "file": "src/training/enhanced_training_manager_backup.py",
+    "line": 2231,
+    "desc": "unused import 'step9_hmm_based_training_enhanced'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/enhanced_training_manager_backup.py",
+    "line": 3362,
+    "desc": "unused variable 'is_fatal'",
+    "conf": 100
+  },
+  {
+    "file": "src/training/matrix_diverse_lookback_optimizer.py",
+    "line": 24,
+    "desc": "unused import 'pdist'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/matrix_diverse_lookback_optimizer.py",
+    "line": 1564,
+    "desc": "unused variable 'global_periods'",
+    "conf": 100
+  },
+  {
+    "file": "src/training/model_trainer.py",
+    "line": 22,
+    "desc": "unused import 'featuregenerator'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/model_trainer.py",
+    "line": 37,
+    "desc": "unused import 'log_training_metadata_to_mlflow'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/multi_output_model_trainer.py",
+    "line": 55,
+    "desc": "unused import 'multioutputclassifier'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/multi_output_model_trainer.py",
+    "line": 55,
+    "desc": "unused import 'multioutputregressor'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/optimization/advanced_surrogate_models.py",
+    "line": 21,
+    "desc": "unused import 'gradientboostingregressor'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/optimization/advanced_surrogate_models.py",
+    "line": 25,
+    "desc": "unused import 'svr'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/optimization/advanced_surrogate_models.py",
+    "line": 26,
+    "desc": "unused import 'kernelridge'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/optimization/computational_optimization_manager.py",
+    "line": 27,
+    "desc": "unused import 'svr'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/optimization/computational_optimization_manager.py",
+    "line": 28,
+    "desc": "unused import 'decisiontreeregressor'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/optimization/problem_specific_strategies.py",
+    "line": 27,
+    "desc": "unused import 'pairwise_distances'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/optimization/problem_specific_strategies.py",
+    "line": 29,
+    "desc": "unused import 'differential_evolution'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/optimization/transfer_learning_system.py",
+    "line": 33,
+    "desc": "unused import 'featurehasher'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/optimization/transfer_learning_system.py",
+    "line": 339,
+    "desc": "unused variable 'target_parameter_space'",
+    "conf": 100
+  },
+  {
+    "file": "src/training/performance_comparison.py",
+    "line": 687,
+    "desc": "unused variable 'before'",
+    "conf": 100
+  },
+  {
+    "file": "src/training/performance_comparison.py",
+    "line": 688,
+    "desc": "unused variable 'after'",
+    "conf": 100
+  },
+  {
+    "file": "src/training/performance_comparison.py",
+    "line": 695,
+    "desc": "unused variable 'before'",
+    "conf": 100
+  },
+  {
+    "file": "src/training/performance_comparison.py",
+    "line": 696,
+    "desc": "unused variable 'after'",
+    "conf": 100
+  },
+  {
+    "file": "src/training/performance_comparison.py",
+    "line": 703,
+    "desc": "unused variable 'before'",
+    "conf": 100
+  },
+  {
+    "file": "src/training/performance_comparison.py",
+    "line": 704,
+    "desc": "unused variable 'after'",
+    "conf": 100
+  },
+  {
+    "file": "src/training/performance_comparison.py",
+    "line": 711,
+    "desc": "unused variable 'before'",
+    "conf": 100
+  },
+  {
+    "file": "src/training/performance_comparison.py",
+    "line": 712,
+    "desc": "unused variable 'after'",
+    "conf": 100
+  },
+  {
+    "file": "src/training/probabilistic_model_integration.py",
+    "line": 26,
+    "desc": "unused import 'tacticianenhancedpredictionintegrator'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/probabilistic_model_integration.py",
+    "line": 28,
+    "desc": "unused import 'regimepredictor'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/probabilistic_model_integration.py",
+    "line": 29,
+    "desc": "unused import 'volatilitypredictor'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/probabilistic_model_integration.py",
+    "line": 30,
+    "desc": "unused import 'momentumpredictor'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/probabilistic_model_integration.py",
+    "line": 31,
+    "desc": "unused import 'trendpredictor'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/steps/enhanced_step1_5_data_converter.py",
+    "line": 32,
+    "desc": "unused import 'memoryoptimizedprocessor'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/steps/enhanced_step1_data_collection.py",
+    "line": 31,
+    "desc": "unused import 'memoryoptimizedprocessor'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/steps/fractional_feature_selector.py",
+    "line": 15,
+    "desc": "unused import 'selectfrommodel'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/steps/fractional_feature_selector.py",
+    "line": 20,
+    "desc": "unused import 'lassocv'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/steps/step1/enhanced_data_quality_manager.py",
+    "line": 385,
+    "desc": "unused variable 'force_refresh'",
+    "conf": 100
+  },
+  {
+    "file": "src/training/steps/step17_final_parameters_optimization/evaluation_engine.py",
+    "line": 113,
+    "desc": "unused variable 'backtest_data'",
+    "conf": 100
+  },
+  {
+    "file": "src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization_enhanced.py",
+    "line": 55,
+    "desc": "unused import 'prange'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/steps/step17_final_parameters_optimization/optimized_step17_implementation.py",
+    "line": 1097,
+    "desc": "unused variable 'parameter_names'",
+    "conf": 100
+  },
+  {
+    "file": "src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py",
+    "line": 38,
+    "desc": "unused import 'get_parameter_search_space'",
+    "conf": 90
+  },
+  {
+    "file": "src/training/steps/step1_5_data_converter.py",
+    "line": 605,
+    "desc": "unused variable 'use_threads'",
+    "conf": 100
+  },
+  {
+    "file": "src/training/steps/step1_5_data_converter.py",
+    "line": 736,
+    "desc": "unused variable 'use_threads'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/centralized_decorators.py",
+    "line": 141,
+    "desc": "unused variable 'fail_on_issues'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/centralized_decorators.py",
+    "line": 496,
+    "desc": "unused variable 'enable_alerts'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/centralized_decorators.py",
+    "line": 769,
+    "desc": "unused variable 'enable_timing'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/centralized_decorators.py",
+    "line": 770,
+    "desc": "unused variable 'enable_memory_monitoring'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/centralized_decorators.py",
+    "line": 783,
+    "desc": "unused variable 'error_handling'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/centralized_decorators.py",
+    "line": 784,
+    "desc": "unused variable 'rollback_on_failure'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/centralized_decorators.py",
+    "line": 786,
+    "desc": "unused variable 'resource_cleanup'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/centralized_decorators_v2.py",
+    "line": 118,
+    "desc": "unused variable 'validation_kwargs'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/centralized_decorators_v2.py",
+    "line": 452,
+    "desc": "unused variable 'track_correlation_changes'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/centralized_decorators_v2.py",
+    "line": 470,
+    "desc": "unused variable 'track_quality_metrics'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/centralized_decorators_v2.py",
+    "line": 471,
+    "desc": "unused variable 'track_collection_time'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/data_type_optimizer.py",
+    "line": 20,
+    "desc": "unused variable 'target_memory_reduction'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/data_validation.py",
+    "line": 6,
+    "desc": "unused import 'overload'",
+    "conf": 90
+  },
+  {
+    "file": "src/utils/enhanced_decorators.py",
+    "line": 358,
+    "desc": "unused variable 'track_io'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/enhanced_outlier_handler.py",
+    "line": 526,
+    "desc": "unused import 'chi2'",
+    "conf": 90
+  },
+  {
+    "file": "src/utils/enhanced_validation_decorators.py",
+    "line": 53,
+    "desc": "unused variable 'cache_validation'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/error_handler.py",
+    "line": 29,
+    "desc": "unused variable 'neginf'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/error_handler.py",
+    "line": 29,
+    "desc": "unused variable 'posinf'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/model_manager.py",
+    "line": 30,
+    "desc": "unused import 'eh_warning'",
+    "conf": 90
+  },
+  {
+    "file": "src/utils/security_framework.py",
+    "line": 27,
+    "desc": "unused import 'hashes'",
+    "conf": 90
+  },
+  {
+    "file": "src/utils/security_framework.py",
+    "line": 28,
+    "desc": "unused import 'pbkdf2hmac'",
+    "conf": 90
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 94,
+    "desc": "unused variable 'backup_before'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 95,
+    "desc": "unused variable 'integrity_checks'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 96,
+    "desc": "unused variable 'memory_cleanup'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 117,
+    "desc": "unused variable 'feature_leakage_detection'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 118,
+    "desc": "unused variable 'cross_validation_isolation'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 119,
+    "desc": "unused variable 'lookahead_bias_prevention'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 139,
+    "desc": "unused variable 'required_inputs'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 140,
+    "desc": "unused variable 'expected_outputs'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 143,
+    "desc": "unused variable 'enable_rollback'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 163,
+    "desc": "unused variable 'backup_before'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 164,
+    "desc": "unused variable 'integrity_checks'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 165,
+    "desc": "unused variable 'memory_cleanup'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 167,
+    "desc": "unused variable 'check_schema'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 168,
+    "desc": "unused variable 'check_constraints'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 169,
+    "desc": "unused variable 'validate_relationships'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 190,
+    "desc": "unused variable 'disk_threshold_gb'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 192,
+    "desc": "unused variable 'auto_cleanup'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 212,
+    "desc": "unused variable 'streaming_processing'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 213,
+    "desc": "unused variable 'memory_pool'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 233,
+    "desc": "unused variable 'log_intermediate_results'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 234,
+    "desc": "unused variable 'save_debug_artifacts'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 235,
+    "desc": "unused variable 'performance_profiling'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 236,
+    "desc": "unused variable 'error_context_preservation'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 299,
+    "desc": "unused variable 'model_performance_thresholds'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 301,
+    "desc": "unused variable 'convergence_checks'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 302,
+    "desc": "unused variable 'overfitting_detection'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 303,
+    "desc": "unused variable 'validation_score_requirements'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 439,
+    "desc": "unused variable 'enable_vif_check'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 1430,
+    "desc": "unused variable 'enable_timing'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 1431,
+    "desc": "unused variable 'enable_memory_monitoring'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 1452,
+    "desc": "unused variable 'error_handling'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 1453,
+    "desc": "unused variable 'rollback_on_failure'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/training_pipeline_decorators.py",
+    "line": 1455,
+    "desc": "unused variable 'resource_cleanup'",
+    "conf": 100
+  },
+  {
+    "file": "src/utils/validation_decorators.py",
+    "line": 22,
+    "desc": "unused import 'filevalidationresult'",
+    "conf": 90
+  },
+  {
+    "file": "src/utils/validation_decorators.py",
+    "line": 22,
+    "desc": "unused import 'validationseverity'",
+    "conf": 90
+  },
+  {
+    "file": "test_comprehensive_sr_integration.py",
+    "line": 17,
+    "desc": "unused import 'run_comprehensive_sr_training'",
+    "conf": 90
+  },
+  {
+    "file": "tests/test_strategist.py",
+    "line": 9,
+    "desc": "unused import 'asyncmock'",
+    "conf": 90
+  },
+  {
+    "file": "tests/test_strategist.py",
+    "line": 9,
+    "desc": "unused import 'mock'",
+    "conf": 90
+  },
+  {
+    "file": "tests/test_strategist.py",
+    "line": 9,
+    "desc": "unused import 'patch'",
+    "conf": 90
+  }
+]

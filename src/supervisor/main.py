@@ -1,20 +1,21 @@
 # src/supervisor/main.py
 
-from datetime import datetime
-from src.supervisor.performance_reporter import PerformanceReporter
-from src.utils.logger import system_logger
-from typing import Any
 import asyncio
+from datetime import datetime
+from typing import Any
 
-from src.utils.model_manager import ModelManager
 from src.config import CONFIG, get_environment_settings
 from src.paper_trader import PaperTrader
 from src.sentinel.sentinel import Sentinel
 from src.supervisor.ab_tester import ABTester
 from src.supervisor.monitoring import Monitoring
+from src.supervisor.performance_reporter import PerformanceReporter
 from src.supervisor.risk_allocator import RiskAllocator
 from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.logger import system_logger
+from src.utils.model_manager import ModelManager
 from src.utils.state_manager import StateManager
+
 
 class Supervisor:
     """
@@ -24,18 +25,19 @@ class Supervisor:
     """
 
     def __init__(
-        self, symbol: str,
-        exchange_name: str, exchange_client: Any,
-        state_manager: StateManager, db_manager: Any,
+        self,
+        symbol: str,
+        exchange_name: str,
+        exchange_client: Any,
+        state_manager: StateManager,
+        db_manager: Any,
     ):  # Accept the exchange client from main.py
         self.logger = system_logger.getChild("Supervisor")
         self.state_manager = state_manager  # Use the passed state_manager
         self.symbol = symbol
         self.exchange_name = exchange_name
-        self.state = (
-            self.state_manager.get_state(  # Use get_state() to load current state
-                "global_trading_status",
-            )
+        self.state = self.state_manager.get_state(  # Use get_state() to load current state
+            "global_trading_status",
         )  # Use get_state() to load current state
         self.config = CONFIG  # Use the global CONFIG dictionary for general settings
         self.db_manager = db_manager  # Store the database manager
@@ -43,7 +45,8 @@ class Supervisor:
         # Initialize Supervisor sub-components, passing necessary dependencies
         self.risk_allocator = RiskAllocator(self.config)
         self.performance_reporter = PerformanceReporter(
-            self.config, self.db_manager,
+            self.config,
+            self.db_manager,
         )  # Pass db_manager
         self.ab_tester = ABTester(self.config, self.performance_reporter)
         self.monitoring = Monitoring(self.db_manager)
@@ -51,15 +54,10 @@ class Supervisor:
         # Determine the actual trading client (PaperTrader or live exchange_client)
         env_settings = get_environment_settings()
         if env_settings.trading_environment == "PAPER":
-            self.trader = PaperTrader(
-                symbol=self.symbol, exchange_name=self.exchange_name,
-                config=self.config
-            )
+            self.trader = PaperTrader(symbol=self.symbol, exchange_name=self.exchange_name, config=self.config)
             self.logger.info("Paper Trader initialized for simulation.")
         elif env_settings.trading_environment == "LIVE":
-            self.trader = (
-                exchange_client  # Use the live exchange client passed from main
-            )
+            self.trader = exchange_client  # Use the live exchange client passed from main
             self.logger.info(
                 "Live Trader (BinanceExchange) initialized for live operations.",
             )
@@ -84,14 +82,11 @@ class Supervisor:
         # Initialize the core real-time components, getting instances from ModelManager
         if self.trader:
             self.sentinel = Sentinel(
-                self.trader, self.state_manager,
+                self.trader,
+                self.state_manager,
             )  # Sentinel needs the real trader
-            self.analyst = (
-                self.model_manager.get_analyst()
-            )  # Get Analyst instance from ModelManager
-            self.strategist = (
-                self.model_manager.get_strategist()
-            )  # Get Strategist instance from ModelManager
+            self.analyst = self.model_manager.get_analyst()  # Get Analyst instance from ModelManager
+            self.strategist = self.model_manager.get_strategist()  # Get Strategist instance from ModelManager
             # Tactician instance is already created by ModelManager with performance_reporter
             self.tactician = self.model_manager.get_tactician()
 
@@ -101,29 +96,17 @@ class Supervisor:
             # For the training pipeline, these are mostly placeholders.
             if hasattr(self.analyst, "exchange") and self.analyst.exchange is None:
                 self.analyst.exchange = self.trader
-            if (
-                hasattr(self.analyst, "state_manager")
-                and self.analyst.state_manager is None
-            ):
+            if hasattr(self.analyst, "state_manager") and self.analyst.state_manager is None:
                 self.analyst.state_manager = self.state_manager
 
-            if (
-                hasattr(self.strategist, "exchange")
-                and self.strategist.exchange is None
-            ):
+            if hasattr(self.strategist, "exchange") and self.strategist.exchange is None:
                 self.strategist.exchange = self.trader
-            if (
-                hasattr(self.strategist, "state_manager")
-                and self.strategist.state_manager is None
-            ):
+            if hasattr(self.strategist, "state_manager") and self.strategist.state_manager is None:
                 self.strategist.state_manager = self.state_manager
 
             if hasattr(self.tactician, "exchange") and self.tactician.exchange is None:
                 self.tactician.exchange = self.trader
-            if (
-                hasattr(self.tactician, "state_manager")
-                and self.tactician.state_manager is None
-            ):
+            if hasattr(self.tactician, "state_manager") and self.tactician.state_manager is None:
                 self.tactician.state_manager = self.state_manager
 
         else:
@@ -153,19 +136,11 @@ class Supervisor:
         self.logger.info("Supervisor starting all components...")
         self.running = True
 
-        if hasattr(self.db_manager, "initialize") and asyncio.iscoroutinefunction(
-            self.db_manager.initialize
-        ):
+        if hasattr(self.db_manager, "initialize") and asyncio.iscoroutinefunction(self.db_manager.initialize):
             await self.db_manager.initialize()
 
         tasks = []
-        if (
-            self.trader
-            and self.sentinel
-            and self.analyst
-            and self.strategist
-            and self.tactician
-        ):
+        if self.trader and self.sentinel and self.analyst and self.strategist and self.tactician:
             tasks.extend(
                 [
                     asyncio.create_task(self.sentinel.start(), name="Sentinel_Task"),
@@ -245,27 +220,26 @@ class Supervisor:
             active_position_on_exchange = None
 
             for position in open_positions:
-                if (
-                    position.get("symbol") == symbol
-                    and float(position.get("positionAmt", 0)) != 0
-                ):
+                if position.get("symbol") == symbol and float(position.get("positionAmt", 0)) != 0:
                     # Capture more details for active_position
                     active_position_on_exchange = {
                         "symbol": position["symbol"],
                         "amount": float(position["positionAmt"]),
                         "entry_price": float(position["entryPrice"]),
                         "leverage": int(position.get("leverage", 1)),
-                        "direction": "LONG"
-                        if float(position["positionAmt"]) > 0
-                        else "SHORT",
+                        "direction": ("LONG" if float(position["positionAmt"]) > 0 else "SHORT"),
                         "trade_id": self.state_manager.get_state(
                             "current_position",
                             {},
-                        ).get("trade_id"),  # Attempt to recover trade_id
+                        ).get(
+                            "trade_id"
+                        ),  # Attempt to recover trade_id
                         "entry_timestamp": self.state_manager.get_state(
                             "current_position",
                             {},
-                        ).get("entry_timestamp"),  # Attempt to recover timestamp
+                        ).get(
+                            "entry_timestamp"
+                        ),  # Attempt to recover timestamp
                         "stop_loss": self.state_manager.get_state(
                             "current_position",
                             {},
@@ -299,15 +273,12 @@ class Supervisor:
                     f"State mismatch or update: Synchronizing position state with exchange. New state: {active_position_on_exchange}",
                 )
                 self.state_manager.set_state(
-                    "current_position",
-                    active_position_on_exchange
+                    "current_position", active_position_on_exchange
                 )  # Update 'current_position'
 
         except Exception as e:
-            self.logger.error(
-                f"Failed to synchronize state with exchange: {e}",
-                exc_info=True
-            )
+            self.logger.error(f"Failed to synchronize state with exchange: {e}", exc_info=True)
+
 
 class MainSupervisor:
     """
@@ -439,7 +410,9 @@ class MainSupervisor:
             history = history[-limit:]
         return history
 
+
 main_supervisor: MainSupervisor | None = None
+
 
 @handle_errors(
     exceptions=(Exception,),

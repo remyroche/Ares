@@ -1,17 +1,24 @@
+"""Performance Monitor Module.
+
+This module provides comprehensive performance monitoring for trading models,
+including real-time tracking, drift detection, statistical analysis, and
+performance metrics calculation. It integrates with the model behavior tracker
+to provide holistic performance insights.
+"""
+
 import asyncio
-import datetime
-import numpy as np
+import json
 from datetime import datetime
-from scipy import stats
-from src.utils.logger import system_logger
 from typing import Any
+
+import numpy as np
+import yaml
+from scipy import stats
+
 from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    invalid,
-    warning,
-)
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import error, failed, invalid, warning
+
 
 class PerformanceMonitor:
     """
@@ -45,13 +52,13 @@ class PerformanceMonitor:
         )
         self.model_performance_history: dict[str, list] = {}
         self.drift_alerts: list[dict[str, Any]] = []
-        
+
         # Real-time performance tracking
         self.real_time_config: dict[str, Any] = self.monitor_config.get("real_time_tracking", {})
         self.enable_real_time_tracking: bool = self.real_time_config.get("enable_real_time_tracking", True)
         self.performance_window: int = self.real_time_config.get("performance_window", 100)
         self.retraining_threshold: float = self.real_time_config.get("retraining_threshold", 0.1)
-        
+
         # Performance tracking state
         self.model_predictions: dict[str, list] = {}
         self.model_outcomes: dict[str, list] = {}
@@ -68,6 +75,7 @@ class PerformanceMonitor:
         context="performance monitor initialization",
     )
     async def initialize(self) -> bool:
+        """Initialize the performance monitor with configuration validation."""
         try:
             self.logger.info("Initializing Performance Monitor...")
             await self._load_monitor_configuration()
@@ -78,8 +86,12 @@ class PerformanceMonitor:
                 "✅ Performance Monitor initialization completed successfully",
             )
             return True
+        except (ValueError, AttributeError, KeyError) as e:
+            self.print(failed(f"❌ Performance Monitor initialization failed: {type(e).__name__}: {e}"))
+            return False
         except Exception as e:
-            self.print(failed(f"❌ Performance Monitor initialization failed: {e}"))
+            self.logger.exception("Unexpected error during initialization")
+            self.print(failed(f"❌ Performance Monitor initialization failed with unexpected error: {e}"))
             return False
 
     @handle_errors(
@@ -94,15 +106,21 @@ class PerformanceMonitor:
             self.monitor_interval = self.monitor_config["monitor_interval"]
             self.max_history = self.monitor_config["max_history"]
             self.logger.info("Performance monitor configuration loaded successfully")
+        except FileNotFoundError:
+            self.logger.warning("Monitor configuration file not found, using defaults")
+            self.monitor_config = {"monitor_interval": 60, "max_history": 100}
+        except (json.JSONDecodeError, yaml.YAMLError) as e:
+            self.print(error(f"Error parsing monitor configuration: {e}"))
+            self.monitor_config = {"monitor_interval": 60, "max_history": 100}
         except Exception as e:
-            self.print(error("Error loading monitor configuration: {e}"))
+            self.print(error(f"Unexpected error loading monitor configuration: {e}"))
+            self.monitor_config = {"monitor_interval": 60, "max_history": 100}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
     )
-
     def _validate_configuration(self) -> bool:
         try:
             if self.monitor_interval <= 0:
@@ -145,7 +163,7 @@ class PerformanceMonitor:
     async def _perform_monitoring(self) -> None:
         try:
             now = datetime.now().isoformat()
-            self.status = {"timestamp": now , "status": "running"}
+            self.status = {"timestamp": now, "status": "running"}
             self.history.append(self.status.copy())
             if len(self.history) > self.max_history:
                 self.history.pop(0)
@@ -219,7 +237,7 @@ class PerformanceMonitor:
         except Exception:
             self.print(error("Error stopping performance monitor: {e}"))
 
-    def get_status(self) -> dict[str , Any]:
+    def get_status(self) -> dict[str, Any]:
         return self.status.copy()
 
     def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
@@ -228,13 +246,13 @@ class PerformanceMonitor:
             history = history[-limit:]
         return history
 
-    def get_performance_metrics(self) -> dict[str , Any]:
+    def get_performance_metrics(self) -> dict[str, Any]:
         return self.performance_metrics.copy()
 
-    def get_alerts(self) -> list[dict[str , Any]]:
+    def get_alerts(self) -> list[dict[str, Any]]:
         return self.alerts.copy()
 
-    def get_drift_alerts(self) -> list[dict[str , Any]]:
+    def get_drift_alerts(self) -> list[dict[str, Any]]:
         """Get concept drift alerts."""
         return self.drift_alerts.copy()
 
@@ -262,25 +280,17 @@ class PerformanceMonitor:
             )
 
             # Keep only recent history
-            if (
-                len(self.model_performance_history[model_name])
-                > self.drift_detection_window
-            ):
-                self.model_performance_history[model_name] = (
-                    self.model_performance_history[
-                        model_name
-                    ][-self.drift_detection_window :]
-                )
+            if len(self.model_performance_history[model_name]) > self.drift_detection_window:
+                self.model_performance_history[model_name] = self.model_performance_history[model_name][
+                    -self.drift_detection_window:
+                ]
 
             # Need enough data to detect drift
             if len(self.model_performance_history[model_name]) < 20:
                 return False
 
             # Calculate performance statistics
-            performances = [
-                entry["performance"]
-                for entry in self.model_performance_history[model_name]
-            ]
+            performances = [entry["performance"] for entry in self.model_performance_history[model_name]]
             recent_performances = performances[-10:]  # Last 10 predictions
             historical_performances = performances[:-10]  # Earlier predictions
 
@@ -337,15 +347,15 @@ class PerformanceMonitor:
                     "timestamp": datetime.now().isoformat(),
                     "model_name": model_name,
                     "type": "concept_drift",
-                    "severity": "high"
-                    if mean_shift > self.drift_threshold * 2
-                    else "medium",
+                    "severity": ("high" if mean_shift > self.drift_threshold * 2 else "medium"),
                     "message": f"Concept drift detected for {model_name}: {'; '.join(drift_reasons)}",
                     "metrics": {
-                        "recent_mean": recent_mean , "historical_mean": historical_mean,
+                        "recent_mean": recent_mean,
+                        "historical_mean": historical_mean,
                         "mean_shift": mean_shift,
                         "variance_shift": variance_shift,
-                        "recent_std": recent_std , "historical_std": historical_std,
+                        "recent_std": recent_std,
+                        "historical_std": historical_std,
                     },
                 }
                 self.drift_alerts.append(alert)
@@ -363,7 +373,7 @@ class PerformanceMonitor:
 
     def get_model_performance_history(self, model_name: str) -> list[dict[str, Any]]:
         """Get performance history for a specific model."""
-        return self.model_performance_history.get(model_name = []).copy()
+        return self.model_performance_history.get(model_name=[]).copy()
 
     def clear_drift_alerts(self) -> None:
         """Clear concept drift alerts."""
@@ -379,9 +389,11 @@ class PerformanceMonitor:
         context="real-time performance update",
     )
     async def update_model_performance(
-        self, model_name: str,
-        prediction: float, actual_outcome: float,
-        timestamp: datetime = None
+        self,
+        model_name: str,
+        prediction: float,
+        actual_outcome: float,
+        timestamp: datetime = None,
     ) -> None:
         """Update real-time performance tracking for a model."""
         try:
@@ -416,7 +428,8 @@ class PerformanceMonitor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="real-time metrics calculation",
+        default_return=None,
+        context="real-time metrics calculation",
     )
     async def _calculate_real_time_metrics(self, model_name: str) -> None:
         """Calculate real-time performance metrics for a model."""
@@ -428,19 +441,23 @@ class PerformanceMonitor:
                 return
 
             # Calculate accuracy (for binary outcomes)
-            correct_predictions = sum(1 for p , o in zip(predictions, outcomes) if abs(p - o) < 0.1)
+            correct_predictions = sum(1 for p, o in zip(predictions, outcomes) if abs(p - o) < 0.1)
             accuracy = correct_predictions / len(predictions)
 
             # Calculate mean absolute error
-            mae = sum(abs(p - o) for p , o in zip(predictions, outcomes)) / len(predictions)
+            mae = sum(abs(p - o) for p, o in zip(predictions, outcomes)) / len(predictions)
 
             # Calculate precision and recall (for binary classification)
-            true_positives = sum(1 for p , o in zip(predictions, outcomes) if p > 0.5 and o > 0.5)
-            false_positives = sum(1 for p , o in zip(predictions, outcomes) if p > 0.5 and o <= 0.5)
-            false_negatives = sum(1 for p , o in zip(predictions, outcomes) if p <= 0.5 and o > 0.5)
+            true_positives = sum(1 for p, o in zip(predictions, outcomes) if p > 0.5 and o > 0.5)
+            false_positives = sum(1 for p, o in zip(predictions, outcomes) if p > 0.5 and o <= 0.5)
+            false_negatives = sum(1 for p, o in zip(predictions, outcomes) if p <= 0.5 and o > 0.5)
 
-            precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0.0
-            recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0.0
+            precision = (
+                true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0.0
+            )
+            recall = (
+                true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0.0
+            )
             f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0.0
 
             # Calculate trend (performance over time)
@@ -448,16 +465,19 @@ class PerformanceMonitor:
             if len(predictions) >= 20:
                 recent_predictions = predictions[-10:]
                 recent_outcomes = outcomes[-10:]
-                recent_correct = sum(1 for p , o in zip(recent_predictions, recent_outcomes) if abs(p - o) < 0.1)
+                recent_correct = sum(1 for p, o in zip(recent_predictions, recent_outcomes) if abs(p - o) < 0.1)
                 recent_accuracy = recent_correct / len(recent_predictions)
 
             # Store metrics
             self.model_metrics[model_name] = {
-                "accuracy": accuracy , "mae": mae,
-                "precision": precision , "recall": recall,
-                "f1_score": f1_score , "recent_accuracy": recent_accuracy,
+                "accuracy": accuracy,
+                "mae": mae,
+                "precision": precision,
+                "recall": recall,
+                "f1_score": f1_score,
+                "recent_accuracy": recent_accuracy,
                 "prediction_count": len(predictions),
-                "last_updated": datetime.now().isoformat()
+                "last_updated": datetime.now().isoformat(),
             }
 
         except Exception as e:
@@ -465,12 +485,13 @@ class PerformanceMonitor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="retraining trigger check",
+        default_return=None,
+        context="retraining trigger check",
     )
     async def _check_retraining_triggers(self, model_name: str) -> None:
         """Check if model retraining is needed."""
         try:
-            metrics = self.model_metrics.get(model_name = {})
+            metrics = self.model_metrics.get(model_name={})
             if not metrics:
                 return
 
@@ -478,45 +499,54 @@ class PerformanceMonitor:
 
             # Check for performance degradation
             if metrics.get("accuracy", 1.0) < 0.5:  # Below 50% accuracy
-                triggers.append({
-                    "model": model_name,
-                    "reason": "performance_degradation",
-                    "severity": "high",
-                    "metric": "accuracy",
-                    "value": metrics["accuracy"],
-                    "threshold": 0.5
-                })
+                triggers.append(
+                    {
+                        "model": model_name,
+                        "reason": "performance_degradation",
+                        "severity": "high",
+                        "metric": "accuracy",
+                        "value": metrics["accuracy"],
+                        "threshold": 0.5,
+                    }
+                )
 
             # Check for concept drift
             if await self._detect_concept_drift(model_name):
-                triggers.append({
-                    "model": model_name,
-                    "reason": "concept_drift",
-                    "severity": "high",
-                    "metric": "drift_detected",
-                    "value": True
-                })
+                triggers.append(
+                    {
+                        "model": model_name,
+                        "reason": "concept_drift",
+                        "severity": "high",
+                        "metric": "drift_detected",
+                        "value": True,
+                    }
+                )
 
             # Check for F1 score degradation
             if metrics.get("f1_score", 1.0) < 0.4:  # Below 40% F1
-                triggers.append({
-                    "model": model_name , "reason": "f1_degradation",
-                    "severity": "medium",
-                    "metric": "f1_score",
-                    "value": metrics["f1_score"],
-                    "threshold": 0.4
-                })
+                triggers.append(
+                    {
+                        "model": model_name,
+                        "reason": "f1_degradation",
+                        "severity": "medium",
+                        "metric": "f1_score",
+                        "value": metrics["f1_score"],
+                        "threshold": 0.4,
+                    }
+                )
 
             # Check for recent accuracy drop
             if metrics.get("recent_accuracy", 1.0) < metrics.get("accuracy", 1.0) - self.retraining_threshold:
-                triggers.append({
-                    "model": model_name,
-                    "reason": "recent_performance_drop",
-                    "severity": "medium",
-                    "metric": "recent_accuracy",
-                    "value": metrics["recent_accuracy"],
-                    "baseline": metrics["accuracy"]
-                })
+                triggers.append(
+                    {
+                        "model": model_name,
+                        "reason": "recent_performance_drop",
+                        "severity": "medium",
+                        "metric": "recent_accuracy",
+                        "value": metrics["recent_accuracy"],
+                        "baseline": metrics["accuracy"],
+                    }
+                )
 
             # Add triggers to the list
             for trigger in triggers:
@@ -531,11 +561,14 @@ class PerformanceMonitor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="adaptive model selection",
+        default_return=None,
+        context="adaptive model selection",
     )
     async def select_best_models(
-        self, model_names: list[str], 
-        current_regime: str = None, required_count: int = 3
+        self,
+        model_names: list[str],
+        current_regime: str = None,
+        required_count: int = 3,
     ) -> list[str]:
         """Select best performing models based on real-time metrics."""
         try:
@@ -545,7 +578,7 @@ class PerformanceMonitor:
             # Calculate performance scores for each model
             model_scores = {}
             for model_name in model_names:
-                metrics = self.model_metrics.get(model_name = {})
+                metrics = self.model_metrics.get(model_name={})
                 if not metrics:
                     model_scores[model_name] = 0.5  # Default score
                     continue
@@ -557,21 +590,21 @@ class PerformanceMonitor:
 
                 # Weight recent performance more heavily
                 composite_score = (
-                    0.3 * accuracy_score +
-                    0.3 * f1_score +
-                    0.4 * recent_accuracy  # Higher weight for recent performance
+                    0.3 * accuracy_score
+                    + 0.3 * f1_score
+                    + 0.4 * recent_accuracy  # Higher weight for recent performance
                 )
 
                 # Apply regime adjustment if available
                 if current_regime:
-                    regime_adjustment = self._get_regime_performance_adjustment(model_name = current_regime)
+                    regime_adjustment = self._get_regime_performance_adjustment(model_name=current_regime)
                     composite_score *= regime_adjustment
 
                 model_scores[model_name] = composite_score
 
             # Sort models by score and return top performers
             sorted_models = sorted(model_scores.items(), key=lambda x: x[1], reverse=True)
-            best_models = [model for model , score in sorted_models[:required_count]]
+            best_models = [model for model, score in sorted_models[:required_count]]
 
             self.logger.info(f"Selected best models: {best_models} with scores: {model_scores}")
 
@@ -586,16 +619,46 @@ class PerformanceMonitor:
         try:
             # Define regime-specific performance multipliers
             regime_multipliers = {
-                'BULL': {'tcn': 1.1, 'transformer': 1.0, 'lstm': 0.9, 'gru': 0.9, 'tabnet': 1.0},
-                'BEAR': {'tcn': 0.9, 'transformer': 1.1, 'lstm': 1.0, 'gru': 1.0, 'tabnet': 0.9},
-                'SIDEWAYS': {'tcn': 1.0, 'transformer': 1.0, 'lstm': 1.1, 'gru': 1.0, 'tabnet': 1.0},
-                'SR': {'tcn': 1.2, 'transformer': 1.0, 'lstm': 0.8, 'gru': 0.8, 'tabnet': 1.1},
-                'CANDLE': {'tcn': 0.9, 'transformer': 1.2, 'lstm': 1.0, 'gru': 1.0, 'tabnet': 0.9}
+                "BULL": {
+                    "tcn": 1.1,
+                    "transformer": 1.0,
+                    "lstm": 0.9,
+                    "gru": 0.9,
+                    "tabnet": 1.0,
+                },
+                "BEAR": {
+                    "tcn": 0.9,
+                    "transformer": 1.1,
+                    "lstm": 1.0,
+                    "gru": 1.0,
+                    "tabnet": 0.9,
+                },
+                "SIDEWAYS": {
+                    "tcn": 1.0,
+                    "transformer": 1.0,
+                    "lstm": 1.1,
+                    "gru": 1.0,
+                    "tabnet": 1.0,
+                },
+                "SR": {
+                    "tcn": 1.2,
+                    "transformer": 1.0,
+                    "lstm": 0.8,
+                    "gru": 0.8,
+                    "tabnet": 1.1,
+                },
+                "CANDLE": {
+                    "tcn": 0.9,
+                    "transformer": 1.2,
+                    "lstm": 1.0,
+                    "gru": 1.0,
+                    "tabnet": 0.9,
+                },
             }
 
             # Extract model type from name (e.g., "tcn", "transformer", etc.)
             model_type = None
-            for model_type_name in ['tcn', 'transformer', 'lstm', 'gru', 'tabnet']:
+            for model_type_name in ["tcn", "transformer", "lstm", "gru", "tabnet"]:
                 if model_type_name in model_name.lower():
                     model_type = model_type_name
                     break
@@ -603,7 +666,7 @@ class PerformanceMonitor:
             if not model_type:
                 return 1.0  # Default multiplier
 
-            regime_multiplier = regime_multipliers.get(regime = {}).get(model_type, 1.0)
+            regime_multiplier = regime_multipliers.get(regime={}).get(model_type, 1.0)
             return regime_multiplier
 
         except Exception as e:
@@ -615,16 +678,17 @@ class PerformanceMonitor:
         default_return=None,
         context="performance feedback loop",
     )
-    async def get_performance_feedback(self) -> dict[str , Any]:
+    async def get_performance_feedback(self) -> dict[str, Any]:
         """Get comprehensive performance feedback for the system."""
         try:
             feedback = {
                 "timestamp": datetime.now().isoformat(),
-                "real_time_tracking_enabled": self.enable_real_time_tracking , "models_tracked": list(self.model_metrics.keys()),
+                "real_time_tracking_enabled": self.enable_real_time_tracking,
+                "models_tracked": list(self.model_metrics.keys()),
                 "model_performances": self.model_metrics.copy(),
                 "retraining_triggers": self.retraining_triggers.copy(),
                 "drift_alerts": self.drift_alerts.copy(),
-                "system_health": self._calculate_system_health()
+                "system_health": self._calculate_system_health(),
             }
 
             return feedback
@@ -633,7 +697,7 @@ class PerformanceMonitor:
             self.logger.exception(f"Error getting performance feedback: {e}")
             return {}
 
-    def _calculate_system_health(self) -> dict[str , Any]:
+    def _calculate_system_health(self) -> dict[str, Any]:
         """Calculate overall system health metrics."""
         try:
             if not self.model_metrics:
@@ -657,18 +721,20 @@ class PerformanceMonitor:
                 status = "critical"
 
             return {
-                "status": status , "overall_accuracy": avg_accuracy,
-                "overall_f1": avg_f1 , "overall_recent_accuracy": avg_recent_accuracy,
+                "status": status,
+                "overall_accuracy": avg_accuracy,
+                "overall_f1": avg_f1,
+                "overall_recent_accuracy": avg_recent_accuracy,
                 "models_count": len(self.model_metrics),
                 "retraining_needed": len(self.retraining_triggers) > 0,
-                "drift_detected": len(self.drift_alerts) > 0
+                "drift_detected": len(self.drift_alerts) > 0,
             }
 
         except Exception as e:
             self.logger.exception(f"Error calculating system health: {e}")
             return {"status": "error", "overall_accuracy": 0.0}
 
-    def get_retraining_triggers(self) -> list[dict[str , Any]]:
+    def get_retraining_triggers(self) -> list[dict[str, Any]]:
         """Get current retraining triggers."""
         return self.retraining_triggers.copy()
 
@@ -676,7 +742,9 @@ class PerformanceMonitor:
         """Clear retraining triggers."""
         self.retraining_triggers.clear()
 
+
 performance_monitor: PerformanceMonitor | None = None
+
 
 @handle_errors(
     exceptions=(Exception,),
@@ -684,7 +752,7 @@ performance_monitor: PerformanceMonitor | None = None
     context="performance monitor setup",
 )
 async def setup_performance_monitor(
-    config: dict[str , Any] | None = None,
+    config: dict[str, Any] | None = None,
 ) -> PerformanceMonitor | None:
     try:
         global performance_monitor

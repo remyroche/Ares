@@ -2,21 +2,19 @@ import asyncio
 import time
 from collections import defaultdict
 from datetime import datetime
-from src.utils.logger import system_logger
 from typing import Any, Dict
 
+import pandas as pd
+
 from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.warning_symbols import (
-    error,
-    failed,
-    initialization_error,
-    invalid,
-)
+from src.utils.logger import system_logger
 from src.utils.tracing import with_tracing_span
+from src.utils.warning_symbols import error, failed, initialization_error, invalid
 
 DEFAULT_SUPERVISOR_CONFIG = {
     "supervisor": {"supervision_interval": 60, "max_history": 100},
 }
+
 
 class CircuitBreaker:
     """Circuit breaker pattern for external services."""
@@ -54,6 +52,7 @@ class CircuitBreaker:
                 self.state = "OPEN"
             raise
 
+
 class OnlineLearningManager:
     """Manages online learning for model weighting based on performance."""
 
@@ -61,14 +60,15 @@ class OnlineLearningManager:
         self.config = config
         self.logger = system_logger.getChild("OnlineLearningManager")
         self.model_performances: dict[str, list[float]] = defaultdict(list)
-        self.model_weights: dict[str , float] = {}
+        self.model_weights: dict[str, float] = {}
         self.learning_rate: float = config.get("learning_rate", 0.01)
         self.min_weight: float = config.get("min_weight", 0.1)
         self.max_weight: float = config.get("max_weight", 0.8)
 
     @handle_errors(
         exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
-        default_return=None)
+        default_return=None,
+    )
     async def update_model_performance(self, model_id: str, performance: float) -> None:
         """Update model performance and recalculate weights."""
         try:
@@ -76,9 +76,7 @@ class OnlineLearningManager:
 
             # Keep only recent performances (last 100)
             if len(self.model_performances[model_id]) > 100:
-                self.model_performances[model_id] = self.model_performances[model_id][
-                    -100:
-                ]
+                self.model_performances[model_id] = self.model_performances[model_id][-100:]
 
             # Recalculate weights based on recent performance
             await self._recalculate_weights()
@@ -90,7 +88,8 @@ class OnlineLearningManager:
 
     @handle_errors(
         exceptions=(ValueError, TypeError, KeyError, ZeroDivisionError),
-        default_return=None)
+        default_return=None,
+    )
     async def _recalculate_weights(self) -> None:
         """Recalculate model weights based on performance."""
         try:
@@ -126,13 +125,14 @@ class OnlineLearningManager:
         except Exception:
             self.print(error("Error recalculating weights: {e}"))
 
-    def get_model_weights(self) -> dict[str , float]:
+    def get_model_weights(self) -> dict[str, float]:
         """Get current model weights."""
         return self.model_weights.copy()
 
-    def get_model_performances(self) -> dict[str , list[float]]:
+    def get_model_performances(self) -> dict[str, list[float]]:
         """Get model performance history."""
         return {k: v.copy() for k, v in self.model_performances.items()}
+
 
 class Supervisor:
     """
@@ -147,22 +147,22 @@ class Supervisor:
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config: dict[str , Any] = config
+        self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("Supervisor")
         self.is_running: bool = False
-        self.status: dict[str , Any] = {}
-        self.history: list[dict[str , Any]] = []
-        self.supervisor_config: dict[str , Any] = self.config.get("supervisor", {})
+        self.status: dict[str, Any] = {}
+        self.history: list[dict[str, Any]] = []
+        self.supervisor_config: dict[str, Any] = self.config.get("supervisor", {})
         self.supervision_interval: int = self.supervisor_config.get(
             "supervision_interval",
             60,
         )
         self.max_history: int = self.supervisor_config.get("max_history", 100)
-        self.supervision_results: dict[str , Any] = {}
-        self.components: dict[str , Any] = {}
+        self.supervision_results: dict[str, Any] = {}
+        self.components: dict[str, Any] = {}
 
         # Advanced error handling and recovery
-        self.circuit_breakers: dict[str , CircuitBreaker] = {}
+        self.circuit_breakers: dict[str, CircuitBreaker] = {}
         self.recovery_attempts: dict[str, int] = defaultdict(int)
         self.max_recovery_attempts: int = self.supervisor_config.get(
             "max_recovery_attempts",
@@ -172,7 +172,7 @@ class Supervisor:
             "recovery_cooldown",
             300,
         )  # 5 minutes
-        self.last_recovery_attempt: dict[str , float] = {}
+        self.last_recovery_attempt: dict[str, float] = {}
 
         # Online learning for model weighting
         self.online_learning = OnlineLearningManager(
@@ -184,8 +184,9 @@ class Supervisor:
         self.is_initialized: bool = False
         self.enhanced_prediction_service_config = self.supervisor_config.get("enhanced_prediction_service", {})
         self.entry_threshold: float = self.enhanced_prediction_service_config.get("entry_threshold", 0.7)
-        self.max_confidence_threshold: float = self.enhanced_prediction_service_config.get("max_confidence_threshold", 0.9)
-
+        self.max_confidence_threshold: float = self.enhanced_prediction_service_config.get(
+            "max_confidence_threshold", 0.9
+        )
 
     @handle_specific_errors(
         error_handlers={
@@ -216,7 +217,8 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=None, context="supervisor configuration loading",
+        default_return=None,
+        context="supervisor configuration loading",
     )
     async def _load_supervisor_configuration(self) -> None:
         try:
@@ -234,9 +236,9 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=False, context="configuration validation",
+        default_return=False,
+        context="configuration validation",
     )
-
     def _validate_configuration(self) -> bool:
         try:
             if self.supervision_interval <= 0:
@@ -259,19 +261,25 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="component initialization",
+        default_return=None,
+        context="component initialization",
     )
     async def _initialize_components(self) -> None:
         try:
             # Initialize critical components with updated structure
             self.components = {
-                "database": None , "exchange": None,
-                "analyst": None , "strategist": None,
-                "tactician": None , "sentinel": None,
+                "database": None,
+                "exchange": None,
+                "analyst": None,
+                "strategist": None,
+                "tactician": None,
+                "sentinel": None,
                 "paper_trader": None,
                 "performance_monitor": None,
-                "enhanced_training_manager": None , "model_manager": None,
-                "state_manager": None}
+                "enhanced_training_manager": None,
+                "model_manager": None,
+                "state_manager": None,
+            }
 
             # Initialize enhanced prediction service
             await self._initialize_enhanced_prediction_service()
@@ -282,7 +290,8 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="circuit breakers setup",
+        default_return=None,
+        context="circuit breakers setup",
     )
     async def _setup_circuit_breakers(self) -> None:
         """Setup circuit breakers for critical services."""
@@ -306,7 +315,8 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="online learning setup",
+        default_return=None,
+        context="online learning setup",
     )
     async def _setup_online_learning(self) -> None:
         """Setup online learning for model weighting."""
@@ -321,7 +331,8 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="component monitors setup",
+        default_return=None,
+        context="component monitors setup",
     )
     async def _setup_component_monitors(self) -> None:
         """Setup component-specific monitoring."""
@@ -344,17 +355,17 @@ class Supervisor:
         """Initialize the enhanced prediction service."""
         try:
             from src.supervisor.enhanced_prediction_service import EnhancedPredictionService
-            
+
             self.enhanced_prediction_service = EnhancedPredictionService(self.config)
             success = await self.enhanced_prediction_service.initialize()
-            
+
             if success:
                 self.logger.info("✅ Enhanced Prediction Service initialized successfully")
             else:
                 self.logger.warning("⚠️ Enhanced Prediction Service initialization failed")
-            
+
             return success
-            
+
         except Exception as e:
             self.logger.error(f"❌ Error initializing Enhanced Prediction Service: {e}")
             return False
@@ -371,11 +382,11 @@ class Supervisor:
         regime_info: Dict[str, Any],
         symbol: str,
         exchange: str,
-        timeframe: str = "1h"
+        timeframe: str = "1h",
     ) -> Dict[str, Any]:
         """
         Get Analyst predictions using calibrated confidence scores from ML models.
-        
+
         The Analyst decides if we enter a position based on calibrated confidence scores.
         """
         try:
@@ -387,16 +398,20 @@ class Supervisor:
             calibrated_confidence = await self.enhanced_prediction_service.get_calibrated_confidence_scores(
                 market_data, regime_info, symbol, exchange
             )
-            
+
             # Step 2: Analyst decides if we enter a position using Analyst models
             analyst_decision = await self._analyst_decide_position_entry(
-                market_data, regime_info, calibrated_confidence["analyst_models"], symbol, exchange
+                market_data,
+                regime_info,
+                calibrated_confidence["analyst_models"],
+                symbol,
+                exchange,
             )
-            
+
             return {
                 "calibrated_confidence_scores": calibrated_confidence,
                 "analyst_decision": analyst_decision,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
 
         except ValueError as e:
@@ -404,8 +419,11 @@ class Supervisor:
             self.logger.error(error(f"❌ Enhanced Prediction Service failed: {e}"))
             return {
                 "error": str(e),
-                "analyst_decision": {"should_enter_position": False, "reason": "no_calibrated_confidence"},
-                "timestamp": datetime.now().isoformat()
+                "analyst_decision": {
+                    "should_enter_position": False,
+                    "reason": "no_calibrated_confidence",
+                },
+                "timestamp": datetime.now().isoformat(),
             }
         except Exception as e:
             self.logger.error(error(f"❌ Error getting analyst predictions: {e}"))
@@ -424,11 +442,11 @@ class Supervisor:
         analyst_signals: Dict[str, Any],
         symbol: str,
         exchange: str,
-        timeframe: str = "1m"
+        timeframe: str = "1m",
     ) -> Dict[str, Any]:
         """
         Get Tactician predictions using calibrated confidence scores from ML models.
-        
+
         The Tactician decides when, how much, and with what leverage based on calibrated confidence scores.
         Must agree with Analyst on trade direction.
         """
@@ -441,16 +459,20 @@ class Supervisor:
             calibrated_confidence = await self.enhanced_prediction_service.get_calibrated_confidence_scores(
                 market_data, regime_info, symbol, exchange
             )
-            
+
             # Step 2: Tactician decides execution parameters using Tactician models
             tactician_decision = await self._tactician_calculate_execution_parameters(
-                market_data, analyst_signals, calibrated_confidence["tactician_models"], symbol, exchange
+                market_data,
+                analyst_signals,
+                calibrated_confidence["tactician_models"],
+                symbol,
+                exchange,
             )
-            
+
             return {
                 "calibrated_confidence_scores": calibrated_confidence,
                 "tactician_decision": tactician_decision,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
 
         except ValueError as e:
@@ -458,8 +480,11 @@ class Supervisor:
             self.logger.error(error(f"❌ Enhanced Prediction Service failed: {e}"))
             return {
                 "error": str(e),
-                "tactician_decision": {"should_execute": False, "reason": "no_calibrated_confidence"},
-                "timestamp": datetime.now().isoformat()
+                "tactician_decision": {
+                    "should_execute": False,
+                    "reason": "no_calibrated_confidence",
+                },
+                "timestamp": datetime.now().isoformat(),
             }
         except Exception as e:
             self.logger.error(error(f"❌ Error getting tactician predictions: {e}"))
@@ -477,7 +502,7 @@ class Supervisor:
         regime_info: Dict[str, Any],
         analyst_confidence_scores: Dict[str, float],
         symbol: str,
-        exchange: str
+        exchange: str,
     ) -> Dict[str, Any]:
         """
         Analyst decides if we enter a position and determines trade direction based on Analyst ML models.
@@ -491,29 +516,29 @@ class Supervisor:
                     "entry_confidence": 0.0,
                     "max_confidence": 0.0,
                     "individual_confidences": {},
-                    "entry_reason": "no_analyst_confidence"
+                    "entry_reason": "no_analyst_confidence",
                 }
-            
+
             avg_confidence = sum(analyst_confidence_scores.values()) / len(analyst_confidence_scores)
             max_confidence = max(analyst_confidence_scores.values())
-            
+
             # Determine trade direction from Analyst models
             trade_direction = self._analyst_determine_trade_direction(analyst_confidence_scores, market_data)
-            
+
             # Decision logic
             should_enter = (
-                avg_confidence > self.enhanced_prediction_service.entry_threshold and 
-                max_confidence > self.enhanced_prediction_service.max_confidence_threshold and
-                trade_direction != "neutral"
+                avg_confidence > self.enhanced_prediction_service.entry_threshold
+                and max_confidence > self.enhanced_prediction_service.max_confidence_threshold
+                and trade_direction != "neutral"
             )
-            
+
             return {
                 "should_enter_position": should_enter,
                 "trade_direction": trade_direction,
                 "entry_confidence": avg_confidence,
                 "max_confidence": max_confidence,
                 "individual_confidences": analyst_confidence_scores,
-                "entry_reason": "high_confidence" if should_enter else "low_confidence_or_neutral"
+                "entry_reason": ("high_confidence" if should_enter else "low_confidence_or_neutral"),
             }
 
         except Exception as e:
@@ -525,36 +550,32 @@ class Supervisor:
                 "max_confidence": 0.0,
                 "individual_confidences": {},
                 "entry_reason": "error",
-                "error": str(e)
+                "error": str(e),
             }
 
-    def _analyst_determine_trade_direction(
-        self, 
-        confidence_scores: Dict[str, float], 
-        market_data: pd.DataFrame
-    ) -> str:
+    def _analyst_determine_trade_direction(self, confidence_scores: Dict[str, float], market_data: pd.DataFrame) -> str:
         """Determine trade direction based on Analyst model confidences."""
         try:
             # Logic to determine if models suggest long, short, or neutral
             # This would be based on the specific Analyst model outputs
             bullish_confidence = sum(
-                conf for name, conf in confidence_scores.items() 
-                if "bullish" in name.lower() or "long" in name.lower()
+                conf for name, conf in confidence_scores.items() if "bullish" in name.lower() or "long" in name.lower()
             )
             bearish_confidence = sum(
-                conf for name, conf in confidence_scores.items() 
-                if "bearish" in name.lower() or "short" in name.lower()
+                conf for name, conf in confidence_scores.items() if "bearish" in name.lower() or "short" in name.lower()
             )
-            
+
             # If no directional models, use overall confidence pattern
             if bullish_confidence == 0 and bearish_confidence == 0:
                 # Use price momentum as fallback
                 if len(market_data) >= 2:
-                    price_change = (market_data['close'].iloc[-1] - market_data['close'].iloc[-2]) / market_data['close'].iloc[-2]
+                    price_change = (market_data["close"].iloc[-1] - market_data["close"].iloc[-2]) / market_data[
+                        "close"
+                    ].iloc[-2]
                     if abs(price_change) > 0.001:  # 0.1% threshold
                         return "long" if price_change > 0 else "short"
                 return "neutral"
-            
+
             # Determine direction based on confidence
             if bullish_confidence > bearish_confidence and bullish_confidence > 0.6:
                 return "long"
@@ -562,7 +583,7 @@ class Supervisor:
                 return "short"
             else:
                 return "neutral"
-                
+
         except Exception as e:
             self.logger.error(error(f"❌ Error determining trade direction: {e}"))
             return "neutral"
@@ -579,7 +600,7 @@ class Supervisor:
         analyst_signals: Dict[str, Any],
         tactician_confidence_scores: Dict[str, float],
         symbol: str,
-        exchange: str
+        exchange: str,
     ) -> Dict[str, Any]:
         """
         Tactician decides when, how much, and what leverage based on Tactician ML models.
@@ -589,94 +610,82 @@ class Supervisor:
         try:
             # Import enhanced execution manager
             from src.tactician.enhanced_execution_manager import EnhancedExecutionManager
-            
+
             # Initialize enhanced execution manager
             enhanced_manager = EnhancedExecutionManager(self.config)
-            
+
             # Check if Analyst wants to enter
             analyst_decision = analyst_signals.get("analyst_decision", {})
             if not analyst_decision.get("should_enter_position", False):
-                return {
-                    "should_execute": False,
-                    "reason": "analyst_no_entry"
-                }
-            
+                return {"should_execute": False, "reason": "analyst_no_entry"}
+
             # Calculate average tactician confidence
             if not tactician_confidence_scores:
-                return {
-                    "should_execute": False,
-                    "reason": "no_tactician_confidence"
-                }
-            
+                return {"should_execute": False, "reason": "no_tactician_confidence"}
+
             avg_tactician_confidence = sum(tactician_confidence_scores.values()) / len(tactician_confidence_scores)
-            
+
             # Get current price for execution calculations
-            current_price = market_data['close'].iloc[-1] if not market_data.empty else 0.0
-            
+            current_price = market_data["close"].iloc[-1] if not market_data.empty else 0.0
+
             # Use enhanced execution manager for high precision parameters
             execution_params = enhanced_manager.calculate_execution_parameters(
                 market_data=market_data,
                 analyst_signal=analyst_decision,
                 tactician_confidence=avg_tactician_confidence,
-                current_price=current_price
+                current_price=current_price,
             )
-            
+
             if not execution_params.get("should_execute", False):
                 return execution_params
-            
+
             # Add additional metadata
-            execution_params.update({
-                "symbol": symbol,
-                "exchange": exchange,
-                "execution_manager": "enhanced_precision",
-                "barrier_strategy": "fraction_based",
-                "barrier_types": ["upper_barrier", "lower_barrier"],
-                "timeframes": ["1m", "5m"]
-            })
-            
-            self.logger.info(f"🎯 Enhanced Tactician Execution Parameters:")
+            execution_params.update(
+                {
+                    "symbol": symbol,
+                    "exchange": exchange,
+                    "execution_manager": "enhanced_precision",
+                    "barrier_strategy": "fraction_based",
+                    "barrier_types": ["upper_barrier", "lower_barrier"],
+                    "timeframes": ["1m", "5m"],
+                }
+            )
+
+            self.logger.info("🎯 Enhanced Tactician Execution Parameters:")
             self.logger.info(f"   Symbol: {symbol}")
             self.logger.info(f"   Direction: {execution_params.get('trade_direction', 'unknown')}")
             self.logger.info(f"   Precision Score: {execution_params.get('precision_score', 0.0):.3f}")
             self.logger.info(f"   Combined Confidence: {execution_params.get('combined_confidence', 0.0):.3f}")
-            
+
             return execution_params
 
         except Exception as e:
             self.logger.error(error(f"❌ Error in enhanced tactician execution calculation: {e}"))
-            return {
-                "should_execute": False,
-                "reason": "error",
-                "error": str(e)
-            }
+            return {"should_execute": False, "reason": "error", "error": str(e)}
 
-    def _tactician_determine_direction(
-        self, 
-        confidence_scores: Dict[str, float], 
-        market_data: pd.DataFrame
-    ) -> str:
+    def _tactician_determine_direction(self, confidence_scores: Dict[str, float], market_data: pd.DataFrame) -> str:
         """Determine trade direction based on Tactician model confidences."""
         try:
             # Logic to determine if Tactician models suggest long, short, or neutral
             # This would be based on the specific Tactician model outputs (lower timeframe)
             bullish_confidence = sum(
-                conf for name, conf in confidence_scores.items() 
-                if "bullish" in name.lower() or "long" in name.lower()
+                conf for name, conf in confidence_scores.items() if "bullish" in name.lower() or "long" in name.lower()
             )
             bearish_confidence = sum(
-                conf for name, conf in confidence_scores.items() 
-                if "bearish" in name.lower() or "short" in name.lower()
+                conf for name, conf in confidence_scores.items() if "bearish" in name.lower() or "short" in name.lower()
             )
-            
+
             # If no directional models, use overall confidence pattern
             if bullish_confidence == 0 and bearish_confidence == 0:
                 # Use short-term price momentum as fallback
                 if len(market_data) >= 3:
-                    recent_change = (market_data['close'].iloc[-1] - market_data['close'].iloc[-3]) / market_data['close'].iloc[-3]
+                    recent_change = (market_data["close"].iloc[-1] - market_data["close"].iloc[-3]) / market_data[
+                        "close"
+                    ].iloc[-3]
                     if abs(recent_change) > 0.0005:  # 0.05% threshold for short-term
                         return "long" if recent_change > 0 else "short"
                 return "neutral"
-            
+
             # Determine direction based on confidence
             if bullish_confidence > bearish_confidence and bullish_confidence > 0.6:
                 return "long"
@@ -684,7 +693,7 @@ class Supervisor:
                 return "short"
             else:
                 return "neutral"
-                
+
         except Exception as e:
             self.logger.error(error(f"❌ Error determining tactician direction: {e}"))
             return "neutral"
@@ -734,11 +743,11 @@ class Supervisor:
         market_data: pd.DataFrame,
         regime_info: dict[str, Any],
         symbol: str,
-        exchange: str
+        exchange: str,
     ) -> dict[str, Any]:
         """
         Integrate ML profit predictions with existing Analyst components.
-        
+
         This function enhances the Analyst's decision-making by incorporating:
         1. ML profit predictions from steps 6-14
         2. Enhanced confidence scores with barrier analysis
@@ -751,7 +760,7 @@ class Supervisor:
                 "enhanced_analyst_signals": {},
                 "risk_metrics": {},
                 "confidence_enhancement": {},
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
 
             # Extract key components from ML profit predictions
@@ -762,14 +771,15 @@ class Supervisor:
 
             # Generate enhanced analyst signals
             enhanced_signals = await self._generate_enhanced_analyst_signals(
-                ml_profit_data, enhanced_confidence, barrier_analysis, regime_predictions
+                ml_profit_data,
+                enhanced_confidence,
+                barrier_analysis,
+                regime_predictions,
             )
             integrated_predictions["enhanced_analyst_signals"] = enhanced_signals
 
             # Calculate risk metrics
-            risk_metrics = await self._calculate_analyst_risk_metrics(
-                ml_profit_data, barrier_analysis, market_data
-            )
+            risk_metrics = await self._calculate_analyst_risk_metrics(ml_profit_data, barrier_analysis, market_data)
             integrated_predictions["risk_metrics"] = risk_metrics
 
             # Generate confidence enhancement
@@ -795,11 +805,11 @@ class Supervisor:
         market_data: pd.DataFrame,
         analyst_signals: dict[str, Any],
         symbol: str,
-        exchange: str
+        exchange: str,
     ) -> dict[str, Any]:
         """
         Integrate ML profit predictions with existing Tactician components.
-        
+
         This function enhances the Tactician's execution by providing:
         1. ML profit predictions with triple barrier probabilities
         2. Enhanced confidence scores for leverage decisions
@@ -812,7 +822,7 @@ class Supervisor:
                 "enhanced_tactician_signals": {},
                 "position_decision_signals": {},
                 "leverage_inputs": {},
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
 
             # Extract key components from ML profit predictions
@@ -854,7 +864,7 @@ class Supervisor:
         ml_profit_data: dict[str, Any],
         enhanced_confidence: dict[str, Any],
         barrier_analysis: dict[str, Any],
-        regime_predictions: dict[str, Any]
+        regime_predictions: dict[str, Any],
     ) -> dict[str, Any]:
         """Generate enhanced analyst signals with ML profit integration."""
         try:
@@ -862,7 +872,7 @@ class Supervisor:
                 "directional_signals": {},
                 "confidence_signals": {},
                 "risk_signals": {},
-                "regime_signals": {}
+                "regime_signals": {},
             }
 
             # Process directional signals from ML profit predictions
@@ -870,12 +880,12 @@ class Supervisor:
                 direction = prediction_data.get("direction", 0)
                 magnitude = prediction_data.get("magnitude", 0.0)
                 confidence = enhanced_confidence.get(prediction_name, {}).get("enhanced_confidence", 0.5)
-                
+
                 enhanced_signals["directional_signals"][prediction_name] = {
                     "direction": direction,
                     "magnitude": magnitude,
                     "confidence": confidence,
-                    "signal_strength": abs(direction) * confidence
+                    "signal_strength": abs(direction) * confidence,
                 }
 
             # Process confidence signals
@@ -883,7 +893,8 @@ class Supervisor:
                 enhanced_signals["confidence_signals"][prediction_name] = {
                     "enhanced_confidence": confidence_data.get("enhanced_confidence", 0.5),
                     "base_confidence": confidence_data.get("base_confidence", 0.5),
-                    "confidence_improvement": confidence_data.get("enhanced_confidence", 0.5) - confidence_data.get("base_confidence", 0.5)
+                    "confidence_improvement": confidence_data.get("enhanced_confidence", 0.5)
+                    - confidence_data.get("base_confidence", 0.5),
                 }
 
             # Process risk signals from barrier analysis
@@ -892,7 +903,7 @@ class Supervisor:
                     "risk_reward_ratio": barrier_data.get("risk_reward_ratio", 0.0),
                     "expected_value": barrier_data.get("expected_value", 0.0),
                     "barrier_distance": barrier_data.get("barrier_distance", 0.0),
-                    "profit_distance": barrier_data.get("profit_distance", 0.0)
+                    "profit_distance": barrier_data.get("profit_distance", 0.0),
                 }
 
             # Process regime signals
@@ -900,7 +911,7 @@ class Supervisor:
                 enhanced_signals["regime_signals"][prediction_name] = {
                     "regime": regime_data.get("regime", "unknown"),
                     "prediction": regime_data.get("prediction", 0.0),
-                    "confidence": regime_data.get("confidence", 0.5)
+                    "confidence": regime_data.get("confidence", 0.5),
                 }
 
             return enhanced_signals
@@ -919,14 +930,14 @@ class Supervisor:
         ml_profit_data: dict[str, Any],
         enhanced_confidence: dict[str, Any],
         barrier_analysis: dict[str, Any],
-        analyst_signals: dict[str, Any]
+        analyst_signals: dict[str, Any],
     ) -> dict[str, Any]:
         """Generate enhanced tactician signals with ML profit integration."""
         try:
             enhanced_signals = {
                 "execution_signals": {},
                 "timing_signals": {},
-                "risk_signals": {}
+                "risk_signals": {},
             }
 
             # Process execution signals
@@ -934,31 +945,33 @@ class Supervisor:
                 direction = prediction_data.get("direction", 0)
                 magnitude = prediction_data.get("magnitude", 0.0)
                 confidence = enhanced_confidence.get(prediction_name, {}).get("enhanced_confidence", 0.5)
-                
+
                 # Determine execution urgency based on confidence and magnitude
                 execution_urgency = confidence * magnitude
-                
+
                 enhanced_signals["execution_signals"][prediction_name] = {
                     "direction": direction,
                     "magnitude": magnitude,
                     "confidence": confidence,
                     "execution_urgency": execution_urgency,
-                    "should_execute": confidence > self.enhanced_prediction_service.direction_confidence_threshold
+                    "should_execute": confidence > self.enhanced_prediction_service.direction_confidence_threshold,
                 }
 
             # Process position signals
             for prediction_name, prediction_data in ml_profit_data.items():
                 confidence = enhanced_confidence.get(prediction_name, {}).get("enhanced_confidence", 0.5)
                 magnitude = prediction_data.get("magnitude", 0.0)
-                
+
                 # Calculate position size based on confidence and magnitude
                 position_size_factor = confidence * min(1.0, magnitude * 10)  # Scale magnitude
-                
+
                 enhanced_signals["position_signals"][prediction_name] = {
                     "position_size_factor": position_size_factor,
                     "confidence": confidence,
                     "magnitude": magnitude,
-                    "recommended_size": "large" if position_size_factor > 0.7 else "medium" if position_size_factor > 0.4 else "small"
+                    "recommended_size": (
+                        "large" if position_size_factor > 0.7 else "medium" if position_size_factor > 0.4 else "small"
+                    ),
                 }
 
             # Process risk signals
@@ -967,20 +980,20 @@ class Supervisor:
                     "stop_loss_level": barrier_data.get("barrier_level", 0.0),
                     "take_profit_level": barrier_data.get("profit_target", 0.0),
                     "risk_reward_ratio": barrier_data.get("risk_reward_ratio", 0.0),
-                    "expected_value": barrier_data.get("expected_value", 0.0)
+                    "expected_value": barrier_data.get("expected_value", 0.0),
                 }
 
             # Process timing signals
             for prediction_name, prediction_data in ml_profit_data.items():
                 confidence = enhanced_confidence.get(prediction_name, {}).get("enhanced_confidence", 0.5)
-                
+
                 # Determine timing based on confidence and volatility
                 timing_urgency = "immediate" if confidence > 0.8 else "normal" if confidence > 0.6 else "cautious"
-                
+
                 enhanced_signals["timing_signals"][prediction_name] = {
                     "timing_urgency": timing_urgency,
                     "confidence": confidence,
-                    "wait_for_confirmation": confidence < 0.6
+                    "wait_for_confirmation": confidence < 0.6,
                 }
 
             return enhanced_signals
@@ -998,18 +1011,18 @@ class Supervisor:
         self,
         ml_profit_data: dict[str, Any],
         enhanced_confidence: dict[str, Any],
-        barrier_analysis: dict[str, Any]
+        barrier_analysis: dict[str, Any],
     ) -> dict[str, Any]:
         """
         Generate position decision signals (should we take a position?).
-        
+
         This provides signals to the Tactician about whether to take positions,
         but does NOT calculate position sizing - that's the Tactician's responsibility.
         """
         try:
             position_decisions = {
                 "position_recommendations": {},
-                "aggregate_position_signal": {}
+                "aggregate_position_signal": {},
             }
 
             # Generate position recommendations for each prediction
@@ -1017,20 +1030,22 @@ class Supervisor:
                 confidence_data = enhanced_confidence.get(prediction_name, {})
                 optimized_confidence = confidence_data.get("optimized_confidence", 0.5)
                 triple_barrier_probs = confidence_data.get("triple_barrier_details", {})
-                
+
                 # Determine if we should take a position based on confidence
-                should_take_position = optimized_confidence > self.enhanced_prediction_service.direction_confidence_threshold
-                
+                should_take_position = (
+                    optimized_confidence > self.enhanced_prediction_service.direction_confidence_threshold
+                )
+
                 # Get the best triple barrier probability for decision making
                 best_probability = 0.0
                 best_scenario = None
-                
+
                 if triple_barrier_probs:
                     for scenario_name, scenario_data in triple_barrier_probs.items():
                         if scenario_data["probability"] > best_probability:
                             best_probability = scenario_data["probability"]
                             best_scenario = scenario_name
-                
+
                 position_decisions["position_recommendations"][prediction_name] = {
                     "should_take_position": should_take_position,
                     "confidence": optimized_confidence,
@@ -1038,20 +1053,28 @@ class Supervisor:
                     "best_scenario": best_scenario,
                     "direction": prediction_data.get("direction", 0),
                     "magnitude": prediction_data.get("magnitude", 0.0),
-                    "recommendation_strength": "strong" if optimized_confidence > 0.8 else "moderate" if optimized_confidence > 0.6 else "weak"
+                    "recommendation_strength": (
+                        "strong" if optimized_confidence > 0.8 else "moderate" if optimized_confidence > 0.6 else "weak"
+                    ),
                 }
 
             # Calculate aggregate position signal
             total_recommendations = len(position_decisions["position_recommendations"])
-            strong_recommendations = sum(1 for rec in position_decisions["position_recommendations"].values() 
-                                       if rec["recommendation_strength"] == "strong")
-            moderate_recommendations = sum(1 for rec in position_decisions["position_recommendations"].values() 
-                                         if rec["recommendation_strength"] == "moderate")
-            
+            strong_recommendations = sum(
+                1
+                for rec in position_decisions["position_recommendations"].values()
+                if rec["recommendation_strength"] == "strong"
+            )
+            moderate_recommendations = sum(
+                1
+                for rec in position_decisions["position_recommendations"].values()
+                if rec["recommendation_strength"] == "moderate"
+            )
+
             if total_recommendations > 0:
                 strong_ratio = strong_recommendations / total_recommendations
                 moderate_ratio = moderate_recommendations / total_recommendations
-                
+
                 if strong_ratio > 0.5:
                     aggregate_signal = "strong_buy"
                 elif moderate_ratio > 0.5:
@@ -1069,7 +1092,7 @@ class Supervisor:
                 "strong_recommendations": strong_recommendations,
                 "moderate_recommendations": moderate_recommendations,
                 "strong_ratio": strong_ratio if total_recommendations > 0 else 0.0,
-                "moderate_ratio": moderate_ratio if total_recommendations > 0 else 0.0
+                "moderate_ratio": moderate_ratio if total_recommendations > 0 else 0.0,
             }
 
             return position_decisions
@@ -1087,11 +1110,11 @@ class Supervisor:
         self,
         ml_profit_data: dict[str, Any],
         enhanced_confidence: dict[str, Any],
-        barrier_analysis: dict[str, Any]
+        barrier_analysis: dict[str, Any],
     ) -> dict[str, Any]:
         """
         Generate leverage inputs for the Tactician.
-        
+
         This provides confidence and probability data to help the Tactician
         make leverage decisions, but does NOT calculate leverage itself.
         """
@@ -1099,7 +1122,7 @@ class Supervisor:
             leverage_inputs = {
                 "confidence_inputs": {},
                 "probability_inputs": {},
-                "risk_inputs": {}
+                "risk_inputs": {},
             }
 
             # Generate confidence inputs for leverage decisions
@@ -1107,38 +1130,44 @@ class Supervisor:
                 confidence_data = enhanced_confidence.get(prediction_name, {})
                 optimized_confidence = confidence_data.get("optimized_confidence", 0.5)
                 triple_barrier_max_prob = confidence_data.get("triple_barrier_max_probability", 0.5)
-                
+
                 leverage_inputs["confidence_inputs"][prediction_name] = {
                     "model_confidence": prediction_data.get("model_confidence", 0.5),
                     "optimized_confidence": optimized_confidence,
                     "triple_barrier_max_probability": triple_barrier_max_prob,
                     "confidence_for_leverage": max(optimized_confidence, triple_barrier_max_prob),
-                    "leverage_confidence_level": "high" if optimized_confidence > 0.8 else "medium" if optimized_confidence > 0.6 else "low"
+                    "leverage_confidence_level": (
+                        "high" if optimized_confidence > 0.8 else "medium" if optimized_confidence > 0.6 else "low"
+                    ),
                 }
 
             # Generate probability inputs
             for prediction_name, prediction_data in ml_profit_data.items():
                 confidence_data = enhanced_confidence.get(prediction_name, {})
                 triple_barrier_probs = confidence_data.get("triple_barrier_details", {})
-                
+
                 # Extract probability information for leverage decisions
                 probabilities = []
                 scenarios = []
-                
+
                 for scenario_name, scenario_data in triple_barrier_probs.items():
                     probabilities.append(scenario_data["probability"])
-                    scenarios.append({
-                        "name": scenario_name,
-                        "probability": scenario_data["probability"],
-                        "risk_reward_ratio": scenario_data["risk_reward_ratio"]
-                    })
-                
+                    scenarios.append(
+                        {
+                            "name": scenario_name,
+                            "probability": scenario_data["probability"],
+                            "risk_reward_ratio": scenario_data["risk_reward_ratio"],
+                        }
+                    )
+
                 leverage_inputs["probability_inputs"][prediction_name] = {
                     "all_probabilities": probabilities,
                     "max_probability": max(probabilities) if probabilities else 0.5,
-                    "avg_probability": sum(probabilities) / len(probabilities) if probabilities else 0.5,
+                    "avg_probability": (sum(probabilities) / len(probabilities) if probabilities else 0.5),
                     "scenarios": scenarios,
-                    "probability_consistency": 1.0 - (max(probabilities) - min(probabilities)) if len(probabilities) > 1 else 1.0
+                    "probability_consistency": (
+                        1.0 - (max(probabilities) - min(probabilities)) if len(probabilities) > 1 else 1.0
+                    ),
                 }
 
             # Generate risk inputs
@@ -1148,7 +1177,11 @@ class Supervisor:
                     "expected_value": barrier_data.get("expected_value", 0.0),
                     "barrier_distance": barrier_data.get("barrier_distance", 0.0),
                     "profit_distance": barrier_data.get("profit_distance", 0.0),
-                    "risk_level": "low" if barrier_data.get("risk_reward_ratio", 1.0) > 2.0 else "medium" if barrier_data.get("risk_reward_ratio", 1.0) > 1.5 else "high"
+                    "risk_level": (
+                        "low"
+                        if barrier_data.get("risk_reward_ratio", 1.0) > 2.0
+                        else ("medium" if barrier_data.get("risk_reward_ratio", 1.0) > 1.5 else "high")
+                    ),
                 }
 
             return leverage_inputs
@@ -1166,14 +1199,14 @@ class Supervisor:
         self,
         ml_profit_data: dict[str, Any],
         barrier_analysis: dict[str, Any],
-        market_data: pd.DataFrame
+        market_data: pd.DataFrame,
     ) -> dict[str, Any]:
         """Calculate risk metrics for analyst decision making."""
         try:
             risk_metrics = {
                 "aggregate_risk": {},
                 "individual_risks": {},
-                "portfolio_implications": {}
+                "portfolio_implications": {},
             }
 
             # Calculate aggregate risk metrics
@@ -1185,7 +1218,7 @@ class Supervisor:
             for prediction_name, prediction_data in ml_profit_data.items():
                 confidence = prediction_data.get("confidence", 0.5)
                 barrier_data = barrier_analysis.get(prediction_name, {})
-                
+
                 total_confidence += confidence
                 total_expected_value += barrier_data.get("expected_value", 0.0)
                 total_risk_reward += barrier_data.get("risk_reward_ratio", 0.0)
@@ -1205,27 +1238,33 @@ class Supervisor:
                 "average_expected_value": avg_expected_value,
                 "average_risk_reward_ratio": avg_risk_reward,
                 "prediction_count": prediction_count,
-                "overall_risk_level": "low" if avg_confidence > 0.7 else "medium" if avg_confidence > 0.5 else "high"
+                "overall_risk_level": ("low" if avg_confidence > 0.7 else "medium" if avg_confidence > 0.5 else "high"),
             }
 
             # Calculate individual risk metrics
             for prediction_name, prediction_data in ml_profit_data.items():
                 barrier_data = barrier_analysis.get(prediction_name, {})
-                
+
                 risk_metrics["individual_risks"][prediction_name] = {
                     "confidence": prediction_data.get("confidence", 0.5),
                     "expected_value": barrier_data.get("expected_value", 0.0),
                     "risk_reward_ratio": barrier_data.get("risk_reward_ratio", 0.0),
-                    "risk_level": "low" if prediction_data.get("confidence", 0.5) > 0.7 else "medium" if prediction_data.get("confidence", 0.5) > 0.5 else "high"
+                    "risk_level": (
+                        "low"
+                        if prediction_data.get("confidence", 0.5) > 0.7
+                        else ("medium" if prediction_data.get("confidence", 0.5) > 0.5 else "high")
+                    ),
                 }
 
             # Calculate portfolio implications
-            current_volatility = market_data['close'].pct_change().std()
-            
+            current_volatility = market_data["close"].pct_change().std()
+
             risk_metrics["portfolio_implications"] = {
                 "market_volatility": current_volatility,
-                "recommended_position_size": "reduced" if current_volatility > 0.03 else "normal" if current_volatility > 0.02 else "increased",
-                "risk_adjustment_factor": max(0.5, min(1.5, 1.0 / (1.0 + current_volatility * 10)))
+                "recommended_position_size": (
+                    "reduced" if current_volatility > 0.03 else "normal" if current_volatility > 0.02 else "increased"
+                ),
+                "risk_adjustment_factor": max(0.5, min(1.5, 1.0 / (1.0 + current_volatility * 10))),
             }
 
             return risk_metrics
@@ -1234,13 +1273,12 @@ class Supervisor:
             self.logger.error(error(f"❌ Error calculating analyst risk metrics: {e}"))
             return {}
 
-
-
     @handle_specific_errors(
         error_handlers={
             Exception: (False, "Supervisor run failed"),
         },
-        default_return=False, context="supervisor run",
+        default_return=False,
+        context="supervisor run",
     )
     async def run(self) -> bool:
         self.is_running = True
@@ -1252,7 +1290,8 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="supervision step",
+        default_return=None,
+        context="supervision step",
     )
     async def _perform_supervision(self) -> None:
         # Perform health checks
@@ -1278,7 +1317,8 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="system health monitoring",
+        default_return=None,
+        context="system health monitoring",
     )
     async def _monitor_system_health(self) -> None:
         try:
@@ -1294,11 +1334,7 @@ class Supervisor:
             # Log overall health status
             healthy_components = sum(self.health_checks.values())
             total_components = len(self.health_checks)
-            health_percentage = (
-                (healthy_components / total_components) * 100
-                if total_components > 0
-                else 0
-            )
+            health_percentage = (healthy_components / total_components) * 100 if total_components > 0 else 0
 
             self.logger.info(
                 f"System health: {health_percentage:.1f}% ({healthy_components}/{total_components} components healthy)",
@@ -1325,11 +1361,8 @@ class Supervisor:
         }
 
         # Monitor each feature
-        for monitor_key , feature_name in analyst_features.items():
-            analyst_monitors[monitor_key] = (
-                hasattr(analyst = feature_name)
-                and getattr(analyst = feature_name) is not None
-            )
+        for monitor_key, feature_name in analyst_features.items():
+            analyst_monitors[monitor_key] = hasattr(analyst, feature_name) and getattr(analyst, feature_name) is not None
 
     def _monitor_strategist_features(self) -> None:
         """Monitor Strategist component features."""
@@ -1347,10 +1380,9 @@ class Supervisor:
         }
 
         # Monitor each feature
-        for monitor_key , feature_name in strategist_features.items():
+        for monitor_key, feature_name in strategist_features.items():
             strategist_monitors[monitor_key] = (
-                hasattr(strategist = feature_name)
-                and getattr(strategist = feature_name) is not None
+                hasattr(strategist, feature_name) and getattr(strategist, feature_name) is not None
             )
 
     def _monitor_tactician_features(self) -> None:
@@ -1371,18 +1403,14 @@ class Supervisor:
         }
 
         # Monitor each feature
-        for monitor_key , feature_name in tactician_features.items():
+        for monitor_key, feature_name in tactician_features.items():
             tactician_monitors[monitor_key] = (
-                hasattr(tactician = feature_name)
-                and getattr(tactician = feature_name) is not None
+                hasattr(tactician, feature_name) and getattr(tactician, feature_name) is not None
             )
 
     def _monitor_enhanced_training_manager_features(self) -> None:
         """Monitor Enhanced Training Manager component features."""
-        if (
-            "enhanced_training_manager" not in self.components
-            or not self.components["enhanced_training_manager"]
-        ):
+        if "enhanced_training_manager" not in self.components or not self.components["enhanced_training_manager"]:
             return
 
         training_manager = self.components["enhanced_training_manager"]
@@ -1399,15 +1427,14 @@ class Supervisor:
         }
 
         # Monitor each feature
-        for monitor_key , feature_name in training_features.items():
+        for monitor_key, feature_name in training_features.items():
             training_monitors[monitor_key] = (
-                hasattr(training_manager = feature_name)
-                and getattr(training_manager = feature_name) is not None
+                hasattr(training_manager, feature_name) and getattr(training_manager, feature_name) is not None
             )
 
     def _log_component_feature_status(self) -> None:
         """Log the status of all component features."""
-        for component , monitors in self.component_monitors.items():
+        for component, monitors in self.component_monitors.items():
             active_features = sum(monitors.values())
             total_features = len(monitors)
             if total_features > 0:
@@ -1418,7 +1445,8 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="component features monitoring",
+        default_return=None,
+        context="component features monitoring",
     )
     async def _monitor_component_features(self) -> None:
         """Monitor component-specific features and sub-components."""
@@ -1437,7 +1465,8 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False, context="component health check",
+        default_return=False,
+        context="component health check",
     )
     async def _check_component_health(self, component: str) -> bool:
         """Check health of a specific component."""
@@ -1458,7 +1487,8 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="component coordination",
+        default_return=None,
+        context="component coordination",
     )
     async def _coordinate_components(self) -> None:
         """
@@ -1470,19 +1500,20 @@ class Supervisor:
         try:
             # Coordinate Analyst-Strategist
             await self._coordinate_analyst_strategist()
-            
+
             # Coordinate Strategist-Tactician
             await self._coordinate_strategist_tactician()
-            
+
             # Coordinate Training Manager
             await self._coordinate_training_manager()
-            
+
         except Exception:
             self.print(error("Error coordinating components: {e}"))
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="analyst strategist coordination",
+        default_return=None,
+        context="analyst strategist coordination",
     )
     async def _coordinate_analyst_strategist(self) -> None:
         """Coordinate Analyst and Strategist components."""
@@ -1493,17 +1524,14 @@ class Supervisor:
             # Share regime classification results
             if hasattr(analyst, "regime_classifier") and analyst.regime_classifier:
                 regime_info = await analyst._perform_regime_classification({})
-                if regime_info and hasattr(strategist = "current_regime"):
+                if regime_info and hasattr(strategist, "current_regime"):
                     strategist.current_regime = regime_info.get("regime")
                     strategist.regime_confidence = regime_info.get("confidence", 0.0)
 
             # Share ML confidence predictions
-            if (
-                hasattr(analyst = "ml_confidence_predictor")
-                and analyst.ml_confidence_predictor
-            ):
+            if hasattr(analyst, "ml_confidence_predictor") and analyst.ml_confidence_predictor:
                 ml_predictions = await analyst._perform_ml_predictions({})
-                if ml_predictions and hasattr(strategist = "ml_confidence_predictor"):
+                if ml_predictions and hasattr(strategist, "ml_confidence_predictor"):
                     strategist.ml_confidence_predictor = ml_predictions
 
             self.logger.info("Analyst-Strategist coordination completed")
@@ -1513,12 +1541,13 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="strategist tactician coordination",
+        default_return=None,
+        context="strategist tactician coordination",
     )
     async def _coordinate_strategist_tactician(self) -> None:
         """
         Coordinate Strategist and Tactician components.
-        
+
         Strategy Coordination:
         - Strategist provides trading strategies and market analysis
         - Tactician handles position sizing and execution tactics
@@ -1550,7 +1579,8 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="training manager coordination",
+        default_return=None,
+        context="training manager coordination",
     )
     async def _coordinate_training_manager(self) -> None:
         """Coordinate Enhanced Training Manager with other components."""
@@ -1560,17 +1590,17 @@ class Supervisor:
             # Coordinate with Analyst for model updates
             if self.components.get("analyst"):
                 analyst = self.components["analyst"]
-                if hasattr(training_manager = "get_enhanced_training_results"):
+                if hasattr(training_manager, "get_enhanced_training_results"):
                     training_results = training_manager.get_enhanced_training_results()
-                    if training_results and hasattr(analyst = "update_models"):
+                    if training_results and hasattr(analyst, "update_models"):
                         await analyst.update_models(training_results)
 
             # Coordinate with Strategist for model updates
             if self.components.get("strategist"):
                 strategist = self.components["strategist"]
-                if hasattr(training_manager = "get_enhanced_training_results"):
+                if hasattr(training_manager, "get_enhanced_training_results"):
                     training_results = training_manager.get_enhanced_training_results()
-                    if training_results and hasattr(strategist = "update_models"):
+                    if training_results and hasattr(strategist, "update_models"):
                         await strategist.update_models(training_results)
 
             self.logger.info("Training Manager coordination completed")
@@ -1580,7 +1610,8 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="online learning update",
+        default_return=None,
+        context="online learning update",
     )
     async def _update_online_learning(self) -> None:
         """Update online learning with current performance data."""
@@ -1591,7 +1622,7 @@ class Supervisor:
             # Get performances from Analyst
             if self.components.get("analyst"):
                 analyst = self.components["analyst"]
-                if hasattr(analyst = "get_analysis_results"):
+                if hasattr(analyst, "get_analysis_results"):
                     analysis_results = analyst.get_analysis_results()
                     if analysis_results:
                         model_performances["analyst"] = analysis_results.get(
@@ -1613,7 +1644,7 @@ class Supervisor:
             # Get performances from Tactician
             if self.components.get("tactician"):
                 tactician = self.components["tactician"]
-                if hasattr(tactician = "get_tactics_results"):
+                if hasattr(tactician, "get_tactics_results"):
                     tactics_results = tactician.get_tactics_results()
                     if tactics_results:
                         model_performances["tactician"] = tactics_results.get(
@@ -1643,13 +1674,14 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="recovery trigger",
+        default_return=None,
+        context="recovery trigger",
     )
     async def _trigger_recovery(self, component: str) -> None:
         """Trigger recovery for a failed component."""
         try:
             current_time = time.time()
-            last_attempt = self.last_recovery_attempt.get(component = 0)
+            last_attempt = self.last_recovery_attempt.get(component=0)
 
             # Check if we can attempt recovery
             if (
@@ -1679,7 +1711,8 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False, context="recovery attempt",
+        default_return=False,
+        context="recovery attempt",
     )
     async def _attempt_recovery(self, component: str) -> bool:
         """Attempt to recover a failed component."""
@@ -1706,7 +1739,8 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False, context="database recovery",
+        default_return=False,
+        context="database recovery",
     )
     async def _recover_database(self) -> bool:
         """Recover database connection."""
@@ -1722,7 +1756,8 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False, context="exchange recovery",
+        default_return=False,
+        context="exchange recovery",
     )
     async def _recover_exchange(self) -> bool:
         """Recover exchange connection."""
@@ -1738,7 +1773,8 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False, context="analyst recovery",
+        default_return=False,
+        context="analyst recovery",
     )
     async def _recover_analyst(self) -> bool:
         """Recover analyst component."""
@@ -1754,7 +1790,8 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False, context="strategist recovery",
+        default_return=False,
+        context="strategist recovery",
     )
     async def _recover_strategist(self) -> bool:
         """Recover strategist component."""
@@ -1770,7 +1807,8 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False, context="tactician recovery",
+        default_return=False,
+        context="tactician recovery",
     )
     async def _recover_tactician(self) -> bool:
         """Recover tactician component."""
@@ -1786,7 +1824,8 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False, context="enhanced training manager recovery",
+        default_return=False,
+        context="enhanced training manager recovery",
     )
     async def _recover_enhanced_training_manager(self) -> bool:
         """Recover enhanced training manager component."""
@@ -1802,7 +1841,8 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False, context="generic recovery",
+        default_return=False,
+        context="generic recovery",
     )
     async def _generic_recovery(self, component: str) -> bool:
         """Generic recovery for unspecified components."""
@@ -1817,12 +1857,13 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="recovery needs check",
+        default_return=None,
+        context="recovery needs check",
     )
     async def _check_recovery_needs(self) -> None:
         """Check if any components need recovery."""
         try:
-            for component , health_status in self.health_checks.items():
+            for component, health_status in self.health_checks.items():
                 if not health_status:
                     await self._trigger_recovery(component)
 
@@ -1831,22 +1872,19 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="supervision results update",
+        default_return=None,
+        context="supervision results update",
     )
     async def _update_supervision_results(self) -> None:
         try:
             # Add timestamp
-            self.supervision_results["timestamp"] = (
-                time.time()
-            )  # Changed from datetime.now() to time.time()
+            self.supervision_results["timestamp"] = time.time()  # Changed from datetime.now() to time.time()
 
             # Add health status
             self.supervision_results["health_status"] = self.health_checks.copy()
 
             # Add component monitors status
-            self.supervision_results["component_monitors"] = (
-                self.component_monitors.copy()
-            )
+            self.supervision_results["component_monitors"] = self.component_monitors.copy()
 
             # Add recovery status
             self.supervision_results["recovery_status"] = {
@@ -1866,7 +1904,8 @@ class Supervisor:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None, context="supervisor stop",
+        default_return=None,
+        context="supervisor stop",
     )
     async def stop(self) -> None:
         self.logger.info("🛑 Stopping Supervisor...")
@@ -1876,11 +1915,14 @@ class Supervisor:
         except Exception:
             self.print(error("Error stopping supervisor: {e}"))
 
-    def get_status(self) -> dict[str , Any]:
+    def get_status(self) -> dict[str, Any]:
         return {
-            "is_running": self.is_running , "supervision_interval": self.supervision_interval,
-            "max_history": self.max_history , "health_checks": self.health_checks,
-            "component_monitors": self.component_monitors , "recovery_attempts": dict(self.recovery_attempts),
+            "is_running": self.is_running,
+            "supervision_interval": self.supervision_interval,
+            "max_history": self.max_history,
+            "health_checks": self.health_checks,
+            "component_monitors": self.component_monitors,
+            "recovery_attempts": dict(self.recovery_attempts),
             "online_learning_weights": self.online_learning.get_model_weights(),
         }
 
@@ -1890,21 +1932,23 @@ class Supervisor:
             history = history[-limit:]
         return history
 
-    def get_supervision_results(self) -> dict[str , Any]:
+    def get_supervision_results(self) -> dict[str, Any]:
         return self.supervision_results.copy()
 
-    def get_components(self) -> dict[str , Any]:
+    def get_components(self) -> dict[str, Any]:
         return self.components.copy()
 
-    def get_online_learning_status(self) -> dict[str , Any]:
+    def get_online_learning_status(self) -> dict[str, Any]:
         """Get online learning status and statistics."""
         return {
             "model_weights": self.online_learning.get_model_weights(),
             "model_performances": self.online_learning.get_model_performances(),
-            "learning_rate": self.online_learning.learning_rate , "min_weight": self.online_learning.min_weight,
-            "max_weight": self.online_learning.max_weight}
+            "learning_rate": self.online_learning.learning_rate,
+            "min_weight": self.online_learning.min_weight,
+            "max_weight": self.online_learning.max_weight,
+        }
 
-    def get_component_monitors(self) -> dict[str , Any]:
+    def get_component_monitors(self) -> dict[str, Any]:
         """Get component monitors status."""
         return self.component_monitors.copy()
 
@@ -1942,7 +1986,7 @@ class Supervisor:
             breach = (max_drawdown <= dd_limit) or (daily_return <= daily_loss_limit)
             if breach:
                 # Pause tactician run loop or set is_running flag down
-                if hasattr(tactician = "is_running"):
+                if hasattr(tactician, "is_running"):
                     tactician.is_running = False
                 self.logger.warning(
                     f"⛔ Portfolio guard triggered. MDD={max_drawdown:.2%}, Daily={daily_return:.2%}. Pausing Tactician.",
@@ -1950,21 +1994,25 @@ class Supervisor:
                 # Record in supervision results
                 self.supervision_results.setdefault("guards", {})["paused"] = True
                 self.supervision_results["guards"]["reason"] = {
-                    "max_drawdown": max_drawdown , "daily_return": daily_return,
-                    "limits": {"dd_limit": dd_limit , "daily_limit": daily_loss_limit},
+                    "max_drawdown": max_drawdown,
+                    "daily_return": daily_return,
+                    "limits": {"dd_limit": dd_limit, "daily_limit": daily_loss_limit},
                 }
         except Exception:
             self.print(error("Error enforcing portfolio guards: {e}"))
             return
 
+
 supervisor: Supervisor | None = None
+
 
 @handle_errors(
     exceptions=(Exception,),
-    default_return=None, context="supervisor setup",
+    default_return=None,
+    context="supervisor setup",
 )
 async def setup_supervisor(
-    config: dict[str , Any] | None = None,
+    config: dict[str, Any] | None = None,
 ) -> Supervisor | None:
     global supervisor
     if config is None:

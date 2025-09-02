@@ -1,0 +1,14 @@
+src/supervisor/enhanced_prediction_service.py:8:1: F401 'asyncio' imported but unused
+src/supervisor/enhanced_prediction_service.py:10:1: F401 'datetime.datetime' imported but unused
+src/supervisor/enhanced_prediction_service.py:14:1: F401 'numpy as np' imported but unused
+src/supervisor/enhanced_prediction_service.py:19:1: F401 'src.utils.error_handling.handle_specific_errors' imported but unused
+src/supervisor/enhanced_prediction_service.py:23:1: F401 'src.utils.validation.comprehensive_validation' imported but unused
+src/supervisor/enhanced_prediction_service.py:574:13: F841 local variable 'magnitude' is assigned to but never used
+src/supervisor/exchange_volume_adapter.py:14:1: F401 'src.utils.warning_symbols.invalid' imported but unused
+src/supervisor/model_behavior_tracker.py:682:13: F841 local variable 'export_data' is assigned to but never used
+src/supervisor/performance_monitor.py:94:9: F841 local variable 'e' is assigned to but never used
+src/supervisor/pnl_loss_functions.py:1107:9: F821 undefined name 'self'
+src/supervisor/supervisor.py:1351:9: F841 local variable 'analyst' is assigned to but never used
+src/supervisor/supervisor.py:1372:9: F841 local variable 'strategist' is assigned to but never used
+src/supervisor/supervisor.py:1393:9: F841 local variable 'tactician' is assigned to but never used
+src/supervisor/supervisor.py:1416:9: F841 local variable 'training_manager' is assigned to but never used

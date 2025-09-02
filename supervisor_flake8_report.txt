@@ -1,0 +1,1277 @@
+dynamic_weighter.py:6:1: E302 expected 2 blank lines, found 1
+dynamic_weighter.py:27:80: E501 line too long (86 > 79 characters)
+dynamic_weighter.py:62:80: E501 line too long (83 > 79 characters)
+dynamic_weighter.py:63:80: E501 line too long (90 > 79 characters)
+dynamic_weighter.py:74:80: E501 line too long (84 > 79 characters)
+dynamic_weighter.py:121:80: E501 line too long (81 > 79 characters)
+dynamic_weighter.py:125:80: E501 line too long (80 > 79 characters)
+dynamic_weighter.py:128:80: E501 line too long (80 > 79 characters)
+dynamic_weighter.py:129:80: E501 line too long (86 > 79 characters)
+dynamic_weighter.py:133:80: E501 line too long (86 > 79 characters)
+dynamic_weighter.py:138:80: E501 line too long (82 > 79 characters)
+dynamic_weighter.py:172:80: E501 line too long (80 > 79 characters)
+dynamic_weighter.py:173:80: E501 line too long (82 > 79 characters)
+dynamic_weighter.py:176:80: E501 line too long (80 > 79 characters)
+dynamic_weighter.py:214:80: E501 line too long (81 > 79 characters)
+dynamic_weighter.py:353:80: E501 line too long (81 > 79 characters)
+dynamic_weighter.py:394:80: E501 line too long (82 > 79 characters)
+dynamic_weighter.py:435:80: E501 line too long (90 > 79 characters)
+dynamic_weighter.py:441:80: E501 line too long (90 > 79 characters)
+dynamic_weighter.py:447:80: E501 line too long (91 > 79 characters)
+dynamic_weighter.py:453:80: E501 line too long (90 > 79 characters)
+dynamic_weighter.py:477:80: E501 line too long (80 > 79 characters)
+dynamic_weighter.py:478:80: E501 line too long (83 > 79 characters)
+dynamic_weighter.py:483:80: E501 line too long (87 > 79 characters)
+dynamic_weighter.py:489:80: E501 line too long (85 > 79 characters)
+dynamic_weighter.py:495:80: E501 line too long (88 > 79 characters)
+dynamic_weighter.py:519:80: E501 line too long (88 > 79 characters)
+dynamic_weighter.py:525:80: E501 line too long (81 > 79 characters)
+dynamic_weighter.py:531:80: E501 line too long (82 > 79 characters)
+dynamic_weighter.py:537:80: E501 line too long (83 > 79 characters)
+dynamic_weighter.py:651:80: E501 line too long (82 > 79 characters)
+dynamic_weighter.py:668:80: E501 line too long (80 > 79 characters)
+dynamic_weighter.py:685:80: E501 line too long (83 > 79 characters)
+dynamic_weighter.py:875:80: E501 line too long (89 > 79 characters)
+dynamic_weighter.py:881:80: E501 line too long (90 > 79 characters)
+dynamic_weighter.py:887:80: E501 line too long (92 > 79 characters)
+dynamic_weighter.py:893:80: E501 line too long (92 > 79 characters)
+dynamic_weighter.py:918:80: E501 line too long (80 > 79 characters)
+dynamic_weighter.py:935:80: E501 line too long (81 > 79 characters)
+dynamic_weighter.py:952:80: E501 line too long (83 > 79 characters)
+dynamic_weighter.py:969:80: E501 line too long (83 > 79 characters)
+dynamic_weighter.py:1007:80: E501 line too long (84 > 79 characters)
+dynamic_weighter.py:1024:80: E501 line too long (83 > 79 characters)
+dynamic_weighter.py:1057:80: E501 line too long (96 > 79 characters)
+dynamic_weighter.py:1059:80: E501 line too long (80 > 79 characters)
+dynamic_weighter.py:1063:80: E501 line too long (95 > 79 characters)
+dynamic_weighter.py:1069:80: E501 line too long (94 > 79 characters)
+dynamic_weighter.py:1075:80: E501 line too long (96 > 79 characters)
+dynamic_weighter.py:1077:80: E501 line too long (80 > 79 characters)
+dynamic_weighter.py:1100:80: E501 line too long (85 > 79 characters)
+dynamic_weighter.py:1103:5: F811 redefinition of unused '_perform_implied_volatility_weighting' from line 993
+dynamic_weighter.py:1117:80: E501 line too long (84 > 79 characters)
+dynamic_weighter.py:1120:5: F811 redefinition of unused '_perform_volatility_regime_weighting' from line 1010
+dynamic_weighter.py:1134:80: E501 line too long (83 > 79 characters)
+dynamic_weighter.py:1151:80: E501 line too long (85 > 79 characters)
+dynamic_weighter.py:1208:80: E501 line too long (86 > 79 characters)
+dynamic_weighter.py:1257:80: E501 line too long (90 > 79 characters)
+dynamic_weighter.py:1270:80: E501 line too long (112 > 79 characters)
+dynamic_weighter.py:1304:80: E501 line too long (86 > 79 characters)
+dynamic_weighter.py:1305:80: E501 line too long (120 > 79 characters)
+dynamic_weighter.py:1313:80: E501 line too long (90 > 79 characters)
+dynamic_weighter.py:1339:80: E501 line too long (97 > 79 characters)
+dynamic_weighter.py:1340:80: E501 line too long (97 > 79 characters)
+dynamic_weighter.py:1341:80: E501 line too long (101 > 79 characters)
+dynamic_weighter.py:1342:80: E501 line too long (95 > 79 characters)
+dynamic_weighter.py:1343:80: E501 line too long (98 > 79 characters)
+dynamic_weighter.py:1359:80: E501 line too long (100 > 79 characters)
+dynamic_weighter.py:1360:80: E501 line too long (82 > 79 characters)
+dynamic_weighter.py:1362:80: E501 line too long (88 > 79 characters)
+dynamic_weighter.py:1367:80: E501 line too long (101 > 79 characters)
+dynamic_weighter.py:1372:80: E501 line too long (81 > 79 characters)
+dynamic_weighter.py:1381:80: E501 line too long (88 > 79 characters)
+dynamic_weighter.py:1387:80: E501 line too long (98 > 79 characters)
+dynamic_weighter.py:1404:80: E501 line too long (86 > 79 characters)
+dynamic_weighter.py:1409:80: E501 line too long (86 > 79 characters)
+dynamic_weighter.py:1410:80: E501 line too long (94 > 79 characters)
+dynamic_weighter.py:1418:80: E501 line too long (116 > 79 characters)
+dynamic_weighter.py:1426:80: E501 line too long (93 > 79 characters)
+dynamic_weighter.py:1427:80: E501 line too long (114 > 79 characters)
+dynamic_weighter.py:1432:80: E501 line too long (86 > 79 characters)
+dynamic_weighter.py:1433:80: E501 line too long (86 > 79 characters)
+dynamic_weighter.py:1434:80: E501 line too long (96 > 79 characters)
+dynamic_weighter.py:1448:80: E501 line too long (91 > 79 characters)
+dynamic_weighter.py:1454:80: E501 line too long (86 > 79 characters)
+dynamic_weighter.py:1455:80: E501 line too long (94 > 79 characters)
+dynamic_weighter.py:1457:80: E501 line too long (84 > 79 characters)
+dynamic_weighter.py:1464:80: E501 line too long (90 > 79 characters)
+dynamic_weighter.py:1468:80: E501 line too long (84 > 79 characters)
+dynamic_weighter.py:1478:80: E501 line too long (82 > 79 characters)
+dynamic_weighter.py:1491:80: E501 line too long (95 > 79 characters)
+dynamic_weighter.py:1496:80: E501 line too long (96 > 79 characters)
+dynamic_weighter.py:1526:1: E305 expected 2 blank lines after class or function definition, found 1
+dynamic_weighter.py:1528:1: E302 expected 2 blank lines, found 1
+enhanced_model_monitor.py:5:80: E501 line too long (90 > 79 characters)
+enhanced_model_monitor.py:6:80: E501 line too long (84 > 79 characters)
+enhanced_model_monitor.py:10:1: F401 'json' imported but unused
+enhanced_model_monitor.py:12:1: F401 'numpy as np' imported but unused
+enhanced_model_monitor.py:18:1: F401 'dataclasses.asdict' imported but unused
+enhanced_model_monitor.py:22:1: F401 'src.utils.warning_symbols.error' imported but unused
+enhanced_model_monitor.py:22:1: F401 'src.utils.warning_symbols.failed' imported but unused
+enhanced_model_monitor.py:22:1: F401 'src.utils.warning_symbols.initialization_error' imported but unused
+enhanced_model_monitor.py:28:1: E302 expected 2 blank lines, found 1
+enhanced_model_monitor.py:36:1: E302 expected 2 blank lines, found 1
+enhanced_model_monitor.py:99:1: E302 expected 2 blank lines, found 1
+enhanced_model_monitor.py:105:80: E501 line too long (88 > 79 characters)
+enhanced_model_monitor.py:131:80: E501 line too long (87 > 79 characters)
+enhanced_model_monitor.py:148:80: E501 line too long (86 > 79 characters)
+enhanced_model_monitor.py:187:80: E501 line too long (81 > 79 characters)
+enhanced_model_monitor.py:205:80: E501 line too long (83 > 79 characters)
+enhanced_model_monitor.py:207:1: W293 blank line contains whitespace
+enhanced_model_monitor.py:213:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:4:80: E501 line too long (97 > 79 characters)
+enhanced_prediction_service.py:5:80: E501 line too long (95 > 79 characters)
+enhanced_prediction_service.py:8:1: F401 'asyncio' imported but unused
+enhanced_prediction_service.py:10:1: F401 'datetime.datetime' imported but unused
+enhanced_prediction_service.py:14:1: F401 'numpy as np' imported but unused
+enhanced_prediction_service.py:17:80: E501 line too long (96 > 79 characters)
+enhanced_prediction_service.py:19:1: F401 'src.utils.error_handling.handle_specific_errors' imported but unused
+enhanced_prediction_service.py:19:80: E501 line too long (90 > 79 characters)
+enhanced_prediction_service.py:21:1: F401 'src.utils.validation.comprehensive_validation' imported but unused
+enhanced_prediction_service.py:21:80: E501 line too long (80 > 79 characters)
+enhanced_prediction_service.py:28:80: E501 line too long (90 > 79 characters)
+enhanced_prediction_service.py:29:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:30:80: E501 line too long (101 > 79 characters)
+enhanced_prediction_service.py:33:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:38:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:42:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:46:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:50:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:53:80: E501 line too long (88 > 79 characters)
+enhanced_prediction_service.py:54:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:67:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:71:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:75:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:77:80: E501 line too long (86 > 79 characters)
+enhanced_prediction_service.py:79:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:81:80: E501 line too long (96 > 79 characters)
+enhanced_prediction_service.py:94:80: E501 line too long (93 > 79 characters)
+enhanced_prediction_service.py:96:80: E501 line too long (97 > 79 characters)
+enhanced_prediction_service.py:100:75: W291 trailing whitespace
+enhanced_prediction_service.py:103:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:108:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:113:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:115:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:117:80: E501 line too long (116 > 79 characters)
+enhanced_prediction_service.py:118:80: E501 line too long (133 > 79 characters)
+enhanced_prediction_service.py:120:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:121:80: E501 line too long (87 > 79 characters)
+enhanced_prediction_service.py:122:80: E501 line too long (101 > 79 characters)
+enhanced_prediction_service.py:123:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:125:80: E501 line too long (113 > 79 characters)
+enhanced_prediction_service.py:144:80: E501 line too long (97 > 79 characters)
+enhanced_prediction_service.py:146:80: E501 line too long (101 > 79 characters)
+enhanced_prediction_service.py:150:80: E501 line too long (86 > 79 characters)
+enhanced_prediction_service.py:150:87: W291 trailing whitespace
+enhanced_prediction_service.py:153:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:158:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:163:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:165:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:167:80: E501 line too long (116 > 79 characters)
+enhanced_prediction_service.py:168:80: E501 line too long (135 > 79 characters)
+enhanced_prediction_service.py:170:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:171:80: E501 line too long (89 > 79 characters)
+enhanced_prediction_service.py:172:80: E501 line too long (103 > 79 characters)
+enhanced_prediction_service.py:173:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:175:80: E501 line too long (115 > 79 characters)
+enhanced_prediction_service.py:181:80: E501 line too long (81 > 79 characters)
+enhanced_prediction_service.py:191:80: E501 line too long (94 > 79 characters)
+enhanced_prediction_service.py:200:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:204:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:206:80: E501 line too long (115 > 79 characters)
+enhanced_prediction_service.py:209:80: E501 line too long (81 > 79 characters)
+enhanced_prediction_service.py:218:80: E501 line too long (95 > 79 characters)
+enhanced_prediction_service.py:227:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:230:80: E501 line too long (80 > 79 characters)
+enhanced_prediction_service.py:231:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:233:80: E501 line too long (117 > 79 characters)
+enhanced_prediction_service.py:236:80: E501 line too long (82 > 79 characters)
+enhanced_prediction_service.py:247:14: W291 trailing whitespace
+enhanced_prediction_service.py:254:80: E501 line too long (86 > 79 characters)
+enhanced_prediction_service.py:255:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:256:80: E501 line too long (86 > 79 characters)
+enhanced_prediction_service.py:256:87: W291 trailing whitespace
+enhanced_prediction_service.py:258:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:260:80: E501 line too long (90 > 79 characters)
+enhanced_prediction_service.py:263:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:264:80: E501 line too long (91 > 79 characters)
+enhanced_prediction_service.py:265:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:271:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:273:80: E501 line too long (94 > 79 characters)
+enhanced_prediction_service.py:274:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:276:80: E501 line too long (83 > 79 characters)
+enhanced_prediction_service.py:286:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:292:80: E501 line too long (113 > 79 characters)
+enhanced_prediction_service.py:294:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:300:80: E501 line too long (115 > 79 characters)
+enhanced_prediction_service.py:302:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:303:80: E501 line too long (100 > 79 characters)
+enhanced_prediction_service.py:304:80: E501 line too long (114 > 79 characters)
+enhanced_prediction_service.py:305:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:307:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:309:80: E501 line too long (90 > 79 characters)
+enhanced_prediction_service.py:325:80: E501 line too long (99 > 79 characters)
+enhanced_prediction_service.py:328:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:333:80: E501 line too long (101 > 79 characters)
+enhanced_prediction_service.py:334:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:336:80: E501 line too long (124 > 79 characters)
+enhanced_prediction_service.py:338:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:340:80: E501 line too long (84 > 79 characters)
+enhanced_prediction_service.py:341:80: E501 line too long (92 > 79 characters)
+enhanced_prediction_service.py:342:80: E501 line too long (128 > 79 characters)
+enhanced_prediction_service.py:343:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:344:80: E501 line too long (101 > 79 characters)
+enhanced_prediction_service.py:345:80: E501 line too long (93 > 79 characters)
+enhanced_prediction_service.py:346:80: E501 line too long (96 > 79 characters)
+enhanced_prediction_service.py:348:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:350:80: E501 line too long (96 > 79 characters)
+enhanced_prediction_service.py:351:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:353:80: E501 line too long (120 > 79 characters)
+enhanced_prediction_service.py:354:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:356:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:358:80: E501 line too long (91 > 79 characters)
+enhanced_prediction_service.py:374:80: E501 line too long (101 > 79 characters)
+enhanced_prediction_service.py:377:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:382:80: E501 line too long (101 > 79 characters)
+enhanced_prediction_service.py:383:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:385:80: E501 line too long (126 > 79 characters)
+enhanced_prediction_service.py:387:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:389:80: E501 line too long (84 > 79 characters)
+enhanced_prediction_service.py:390:80: E501 line too long (92 > 79 characters)
+enhanced_prediction_service.py:391:80: E501 line too long (128 > 79 characters)
+enhanced_prediction_service.py:392:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:393:80: E501 line too long (101 > 79 characters)
+enhanced_prediction_service.py:394:80: E501 line too long (93 > 79 characters)
+enhanced_prediction_service.py:395:80: E501 line too long (98 > 79 characters)
+enhanced_prediction_service.py:397:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:399:80: E501 line too long (98 > 79 characters)
+enhanced_prediction_service.py:400:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:402:80: E501 line too long (122 > 79 characters)
+enhanced_prediction_service.py:403:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:405:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:407:80: E501 line too long (93 > 79 characters)
+enhanced_prediction_service.py:418:80: E501 line too long (98 > 79 characters)
+enhanced_prediction_service.py:419:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:420:80: E501 line too long (93 > 79 characters)
+enhanced_prediction_service.py:422:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:424:80: E501 line too long (92 > 79 characters)
+enhanced_prediction_service.py:428:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:434:80: E501 line too long (99 > 79 characters)
+enhanced_prediction_service.py:435:80: E501 line too long (89 > 79 characters)
+enhanced_prediction_service.py:436:80: E501 line too long (89 > 79 characters)
+enhanced_prediction_service.py:437:80: E501 line too long (105 > 79 characters)
+enhanced_prediction_service.py:438:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:442:80: E501 line too long (81 > 79 characters)
+enhanced_prediction_service.py:444:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:447:80: E501 line too long (85 > 79 characters)
+enhanced_prediction_service.py:448:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:451:80: E501 line too long (92 > 79 characters)
+enhanced_prediction_service.py:452:80: E501 line too long (82 > 79 characters)
+enhanced_prediction_service.py:453:80: E501 line too long (82 > 79 characters)
+enhanced_prediction_service.py:454:80: E501 line too long (98 > 79 characters)
+enhanced_prediction_service.py:461:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:469:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:471:80: E501 line too long (83 > 79 characters)
+enhanced_prediction_service.py:473:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:476:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:479:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:482:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:485:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:488:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:489:80: E501 line too long (99 > 79 characters)
+enhanced_prediction_service.py:490:29: E128 continuation line under-indented for visual indent
+enhanced_prediction_service.py:490:80: E501 line too long (105 > 79 characters)
+enhanced_prediction_service.py:491:29: E128 continuation line under-indented for visual indent
+enhanced_prediction_service.py:491:80: E501 line too long (89 > 79 characters)
+enhanced_prediction_service.py:492:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:494:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:496:80: E501 line too long (112 > 79 characters)
+enhanced_prediction_service.py:511:80: E501 line too long (80 > 79 characters)
+enhanced_prediction_service.py:512:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:514:80: E501 line too long (101 > 79 characters)
+enhanced_prediction_service.py:515:80: E501 line too long (83 > 79 characters)
+enhanced_prediction_service.py:516:80: E501 line too long (82 > 79 characters)
+enhanced_prediction_service.py:517:80: E501 line too long (88 > 79 characters)
+enhanced_prediction_service.py:518:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:522:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:529:41: W291 trailing whitespace
+enhanced_prediction_service.py:533:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:536:80: E501 line too long (121 > 79 characters)
+enhanced_prediction_service.py:538:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:540:80: E501 line too long (94 > 79 characters)
+enhanced_prediction_service.py:541:80: E501 line too long (135 > 79 characters)
+enhanced_prediction_service.py:543:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:545:80: E501 line too long (85 > 79 characters)
+enhanced_prediction_service.py:547:13: F841 local variable 'magnitude' is assigned to but never used
+enhanced_prediction_service.py:548:80: E501 line too long (91 > 79 characters)
+enhanced_prediction_service.py:549:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:552:80: E501 line too long (158 > 79 characters)
+enhanced_prediction_service.py:554:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:557:80: E501 line too long (186 > 79 characters)
+enhanced_prediction_service.py:559:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:561:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:563:80: E501 line too long (108 > 79 characters)
+enhanced_prediction_service.py:572:80: E501 line too long (101 > 79 characters)
+enhanced_prediction_service.py:575:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:579:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:586:80: E501 line too long (111 > 79 characters)
+enhanced_prediction_service.py:588:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:589:80: E501 line too long (81 > 79 characters)
+enhanced_prediction_service.py:590:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:592:80: E501 line too long (101 > 79 characters)
+enhanced_prediction_service.py:594:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:595:80: E501 line too long (84 > 79 characters)
+enhanced_prediction_service.py:597:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:599:80: E501 line too long (100 > 79 characters)
+enhanced_prediction_service.py:611:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:627:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:632:80: E501 line too long (120 > 79 characters)
+enhanced_prediction_service.py:633:80: E501 line too long (86 > 79 characters)
+enhanced_prediction_service.py:635:80: E501 line too long (134 > 79 characters)
+enhanced_prediction_service.py:637:80: E501 line too long (80 > 79 characters)
+enhanced_prediction_service.py:639:80: E501 line too long (97 > 79 characters)
+enhanced_prediction_service.py:640:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:645:80: E501 line too long (120 > 79 characters)
+enhanced_prediction_service.py:646:80: E501 line too long (88 > 79 characters)
+enhanced_prediction_service.py:648:80: E501 line too long (134 > 79 characters)
+enhanced_prediction_service.py:650:80: E501 line too long (82 > 79 characters)
+enhanced_prediction_service.py:652:80: E501 line too long (99 > 79 characters)
+enhanced_prediction_service.py:653:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:655:80: E501 line too long (142 > 79 characters)
+enhanced_prediction_service.py:656:80: E501 line too long (181 > 79 characters)
+enhanced_prediction_service.py:657:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:658:80: E501 line too long (133 > 79 characters)
+enhanced_prediction_service.py:659:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:662:80: E501 line too long (89 > 79 characters)
+enhanced_prediction_service.py:664:80: E501 line too long (131 > 79 characters)
+enhanced_prediction_service.py:665:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:667:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:669:80: E501 line too long (94 > 79 characters)
+enhanced_prediction_service.py:679:80: E501 line too long (93 > 79 characters)
+enhanced_prediction_service.py:683:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:687:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:690:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:692:80: E501 line too long (80 > 79 characters)
+enhanced_prediction_service.py:693:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:695:80: E501 line too long (85 > 79 characters)
+enhanced_prediction_service.py:696:80: E501 line too long (107 > 79 characters)
+enhanced_prediction_service.py:697:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:699:80: E501 line too long (90 > 79 characters)
+enhanced_prediction_service.py:701:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:702:80: E501 line too long (86 > 79 characters)
+enhanced_prediction_service.py:703:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:711:80: E501 line too long (96 > 79 characters)
+enhanced_prediction_service.py:712:80: E501 line too long (100 > 79 characters)
+enhanced_prediction_service.py:713:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:725:80: E501 line too long (85 > 79 characters)
+enhanced_prediction_service.py:727:1: W293 blank line contains whitespace
+enhanced_prediction_service.py:733:80: E501 line too long (80 > 79 characters)
+enhanced_prediction_service.py:735:80: E501 line too long (99 > 79 characters)
+enhanced_prediction_service.py:737:80: E501 line too long (112 > 79 characters)
+enhanced_prediction_service.py:738:80: E501 line too long (94 > 79 characters)
+enhanced_prediction_service.py:739:80: E501 line too long (93 > 79 characters)
+enhanced_prediction_service.py:739:94: W291 trailing whitespace
+enhanced_prediction_service.py:740:80: E501 line too long (98 > 79 characters)
+enhanced_prediction_service.py:743:80: E501 line too long (83 > 79 characters)
+enhanced_prediction_service.py:752:80: E501 line too long (85 > 79 characters)
+enhanced_prediction_service.py:753:80: E501 line too long (86 > 79 characters)
+enhanced_prediction_service.py:755:80: E501 line too long (87 > 79 characters)
+enhanced_prediction_service.py:756:80: E501 line too long (80 > 79 characters)
+enhanced_prediction_service.py:760:80: E501 line too long (99 > 79 characters)
+enhanced_prediction_service.py:761:80: E501 line too long (89 > 79 characters)
+enhanced_prediction_service.py:762:80: E501 line too long (89 > 79 characters)
+enhanced_prediction_service.py:763:80: E501 line too long (104 > 79 characters)
+enhanced_prediction_service.py:767:10: W292 no newline at end of file
+exchange_volume_adapter.py:13:1: F401 'src.utils.warning_symbols.invalid' imported but unused
+exchange_volume_adapter.py:21:1: E302 expected 2 blank lines, found 1
+exchange_volume_adapter.py:23:80: E501 line too long (91 > 79 characters)
+exchange_volume_adapter.py:88:80: E501 line too long (81 > 79 characters)
+exchange_volume_adapter.py:105:80: E501 line too long (86 > 79 characters)
+exchange_volume_adapter.py:112:80: E501 line too long (82 > 79 characters)
+exchange_volume_adapter.py:186:80: E501 line too long (86 > 79 characters)
+exchange_volume_adapter.py:193:80: E501 line too long (81 > 79 characters)
+exchange_volume_adapter.py:206:80: E501 line too long (84 > 79 characters)
+exchange_volume_adapter.py:245:80: E501 line too long (87 > 79 characters)
+exchange_volume_adapter.py:246:40: E251 unexpected spaces around keyword / parameter equals
+exchange_volume_adapter.py:246:42: E251 unexpected spaces around keyword / parameter equals
+exchange_volume_adapter.py:260:80: E501 line too long (80 > 79 characters)
+exchange_volume_adapter.py:263:80: E501 line too long (86 > 79 characters)
+exchange_volume_adapter.py:276:9: E125 continuation line with same indent as next logical line
+exchange_volume_adapter.py:289:9: E125 continuation line with same indent as next logical line
+exchange_volume_adapter.py:289:80: E501 line too long (93 > 79 characters)
+exchange_volume_adapter.py:352:80: E501 line too long (85 > 79 characters)
+exchange_volume_adapter.py:363:80: E501 line too long (84 > 79 characters)
+exchange_volume_adapter.py:369:80: E501 line too long (82 > 79 characters)
+exchange_volume_adapter.py:383:80: E501 line too long (84 > 79 characters)
+exchange_volume_adapter.py:387:80: E501 line too long (82 > 79 characters)
+exchange_volume_adapter.py:389:1: W293 blank line contains whitespace
+exchange_volume_adapter.py:391:1: W293 blank line contains whitespace
+exchange_volume_adapter.py:394:1: W293 blank line contains whitespace
+exchange_volume_adapter.py:396:80: E501 line too long (96 > 79 characters)
+exchange_volume_adapter.py:398:1: W293 blank line contains whitespace
+exchange_volume_adapter.py:400:80: E501 line too long (85 > 79 characters)
+exchange_volume_adapter.py:401:80: E501 line too long (90 > 79 characters)
+exchange_volume_adapter.py:404:1: W293 blank line contains whitespace
+exchange_volume_adapter.py:409:1: W293 blank line contains whitespace
+exchange_volume_adapter.py:411:1: W293 blank line contains whitespace
+exchange_volume_adapter.py:413:80: E501 line too long (85 > 79 characters)
+exchange_volume_adapter.py:416:49: E203 whitespace before ','
+exchange_volume_adapter.py:434:9: E125 continuation line with same indent as next logical line
+exchange_volume_adapter.py:453:41: E203 whitespace before ','
+exchange_volume_adapter.py:454:45: E203 whitespace before ','
+exchange_volume_adapter.py:461:80: E501 line too long (80 > 79 characters)
+exchange_volume_adapter.py:478:1: E302 expected 2 blank lines, found 1
+exchange_volume_adapter.py:483:21: E203 whitespace before ','
+exchange_volume_adapter.py:496:80: E501 line too long (87 > 79 characters)
+global_portfolio_manager.py:13:1: E302 expected 2 blank lines, found 1
+global_portfolio_manager.py:61:80: E501 line too long (82 > 79 characters)
+global_portfolio_manager.py:86:80: E501 line too long (82 > 79 characters)
+global_portfolio_manager.py:94:80: E501 line too long (83 > 79 characters)
+global_portfolio_manager.py:114:80: E501 line too long (81 > 79 characters)
+global_portfolio_manager.py:117:80: E501 line too long (83 > 79 characters)
+global_portfolio_manager.py:121:80: E501 line too long (83 > 79 characters)
+global_portfolio_manager.py:131:80: E501 line too long (81 > 79 characters)
+global_portfolio_manager.py:146:5: E304 blank lines found after function decorator
+global_portfolio_manager.py:170:80: E501 line too long (85 > 79 characters)
+global_portfolio_manager.py:174:80: E501 line too long (81 > 79 characters)
+global_portfolio_manager.py:204:80: E501 line too long (80 > 79 characters)
+global_portfolio_manager.py:217:80: E501 line too long (82 > 79 characters)
+global_portfolio_manager.py:229:41: E203 whitespace before ','
+global_portfolio_manager.py:230:46: E203 whitespace before ','
+global_portfolio_manager.py:237:80: E501 line too long (85 > 79 characters)
+global_portfolio_manager.py:257:80: E501 line too long (87 > 79 characters)
+global_portfolio_manager.py:268:45: E203 whitespace before ','
+global_portfolio_manager.py:269:42: E203 whitespace before ','
+global_portfolio_manager.py:275:80: E501 line too long (83 > 79 characters)
+global_portfolio_manager.py:287:42: E203 whitespace before ','
+global_portfolio_manager.py:288:47: E203 whitespace before ','
+global_portfolio_manager.py:295:80: E501 line too long (87 > 79 characters)
+global_portfolio_manager.py:307:51: E203 whitespace before ','
+global_portfolio_manager.py:307:80: E501 line too long (90 > 79 characters)
+global_portfolio_manager.py:308:49: E203 whitespace before ','
+global_portfolio_manager.py:314:80: E501 line too long (84 > 79 characters)
+global_portfolio_manager.py:341:80: E501 line too long (83 > 79 characters)
+global_portfolio_manager.py:347:80: E501 line too long (84 > 79 characters)
+global_portfolio_manager.py:351:80: E501 line too long (84 > 79 characters)
+global_portfolio_manager.py:356:80: E501 line too long (87 > 79 characters)
+global_portfolio_manager.py:360:80: E501 line too long (80 > 79 characters)
+global_portfolio_manager.py:361:80: E501 line too long (81 > 79 characters)
+global_portfolio_manager.py:363:80: E501 line too long (87 > 79 characters)
+global_portfolio_manager.py:376:80: E501 line too long (81 > 79 characters)
+global_portfolio_manager.py:381:80: E501 line too long (81 > 79 characters)
+global_portfolio_manager.py:390:5: E304 blank lines found after function decorator
+global_portfolio_manager.py:390:80: E501 line too long (84 > 79 characters)
+global_portfolio_manager.py:431:18: E203 whitespace before ','
+global_portfolio_manager.py:445:80: E501 line too long (83 > 79 characters)
+global_portfolio_manager.py:450:80: E501 line too long (84 > 79 characters)
+global_portfolio_manager.py:455:80: E501 line too long (88 > 79 characters)
+global_portfolio_manager.py:456:80: E501 line too long (87 > 79 characters)
+global_portfolio_manager.py:460:80: E501 line too long (86 > 79 characters)
+global_portfolio_manager.py:461:80: E501 line too long (83 > 79 characters)
+global_portfolio_manager.py:477:18: E203 whitespace before ','
+global_portfolio_manager.py:494:80: E501 line too long (82 > 79 characters)
+global_portfolio_manager.py:495:80: E501 line too long (85 > 79 characters)
+global_portfolio_manager.py:499:80: E501 line too long (84 > 79 characters)
+global_portfolio_manager.py:505:80: E501 line too long (83 > 79 characters)
+global_portfolio_manager.py:506:80: E501 line too long (87 > 79 characters)
+global_portfolio_manager.py:522:18: E203 whitespace before ','
+global_portfolio_manager.py:537:80: E501 line too long (85 > 79 characters)
+global_portfolio_manager.py:542:80: E501 line too long (87 > 79 characters)
+global_portfolio_manager.py:551:80: E501 line too long (83 > 79 characters)
+global_portfolio_manager.py:570:18: E203 whitespace before ','
+global_portfolio_manager.py:584:80: E501 line too long (86 > 79 characters)
+global_portfolio_manager.py:589:80: E501 line too long (84 > 79 characters)
+global_portfolio_manager.py:596:17: E129 visually indented line with same indent as next logical line
+global_portfolio_manager.py:604:17: E129 visually indented line with same indent as next logical line
+global_portfolio_manager.py:605:80: E501 line too long (85 > 79 characters)
+global_portfolio_manager.py:621:18: E203 whitespace before ','
+global_portfolio_manager.py:635:80: E501 line too long (85 > 79 characters)
+global_portfolio_manager.py:641:80: E501 line too long (87 > 79 characters)
+global_portfolio_manager.py:643:80: E501 line too long (80 > 79 characters)
+global_portfolio_manager.py:647:80: E501 line too long (83 > 79 characters)
+global_portfolio_manager.py:654:80: E501 line too long (83 > 79 characters)
+global_portfolio_manager.py:668:18: E203 whitespace before ','
+global_portfolio_manager.py:673:51: E203 whitespace before ','
+global_portfolio_manager.py:673:80: E501 line too long (90 > 79 characters)
+global_portfolio_manager.py:684:18: E203 whitespace before ','
+global_portfolio_manager.py:689:52: E203 whitespace before ','
+global_portfolio_manager.py:689:80: E501 line too long (93 > 79 characters)
+global_portfolio_manager.py:706:18: E203 whitespace before ','
+global_portfolio_manager.py:728:18: E203 whitespace before ','
+global_portfolio_manager.py:751:80: E501 line too long (83 > 79 characters)
+global_portfolio_manager.py:755:18: E203 whitespace before ','
+global_portfolio_manager.py:760:55: E203 whitespace before ','
+global_portfolio_manager.py:760:80: E501 line too long (93 > 79 characters)
+global_portfolio_manager.py:771:18: E203 whitespace before ','
+global_portfolio_manager.py:776:57: E203 whitespace before ','
+global_portfolio_manager.py:776:80: E501 line too long (88 > 79 characters)
+global_portfolio_manager.py:787:18: E203 whitespace before ','
+global_portfolio_manager.py:792:56: E203 whitespace before ','
+global_portfolio_manager.py:792:80: E501 line too long (84 > 79 characters)
+global_portfolio_manager.py:805:18: E203 whitespace before ','
+global_portfolio_manager.py:810:55: E203 whitespace before ','
+global_portfolio_manager.py:810:80: E501 line too long (92 > 79 characters)
+global_portfolio_manager.py:822:18: E203 whitespace before ','
+global_portfolio_manager.py:827:56: E203 whitespace before ','
+global_portfolio_manager.py:827:80: E501 line too long (82 > 79 characters)
+global_portfolio_manager.py:839:18: E203 whitespace before ','
+global_portfolio_manager.py:856:18: E203 whitespace before ','
+global_portfolio_manager.py:861:60: E203 whitespace before ','
+global_portfolio_manager.py:861:80: E501 line too long (91 > 79 characters)
+global_portfolio_manager.py:868:80: E501 line too long (80 > 79 characters)
+global_portfolio_manager.py:875:18: E203 whitespace before ','
+global_portfolio_manager.py:880:52: E203 whitespace before ','
+global_portfolio_manager.py:892:18: E203 whitespace before ','
+global_portfolio_manager.py:897:50: E203 whitespace before ','
+global_portfolio_manager.py:909:18: E203 whitespace before ','
+global_portfolio_manager.py:914:57: E203 whitespace before ','
+global_portfolio_manager.py:914:80: E501 line too long (83 > 79 characters)
+global_portfolio_manager.py:929:18: E203 whitespace before ','
+global_portfolio_manager.py:934:55: E203 whitespace before ','
+global_portfolio_manager.py:934:80: E501 line too long (82 > 79 characters)
+global_portfolio_manager.py:948:18: E203 whitespace before ','
+global_portfolio_manager.py:953:61: E203 whitespace before ','
+global_portfolio_manager.py:953:80: E501 line too long (102 > 79 characters)
+global_portfolio_manager.py:960:80: E501 line too long (81 > 79 characters)
+global_portfolio_manager.py:965:18: E203 whitespace before ','
+global_portfolio_manager.py:970:63: E203 whitespace before ','
+global_portfolio_manager.py:970:80: E501 line too long (106 > 79 characters)
+global_portfolio_manager.py:977:80: E501 line too long (83 > 79 characters)
+global_portfolio_manager.py:982:18: E203 whitespace before ','
+global_portfolio_manager.py:987:59: E203 whitespace before ','
+global_portfolio_manager.py:987:80: E501 line too long (98 > 79 characters)
+global_portfolio_manager.py:999:18: E203 whitespace before ','
+global_portfolio_manager.py:1004:54: E203 whitespace before ','
+global_portfolio_manager.py:1004:80: E501 line too long (94 > 79 characters)
+global_portfolio_manager.py:1041:5: E304 blank lines found after function decorator
+global_portfolio_manager.py:1043:18: E203 whitespace before ','
+global_portfolio_manager.py:1055:67: E251 unexpected spaces around keyword / parameter equals
+global_portfolio_manager.py:1055:69: E251 unexpected spaces around keyword / parameter equals
+global_portfolio_manager.py:1067:5: E304 blank lines found after function decorator
+global_portfolio_manager.py:1067:80: E501 line too long (87 > 79 characters)
+global_portfolio_manager.py:1089:48: E203 whitespace before ','
+global_portfolio_manager.py:1138:1: E305 expected 2 blank lines after class or function definition, found 1
+global_portfolio_manager.py:1140:1: E302 expected 2 blank lines, found 1
+global_portfolio_manager.py:1164:80: E501 line too long (88 > 79 characters)
+main.py:19:1: E302 expected 2 blank lines, found 1
+main.py:23:80: E501 line too long (81 > 79 characters)
+main.py:36:80: E501 line too long (82 > 79 characters)
+main.py:40:80: E501 line too long (85 > 79 characters)
+main.py:51:80: E501 line too long (83 > 79 characters)
+main.py:61:80: E501 line too long (80 > 79 characters)
+main.py:64:80: E501 line too long (81 > 79 characters)
+main.py:69:80: E501 line too long (112 > 79 characters)
+main.py:71:80: E501 line too long (84 > 79 characters)
+main.py:77:80: E501 line too long (82 > 79 characters)
+main.py:84:80: E501 line too long (87 > 79 characters)
+main.py:95:80: E501 line too long (93 > 79 characters)
+main.py:98:80: E501 line too long (83 > 79 characters)
+main.py:99:80: E501 line too long (92 > 79 characters)
+main.py:102:80: E501 line too long (83 > 79 characters)
+main.py:121:80: E501 line too long (87 > 79 characters)
+main.py:135:80: E501 line too long (94 > 79 characters)
+main.py:156:80: E501 line too long (82 > 79 characters)
+main.py:171:80: E501 line too long (85 > 79 characters)
+main.py:172:80: E501 line too long (83 > 79 characters)
+main.py:177:80: E501 line too long (87 > 79 characters)
+main.py:189:80: E501 line too long (88 > 79 characters)
+main.py:209:80: E501 line too long (81 > 79 characters)
+main.py:226:80: E501 line too long (82 > 79 characters)
+main.py:231:80: E501 line too long (84 > 79 characters)
+main.py:237:80: E501 line too long (86 > 79 characters)
+main.py:238:80: E501 line too long (88 > 79 characters)
+main.py:240:80: E501 line too long (82 > 79 characters)
+main.py:243:80: E501 line too long (86 > 79 characters)
+main.py:268:80: E501 line too long (81 > 79 characters)
+main.py:299:80: E501 line too long (134 > 79 characters)
+main.py:312:1: E302 expected 2 blank lines, found 1
+main.py:323:80: E501 line too long (87 > 79 characters)
+main.py:330:80: E501 line too long (83 > 79 characters)
+main.py:343:80: E501 line too long (87 > 79 characters)
+main.py:360:80: E501 line too long (81 > 79 characters)
+main.py:428:80: E501 line too long (88 > 79 characters)
+main.py:442:1: E305 expected 2 blank lines after class or function definition, found 1
+main.py:444:1: E302 expected 2 blank lines, found 1
+main.py:455:80: E501 line too long (82 > 79 characters)
+model_behavior_tracker.py:5:80: E501 line too long (82 > 79 characters)
+model_behavior_tracker.py:6:80: E501 line too long (83 > 79 characters)
+model_behavior_tracker.py:22:1: E302 expected 2 blank lines, found 1
+model_behavior_tracker.py:34:1: E302 expected 2 blank lines, found 1
+model_behavior_tracker.py:51:1: E302 expected 2 blank lines, found 1
+model_behavior_tracker.py:63:1: E302 expected 2 blank lines, found 1
+model_behavior_tracker.py:65:1: E304 blank lines found after function decorator
+model_behavior_tracker.py:76:1: E302 expected 2 blank lines, found 1
+model_behavior_tracker.py:78:80: E501 line too long (89 > 79 characters)
+model_behavior_tracker.py:81:80: E501 line too long (88 > 79 characters)
+model_behavior_tracker.py:99:80: E501 line too long (81 > 79 characters)
+model_behavior_tracker.py:102:40: E203 whitespace before ','
+model_behavior_tracker.py:103:50: E203 whitespace before ','
+model_behavior_tracker.py:103:80: E501 line too long (89 > 79 characters)
+model_behavior_tracker.py:104:45: E203 whitespace before ','
+model_behavior_tracker.py:111:42: E203 whitespace before ','
+model_behavior_tracker.py:136:80: E501 line too long (81 > 79 characters)
+model_behavior_tracker.py:166:80: E501 line too long (81 > 79 characters)
+model_behavior_tracker.py:190:80: E501 line too long (82 > 79 characters)
+model_behavior_tracker.py:208:80: E501 line too long (81 > 79 characters)
+model_behavior_tracker.py:226:80: E501 line too long (87 > 79 characters)
+model_behavior_tracker.py:242:80: E501 line too long (84 > 79 characters)
+model_behavior_tracker.py:265:80: E501 line too long (84 > 79 characters)
+model_behavior_tracker.py:277:80: E501 line too long (80 > 79 characters)
+model_behavior_tracker.py:279:80: E501 line too long (83 > 79 characters)
+model_behavior_tracker.py:281:80: E501 line too long (80 > 79 characters)
+model_behavior_tracker.py:290:80: E501 line too long (87 > 79 characters)
+model_behavior_tracker.py:300:80: E501 line too long (82 > 79 characters)
+model_behavior_tracker.py:304:80: E501 line too long (80 > 79 characters)
+model_behavior_tracker.py:308:80: E501 line too long (82 > 79 characters)
+model_behavior_tracker.py:335:80: E501 line too long (80 > 79 characters)
+model_behavior_tracker.py:336:80: E501 line too long (86 > 79 characters)
+model_behavior_tracker.py:337:52: E203 whitespace before ':'
+model_behavior_tracker.py:343:80: E501 line too long (83 > 79 characters)
+model_behavior_tracker.py:352:80: E501 line too long (84 > 79 characters)
+model_behavior_tracker.py:360:80: E501 line too long (81 > 79 characters)
+model_behavior_tracker.py:361:80: E501 line too long (87 > 79 characters)
+model_behavior_tracker.py:386:80: E501 line too long (83 > 79 characters)
+model_behavior_tracker.py:391:30: E203 whitespace before ','
+model_behavior_tracker.py:405:80: E501 line too long (88 > 79 characters)
+model_behavior_tracker.py:417:30: E203 whitespace before ','
+model_behavior_tracker.py:433:80: E501 line too long (83 > 79 characters)
+model_behavior_tracker.py:438:30: E203 whitespace before ','
+model_behavior_tracker.py:442:80: E501 line too long (83 > 79 characters)
+model_behavior_tracker.py:449:80: E501 line too long (85 > 79 characters)
+model_behavior_tracker.py:454:30: E203 whitespace before ','
+model_behavior_tracker.py:468:80: E501 line too long (85 > 79 characters)
+model_behavior_tracker.py:480:30: E203 whitespace before ','
+model_behavior_tracker.py:485:80: E501 line too long (92 > 79 characters)
+model_behavior_tracker.py:490:80: E501 line too long (80 > 79 characters)
+model_behavior_tracker.py:496:30: E203 whitespace before ','
+model_behavior_tracker.py:501:80: E501 line too long (82 > 79 characters)
+model_behavior_tracker.py:506:80: E501 line too long (81 > 79 characters)
+model_behavior_tracker.py:529:80: E501 line too long (80 > 79 characters)
+model_behavior_tracker.py:533:9: E125 continuation line with same indent as next logical line
+model_behavior_tracker.py:535:53: E251 unexpected spaces around keyword / parameter equals
+model_behavior_tracker.py:535:55: E251 unexpected spaces around keyword / parameter equals
+model_behavior_tracker.py:545:57: E251 unexpected spaces around keyword / parameter equals
+model_behavior_tracker.py:545:59: E251 unexpected spaces around keyword / parameter equals
+model_behavior_tracker.py:554:37: E203 whitespace before ','
+model_behavior_tracker.py:565:80: E501 line too long (83 > 79 characters)
+model_behavior_tracker.py:566:80: E501 line too long (87 > 79 characters)
+model_behavior_tracker.py:581:80: E501 line too long (84 > 79 characters)
+model_behavior_tracker.py:593:80: E501 line too long (82 > 79 characters)
+model_behavior_tracker.py:596:80: E501 line too long (87 > 79 characters)
+model_behavior_tracker.py:603:80: E501 line too long (84 > 79 characters)
+model_behavior_tracker.py:617:80: E501 line too long (81 > 79 characters)
+model_behavior_tracker.py:633:80: E501 line too long (88 > 79 characters)
+model_behavior_tracker.py:646:80: E501 line too long (84 > 79 characters)
+model_behavior_tracker.py:649:80: E501 line too long (84 > 79 characters)
+model_behavior_tracker.py:656:80: E501 line too long (84 > 79 characters)
+model_behavior_tracker.py:658:80: E501 line too long (88 > 79 characters)
+model_behavior_tracker.py:661:80: E501 line too long (80 > 79 characters)
+model_behavior_tracker.py:663:80: E501 line too long (82 > 79 characters)
+model_behavior_tracker.py:665:80: E501 line too long (82 > 79 characters)
+model_behavior_tracker.py:673:53: E203 whitespace before ','
+model_behavior_tracker.py:689:13: F841 local variable 'export_data' is assigned to but never used
+model_behavior_tracker.py:692:33: E203 whitespace before ','
+model_behavior_tracker.py:698:31: E251 unexpected spaces around keyword / parameter equals
+model_behavior_tracker.py:698:33: E251 unexpected spaces around keyword / parameter equals
+model_behavior_tracker.py:699:38: E251 unexpected spaces around keyword / parameter equals
+model_behavior_tracker.py:699:40: E251 unexpected spaces around keyword / parameter equals
+model_behavior_tracker.py:709:1: E302 expected 2 blank lines, found 1
+model_behavior_tracker.py:714:21: E203 whitespace before ','
+model_behavior_tracker.py:736:80: E501 line too long (86 > 79 characters)
+monitoring.py:15:1: E302 expected 2 blank lines, found 1
+monitoring.py:17:80: E501 line too long (81 > 79 characters)
+monitoring.py:26:80: E501 line too long (82 > 79 characters)
+monitoring.py:27:80: E501 line too long (83 > 79 characters)
+monitoring.py:47:80: E501 line too long (82 > 79 characters)
+monitoring.py:160:80: E501 line too long (88 > 79 characters)
+monitoring.py:180:1: E305 expected 2 blank lines after class or function definition, found 1
+monitoring.py:182:1: E302 expected 2 blank lines, found 1
+optimizer.py:10:1: E302 expected 2 blank lines, found 1
+optimizer.py:12:80: E501 line too long (80 > 79 characters)
+optimizer.py:21:80: E501 line too long (80 > 79 characters)
+optimizer.py:46:80: E501 line too long (81 > 79 characters)
+optimizer.py:61:80: E501 line too long (87 > 79 characters)
+optimizer.py:151:80: E501 line too long (81 > 79 characters)
+optimizer.py:167:80: E501 line too long (88 > 79 characters)
+optimizer.py:254:80: E501 line too long (81 > 79 characters)
+optimizer.py:282:1: E305 expected 2 blank lines after class or function definition, found 1
+optimizer.py:284:1: E302 expected 2 blank lines, found 1
+optimizer.py:289:80: E501 line too long (84 > 79 characters)
+optimizer.py:293:80: E501 line too long (86 > 79 characters)
+performance_monitor.py:4:1: F811 redefinition of unused 'datetime' from line 2
+performance_monitor.py:16:1: E302 expected 2 blank lines, found 1
+performance_monitor.py:18:80: E501 line too long (91 > 79 characters)
+performance_monitor.py:27:80: E501 line too long (88 > 79 characters)
+performance_monitor.py:28:80: E501 line too long (84 > 79 characters)
+performance_monitor.py:48:1: W293 blank line contains whitespace
+performance_monitor.py:50:80: E501 line too long (97 > 79 characters)
+performance_monitor.py:51:80: E501 line too long (107 > 79 characters)
+performance_monitor.py:52:80: E501 line too long (91 > 79 characters)
+performance_monitor.py:53:80: E501 line too long (97 > 79 characters)
+performance_monitor.py:54:1: W293 blank line contains whitespace
+performance_monitor.py:64:80: E501 line too long (87 > 79 characters)
+performance_monitor.py:75:80: E501 line too long (84 > 79 characters)
+performance_monitor.py:82:80: E501 line too long (83 > 79 characters)
+performance_monitor.py:96:80: E501 line too long (85 > 79 characters)
+performance_monitor.py:97:9: F841 local variable 'e' is assigned to but never used
+performance_monitor.py:106:5: E304 blank lines found after function decorator
+performance_monitor.py:148:44: E203 whitespace before ','
+performance_monitor.py:193:80: E501 line too long (83 > 79 characters)
+performance_monitor.py:202:80: E501 line too long (86 > 79 characters)
+performance_monitor.py:217:80: E501 line too long (88 > 79 characters)
+performance_monitor.py:222:37: E203 whitespace before ','
+performance_monitor.py:231:50: E203 whitespace before ','
+performance_monitor.py:234:42: E203 whitespace before ','
+performance_monitor.py:237:48: E203 whitespace before ','
+performance_monitor.py:241:80: E501 line too long (88 > 79 characters)
+performance_monitor.py:247:80: E501 line too long (87 > 79 characters)
+performance_monitor.py:272:51: E203 whitespace before ':'
+performance_monitor.py:316:80: E501 line too long (91 > 79 characters)
+performance_monitor.py:321:80: E501 line too long (87 > 79 characters)
+performance_monitor.py:343:80: E501 line too long (102 > 79 characters)
+performance_monitor.py:345:51: E203 whitespace before ','
+performance_monitor.py:345:80: E501 line too long (88 > 79 characters)
+performance_monitor.py:348:49: E203 whitespace before ','
+performance_monitor.py:348:80: E501 line too long (84 > 79 characters)
+performance_monitor.py:353:80: E501 line too long (80 > 79 characters)
+performance_monitor.py:364:80: E501 line too long (85 > 79 characters)
+performance_monitor.py:366:61: E251 unexpected spaces around keyword / parameter equals
+performance_monitor.py:366:63: E251 unexpected spaces around keyword / parameter equals
+performance_monitor.py:402:80: E501 line too long (81 > 79 characters)
+performance_monitor.py:403:80: E501 line too long (114 > 79 characters)
+performance_monitor.py:404:80: E501 line too long (108 > 79 characters)
+performance_monitor.py:431:46: E203 whitespace before ','
+performance_monitor.py:431:80: E501 line too long (100 > 79 characters)
+performance_monitor.py:435:39: E203 whitespace before ','
+performance_monitor.py:435:80: E501 line too long (92 > 79 characters)
+performance_monitor.py:438:41: E203 whitespace before ','
+performance_monitor.py:438:80: E501 line too long (98 > 79 characters)
+performance_monitor.py:439:42: E203 whitespace before ','
+performance_monitor.py:439:80: E501 line too long (100 > 79 characters)
+performance_monitor.py:440:42: E203 whitespace before ','
+performance_monitor.py:440:80: E501 line too long (100 > 79 characters)
+performance_monitor.py:442:80: E501 line too long (126 > 79 characters)
+performance_monitor.py:443:80: E501 line too long (123 > 79 characters)
+performance_monitor.py:444:80: E501 line too long (107 > 79 characters)
+performance_monitor.py:451:45: E203 whitespace before ','
+performance_monitor.py:451:80: E501 line too long (113 > 79 characters)
+performance_monitor.py:456:37: E203 whitespace before ','
+performance_monitor.py:457:39: E203 whitespace before ','
+performance_monitor.py:458:37: E203 whitespace before ','
+performance_monitor.py:473:56: E251 unexpected spaces around keyword / parameter equals
+performance_monitor.py:473:58: E251 unexpected spaces around keyword / parameter equals
+performance_monitor.py:503:40: E203 whitespace before ','
+performance_monitor.py:511:80: E501 line too long (110 > 79 characters)
+performance_monitor.py:527:80: E501 line too long (97 > 79 characters)
+performance_monitor.py:537:38: W291 trailing whitespace
+performance_monitor.py:548:60: E251 unexpected spaces around keyword / parameter equals
+performance_monitor.py:548:62: E251 unexpected spaces around keyword / parameter equals
+performance_monitor.py:562:80: E501 line too long (81 > 79 characters)
+performance_monitor.py:567:80: E501 line too long (108 > 79 characters)
+performance_monitor.py:567:91: E251 unexpected spaces around keyword / parameter equals
+performance_monitor.py:567:93: E251 unexpected spaces around keyword / parameter equals
+performance_monitor.py:573:80: E501 line too long (90 > 79 characters)
+performance_monitor.py:574:43: E203 whitespace before ','
+performance_monitor.py:574:80: E501 line too long (85 > 79 characters)
+performance_monitor.py:576:80: E501 line too long (96 > 79 characters)
+performance_monitor.py:584:80: E501 line too long (88 > 79 characters)
+performance_monitor.py:589:80: E501 line too long (97 > 79 characters)
+performance_monitor.py:590:80: E501 line too long (97 > 79 characters)
+performance_monitor.py:591:80: E501 line too long (101 > 79 characters)
+performance_monitor.py:592:80: E501 line too long (95 > 79 characters)
+performance_monitor.py:593:80: E501 line too long (98 > 79 characters)
+performance_monitor.py:598:80: E501 line too long (83 > 79 characters)
+performance_monitor.py:606:62: E251 unexpected spaces around keyword / parameter equals
+performance_monitor.py:606:64: E251 unexpected spaces around keyword / parameter equals
+performance_monitor.py:606:80: E501 line too long (88 > 79 characters)
+performance_monitor.py:610:80: E501 line too long (86 > 79 characters)
+performance_monitor.py:618:57: E203 whitespace before ','
+performance_monitor.py:623:77: E203 whitespace before ','
+performance_monitor.py:623:80: E501 line too long (129 > 79 characters)
+performance_monitor.py:636:51: E203 whitespace before ','
+performance_monitor.py:643:80: E501 line too long (98 > 79 characters)
+performance_monitor.py:644:80: E501 line too long (97 > 79 characters)
+performance_monitor.py:645:80: E501 line too long (112 > 79 characters)
+performance_monitor.py:647:80: E501 line too long (83 > 79 characters)
+performance_monitor.py:649:80: E501 line too long (111 > 79 characters)
+performance_monitor.py:660:33: E203 whitespace before ','
+performance_monitor.py:661:37: E203 whitespace before ','
+performance_monitor.py:661:80: E501 line too long (86 > 79 characters)
+performance_monitor.py:671:55: E203 whitespace before ','
+performance_monitor.py:679:1: E305 expected 2 blank lines after class or function definition, found 1
+performance_monitor.py:681:1: E302 expected 2 blank lines, found 1
+performance_monitor.py:687:21: E203 whitespace before ','
+performance_monitor.py:693:80: E501 line too long (84 > 79 characters)
+performance_reporter.py:11:1: E302 expected 2 blank lines, found 1
+performance_reporter.py:12:80: E501 line too long (88 > 79 characters)
+performance_reporter.py:39:80: E501 line too long (85 > 79 characters)
+performance_reporter.py:40:80: E501 line too long (81 > 79 characters)
+performance_reporter.py:107:80: E501 line too long (82 > 79 characters)
+performance_reporter.py:110:80: E501 line too long (84 > 79 characters)
+performance_reporter.py:113:80: E501 line too long (84 > 79 characters)
+performance_reporter.py:120:80: E501 line too long (80 > 79 characters)
+performance_reporter.py:146:80: E501 line too long (82 > 79 characters)
+performance_reporter.py:196:80: E501 line too long (82 > 79 characters)
+performance_reporter.py:197:80: E501 line too long (83 > 79 characters)
+performance_reporter.py:278:80: E501 line too long (85 > 79 characters)
+performance_reporter.py:290:80: E501 line too long (86 > 79 characters)
+performance_reporter.py:362:1: E302 expected 2 blank lines, found 1
+performance_reporter.py:364:80: E501 line too long (124 > 79 characters)
+performance_reporter.py:382:80: E501 line too long (85 > 79 characters)
+performance_reporter.py:422:80: E501 line too long (88 > 79 characters)
+performance_reporter.py:443:80: E501 line too long (83 > 79 characters)
+performance_reporter.py:462:80: E501 line too long (83 > 79 characters)
+performance_reporter.py:478:80: E501 line too long (86 > 79 characters)
+performance_reporter.py:487:80: E501 line too long (80 > 79 characters)
+performance_reporter.py:491:80: E501 line too long (86 > 79 characters)
+performance_reporter.py:654:80: E501 line too long (84 > 79 characters)
+performance_reporter.py:676:80: E501 line too long (85 > 79 characters)
+performance_reporter.py:681:80: E501 line too long (84 > 79 characters)
+performance_reporter.py:687:80: E501 line too long (85 > 79 characters)
+performance_reporter.py:688:80: E501 line too long (88 > 79 characters)
+performance_reporter.py:690:80: E501 line too long (87 > 79 characters)
+performance_reporter.py:706:80: E501 line too long (82 > 79 characters)
+performance_reporter.py:709:80: E501 line too long (83 > 79 characters)
+performance_reporter.py:757:80: E501 line too long (88 > 79 characters)
+performance_reporter.py:776:80: E501 line too long (87 > 79 characters)
+performance_reporter.py:864:80: E501 line too long (90 > 79 characters)
+performance_reporter.py:896:80: E501 line too long (103 > 79 characters)
+performance_reporter.py:909:80: E501 line too long (83 > 79 characters)
+performance_reporter.py:910:80: E501 line too long (84 > 79 characters)
+performance_reporter.py:916:80: E501 line too long (82 > 79 characters)
+performance_reporter.py:919:80: E501 line too long (90 > 79 characters)
+performance_reporter.py:931:80: E501 line too long (83 > 79 characters)
+performance_reporter.py:932:80: E501 line too long (84 > 79 characters)
+performance_reporter.py:935:80: E501 line too long (90 > 79 characters)
+performance_reporter.py:944:80: E501 line too long (81 > 79 characters)
+performance_reporter.py:947:80: E501 line too long (85 > 79 characters)
+performance_reporter.py:948:80: E501 line too long (84 > 79 characters)
+performance_reporter.py:963:80: E501 line too long (85 > 79 characters)
+performance_reporter.py:964:80: E501 line too long (84 > 79 characters)
+performance_reporter.py:966:80: E501 line too long (97 > 79 characters)
+performance_reporter.py:974:80: E501 line too long (81 > 79 characters)
+performance_reporter.py:978:80: E501 line too long (84 > 79 characters)
+performance_reporter.py:980:80: E501 line too long (80 > 79 characters)
+performance_reporter.py:990:80: E501 line too long (80 > 79 characters)
+performance_reporter.py:999:80: E501 line too long (80 > 79 characters)
+performance_reporter.py:1056:1: E305 expected 2 blank lines after class or function definition, found 1
+performance_reporter.py:1058:1: E302 expected 2 blank lines, found 1
+performance_reporter.py:1079:80: E501 line too long (86 > 79 characters)
+pnl_loss_functions.py:7:1: E302 expected 2 blank lines, found 1
+pnl_loss_functions.py:24:80: E501 line too long (81 > 79 characters)
+pnl_loss_functions.py:25:80: E501 line too long (82 > 79 characters)
+pnl_loss_functions.py:26:80: E501 line too long (81 > 79 characters)
+pnl_loss_functions.py:30:80: E501 line too long (107 > 79 characters)
+pnl_loss_functions.py:43:80: E501 line too long (94 > 79 characters)
+pnl_loss_functions.py:44:80: E501 line too long (113 > 79 characters)
+pnl_loss_functions.py:53:80: E501 line too long (97 > 79 characters)
+pnl_loss_functions.py:54:80: E501 line too long (82 > 79 characters)
+pnl_loss_functions.py:66:1: E302 expected 2 blank lines, found 1
+pnl_loss_functions.py:87:80: E501 line too long (83 > 79 characters)
+pnl_loss_functions.py:127:80: E501 line too long (86 > 79 characters)
+pnl_loss_functions.py:148:80: E501 line too long (81 > 79 characters)
+pnl_loss_functions.py:160:80: E501 line too long (81 > 79 characters)
+pnl_loss_functions.py:182:80: E501 line too long (85 > 79 characters)
+pnl_loss_functions.py:183:80: E501 line too long (83 > 79 characters)
+pnl_loss_functions.py:184:80: E501 line too long (85 > 79 characters)
+pnl_loss_functions.py:186:80: E501 line too long (91 > 79 characters)
+pnl_loss_functions.py:187:80: E501 line too long (93 > 79 characters)
+pnl_loss_functions.py:189:80: E501 line too long (84 > 79 characters)
+pnl_loss_functions.py:227:80: E501 line too long (82 > 79 characters)
+pnl_loss_functions.py:265:80: E501 line too long (83 > 79 characters)
+pnl_loss_functions.py:383:80: E501 line too long (83 > 79 characters)
+pnl_loss_functions.py:385:80: E501 line too long (81 > 79 characters)
+pnl_loss_functions.py:405:80: E501 line too long (80 > 79 characters)
+pnl_loss_functions.py:409:80: E501 line too long (82 > 79 characters)
+pnl_loss_functions.py:420:80: E501 line too long (81 > 79 characters)
+pnl_loss_functions.py:426:80: E501 line too long (83 > 79 characters)
+pnl_loss_functions.py:432:80: E501 line too long (87 > 79 characters)
+pnl_loss_functions.py:445:80: E501 line too long (86 > 79 characters)
+pnl_loss_functions.py:487:80: E501 line too long (87 > 79 characters)
+pnl_loss_functions.py:497:80: E501 line too long (81 > 79 characters)
+pnl_loss_functions.py:542:80: E501 line too long (80 > 79 characters)
+pnl_loss_functions.py:583:80: E501 line too long (81 > 79 characters)
+pnl_loss_functions.py:589:80: E501 line too long (81 > 79 characters)
+pnl_loss_functions.py:611:80: E501 line too long (87 > 79 characters)
+pnl_loss_functions.py:615:80: E501 line too long (89 > 79 characters)
+pnl_loss_functions.py:619:80: E501 line too long (87 > 79 characters)
+pnl_loss_functions.py:622:80: E501 line too long (83 > 79 characters)
+pnl_loss_functions.py:623:80: E501 line too long (97 > 79 characters)
+pnl_loss_functions.py:627:80: E501 line too long (89 > 79 characters)
+pnl_loss_functions.py:631:80: E501 line too long (87 > 79 characters)
+pnl_loss_functions.py:652:80: E501 line too long (82 > 79 characters)
+pnl_loss_functions.py:653:80: E501 line too long (93 > 79 characters)
+pnl_loss_functions.py:656:80: E501 line too long (83 > 79 characters)
+pnl_loss_functions.py:657:80: E501 line too long (95 > 79 characters)
+pnl_loss_functions.py:660:80: E501 line too long (82 > 79 characters)
+pnl_loss_functions.py:661:80: E501 line too long (93 > 79 characters)
+pnl_loss_functions.py:665:80: E501 line too long (85 > 79 characters)
+pnl_loss_functions.py:709:80: E501 line too long (86 > 79 characters)
+pnl_loss_functions.py:1075:80: E501 line too long (88 > 79 characters)
+pnl_loss_functions.py:1141:1: E305 expected 2 blank lines after class or function definition, found 1
+pnl_loss_functions.py:1143:1: E302 expected 2 blank lines, found 1
+pnl_loss_functions.py:1186:9: F821 undefined name 'self'
+risk_allocator.py:11:1: E302 expected 2 blank lines, found 1
+risk_allocator.py:18:1: W293 blank line contains whitespace
+risk_allocator.py:28:80: E501 line too long (80 > 79 characters)
+risk_allocator.py:29:80: E501 line too long (87 > 79 characters)
+risk_allocator.py:35:80: E501 line too long (84 > 79 characters)
+risk_allocator.py:36:80: E501 line too long (88 > 79 characters)
+risk_allocator.py:37:80: E501 line too long (83 > 79 characters)
+risk_allocator.py:48:80: E501 line too long (82 > 79 characters)
+risk_allocator.py:61:80: E501 line too long (86 > 79 characters)
+risk_allocator.py:78:80: E501 line too long (80 > 79 characters)
+risk_allocator.py:186:80: E501 line too long (88 > 79 characters)
+risk_allocator.py:212:80: E501 line too long (82 > 79 characters)
+risk_allocator.py:240:80: E501 line too long (81 > 79 characters)
+risk_allocator.py:273:80: E501 line too long (86 > 79 characters)
+risk_allocator.py:326:80: E501 line too long (94 > 79 characters)
+risk_allocator.py:338:80: E501 line too long (88 > 79 characters)
+risk_allocator.py:339:80: E501 line too long (107 > 79 characters)
+risk_allocator.py:384:80: E501 line too long (87 > 79 characters)
+risk_allocator.py:389:80: E501 line too long (83 > 79 characters)
+risk_allocator.py:428:1: E305 expected 2 blank lines after class or function definition, found 1
+risk_allocator.py:430:1: E302 expected 2 blank lines, found 1
+risk_allocator.py:441:80: E501 line too long (88 > 79 characters)
+supervisor.py:21:1: E302 expected 2 blank lines, found 1
+supervisor.py:57:1: E302 expected 2 blank lines, found 1
+supervisor.py:64:37: E203 whitespace before ','
+supervisor.py:72:80: E501 line too long (88 > 79 characters)
+supervisor.py:79:80: E501 line too long (86 > 79 characters)
+supervisor.py:86:80: E501 line too long (88 > 79 characters)
+supervisor.py:104:80: E501 line too long (86 > 79 characters)
+supervisor.py:115:80: E501 line too long (82 > 79 characters)
+supervisor.py:129:44: E203 whitespace before ','
+supervisor.py:133:49: E203 whitespace before ','
+supervisor.py:137:1: E302 expected 2 blank lines, found 1
+supervisor.py:141:80: E501 line too long (84 > 79 characters)
+supervisor.py:143:80: E501 line too long (108 > 79 characters)
+supervisor.py:150:30: E203 whitespace before ','
+supervisor.py:153:30: E203 whitespace before ','
+supervisor.py:154:36: E203 whitespace before ','
+supervisor.py:155:41: E203 whitespace before ','
+supervisor.py:155:80: E501 line too long (83 > 79 characters)
+supervisor.py:161:43: E203 whitespace before ','
+supervisor.py:162:34: E203 whitespace before ','
+supervisor.py:165:40: E203 whitespace before ','
+supervisor.py:175:45: E203 whitespace before ','
+supervisor.py:185:80: E501 line too long (111 > 79 characters)
+supervisor.py:186:80: E501 line too long (105 > 79 characters)
+supervisor.py:187:80: E501 line too long (123 > 79 characters)
+supervisor.py:190:5: E303 too many blank lines (2)
+supervisor.py:210:80: E501 line too long (82 > 79 characters)
+supervisor.py:227:80: E501 line too long (86 > 79 characters)
+supervisor.py:229:80: E501 line too long (88 > 79 characters)
+supervisor.py:230:80: E501 line too long (80 > 79 characters)
+supervisor.py:240:5: E304 blank lines found after function decorator
+supervisor.py:268:33: E203 whitespace before ','
+supervisor.py:269:32: E203 whitespace before ','
+supervisor.py:270:34: E203 whitespace before ','
+supervisor.py:273:50: E203 whitespace before ','
+supervisor.py:281:80: E501 line too long (82 > 79 characters)
+supervisor.py:315:80: E501 line too long (86 > 79 characters)
+supervisor.py:316:80: E501 line too long (80 > 79 characters)
+supervisor.py:346:80: E501 line too long (92 > 79 characters)
+supervisor.py:347:1: W293 blank line contains whitespace
+supervisor.py:348:80: E501 line too long (85 > 79 characters)
+supervisor.py:350:1: W293 blank line contains whitespace
+supervisor.py:352:80: E501 line too long (90 > 79 characters)
+supervisor.py:354:80: E501 line too long (91 > 79 characters)
+supervisor.py:355:1: W293 blank line contains whitespace
+supervisor.py:357:1: W293 blank line contains whitespace
+supervisor.py:359:80: E501 line too long (87 > 79 characters)
+supervisor.py:370:22: F821 undefined name 'pd'
+supervisor.py:377:80: E501 line too long (82 > 79 characters)
+supervisor.py:378:1: W293 blank line contains whitespace
+supervisor.py:379:80: E501 line too long (89 > 79 characters)
+supervisor.py:386:80: E501 line too long (87 > 79 characters)
+supervisor.py:387:80: E501 line too long (108 > 79 characters)
+supervisor.py:390:1: W293 blank line contains whitespace
+supervisor.py:391:80: E501 line too long (81 > 79 characters)
+supervisor.py:393:80: E501 line too long (99 > 79 characters)
+supervisor.py:395:1: W293 blank line contains whitespace
+supervisor.py:404:80: E501 line too long (82 > 79 characters)
+supervisor.py:407:80: E501 line too long (107 > 79 characters)
+supervisor.py:411:80: E501 line too long (81 > 79 characters)
+supervisor.py:422:22: F821 undefined name 'pd'
+supervisor.py:430:80: E501 line too long (84 > 79 characters)
+supervisor.py:431:1: W293 blank line contains whitespace
+supervisor.py:432:80: E501 line too long (107 > 79 characters)
+supervisor.py:440:80: E501 line too long (87 > 79 characters)
+supervisor.py:441:80: E501 line too long (108 > 79 characters)
+supervisor.py:444:1: W293 blank line contains whitespace
+supervisor.py:445:80: E501 line too long (83 > 79 characters)
+supervisor.py:446:80: E501 line too long (86 > 79 characters)
+supervisor.py:447:80: E501 line too long (105 > 79 characters)
+supervisor.py:449:1: W293 blank line contains whitespace
+supervisor.py:458:80: E501 line too long (82 > 79 characters)
+supervisor.py:461:80: E501 line too long (102 > 79 characters)
+supervisor.py:465:80: E501 line too long (83 > 79 characters)
+supervisor.py:476:22: F821 undefined name 'pd'
+supervisor.py:483:80: E501 line too long (105 > 79 characters)
+supervisor.py:496:1: W293 blank line contains whitespace
+supervisor.py:497:80: E501 line too long (101 > 79 characters)
+supervisor.py:499:1: W293 blank line contains whitespace
+supervisor.py:501:80: E501 line too long (109 > 79 characters)
+supervisor.py:502:1: W293 blank line contains whitespace
+supervisor.py:505:80: E501 line too long (85 > 79 characters)
+supervisor.py:505:86: W291 trailing whitespace
+supervisor.py:506:80: E501 line too long (94 > 79 characters)
+supervisor.py:509:1: W293 blank line contains whitespace
+supervisor.py:516:80: E501 line too long (98 > 79 characters)
+supervisor.py:520:80: E501 line too long (82 > 79 characters)
+supervisor.py:532:14: W291 trailing whitespace
+supervisor.py:533:45: W291 trailing whitespace
+supervisor.py:534:22: F821 undefined name 'pd'
+supervisor.py:541:65: W291 trailing whitespace
+supervisor.py:545:65: W291 trailing whitespace
+supervisor.py:548:1: W293 blank line contains whitespace
+supervisor.py:553:80: E501 line too long (130 > 79 characters)
+supervisor.py:557:1: W293 blank line contains whitespace
+supervisor.py:559:80: E501 line too long (84 > 79 characters)
+supervisor.py:561:80: E501 line too long (86 > 79 characters)
+supervisor.py:565:1: W293 blank line contains whitespace
+supervisor.py:567:80: E501 line too long (81 > 79 characters)
+supervisor.py:578:22: F821 undefined name 'pd'
+supervisor.py:585:80: E501 line too long (89 > 79 characters)
+supervisor.py:591:80: E501 line too long (89 > 79 characters)
+supervisor.py:592:1: W293 blank line contains whitespace
+supervisor.py:595:1: W293 blank line contains whitespace
+supervisor.py:603:1: W293 blank line contains whitespace
+supervisor.py:610:1: W293 blank line contains whitespace
+supervisor.py:611:80: E501 line too long (115 > 79 characters)
+supervisor.py:612:1: W293 blank line contains whitespace
+supervisor.py:614:80: E501 line too long (91 > 79 characters)
+supervisor.py:615:1: W293 blank line contains whitespace
+supervisor.py:623:1: W293 blank line contains whitespace
+supervisor.py:626:1: W293 blank line contains whitespace
+supervisor.py:636:1: W293 blank line contains whitespace
+supervisor.py:637:30: F541 f-string is missing placeholders
+supervisor.py:639:80: E501 line too long (99 > 79 characters)
+supervisor.py:640:80: E501 line too long (103 > 79 characters)
+supervisor.py:641:80: E501 line too long (111 > 79 characters)
+supervisor.py:642:1: W293 blank line contains whitespace
+supervisor.py:646:80: E501 line too long (97 > 79 characters)
+supervisor.py:654:14: W291 trailing whitespace
+supervisor.py:655:45: W291 trailing whitespace
+supervisor.py:656:22: F821 undefined name 'pd'
+supervisor.py:660:80: E501 line too long (84 > 79 characters)
+supervisor.py:661:80: E501 line too long (91 > 79 characters)
+supervisor.py:663:65: W291 trailing whitespace
+supervisor.py:667:65: W291 trailing whitespace
+supervisor.py:670:1: W293 blank line contains whitespace
+supervisor.py:675:80: E501 line too long (131 > 79 characters)
+supervisor.py:676:80: E501 line too long (85 > 79 characters)
+supervisor.py:679:1: W293 blank line contains whitespace
+supervisor.py:681:80: E501 line too long (84 > 79 characters)
+supervisor.py:683:80: E501 line too long (86 > 79 characters)
+supervisor.py:687:1: W293 blank line contains whitespace
+supervisor.py:689:80: E501 line too long (85 > 79 characters)
+supervisor.py:692:80: E501 line too long (90 > 79 characters)
+supervisor.py:711:80: E501 line too long (94 > 79 characters)
+supervisor.py:717:62: F821 undefined name 'pd'
+supervisor.py:717:80: E501 line too long (101 > 79 characters)
+supervisor.py:734:22: F821 undefined name 'pd'
+supervisor.py:741:1: W293 blank line contains whitespace
+supervisor.py:758:80: E501 line too long (83 > 79 characters)
+supervisor.py:759:80: E501 line too long (93 > 79 characters)
+supervisor.py:760:80: E501 line too long (80 > 79 characters)
+supervisor.py:761:80: E501 line too long (84 > 79 characters)
+supervisor.py:765:80: E501 line too long (89 > 79 characters)
+supervisor.py:767:80: E501 line too long (81 > 79 characters)
+supervisor.py:776:80: E501 line too long (81 > 79 characters)
+supervisor.py:779:80: E501 line too long (85 > 79 characters)
+supervisor.py:784:80: E501 line too long (95 > 79 characters)
+supervisor.py:795:22: F821 undefined name 'pd'
+supervisor.py:802:1: W293 blank line contains whitespace
+supervisor.py:807:80: E501 line too long (87 > 79 characters)
+supervisor.py:819:80: E501 line too long (83 > 79 characters)
+supervisor.py:820:80: E501 line too long (93 > 79 characters)
+supervisor.py:821:80: E501 line too long (80 > 79 characters)
+supervisor.py:825:80: E501 line too long (86 > 79 characters)
+supervisor.py:827:80: E501 line too long (83 > 79 characters)
+supervisor.py:830:80: E501 line too long (80 > 79 characters)
+supervisor.py:833:80: E501 line too long (84 > 79 characters)
+supervisor.py:844:80: E501 line too long (97 > 79 characters)
+supervisor.py:872:80: E501 line too long (105 > 79 characters)
+supervisor.py:873:1: W293 blank line contains whitespace
+supervisor.py:882:80: E501 line too long (80 > 79 characters)
+supervisor.py:884:80: E501 line too long (91 > 79 characters)
+supervisor.py:885:80: E501 line too long (83 > 79 characters)
+supervisor.py:886:80: E501 line too long (139 > 79 characters)
+supervisor.py:892:80: E501 line too long (84 > 79 characters)
+supervisor.py:894:80: E501 line too long (82 > 79 characters)
+supervisor.py:909:80: E501 line too long (89 > 79 characters)
+supervisor.py:936:80: E501 line too long (105 > 79 characters)
+supervisor.py:937:1: W293 blank line contains whitespace
+supervisor.py:940:1: W293 blank line contains whitespace
+supervisor.py:946:80: E501 line too long (114 > 79 characters)
+supervisor.py:951:80: E501 line too long (105 > 79 characters)
+supervisor.py:953:1: W293 blank line contains whitespace
+supervisor.py:955:80: E501 line too long (95 > 79 characters)
+supervisor.py:956:1: W293 blank line contains whitespace
+supervisor.py:961:80: E501 line too long (134 > 79 characters)
+supervisor.py:968:80: E501 line too long (80 > 79 characters)
+supervisor.py:969:80: E501 line too long (84 > 79 characters)
+supervisor.py:975:80: E501 line too long (105 > 79 characters)
+supervisor.py:976:1: W293 blank line contains whitespace
+supervisor.py:978:80: E501 line too long (114 > 79 characters)
+supervisor.py:979:1: W293 blank line contains whitespace
+supervisor.py:989:80: E501 line too long (91 > 79 characters)
+supervisor.py:1005:1: W293 blank line contains whitespace
+supervisor.py:1007:80: E501 line too long (87 > 79 characters)
+supervisor.py:1018:80: E501 line too long (87 > 79 characters)
+supervisor.py:1019:80: E501 line too long (88 > 79 characters)
+supervisor.py:1020:1: W293 blank line contains whitespace
+supervisor.py:1022:80: E501 line too long (125 > 79 characters)
+supervisor.py:1023:1: W293 blank line contains whitespace
+supervisor.py:1027:1: W293 blank line contains whitespace
+supervisor.py:1029:80: E501 line too long (85 > 79 characters)
+supervisor.py:1033:1: W293 blank line contains whitespace
+supervisor.py:1034:80: E501 line too long (83 > 79 characters)
+supervisor.py:1041:80: E501 line too long (143 > 79 characters)
+supervisor.py:1045:80: E501 line too long (87 > 79 characters)
+supervisor.py:1046:80: E501 line too long (109 > 79 characters)
+supervisor.py:1046:110: W291 trailing whitespace
+supervisor.py:1047:40: E128 continuation line under-indented for visual indent
+supervisor.py:1047:80: E501 line too long (85 > 79 characters)
+supervisor.py:1048:80: E501 line too long (111 > 79 characters)
+supervisor.py:1048:112: W291 trailing whitespace
+supervisor.py:1049:42: E128 continuation line under-indented for visual indent
+supervisor.py:1049:80: E501 line too long (89 > 79 characters)
+supervisor.py:1050:1: W293 blank line contains whitespace
+supervisor.py:1053:80: E501 line too long (81 > 79 characters)
+supervisor.py:1054:1: W293 blank line contains whitespace
+supervisor.py:1071:80: E501 line too long (83 > 79 characters)
+supervisor.py:1072:80: E501 line too long (86 > 79 characters)
+supervisor.py:1078:80: E501 line too long (90 > 79 characters)
+supervisor.py:1094:1: W293 blank line contains whitespace
+supervisor.py:1108:80: E501 line too long (87 > 79 characters)
+supervisor.py:1109:80: E501 line too long (100 > 79 characters)
+supervisor.py:1110:1: W293 blank line contains whitespace
+supervisor.py:1112:80: E501 line too long (85 > 79 characters)
+supervisor.py:1115:80: E501 line too long (98 > 79 characters)
+supervisor.py:1116:80: E501 line too long (140 > 79 characters)
+supervisor.py:1122:80: E501 line too long (88 > 79 characters)
+supervisor.py:1123:1: W293 blank line contains whitespace
+supervisor.py:1127:1: W293 blank line contains whitespace
+supervisor.py:1128:80: E501 line too long (81 > 79 characters)
+supervisor.py:1135:1: W293 blank line contains whitespace
+supervisor.py:1138:80: E501 line too long (84 > 79 characters)
+supervisor.py:1139:80: E501 line too long (105 > 79 characters)
+supervisor.py:1141:80: E501 line too long (129 > 79 characters)
+supervisor.py:1147:80: E501 line too long (84 > 79 characters)
+supervisor.py:1149:80: E501 line too long (82 > 79 characters)
+supervisor.py:1150:80: E501 line too long (80 > 79 characters)
+supervisor.py:1151:80: E501 line too long (169 > 79 characters)
+supervisor.py:1157:80: E501 line too long (80 > 79 characters)
+supervisor.py:1169:22: F821 undefined name 'pd'
+supervisor.py:1188:1: W293 blank line contains whitespace
+supervisor.py:1208:80: E501 line too long (117 > 79 characters)
+supervisor.py:1214:1: W293 blank line contains whitespace
+supervisor.py:1218:80: E501 line too long (84 > 79 characters)
+supervisor.py:1219:80: E501 line too long (161 > 79 characters)
+supervisor.py:1224:1: W293 blank line contains whitespace
+supervisor.py:1227:80: E501 line too long (144 > 79 characters)
+supervisor.py:1228:80: E501 line too long (99 > 79 characters)
+supervisor.py:1234:80: E501 line too long (86 > 79 characters)
+supervisor.py:1239:5: E303 too many blank lines (3)
+supervisor.py:1291:80: E501 line too long (86 > 79 characters)
+supervisor.py:1304:80: E501 line too long (120 > 79 characters)
+supervisor.py:1315:9: F841 local variable 'analyst' is assigned to but never used
+supervisor.py:1322:80: E501 line too long (83 > 79 characters)
+supervisor.py:1328:24: E203 whitespace before ','
+supervisor.py:1330:32: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1330:34: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1331:36: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1331:38: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1336:80: E501 line too long (84 > 79 characters)
+supervisor.py:1339:9: F841 local variable 'strategist' is assigned to but never used
+supervisor.py:1342:80: E501 line too long (94 > 79 characters)
+supervisor.py:1350:24: E203 whitespace before ','
+supervisor.py:1352:35: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1352:37: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1353:39: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1353:41: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1358:80: E501 line too long (82 > 79 characters)
+supervisor.py:1361:9: F841 local variable 'tactician' is assigned to but never used
+supervisor.py:1374:24: E203 whitespace before ','
+supervisor.py:1376:34: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1376:36: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1377:38: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1377:40: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1388:9: F841 local variable 'training_manager' is assigned to but never used
+supervisor.py:1389:80: E501 line too long (80 > 79 characters)
+supervisor.py:1402:24: E203 whitespace before ','
+supervisor.py:1404:41: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1404:43: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1405:45: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1405:47: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1410:22: E203 whitespace before ','
+supervisor.py:1416:80: E501 line too long (115 > 79 characters)
+supervisor.py:1473:1: W293 blank line contains whitespace
+supervisor.py:1476:1: W293 blank line contains whitespace
+supervisor.py:1479:1: W293 blank line contains whitespace
+supervisor.py:1494:80: E501 line too long (83 > 79 characters)
+supervisor.py:1496:54: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1496:56: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1498:80: E501 line too long (85 > 79 characters)
+supervisor.py:1502:32: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1502:34: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1506:57: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1506:59: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1506:80: E501 line too long (86 > 79 characters)
+supervisor.py:1521:1: W293 blank line contains whitespace
+supervisor.py:1532:80: E501 line too long (87 > 79 characters)
+supervisor.py:1537:80: E501 line too long (85 > 79 characters)
+supervisor.py:1539:80: E501 line too long (80 > 79 characters)
+supervisor.py:1542:80: E501 line too long (83 > 79 characters)
+supervisor.py:1563:44: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1563:46: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1564:80: E501 line too long (87 > 79 characters)
+supervisor.py:1565:60: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1565:62: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1571:44: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1571:46: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1572:80: E501 line too long (87 > 79 characters)
+supervisor.py:1573:63: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1573:65: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1573:80: E501 line too long (82 > 79 characters)
+supervisor.py:1594:35: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1594:37: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1606:80: E501 line too long (80 > 79 characters)
+supervisor.py:1608:80: E501 line too long (84 > 79 characters)
+supervisor.py:1616:37: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1616:39: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1634:80: E501 line too long (87 > 79 characters)
+supervisor.py:1636:80: E501 line too long (84 > 79 characters)
+supervisor.py:1652:68: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1652:70: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1657:80: E501 line too long (82 > 79 characters)
+supervisor.py:1661:80: E501 line too long (81 > 79 characters)
+supervisor.py:1667:80: E501 line too long (85 > 79 characters)
+supervisor.py:1672:80: E501 line too long (144 > 79 characters)
+supervisor.py:1795:80: E501 line too long (80 > 79 characters)
+supervisor.py:1796:80: E501 line too long (80 > 79 characters)
+supervisor.py:1800:80: E501 line too long (80 > 79 characters)
+supervisor.py:1825:26: E203 whitespace before ','
+supervisor.py:1844:80: E501 line too long (81 > 79 characters)
+supervisor.py:1879:37: E203 whitespace before ','
+supervisor.py:1881:42: E203 whitespace before ','
+supervisor.py:1881:80: E501 line too long (94 > 79 characters)
+supervisor.py:1882:44: E203 whitespace before ','
+supervisor.py:1882:80: E501 line too long (82 > 79 characters)
+supervisor.py:1883:58: E203 whitespace before ','
+supervisor.py:1883:80: E501 line too long (110 > 79 characters)
+supervisor.py:1884:80: E501 line too long (80 > 79 characters)
+supervisor.py:1893:50: E203 whitespace before ','
+supervisor.py:1896:41: E203 whitespace before ','
+supervisor.py:1899:53: E203 whitespace before ','
+supervisor.py:1903:80: E501 line too long (80 > 79 characters)
+supervisor.py:1904:64: E203 whitespace before ','
+supervisor.py:1904:80: E501 line too long (112 > 79 characters)
+supervisor.py:1907:49: E203 whitespace before ','
+supervisor.py:1917:80: E501 line too long (92 > 79 characters)
+supervisor.py:1937:80: E501 line too long (82 > 79 characters)
+supervisor.py:1942:80: E501 line too long (85 > 79 characters)
+supervisor.py:1945:37: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1945:39: E251 unexpected spaces around keyword / parameter equals
+supervisor.py:1948:80: E501 line too long (121 > 79 characters)
+supervisor.py:1951:80: E501 line too long (82 > 79 characters)
+supervisor.py:1953:49: E203 whitespace before ','
+supervisor.py:1953:80: E501 line too long (80 > 79 characters)
+supervisor.py:1954:52: E203 whitespace before ','
+supervisor.py:1954:80: E501 line too long (87 > 79 characters)
+supervisor.py:1960:1: E305 expected 2 blank lines after class or function definition, found 1
+supervisor.py:1962:1: E302 expected 2 blank lines, found 1
+supervisor.py:1967:21: E203 whitespace before ','

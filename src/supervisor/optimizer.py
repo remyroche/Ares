@@ -1,11 +1,13 @@
 # src/supervisor/optimizer.py
-from datetime import datetime
-from src.utils.logger import system_logger
-from typing import Any
 import asyncio
+from datetime import datetime
+from typing import Any
+
 import pandas as pd
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.logger import system_logger
+
 
 class Optimizer:
     """
@@ -190,10 +192,14 @@ class Optimizer:
         context="global system optimization",
     )
     async def implement_global_system_optimization(
-        self, historical_pnl_data: pd.DataFrame,
-        strategy_breakdown_data: dict, checkpoint_file_path: str,
-        hpo_ranges: dict, klines_df: pd.DataFrame,
-        agg_trades_df: pd.DataFrame, futures_df: pd.DataFrame,
+        self,
+        historical_pnl_data: pd.DataFrame,  # pylint: disable=unused-argument
+        strategy_breakdown_data: dict,  # pylint: disable=unused-argument
+        checkpoint_file_path: str,  # pylint: disable=unused-argument
+        hpo_ranges: dict,  # pylint: disable=unused-argument
+        klines_df: pd.DataFrame,
+        agg_trades_df: pd.DataFrame,
+        futures_df: pd.DataFrame,
     ) -> dict:
         """
         Implement global system optimization with enhanced error handling.
@@ -279,7 +285,9 @@ class Optimizer:
             self.logger.error(f"Error calculating SR levels: {e}")
             return []
 
+
 optimizer: Optimizer | None = None
+
 
 @handle_errors(
     exceptions=(Exception,),

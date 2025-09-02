@@ -2,10 +2,10 @@
 """
 Create Correct Mock Data for Enhanced Training Manager
 
-This script creates mock data that matches what step1 actually produces
+This script creates mock data that matches what step01 actually produces
 and what the enhanced_training_manager expects for steps 1_5, 2, 3, and 4.
 
-Expected files from step1:
+Expected files from step01:
 - klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet
 - aggtrades_{exchange}_{symbol}_consolidated.parquet  
 - futures_{exchange}_{symbol}_consolidated.parquet
@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 
 def create_klines_data(symbol: str, exchange: str, timeframe: str, days: int=30):
-    """Create klines data that matches step1 output format."""
+    """Create klines data that matches step01 output format."""
     print(f"📊 Creating klines data for {exchange}_{symbol}_{timeframe}")
     
     # Calculate number of records based on timeframe
@@ -85,7 +85,7 @@ def create_klines_data(symbol: str, exchange: str, timeframe: str, days: int=30)
     return df
 
 def create_aggtrades_data(symbol: str, exchange: str, days: int=30):
-    """Create aggtrades data that matches step1 output format."""
+    """Create aggtrades data that matches step01 output format."""
     print(f"📊 Creating aggtrades data for {exchange}_{symbol}")
     
     # Generate timestamps (more frequent than klines)
@@ -124,7 +124,7 @@ def create_aggtrades_data(symbol: str, exchange: str, days: int=30):
     return df
 
 def create_futures_data(symbol: str, exchange: str, days: int=30):
-    """Create futures data that matches step1 output format (8h funding rate data)."""
+    """Create futures data that matches step01 output format (8h funding rate data)."""
     print(f"📊 Creating futures data for {exchange}_{symbol}")
     
     # Generate 8-hour intervals for funding rate data
@@ -191,7 +191,7 @@ def create_unified_data(symbol: str, exchange: str, timeframe: str, days: int=30
         return None
 
 def create_features_data(symbol: str, exchange: str, timeframe: str, days: int=30):
-    """Create features data that step2 produces."""
+    """Create features data that step02 produces."""
     print(f"📊 Creating features data for {exchange}_{symbol}_{timeframe}")
     
     # Load unified data
@@ -248,20 +248,20 @@ def create_all_mock_data(symbol: str="ETHUSDT", exchange: str="BINANCE", days: i
         print(f"\n📊 Processing timeframe: {timeframe}")
         print("-" * 40)
         
-        # 1. Create klines data (step1 output)
+        # 1. Create klines data (step01 output)
         klines_df=create_klines_data(symbol, exchange, timeframe, days)
         klines_file=f"data_cache/klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
         klines_df.to_parquet(klines_file, index=False)
         print(f"💾 Saved klines: {klines_file}")
         
-        # 2. Create aggtrades data (step1 output)
+        # 2. Create aggtrades data (step01 output)
         if timeframe== "1m":  # Only create once for aggtrades
             aggtrades_df = create_aggtrades_data(symbol, exchange, days)
             aggtrades_file=f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
             aggtrades_df.to_parquet(aggtrades_file, index=False)
             print(f"💾 Saved aggtrades: {aggtrades_file}")
         
-        # 3. Create futures data (step1 output)
+        # 3. Create futures data (step01 output)
         if timeframe== "1m":  # Only create once for futures
             futures_df = create_futures_data(symbol, exchange, days)
             futures_file=f"data_cache/futures_{exchange}_{symbol}_consolidated.parquet"
@@ -292,7 +292,7 @@ def create_all_mock_data(symbol: str="ETHUSDT", exchange: str="BINANCE", days: i
                 json.dump(config_data, f, indent=2)
             print(f"💾 Saved config: {config_file}")
         
-        # 5. Create features data (step2 output)
+        # 5. Create features data (step02 output)
         features_df=create_features_data(symbol, exchange, timeframe, days)
         if features_df is not None:
             # Split into train/val/test

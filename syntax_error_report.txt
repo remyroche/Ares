@@ -696,7 +696,7 @@ src/training/steps/analyst_training_components/regime_specific_tpsl_optimizer.py
   - IndentationError: 1
     1. IndentationError: IndentationError...
 
-src/training/steps/step1/comprehensive_gap_filler.py (1 errors):
+src/training/steps/step01/comprehensive_gap_filler.py (1 errors):
   - IndentationError: 1
     1. IndentationError: IndentationError...
 
@@ -1500,7 +1500,7 @@ src/training/steps/analyst_training_components/regime_specific_tpsl_optimizer.py
 --------------------------------------------------------------------------------
   1. Sorry: IndentationError: expected an indented block after 'if' statement on line 198 (regime_specific_tpsl_optimizer.py, line 199)
 
-src/training/steps/step1/comprehensive_gap_filler.py:
+src/training/steps/step01/comprehensive_gap_filler.py:
 ----------------------------------------------------
   1. Sorry: IndentationError: expected an indented block after 'for' statement on line 814 (comprehensive_gap_filler.py, line 815)
 

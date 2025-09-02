@@ -10,11 +10,11 @@ from src.utils.logger import system_logger
 from typing import Any
 import contextlib
 
-from src.config_optuna import get_parameter_value
 from src.utils.confidence import normalize_dual_confidence
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import error, initialization_error, missing
 from src.utils.centralized_decorators import validate_data_quality
+from kelly_criterion_fix import calculate_correct_kelly_position_size
 
 
 class PositionSizer:
@@ -132,34 +132,31 @@ class PositionSizer:
         """
         Refresh configuration from step17 optimization results.
         This method is called automatically when step17 completes.
-        
+
         Args:
             step17_results: Step17 optimization results
         """
         try:
             if "position_sizing" in step17_results:
                 position_sizing_optimization = step17_results["position_sizing"]
-                
+
                 # Update position sizing parameters
                 self.kelly_multiplier = position_sizing_optimization.get("kelly_multiplier", self.kelly_multiplier)
                 self.max_position_size = position_sizing_optimization.get("max_position_size", self.max_position_size)
                 self.min_position_size = position_sizing_optimization.get("min_position_size", self.min_position_size)
                 self.confidence_threshold = position_sizing_optimization.get("confidence_threshold", self.confidence_threshold)
-                
+
                 # Update component weights
-                self.ml_weight = position_sizing_optimization.get("ml_weight", self.ml_weight)
-                self.kelly_weight = position_sizing_optimization.get("kelly_weight", self.kelly_weight)
-                
+                # Removed: no longer updating ml_weight/kelly_weight from config
+
                 # Update additional parameters
-                self.risk_adjustment_factor = position_sizing_optimization.get("risk_adjustment_factor", self.risk_adjustment_factor)
-                self.confidence_boost_threshold = position_sizing_optimization.get("confidence_boost_threshold", self.confidence_boost_threshold)
-                self.volatility_adjustment = position_sizing_optimization.get("volatility_adjustment", self.volatility_adjustment)
-                self.market_regime_multiplier = position_sizing_optimization.get("market_regime_multiplier", self.market_regime_multiplier)
-                
+                # Removed: deprecated parameters no longer refreshed
+
                 self.logger.info("✅ Position sizer configuration refreshed from step17 results")
-                
+
         except Exception as e:
             self.logger.error(f"Error refreshing step17 configuration: {e}")
+            raise
 
     @validate_data_quality(
         required_columns=None,  # This method validates dict input, not DataFrame
@@ -209,7 +206,7 @@ class PositionSizer:
         try:
             # NEW: Extract combined confidence from Tactician multi-output predictions
             combined_confidence = ml_predictions.get("combined_confidence", 0.5)
-            
+
             # Extract ML confidence scores (for backward compatibility)
             price_target_confidences = ml_predictions.get(
                 "price_target_confidences",
@@ -293,54 +290,13 @@ class PositionSizer:
     ) -> float:
         """Calculate position size using Kelly criterion based on ML confidence scores."""
         try:
-            # Get average confidence for target levels (0.5% to 2.0%)
-            target_levels = [0.5, 1.0, 1.5, 2.0]
-            confidences = []
-
-            for level in target_levels:
-                closest_level = min(
-                    price_target_confidences.keys(),
-                    key=lambda x: abs(float(x.replace("%", "")) - level),
-                )
-                confidence = price_target_confidences.get(closest_level, 0.5)
-                confidences.append(confidence)
-
-            # Calculate average confidence
-            avg_confidence = sum(confidences) / len(confidences)
-
-            # Get average adverse risk
-            adverse_risks = []
-            for level in target_levels:
-                closest_level = min(
-                    adversarial_confidences.keys(),
-                    key=lambda x: abs(float(x.replace("%", "")) - level),
-                )
-                risk = adversarial_confidences.get(closest_level, 0.3)
-                adverse_risks.append(risk)
-
-            avg_adverse_risk = sum(adverse_risks) / len(adverse_risks)
-
-            # CORRECT Kelly criterion: f = (bp - q) / b
-            # where b = odds received, p = probability of win, q = probability of loss
-            # For our case: b = 1 (1:1 odds), so f = p - q
-            # where p = avg_confidence (probability of win)
-            # and q = avg_adverse_risk (probability of loss)
-
-            # Ensure probabilities are valid (0 <= p, q <= 1 and p + q <= 1)
-            p = max(0.0, min(1.0, avg_confidence))
-            q = max(0.0, min(1.0, avg_adverse_risk))
-
-            # If p + q > 1, normalize them
-            if p + q > 1.0:
-                total = p + q
-                p = p / total
-                q = q / total
-
-            # Calculate Kelly fraction
-            kelly_fraction = p - q
-
-            # Apply Kelly multiplier for conservative sizing
-            kelly_position_size = kelly_fraction * self.kelly_multiplier
+            kelly_position_size = calculate_correct_kelly_position_size(
+                price_target_confidences=price_target_confidences,
+                adversarial_confidences=adversarial_confidences,
+                kelly_multiplier=self.kelly_multiplier,
+                min_position_size=self.min_position_size,
+                max_position_size=self.max_position_size,
+            )
 
             # Ensure within bounds
             return max(
@@ -420,16 +376,25 @@ class PositionSizer:
     ) -> float:
         """Calculate weighted position size using Kelly criterion and ML confidence."""
         try:
-            # Calculate weighted position size
+                        # Calculate weighted position size
+            # Combine Kelly and ML sizes multiplicatively as requested
             weighted_size = (kelly_position_size * ml_position_size)
 
+            # Scale to position size range
+            weighted_size = (
+                self.min_position_size
+                + (self.max_position_size - self.min_position_size)
+                * (weighted_size / (self.max_position_size * self.max_position_size))
+            )
+
+            # Ensure within bounds
             return max(
                 self.min_position_size, min(self.max_position_size, weighted_size),
             )
 
         except Exception as e:
             self.print(error(f"Error calculating weighted position size: {e}"))
-            return kelly_position_size
+            return max(self.min_position_size, min(self.max_position_size, kelly_position_size))
 
     def _apply_position_size_modifiers(
         self,
@@ -634,6 +599,7 @@ class PositionSizer:
             self.logger.info("✅ Position sizer stopped successfully")
         except Exception as e:
             self.print(error(f"Error stopping position sizer: {e}"))
+            raise
 
     @handle_errors(
         exceptions=(Exception,),
@@ -649,6 +615,7 @@ class PositionSizer:
             self.logger.info("✅ Position sizer cleanup completed")
         except Exception as e:
             self.logger.error(f"Error cleaning up position sizer: {e}")
+            raise
 
 
 @handle_errors(

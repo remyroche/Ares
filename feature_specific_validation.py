@@ -1,14 +1,15 @@
 def enhanced_validate_features_with_type_specific_thresholds(
-    data: pd.DataFrame = dataset_name: str = "features",
-) -> Dict[str , Any]:
+    data: pd.DataFrame=dataset_name: str = "features",
+) -> Dict[str, Any]:
     """
     Enhanced validation with feature-specific thresholds
     """
-    from collections import defaultdict, import numpy as np
+    from collections import defaultdict
+import numpy as np
 
     def detect_feature_type(feature_name: str) -> str:
         """Detect feature type based on feature name patterns"""
-        feature_name_lower , feature_name.lower()
+        feature_name_lower, feature_name.lower()
 
         if any(
             pattern in feature_name_lower
@@ -32,9 +33,9 @@ def enhanced_validate_features_with_type_specific_thresholds(
             return "technical_indicators"
         return "technical_indicators"
 
-    def get_feature_thresholds(feature_type: str) -> Dict[str , float]:
+    def get_feature_thresholds(feature_type: str) -> Dict[str, float]:
         """Get thresholds for specific feature type"""
-        thresholds = {
+        thresholds={
             "wavelet_features": {
                 "missing_warning": 0.05,
                 "missing_error": 0.20,
@@ -56,9 +57,9 @@ def enhanced_validate_features_with_type_specific_thresholds(
                 "variance": 1e-6,
             },
         }
-        return thresholds.get(feature_type = thresholds["technical_indicators"])
+        return thresholds.get(feature_type=thresholds["technical_indicators"])
 
-    results = {
+    results={
         "total_issues": 0,
         "errors": 0,
         "warnings": 0,
@@ -68,21 +69,21 @@ def enhanced_validate_features_with_type_specific_thresholds(
     }
 
     for feature in data.columns:
-        feature_type = detect_feature_type(feature)
+        feature_type=detect_feature_type(feature)
         results["feature_types"][feature] = feature_type
 
-        thresholds = get_feature_thresholds(feature_type)
-        feature_data = data[feature].dropna()
+        thresholds=get_feature_thresholds(feature_type)
+        feature_data=data[feature].dropna()
 
         # Calculate statistics
-        total_rows = len(data)
-        missing_pct = data[feature].isna().sum() / total_rows if total_rows > 0 else 0
-        infinite_pct = (
+        total_rows=len(data)
+        missing_pct=data[feature].isna().sum() / total_rows if total_rows > 0 else 0
+        infinite_pct=(
             np.isinf(data[feature]).sum() / total_rows if total_rows > 0 else 0
         )
-        variance = feature_data.var() if len(feature_data) > 1 else 0
+        variance=feature_data.var() if len(feature_data) > 1 else 0
 
-        issues = []
+        issues=[]
 
         # Apply feature-specific thresholds
         if missing_pct > thresholds["missing_error"]:
@@ -109,10 +110,10 @@ def enhanced_validate_features_with_type_specific_thresholds(
 
         if issues:
             results["feature_issues"][feature] = {
-                "type": feature_type , "issues": issues,
+                "type": feature_type, "issues": issues,
                 "stats": {
-                    "missing_pct": missing_pct , "infinite_pct": infinite_pct,
-                    "variance": variance = },
+                    "missing_pct": missing_pct, "infinite_pct": infinite_pct,
+                    "variance": variance=},
             }
             results["total_issues"] += len(issues)
 

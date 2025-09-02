@@ -20,7 +20,7 @@ async def main():
         print("🚀 Running step2_feature_engineering directly...")
         
         # Run the step
-        result = await run_step(
+        result=await run_step(
             symbol="ETHUSDT",
             exchange="BINANCE", 
             output_dir="data/training",
@@ -38,5 +38,5 @@ async def main():
         import traceback
         traceback.print_exc()
 
-if __name__ == "__main__":
+if __name__== "__main__":
     asyncio.run(main())

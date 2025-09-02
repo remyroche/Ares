@@ -21,15 +21,15 @@ def _safe_read_json(path: Path) -> Dict[str, Any] | None:
 
 def check_notifications() -> None:
     """Check for bot notifications and display them"""
-    project_root = Path(__file__).parent.parent
-    notification_file = project_root / "state/ai_notification.json"
+    project_root=Path(__file__).parent.parent
+    notification_file=project_root / "state/ai_notification.json"
     status_file = project_root / "state/bot_status.json"
 
     print("🔍 Checking for ARES Bot notifications...")
 
     # Check if notification file exists
     if notification_file.exists():
-        notification = _safe_read_json(notification_file) or {}
+        notification=_safe_read_json(notification_file) or {}
 
         print("\n🚨 NOTIFICATION RECEIVED:")
         print(f"   Time: {notification.get('timestamp', 'Unknown')}")
@@ -46,7 +46,7 @@ def check_notifications() -> None:
 
         # Mark as read by renaming the file
         try:
-            read_file = notification_file.parent / f"{notification_file.stem}.read.json"
+            read_file=notification_file.parent / f"{notification_file.stem}.read.json"
             notification_file.rename(read_file)
             print(f"   ✅ Notification marked as read: {read_file}")
         except Exception as e:  # noqa: BLE001
@@ -57,7 +57,7 @@ def check_notifications() -> None:
 
     # Check current bot status
     if status_file.exists():
-        status = _safe_read_json(status_file) or {}
+        status=_safe_read_json(status_file) or {}
 
         print("\n📊 Current Bot Status:")
         print(f"   Running: {'✅ Yes' if status.get('running') else '❌ No'}")
@@ -74,8 +74,8 @@ def check_notifications() -> None:
 
 def check_logs_for_errors() -> None:
     """Check recent log files for errors"""
-    project_root = Path(__file__).parent.parent
-    log_dir = project_root / "logs"
+    project_root=Path(__file__).parent.parent
+    log_dir=project_root / "logs"
 
     if not log_dir.exists():
         print(missing("Logs directory not found"))
@@ -86,7 +86,7 @@ def check_logs_for_errors() -> None:
     for log_file in log_dir.glob("*.log"):
         try:
             with open(log_file, "r", encoding="utf-8") as f:
-                lines = f.readlines()
+                lines=f.readlines()
             # Check last 20 lines for errors
             error_lines: List[str] = []
             for line in lines[-20:]:
@@ -111,6 +111,6 @@ def check_logs_for_errors() -> None:
             print(warning(f"Error reading {log_file}: {e}"))
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     check_notifications()
     check_logs_for_errors()

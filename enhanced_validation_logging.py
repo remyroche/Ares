@@ -9,32 +9,33 @@ def create_enhanced_validation_wrapper() -> str:
     return '''
 # Enhanced validation wrapper
 
-def enhanced_validate_features(data: pd.DataFrame, dataset_name: str = "features") -> Dict[str, Any]:
+def enhanced_validate_features(data: pd.DataFrame, dataset_name: str="features") -> Dict[str, Any]:
     """Enhanced validation with detailed logging"""
 
     from datetime import datetime
-from src.utils.data_quality_validator import validate_features, import json
+from src.utils.data_quality_validator import validate_features
+import json
 from collections import defaultdict
-from typing import Dict, List , Any
+from typing import Dict, List, Any
 import argparse
 import json
 
 import pandas as pd
 
     # Run original validation
-    results = validate_features(data, dataset_name)
+    results=validate_features(data, dataset_name)
 
     # Enhanced logging
-    detailed_report = {
+    detailed_report={
         "timestamp": datetime.now().isoformat(),
-        "dataset_name": dataset_name , "data_shape": data.shape,
+        "dataset_name": dataset_name, "data_shape": data.shape,
         "total_features": len(data.columns),
         "validation_summary": results["summary"],
         "detailed_issues": {}
     }
 
     # Categorize issues by type
-    issue_categories = {}
+    issue_categories={}
     for issue in results["issues"]:
         issue_type = issue.get("issue_type", "unknown")
         if issue_type not in issue_categories:
@@ -44,7 +45,7 @@ import pandas as pd
     detailed_report["issue_categories"] = issue_categories
 
     # Feature-specific analysis
-    feature_analysis = {}
+    feature_analysis={}
     for col in data.columns:
         series = data[col]
         analysis = {
@@ -53,7 +54,7 @@ import pandas as pd
             "missing_percentage": (series.isna().sum() / len(series)) * 100,
             "unique_count": series.nunique(),
             "most_common_value": series.mode().iloc[0] if len(series.mode()) > 0 else None,
-            "most_common_count": (series == series.mode().iloc[0]).sum() if len(series.mode()) > 0 else 0
+            "most_common_count": (series== series.mode().iloc[0]).sum() if len(series.mode()) > 0 else 0
         }
 
         if pd.api.types.is_numeric_dtype(series.dtype):
@@ -71,17 +72,17 @@ import pandas as pd
     detailed_report["feature_analysis"] = feature_analysis
 
     # Save detailed report
-    report_file = f"validation_detailed_report_{dataset_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    with open(report_file = 'w') as f:
-        json.dump(detailed_report = f, indent=2, default=str)
+    report_file=f"validation_detailed_report_{dataset_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    with open(report_file, 'w') as f:
+        json.dump(detailed_report, f, indent=2, default=str)
 
     print(f"📊 Detailed validation report saved to: {report_file}")
 
     return results
 
 # Usage in step1_7_hmm_regime_discovery.py:
-# Replace: validation_results = validate_features(features_df = f"features_{tf}")
-# With: validation_results = enhanced_validate_features(features_df = f"features_{tf}")
+# Replace: validation_results=validate_features(features_df = f"features_{tf}")
+# With: validation_results=enhanced_validate_features(features_df = f"features_{tf}")
 '''
 
 
@@ -94,13 +95,13 @@ Feature Analysis Script
 Analyzes detailed validation reports to provide actionable insights
 """
 
-def analyze_validation_report(report_file: str) -> Dict[str , Any]:
+def analyze_validation_report(report_file: str) -> Dict[str, Any]:
     """Analyze a detailed validation report"""
 
-    with open(report_file = 'r') as f:
-        report = json.load(f)
+    with open(report_file, 'r') as f:
+        report=json.load(f)
 
-    analysis = {
+    analysis={
         "summary": report["validation_summary"],
         "issue_breakdown": {},
         "problematic_features": {},
@@ -108,7 +109,7 @@ def analyze_validation_report(report_file: str) -> Dict[str , Any]:
     }
 
     # Analyze issues by category
-    for issue_type , issues in report["issue_categories"].items():
+    for issue_type, issues in report["issue_categories"].items():
         analysis["issue_breakdown"][issue_type] = {
             "count": len(issues),
             "features": [issue["feature"] for issue in issues],
@@ -116,11 +117,11 @@ def analyze_validation_report(report_file: str) -> Dict[str , Any]:
         }
 
     # Identify problematic features
-    feature_analysis = report["feature_analysis"]
+    feature_analysis=report["feature_analysis"]
     problematic = defaultdict(list)
 
-    for feature , analysis_data in feature_analysis.items():
-        issues = []
+    for feature, analysis_data in feature_analysis.items():
+        issues=[]
 
         # Check missing values
         if analysis_data["missing_percentage"] > 50:
@@ -130,7 +131,7 @@ def analyze_validation_report(report_file: str) -> Dict[str , Any]:
 
         # Check infinite values
         if "infinite_count" in analysis_data and analysis_data["infinite_count"] > 0:
-            inf_pct = (analysis_data["infinite_count"] / analysis_data["total_values"]) * 100
+            inf_pct=(analysis_data["infinite_count"] / analysis_data["total_values"]) * 100
             if inf_pct > 5:
                 issues.append(f"ERROR: {inf_pct:.1f}% infinite values")
             elif inf_pct > 1:
@@ -179,7 +180,7 @@ def analyze_validation_report(report_file: str) -> Dict[str , Any]:
 
     return analysis
 
-def print_analysis(analysis: Dict[str = Any]):
+def print_analysis(analysis: Dict[str=Any]):
     """Print the analysis results"""
 
     print("=" * 80)
@@ -187,7 +188,7 @@ def print_analysis(analysis: Dict[str = Any]):
     print("=" * 80)
 
     # Summary
-    summary = analysis["summary"]
+    summary=analysis["summary"]
     print(f"\\n📊 VALIDATION SUMMARY:")
     print(f"  Total Issues: {summary['total_issues']}")
     print(f"  Critical: {summary['critical_issues']}")
@@ -197,7 +198,7 @@ def print_analysis(analysis: Dict[str = Any]):
 
     # Issue breakdown
     print(f"\\n🔍 ISSUE BREAKDOWN:")
-    for issue_type , details in analysis["issue_breakdown"].items():
+    for issue_type, details in analysis["issue_breakdown"].items():
         print(f"  {issue_type}: {details['count']} issues")
         if details['count'] <= 10:
             for feature in details['features']:
@@ -207,7 +208,7 @@ def print_analysis(analysis: Dict[str = Any]):
 
     # Problematic features
     print(f"\\n⚠️ PROBLEMATIC FEATURES:")
-    for feature , issues in analysis["problematic_features"].items():
+    for feature, issues in analysis["problematic_features"].items():
         print(f"  {feature}: {', '.join(issues)}")
 
     # Recommendations
@@ -217,15 +218,15 @@ def print_analysis(analysis: Dict[str = Any]):
         print(f"    Affects {rec['affected_features']} features")
 
 def main():
-    parser = argparse.ArgumentParser(description="Analyze detailed validation report")
+    parser=argparse.ArgumentParser(description="Analyze detailed validation report")
     parser.add_argument("report_file", help="Path to the detailed validation report JSON file")
 
-    args = parser.parse_args()
+    args=parser.parse_args()
 
-    analysis = analyze_validation_report(args.report_file)
+    analysis=analyze_validation_report(args.report_file)
     print_analysis(analysis)
 
-if __name__ == "__main__":
+if __name__== "__main__":
     main()
 '''
 
@@ -233,16 +234,16 @@ if __name__ == "__main__":
 def main() -> None:
     """Create enhanced validation tools."""
     # Create enhanced validation wrapper
-    wrapper_code = create_enhanced_validation_wrapper()
+    wrapper_code=create_enhanced_validation_wrapper()
     with open("enhanced_validation_wrapper.py", "w") as f:
         f.write(wrapper_code)
 
     # Create analysis script
-    analysis_script = create_feature_analysis_script()
+    analysis_script=create_feature_analysis_script()
     with open("feature_analysis_script.py", "w") as f:
         f.write(analysis_script)
 
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     main()

@@ -24,11 +24,11 @@ import sys
 import pandas as pd
 
 # Add project root to path
-project_root = Path(__file__).parent.parent
+project_root=Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
-logger = system_logger.getChild("MultiTimeframeHMMTraining")
+logger=system_logger.getChild("MultiTimeframeHMMTraining")
 
 
 @handle_errors(default_return=pd.DataFrame(), context="load_timeframe_data")
@@ -36,14 +36,14 @@ logger = system_logger.getChild("MultiTimeframeHMMTraining")
 def load_timeframe_data(symbol: str, exchange: str, timeframe: str, data_dir: str) -> pd.DataFrame:
     """Load HMM cluster data for a specific timeframe."""
     # Look for HMM composite cluster data
-    hmm_data_path = os.path.join(
+    hmm_data_path=os.path.join(
         data_dir,
         f"{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet",
     )
 
     if os.path.exists(hmm_data_path):
         logger.info(f"📂 Loading HMM data from {hmm_data_path}")
-        data = pd.read_parquet(hmm_data_path)
+        data=pd.read_parquet(hmm_data_path)
         logger.info(f"📊 Loaded {len(data)} rows for {timeframe}")
         return data
 
@@ -53,7 +53,7 @@ def load_timeframe_data(symbol: str, exchange: str, timeframe: str, data_dir: st
 
 def create_ensemble_config() -> EnsembleConfig:
     """Create ensemble configuration with specified timeframes."""
-    timeframes = [
+    timeframes=[
         TimeframeConfig(
             timeframe="1h",
             weight=0.25,  # Equal weight initially
@@ -105,8 +105,8 @@ def validate_data_quality(timeframe_data: Dict[str, pd.DataFrame]) -> bool:
             return False
 
         # Check for required columns
-        required_cols = ["close", "volume"]
-        missing_cols = [col for col in required_cols if col not in data.columns]
+        required_cols=["close", "volume"]
+        missing_cols=[col for col in required_cols if col not in data.columns]
         if missing_cols:
             logger.error(
                 f"❌ Missing required columns for {timeframe}: {missing_cols}",
@@ -114,7 +114,7 @@ def validate_data_quality(timeframe_data: Dict[str, pd.DataFrame]) -> bool:
             return False
 
         # Check for cluster columns
-        cluster_cols = [col for col in data.columns if "cluster" in col.lower()]
+        cluster_cols=[col for col in data.columns if "cluster" in col.lower()]
         if not cluster_cols:
             logger.warning(f"⚠️ No cluster columns found for {timeframe}")
 
@@ -132,7 +132,7 @@ def validate_data_quality(timeframe_data: Dict[str, pd.DataFrame]) -> bool:
 @handle_errors(default_return=False, context="main_training")
 def main() -> bool:
     """Main training function."""
-    parser = argparse.ArgumentParser(description="Train Multi-Timeframe HMM Ensemble")
+    parser=argparse.ArgumentParser(description="Train Multi-Timeframe HMM Ensemble")
     parser.add_argument(
         "--symbol",
         type=str,
@@ -178,7 +178,7 @@ def main() -> bool:
         help="Minimum confidence threshold for predictions",
     )
 
-    args = parser.parse_args()
+    args=parser.parse_args()
 
     logger.info("🚀 Starting Multi-Timeframe HMM Ensemble Training")
     logger.info(f"📊 Symbol: {args.symbol}")
@@ -188,14 +188,14 @@ def main() -> bool:
     logger.info(f"🧠 Meta-learner: {args.meta_learner}")
 
     # Parse timeframes
-    timeframes = [tf.strip() for tf in args.timeframes.split(",") if tf.strip()]
+    timeframes=[tf.strip() for tf in args.timeframes.split(",") if tf.strip()]
     logger.info(f"📋 Processing timeframes: {timeframes}")
 
     # Load data for all timeframes
     timeframe_data: Dict[str, pd.DataFrame] = {}
     for timeframe in timeframes:
         logger.info(f"📂 Loading data for {timeframe}...")
-        data = load_timeframe_data(
+        data=load_timeframe_data(
             symbol=args.symbol,
             exchange=args.exchange,
             timeframe=timeframe,
@@ -216,18 +216,18 @@ def main() -> bool:
         return False
 
     # Create ensemble configuration
-    config = create_ensemble_config()
-    config.ensemble_method = args.ensemble_method
+    config=create_ensemble_config()
+    config.ensemble_method=args.ensemble_method
     config.meta_learner_type = args.meta_learner
     config.enable_dynamic_weighting = args.enable_dynamic_weighting
     config.min_confidence_threshold = args.min_confidence
 
     # Update timeframe weights to match loaded data
     available_timeframes: List[str] = list(timeframe_data.keys())
-    equal_weight = 1.0 / len(available_timeframes)
+    equal_weight=1.0 / len(available_timeframes)
     for tf_config in config.timeframes:
         if tf_config.timeframe in available_timeframes:
-            tf_config.weight = equal_weight
+            tf_config.weight=equal_weight
         else:
             tf_config.weight = 0.0
 
@@ -236,10 +236,10 @@ def main() -> bool:
     )
 
     # Create and train ensemble
-    ensemble = MultiTimeframeHMMEnsemble(config, args.symbol, args.exchange)
+    ensemble=MultiTimeframeHMMEnsemble(config, args.symbol, args.exchange)
 
     logger.info("🎯 Training multi-timeframe HMM ensemble...")
-    success = ensemble.train_ensemble(timeframe_data)
+    success=ensemble.train_ensemble(timeframe_data)
 
     if success:
         logger.info(
@@ -247,7 +247,7 @@ def main() -> bool:
         )
 
         # Get ensemble status
-        status = ensemble.get_ensemble_status()
+        status=ensemble.get_ensemble_status()
         logger.info("📊 Ensemble Status:")
         logger.info(f"   - Trained: {status['trained']}")
         logger.info(f"   - Timeframes: {status['timeframes']}")
@@ -265,7 +265,7 @@ def main() -> bool:
                 test_data[tf] = data.tail(10)  # Use last 10 rows for testing
 
         if test_data:
-            prediction = ensemble.predict(test_data)
+            prediction=ensemble.predict(test_data)
             logger.info(
                 f"🎯 Test prediction: {prediction.get('prediction')} (confidence: {prediction.get('confidence', 0.0):.3f})",
             )
@@ -279,6 +279,6 @@ def main() -> bool:
     return False
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     success = main()
     sys.exit(0 if success else 1)

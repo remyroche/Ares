@@ -11,7 +11,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
-logger = logging.getLogger(__name__)
+logger=logging.getLogger(__name__)
 
 
 def analyze_feature_pipeline_issue():
@@ -34,23 +34,23 @@ def analyze_feature_pipeline_issue():
 
     print("\n🔍 ROOT CAUSE ANALYSIS:")
     print(
-        "   1. Autoencoder is designed to work with ENGINEERED features = not raw OHLCV data",
+        "   1. Autoencoder is designed to work with ENGINEERED features=not raw OHLCV data",
     )
     print(
-        "   2. Raw OHLCV columns (open = high, low = close, volume) are correctly filtered out",
+        "   2. Raw OHLCV columns (open=high, low=close, volume) are correctly filtered out",
     )
     print(
-        "   3. Expected: Technical indicators = momentum features, volatility features = etc.",
+        "   3. Expected: Technical indicators=momentum features, volatility features=etc.",
     )
     print("   4. Actual: Only cluster features are being passed to autoencoder")
     print("   5. This indicates a data pipeline issue upstream")
 
     print("\n📊 EXPECTED FEATURE TYPES:")
-    print("   ✅ Technical Indicators: RSI = MACD, Bollinger Bands = ATR, etc.")
-    print("   ✅ Momentum Features: Price momentum = volume momentum, etc.")
-    print("   ✅ Volatility Features: Realized volatility = volatility regimes, etc.")
-    print("   ✅ Order Flow Features: OBV = volume ratios, etc.")
-    print("   ✅ Time-based Features: Hour sin/cos = day of week, etc.")
+    print("   ✅ Technical Indicators: RSI=MACD, Bollinger Bands=ATR, etc.")
+    print("   ✅ Momentum Features: Price momentum=volume momentum, etc.")
+    print("   ✅ Volatility Features: Realized volatility=volatility regimes, etc.")
+    print("   ✅ Order Flow Features: OBV=volume ratios, etc.")
+    print("   ✅ Time-based Features: Hour sin/cos=day of week, etc.")
     print(
         "   ❌ Cluster Features: intensity_cluster_*, hmm_composite_cluster_id (should be minimal)",
     )
@@ -59,7 +59,7 @@ def analyze_feature_pipeline_issue():
     print(
         "   The feature engineering pipeline is not generating the expected engineered features.",
     )
-    print("   Only cluster features are reaching the autoencoder = which causes:")
+    print("   Only cluster features are reaching the autoencoder=which causes:")
     print("   - 0 price features found (no raw OHLCV data)")
     print("   - 0 volume features found (no raw OHLCV data)")
     print("   - Low variance in cluster features (categorical nature)")
@@ -94,7 +94,7 @@ def check_expected_features():
     """
     print("\n📋 EXPECTED FEATURE CATEGORIES:")
 
-    expected_features = {
+    expected_features={
         "Technical Indicators": [
             "RSI_14",
             "MACD_12_26_9",
@@ -169,14 +169,14 @@ def check_expected_features():
         ],
     }
 
-    for category , features in expected_features.items():
+    for category, features in expected_features.items():
         print(f"   {category}: {len(features)} features")
         if len(features) <= 8:
             print(f"      {', '.join(features)}")
         else:
             print(f"      {', '.join(features[:8])}... (and {len(features)-8} more)")
 
-    total_expected = sum(len(features) for features in expected_features.values())
+    total_expected=sum(len(features) for features in expected_features.values())
     print(f"\n   Total expected engineered features: {total_expected}")
 
 
@@ -193,5 +193,5 @@ def main():
     logger.info("📝 Review the output above to understand the issue and next steps.")
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     main()

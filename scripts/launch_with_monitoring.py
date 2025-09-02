@@ -70,5 +70,5 @@ def launch_bot_with_monitoring():
             return
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     launch_bot_with_monitoring()

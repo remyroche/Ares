@@ -11,7 +11,7 @@ def consolidate_aggtrades():
     print("🔄 Consolidating aggtrades files...")
 
     # Find all aggtrades parquet files
-    pattern = "data_cache/aggtrades_BINANCE_ETHUSDT_*.parquet"
+    pattern="data_cache/aggtrades_BINANCE_ETHUSDT_*.parquet"
     files = glob.glob(pattern)
 
     if not files:
@@ -21,11 +21,11 @@ def consolidate_aggtrades():
     print(f"📁 Found {len(files)} aggtrades files")
 
     # Read and concatenate all files
-    dfs = []
+    dfs=[]
     for file in sorted(files):
         try:
             print(f"📖 Reading {file}...")
-            df = pd.read_parquet(file)
+            df=pd.read_parquet(file)
             dfs.append(df)
         except Exception as e:
             print(f"⚠️ Error reading {file}: {e}")
@@ -37,17 +37,17 @@ def consolidate_aggtrades():
 
     # Concatenate all dataframes
     print("🔗 Concatenating dataframes...")
-    consolidated_df = pd.concat(dfs, ignore_index=True)
+    consolidated_df=pd.concat(dfs, ignore_index=True)
 
     # Sort by timestamp if it exists
     if 'timestamp' in consolidated_df.columns:
-        consolidated_df = consolidated_df.sort_values('timestamp')
+        consolidated_df=consolidated_df.sort_values('timestamp')
 
     # Remove duplicates if any
-    consolidated_df = consolidated_df.drop_duplicates()
+    consolidated_df=consolidated_df.drop_duplicates()
 
     # Save consolidated file
-    output_file = "data_cache/aggtrades_BINANCE_ETHUSDT_consolidated.parquet"
+    output_file="data_cache/aggtrades_BINANCE_ETHUSDT_consolidated.parquet"
     print(f"💾 Saving consolidated file to {output_file}...")
     consolidated_df.to_parquet(output_file, index=False)
 
@@ -55,5 +55,5 @@ def consolidate_aggtrades():
     return True
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     consolidate_aggtrades()

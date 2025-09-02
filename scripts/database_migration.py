@@ -28,7 +28,7 @@ from typing import Any, Dict, List, Optional
 import sys
 
 # Add the project root to the Python path
-project_root = Path(__file__).parent.parent
+project_root=Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.database.migration_utils import DatabaseMigrationUtils  # noqa: E402
@@ -37,21 +37,21 @@ from src.utils.logger import setup_logging, system_logger  # noqa: E402
 from src.utils.warning_symbols import failed, warning  # noqa: E402
 
 
-async def export_database(db_path: str = "data/ares_local_db.sqlite") -> None:
+async def export_database(db_path: str="data/ares_local_db.sqlite") -> None:
     """Export database for trading computer."""
-    logger = system_logger.getChild("MigrationScript")
+    logger=system_logger.getChild("MigrationScript")
     db_manager: Optional[SQLiteManager] = None
 
     try:
         # Initialize database manager
-        db_manager = SQLiteManager(db_path)
+        db_manager=SQLiteManager(db_path)
         await db_manager.initialize()
 
         # Create migration utils
-        migration_utils = DatabaseMigrationUtils(db_manager)
+        migration_utils=DatabaseMigrationUtils(db_manager)
 
         # Export for trading
-        export_path = await migration_utils.export_for_trading()
+        export_path=await migration_utils.export_for_trading()
 
         if export_path:
             print("✅ Database exported successfully!")
@@ -60,7 +60,7 @@ async def export_database(db_path: str = "data/ares_local_db.sqlite") -> None:
 
             # Calculate checksum
             with open(export_path, "rb") as f:
-                checksum = hashlib.md5(f.read()).hexdigest()
+                checksum=hashlib.md5(f.read()).hexdigest()
             print(f"🔍 Checksum: {checksum}")
             print("\n📋 Next steps:")
             print("   1. Copy the export file to your trading computer")
@@ -81,18 +81,18 @@ async def export_database(db_path: str = "data/ares_local_db.sqlite") -> None:
                 logger.warning("Error closing DB manager after export")
 
 
-async def import_database(import_path: str, db_path: str = "data/ares_local_db.sqlite") -> None:
+async def import_database(import_path: str, db_path: str="data/ares_local_db.sqlite") -> None:
     """Import database on trading computer."""
-    logger = system_logger.getChild("MigrationScript")
+    logger=system_logger.getChild("MigrationScript")
     db_manager: Optional[SQLiteManager] = None
 
     try:
         # Validate the import file first
-        db_manager = SQLiteManager(db_path)
+        db_manager=SQLiteManager(db_path)
         await db_manager.initialize()
 
-        migration_utils = DatabaseMigrationUtils(db_manager)
-        validation_result = await migration_utils.validate_migration_file(import_path)
+        migration_utils=DatabaseMigrationUtils(db_manager)
+        validation_result=await migration_utils.validate_migration_file(import_path)
 
         if not validation_result["valid"]:
             print(failed("Import file validation failed!"))
@@ -104,7 +104,7 @@ async def import_database(import_path: str, db_path: str = "data/ares_local_db.s
         print("✅ Import file validation passed!")
 
         # Import the database
-        success = await migration_utils.import_for_trading(import_path)
+        success=await migration_utils.import_for_trading(import_path)
 
         if success:
             print("✅ Database imported successfully!")
@@ -127,15 +127,15 @@ async def import_database(import_path: str, db_path: str = "data/ares_local_db.s
 
 async def validate_file(file_path: str) -> None:
     """Validate a migration file."""
-    logger = system_logger.getChild("MigrationScript")
+    logger=system_logger.getChild("MigrationScript")
     db_manager: Optional[SQLiteManager] = None
 
     try:
-        db_manager = SQLiteManager("data/ares_local_db.sqlite")
+        db_manager=SQLiteManager("data/ares_local_db.sqlite")
         await db_manager.initialize()
 
-        migration_utils = DatabaseMigrationUtils(db_manager)
-        validation_result = await migration_utils.validate_migration_file(file_path)
+        migration_utils=DatabaseMigrationUtils(db_manager)
+        validation_result=await migration_utils.validate_migration_file(file_path)
 
         print("🔍 File Validation Results:")
         print(f"   File exists: {'✅' if validation_result['file_exists'] else '❌'}")
@@ -172,16 +172,16 @@ async def validate_file(file_path: str) -> None:
                 logger.warning("Error closing DB manager after validation")
 
 
-async def create_backup(db_path: str = "data/ares_local_db.sqlite") -> None:
+async def create_backup(db_path: str="data/ares_local_db.sqlite") -> None:
     """Create a manual backup of the database."""
-    logger = system_logger.getChild("MigrationScript")
+    logger=system_logger.getChild("MigrationScript")
     db_manager: Optional[SQLiteManager] = None
 
     try:
-        db_manager = SQLiteManager(db_path)
+        db_manager=SQLiteManager(db_path)
         await db_manager.initialize()
 
-        backup_path = await db_manager.create_backup()
+        backup_path=await db_manager.create_backup()
 
         if backup_path:
             print("✅ Backup created successfully!")
@@ -201,17 +201,17 @@ async def create_backup(db_path: str = "data/ares_local_db.sqlite") -> None:
                 logger.warning("Error closing DB manager after backup")
 
 
-async def list_migrations(db_path: str = "data/ares_local_db.sqlite") -> None:
+async def list_migrations(db_path: str="data/ares_local_db.sqlite") -> None:
     """List all available migrations."""
-    logger = system_logger.getChild("MigrationScript")
+    logger=system_logger.getChild("MigrationScript")
     db_manager: Optional[SQLiteManager] = None
 
     try:
-        db_manager = SQLiteManager(db_path)
+        db_manager=SQLiteManager(db_path)
         await db_manager.initialize()
 
-        migration_utils = DatabaseMigrationUtils(db_manager)
-        migrations = await migration_utils.list_migrations()
+        migration_utils=DatabaseMigrationUtils(db_manager)
+        migrations=await migration_utils.list_migrations()
 
         if not migrations:
             print("📋 No migrations found.")
@@ -221,11 +221,11 @@ async def list_migrations(db_path: str = "data/ares_local_db.sqlite") -> None:
         print("-" * 80)
 
         for migration in migrations:
-            migration_id = migration.get("migration_id", "Unknown")
-            migration_type = migration.get("migration_type", "Unknown")
-            status = migration.get("status", "Unknown")
-            created_at = migration.get("created_at", "Unknown")
-            file_size = migration.get("file_size", 0)
+            migration_id=migration.get("migration_id", "Unknown")
+            migration_type=migration.get("migration_type", "Unknown")
+            status=migration.get("status", "Unknown")
+            created_at=migration.get("created_at", "Unknown")
+            file_size=migration.get("file_size", 0)
 
             print(f"🆔 ID: {migration_id}")
             print(f"📝 Type: {migration_type}")
@@ -245,16 +245,16 @@ async def list_migrations(db_path: str = "data/ares_local_db.sqlite") -> None:
                 logger.warning("Error closing DB manager after listing migrations")
 
 
-async def cleanup_migrations(db_path: str = "data/ares_local_db.sqlite") -> None:
+async def cleanup_migrations(db_path: str="data/ares_local_db.sqlite") -> None:
     """Clean up old migrations."""
-    logger = system_logger.getChild("MigrationScript")
+    logger=system_logger.getChild("MigrationScript")
     db_manager: Optional[SQLiteManager] = None
 
     try:
-        db_manager = SQLiteManager(db_path)
+        db_manager=SQLiteManager(db_path)
         await db_manager.initialize()
 
-        migration_utils = DatabaseMigrationUtils(db_manager)
+        migration_utils=DatabaseMigrationUtils(db_manager)
         await migration_utils.cleanup_old_migrations()
 
         print("✅ Cleanup completed!")
@@ -306,38 +306,38 @@ async def main() -> None:
         print_usage()
         sys.exit(1)
 
-    command = sys.argv[1]
+    command=sys.argv[1]
 
     if command == "export":
         db_path = sys.argv[2] if len(sys.argv) > 2 else "data/ares_local_db.sqlite"
         await export_database(db_path)
 
-    elif command == "import":
+    elif command== "import":
         if len(sys.argv) < 3:
             print(warning("Import path required"))
             print_usage()
             sys.exit(1)
-        import_path = sys.argv[2]
+        import_path=sys.argv[2]
         db_path = sys.argv[3] if len(sys.argv) > 3 else "data/ares_local_db.sqlite"
         await import_database(import_path, db_path)
 
-    elif command == "validate":
+    elif command== "validate":
         if len(sys.argv) < 3:
             print(warning("File path required"))
             print_usage()
             sys.exit(1)
-        file_path = sys.argv[2]
+        file_path=sys.argv[2]
         await validate_file(file_path)
 
-    elif command == "backup":
+    elif command== "backup":
         db_path = sys.argv[2] if len(sys.argv) > 2 else "data/ares_local_db.sqlite"
         await create_backup(db_path)
 
-    elif command == "list-migrations":
+    elif command== "list-migrations":
         db_path = sys.argv[2] if len(sys.argv) > 2 else "data/ares_local_db.sqlite"
         await list_migrations(db_path)
 
-    elif command == "cleanup":
+    elif command== "cleanup":
         db_path = sys.argv[2] if len(sys.argv) > 2 else "data/ares_local_db.sqlite"
         await cleanup_migrations(db_path)
 
@@ -347,5 +347,5 @@ async def main() -> None:
         sys.exit(1)
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     asyncio.run(main())

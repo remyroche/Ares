@@ -20,13 +20,13 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
-logger = logging.getLogger(__name__)
+logger=logging.getLogger(__name__)
 
 
 class ScanType(Enum):
     """Enumeration of available scan types"""
 
-    FORMATTING = "formatting"
+    FORMATTING="formatting"
     LINTING = "linting"
     TYPE_CHECKING = "type_checking"
     COMPLEXITY = "complexity"
@@ -122,13 +122,13 @@ class ScanManager:
             ),
         }
 
-    def run_scan(self, scan_type: str, verbose: bool = False) -> bool:
+    def run_scan(self, scan_type: str, verbose: bool=False) -> bool:
         """Run a specific scan"""
         if scan_type not in self.features:
             print(error(f"Unknown scan type: {scan_type}"))
             return False
 
-        feature = self.features[scan_type]
+        feature=self.features[scan_type]
 
         if not feature.enabled:
             print(warning(f"Feature '{feature.name}' is disabled"))
@@ -143,7 +143,7 @@ class ScanManager:
             print("-" * 50)
 
         try:
-            result = subprocess.run(
+            result=subprocess.run(
                 feature.command.split(),
                 capture_output=True,
                 text=True,
@@ -156,7 +156,7 @@ class ScanManager:
             if result.stderr:
                 print(result.stderr, file=sys.stderr)
 
-            if result.returncode == 0:
+            if result.returncode== 0:
                 logger.info(f"✓ {feature.name} completed successfully")
                 return True
             if feature.ignore_errors:
@@ -178,9 +178,9 @@ class ScanManager:
             print(failed(f"✗ {feature.name} failed with error: {e}"))
             return False
 
-    def run_all_scans(self, verbose: bool = False) -> dict[str, bool]:
+    def run_all_scans(self, verbose: bool=False) -> dict[str, bool]:
         """Run all enabled scans and return results"""
-        results = {}
+        results={}
 
         logger.info("Starting comprehensive code analysis...")
 
@@ -195,7 +195,7 @@ class ScanManager:
     def enable_feature(self, scan_type: str) -> bool:
         """Enable a specific feature"""
         if scan_type in self.features:
-            self.features[scan_type].enabled = True
+            self.features[scan_type].enabled=True
             logger.info(f"Enabled feature: {self.features[scan_type].name}")
             return True
         print(error(f"Unknown feature: {scan_type}"))
@@ -204,7 +204,7 @@ class ScanManager:
     def disable_feature(self, scan_type: str) -> bool:
         """Disable a specific feature"""
         if scan_type in self.features:
-            self.features[scan_type].enabled = False
+            self.features[scan_type].enabled=False
             logger.info(f"Disabled feature: {self.features[scan_type].name}")
             return True
         print(error(f"Unknown feature: {scan_type}"))
@@ -219,16 +219,16 @@ class ScanManager:
         print("\nAvailable Code Analysis Features:")
         print("=" * 50)
         for scan_type, feature in self.features.items():
-            status = "✓ Enabled" if feature.enabled else "✗ Disabled"
+            status="✓ Enabled" if feature.enabled else "✗ Disabled"
             print(f"{scan_type:20} {status}")
             print(f"{'':20} {feature.description}")
             print()
 
     def get_summary(self, results: dict[str, bool]) -> str:
         """Generate a summary of scan results"""
-        total = len(results)
-        passed = sum(1 for result in results.values() if result)
-        failed = total - passed
+        total=len(results)
+        passed=sum(1 for result in results.values() if result)
+        failed=total - passed
 
         summary = f"\nScan Summary:\n"
         summary += f"Total scans: {total}\n"
@@ -247,7 +247,7 @@ class ScanManager:
 
 def main():
     """Main entry point"""
-    parser = argparse.ArgumentParser(
+    parser=argparse.ArgumentParser(
         description="Run comprehensive code analysis scans"
     )
     parser.add_argument(
@@ -275,9 +275,9 @@ def main():
         help="Disable a specific feature",
     )
 
-    args = parser.parse_args()
+    args=parser.parse_args()
 
-    scan_manager = ScanManager()
+    scan_manager=ScanManager()
 
     # Handle list command
     if args.list:
@@ -297,11 +297,11 @@ def main():
 
     # Run scans
     if args.scan_type:
-        if args.scan_type == ScanType.ALL.value:
+        if args.scan_type== ScanType.ALL.value:
             results = scan_manager.run_all_scans(args.verbose)
         else:
-            success = scan_manager.run_scan(args.scan_type, args.verbose)
-            results = {args.scan_type: success}
+            success=scan_manager.run_scan(args.scan_type, args.verbose)
+            results={args.scan_type: success}
     else:
         # Default to running all scans
         results = scan_manager.run_all_scans(args.verbose)
@@ -318,5 +318,5 @@ def main():
         sys.exit(1)
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     main()

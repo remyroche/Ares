@@ -36,8 +36,8 @@ class EnhancedHMMRegimeOptimizer:
     """Enhanced HMM Regime Optimizer with advanced features."""
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        self.config = config or self._get_default_config()
-        self.study = None
+        self.config=config or self._get_default_config()
+        self.study=None
         self.best_params = {}
         self.best_score = -np.inf
         self.optimization_history = []
@@ -75,8 +75,8 @@ class EnhancedHMMRegimeOptimizer:
         }
     
     def optimize_parallel(self, data: pd.DataFrame, feature_columns: List[str], 
-                         market_condition_columns: List[str], n_trials: int = 100,
-                         timeout: Optional[int] = None, study_name: str = "enhanced_optimization") -> Dict[str, Any]:
+                         market_condition_columns: List[str], n_trials: int=100,
+                         timeout: Optional[int] = None, study_name: str="enhanced_optimization") -> Dict[str, Any]:
         """Run parallel optimization with advanced features."""
         
         print(f"🚀 Starting Enhanced HMM Regime Optimization...")
@@ -87,13 +87,13 @@ class EnhancedHMMRegimeOptimizer:
         print(f"⚡ Parallel processing: {self.config['optimization_settings']['parallel_trials']}")
         
         # Pre-process data for optimization
-        processed_data = self._preprocess_data_enhanced(data, feature_columns, market_condition_columns)
+        processed_data=self._preprocess_data_enhanced(data, feature_columns, market_condition_columns)
         
         # Create enhanced study with advanced samplers and pruners
-        self.study = self._create_enhanced_study(study_name)
+        self.study=self._create_enhanced_study(study_name)
         
         # Create objective function with cross-validation
-        objective = self._create_enhanced_objective(processed_data, feature_columns, market_condition_columns)
+        objective=self._create_enhanced_objective(processed_data, feature_columns, market_condition_columns)
         
         # Run optimization with parallel processing
         self.study.optimize(
@@ -105,7 +105,7 @@ class EnhancedHMMRegimeOptimizer:
         )
         
         # Store best results
-        self.best_params = self.study.best_params
+        self.best_params=self.study.best_params
         self.best_score = self.study.best_value
         
         print(f"\n✅ Enhanced Optimization completed!")
@@ -124,7 +124,7 @@ class EnhancedHMMRegimeOptimizer:
         """Create enhanced Optuna study with advanced samplers and pruners."""
         
         # Choose sampler based on configuration
-        sampler_config = self.config['sampling_strategy']
+        sampler_config=self.config['sampling_strategy']
         if sampler_config['sampler'] == 'tpe':
             sampler = TPESampler(
                 seed=42,
@@ -132,21 +132,21 @@ class EnhancedHMMRegimeOptimizer:
                 n_ei_candidates=sampler_config['n_ei_candidates']
             )
         elif sampler_config['sampler'] == 'cmaes':
-            sampler = CmaEsSampler(seed=42)
+            sampler=CmaEsSampler(seed=42)
         else:
-            sampler = optuna.samplers.RandomSampler(seed=42)
+            sampler=optuna.samplers.RandomSampler(seed=42)
         
         # Choose pruner based on configuration
-        pruner_config = self.config['pruning_strategy']
+        pruner_config=self.config['pruning_strategy']
         if pruner_config['pruner'] == 'median':
             pruner = MedianPruner(
                 n_startup_trials=pruner_config['n_startup_trials'],
                 n_warmup_steps=pruner_config['n_warmup_steps']
             )
         elif pruner_config['pruner'] == 'hyperband':
-            pruner = HyperbandPruner()
+            pruner=HyperbandPruner()
         else:
-            pruner = optuna.pruners.NopPruner()
+            pruner=optuna.pruners.NopPruner()
         
         return optuna.create_study(
             direction='maximize',
@@ -160,7 +160,7 @@ class EnhancedHMMRegimeOptimizer:
         """Enhanced pre-processing with additional optimizations."""
         
         # Filter valid columns
-        valid_features = [col for col in feature_columns if col in data.columns]
+        valid_features=[col for col in feature_columns if col in data.columns]
         valid_market_conditions = [col for col in market_condition_columns if col in data.columns]
         
         # Create enhanced pre-processed data structure
@@ -177,7 +177,7 @@ class EnhancedHMMRegimeOptimizer:
         
         # Pre-calculate ranges for normalization
         for col in valid_features:
-            col_data = data[col].dropna()
+            col_data=data[col].dropna()
             if len(col_data) > 0:
                 processed_data['feature_ranges'][col] = {
                     'min': col_data.min(),
@@ -188,7 +188,7 @@ class EnhancedHMMRegimeOptimizer:
                 }
         
         for col in valid_market_conditions:
-            col_data = data[col].dropna()
+            col_data=data[col].dropna()
             if len(col_data) > 0:
                 processed_data['market_condition_ranges'][col] = {
                     'min': col_data.min(),
@@ -200,7 +200,7 @@ class EnhancedHMMRegimeOptimizer:
         
         # Create cross-validation splits if enabled
         if self.config['advanced_optimization']['use_cross_validation']:
-            cv_folds = self.config['advanced_optimization']['cv_folds']
+            cv_folds=self.config['advanced_optimization']['cv_folds']
             tscv = TimeSeriesSplit(n_splits=cv_folds)
             processed_data['cv_splits'] = list(tscv.split(data))
         
@@ -216,31 +216,31 @@ class EnhancedHMMRegimeOptimizer:
             
             # Suggest parameters with adaptive ranges if enabled
             if self.config['advanced_optimization']['use_adaptive_ranges']:
-                params = self._suggest_adaptive_parameters(trial)
+                params=self._suggest_adaptive_parameters(trial)
             else:
-                params = self._suggest_standard_parameters(trial)
+                params=self._suggest_standard_parameters(trial)
             
             try:
                 # Use cross-validation if enabled
                 if self.config['advanced_optimization']['use_cross_validation'] and processed_data['cv_splits']:
-                    cv_scores = []
+                    cv_scores=[]
                     
                     for train_idx, val_idx in processed_data['cv_splits']:
                         # Split data
-                        train_data = processed_data['data'].iloc[train_idx]
+                        train_data=processed_data['data'].iloc[train_idx]
                         val_data = processed_data['data'].iloc[val_idx]
                         
                         # Generate clusters for training data
                         train_clusters = self._generate_clusters_enhanced(train_data, params)
                         
                         # Evaluate on validation data
-                        val_score = self._evaluate_regime_quality_enhanced(
+                        val_score=self._evaluate_regime_quality_enhanced(
                             val_data, train_clusters, processed_data['market_condition_columns'], params
                         )
                         cv_scores.append(val_score)
                     
                     # Return mean CV score
-                    final_score = np.mean(cv_scores)
+                    final_score=np.mean(cv_scores)
                     
                     # Store CV results
                     self.cv_results[trial.number] = {
@@ -251,13 +251,13 @@ class EnhancedHMMRegimeOptimizer:
                     
                 else:
                     # Standard evaluation without CV
-                    cluster_data = self._generate_clusters_enhanced(processed_data['data'], params)
-                    final_score = self._evaluate_regime_quality_enhanced(
+                    cluster_data=self._generate_clusters_enhanced(processed_data['data'], params)
+                    final_score=self._evaluate_regime_quality_enhanced(
                         cluster_data, None, processed_data['market_condition_columns'], params
                     )
                 
                 # Store trial information
-                trial_info = {
+                trial_info={
                     'trial_number': trial.number,
                     'params': params,
                     'score': final_score,
@@ -278,20 +278,20 @@ class EnhancedHMMRegimeOptimizer:
         
         # Get previous best parameters to adapt ranges
         if self.study and len(self.study.trials) > 0:
-            completed_trials = [t for t in self.study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+            completed_trials=[t for t in self.study.trials if t.state == optuna.trial.TrialState.COMPLETE]
             if completed_trials:
                 best_trial = max(completed_trials, key=lambda t: t.value)
-                best_params = best_trial.params
+                best_params=best_trial.params
                 
                 # Adapt ranges based on best parameters
                 n_components_range = self._adapt_range(best_params.get('n_components', 5), [2, 10])
-                target_regimes_range = self._adapt_range(best_params.get('target_regimes', 18), [15, 20])
+                target_regimes_range=self._adapt_range(best_params.get('target_regimes', 18), [15, 20])
             else:
-                n_components_range = [2, 10]
-                target_regimes_range = [15, 20]
+                n_components_range=[2, 10]
+                target_regimes_range=[15, 20]
         else:
-            n_components_range = [2, 10]
-            target_regimes_range = [15, 20]
+            n_components_range=[2, 10]
+            target_regimes_range=[15, 20]
         
         return {
             'n_components': trial.suggest_int('n_components', n_components_range[0], n_components_range[1]),
@@ -331,15 +331,15 @@ class EnhancedHMMRegimeOptimizer:
         
         if isinstance(best_value, int):
             # Adapt integer range
-            range_size = original_range[1] - original_range[0]
+            range_size=original_range[1] - original_range[0]
             new_min = max(original_range[0], best_value - range_size // 4)
-            new_max = min(original_range[1], best_value + range_size // 4)
+            new_max=min(original_range[1], best_value + range_size // 4)
             return [new_min, new_max]
         elif isinstance(best_value, float):
             # Adapt float range
-            range_size = original_range[1] - original_range[0]
+            range_size=original_range[1] - original_range[0]
             new_min = max(original_range[0], best_value - range_size * 0.25)
-            new_max = min(original_range[1], best_value + range_size * 0.25)
+            new_max=min(original_range[1], best_value + range_size * 0.25)
             return [new_min, new_max]
         else:
             return original_range
@@ -349,7 +349,7 @@ class EnhancedHMMRegimeOptimizer:
         
         # This would implement the cluster generation logic
         # For now, return a simple implementation
-        result_data = data.copy()
+        result_data=data.copy()
         result_data['composite_cluster_id'] = np.random.randint(0, params.get('target_regimes', 18), size=len(data))
         return result_data
     
@@ -364,16 +364,16 @@ class EnhancedHMMRegimeOptimizer:
             return -np.inf
         
         # Calculate basic metrics
-        n_regimes = len(cluster_data['composite_cluster_id'].unique())
-        target_regimes = params.get('target_regimes', 18)
+        n_regimes=len(cluster_data['composite_cluster_id'].unique())
+        target_regimes=params.get('target_regimes', 18)
         
         # Target count penalty
-        target_penalty = 1.0 - abs(n_regimes - target_regimes) / target_regimes
+        target_penalty=1.0 - abs(n_regimes - target_regimes) / target_regimes
         if n_regimes < 15 or n_regimes > 20:
             target_penalty *= 0.5
         
         # Basic score (placeholder)
-        score = target_penalty * 0.5 + np.random.random() * 0.5
+        score=target_penalty * 0.5 + np.random.random() * 0.5
         
         return max(0.0, score)
 
@@ -383,7 +383,7 @@ def main():
     
     # Create sample data
     np.random.seed(42)
-    n_samples = 10000
+    n_samples=10000
     n_features = 20
     
     data = pd.DataFrame(
@@ -397,11 +397,11 @@ def main():
     data['volume'] = np.random.lognormal(0, 1, n_samples)
     data['returns'] = np.random.normal(0, 0.02, n_samples)
     
-    feature_columns = [f'feature_{i}' for i in range(n_features)]
-    market_condition_columns = ['volatility', 'momentum', 'volume', 'returns']
+    feature_columns=[f'feature_{i}' for i in range(n_features)]
+    market_condition_columns=['volatility', 'momentum', 'volume', 'returns']
     
     # Initialize enhanced optimizer
-    config = {
+    config={
         "optimization_settings": {
             "n_trials": 50,  # Reduced for demo
             "timeout": 600,
@@ -415,10 +415,10 @@ def main():
         }
     }
     
-    optimizer = EnhancedHMMRegimeOptimizer(config)
+    optimizer=EnhancedHMMRegimeOptimizer(config)
     
     # Run enhanced optimization
-    results = optimizer.optimize_parallel(
+    results=optimizer.optimize_parallel(
         data=data,
         feature_columns=feature_columns,
         market_condition_columns=market_condition_columns,
@@ -431,5 +431,5 @@ def main():
     print(f"🔧 Best parameters: {results['best_params']}")
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     main()

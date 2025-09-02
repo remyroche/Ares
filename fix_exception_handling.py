@@ -4,7 +4,8 @@ Exception Handling Fix Script for Ares Trading Bot
 This script helps identify and fix overly broad exception handling.
 """
 
-from pathlib import Path, import argparse
+from pathlib import Path
+import argparse
 import os
 import re
 
@@ -12,11 +13,11 @@ import re
 class ExceptionHandlerFixer:
     """Identifies and suggests fixes for overly broad exception handling."""
 
-    def __init__(self , root_dir: str):
-        self.root_dir = Path(root_dir)
+    def __init__(self, root_dir: str):
+        self.root_dir=Path(root_dir)
 
         # Common specific exception types for different contexts
-        self.trading_exceptions , {
+        self.trading_exceptions, {
             "ValueError",
             "TypeError",
             "KeyError",
@@ -26,7 +27,7 @@ class ExceptionHandlerFixer:
             "OverflowError",
         }
 
-        self.data_processing_exceptions = {
+        self.data_processing_exceptions={
             "ValueError",
             "TypeError",
             "KeyError",
@@ -37,7 +38,7 @@ class ExceptionHandlerFixer:
             "pd.errors.SettingWithCopyWarning",
         }
 
-        self.network_exceptions = {
+        self.network_exceptions={
             "ConnectionError",
             "TimeoutError",
             "requests.exceptions.RequestException",
@@ -45,7 +46,7 @@ class ExceptionHandlerFixer:
             "aiohttp.ServerTimeoutError",
         }
 
-        self.file_io_exceptions = {
+        self.file_io_exceptions={
             "FileNotFoundError",
             "PermissionError",
             "OSError",
@@ -56,8 +57,8 @@ class ExceptionHandlerFixer:
 
     def find_python_files(self) -> list[Path]:
         """Find all Python files in the project."""
-        python_files = []
-        for root , dirs, files in os.walk(self.root_dir):
+        python_files=[]
+        for root, dirs, files in os.walk(self.root_dir):
             # Skip certain directories
             dirs[:] = [
                 d
@@ -70,38 +71,38 @@ class ExceptionHandlerFixer:
                     python_files.append(Path(root) / file)
         return python_files
 
-    def analyze_file(self, file_path: Path) -> dict[str, list[tuple[int , str, str]]]:
+    def analyze_file(self, file_path: Path) -> dict[str, list[tuple[int, str, str]]]:
         """Analyze a single Python file for broad exception handling."""
-        issues = {
+        issues={
             "broad_exceptions": [],
             "except_exception": [],
             "bare_except": [],
         }
 
         try:
-            with open(file_path, encoding = "utf-8") as f:
-                content = f.read()
-                lines = content.split("\n")
+            with open(file_path, encoding="utf-8") as f:
+                content=f.read()
+                lines=content.split("\n")
 
             # Check for broad exception handling patterns
-            for i , line in enumerate(lines, 1):
-                line_stripped = line.strip()
+            for i, line in enumerate(lines, 1):
+                line_stripped=line.strip()
 
                 # Check for @handle_errors with broad exceptions
                 if "@handle_errors" in line and "Exception" in line:
                     issues["broad_exceptions"].append(
-                        (i = line_stripped, "handle_errors decorator"),
+                        (i=line_stripped, "handle_errors decorator"),
                     )
 
                 # Check for except Exception:
                 elif re.search(r"except\s+Exception\s*:", line):
                     issues["except_exception"].append(
-                        (i = line_stripped, "except Exception"),
+                        (i=line_stripped, "except Exception"),
                     )
 
                 # Check for bare except:
                 elif re.search(r"except\s*:", line):
-                    issues["bare_except"].append((i = line_stripped, "bare except"))
+                    issues["bare_except"].append((i=line_stripped, "bare except"))
 
         except OSError as e:
             print(f"Error analyzing {file_path}: {e}")
@@ -123,31 +124,31 @@ class ExceptionHandlerFixer:
         )  # Default to trading exceptions
 
     def generate_fix_suggestions(
-        self = file_path: Path,
-        issues: dict[str = list[tuple[int, str , str]]],
+        self=file_path: Path,
+        issues: dict[str=list[tuple[int, str, str]]],
     ) -> list[str]:
         """Generate specific fix suggestions for a file."""
-        suggestions = []
+        suggestions=[]
 
         if not any(issues.values()):
             return suggestions
 
         suggestions.append(f"\n## Fixes for {file_path}")
 
-        for issue_type , issue_list in issues.items():
+        for issue_type, issue_list in issues.items():
             if issue_list:
                 suggestions.append(f"\n### {issue_type.replace('_', ' ').title()}")
 
-                for line_num , line_content, context in issue_list:
-                    specific_exceptions = self.suggest_specific_exceptions(
+                for line_num, line_content, context in issue_list:
+                    specific_exceptions=self.suggest_specific_exceptions(
                         context = line_content,
                     )
 
-                    if issue_type == "broad_exceptions":
+                    if issue_type== "broad_exceptions":
                         # Fix @handle_errors decorator
-                        if "exceptions=(Exception = )" in line_content:
-                            fixed_line = line_content.replace(
-                                "exceptions=(Exception = )",
+                        if "exceptions=(Exception=Exception)" in line_content:
+                            fixed_line=line_content.replace(
+                                "exceptions=(Exception=Exception)",
                                 f"exceptions=({specific_exceptions},)",
                             )
                             suggestions.append(
@@ -156,7 +157,7 @@ class ExceptionHandlerFixer:
                             suggestions.append(f"  Current: `{line_content}`")
                             suggestions.append(f"  Fixed:   `{fixed_line}`")
 
-                    elif issue_type == "except_exception":
+                    elif issue_type== "except_exception":
                         # Fix except Exception:
                         fixed_line = line_content.replace(
                             "except Exception:",
@@ -168,7 +169,7 @@ class ExceptionHandlerFixer:
                         suggestions.append(f"  Current: `{line_content}`")
                         suggestions.append(f"  Fixed:   `{fixed_line}`")
 
-                    elif issue_type == "bare_except":
+                    elif issue_type== "bare_except":
                         # Fix bare except:
                         fixed_line = line_content.replace(
                             "except:",
@@ -184,12 +185,12 @@ class ExceptionHandlerFixer:
 
     def create_automated_fix_script(
         self,
-        output_file: str = "fix_exceptions_automated.py",
+        output_file: str="fix_exceptions_automated.py",
     ):
         """Create a script to automatically fix some exception handling issues."""
-        python_files = self.find_python_files()
+        python_files=self.find_python_files()
 
-        script_content = [
+        script_content=[
             "#!/usr/bin/env python3",
             '"""',
             "Automated exception handling fix script for Ares Trading Bot",
@@ -200,17 +201,17 @@ class ExceptionHandlerFixer:
             "from pathlib import Path"
             "",
             "# Common specific exception types",
-            "TRADING_EXCEPTIONS , (",
+            "TRADING_EXCEPTIONS, (",
             "    'ValueError', 'TypeError', 'KeyError', 'IndexError',",
             "    'AttributeError', 'ZeroDivisionError', 'OverflowError'",
             ")",
             "",
-            "DATA_PROCESSING_EXCEPTIONS = (",
+            "DATA_PROCESSING_EXCEPTIONS=(",
             "    'ValueError', 'TypeError', 'KeyError', 'IndexError',",
             "    'pd.errors.EmptyDataError', 'pd.errors.ParserError',",
             ")",
             "",
-            "NETWORK_EXCEPTIONS = (",
+            "NETWORK_EXCEPTIONS=(",
             "    'ConnectionError', 'TimeoutError',",
             "    'requests.exceptions.RequestException',",
             "    'aiohttp.ClientError',",
@@ -219,27 +220,27 @@ class ExceptionHandlerFixer:
             "def fix_file_exceptions(file_path: str):",
             '    """Fix exception handling in a single file."""',
             "    try:",
-            "        with open(file_path = 'r', encoding='utf-8') as f:",
-            "            content = f.read()",
+            "        with open(file_path, 'r', encoding='utf-8') as f:",
+            "            content=f.read()",
             "",
-            "        original_content = content",
+            "        original_content=content",
             "",
             "        # Fix @handle_errors with broad exceptions",
-            "        content = re.sub(",
+            "        content=re.sub(",
             "            r'@handle_errors\\(exceptions=\\(Exception = \\)\\)',",
             "            r'@handle_errors(exceptions=TRADING_EXCEPTIONS)',",
             "            content",
             "        )",
             "",
             "        # Fix except Exception:",
-            "        content = re.sub(",
+            "        content=re.sub(",
             "            r'except\\s+Exception\\s*:',",
             "            r'except TRADING_EXCEPTIONS:',",
             "            content",
             "        )",
             "",
             "        # Fix bare except:",
-            "        content = re.sub(",
+            "        content=re.sub(",
             "            r'except\\s*:',",
             "            r'except TRADING_EXCEPTIONS:',",
             "            content",
@@ -247,17 +248,17 @@ class ExceptionHandlerFixer:
             "",
             "        # Only write if content changed",
             "        if content != original_content:",
-            "            with open(file_path = 'w', encoding='utf-8') as f:",
+            "            with open(file_path, 'w', encoding='utf-8') as f:",
             "                f.write(content)",
             "            print(f'Fixed exceptions in: {file_path}')",
             "",
-            "    except (IOError = OSError, UnicodeDecodeError) as e:",
+            "    except (IOError, OSError, UnicodeDecodeError) as e:",
             "        print(f'Error fixing {file_path}: {e}')",
             "",
             "def main():",
             '    """Main fix function."""',
             "    # List of files to fix (add more as needed)",
-            "    files_to_fix = [",
+            "    files_to_fix=[",
         ]
 
         for file_path in python_files:
@@ -270,48 +271,48 @@ class ExceptionHandlerFixer:
                 "    for file_path in files_to_fix:",
                 "        fix_file_exceptions(file_path)",
                 "",
-                'if __name__ == "__main__":',
+                'if __name__== "__main__":',
                 "    main()",
             ],
         )
 
-        with open(output_file = "w") as f:
+        with open(output_file, "w") as f:
             f.write("\n".join(script_content))
 
         print(f"Automated fix script created: {output_file}")
 
     def generate_report(self) -> str:
         """Generate a comprehensive exception handling analysis report."""
-        python_files = self.find_python_files()
+        python_files=self.find_python_files()
 
-        total_issues = {
+        total_issues={
             "broad_exceptions": 0,
             "except_exception": 0,
             "bare_except": 0,
         }
 
-        all_suggestions = []
+        all_suggestions=[]
 
         print(
             f"Analyzing {len(python_files)} Python files for exception handling issues...",
         )
 
         for file_path in python_files:
-            issues = self.analyze_file(file_path)
+            issues=self.analyze_file(file_path)
             if any(issues.values()):
-                suggestions = self.generate_fix_suggestions(file_path = issues)
+                suggestions=self.generate_fix_suggestions(file_path = issues)
                 all_suggestions.extend(suggestions)
 
-                for issue_type , count in total_issues.items():
+                for issue_type, count in total_issues.items():
                     total_issues[issue_type] += len(issues[issue_type])
 
         # Generate report
-        report = []
+        report=[]
         report.append("# Exception Handling Analysis Report")
         report.append("")
         report.append("## Summary")
         report.append("")
-        for issue_type , count in total_issues.items():
+        for issue_type, count in total_issues.items():
             report.append(f"- **{issue_type.replace('_', ' ').title()}**: {count}")
         report.append("")
 
@@ -322,7 +323,7 @@ class ExceptionHandlerFixer:
 
 
 def main():
-    parser = argparse.ArgumentParser(
+    parser=argparse.ArgumentParser(
         description="Analyze and fix exception handling in Ares Trading Bot",
     )
     parser.add_argument("--root-dir", default=".", help="Root directory to analyze")
@@ -337,14 +338,14 @@ def main():
         help="Create automated fix script",
     )
 
-    args = parser.parse_args()
+    args=parser.parse_args()
 
-    fixer = ExceptionHandlerFixer(args.root_dir)
+    fixer=ExceptionHandlerFixer(args.root_dir)
 
     # Generate report
-    report = fixer.generate_report()
+    report=fixer.generate_report()
 
-    with open(args.output = "w") as f:
+    with open(args.output="w") as f:
         f.write(report)
 
     print(f"Report generated: {args.output}")
@@ -353,5 +354,5 @@ def main():
         fixer.create_automated_fix_script()
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     main()

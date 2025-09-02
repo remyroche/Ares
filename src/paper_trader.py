@@ -46,37 +46,37 @@ class PaperTrader:
             config: Configuration dictionary
         """
         self.config: dict[str, Any] = config
-        self.logger = system_logger.getChild("PaperTrader")
+        self.logger=system_logger.getChild("PaperTrader")
 
         # Trading state
-        self.is_trading: bool = False
+        self.is_trading: bool=False
         self.positions: dict[str, dict[str, Any]] = {}
         self.trade_history: list[dict[str, Any]] = []
-        self.balance: float = 10000.0  # Starting balance
+        self.balance: float=10000.0  # Starting balance
         self.equity_history: list[float] = []
         self.prices: dict[str, float] = {}
 
         # Configuration
         self.trader_config: dict[str, Any] = self.config.get("paper_trader", {})
-        self.initial_balance: float = self.trader_config.get(
+        self.initial_balance: float=self.trader_config.get(
             "initial_balance",
             DEFAULT_INITIAL_BALANCE
         )
-        self.max_position_size: float = self.trader_config.get(
+        self.max_position_size: float=self.trader_config.get(
             "max_position_size",
             DEFAULT_MAX_POSITION_SIZE
         )
-        self.commission_rate: float = self.trader_config.get(
+        self.commission_rate: float=self.trader_config.get(
             "commission_rate",
             DEFAULT_COMMISSION_RATE
         )
-        self.slippage_rate: float = self.trader_config.get(
+        self.slippage_rate: float=self.trader_config.get(
             "slippage_rate",
             DEFAULT_SLIPPAGE_RATE
         )
 
         # Trade tracking
-        self.trade_tracker = get_trade_tracker()
+        self.trade_tracker=get_trade_tracker()
 
     @handle_specific_errors(
         error_handlers={
@@ -132,7 +132,7 @@ class PaperTrader:
             self.trader_config.setdefault("max_drawdown", 0.2)
 
             # Update configuration
-            self.initial_balance = self.trader_config["initial_balance"]
+            self.initial_balance=self.trader_config["initial_balance"]
             self.max_position_size = self.trader_config["max_position_size"]
             self.commission_rate = self.trader_config["commission_rate"]
             self.slippage_rate = self.trader_config["slippage_rate"]
@@ -193,7 +193,7 @@ class PaperTrader:
         """Initialize trading state."""
         try:
             # Set initial balance
-            self.balance = self.initial_balance
+            self.balance=self.initial_balance
             self.equity_history = [self.initial_balance]
             self.prices.clear()
 
@@ -225,7 +225,7 @@ class PaperTrader:
         quantity: float,
         price: float,
         timestamp: datetime,
-        trade_context: Any = None,
+        trade_context: Any=None,
     ) -> bool:
         """
         Execute a buy order.
@@ -245,7 +245,7 @@ class PaperTrader:
                 return False
 
             # Calculate costs
-            total_cost = quantity * price
+            total_cost=quantity * price
             commission = total_cost * self.commission_rate
             slippage = total_cost * self.slippage_rate
             total_with_fees = total_cost + commission + slippage
@@ -268,7 +268,7 @@ class PaperTrader:
                     "total_cost": 0,
                 }
 
-            position = self.positions[symbol]
+            position=self.positions[symbol]
             old_quantity = position["quantity"]
             old_total_cost = position["total_cost"]
 
@@ -283,7 +283,7 @@ class PaperTrader:
 
             # Create trade record with comprehensive tracking data
             trade_id = f"BUY_{symbol}_{timestamp.strftime('%Y%m%d_%H%M%S')}"
-            trade_record = {
+            trade_record={
                 "trade_id": trade_id,
                 "timestamp": timestamp,
                 "symbol": symbol,
@@ -337,7 +337,7 @@ class PaperTrader:
         quantity: float,
         price: float,
         timestamp: datetime,
-        trade_context: Any = None,
+        trade_context: Any=None,
     ) -> bool:
         """
         Execute a sell order.
@@ -367,7 +367,7 @@ class PaperTrader:
                 return False
 
             # Calculate proceeds
-            total_proceeds = quantity * price
+            total_proceeds=quantity * price
             commission = total_proceeds * self.commission_rate
             slippage = total_proceeds * self.slippage_rate
             net_proceeds = total_proceeds - commission - slippage
@@ -402,7 +402,7 @@ class PaperTrader:
 
             # Create trade record with comprehensive tracking data
             trade_id = f"SELL_{symbol}_{timestamp.strftime('%Y%m%d_%H%M%S')}"
-            trade_record = {
+            trade_record={
                 "trade_id": trade_id,
                 "timestamp": timestamp,
                 "symbol": symbol,
@@ -475,7 +475,7 @@ class PaperTrader:
                 return False
 
             # Check position size limits
-            total_value = quantity * price
+            total_value=quantity * price
             max_allowed = self.balance * self.max_position_size
 
             if total_value > max_allowed:
@@ -528,11 +528,11 @@ class PaperTrader:
     def _update_equity(self) -> None:
         """Recompute total equity using current prices and unrealized PnL."""
         try:
-            equity = self.balance
+            equity=self.balance
             for sym, pos in self.positions.items():
-                qty = pos.get("quantity", 0.0)
-                avg = pos.get("avg_price", 0.0)
-                mark = self.prices.get(sym, avg)
+                qty=pos.get("quantity", 0.0)
+                avg=pos.get("avg_price", 0.0)
+                mark=self.prices.get(sym, avg)
                 if qty > 0 and mark > 0 and avg > 0:
                     equity += qty * (mark - avg)
             self.equity_history.append(equity)
@@ -579,7 +579,7 @@ class PaperTrader:
         exceptions=(ValueError, AttributeError),
         default_return=None, context="trade history getting",
     )
-    def get_trade_history(self, symbol: str | None = None) -> list[dict[str, Any]]:
+    def get_trade_history(self, symbol: str | None=None) -> list[dict[str, Any]]:
         """
         Get trade history.
 
@@ -623,24 +623,24 @@ class PaperTrader:
                 }
 
             # Calculate basic metrics
-            total_trades = len(self.trade_history)
-            buy_trades = [t for t in self.trade_history if t["side"] == "BUY"]
+            total_trades=len(self.trade_history)
+            buy_trades=[t for t in self.trade_history if t["side"] == "BUY"]
             sell_trades = [t for t in self.trade_history if t["side"] == "SELL"]
 
             # Calculate P&L
             total_buy_cost = sum(t["total_cost"] for t in buy_trades)
-            total_sell_proceeds = sum(t.get("net_proceeds", 0.0) for t in sell_trades)
-            total_pnl = total_sell_proceeds - total_buy_cost
+            total_sell_proceeds=sum(t.get("net_proceeds", 0.0) for t in sell_trades)
+            total_pnl=total_sell_proceeds - total_buy_cost
 
             # Calculate win rate
             profitable_trades = len(
                 [t for t in sell_trades if t.get("net_proceeds", 0.0) > 0],
             )
-            win_rate = profitable_trades / len(sell_trades) if sell_trades else 0.0
+            win_rate=profitable_trades / len(sell_trades) if sell_trades else 0.0
 
             # Calculate max drawdown using equity history
             if len(self.equity_history) < 2:
-                max_drawdown = 0.0
+                max_drawdown=0.0
                 sharpe_ratio = 0.0
             else:
                 equity_series = self.equity_history
@@ -648,17 +648,17 @@ class PaperTrader:
                 max_drawdown = 0.0
                 returns = []
                 for i in range(1, len(equity_series)):
-                    eq = equity_series[i]
+                    eq=equity_series[i]
                     prev = equity_series[i - 1]
                     peak = max(peak, eq)
-                    dd = (peak - eq) / peak
-                    max_drawdown = max(max_drawdown, dd)
-                    ret = (eq - prev) / prev if prev > 0 else 0.0
+                    dd=(peak - eq) / peak
+                    max_drawdown=max(max_drawdown, dd)
+                    ret=(eq - prev) / prev if prev > 0 else 0.0
                     returns.append(ret)
                 if returns:
-                    avg_return = float(np.mean(returns))
-                    std_return = float(np.std(returns))
-                    sharpe_ratio = avg_return / std_return if std_return > 0 else 0.0
+                    avg_return=float(np.mean(returns))
+                    std_return=float(np.std(returns))
+                    sharpe_ratio=avg_return / std_return if std_return > 0 else 0.0
                 else:
                     sharpe_ratio = 0.0
 
@@ -719,7 +719,7 @@ class PaperTrader:
                 # Note: In a real implementation, you would close positions at current market prices
                 self.positions.clear()
 
-            self.is_trading = False
+            self.is_trading=False
             self.logger.info("✅ Paper Trader stopped successfully")
 
         except Exception as e:
@@ -727,7 +727,7 @@ class PaperTrader:
 
 
 # Global paper trader instance
-paper_trader: PaperTrader | None = None
+paper_trader: PaperTrader | None=None
 
 
 @handle_errors(
@@ -735,7 +735,7 @@ paper_trader: PaperTrader | None = None
     default_return=None, context="paper trader setup",
 )
 async def setup_paper_trader(
-    config: dict[str, Any] | None = None,
+    config: dict[str, Any] | None=None,
 ) -> PaperTrader | None:
     """
     Setup global paper trader.
@@ -750,7 +750,7 @@ async def setup_paper_trader(
         global paper_trader
 
         if config is None:
-            config = {
+            config={
                 "paper_trader": {
                     "initial_balance": 10000.0,
                     "max_position_size": 0.1,
@@ -762,10 +762,10 @@ async def setup_paper_trader(
             }
 
         # Create paper trader
-        paper_trader = PaperTrader(config)
+        paper_trader=PaperTrader(config)
 
         # Initialize paper trader
-        success = await paper_trader.initialize()
+        success=await paper_trader.initialize()
         if success:
             return paper_trader
         return None

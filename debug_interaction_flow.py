@@ -3,7 +3,8 @@
 Debug script to trace the exact flow of interaction features through the system
 """
 
-from src.training.steps.vectorized_advanced_feature_engineering import (VectorizedAdvancedFeatureEngineering), import asyncio
+from src.training.steps.vectorized_advanced_feature_engineering import (VectorizedAdvancedFeatureEngineering)
+import asyncio
 import os
 import sys
 
@@ -18,7 +19,7 @@ async def debug_interaction_flow():
     print("🔍 Debugging interaction features flow...")
 
     # Create a mock instance
-    config , {
+    config, {
         "symbol": "ETHUSDT",
         "exchange": "BINANCE",
         "timeframe": "1m",
@@ -40,11 +41,11 @@ async def debug_interaction_flow():
         def debug(self, msg):
             print(f"DEBUG: {msg}")
 
-    feature_eng = VectorizedAdvancedFeatureEngineering(config)
-    feature_eng.logger = MockLogger()
+    feature_eng=VectorizedAdvancedFeatureEngineering(config)
+    feature_eng.logger=MockLogger()
 
     # Create mock price data
-    price_data = pd.DataFrame(
+    price_data=pd.DataFrame(
         {
             "open": [100, 101, 102, 103, 104],
             "high": [105, 106, 107, 108, 109],
@@ -55,7 +56,7 @@ async def debug_interaction_flow():
     )
 
     # Create mock features
-    features = {
+    features={
         "rsi": pd.Series([0.5, 0.6, 0.7, 0.8, 0.9]),
         "volume": pd.Series([100, 110, 120, 130, 140]),
         "price_momentum": pd.Series([0.1, 0.2, 0.3, 0.4, 0.5]),
@@ -70,7 +71,7 @@ async def debug_interaction_flow():
     print("\n🔍 Testing _generate_interaction_features method directly...")
 
     # Create some enhanced features (difference/acceleration features)
-    enhanced_features = {
+    enhanced_features={
         "rsi_diff_1": pd.Series([0.1, 0.1, 0.1, 0.1, 0.1]),
         "rsi_diff_3": pd.Series([0.2, 0.2, 0.2, 0.2, 0.2]),
         "volume_diff_1": pd.Series([10, 10, 10, 10, 10]),
@@ -89,9 +90,9 @@ async def debug_interaction_flow():
     print("Enhanced feature names:", list(enhanced_features.keys()))
 
     # Call the interaction features generation method
-    interaction_features = await feature_eng._generate_interaction_features(
+    interaction_features=await feature_eng._generate_interaction_features(
         enhanced_features = features,
-        price_data = )
+        price_data=price_data)
 
     print(f"\n📊 Interaction features generated: {len(interaction_features)}")
     print("Interaction feature names:", list(interaction_features.keys()))
@@ -100,7 +101,7 @@ async def debug_interaction_flow():
     print("\n🔍 Testing full difference/acceleration flow...")
 
     # Create a larger set of features to simulate the real scenario
-    large_features = {}
+    large_features={}
     for i in range(100):  # Create 100 features to trigger capping
         large_features[f"feature_{i}"] = pd.Series([i] * 5)
 
@@ -118,14 +119,14 @@ async def debug_interaction_flow():
     print(f"Large features set: {len(large_features)}")
 
     # Call the full difference/acceleration method
-    result = await feature_eng._engineer_difference_and_acceleration_features(
+    result=await feature_eng._engineer_difference_and_acceleration_features(
         large_features = price_data,
     )
 
     print(f"\n📊 Final result: {len(result)}")
 
     # Check for interaction features in the result
-    interaction_features_in_result = [f for f in result.keys() if "_x_" in f]
+    interaction_features_in_result=[f for f in result.keys() if "_x_" in f]
     print(
         f"Interaction features in final result: {len(interaction_features_in_result)}"
     )
@@ -133,8 +134,8 @@ async def debug_interaction_flow():
 
     # Test the summary logging method
     print("\n🔍 Testing summary logging method...")
-    feature_eng._log_feature_engineering_summary(result = result)
+    feature_eng._log_feature_engineering_summary(result=result)
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     asyncio.run(debug_interaction_flow())

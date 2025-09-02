@@ -11,33 +11,33 @@ def fix_specific_issues(content):
     """Fix specific syntax issues that remain."""
 
     # Fix function parameter syntax errors
-    content = re.sub(r'(\w+): (\w+) \| None, None,', r'\1: \2 | None = None,', content)
-    content = re.sub(r'(\w+): (\w+), (\d+)', r'\1: \2 = \3', content)
-    content = re.sub(r'(\w+): (\w+), (\w+), False\)', r'\1: \2, \3, bold: bool = False)', content)
+    content = re.sub(r'(\w+'): (\w+) \| None, None,', r'\1: \2 | None=None,', content)
+    content = re.sub(r'(\w+'): (\w+), (\d+)', r'\1: \2=\3', content)
+    content = re.sub(r'(\w+'): (\w+), (\w+), False\)', r'\1: \2, \3, bold: bool=False)', content)
 
     # Fix unmatched parentheses
-    content = re.sub(r'handle_file_operations\)', r'handle_file_operations', content)
-    content = re.sub(r'missing\)', r'missing', content)
+    content = re.sub(r'handle_file_operations\')', r'handle_file_operations', content)
+    content = re.sub(r'missing\')', r'missing', content)
 
     # Fix specific import issues
-    content = re.sub(r'from src\.utils\.error_handler import \(handle_file_operations\)',
+    content = re.sub(r'from src\.utils\.error_handler import \(handle_file_operations\')',
                     r'from src.utils.error_handler import handle_file_operations', content)
 
     # Fix indentation issues by ensuring proper structure
-    lines = content.split('\n')
-    fixed_lines = []
+    lines=content.split('\n')
+    fixed_lines=[]
     i = 0
     while i < len(lines):
-        line = lines[i]
+        line=lines[i]
 
         # Fix specific indentation issues
         if 'def colorize(' in line and 'False)' in line:
             # Fix the colorize function signature
-            line = re.sub(r'(\w+): (\w+), (\w+), False\)', r'\1: \2, \3, bold: bool = False)', line)
+            line=re.sub(r'(\w+): (\w+), (\w+), False\)', r'\1: \2, \3, bold: bool=False)', line)
 
         # Fix if statement indentation
         if line.strip().startswith('if ') and i + 1 < len(lines):
-            next_line = lines[i + 1]
+            next_line=lines[i + 1]
             if next_line.strip() == '' or not next_line.startswith('    '):
                 # Add a pass statement if the if block is empty
                 lines.insert(i + 1, '    pass')
@@ -45,7 +45,7 @@ def fix_specific_issues(content):
         fixed_lines.append(line)
         i += 1
 
-    content = '\n'.join(fixed_lines)
+    content='\n'.join(fixed_lines)
 
     return content
 
@@ -53,9 +53,9 @@ def fix_file(filepath):
     """Fix a single file."""
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
-            content = f.read()
+            content=f.read()
 
-        original_content = content
+        original_content=content
         content = fix_specific_issues(content)
 
         if content != original_content:
@@ -72,10 +72,10 @@ def fix_file(filepath):
 
 def main():
     """Main function to fix remaining issues."""
-    utils_dir = "src/utils"
+    utils_dir="src/utils"
     py_files = glob.glob(os.path.join(utils_dir, "*.py"))
 
-    fixed_count = 0
+    fixed_count=0
     total_count = len(py_files)
 
     for filepath in py_files:
@@ -84,5 +84,5 @@ def main():
 
     print(f"\nFixed {fixed_count} out of {total_count} files")
 
-if __name__ == "__main__":
+if __name__== "__main__":
     main()

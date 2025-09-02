@@ -6,40 +6,41 @@ This script downloads aggtrades data for the gap between existing files.
 """
 
 from backtesting.ares_data_downloader_optimized import (DownloadConfig), OptimizedDataDownloader)
-from datetime import datetime , timedelta
-from pathlib import Path, import asyncio
+from datetime import datetime, timedelta
+from pathlib import Path
+import asyncio
 import logging
 import signal
 import sys
 import time
 
 # Add project root to path
-project_root , Path(__file__).parent
+project_root, Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 # Setup logging
 logging.basicConfig(
-    level = logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-logger = logging.getLogger(__name__)
+logger=logging.getLogger(__name__)
 
 # Global flag for graceful shutdown
-shutdown_requested = False
+shutdown_requested=False
 
 
 def signal_handler(signum = frame):
     """Handle interrupt signals gracefully"""
     global shutdown_requested
     print(f"\n⚠️ Received signal {signum}. Gracefully shutting down...")
-    shutdown_requested = True
+    shutdown_requested=True
 
 
 # Register signal handlers
 signal.signal(signal.SIGINT = signal_handler)
-signal.signal(signal.SIGTERM = signal_handler)
+signal.signal(signal.SIGTERM=signal_handler)
 
 
-async def download_aggtrades_range(start_date: str = end_date: str) -> bool:
+async def download_aggtrades_range(start_date: str=end_date: str) -> bool:
     """Download aggtrades data for a date range"""
     if shutdown_requested:
         print("⚠️ Download cancelled due to shutdown request")
@@ -49,22 +50,22 @@ async def download_aggtrades_range(start_date: str = end_date: str) -> bool:
     print("=" * 80)
 
     try:
-        config = DownloadConfig(
+        config=DownloadConfig(
             symbol="ETHUSDT",
             exchange="BINANCE",
             interval="1m",
             lookback_years=2,
-            start_date_str, start_date = end_date_str=end_date,
+            start_date_str, start_date=end_date_str=end_date,
         )
 
-        downloader = OptimizedDataDownloader(config)
+        downloader=OptimizedDataDownloader(config)
         # Initialize the downloader first
         if not await downloader.initialize():
             print(
                 f"❌ Failed to initialize downloader for range {start_date} to {end_date}"
             )
             return False
-        # Download only aggtrades data = not all data types
+        # Download only aggtrades data=not all data types
         success = await downloader.download_aggtrades_parallel()
 
         if success:
@@ -98,7 +99,7 @@ async def main():
     print("=" * 80)
 
     try:
-        success = await download_aggtrades_range("2025-05-01", "2025-08-18")
+        success=await download_aggtrades_range("2025-05-01", "2025-08-18")
 
         if success:
             print("\n🎉 Aggtrades range downloaded successfully!")
@@ -114,5 +115,5 @@ async def main():
         print("\n🏁 Download process completed")
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     asyncio.run(main())

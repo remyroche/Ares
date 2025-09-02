@@ -45,7 +45,7 @@ from src.utils.warning_symbols import error, execution_error, failed, warning
 import mlflow
 
 # Add the project root to the Python path
-project_root = Path(__file__).parent.parent
+project_root=Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 
@@ -53,12 +53,12 @@ class TrainingCLI:
     """Command-line interface for training operations."""
 
     def __init__(self) -> None:
-        self.logger = system_logger.getChild("TrainingCLI")
+        self.logger=system_logger.getChild("TrainingCLI")
         self.logger.info("🔧 Initializing TrainingCLI...")
 
         # Initialize SQLiteManager for CLI scope, passed to TrainingManager
-        self.db_manager = SQLiteManager({})
-        self.training_manager = EnhancedTrainingManager(self.db_manager)
+        self.db_manager=SQLiteManager({})
+        self.training_manager=EnhancedTrainingManager(self.db_manager)
 
         self.logger.info("✅ TrainingCLI initialized successfully")
 
@@ -70,9 +70,9 @@ class TrainingCLI:
         await self.db_manager.initialize()
         self.logger.info("✅ Database manager initialized successfully")
 
-    async def run_full_training(self, symbol: str, exchange_name: str = "BINANCE") -> bool:
+    async def run_full_training(self, symbol: str, exchange_name: str="BINANCE") -> bool:
         """Runs the full training pipeline and tags the resulting model as a candidate."""
-        start_time = time.time()
+        start_time=time.time()
         self.logger.info("=" * 80)
         self.logger.info("🚀 FULL TRAINING PIPELINE START")
         self.logger.info("=" * 80)
@@ -90,14 +90,14 @@ class TrainingCLI:
             # The training manager now handles its own data loading and preparation.
             # It returns the MLflow run_id upon completion.
             self.logger.info("🔧 Starting training manager execution...")
-            training_start_time = time.time()
+            training_start_time=time.time()
 
-            run_id = await self.training_manager.run_full_training(
+            run_id=await self.training_manager.run_full_training(
                 symbol=symbol,
                 exchange=exchange_name,
             )
 
-            training_duration = time.time() - training_start_time
+            training_duration=time.time() - training_start_time
             self.logger.info(
                 f"⏱️  Training manager execution completed in {training_duration:.2f} seconds",
             )
@@ -110,14 +110,14 @@ class TrainingCLI:
 
                 # Tag the model in MLflow so the supervisor can find it
                 self.logger.info("🔧 Tagging model as 'candidate' in MLflow...")
-                client = mlflow.tracking.MlflowClient()
+                client=mlflow.tracking.MlflowClient()
                 client.set_tag(run_id, "model_status", "candidate")
                 self.logger.info(
                     "✅ Model tagged as 'candidate' for production review.",
                 )
                 print("✅ Model tagged as 'candidate' for production review.")
 
-                total_duration = time.time() - start_time
+                total_duration=time.time() - start_time
                 self.logger.info("📊 Full training summary:")
                 self.logger.info(f"   Symbol: {symbol}")
                 self.logger.info(f"   Exchange: {exchange_name}")
@@ -138,7 +138,7 @@ class TrainingCLI:
                 f"❌ Full training failed for {symbol}. No MLflow run ID was returned.",
             )
 
-            total_duration = time.time() - start_time
+            total_duration=time.time() - start_time
             self.logger.error("📊 Full training summary:")
             self.logger.error(f"   Symbol: {symbol}")
             self.logger.error(f"   Exchange: {exchange_name}")
@@ -149,7 +149,7 @@ class TrainingCLI:
             return False
 
         except Exception as e:  # noqa: BLE001
-            total_duration = time.time() - start_time
+            total_duration=time.time() - start_time
             print(failed(f"💥 Full training failed: {e}"))
             print(error(f"Error type: {type(e).__name__}"))
             print(error("Full traceback:"))
@@ -168,7 +168,7 @@ class TrainingCLI:
             await self.db_manager.close()  # Close DB connection after operation
             self.logger.info("✅ Database connection closed")
 
-            total_duration = time.time() - start_time
+            total_duration=time.time() - start_time
             self.logger.info("=" * 80)
             self.logger.info("🏁 FULL TRAINING PIPELINE END")
             self.logger.info("=" * 80)
@@ -180,7 +180,7 @@ class TrainingCLI:
                 f"Status: {'SUCCESS' if 'run_id' in locals() and run_id else 'ERROR'}",
             )
 
-    async def retrain_models(self, symbol: str, exchange_name: str = "BINANCE") -> bool:
+    async def retrain_models(self, symbol: str, exchange_name: str="BINANCE") -> bool:
         """Retrains models. In the new workflow, this is an alias for a full training run."""
         self.logger.info("🔄 Starting model retraining (alias for full training)...")
         print("🔄 Retraining is now an alias for the full training pipeline.")
@@ -194,11 +194,11 @@ class TrainingCLI:
             print(warning(f"Retraining error: {e}"))
             return False
 
-    async def run_full_test_run(self, symbol: str, exchange_name: str = "BINANCE") -> None:
+    async def run_full_test_run(self, symbol: str, exchange_name: str="BINANCE") -> None:
         """
         Executes a full test run: Training -> Backtesting -> Instructions for Paper Trading.
         """
-        start_time = time.time()
+        start_time=time.time()
         self.logger.info("=" * 80)
         self.logger.info("🚀 FULL TEST RUN START")
         self.logger.info("=" * 80)
@@ -213,10 +213,10 @@ class TrainingCLI:
         # --- Step 1: Run Full Training ---
         self.logger.info("📋 STEP 1/2: Running Full Training Pipeline")
         print("\n--- STEP 1/2: Running Full Training Pipeline ---")
-        training_start_time = time.time()
+        training_start_time=time.time()
 
-        training_success = await self.run_full_training(symbol, exchange_name)
-        training_duration = time.time() - training_start_time
+        training_success=await self.run_full_training(symbol, exchange_name)
+        training_duration=time.time() - training_start_time
 
         self.logger.info(
             f"⏱️  Training step completed in {training_duration:.2f} seconds",
@@ -234,7 +234,7 @@ class TrainingCLI:
             "📋 STEP 2/2: Running Backtesting with Newly Optimized Parameters",
         )
         print("\n--- STEP 2/2: Running Backtesting with Newly Optimized Parameters ---")
-        backtest_start_time = time.time()
+        backtest_start_time=time.time()
 
         try:
             # Re-initialize DB connection as it was closed after training_manager.run_full_training
@@ -247,7 +247,7 @@ class TrainingCLI:
             self.logger.info("📊 Loading raw data for backtesting...")
             print("Loading raw data for backtesting...")
             # Pass symbol to data loader
-            klines_df = load_raw_data(symbol=symbol, exchange=exchange_name)
+            klines_df=load_raw_data(symbol=symbol, exchange=exchange_name)
 
             if klines_df.empty:  # type: ignore[attr-defined]
                 self.logger.error(
@@ -259,7 +259,7 @@ class TrainingCLI:
             if hasattr(klines_df, "shape"):
                 self.logger.info(f"   Klines shape: {klines_df.shape}")
 
-            daily_df = (
+            daily_df=(
                 klines_df.resample("D")  # type: ignore[attr-defined]
                 .agg(
                     {
@@ -282,11 +282,11 @@ class TrainingCLI:
                 },
                 inplace=True,
             )
-            sr_levels = get_sr_levels(daily_df)
+            sr_levels=get_sr_levels(daily_df)
             self.logger.info("✅ Daily data prepared and SR levels calculated")
 
             # CONFIG['BEST_PARAMS'] should now contain the parameters optimized by the training run
-            current_best_params = CONFIG.get("best_params", {})
+            current_best_params=CONFIG.get("best_params", {})
             self.logger.info(
                 f"📊 Using optimized parameters for backtest: {current_best_params}",
             )
@@ -294,7 +294,7 @@ class TrainingCLI:
 
             self.logger.info("📊 Preparing data for backtesting...")
             print("Preparing data for backtesting...")
-            prepared_df = calculate_and_label_regimes(
+            prepared_df=calculate_and_label_regimes(
                 klines_df.copy(),
                 current_best_params=current_best_params,
                 sr_levels=sr_levels,
@@ -312,11 +312,11 @@ class TrainingCLI:
 
             self.logger.info("📊 Running backtest...")
             print("Running backtest...")
-            portfolio = run_backtest(prepared_df, current_best_params)
+            portfolio=run_backtest(prepared_df, current_best_params)
             self.logger.info("✅ Backtest completed successfully")
 
             report_lines: List[str] = []
-            separator = "=" * 80
+            separator="=" * 80
 
             report_lines.append("\n" + separator)
             report_lines.append("BACKTESTING RESULTS WITH NEWLY TRAINED MODEL")
@@ -327,10 +327,10 @@ class TrainingCLI:
                 report_lines.append(f"Total Trades: {len(getattr(portfolio, 'trades'))}\n")
 
             # Calculate detailed metrics for a comprehensive report
-            num_days_in_backtest = (
+            num_days_in_backtest=(
                 prepared_df.index.max() - prepared_df.index.min()  # type: ignore[attr-defined]
             ).days
-            detailed_metrics = calculate_detailed_metrics(
+            detailed_metrics=calculate_detailed_metrics(
                 portfolio=portfolio,
                 num_days=num_days_in_backtest,
             )
@@ -339,12 +339,12 @@ class TrainingCLI:
             for key, value in detailed_metrics.items():
                 report_lines.append(f"  {key:<20}: {value:.2f}")
 
-            report_string = "\n".join(report_lines)
+            report_string="\n".join(report_lines)
             print(report_string)
             self.logger.info(f"📊 Backtesting complete. Results:\n{report_string}")
 
         except Exception as e:  # noqa: BLE001
-            backtest_duration = time.time() - backtest_start_time
+            backtest_duration=time.time() - backtest_start_time
             print(failed(f"💥 Backtesting failed during full test run: {e}"))
             print(error(f"Error type: {type(e).__name__}"))
             print(error("Full traceback:"))
@@ -355,7 +355,7 @@ class TrainingCLI:
             print(failed(f"Backtesting failed: {e}"))
             return
         finally:
-            backtest_duration = time.time() - backtest_start_time
+            backtest_duration=time.time() - backtest_start_time
             self.logger.info(
                 f"⏱️  Backtesting step completed in {backtest_duration:.2f} seconds",
             )
@@ -367,7 +367,7 @@ class TrainingCLI:
         print("\n--- STEP 2/2 Complete: Backtesting Successful! ---")
 
         # --- Step 3: Instruct for Paper Trading ---
-        total_duration = time.time() - start_time
+        total_duration=time.time() - start_time
         self.logger.info("=" * 80)
         self.logger.info("🎉 FULL TEST RUN COMPLETE")
         self.logger.info("=" * 80)
@@ -429,22 +429,22 @@ class TrainingCLI:
         self.logger.info(f"📊 Found {len(model_configs)} model types in configuration")
 
         for model_name, config in model_configs.items():
-            enabled = "✅" if config.get("enabled", False) else "❌"
+            enabled="✅" if config.get("enabled", False) else "❌"
             self.logger.info(
                 f"📊 Model {model_name}: {'enabled' if config.get('enabled', False) else 'disabled'}",
             )
             print(f"{enabled} {model_name.upper()}")
 
-            if model_name == "lightgbm":
+            if model_name== "lightgbm":
                 print("   - Gradient boosting with LightGBM")
                 print("   - Fast training and good performance")
-            elif model_name == "xgboost":
+            elif model_name== "xgboost":
                 print("   - Extreme gradient boosting")
                 print("   - Excellent for structured data")
-            elif model_name == "neural_network":
+            elif model_name== "neural_network":
                 print("   - Multi-layer perceptron")
                 print("   - Good for complex patterns")
-            elif model_name == "random_forest":
+            elif model_name== "random_forest":
                 print("   - Ensemble of decision trees")
                 print("   - Robust and interpretable")
 
@@ -539,8 +539,8 @@ def get_symbols_to_process(argv: List[str]) -> List[Tuple[str, str]]:
     Returns a list of (symbol, exchange) tuples.
     """
     if len(argv) > 2:  # A specific symbol is provided
-        symbol = argv[2].upper()
-        exchange = argv[3].upper() if len(argv) > 3 else "BINANCE"
+        symbol=argv[2].upper()
+        exchange=argv[3].upper() if len(argv) > 3 else "BINANCE"
         system_logger.info(f"Processing specific symbol: {symbol} on {exchange}")
         return [(symbol, exchange)]
     # No symbol provided, use all from config
@@ -559,11 +559,11 @@ def get_symbols_to_process(argv: List[str]) -> List[Tuple[str, str]]:
 
 async def main() -> None:
     """Main function."""
-    start_time = time.time()
+    start_time=time.time()
 
     # Setup logging
     setup_logging()
-    logger = system_logger.getChild("TrainingCLIMain")
+    logger=system_logger.getChild("TrainingCLIMain")
 
     logger.info("=" * 80)
     logger.info("🚀 TRAINING CLI START")
@@ -578,14 +578,14 @@ async def main() -> None:
         print_usage()
         sys.exit(1)
 
-    command = sys.argv[1]
+    command=sys.argv[1]
     logger.info(f"📋 Executing command: {command}")
 
-    cli = TrainingCLI()
+    cli=TrainingCLI()
 
     try:
         if command in ["train", "retrain", "full-test-run"]:
-            symbols_to_process = get_symbols_to_process(sys.argv)
+            symbols_to_process=get_symbols_to_process(sys.argv)
             if not symbols_to_process:
                 print(error("No symbols to process. Exiting."))
                 sys.exit(1)
@@ -595,7 +595,7 @@ async def main() -> None:
                     f"Running '{command}' for all {len(symbols_to_process)} supported tokens...",
                 )
 
-            overall_success = True
+            overall_success=True
             for symbol, exchange in symbols_to_process:
                 logger.info(
                     f"--- Processing {symbol} on {exchange} for command '{command}' ---",
@@ -604,14 +604,14 @@ async def main() -> None:
                     f"\n--- Processing {symbol} on {exchange} for command '{command}' ---",
                 )
 
-                success = False
+                success=False
                 if command == "train":
                     success = await cli.run_full_training(symbol, exchange)
-                elif command == "retrain":
+                elif command== "retrain":
                     success = await cli.retrain_models(symbol, exchange)
-                elif command == "full-test-run":
+                elif command== "full-test-run":
                     await cli.run_full_test_run(symbol, exchange)
-                    success = True  # Assume success if no exception
+                    success=True  # Assume success if no exception
 
                 if not success:
                     overall_success = False
@@ -621,17 +621,17 @@ async def main() -> None:
 
             sys.exit(0 if overall_success else 1)
 
-        elif command == "list-tokens":
+        elif command== "list-tokens":
             logger.info("📋 Listing supported tokens")
             cli.list_supported_tokens()
             sys.exit(0)
 
-        elif command == "list-models":
+        elif command== "list-models":
             logger.info("📋 Listing model types")
             cli.list_model_types()
             sys.exit(0)
 
-        elif command == "config":
+        elif command== "config":
             logger.info("📋 Showing training configuration")
             cli.show_training_config()
             sys.exit(0)
@@ -646,7 +646,7 @@ async def main() -> None:
             sys.exit(1)
 
     except Exception as e:  # noqa: BLE001
-        total_duration = time.time() - start_time
+        total_duration=time.time() - start_time
         print(execution_error(f"💥 CRITICAL ERROR in main execution: {e}"))
         print(error(f"Error type: {type(e).__name__}"))
         print(error("Full traceback:"))
@@ -660,7 +660,7 @@ async def main() -> None:
         print(f"\n💥 Unexpected error: {e}")
         sys.exit(1)
     finally:
-        total_duration = time.time() - start_time
+        total_duration=time.time() - start_time
         logger.info("=" * 80)
         logger.info("🏁 TRAINING CLI END")
         logger.info("=" * 80)
@@ -670,7 +670,7 @@ async def main() -> None:
         logger.info(f"Status: {'SUCCESS' if 'success' in locals() else 'ERROR'}")
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:

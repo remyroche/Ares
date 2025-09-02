@@ -24,8 +24,8 @@ class AdvancedMonitoringLauncher:
 
     def __init__(self):
         """Initialize the launcher."""
-        self.logger = system_logger.getChild("AdvancedMonitoringLauncher")
-        self.integration_manager: MonitoringIntegrationManager | None = None
+        self.logger=system_logger.getChild("AdvancedMonitoringLauncher")
+        self.integration_manager: MonitoringIntegrationManager | None=None
         self.is_running = False
 
         # Setup signal handlers
@@ -37,7 +37,7 @@ class AdvancedMonitoringLauncher:
     def _signal_handler(self, signum, frame):
         """Handle shutdown signals."""
         self.logger.info(f"Received signal {signum}, shutting down...")
-        self.is_running = False
+        self.is_running=False
 
     def _get_default_config(self) -> dict[str, Any]:
         """Get default monitoring configuration."""
@@ -99,10 +99,10 @@ class AdvancedMonitoringLauncher:
         self.logger.info("Setting up advanced monitoring system...")
 
         # Get configuration
-        config = self._get_default_config()
+        config=self._get_default_config()
 
         # Setup integration manager
-        self.integration_manager = await MonitoringIntegrationManager.setup_monitoring_integration_manager(
+        self.integration_manager=await MonitoringIntegrationManager.setup_monitoring_integration_manager(
                 config=config)
 
         if not self.integration_manager:
@@ -121,10 +121,10 @@ class AdvancedMonitoringLauncher:
         self.logger.info("Starting advanced monitoring system...")
 
         # Start integration
-        success = await self.integration_manager.start_integration()
+        success=await self.integration_manager.start_integration()
 
         if success:
-            self.is_running = True
+            self.is_running=True
             self.logger.info("✅ Advanced monitoring system started")
             return True
         self.logger.error("Failed to start monitoring integration")
@@ -135,7 +135,7 @@ class AdvancedMonitoringLauncher:
         self.logger.info("Running monitoring system demonstration...")
 
         # Demo loop
-        demo_counter = 0
+        demo_counter=0
         while self.is_running and demo_counter < 60:  # Run for 5 minutes
             # Get unified dashboard data
             dashboard_data = (
@@ -145,7 +145,7 @@ class AdvancedMonitoringLauncher:
             )
 
             # Print status every 10 seconds
-            if demo_counter % 10 == 0:
+            if demo_counter % 10== 0:
                 self._print_status(dashboard_data, demo_counter)
 
             # Simulate some activity
@@ -162,35 +162,35 @@ class AdvancedMonitoringLauncher:
         print("=" * 50)
 
         # System metrics
-        system_metrics = dashboard_data.get("system_metrics", {})
+        system_metrics=dashboard_data.get("system_metrics", {})
         print(f"🖥️  System Metrics:")
         print(f"   CPU Usage: {system_metrics.get('cpu_usage', 'N/A')}%")
         print(f"   Memory Usage: {system_metrics.get('memory_usage', 'N/A')}%")
         print(f"   Active Processes: {system_metrics.get('active_processes', 'N/A')}")
 
         # Performance metrics
-        performance_metrics = dashboard_data.get("performance_metrics", {})
+        performance_metrics=dashboard_data.get("performance_metrics", {})
         print(f"⚡ Performance Metrics:")
         print(f"   Response Time: {performance_metrics.get('avg_response_time', 'N/A')}ms")
         print(f"   Throughput: {performance_metrics.get('requests_per_second', 'N/A')} req/s")
         print(f"   Error Rate: {performance_metrics.get('error_rate', 'N/A')}%")
 
         # ML metrics
-        ml_metrics = dashboard_data.get("ml_metrics", {})
+        ml_metrics=dashboard_data.get("ml_metrics", {})
         print(f"🤖 ML Metrics:")
         print(f"   Model Accuracy: {ml_metrics.get('model_accuracy', 'N/A')}%")
         print(f"   Prediction Latency: {ml_metrics.get('prediction_latency', 'N/A')}ms")
         print(f"   Drift Score: {ml_metrics.get('drift_score', 'N/A')}")
 
         # Trading metrics
-        trading_metrics = dashboard_data.get("trading_metrics", {})
+        trading_metrics=dashboard_data.get("trading_metrics", {})
         print(f"💰 Trading Metrics:")
         print(f"   Portfolio Value: ${trading_metrics.get('portfolio_value', 'N/A'):,.2f}")
         print(f"   Daily P&L: ${trading_metrics.get('daily_pnl', 'N/A'):,.2f}")
         print(f"   Win Rate: {trading_metrics.get('win_rate', 'N/A')}%")
 
         # Alerts
-        alerts = dashboard_data.get("alerts", [])
+        alerts=dashboard_data.get("alerts", [])
         if alerts:
             print(f"🚨 Active Alerts ({len(alerts)}):")
             for alert in alerts[:3]:  # Show top 3 alerts
@@ -224,14 +224,14 @@ class AdvancedMonitoringLauncher:
     async def stop_monitoring(self) -> None:
         """Stop the monitoring system."""
         self.logger.info("Stopping advanced monitoring system...")
-        self.is_running = False
+        self.is_running=False
 
         if self.integration_manager:
             await self.integration_manager.stop_integration()
 
         self.logger.info("✅ Advanced monitoring system stopped")
 
-    async def generate_report(self, report_type: str = "comprehensive") -> dict[str, Any]:
+    async def generate_report(self, report_type: str="comprehensive") -> dict[str, Any]:
         """Generate a monitoring report."""
         if not self.integration_manager:
             return {"error": "Integration manager not initialized"}
@@ -243,7 +243,7 @@ async def main():
     """Main function for the advanced monitoring launcher."""
     import argparse
 
-    parser = argparse.ArgumentParser(
+    parser=argparse.ArgumentParser(
         description="Advanced Monitoring System Launcher"
     )
     parser.add_argument(
@@ -263,20 +263,20 @@ async def main():
         help="Generate a specific report type",
     )
 
-    args = parser.parse_args()
+    args=parser.parse_args()
 
     # Initialize launcher
-    launcher = AdvancedMonitoringLauncher()
+    launcher=AdvancedMonitoringLauncher()
 
     try:
         # Setup monitoring
-        success = await launcher.setup_monitoring()
+        success=await launcher.setup_monitoring()
         if not success:
             print("❌ Failed to setup monitoring system")
             sys.exit(1)
 
         # Start monitoring
-        success = await launcher.start_monitoring()
+        success=await launcher.start_monitoring()
         if not success:
             print("❌ Failed to start monitoring system")
             sys.exit(1)
@@ -284,7 +284,7 @@ async def main():
         # Handle different modes
         if args.report:
             print(f"📊 Generating {args.report} report...")
-            report = await launcher.generate_report(args.report)
+            report=await launcher.generate_report(args.report)
             print("Report generated successfully")
             print(report)
         elif args.demo:
@@ -306,5 +306,5 @@ async def main():
         await launcher.stop_monitoring()
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     asyncio.run(main())

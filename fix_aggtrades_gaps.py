@@ -16,14 +16,14 @@ from src.training.steps.step1.data_gap_detector import DataGapDetector
 from src.training.steps.step1.missing_data_downloader_and_gap_filler import MissingDataDownloaderAndGapFiller
 
 # Add project root to path
-project_root = Path(__file__).parent
+project_root=Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-logger = system_logger.getChild("FixAggtradesGaps")
+logger=system_logger.getChild("FixAggtradesGaps")
 
 
 async def fix_specific_files_gaps(
-    symbol: str = "ETHUSDT", exchange: str = "BINANCE", target_files: List[str] = None
+    symbol: str="ETHUSDT", exchange: str="BINANCE", target_files: List[str] = None
 ) -> Dict:
     """
     Fix gaps in specific aggtrades files
@@ -40,10 +40,10 @@ async def fix_specific_files_gaps(
     logger.info("=" * 80)
 
     # Initialize components
-    gap_detector = DataGapDetector()
-    gap_filler = MissingDataDownloaderAndGapFiller()
+    gap_detector=DataGapDetector()
+    gap_filler=MissingDataDownloaderAndGapFiller()
 
-    results = {
+    results={
         "files_processed": 0,
         "gaps_before": 0,
         "gaps_after": 0,
@@ -57,26 +57,26 @@ async def fix_specific_files_gaps(
         logger.info("📊 STEP 1: DETECTING CURRENT GAPS")
         logger.info("-" * 60)
 
-        all_gaps = gap_detector.detect_aggtrades_gaps(symbol, exchange)
+        all_gaps=gap_detector.detect_aggtrades_gaps(symbol, exchange)
         results["gaps_before"] = len(all_gaps)
 
         logger.info(f"📊 Found {len(all_gaps)} total gaps across all files")
 
         # Filter gaps for target files if specified
         if target_files:
-            target_gaps = [gap for gap in all_gaps if gap["file"] in target_files]
+            target_gaps=[gap for gap in all_gaps if gap["file"] in target_files]
             logger.info(
                 f"🎯 Filtering to {len(target_gaps)} gaps in target files: {target_files}"
             )
         else:
-            target_gaps = all_gaps
+            target_gaps=all_gaps
 
         if not target_gaps:
             logger.info("✅ No gaps found in target files")
             return results
 
         # Group gaps by file
-        gaps_by_file = {}
+        gaps_by_file={}
         for gap in target_gaps:
             file_name = gap["file"]
             if file_name not in gaps_by_file:
@@ -93,7 +93,7 @@ async def fix_specific_files_gaps(
 
             try:
                 # Attempt to fill gaps for this file
-                fill_results = await gap_filler.fill_aggtrades_gaps(
+                fill_results=await gap_filler.fill_aggtrades_gaps(
                     symbol, exchange, file_gaps
                 )
 
@@ -116,11 +116,11 @@ async def fix_specific_files_gaps(
         logger.info("📊 STEP 3: VERIFYING RESULTS")
         logger.info("-" * 60)
 
-        updated_gaps = gap_detector.detect_aggtrades_gaps(symbol, exchange)
+        updated_gaps=gap_detector.detect_aggtrades_gaps(symbol, exchange)
         results["gaps_after"] = len(updated_gaps)
 
         # Calculate improvement
-        gaps_eliminated = results["gaps_before"] - results["gaps_after"]
+        gaps_eliminated=results["gaps_before"] - results["gaps_after"]
         improvement_rate = (
             (gaps_eliminated / results["gaps_before"] * 100)
             if results["gaps_before"] > 0
@@ -161,7 +161,7 @@ async def main():
     """Main function to fix gaps in problematic files"""
 
     # Target the files with the most gaps
-    problematic_files = [
+    problematic_files=[
         "aggtrades_BINANCE_ETHUSDT_2023-09-24.parquet",  # 31 gaps
         "aggtrades_BINANCE_ETHUSDT_2023-08-27.parquet",  # 23 gaps
         "aggtrades_BINANCE_ETHUSDT_2023-09-23.parquet",  # 16 gaps
@@ -172,7 +172,7 @@ async def main():
     logger.info("=" * 80)
 
     # Fix gaps in these specific files
-    results = await fix_specific_files_gaps(
+    results=await fix_specific_files_gaps(
         symbol="ETHUSDT", exchange="BINANCE", target_files=problematic_files
     )
 
@@ -188,7 +188,7 @@ async def main():
         return False
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     success = asyncio.run(main())
     print(f"\nScript completed with {'success' if success else 'limited success'}")
     sys.exit(0 if success else 1)

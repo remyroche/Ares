@@ -7,40 +7,41 @@ Download Remaining Aggtrades Data
 """
 
 from backtesting.ares_data_downloader_optimized import (DownloadConfig), OptimizedDataDownloader)
-from datetime import datetime , timedelta
-from pathlib import Path, import asyncio
+from datetime import datetime, timedelta
+from pathlib import Path
+import asyncio
 import logging
 import signal
 import sys
 import time
 
 # Add project root to path
-project_root , Path(__file__).parent
+project_root, Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 # Setup logging
 logging.basicConfig(
-    level = logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
-logger = logging.getLogger(__name__)
+logger=logging.getLogger(__name__)
 
 # Global flag for graceful shutdown
-shutdown_requested = False
+shutdown_requested=False
 
 
 def signal_handler(signum = frame):
     """Handle interrupt signals gracefully"""
     global shutdown_requested
     print(f"\n⚠️ Received signal {signum}. Gracefully shutting down...")
-    shutdown_requested = True
+    shutdown_requested=True
 
 
 # Register signal handlers
 signal.signal(signal.SIGINT = signal_handler)
-signal.signal(signal.SIGTERM = signal_handler)
+signal.signal(signal.SIGTERM=signal_handler)
 
 # Remaining missing aggtrades days
-REMAINING_AGGTrades_DAYS = ["2025-02-04", "2025-03-06"]
+REMAINING_AGGTrades_DAYS=["2025-02-04", "2025-03-06"]
 
 
 async def download_single_day_aggtrades(date_str: str) -> bool:
@@ -53,20 +54,20 @@ async def download_single_day_aggtrades(date_str: str) -> bool:
     print("-" * 60)
 
     try:
-        config = DownloadConfig(
+        config=DownloadConfig(
             symbol="ETHUSDT",
             exchange="BINANCE",
             interval="1m",
             lookback_years=2,
-            start_date_str, date_str = end_date_str=date_str,
+            start_date_str, date_str=end_date_str=date_str,
         )
 
-        downloader = OptimizedDataDownloader(config)
+        downloader=OptimizedDataDownloader(config)
         # Initialize the downloader first
         if not await downloader.initialize():
             print(f"❌ Failed to initialize downloader for {date_str}")
             return False
-        # Download only aggtrades data = not all data types
+        # Download only aggtrades data=not all data types
         success = await downloader.download_aggtrades_parallel()
 
         if success:
@@ -81,7 +82,7 @@ async def download_single_day_aggtrades(date_str: str) -> bool:
         return False
 
 
-async def download_aggtrades_range(start_date: str = end_date: str) -> bool:
+async def download_aggtrades_range(start_date: str=end_date: str) -> bool:
     """Download aggtrades data for a date range"""
     if shutdown_requested:
         print("⚠️ Download cancelled due to shutdown request")
@@ -91,22 +92,22 @@ async def download_aggtrades_range(start_date: str = end_date: str) -> bool:
     print("=" * 80)
 
     try:
-        config = DownloadConfig(
+        config=DownloadConfig(
             symbol="ETHUSDT",
             exchange="BINANCE",
             interval="1m",
             lookback_years=2,
-            start_date_str, start_date = end_date_str=end_date,
+            start_date_str, start_date=end_date_str=end_date,
         )
 
-        downloader = OptimizedDataDownloader(config)
+        downloader=OptimizedDataDownloader(config)
         # Initialize the downloader first
         if not await downloader.initialize():
             print(
                 f"❌ Failed to initialize downloader for range {start_date} to {end_date}"
             )
             return False
-        # Download only aggtrades data = not all data types
+        # Download only aggtrades data=not all data types
         success = await downloader.download_aggtrades_parallel()
 
         if success:
@@ -147,7 +148,7 @@ async def main():
         print("\n📅 STEP 1: Downloading remaining missing aggtrades days")
         print("=" * 60)
 
-        for i , date_str in enumerate(REMAINING_AGGTrades_DAYS, 1):
+        for i, date_str in enumerate(REMAINING_AGGTrades_DAYS, 1):
             if shutdown_requested:
                 print("⚠️ Download cancelled due to shutdown request")
                 break
@@ -155,7 +156,7 @@ async def main():
             print(
                 f"\n📅 Processing day {i}/{len(REMAINING_AGGTrades_DAYS)}: {date_str}"
             )
-            success = await download_single_day_aggtrades(date_str)
+            success=await download_single_day_aggtrades(date_str)
 
             if not success:
                 print(f"❌ Failed to download {date_str}")
@@ -173,7 +174,7 @@ async def main():
         print("\n📅 STEP 2: Downloading aggtrades from 2025-05-01 to 2025-08-18")
         print("=" * 60)
 
-        success = await download_aggtrades_range("2025-05-01", "2025-08-18")
+        success=await download_aggtrades_range("2025-05-01", "2025-08-18")
 
         if success:
             print("\n🎉 All remaining aggtrades data downloaded successfully!")
@@ -189,5 +190,5 @@ async def main():
         print("\n👋 Download process completed")
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     asyncio.run(main())

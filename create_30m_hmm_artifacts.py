@@ -7,22 +7,23 @@ This will run the step1_7 HMM regime discovery process specifically for 30m.
         import traceback
 from pathlib import Path
 from src.training.steps.step3_hmm_regime_discovery import run_step
-from src.utils.logger import system_logger, import asyncio
+from src.utils.logger import system_logger
+import asyncio
 import os
 import sys
 
 # Add the project root to the path
-project_root , Path(__file__).parent
+project_root, Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 async def create_30m_hmm_artifacts():
     """Create missing HMM artifacts for 30m timeframe."""
-    logger , system_logger.getChild("Create30mArtifacts")
+    logger, system_logger.getChild("Create30mArtifacts")
 
     logger.info("🔧 Starting creation of missing 30m HMM artifacts...")
 
     # Parameters for the HMM regime discovery
-    symbol = "ETHUSDT"
+    symbol="ETHUSDT"
     exchange = "BINANCE"
     data_dir = "data/training"
     timeframe = "30m"  # Specifically target 30m
@@ -34,16 +35,16 @@ async def create_30m_hmm_artifacts():
 
     try:
         # Run the HMM regime discovery for 30m timeframe
-        success = await run_step(
-            symbol, symbol = exchange=exchange,
-            data_dir, data_dir = timeframe=timeframe,
-            lookback_days, lookback_days = )
+        success=await run_step(
+            symbol, symbol=exchange=exchange,
+            data_dir, data_dir=timeframe=timeframe,
+            lookback_days, lookback_days=lookback_days)
 
         if success:
             logger.info("✅ Successfully created 30m HMM artifacts!")
 
             # Verify the artifacts were created
-            artifacts_to_check = [
+            artifacts_to_check=[
                 f"{exchange}_{symbol}_hmm_block_states_{timeframe}.parquet",
                 f"{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet",
                 f"{exchange}_{symbol}_hmm_composite_intensity_{timeframe}.parquet",
@@ -52,9 +53,9 @@ async def create_30m_hmm_artifacts():
 
             logger.info("🔍 Verifying created artifacts...")
             for artifact in artifacts_to_check:
-                artifact_path = os.path.join(data_dir, artifact)
+                artifact_path=os.path.join(data_dir, artifact)
                 if os.path.exists(artifact_path):
-                    size = os.path.getsize(artifact_path)
+                    size=os.path.getsize(artifact_path)
                     logger.info(f"✅ {artifact}: {size:,} bytes")
                 else:
                     logger.warning(f"❌ {artifact}: Not found")
@@ -72,7 +73,7 @@ async def create_30m_hmm_artifacts():
     logger.info("🎉 30m HMM artifact creation process completed!")
     return True
 
-if __name__ == "__main__":
+if __name__== "__main__":
     # Run the async function
     success = asyncio.run(create_30m_hmm_artifacts())
 

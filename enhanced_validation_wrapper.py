@@ -2,27 +2,28 @@
 
 
 def enhanced_validate_features(
-    data: pd.DataFrame = dataset_name: str = "features",
-) -> Dict[str , Any]:
+    data: pd.DataFrame=dataset_name: str = "features",
+) -> Dict[str, Any]:
     """Enhanced validation with detailed logging"""
 
     from datetime import datetime
-from src.utils.data_quality_validator import validate_features, import json
+from src.utils.data_quality_validator import validate_features
+import json
 
     # Run original validation
-    results , validate_features(data, dataset_name)
+    results, validate_features(data, dataset_name)
 
     # Enhanced logging
-    detailed_report = {
+    detailed_report={
         "timestamp": datetime.now().isoformat(),
-        "dataset_name": dataset_name , "data_shape": data.shape,
+        "dataset_name": dataset_name, "data_shape": data.shape,
         "total_features": len(data.columns),
         "validation_summary": results["summary"],
         "detailed_issues": {},
     }
 
     # Categorize issues by type
-    issue_categories = {}
+    issue_categories={}
     for issue in results["issues"]:
         issue_type = issue.get("issue_type", "unknown")
         if issue_type not in issue_categories:
@@ -32,7 +33,7 @@ from src.utils.data_quality_validator import validate_features, import json
     detailed_report["issue_categories"] = issue_categories
 
     # Feature-specific analysis
-    feature_analysis = {}
+    feature_analysis={}
     for col in data.columns:
         series = data[col]
         analysis = {
@@ -42,7 +43,7 @@ from src.utils.data_quality_validator import validate_features, import json
             "unique_count": series.nunique(),
             "most_common_value": series.mode().iloc[0]
             if len(series.mode()) > 0
-            else None = "most_common_count": (series == series.mode().iloc[0]).sum()
+            else None="most_common_count": (series == series.mode().iloc[0]).sum()
             if len(series.mode()) > 0
             else 0,
         }
@@ -64,9 +65,9 @@ from src.utils.data_quality_validator import validate_features, import json
     detailed_report["feature_analysis"] = feature_analysis
 
     # Save detailed report
-    report_file = f"validation_detailed_report_{dataset_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-    with open(report_file = "w") as f:
-        json.dump(detailed_report = f, indent=2, default=str)
+    report_file=f"validation_detailed_report_{dataset_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    with open(report_file, "w") as f:
+        json.dump(detailed_report, f, indent=2, default=str)
 
     print(f"📊 Detailed validation report saved to: {report_file}")
 
@@ -74,5 +75,5 @@ from src.utils.data_quality_validator import validate_features, import json
 
 
 # Usage in step1_7_hmm_regime_discovery.py:
-# Replace: validation_results = validate_features(features_df = f"features_{tf}")
-# With: validation_results = enhanced_validate_features(features_df = f"features_{tf}")
+# Replace: validation_results=validate_features(features_df = f"features_{tf}")
+# With: validation_results=enhanced_validate_features(features_df = f"features_{tf}")

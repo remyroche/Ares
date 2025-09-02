@@ -21,7 +21,7 @@ class MulticollinearityFixer:
     """Provides solutions to fix multicollinearity issues in the pipeline."""
 
     def __init__(self) -> None:
-        self.logger = system_logger.getChild("MulticollinearityFixer")
+        self.logger=system_logger.getChild("MulticollinearityFixer")
 
     @handle_errors(default_return={}, context="generate_feature_engineering_fixes")
     def generate_feature_engineering_fixes(self) -> Dict[str, Any]:
@@ -116,44 +116,44 @@ class MulticollinearityFixer:
                 (
                     "def _filter_redundant_price_features(self, data: pd.DataFrame) -> pd.DataFrame:\n"
                     "    \"\"\"Remove redundant price features that cause multicollinearity.\"\"\"\n"
-                    "    redundant_features = [\n"
+                    "    redundant_features=[\n"
                     "        'open', 'high', 'low', 'avg_price', 'min_price', 'max_price',\n"
                     "        'open_price_change', 'high_price_change', 'low_price_change',\n"
                     "        'avg_price_change', 'min_price_change', 'max_price_change'\n"
                     "    ]\n"
-                    "    existing_redundant = [c for c in redundant_features if c in data.columns]\n"
+                    "    existing_redundant=[c for c in redundant_features if c in data.columns]\n"
                     "    if existing_redundant:\n"
                     "        self.logger.info(f'Removing redundant price features: {existing_redundant}')\n"
-                    "        data = data.drop(columns=existing_redundant)\n"
+                    "        data=data.drop(columns=existing_redundant)\n"
                     "    return data\n"
                 ),
                 "# Add this method to validate VIF scores",
                 (
-                    "def _validate_vif_scores(self, data: pd.DataFrame, max_vif: float = 10.0) -> bool:\n"
+                    "def _validate_vif_scores(self, data: pd.DataFrame, max_vif: float=10.0) -> bool:\n"
                     "    \"\"\"Validate that all features have acceptable VIF scores.\"\"\"\n"
                     "    import numpy as np\n"
                     "    from sklearn.linear_model import LinearRegression\n"
                     "    from sklearn.impute import SimpleImputer\n"
                     "    if data.empty:\n"
                     "        return True\n"
-                    "    imputer = SimpleImputer(strategy='median')\n"
-                    "    data_imputed = pd.DataFrame(imputer.fit_transform(data), columns=data.columns, index=data.index)\n"
+                    "    imputer=SimpleImputer(strategy='median')\n"
+                    "    data_imputed=pd.DataFrame(imputer.fit_transform(data), columns=data.columns, index=data.index)\n"
                     "    vif_scores: dict[str, float] = {}\n"
                     "    for col in data_imputed.columns:\n"
-                    "        other_cols = [c for c in data_imputed.columns if c != col]\n"
+                    "        other_cols=[c for c in data_imputed.columns if c != col]\n"
                     "        if not other_cols:\n"
                     "            continue\n"
                     "        X = data_imputed[other_cols]\n"
                     "        y = data_imputed[col]\n"
                     "        reg = LinearRegression()\n"
                     "        reg.fit(X, y)\n"
-                    "        y_pred = reg.predict(X)\n"
-                    "        ss_res = float(np.sum((y - y_pred) ** 2))\n"
-                    "        ss_tot = float(np.sum((y - float(np.mean(y))) ** 2))\n"
-                    "        r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0.0\n"
-                    "        vif = (1.0 / (1.0 - r_squared)) if r_squared < 1.0 else float('inf')\n"
+                    "        y_pred=reg.predict(X)\n"
+                    "        ss_res=float(np.sum((y - y_pred) ** 2))\n"
+                    "        ss_tot=float(np.sum((y - float(np.mean(y))) ** 2))\n"
+                    "        r_squared=1 - (ss_res / ss_tot) if ss_tot != 0 else 0.0\n"
+                    "        vif=(1.0 / (1.0 - r_squared)) if r_squared < 1.0 else float('inf')\n"
                     "        vif_scores[col] = float(vif)\n"
-                    "    high_vif = [c for c, v in vif_scores.items() if v > max_vif]\n"
+                    "    high_vif=[c for c, v in vif_scores.items() if v > max_vif]\n"
                     "    if high_vif:\n"
                     "        self.logger.warning(f'High VIF features: {high_vif}')\n"
                     "        return False\n"
@@ -163,13 +163,13 @@ class MulticollinearityFixer:
             "vectorized_labelling_orchestrator.py": [
                 "# Add this helper to remove extreme VIF features early",
                 (
-                    "def _remove_extreme_vif_features(self, data: pd.DataFrame, threshold: float = 1000.0) -> pd.DataFrame:\n"
+                    "def _remove_extreme_vif_features(self, data: pd.DataFrame, threshold: float=1000.0) -> pd.DataFrame:\n"
                     "    \"\"\"Remove features with extreme VIF scores (> threshold).\"\"\"\n"
-                    "    vif_scores = self._calculate_vif_scores(data)\n"
-                    "    extreme = [c for c, v in vif_scores.items() if v > threshold]\n"
+                    "    vif_scores=self._calculate_vif_scores(data)\n"
+                    "    extreme=[c for c, v in vif_scores.items() if v > threshold]\n"
                     "    if extreme:\n"
                     "        self.logger.warning(f'Removing extreme VIF features: {extreme}')\n"
-                    "        data = data.drop(columns=extreme, errors='ignore')\n"
+                    "        data=data.drop(columns=extreme, errors='ignore')\n"
                     "    return data\n"
                 ),
             ],
@@ -182,9 +182,9 @@ def main() -> bool:
     print("MULTICOLLINEARITY FIX GENERATOR")
     print("=" * 60)
 
-    fixer = MulticollinearityFixer()
+    fixer=MulticollinearityFixer()
 
-    fixes = fixer.generate_feature_engineering_fixes()
+    fixes=fixer.generate_feature_engineering_fixes()
 
     print("\nCRITICAL ISSUES IDENTIFIED:")
     for issue in fixes.get("critical_issues", []):
@@ -207,7 +207,7 @@ def main() -> bool:
         print(f"   - {config_change}")
 
     print("\nRECOMMENDED CONFIGURATION:")
-    config_template = fixer.generate_configuration_template()
+    config_template=fixer.generate_configuration_template()
     for section, settings in config_template.items():
         print(f"\n   {section}:")
         for key, value in settings.items():
@@ -219,7 +219,7 @@ def main() -> bool:
                 print(f"     - {key}: {value}")
 
     print("\nCODE FIXES:")
-    code_fixes = fixer.generate_code_fixes()
+    code_fixes=fixer.generate_code_fixes()
     for file_name, edits in code_fixes.items():
         print(f"\n   {file_name}:")
         for edit in edits:
@@ -238,6 +238,6 @@ def main() -> bool:
     return True
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     success = main()
     raise SystemExit(0 if success else 1)

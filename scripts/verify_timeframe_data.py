@@ -18,19 +18,19 @@ from src.config import CONFIG
 import pandas as pd
 
 # Add project root to path
-project_root = Path(__file__).parent.parent
+project_root=Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-logger = system_logger.getChild("TimeframeDataVerifier")
+logger=system_logger.getChild("TimeframeDataVerifier")
 
 
 class TimeframeDataVerifier:
     """Verifies data availability for multi-timeframe HMM ensemble."""
 
     def __init__(self, config: dict[str, Any]):
-        self.config = config
+        self.config=config
         self.timeframes = ["5m", "15m", "30m", "1h"]
-        self.data_dir = project_root / "data"
+        self.data_dir=project_root / "data"
         self.models_dir = project_root / "models"
 
     def verify_data_files(self) -> dict[str, bool]:
@@ -41,18 +41,18 @@ class TimeframeDataVerifier:
 
         for timeframe in self.timeframes:
             # Check for CSV data files
-            csv_file = self.data_dir / f"ETHUSDT_{timeframe}.csv"
+            csv_file=self.data_dir / f"ETHUSDT_{timeframe}.csv"
             csv_exists = csv_file.exists()
 
             # Check for parquet data files (if they exist)
-            parquet_file = self.data_dir / f"ETHUSDT_{timeframe}.parquet"
+            parquet_file=self.data_dir / f"ETHUSDT_{timeframe}.parquet"
             parquet_exists = parquet_file.exists()
 
             # Check for labeled regime data
-            regime_file = (
+            regime_file=(
                 self.data_dir / f"BINANCE_ETHUSDT_labeled_regimes_{timeframe}.csv"
             )
-            regime_exists = regime_file.exists()
+            regime_exists=regime_file.exists()
 
             data_status[timeframe] = {
                 "csv_exists": csv_exists,
@@ -75,15 +75,15 @@ class TimeframeDataVerifier:
 
         for timeframe in self.timeframes:
             # Check for ensemble models
-            ensemble_dir = self.models_dir / f"ensemble_{timeframe}"
+            ensemble_dir=self.models_dir / f"ensemble_{timeframe}"
             ensemble_exists = ensemble_dir.exists() and any(ensemble_dir.iterdir())
 
             # Check for HMM models
-            hmm_dir = self.models_dir / f"hmm_{timeframe}"
+            hmm_dir=self.models_dir / f"hmm_{timeframe}"
             hmm_exists = hmm_dir.exists() and any(hmm_dir.iterdir())
 
             # Check for regime forecasting models
-            regime_dir = self.models_dir / f"regime_forecasting_{timeframe}"
+            regime_dir=self.models_dir / f"regime_forecasting_{timeframe}"
             regime_exists = regime_dir.exists() and any(regime_dir.iterdir())
 
             model_status[timeframe] = {
@@ -106,11 +106,11 @@ class TimeframeDataVerifier:
         quality_metrics: dict[str, dict[str, Any]] = {}
 
         for timeframe in self.timeframes:
-            csv_file = self.data_dir / f"ETHUSDT_{timeframe}.csv"
+            csv_file=self.data_dir / f"ETHUSDT_{timeframe}.csv"
 
             if csv_file.exists():
                 try:
-                    df = pd.read_csv(csv_file)
+                    df=pd.read_csv(csv_file)
 
                     # Basic quality metrics
                     quality_metrics[timeframe] = {
@@ -125,7 +125,7 @@ class TimeframeDataVerifier:
                     }
 
                     logger.info(
-                        f"  {timeframe}: {len(df)} rows = {len(df.columns)} cols, {quality_metrics[timeframe]['data_size_mb']:.2f}MB",
+                        f"  {timeframe}: {len(df)} rows={len(df.columns)} cols, {quality_metrics[timeframe]['data_size_mb']:.2f}MB",
                     )
                 except Exception as e:  # noqa: BLE001
                     logger.exception(f"  {timeframe}: Error reading data - {e}")
@@ -143,19 +143,19 @@ class TimeframeDataVerifier:
         completeness: dict[str, bool] = {}
 
         for timeframe in self.timeframes:
-            csv_file = self.data_dir / f"ETHUSDT_{timeframe}.csv"
+            csv_file=self.data_dir / f"ETHUSDT_{timeframe}.csv"
 
             if csv_file.exists():
                 try:
-                    df = pd.read_csv(csv_file)
+                    df=pd.read_csv(csv_file)
 
                     # Check for minimum required data
-                    min_rows = 1000  # Minimum rows for training
+                    min_rows=1000  # Minimum rows for training
                     has_required_columns = all(
                         col in df.columns for col in ["open", "high", "low", "close", "volume"]
                     )
-                    has_sufficient_data = len(df) >= min_rows
-                    has_no_major_gaps = (
+                    has_sufficient_data=len(df) >= min_rows
+                    has_no_major_gaps=(
                         df.isnull().sum().max() < len(df) * 0.1
                     )  # Less than 10% missing
 
@@ -166,7 +166,7 @@ class TimeframeDataVerifier:
                         "ready_for_training": has_required_columns and has_sufficient_data and has_no_major_gaps,
                     }
 
-                    status = (
+                    status=(
                         "✅" if completeness[timeframe]["ready_for_training"] else "❌"
                     )
                     logger.info(f"  {timeframe}: {status} Ready for training")
@@ -201,7 +201,7 @@ class TimeframeDataVerifier:
         }
 
         # Summary
-        ready_timeframes = [
+        ready_timeframes=[
             tf
             for tf, status in report["completeness"].items()
             if status.get("ready_for_training", False)
@@ -226,7 +226,7 @@ class TimeframeDataVerifier:
         print(f"🎯 Target Timeframes: {', '.join(report['timeframes'])}")
 
         # Summary
-        summary = report["summary"]
+        summary=report["summary"]
         print("\n📈 SUMMARY:")
         print(f"   Total Timeframes: {summary['total_timeframes']}")
         print(f"   Ready for Training: {summary['ready_timeframes']}")
@@ -240,7 +240,7 @@ class TimeframeDataVerifier:
         # Detailed breakdown
         print("\n📋 DETAILED BREAKDOWN:")
         for timeframe in report["timeframes"]:
-            data_status = report["data_files"][timeframe]
+            data_status=report["data_files"][timeframe]
             model_status = report["model_files"][timeframe]
             completeness = report["completeness"][timeframe]
 
@@ -263,7 +263,7 @@ class TimeframeDataVerifier:
 
 def main() -> bool:
     """Main function to run the verification."""
-    parser = argparse.ArgumentParser(
+    parser=argparse.ArgumentParser(
         description="Verify timeframe data for multi-timeframe HMM ensemble",
     )
     parser.add_argument("--config", type=str, default="", help="Path to config file")
@@ -274,31 +274,31 @@ def main() -> bool:
         help="Path to save report JSON",
     )
 
-    args = parser.parse_args()
+    args=parser.parse_args()
 
     try:
         # Load configuration
         config: dict[str, Any] = CONFIG if hasattr(CONFIG, "get") else {}
 
         # Create verifier
-        verifier = TimeframeDataVerifier(config)
+        verifier=TimeframeDataVerifier(config)
 
         # Generate report
-        report = verifier.generate_report()
+        report=verifier.generate_report()
 
         # Print report
         verifier.print_report(report)
 
         # Save report if requested
         if args.output:
-            output_path = Path(args.output)
+            output_path=Path(args.output)
             output_path.parent.mkdir(parents=True, exist_ok=True)
             with open(output_path, "w", encoding="utf-8") as f:
                 json.dump(report, f, indent=2, default=str)
             logger.info(f"📄 Report saved to {args.output}")
 
         # Return success/failure
-        success = bool(report["summary"]["all_ready"])  # ensure bool
+        success=bool(report["summary"]["all_ready"])  # ensure bool
         if success:
             logger.info("✅ All timeframes verified and ready for training!")
         else:
@@ -310,6 +310,6 @@ def main() -> bool:
         return False
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     success = main()
     sys.exit(0 if success else 1)

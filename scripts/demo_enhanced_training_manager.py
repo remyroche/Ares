@@ -29,14 +29,14 @@ async def load_config() -> Dict[str, Any]:
     """Load configuration for the enhanced training manager."""
     
     # Try to load from config file first
-    config_path = Path("config/enhanced_reporting_config.yaml")
+    config_path=Path("config/enhanced_reporting_config.yaml")
     if config_path.exists():
         with open(config_path, 'r', encoding='utf-8') as f:
-            config = yaml.safe_load(f)
+            config=yaml.safe_load(f)
         system_logger.info(f"📋 Loaded configuration from {config_path}")
     else:
         # Fallback to default configuration
-        config = {
+        config={
             "enhanced_training_manager": {
                 "enhanced_training_interval": 3600,
                 "max_enhanced_training_history": 100,
@@ -70,14 +70,14 @@ async def demonstrate_enhanced_training_manager():
     
     try:
         # Load configuration
-        config = await load_config()
+        config=await load_config()
         
         # Create enhanced training manager
         system_logger.info("🔧 Creating Enhanced Training Manager with Reporting...")
-        manager = await create_enhanced_training_manager_with_reporting(config)
+        manager=await create_enhanced_training_manager_with_reporting(config)
         
         # Prepare training input
-        training_input = {
+        training_input={
             "symbol": "BTCUSDT",
             "exchange": "binance",
             "timeframe": "1m",
@@ -104,17 +104,17 @@ async def demonstrate_enhanced_training_manager():
         system_logger.info("   3. Consistent storage in centralized location")
         system_logger.info("=" * 80)
         
-        success = await manager.execute_enhanced_training(training_input)
+        success=await manager.execute_enhanced_training(training_input)
         
         if success:
             system_logger.info("✅ Enhanced Training Pipeline completed successfully!")
             system_logger.info("📊 Reports have been generated and stored.")
             
             # Show report locations
-            reports_dir = Path("reports/enhanced_training_pipeline")
+            reports_dir=Path("reports/enhanced_training_pipeline")
             if reports_dir.exists():
-                report_files = list(reports_dir.glob("*.json"))
-                summary_files = list(reports_dir.glob("*_summary.txt"))
+                report_files=list(reports_dir.glob("*.json"))
+                summary_files=list(reports_dir.glob("*_summary.txt"))
                 
                 system_logger.info("📁 Generated Reports:")
                 system_logger.info(f"   📊 JSON Reports: {len(report_files)}")
@@ -123,13 +123,13 @@ async def demonstrate_enhanced_training_manager():
                 
                 # Show latest report
                 if report_files:
-                    latest_report = max(report_files, key=lambda x: x.stat().st_mtime)
+                    latest_report=max(report_files, key=lambda x: x.stat().st_mtime)
                     system_logger.info(f"   📄 Latest Report: {latest_report.name}")
                     
                     # Show report content summary
                     try:
                         with open(latest_report, 'r', encoding='utf-8') as f:
-                            report_data = json.load(f)
+                            report_data=json.load(f)
                         
                         system_logger.info("📊 Report Summary:")
                         system_logger.info(f"   Pipeline Success: {report_data.get('overall_success', 'N/A')}")
@@ -163,13 +163,13 @@ async def demonstrate_individual_steps():
     
     try:
         # Load configuration
-        config = await load_config()
+        config=await load_config()
         
         # Create enhanced training manager
-        manager = await create_enhanced_training_manager_with_reporting(config)
+        manager=await create_enhanced_training_manager_with_reporting(config)
         
         # Demonstrate a few key steps
-        steps_to_demo = [
+        steps_to_demo=[
             ("step1_data_collection", "Data Collection"),
             ("step2_feature_engineering", "Feature Engineering"),
             ("step3_hmm_regime_discovery", "HMM Regime Discovery")
@@ -180,10 +180,10 @@ async def demonstrate_individual_steps():
             
             try:
                 # Get the step method
-                step_method = getattr(manager, f"_execute_{step_method_name}_enhanced")
+                step_method=getattr(manager, f"_execute_{step_method_name}_enhanced")
                 
                 # Execute with decorators
-                result = await step_method(
+                result=await step_method(
                     symbol="BTCUSDT",
                     exchange="binance",
                     timeframe="1m",
@@ -274,17 +274,17 @@ async def main():
     print("4. Exit")
     
     try:
-        choice = input("Enter your choice (1-4): ").strip()
+        choice=input("Enter your choice (1-4): ").strip()
         
-        if choice == "1":
+        if choice== "1":
             await demonstrate_enhanced_training_manager()
-        elif choice == "2":
+        elif choice== "2":
             await demonstrate_individual_steps()
-        elif choice == "3":
+        elif choice== "3":
             await demonstrate_enhanced_training_manager()
             print("\n" + "="*80 + "\n")
             await demonstrate_individual_steps()
-        elif choice == "4":
+        elif choice== "4":
             system_logger.info("👋 Goodbye!")
             return
         else:
@@ -303,6 +303,6 @@ async def main():
     system_logger.info("📋 Review the logs for detailed execution information")
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     # Run the demonstration
     asyncio.run(main())

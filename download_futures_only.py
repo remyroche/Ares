@@ -20,23 +20,23 @@ from backtesting.ares_data_downloader_optimized import (
 )
 
 # Add project root to path
-project_root = Path(__file__).parent
+project_root=Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 # Setup logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
-logger = logging.getLogger(__name__)
+logger=logging.getLogger(__name__)
 
 # Global flag for graceful shutdown
-shutdown_requested = False
+shutdown_requested=False
 
 
 def signal_handler(signum, frame) -> None:
     """Handle interrupt signals gracefully."""
     global shutdown_requested
-    shutdown_requested = True
+    shutdown_requested=True
 
 
 # Register signal handlers
@@ -49,18 +49,18 @@ async def download_futures_month(year: int, month: int):
     if shutdown_requested:
         return False
 
-    month_str = f"{year:04d}-{month:02d}"
+    month_str=f"{year:04d}-{month:02d}"
 
     try:
         # Calculate start and end dates for the FULL month
         start_date = datetime(year, month, 1)
-        if month == 12:
+        if month== 12:
             end_date = datetime(year + 1, 1, 1)  # Start of next year
         else:
-            end_date = datetime(year, month + 1, 1)  # Start of next month
+            end_date=datetime(year, month + 1, 1)  # Start of next month
 
 
-        config = DownloadConfig(
+        config=DownloadConfig(
             symbol="ETHUSDT",
             exchange="BINANCE",
             interval="1m",
@@ -71,14 +71,14 @@ async def download_futures_month(year: int, month: int):
             ),  # End date should be last day of month
         )
 
-        downloader = OptimizedDataDownloader(config)
+        downloader=OptimizedDataDownloader(config)
 
         # Initialize the downloader first
         if not await downloader.initialize():
             return False
 
         # Download ONLY futures data (not all data types)
-        success = await downloader.download_futures_parallel()
+        success=await downloader.download_futures_parallel()
 
         if success:
     pass  # TODO: Add proper implementation
@@ -93,7 +93,7 @@ async def download_futures_month(year: int, month: int):
 
 async def download_futures_2023():
     """Download futures data for all months in 2023."""
-    results = {}
+    results={}
     for month in range(1, 13):
         if shutdown_requested:
             break
@@ -107,7 +107,7 @@ async def download_futures_2023():
 
 async def download_futures_2025_01_to_04():
     """Download futures data for 2025-01 to 2025-04."""
-    results = {}
+    results={}
     for month in range(1, 5):  # January to April
         if shutdown_requested:
             break
@@ -124,7 +124,7 @@ async def main() -> bool:
     global shutdown_requested
 
 
-    all_results = {}
+    all_results={}
 
     try:
         # Download 2023 futures data
@@ -136,11 +136,11 @@ async def main() -> bool:
         # Download 2025 futures data
         if not shutdown_requested:
     pass  # TODO: Add proper implementation
-            results_2025 = await download_futures_2025_01_to_04()
+            results_2025=await download_futures_2025_01_to_04()
             all_results.update(results_2025)
 
     except KeyboardInterrupt:
-        shutdown_requested = True
+        shutdown_requested=True
     except Exception:
         logger.exception("Unexpected error in main")
         return False
@@ -149,12 +149,12 @@ async def main() -> bool:
 
     if shutdown_requested:
     pass  # TODO: Add proper implementation
-    success_count = sum(1 for success in all_results.values() if success)
-    total_count = len(all_results)
+    success_count=sum(1 for success in all_results.values() if success)
+    total_count=len(all_results)
 
     for _task, _success in all_results.items():
     pass  # TODO: Add proper implementation
-    if success_count == total_count and not shutdown_requested:
+    if success_count== total_count and not shutdown_requested:
         return True
     if shutdown_requested:
         return False
@@ -164,9 +164,9 @@ async def main() -> bool:
 if __name__ == "__main__":
     start_time = time.time()
     try:
-        success = asyncio.run(main())
-        end_time = time.time()
-        duration = end_time - start_time
+        success=asyncio.run(main())
+        end_time=time.time()
+        duration=end_time - start_time
         sys.exit(0 if success else 1)
     except KeyboardInterrupt:
         sys.exit(1)

@@ -27,10 +27,10 @@ from src.training.enhanced_training_manager import EnhancedTrainingManager
 from src.utils.warning_symbols import failed
 
 # Add project root to path
-project_root = Path(__file__).parent.parent
+project_root=Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-async def run_enhanced_training(symbol: str, lookback_days: int, timeframe: str = "1h"):
+async def run_enhanced_training(symbol: str, lookback_days: int, timeframe: str="1h"):
     """Run enhanced training with all optimizations."""
     logger, system_logger.getChild("EnhancedTrainingRunner")
 
@@ -56,9 +56,9 @@ async def run_enhanced_training(symbol: str, lookback_days: int, timeframe: str 
         logger.info(f"✅ Training completed successfully! Session ID: {session_id}")
 
         # Display efficiency stats
-        stats = training_manager.get_efficiency_stats()
+        stats=training_manager.get_efficiency_stats()
         logger.info("📊 Final Efficiency Statistics:")
-        for key , value in stats.items():
+        for key, value in stats.items():
             logger.info(f"  {key}: {value}")
 
         return True
@@ -78,7 +78,7 @@ async def run_efficiency_demo():
     training_manager, EnhancedTrainingManager(db_manager)
 
     # Initialize efficiency optimizer
-    symbol = "ETHUSDT"
+    symbol="ETHUSDT"
     timeframe = "1h"
     await training_manager.initialize_efficiency_optimizer(symbol, timeframe)
 
@@ -87,7 +87,7 @@ async def run_efficiency_demo():
         logger.info("📊 Memory optimization demo:")
 
         # Create test data
-        test_data = pd.DataFrame(
+        test_data=pd.DataFrame(
             {
                 "timestamp": pd.date_range("2022-01-01", periods=50000, freq="1H"),
                 "open": np.random.randn(50000) * 100 + 2000,
@@ -98,21 +98,21 @@ async def run_efficiency_demo():
             },
         )
 
-        initial_memory = test_data.memory_usage(deep=True).sum()
+        initial_memory=test_data.memory_usage(deep=True).sum()
         logger.info(f"  Initial memory usage: {initial_memory / (1024**2):.2f} MB")
 
         # Optimize memory
-        optimized_data = (
+        optimized_data=(
             training_manager.efficiency_optimizer.optimize_dataframe_memory(test_data)
         )
 
-        final_memory = optimized_data.memory_usage(deep=True).sum()
-        reduction = (initial_memory - final_memory) / initial_memory * 100
+        final_memory=optimized_data.memory_usage(deep=True).sum()
+        reduction=(initial_memory - final_memory) / initial_memory * 100
         logger.info(f"  Memory reduction: {reduction:.1f}%")
 
         # Demonstrate segmentation
         logger.info("📊 Data segmentation demo:")
-        segments = training_manager.efficiency_optimizer.segment_data_by_time(
+        segments=training_manager.efficiency_optimizer.segment_data_by_time(
             segment_days=30,
         )
         logger.info(f"  Created {len(segments)} segments")
@@ -124,8 +124,8 @@ async def run_efficiency_demo():
 
         # Demonstrate database stats
         logger.info("📊 Database statistics:")
-        stats = training_manager.efficiency_optimizer.get_database_stats()
-        for key , value in stats.items():
+        stats=training_manager.efficiency_optimizer.get_database_stats()
+        for key, value in stats.items():
             logger.info(f"  {key}: {value}")
 
     logger.info("✅ Efficiency features demonstration completed")
@@ -143,14 +143,14 @@ async def run_checkpoint_demo():
     training_manager, EnhancedTrainingManager(db_manager)
 
     # Initialize efficiency optimizer
-    symbol = "ETHUSDT"
+    symbol="ETHUSDT"
     timeframe = "1h"
     await training_manager.initialize_efficiency_optimizer(symbol, timeframe)
 
     if training_manager.efficiency_optimizer:
         # Create a test checkpoint
         logger.info("📝 Creating test checkpoint...")
-        test_metadata = {
+        test_metadata={
             "stage": "data_collection",
             "progress": 0.5,
             "last_processed_date": "2023-06-15",
@@ -163,7 +163,7 @@ async def run_checkpoint_demo():
 
         # Retrieve the checkpoint
         logger.info("📖 Retrieving checkpoint...")
-        checkpoint = training_manager.efficiency_optimizer.get_latest_checkpoint(
+        checkpoint=training_manager.efficiency_optimizer.get_latest_checkpoint(
             f"training_{symbol}",
         )
 
@@ -173,7 +173,7 @@ async def run_checkpoint_demo():
 
         # Demonstrate resume functionality
         logger.info("🔄 Testing resume functionality...")
-        resume_success = await training_manager.resume_training_from_checkpoint(symbol)
+        resume_success=await training_manager.resume_training_from_checkpoint(symbol)
         logger.info(f"  Resume success: {resume_success}")
 
     logger.info("✅ Checkpoint and resume demonstration completed")
@@ -182,7 +182,7 @@ def main():
     """Main function with command line interface."""
     parser, argparse.ArgumentParser(
         description="Enhanced Training Runner for Large Datasets",
-        formatter_class=argparse.RawDescriptionHelpFormatter, epilog = """
+        formatter_class=argparse.RawDescriptionHelpFormatter, epilog="""
 Examples:
   # Run training with 2 years of data
   python scripts/run_enhanced_training.py --symbol ETHUSDT --lookback 730
@@ -250,12 +250,12 @@ Examples:
     elif args.checkpoint:
         asyncio.run(run_checkpoint_demo())
     else:
-        success = asyncio.run(
+        success=asyncio.run(
             run_enhanced_training(
                 symbol=args.symbol, lookback_days=args.lookback,
                 timeframe=args.timeframe),
         )
         sys.exit(0 if success else 1)
 
-if __name__ == "__main__":
+if __name__== "__main__":
     main()

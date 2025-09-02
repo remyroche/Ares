@@ -1,5 +1,6 @@
 import numpy as np
 from src.utils.warning_symbols import (
+import logging
     error,
     warning,
     critical,
@@ -38,6 +39,7 @@ class VolatileRegimeEnsemble(BaseEnsemble):
     """
 
     def __init__(self, config: dict, ensemble_name: str = "VolatileRegimeEnsemble"):
+        self.logger = logging.getLogger(self.__class__.__name__)
         super().__init__(config, ensemble_name)
         self.dl_config = {
             "sequence_length": 20,
@@ -115,7 +117,8 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             self.logger.info("Training GARCH model for volatility modeling...")
             self.models["garch"] = self._train_garch_model(aligned_data, y_encoded)
         except Exception as e:
-            self.print(failed("GARCH training failed: {e}"))
+            self.logger.error(failed("GARCH training failed: {e}"))
+
 
         self.logger.info("✅ VolatileRegime base models training completed")
 
@@ -142,7 +145,8 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             return np.array([]), np.array([])
 
         except Exception as e:
-            self.print(error("Error preparing sequence data: {e}"))
+            self.logger.error("Error preparing sequence data: {e}")
+
             return np.array([]), np.array([])
 
     def _train_dl_model(self, X_seq, y_seq_encoded, num_classes, is_transformer=False):
@@ -162,7 +166,8 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             )
 
         except Exception as e:
-            self.print(error("Error training DL model: {e}"))
+            self.logger.error("Error training DL model: {e}")
+
             return None
 
     def _build_lstm_model(self, input_shape, num_classes, X_seq, y_seq_encoded):
@@ -204,7 +209,8 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             return model
 
         except Exception as e:
-            self.print(error("Error building LSTM model: {e}"))
+            self.logger.error("Error building LSTM model: {e}")
+
             return None
 
     def _build_transformer_model(self, input_shape, num_classes, X_seq, y_seq_encoded):
@@ -255,7 +261,8 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             return model
 
         except Exception as e:
-            self.print(error("Error building Transformer model: {e}"))
+            self.logger.error("Error building Transformer model: {e}")
+
             return None
 
     def _train_tabnet_model(self, X_flat, y_flat_encoded):
@@ -271,7 +278,8 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             )
             return tabnet
         except Exception as e:
-            self.print(failed("TabNet training failed: {e}"))
+            self.logger.error(failed("TabNet training failed: {e}"))
+
             return None
 
     def _train_garch_model(self, aligned_data, y_encoded):
@@ -285,7 +293,8 @@ class VolatileRegimeEnsemble(BaseEnsemble):
             return garch_model.fit(disp="off")
 
         except Exception as e:
-            self.print(failed("GARCH model training failed: {e}"))
+            self.logger.error(failed("GARCH model training failed: {e}"))
+
             return None
 
     def _generate_meta_features(self, aligned_data: pd.DataFrame) -> pd.DataFrame:

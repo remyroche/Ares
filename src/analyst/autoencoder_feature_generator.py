@@ -61,6 +61,7 @@ class AutoencoderConfig:
     """Configuration manager for autoencoder feature generator."""
 
     def __init__(self, config_path: str | None = None):
+        self.logger = logging.getLogger(self.__class__.__name__)
         if not DEPENDENCIES_AVAILABLE:
             msg = f"Required dependencies not available: {MISSING_DEPENDENCY}"
             raise ImportError(

@@ -1,0 +1,4874 @@
+{
+  "summary": {
+    "total_files": 31,
+    "analyzed_files": 31,
+    "total_lines": 27426,
+    "total_functions": 443,
+    "total_classes": 40,
+    "total_issues": 800
+  },
+  "issues_by_category": {
+    "placeholders": {
+      "count": 11,
+      "issues": [
+        {
+          "file": "regime_runtime.py",
+          "line": 165,
+          "code": "pass",
+          "type": "placeholder_pass"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2743,
+          "code": "pass",
+          "type": "placeholder_pass"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2886,
+          "code": "pass",
+          "type": "placeholder_pass"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 288,
+          "code": "pass",
+          "type": "placeholder_pass"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 310,
+          "code": "pass",
+          "type": "placeholder_pass"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 812,
+          "code": "# Order book imbalance flip (placeholder - would need order flow data)",
+          "type": "placeholder_comments"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 813,
+          "code": "order_imbalance = 0  # Placeholder",
+          "type": "placeholder_comments"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 18,
+          "code": "# Placeholder imports for actual models",
+          "type": "placeholder_comments"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2645,
+          "code": "# Placeholder: regime-specific or meta-model weighting can be added here",
+          "type": "placeholder_comments"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 320,
+          "code": "# For now, use a simple neural network as LSTM placeholder",
+          "type": "placeholder_comments"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1130,
+          "marker": "BUG",
+          "code": "f\"[DEBUG] load_klines_data: type={type(df)}, shape={df.shape}, columns={df.columns.tolist()}\",",
+          "type": "todo_markers"
+        }
+      ]
+    },
+    "dead_code": {
+      "count": 0,
+      "issues": []
+    },
+    "faulty_functions": {
+      "count": 451,
+      "issues": [
+        {
+          "file": "multi_timeframe_feature_engineering.py",
+          "line": 838,
+          "code": "except:",
+          "type": "bare_except"
+        },
+        {
+          "file": "unified_regime_intelligence_runtime.py",
+          "line": 672,
+          "code": "except:",
+          "type": "bare_except"
+        },
+        {
+          "file": "unified_regime_intelligence_runtime.py",
+          "line": 693,
+          "code": "except:",
+          "type": "bare_except"
+        },
+        {
+          "file": "order_book_analyzer.py",
+          "line": 46,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "order_book_analyzer.py",
+          "line": 102,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "order_book_analyzer.py",
+          "line": 135,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "order_book_analyzer.py",
+          "line": 185,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 66,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 121,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 148,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 677,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 768,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 823,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 850,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 886,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 949,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1001,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1035,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1069,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1104,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1140,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1290,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1410,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1449,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1491,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1529,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1601,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1635,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1669,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1700,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1745,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1818,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1887,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1926,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1965,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1997,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 2035,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 2061,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 2101,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 2134,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 2152,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 2190,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 2200,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 2212,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 2229,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 2260,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 2278,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 2324,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 2342,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 2392,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "multi_timeframe_regime_integration.py",
+          "line": 145,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "multi_timeframe_regime_integration.py",
+          "line": 177,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "multi_timeframe_regime_integration.py",
+          "line": 233,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "multi_timeframe_regime_integration.py",
+          "line": 333,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "multi_timeframe_regime_integration.py",
+          "line": 465,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "multi_timeframe_regime_integration.py",
+          "line": 509,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 197,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 243,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 280,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 321,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 381,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 416,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 453,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 493,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 532,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 559,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 585,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 609,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 676,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 688,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 700,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 710,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 81,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 166,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 244,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 285,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 339,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 379,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 406,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 438,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 469,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 499,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 537,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 570,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 605,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 644,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 689,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 705,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 735,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 767,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 824,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 860,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 891,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 985,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 1076,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 1138,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 1167,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 137,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 143,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 149,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 155,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 161,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "autoencoder_feature_generator.py",
+          "line": 86,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "autoencoder_feature_generator.py",
+          "line": 153,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "autoencoder_feature_generator.py",
+          "line": 1244,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "autoencoder_feature_generator.py",
+          "line": 1364,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "autoencoder_feature_generator.py",
+          "line": 1537,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "autoencoder_feature_generator.py",
+          "line": 1654,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "autoencoder_feature_generator.py",
+          "line": 1767,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "autoencoder_feature_generator.py",
+          "line": 1864,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "autoencoder_feature_generator.py",
+          "line": 2011,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "autoencoder_feature_generator.py",
+          "line": 2100,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "autoencoder_feature_generator.py",
+          "line": 2209,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "autoencoder_feature_generator.py",
+          "line": 2263,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "autoencoder_feature_generator.py",
+          "line": 2347,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "autoencoder_feature_generator.py",
+          "line": 2910,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "autoencoder_feature_generator.py",
+          "line": 548,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "autoencoder_feature_generator.py",
+          "line": 2927,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "autoencoder_feature_generator.py",
+          "line": 2887,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "autoencoder_feature_generator.py",
+          "line": 786,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_prediction_integrator.py",
+          "line": 106,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_prediction_integrator.py",
+          "line": 137,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_prediction_integrator.py",
+          "line": 172,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_prediction_integrator.py",
+          "line": 200,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_prediction_integrator.py",
+          "line": 228,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_prediction_integrator.py",
+          "line": 259,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_prediction_integrator.py",
+          "line": 338,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_prediction_integrator.py",
+          "line": 380,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_prediction_integrator.py",
+          "line": 425,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_prediction_integrator.py",
+          "line": 461,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_prediction_integrator.py",
+          "line": 496,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_prediction_integrator.py",
+          "line": 537,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_prediction_integrator.py",
+          "line": 569,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_prediction_integrator.py",
+          "line": 594,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_prediction_integrator.py",
+          "line": 619,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_prediction_integrator.py",
+          "line": 648,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_prediction_integrator.py",
+          "line": 134,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_prediction_integrator.py",
+          "line": 197,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_prediction_integrator.py",
+          "line": 225,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_prediction_integrator.py",
+          "line": 375,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_prediction_integrator.py",
+          "line": 420,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_prediction_integrator.py",
+          "line": 167,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 1209,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 104,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 136,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 178,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 212,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 233,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 254,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 275,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 298,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 319,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 382,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 423,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 471,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 519,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 569,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 621,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 667,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 684,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 703,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 722,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 739,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 756,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 772,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 791,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 810,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 827,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 846,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 871,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 890,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 910,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 929,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 948,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 967,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 984,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 1003,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 1019,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 1035,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 1059,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 1082,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 1109,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 1159,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "regime_runtime.py",
+          "line": 17,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "regime_runtime.py",
+          "line": 220,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "regime_runtime.py",
+          "line": 216,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "regime_runtime.py",
+          "line": 198,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "liquidation_risk_model.py",
+          "line": 96,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "liquidation_risk_model.py",
+          "line": 139,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "liquidation_risk_model.py",
+          "line": 199,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "liquidation_risk_model.py",
+          "line": 249,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "liquidation_risk_model.py",
+          "line": 284,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "liquidation_risk_model.py",
+          "line": 309,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "liquidation_risk_model.py",
+          "line": 332,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "liquidation_risk_model.py",
+          "line": 358,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "liquidation_risk_model.py",
+          "line": 393,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "liquidation_risk_model.py",
+          "line": 421,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "multi_timeframe_feature_engineering.py",
+          "line": 362,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "multi_timeframe_feature_engineering.py",
+          "line": 392,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "multi_timeframe_feature_engineering.py",
+          "line": 444,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "multi_timeframe_feature_engineering.py",
+          "line": 552,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "multi_timeframe_feature_engineering.py",
+          "line": 602,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "multi_timeframe_feature_engineering.py",
+          "line": 645,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "multi_timeframe_feature_engineering.py",
+          "line": 692,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "multi_timeframe_feature_engineering.py",
+          "line": 748,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "multi_timeframe_feature_engineering.py",
+          "line": 795,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "multi_timeframe_feature_engineering.py",
+          "line": 818,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "multi_timeframe_feature_engineering.py",
+          "line": 846,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "dynamic_regime_mapper.py",
+          "line": 58,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "dynamic_regime_mapper.py",
+          "line": 91,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "dynamic_regime_mapper.py",
+          "line": 163,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "dynamic_regime_mapper.py",
+          "line": 331,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "dynamic_regime_mapper.py",
+          "line": 351,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_regime_predictor.py",
+          "line": 118,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_regime_predictor.py",
+          "line": 131,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_regime_predictor.py",
+          "line": 146,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_regime_predictor.py",
+          "line": 200,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_regime_predictor.py",
+          "line": 229,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_regime_predictor.py",
+          "line": 269,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_regime_predictor.py",
+          "line": 310,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_regime_predictor.py",
+          "line": 349,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_regime_predictor.py",
+          "line": 381,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_regime_predictor.py",
+          "line": 473,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_regime_predictor.py",
+          "line": 489,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_regime_predictor.py",
+          "line": 536,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_regime_predictor.py",
+          "line": 574,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_regime_predictor.py",
+          "line": 417,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_regime_predictor.py",
+          "line": 429,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "enhanced_regime_predictor.py",
+          "line": 442,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "decision_aggregator.py",
+          "line": 16,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1069,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1232,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1317,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1393,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1969,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 99,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 131,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 172,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 202,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 225,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 246,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 267,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 290,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 352,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 393,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 445,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 497,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 552,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 604,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 623,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 641,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 659,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 677,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 696,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 714,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 732,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 750,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 769,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 787,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 805,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 823,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 842,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 860,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 878,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 896,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 920,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 946,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 973,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1022,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_intelligence_runtime.py",
+          "line": 127,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_intelligence_runtime.py",
+          "line": 161,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_intelligence_runtime.py",
+          "line": 181,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_intelligence_runtime.py",
+          "line": 203,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_intelligence_runtime.py",
+          "line": 241,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_intelligence_runtime.py",
+          "line": 329,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_intelligence_runtime.py",
+          "line": 385,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_intelligence_runtime.py",
+          "line": 449,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_intelligence_runtime.py",
+          "line": 567,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_intelligence_runtime.py",
+          "line": 621,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_intelligence_runtime.py",
+          "line": 653,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_intelligence_runtime.py",
+          "line": 708,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_intelligence_runtime.py",
+          "line": 819,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_intelligence_runtime.py",
+          "line": 862,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_intelligence_runtime.py",
+          "line": 902,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "regime_expert_orchestrator.py",
+          "line": 100,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "regime_expert_orchestrator.py",
+          "line": 149,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "regime_expert_orchestrator.py",
+          "line": 188,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "regime_expert_orchestrator.py",
+          "line": 233,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "regime_expert_orchestrator.py",
+          "line": 360,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "regime_expert_orchestrator.py",
+          "line": 406,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "regime_expert_orchestrator.py",
+          "line": 479,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "regime_expert_orchestrator.py",
+          "line": 550,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "regime_expert_orchestrator.py",
+          "line": 299,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "meta_label_relevance.py",
+          "line": 328,
+          "code": "except Exception as _pe:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2940,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 289,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 565,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 604,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 631,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 666,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 731,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 758,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 785,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 821,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 881,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 924,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 972,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1008,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1040,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1110,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1140,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1160,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1214,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1343,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1457,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1478,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1491,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1510,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1541,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1603,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1725,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1829,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2065,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2138,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2206,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2236,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2267,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2279,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2376,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2401,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2413,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2512,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2546,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2569,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2587,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2608,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2623,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1307,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2745,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2888,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 596,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1241,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1414,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1179,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1191,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1201,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "di_analyst.py",
+          "line": 89,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "di_analyst.py",
+          "line": 172,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "di_analyst.py",
+          "line": 243,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "di_analyst.py",
+          "line": 262,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "di_analyst.py",
+          "line": 298,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "di_analyst.py",
+          "line": 322,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "di_analyst.py",
+          "line": 346,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 249,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 317,
+          "code": "except Exception as _shim_exc:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 698,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 772,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 1090,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 1146,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 1241,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 1677,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 1742,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 1823,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 1859,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 1927,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 2021,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 2057,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 2155,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 2344,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 446,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 1503,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 690,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 764,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 295,
+          "code": "except Exception as ctor_exc:  # noqa: BLE001",
+          "type": "broad_except"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 305,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "analyst.py",
+          "line": 1019,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "analyst.py",
+          "line": 207,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "analyst.py",
+          "line": 265,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "analyst.py",
+          "line": 287,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "analyst.py",
+          "line": 309,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "analyst.py",
+          "line": 328,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "analyst.py",
+          "line": 478,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "analyst.py",
+          "line": 532,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "analyst.py",
+          "line": 595,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "analyst.py",
+          "line": 623,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "analyst.py",
+          "line": 656,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "analyst.py",
+          "line": 674,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "analyst.py",
+          "line": 700,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "analyst.py",
+          "line": 718,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "analyst.py",
+          "line": 742,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "analyst.py",
+          "line": 758,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "analyst.py",
+          "line": 802,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "analyst.py",
+          "line": 872,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "analyst.py",
+          "line": 894,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "analyst.py",
+          "line": 917,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "analyst.py",
+          "line": 941,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "analyst.py",
+          "line": 988,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 215,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 269,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 311,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 333,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 356,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 431,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 474,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 541,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 597,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 674,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 711,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 763,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 805,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 848,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 904,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/enhanced_ensemble_orchestrator.py",
+          "line": 133,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/enhanced_ensemble_orchestrator.py",
+          "line": 193,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/enhanced_ensemble_orchestrator.py",
+          "line": 214,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/enhanced_ensemble_orchestrator.py",
+          "line": 236,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/ensemble_orchestrator.py",
+          "line": 572,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/ensemble_orchestrator.py",
+          "line": 744,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/ensemble_orchestrator.py",
+          "line": 761,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/ensemble_orchestrator.py",
+          "line": 281,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/ensemble_orchestrator.py",
+          "line": 594,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py",
+          "line": 117,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py",
+          "line": 144,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py",
+          "line": 164,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py",
+          "line": 206,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py",
+          "line": 257,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py",
+          "line": 273,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py",
+          "line": 287,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py",
+          "line": 361,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/base_ensemble.py",
+          "line": 501,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/base_ensemble.py",
+          "line": 833,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/base_ensemble.py",
+          "line": 912,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/base_ensemble.py",
+          "line": 938,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/base_ensemble.py",
+          "line": 971,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/base_ensemble.py",
+          "line": 1034,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/base_ensemble.py",
+          "line": 1081,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/base_ensemble.py",
+          "line": 1260,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/base_ensemble.py",
+          "line": 1290,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/base_ensemble.py",
+          "line": 1329,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/base_ensemble.py",
+          "line": 1575,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/base_ensemble.py",
+          "line": 1604,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/base_ensemble.py",
+          "line": 1638,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/base_ensemble.py",
+          "line": 580,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/base_ensemble.py",
+          "line": 821,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/base_ensemble.py",
+          "line": 1323,
+          "code": "except Exception as e:",
+          "type": "broad_except"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/base_ensemble.py",
+          "line": 1287,
+          "code": "except Exception:",
+          "type": "broad_except"
+        },
+        {
+          "file": "regime_runtime.py",
+          "line": 164,
+          "code": "except Exception:",
+          "type": "except_pass"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2742,
+          "code": "except Exception:",
+          "type": "except_pass"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2885,
+          "code": "except Exception:",
+          "type": "except_pass"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 287,
+          "code": "except Exception:",
+          "type": "except_pass"
+        },
+        {
+          "file": "unified_regime_classifier.py",
+          "line": 309,
+          "code": "except Exception:",
+          "type": "except_pass"
+        }
+      ]
+    },
+    "code_quality": {
+      "count": 338,
+      "issues": [
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 89,
+          "code": "self.print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 95,
+          "code": "self.print(warning(\"Insufficient data for pattern analysis\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 122,
+          "code": "self.print(error(\"Error analyzing candlestick patterns: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 149,
+          "code": "self.print(error(\"Error preparing candlestick data: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 678,
+          "code": "self.print(error(\"Error converting patterns to features: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 791,
+          "code": "self.print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 824,
+          "code": "self.print(error(\"Error generating feature interactions: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1144,
+          "code": "def print(self, message: str) -> None:",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1146,
+          "code": "print(message)",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1320,
+          "code": "self.print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1411,
+          "code": "self.print(error(\"Error engineering advanced features: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1450,
+          "code": "self.print(error(\"Error engineering multi-timeframe features: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1492,
+          "code": "self.print(error(\"Error calculating {timeframe} features: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1530,
+          "code": "self.print(error(\"Error resampling to {timeframe}: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1746,
+          "code": "self.print(error(\"Error generating meta-labels: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1819,
+          "code": "self.print(error(\"Error generating analyst labels: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1888,
+          "code": "self.print(error(\"Error generating tactician labels: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1927,
+          "code": "self.print(error(\"Error engineering microstructure features: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1966,
+          "code": "self.print(error(\"Error calculating price impact: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 1998,
+          "code": "self.print(error(\"Error calculating order flow imbalance: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 2036,
+          "code": "self.print(error(\"Error calculating volume profile: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 2062,
+          "code": "self.print(error(\"Error engineering adaptive indicators: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 2102,
+          "code": "self.print(error(\"Error calculating adaptive moving averages: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 2153,
+          "code": "self.print(initialization_error(\"Error initializing volatility model: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 2191,
+          "code": "self.print(error(\"Error modeling volatility: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 2230,
+          "code": "self.print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 2261,
+          "code": "self.print(error(\"Error analyzing correlations: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 2279,
+          "code": "self.print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 2325,
+          "code": "self.print(error(\"Error analyzing momentum: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 2343,
+          "code": "self.print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "advanced_feature_engineering.py",
+          "line": 2393,
+          "code": "self.print(error(\"Error analyzing liquidity: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "multi_timeframe_regime_integration.py",
+          "line": 130,
+          "code": "self.print(failed(\"Failed to initialize HMM classifier\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "multi_timeframe_regime_integration.py",
+          "line": 170,
+          "code": "self.print(failed(\"Failed to load existing HMM model\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "multi_timeframe_regime_integration.py",
+          "line": 178,
+          "code": "self.print(initialization_error(\"Error initializing HMM classifier: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "multi_timeframe_regime_integration.py",
+          "line": 234,
+          "code": "self.print(error(\"Error in regime classification: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "multi_timeframe_regime_integration.py",
+          "line": 494,
+          "code": "self.print(invalid(\"Invalid 1h data provided for training\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "multi_timeframe_regime_integration.py",
+          "line": 506,
+          "code": "self.print(failed(\"\u274c Failed to train HMM regime classifier\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "multi_timeframe_regime_integration.py",
+          "line": 510,
+          "code": "self.print(error(\"Error training HMM classifier: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 111,
+          "code": "self.print(warning(\"Empty klines data provided, returning empty DataFrame\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 198,
+          "code": "self.print(error(\"\u274c Error in feature generation orchestration: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 244,
+          "code": "self.print(error(\"Error generating legacy features: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 281,
+          "code": "self.print(error(\"Error calculating multi-timeframe features: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 322,
+          "code": "self.print(error(\"Error calculating meta-labeling features: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 382,
+          "code": "self.print(error(\"Error calculating standard indicators: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 417,
+          "code": "self.print(error(\"Error calculating time features: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 533,
+          "code": "self.print(error(\"Error calculating ML enhanced features: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 560,
+          "code": "self.print(error(\"Error in feature cleanup: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 586,
+          "code": "self.print(error(\"Error getting orchestrator info: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 610,
+          "code": "self.print(error(\"Error getting feature summary: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 677,
+          "code": "self.print(error(\"Error applying wavelet transforms: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 689,
+          "code": "self.print(error(\"Error training autoencoder: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 701,
+          "code": "self.print(error(\"Error applying autoencoders: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "feature_engineering_orchestrator.py",
+          "line": 711,
+          "code": "self.print(error(\"Error loading autoencoder: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 82,
+          "code": "self.print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 138,
+          "code": "self.print(error(\"Error calculating technical indicators: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 144,
+          "code": "self.print(error(\"Error calculating volume features: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 150,
+          "code": "self.print(error(\"Error calculating price action patterns: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 156,
+          "code": "self.print(error(\"Error calculating volatility patterns: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 162,
+          "code": "self.print(error(\"Error calculating momentum patterns: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 340,
+          "code": "self.print(error(\"Error calculating price action patterns: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 380,
+          "code": "self.print(error(\"Error calculating volatility patterns: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 407,
+          "code": "self.print(error(\"Error calculating momentum patterns: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 439,
+          "code": "self.print(error(\"Error detecting strong trend continuation: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 470,
+          "code": "self.print(error(\"Error detecting exhaustion reversal: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 500,
+          "code": "self.print(error(\"Error detecting range mean reversion: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 538,
+          "code": "self.print(error(\"Error detecting breakout patterns: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 571,
+          "code": "self.print(error(\"Error detecting volatility patterns: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 606,
+          "code": "self.print(error(\"Error detecting chart patterns: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 645,
+          "code": "self.print(error(\"Error detecting momentum patterns: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 690,
+          "code": "self.print(error(\"Error calculating entry features: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 706,
+          "code": "self.print(error(\"Error calculating order imbalance: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 736,
+          "code": "self.print(error(\"Error predicting price extremes: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 768,
+          "code": "self.print(error(\"Error predicting order returns: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 825,
+          "code": "self.print(error(\"Error detecting entry signals: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 861,
+          "code": "self.print(error(\"Error predicting adverse excursion: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 892,
+          "code": "self.print(error(\"Error generating abort signal: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 919,
+          "code": "self.print(initialization_error(\"Meta-labeling system not initialized\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 986,
+          "code": "self.print(error(\"Error generating analyst labels: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 1015,
+          "code": "self.print(initialization_error(\"Meta-labeling system not initialized\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 1077,
+          "code": "self.print(error(\"Error generating tactician labels: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 1139,
+          "code": "self.print(error(\"Error generating combined labels: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "meta_labeling_system.py",
+          "line": 1168,
+          "code": "self.print(error(\"Error stopping meta-labeling system: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "autoencoder_feature_generator.py",
+          "line": 27,
+          "code": "print(f\" Missing dependency: {MISSING_DEPENDENCY}\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "autoencoder_feature_generator.py",
+          "line": 28,
+          "code": "print(\"\ud83d\udce6 Please install required packages:\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "autoencoder_feature_generator.py",
+          "line": 29,
+          "code": "print(\"   pip install numpy pandas scikit-learn tensorflow optuna shap pyyaml\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 93,
+          "code": "self.print(invalid(\"Invalid configuration for predictive ensembles\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 105,
+          "code": "self.print(failed(\"\u274c Predictive Ensembles initialization failed: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 137,
+          "code": "self.print(error(\"Error loading ensemble configuration: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 154,
+          "code": "self.print(invalid(\"Invalid ensemble interval\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 159,
+          "code": "self.print(invalid(\"Invalid max ensemble history\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 172,
+          "code": "self.print(error(\"At least one ensemble type must be enabled\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 179,
+          "code": "self.print(error(\"Error validating configuration: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 213,
+          "code": "self.print(initialization_error(\"Error initializing ensemble modules: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 234,
+          "code": "self.print(initialization_error(\"Error initializing model ensemble: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 255,
+          "code": "self.print(initialization_error(\"Error initializing voting ensemble: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 276,
+          "code": "self.print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 299,
+          "code": "self.print(initialization_error(\"Error initializing bagging ensemble: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 320,
+          "code": "self.print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 383,
+          "code": "self.print(error(\"Error executing predictive ensembles: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 407,
+          "code": "self.print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 414,
+          "code": "self.print(invalid(\"Invalid ensemble type\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 418,
+          "code": "self.print(invalid(\"Invalid data source\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 424,
+          "code": "self.print(error(\"Error validating ensemble inputs: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 472,
+          "code": "self.print(error(\"Error performing model ensemble: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 520,
+          "code": "self.print(error(\"Error performing voting ensemble: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 570,
+          "code": "self.print(error(\"Error performing stacking ensemble: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 622,
+          "code": "self.print(error(\"Error performing bagging ensemble: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 668,
+          "code": "self.print(error(\"Error performing boosting ensemble: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 685,
+          "code": "self.print(error(\"Error performing random forest: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 704,
+          "code": "self.print(error(\"Error performing gradient boosting: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 723,
+          "code": "self.print(error(\"Error performing linear regression: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 740,
+          "code": "self.print(error(\"Error performing SVR model: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 757,
+          "code": "self.print(error(\"Error performing hard voting: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 773,
+          "code": "self.print(error(\"Error performing soft voting: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 792,
+          "code": "self.print(error(\"Error performing weighted voting: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 811,
+          "code": "self.print(error(\"Error performing majority voting: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 828,
+          "code": "self.print(error(\"Error performing meta learner: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 847,
+          "code": "self.print(validation_error(\"Error performing cross validation: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 872,
+          "code": "self.print(error(\"Error performing feature importance: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 891,
+          "code": "self.print(error(\"Error performing model selection: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 911,
+          "code": "self.print(error(\"Error performing bootstrap sampling: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 930,
+          "code": "self.print(error(\"Error performing out of bag estimation: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 949,
+          "code": "self.print(error(\"Error performing feature sampling: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 968,
+          "code": "self.print(validation_error(\"Error performing bagging validation: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 985,
+          "code": "self.print(error(\"Error performing AdaBoost: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 1004,
+          "code": "self.print(error(\"Error performing gradient boosting ensemble: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 1020,
+          "code": "self.print(error(\"Error performing XGBoost: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 1036,
+          "code": "self.print(error(\"Error performing LightGBM: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 1060,
+          "code": "self.print(error(\"Error storing ensemble results: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 1083,
+          "code": "self.print(error(\"Error getting ensemble results: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 1110,
+          "code": "self.print(error(\"Error getting ensemble history: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 1160,
+          "code": "self.print(error(\"Error stopping predictive ensembles: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles.py",
+          "line": 1210,
+          "code": "print(f\"Error setting up predictive ensembles: {e}\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "multi_timeframe_feature_engineering.py",
+          "line": 819,
+          "code": "self.print(error(\"Error caching features for {timeframe}: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "multi_timeframe_feature_engineering.py",
+          "line": 847,
+          "code": "self.print(error(\"Error cleaning cache: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 90,
+          "code": "self.print(invalid(\"Invalid configuration for data utils\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 100,
+          "code": "self.print(failed(\"\u274c Data Utils initialization failed: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 132,
+          "code": "self.print(error(\"Error loading data utils configuration: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 149,
+          "code": "self.print(invalid(\"Invalid processing interval\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 154,
+          "code": "self.print(invalid(\"Invalid max processing history\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 166,
+          "code": "self.print(error(\"At least one processing type must be enabled\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 173,
+          "code": "self.print(error(\"Error validating configuration: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 203,
+          "code": "self.print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 226,
+          "code": "self.print(initialization_error(\"Error initializing data cleaning: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 247,
+          "code": "self.print(validation_error(\"Error initializing data validation: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 268,
+          "code": "self.print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 291,
+          "code": "self.print(initialization_error(\"Error initializing data aggregation: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 353,
+          "code": "self.print(error(\"Error executing data processing: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 384,
+          "code": "self.print(invalid(\"Invalid processing type\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 388,
+          "code": "self.print(invalid(\"Invalid data source\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 394,
+          "code": "self.print(error(\"Error validating processing inputs: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 446,
+          "code": "self.print(error(\"Error performing data cleaning: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 498,
+          "code": "self.print(validation_error(\"Error performing data validation: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 553,
+          "code": "self.print(error(\"Error performing data transformation: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 605,
+          "code": "self.print(error(\"Error performing data aggregation: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 624,
+          "code": "self.print(error(\"Error performing outlier removal: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 642,
+          "code": "self.print(missing(\"Error performing missing data handling: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 660,
+          "code": "self.print(error(\"Error performing duplicate removal: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 678,
+          "code": "self.print(error(\"Error performing data normalization: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 697,
+          "code": "self.print(validation_error(\"Error performing data type validation: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 715,
+          "code": "self.print(validation_error(\"Error performing range validation: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 733,
+          "code": "self.print(validation_error(\"Error performing format validation: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 751,
+          "code": "self.print(validation_error(\"Error performing consistency validation: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 770,
+          "code": "self.print(error(\"Error performing feature scaling: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 788,
+          "code": "self.print(error(\"Error performing feature encoding: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 806,
+          "code": "self.print(error(\"Error performing feature selection: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 824,
+          "code": "self.print(error(\"Error performing dimensionality reduction: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 843,
+          "code": "self.print(error(\"Error performing time aggregation: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 861,
+          "code": "self.print(error(\"Error performing group aggregation: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 879,
+          "code": "self.print(error(\"Error performing statistical aggregation: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 897,
+          "code": "self.print(error(\"Error performing custom aggregation: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 921,
+          "code": "self.print(error(\"Error storing processing results: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 947,
+          "code": "self.print(error(\"Error getting processing results: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 974,
+          "code": "self.print(error(\"Error getting processing history: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1023,
+          "code": "self.print(error(\"Error stopping data utils: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1070,
+          "code": "print(f\"Error setting up data utils: {e}\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1123,
+          "code": "print(missing(\"CRITICAL: K-lines data file not found at {filename}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1129,
+          "code": "print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1132,
+          "code": "print(df.head())",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1141,
+          "code": "print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1146,
+          "code": "print(critical(\"CRITICAL: No valid data after timestamp processing\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1163,
+          "code": "print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1166,
+          "code": "print(\"Please fix the data quality issues before proceeding.\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1173,
+          "code": "print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1176,
+          "code": "print(\"Please fix the data quality issues before proceeding.\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1185,
+          "code": "print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1188,
+          "code": "print(\"Please fix the data quality issues before proceeding.\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1196,
+          "code": "print(critical(\"CRITICAL: Found {zero_count} zero values in {col}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1197,
+          "code": "print(\"Please fix the data quality issues before proceeding.\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1203,
+          "code": "print(invalid(\"CRITICAL: Found {invalid_count} rows where high < low\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1204,
+          "code": "print(\"Please fix the data quality issues before proceeding.\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1219,
+          "code": "print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1222,
+          "code": "print(\"Please fix the data quality issues before proceeding.\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1226,
+          "code": "print(critical(\"CRITICAL: No valid data after processing\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1229,
+          "code": "print(f\"\u2705 Successfully loaded {len(df)} high-quality klines records\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1233,
+          "code": "print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1242,
+          "code": "print(missing(\"CRITICAL: Agg trades data file not found at {filename}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1260,
+          "code": "print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1265,
+          "code": "print(critical(\"CRITICAL: No valid data after timestamp processing\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1283,
+          "code": "print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1286,
+          "code": "print(\"Please fix the data quality issues before proceeding.\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1293,
+          "code": "print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1296,
+          "code": "print(\"Please fix the data quality issues before proceeding.\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1304,
+          "code": "print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1307,
+          "code": "print(\"Please fix the data quality issues before proceeding.\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1311,
+          "code": "print(critical(\"CRITICAL: No valid data after processing\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1314,
+          "code": "print(f\"\u2705 Successfully loaded {len(df)} high-quality agg_trades records\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1318,
+          "code": "print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1329,
+          "code": "print(missing(\"CRITICAL: Futures data file not found at {filename}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1347,
+          "code": "print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1352,
+          "code": "print(critical(\"CRITICAL: No valid data after timestamp processing\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1370,
+          "code": "print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1373,
+          "code": "print(\"Please fix the data quality issues before proceeding.\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1380,
+          "code": "print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1383,
+          "code": "print(\"Please fix the data quality issues before proceeding.\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1387,
+          "code": "print(critical(\"CRITICAL: No valid data after processing\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1390,
+          "code": "print(f\"\u2705 Successfully loaded {len(df)} high-quality futures records\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1394,
+          "code": "print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1824,
+          "code": "print(f\"Dummy data file '{filename}' already exists. Skipping creation.\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1827,
+          "code": "print(f\"Creating dummy {data_type} data at {filename}...\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1885,
+          "code": "print(f\"Unknown data type: {data_type}. Skipping dummy data creation.\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1890,
+          "code": "print(f\"Dummy {data_type} data saved to '{filename}'.\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1900,
+          "code": "print(missing(\"Klines file not found: {klines_file}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1903,
+          "code": "print(f\"\ud83d\udcd6 Reading klines data from: {klines_file}\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1908,
+          "code": "print(f\"\ud83d\udcca Loaded {len(df)} records\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1909,
+          "code": "print(f\"\ud83d\udccb Columns: {list(df.columns)}\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1916,
+          "code": "print(missing(\"Missing required columns: {missing_columns}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1938,
+          "code": "print(\"\ud83d\udd04 Resampling 1-minute data to 1-hour data...\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1953,
+          "code": "print(f\"\ud83d\udcca Original 1-minute data: {len(df)} records\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1954,
+          "code": "print(f\"\ud83d\udcca Resampled 1-hour data: {len(df_1h)} records\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1963,
+          "code": "print(f\"\u2705 Successfully created: {output_file}\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1964,
+          "code": "print(f\"\ud83d\udcca File contains {len(df_1h)} records\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1965,
+          "code": "print(f\"\ud83d\udcc5 Date range: {df_1h.index.min()} to {df_1h.index.max()}\")",
+          "type": "debug_prints"
+        },
+        {
+          "file": "data_utils.py",
+          "line": 1970,
+          "code": "print(warning(\"Error creating ETHUSDT_1h.csv: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 513,
+          "code": "self.print(warning(\"Meta-labeling system not available\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 605,
+          "code": "self.print(error(\"Error generating ensemble predictions: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 632,
+          "code": "self.print(error(\"Error generating analyst meta-labels\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 639,
+          "code": "self.print(warning(\"Enhanced training manager not available\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 732,
+          "code": "self.print(error(\"Error getting enhanced training model info: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 759,
+          "code": "self.print(error(\"Error generating tactician meta-labels: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 925,
+          "code": "self.print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 973,
+          "code": "self.print(error(\"Error generating analyst meta-labels: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1009,
+          "code": "self.print(error(\"Error generating tactician meta-labels: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1021,
+          "code": "self.print(warning(\"Enhanced training manager not available\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1041,
+          "code": "self.print(error(\"Error loading trained models: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1111,
+          "code": "self.print(warning(\"Could not load ensemble models: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1141,
+          "code": "self.print(warning(\"Could not load regime models: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1161,
+          "code": "self.print(warning(\"Could not load multi-timeframe models: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1308,
+          "code": "self.print(failed(\"Failed to load existing model: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1333,
+          "code": "self.print(missing(\"Missing required parameter: {param}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1338,
+          "code": "self.print(error(\"Minimum samples for training must be at least 100\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1344,
+          "code": "self.print(validation_error(\"Configuration validation error: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1542,
+          "code": "self.print(error(\"Error assessing ensemble risk: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1604,
+          "code": "self.print(error(\"Error in directional prediction: {str(e)}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 1830,
+          "code": "self.print(error(\"Error calculating directional confidence: {str(e)}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2056,
+          "code": "self.print(failed(\"Failed to initialize enhanced order manager\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2063,
+          "code": "self.print(failed(\"Failed to initialize async order executor\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2066,
+          "code": "self.print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2139,
+          "code": "self.print(error(\"Error executing CHASE_MICRO_BREAKOUT: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2207,
+          "code": "self.print(error(\"Error executing LIMIT_ORDER_RETURN: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2237,
+          "code": "self.print(error(\"Error getting order status: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2268,
+          "code": "self.print(error(\"Error getting strategy orders: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2280,
+          "code": "self.print(error(\"Error getting order manager performance: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2377,
+          "code": "self.print(error(\"Error executing order with strategy: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2402,
+          "code": "self.print(execution_error(\"Error getting execution status: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2414,
+          "code": "self.print(execution_error(\"Error getting execution performance: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2513,
+          "code": "self.print(error(\"Error triggering model training: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2547,
+          "code": "self.print(error(\"Error checking training conditions: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2570,
+          "code": "self.print(error(\"Error calculating performance degradation: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2588,
+          "code": "self.print(error(\"Error updating model performance: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2609,
+          "code": "self.print(error(\"Error getting training status: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "ml_confidence_predictor.py",
+          "line": 2624,
+          "code": "self.print(error(\"Error stopping ML Confidence Predictor: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "di_analyst.py",
+          "line": 90,
+          "code": "self.print(failed(\"Failed to initialize analyst: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "di_analyst.py",
+          "line": 147,
+          "code": "self.print(initialization_error(\"Analyst not properly initialized\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "di_analyst.py",
+          "line": 173,
+          "code": "self.print(failed(\"Analysis failed: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "di_analyst.py",
+          "line": 244,
+          "code": "self.print(failed(\"Comprehensive analysis failed: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "di_analyst.py",
+          "line": 263,
+          "code": "self.print(failed(\"Failed to store analysis result: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "di_analyst.py",
+          "line": 299,
+          "code": "self.print(failed(\"Failed to get historical analysis: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "di_analyst.py",
+          "line": 323,
+          "code": "self.print(failed(\"Model training failed: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "di_analyst.py",
+          "line": 347,
+          "code": "self.print(failed(\"Model loading failed: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "analyst.py",
+          "line": 264,
+          "code": "self.print(failed(\"\u274c Failed to initialize Dual Model System\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "analyst.py",
+          "line": 266,
+          "code": "self.print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "analyst.py",
+          "line": 286,
+          "code": "self.print(failed(\"\u274c Failed to initialize Market Health Analyzer\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "analyst.py",
+          "line": 288,
+          "code": "self.print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "analyst.py",
+          "line": 308,
+          "code": "self.print(failed(\"\u274c Failed to initialize Liquidation Risk Model\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "analyst.py",
+          "line": 310,
+          "code": "self.print(",
+          "type": "debug_prints"
+        },
+        {
+          "file": "analyst.py",
+          "line": 480,
+          "code": "self.print(failed(\"\u274c Analysis failed: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "analyst.py",
+          "line": 596,
+          "code": "self.print(error(\"Error performing price analysis: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "analyst.py",
+          "line": 624,
+          "code": "self.print(error(\"Error performing volume analysis: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "analyst.py",
+          "line": 657,
+          "code": "self.print(error(\"Error performing indicator analysis: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "analyst.py",
+          "line": 675,
+          "code": "self.print(error(\"Error performing pattern analysis: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "analyst.py",
+          "line": 701,
+          "code": "self.print(error(\"Error performing volatility analysis: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "analyst.py",
+          "line": 719,
+          "code": "self.print(error(\"Error performing correlation analysis: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "analyst.py",
+          "line": 743,
+          "code": "self.print(error(\"Error performing drawdown analysis: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "analyst.py",
+          "line": 759,
+          "code": "self.print(error(\"Error performing risk scoring: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "analyst.py",
+          "line": 803,
+          "code": "self.print(error(\"Error performing ML predictions: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "analyst.py",
+          "line": 873,
+          "code": "self.print(error(\"Error performing regime classification: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "analyst.py",
+          "line": 895,
+          "code": "self.print(error(\"Error storing analysis results: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "analyst.py",
+          "line": 918,
+          "code": "self.print(error(\"Error getting analysis results: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "analyst.py",
+          "line": 942,
+          "code": "self.print(error(\"Error getting analysis history: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "analyst.py",
+          "line": 989,
+          "code": "self.print(error(\"\u274c Error stopping Analyst: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 157,
+          "code": "self.print(failed(\"\u274c {timeframe} training failed\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 205,
+          "code": "self.print(failed(\"   - {tf}: FAILED\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 208,
+          "code": "self.print(failed(\"\u274c Meta-learner training failed\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 216,
+          "code": "self.print(error(\"\ud83d\udca5 Error in multi-timeframe ensemble training: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 235,
+          "code": "self.print(warning(\"\u26a0\ufe0f No valid data for {timeframe}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 249,
+          "code": "self.print(error(\"\u274c Unknown model type: {model_type}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 270,
+          "code": "self.print(error(\"\ud83d\udca5 Error training {timeframe} model: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 312,
+          "code": "self.print(error(\"\ud83d\udca5 Error training XGBoost model: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 334,
+          "code": "self.print(error(\"\ud83d\udca5 Error training LSTM model: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 357,
+          "code": "self.print(error(\"\ud83d\udca5 Error training Random Forest model: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 413,
+          "code": "self.print(error(\"Non-numeric columns still present in feature matrix\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 432,
+          "code": "self.print(error(\"\ud83d\udca5 Error preparing features/target: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 443,
+          "code": "self.print(warning(\"\u26a0\ufe0f No trained model for {timeframe}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 452,
+          "code": "self.print(warning(\"\u26a0\ufe0f No valid features for {timeframe}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 475,
+          "code": "self.print(error(\"\ud83d\udca5 Error getting predictions for {timeframe}: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 498,
+          "code": "self.print(error(\"\u274c No valid meta-learner data\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 542,
+          "code": "self.print(error(\"\ud83d\udca5 Error training meta-learner: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 598,
+          "code": "self.print(error(\"\ud83d\udca5 Error preparing meta-learner data: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 618,
+          "code": "self.print(warning(\"\u26a0\ufe0f Multi-timeframe ensemble not trained\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 675,
+          "code": "self.print(error(\"\ud83d\udca5 Error getting prediction: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 686,
+          "code": "self.print(warning(\"\u26a0\ufe0f No trained model for {timeframe}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 696,
+          "code": "self.print(warning(\"\u26a0\ufe0f No valid features for {timeframe}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 712,
+          "code": "self.print(error(\"\ud83d\udca5 Error getting prediction for {timeframe}: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 764,
+          "code": "self.print(error(\"\ud83d\udca5 Error combining with meta-learner: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 775,
+          "code": "self.print(warning(\"\u26a0\ufe0f No timeframe predictions available\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 806,
+          "code": "self.print(error(\"\ud83d\udca5 Error in simple prediction combination: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 849,
+          "code": "self.print(error(\"\ud83d\udca5 Error saving model: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 882,
+          "code": "self.print(warning(\"\u26a0\ufe0f No model file found for {timeframe}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 899,
+          "code": "self.print(warning(\"\u26a0\ufe0f No meta-learner found\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/multi_timeframe_ensemble.py",
+          "line": 905,
+          "code": "self.print(error(\"\ud83d\udca5 Error loading model: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py",
+          "line": 118,
+          "code": "self.print(failed(\"GARCH training failed: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py",
+          "line": 145,
+          "code": "self.print(error(\"Error preparing sequence data: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py",
+          "line": 165,
+          "code": "self.print(error(\"Error training DL model: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py",
+          "line": 207,
+          "code": "self.print(error(\"Error building LSTM model: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py",
+          "line": 258,
+          "code": "self.print(error(\"Error building Transformer model: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py",
+          "line": 274,
+          "code": "self.print(failed(\"TabNet training failed: {e}\"))",
+          "type": "debug_prints"
+        },
+        {
+          "file": "predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py",
+          "line": 288,
+          "code": "self.print(failed(\"GARCH model training failed: {e}\"))",
+          "type": "debug_prints"
+        }
+      ]
+    }
+  },
+  "top_problematic_files": [
+    [
+      "data_utils.py",
+      139
+    ],
+    [
+      "ml_confidence_predictor.py",
+      95
+    ],
+    [
+      "predictive_ensembles.py",
+      90
+    ],
+    [
+      "advanced_feature_engineering.py",
+      74
+    ],
+    [
+      "meta_labeling_system.py",
+      61
+    ],
+    [
+      "predictive_ensembles/multi_timeframe_ensemble.py",
+      46
+    ],
+    [
+      "analyst.py",
+      43
+    ],
+    [
+      "feature_engineering_orchestrator.py",
+      31
+    ],
+    [
+      "unified_regime_classifier.py",
+      26
+    ],
+    [
+      "enhanced_prediction_integrator.py",
+      22
+    ]
+  ]
+}

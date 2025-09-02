@@ -1,294 +1,125 @@
-"""Warning symbols and color utilities for enhanced logging output.
-
-This module provides warning symbols, color codes, and formatting utilities
-for making log messages more visually distinctive and informative.
+"""
+Warning symbols and color codes for terminal output.
 """
 
-import os
-import sys
+from typing import Any, Dict, Optional
+import logging
+
+# Get system logger
+try:
+    from src.utils.logger import system_logger
+except ImportError:
+    system_logger = logging.getLogger(__name__)
+
 
 class ColorCodes:
+    """ANSI color codes for terminal output."""
+
+    # Reset
+    RESET = "\033[0m"
+
+    # Bold
+    BOLD = "\033[1m"
+
+    # Colors
+    BLACK = "\033[30m"
+    RED = "\033[31m"
+    GREEN = "\033[32m"
+    YELLOW = "\033[33m"
+    BLUE = "\033[34m"
+    MAGENTA = "\033[35m"
+    CYAN = "\033[36m"
+    WHITE = "\033[37m"
+
+    # Bright colors
+    BRIGHT_RED = "\033[91m"
+    BRIGHT_GREEN = "\033[92m"
+    BRIGHT_YELLOW = "\033[93m"
+    BRIGHT_BLUE = "\033[94m"
+    BRIGHT_MAGENTA = "\033[95m"
+    BRIGHT_CYAN = "\033[96m"
+    BRIGHT_WHITE = "\033[97m"
+
+    # Background colors
+    BG_BLACK = "\033[40m"
+    BG_RED = "\033[41m"
+    BG_GREEN = "\033[42m"
+    BG_YELLOW = "\033[43m"
+    BG_BLUE = "\033[44m"
+    BG_MAGENTA = "\033[45m"
+    BG_CYAN = "\033[46m"
+    BG_WHITE = "\033[47m"
 
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="colorcodes initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize ColorCodes."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-    def __init__(self, config: dict[str, Any] | None = None) -
-    def __init__(self, config: dict[str, Any] | None = Non
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
-        """Initialize ColorCodes."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("ColorCodes")
-        self.is_initialized = False
-e) -> None:
-        """Initialize ColorCodes."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("ColorCodes")
-        self.is_initialized = False
-> None:
-        """Initialize ColorCodes."""
-        self.config = co
-    def __init__(self, config: dict[str, Any] | None = None) -> No
-    def __init__(self, config: dict[str, Any] | None = None) -
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
+class WarningSymbols:
+    """Warning symbols and formatting utilities."""
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize WarningSymbols."""
         self.config = config or {}
         self.logger = system_logger.getChild("WarningSymbols")
-        s
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="colorcodes initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize ColorCodes."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="warningsymbols initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize WarningSymbols."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-return False
-elf.is_initialized = False
-> None:
-        """Initialize WarningSymbols."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("WarningSymbols")
-        self.is_initialized = False
-ne:
-        """Initialize WarningSymbols."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("WarningSymbols")
-        self.is_initialized = False
-nfig or {}
-        self.logger = system_logger.getChild("ColorCodes")
-        self.is_initialized = False
-    passpassself.logger.info("Implementation placeholder - needs specific logic")
-class ColorCodes:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class ColorCodes:
-    pass"""ANSI color codes for terminal output."""
+        self.is_initialized = True
 
-# Reset
-RESET = "\033[0m"
+    def warning(self, message: str) -> str:
+        """Format a warning message."""
+        return f"{ColorCodes.YELLOW}⚠️  WARNING: {message}{ColorCodes.RESET}"
 
-# Bold
-BOLD = "\033[1m"
+    def error(self, message: str) -> str:
+        """Format an error message."""
+        return f"{ColorCodes.RED}❌ ERROR: {message}{ColorCodes.RESET}"
 
-# Colors
-BLACK = "\033[30m"
-RED = "\033[31m"
-GREEN = "\033[32m"
-YELLOW = "\033[33m"
-BLUE = "\033[34m"
-MAGENTA = "\033[35m"
-CYAN = "\033[36m"
-WHITE = "\033[37m"
+    def success(self, message: str) -> str:
+        """Format a success message."""
+        return f"{ColorCodes.GREEN}✅ SUCCESS: {message}{ColorCodes.RESET}"
 
-# Bright colors
-BRIGHT_RED = "\033[91m"
-BRIGHT_GREEN = "\033[92m"
-BRIGHT_YELLOW = "\033[93m"
-BRIGHT_BLUE = "\033[94m"
-BRIGHT_MAGENTA = "\033[95m"
-BRIGHT_CYAN = "\033[96m"
-BRIGHT_WHITE = "\033[97m"
+    def info(self, message: str) -> str:
+        """Format an info message."""
+        return f"{ColorCodes.BLUE}ℹ️  INFO: {message}{ColorCodes.RESET}"
 
-class WarningSymbols:
-    passpassself.logger.info("Implementation placeholder - needs specific logic")
-class WarningSymbols:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class WarningSymbols:
-    pass"""Unicode warning symbols for enhanced visual feedback."""
+    def critical(self, message: str) -> str:
+        """Format a critical message."""
+        return f"{ColorCodes.BRIGHT_RED}🚨 CRITICAL: {message}{ColorCodes.RESET}"
 
-# Success symbols
-CHECKMARK = "✅"
-SUCCESS_CIRCLE = "🟢"
-THUMBS_UP = "👍"
+    def debug(self, message: str) -> str:
+        """Format a debug message."""
+        return f"{ColorCodes.CYAN}🐛 DEBUG: {message}{ColorCodes.RESET}"
 
-# Warning symbols
-WARNING_TRIANGLE = "⚠️"
-WARNING_SIGN = "🚨"
-EXCLAMATION = "❗"
 
-# Error symbols
-RED_CROSS = "❌"
-FAILURE_SYMBOL = "💥"
-PROBLEM_SYMBOL = "🚫"
-ERROR_SYMBOL = "🔥"
+# Global instances
+color_codes = ColorCodes()
+warning_symbols = WarningSymbols()
 
-# Info symbols
-INFO_CIRCLE = "ℹ️"
-LIGHT_BULB = "💡"
-MAGNIFYING_GLASS = "🔍"
+# Convenience functions
+def warning(message: str) -> str:
+    """Format a warning message."""
+    return warning_symbols.warning(message)
 
-# Process symbols
-GEAR = "⚙️"
-HOURGLASS = "⏳"
-CLOCK = "🕐"
-ARROW = "➡️"
 
-# Status symbols
-PLAY = "▶️"
-PAUSE = "⏸️"
-STOP = "⏹️"
-LOADING = "🔄"
+def error(message: str) -> str:
+    """Format an error message."""
+    return warning_symbols.error(message)
 
-# Data symbols
-DATABASE = "🗄️"
-FILE = "📁"
-CHART = "📊"
-GRAPH = "📈"
 
-# Network symbols
-GLOBE = "🌐"
-WIFI = "📶"
-SERVER = "🖥️"
-CONNECTION = "🔗"
+def success(message: str) -> str:
+    """Format a success message."""
+    return warning_symbols.success(message)
 
-def should_use_colors(...) -> ...:
-    pass"""..."""
-    pass# Check if we're in a terminal
-if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
-    passreturn False
 
-# Check for NO_COLOR environment variable
-if os.environ.get("NO_COLOR"):
-    passpassreturn False
+def info(message: str) -> str:
+    """Format an info message."""
+    return warning_symbols.info(message)
 
-# Check for TERM environment variable
-term, os.environ.get("TERM", "").lower()
-return term not in ("dumb", "unknown")
 
-def colorize(...) -> ...:
-    pass"""..."""
-    passif not should_use_colors():
-    passreturn text
+def critical(message: str) -> str:
+    """Format a critical message."""
+    return warning_symbols.critical(message)
 
-result, text
-if bold:
-    passresult, f"{ColorCodes.BOLD}{result}"
 
-return f"{color}{result}{ColorCodes.RESET}"
+def debug(message: str) -> str:
+    """Format a debug message."""
+    return warning_symbols.debug(message)
 
-def format_warning_message(...) -> ...:
-    """..."""
-    passformatted_symbol, colorize(symbol, color, bold)
-formatted_message, colorize(message, color, bold)
-return f"{formatted_symbol} {formatted_message}"
 
-def format_error_message(...) -> ...:
-    """..."""
-    passformatted_symbol, colorize(symbol, color, bold)
-formatted_message, colorize(message, color, bold)
-return f"{formatted_symbol} {formatted_message}"
-
-def format_critical_message(...) -> ...:
-    """..."""
-    passformatted_symbol, colorize(symbol, color, bold)
-formatted_message, colorize(message, color, bold)
-return f"{formatted_symbol} {formatted_message}"
-
-def format_problem_message(...) -> ...:
-    """..."""
-    passformatted_symbol, colorize(symbol, color, bold)
-formatted_message, colorize(message, color, bold)
-return f"{formatted_symbol} {formatted_message}"
-
-def format_success_message(...) -> ...:
-    """..."""
-    passformatted_symbol, colorize(symbol, color, bold)
-formatted_message, colorize(message, color, bold)
-return f"{formatted_symbol} {formatted_message}"
-
-def format_info_message(...) -> ...:
-    """..."""
-    passformatted_symbol, colorize(symbol, color, bold)
-formatted_message, colorize(message, color, bold)
-return f"{formatted_symbol} {formatted_message}"
-
-# Convenience functions for common warning types
-def warning(...) -> ...:
-    pass"""..."""
-    passreturn format_warning_message(message)
-
-def error(...) -> ...:
-    """..."""
-    passreturn format_error_message(message)
-
-def critical(...) -> ...:
-    """..."""
-    passreturn format_critical_message(message)
-
-def failed(...) -> ...:
-    """..."""
-    passreturn format_problem_message(message)
-
-def success(...) -> ...:
-    """..."""
-    passreturn format_success_message(message)
-
-def info(...) -> ...:
-    """..."""
-    passreturn format_info_message(message)
-
-def initialization_error(...) -> ...:
-    """..."""
-    passreturn format_error_message(message)
-
-def invalid(...) -> ...:
-    """..."""
-    passreturn format_problem_message(message)
-
-def missing(...) -> ...:
-    """..."""
-    passreturn format_warning_message(message)
-
-def problem(...) -> ...:
-    """..."""
-    passreturn format_problem_message(message)
-
-def timeout(...) -> ...:
-    """..."""
-    passreturn format_error_message(message)
-
-def connection_error(...) -> ...:
-    """..."""
-    passreturn format_error_message(message)
-
-def validation_error(...) -> ...:
-    """..."""
-    passreturn format_error_message(message)
-
-def execution_error(...) -> ...:
-    """..."""
-    passreturn format_error_message(message)
+def failed(message: str) -> str:
+    """Format a failure message."""
+    return warning_symbols.error(message)

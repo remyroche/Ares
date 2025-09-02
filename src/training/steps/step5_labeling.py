@@ -133,13 +133,13 @@ class LabelingStep:
         
         # Initialize new configuration options for regime-aware labeling
         labeling_cfg = self.config.get("vectorized_labelling_orchestrator", {})
-        self.auto_calc = bool(labeling_cfg.get("auto_recalculate_hmm_barriers", True))
+        self.auto_recalculate_hmm_barriers = bool(labeling_cfg.get("auto_recalculate_hmm_barriers", True))
         self.regime_col = str(labeling_cfg.get("hmm_barrier_regime_column", "hmm_regime"))
         self.time_barrier_minutes = int(labeling_cfg.get("time_barrier_minutes", 30))
         self.max_lookahead = int(labeling_cfg.get("max_lookahead", 100))
         
         self.logger.info(f"📋 Regime-aware labeling configuration:")
-        self.logger.info(f"   - Auto recalculate HMM barriers: {self.auto_calc}")
+        self.logger.info(f"   - Auto recalculate HMM barriers: {self.auto_recalculate_hmm_barriers}")
         self.logger.info(f"   - HMM regime column: {self.regime_col}")
         self.logger.info(f"   - Time barrier minutes: {self.time_barrier_minutes}")
         self.logger.info(f"   - Max lookahead: {self.max_lookahead}")
@@ -148,14 +148,14 @@ class LabelingStep:
         self.regime_barrier_optimizer = None
         
         try:
-            # Try to import and initialize HMMRegimeBarrierOptimizer
+            # Try to import and initialize RegimeSpecificTripleBarrierOptimizer
             from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_specific_triple_barrier_optimizer import (
                 RegimeSpecificTripleBarrierOptimizer
             )
             self.regime_barrier_optimizer = RegimeSpecificTripleBarrierOptimizer(self.config)
-            self.logger.info("✅ HMMRegimeBarrierOptimizer initialized successfully")
+            self.logger.info("✅ RegimeSpecificTripleBarrierOptimizer initialized successfully")
         except Exception as e:
-            self.logger.warning(f"⚠️ Could not initialize HMMRegimeBarrierOptimizer: {e}")
+            self.logger.warning(f"⚠️ Could not initialize RegimeSpecificTripleBarrierOptimizer: {e}")
             self.regime_barrier_optimizer = None
         
         # Initialize meta-labeling system if available
@@ -423,7 +423,7 @@ class LabelingStep:
         """Generate comprehensive labels combining multiple labeling strategies with regime-aware triple barrier method.
         
         New Labeling Flow:
-        Primary Path: Attempts regime-aware labeling using HMMRegimeBarrierOptimizer
+        Primary Path: Attempts regime-aware labeling using RegimeSpecificTripleBarrierOptimizer
         Fallback Path: Uses OptimizedTripleBarrierLabeling if regime-aware methods fail
         Data Source Flexibility: Can work with unified data or step04 output depending on configuration
         """
@@ -435,7 +435,7 @@ class LabelingStep:
                 self.logger.info("🔄 Triple barrier labels not found, generating them using regime-aware methods...")
                 
                 # Primary Path: Attempt regime-aware labeling
-                if self.regime_barrier_optimizer is not None and self.auto_calc:
+                if self.regime_barrier_optimizer is not None and self.auto_recalculate_hmm_barriers:
                     try:
                         self.logger.info("🚀 Attempting regime-aware triple barrier labeling...")
                         
@@ -461,7 +461,7 @@ class LabelingStep:
                         return None
                 else:
                     # Auto-calculation disabled or optimizer not available
-                    if not self.auto_calc:
+                    if not self.auto_recalculate_hmm_barriers:
                         self.logger.error("❌ Auto-calculation disabled for regime-aware labeling")
                     if self.regime_barrier_optimizer is None:
                         self.logger.error("❌ Regime barrier optimizer not available")
@@ -577,7 +577,7 @@ class LabelingStep:
             return pd.Series("unknown", index=data.index)
 
     async def _generate_regime_aware_labels(self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Optional[pd.Series]:
-        """Generate regime-aware triple barrier labels using HMMRegimeBarrierOptimizer."""
+        """Generate regime-aware triple barrier labels using RegimeSpecificTripleBarrierOptimizer."""
         try:
             if self.regime_barrier_optimizer is None:
                 self.logger.error("❌ Regime barrier optimizer not available")

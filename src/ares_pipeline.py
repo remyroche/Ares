@@ -637,11 +637,37 @@ class AresPipeline:
             print(f"📅 Pipeline start time: {self.start_time}")
             self.logger.info(f"📅 Pipeline start time: {self.start_time}")
 
-            # Add timeout protection
-            max_cycles = 10  # Maximum number of cycles to prevent infinite loops
-            max_duration = 300  # Maximum duration in seconds (5 minutes)
+            # Get configuration for pipeline execution
+            config_service = self.container.resolve("ConfigurationService")
+            if config_service:
+                max_cycles = config_service.get_value("pipeline.max_cycles", 100)
+                max_duration = config_service.get_value("pipeline.max_duration_seconds", 3600)
+                cycle_interval = config_service.get_value("pipeline.loop_interval_seconds", 10)
+                enable_risk_management = config_service.get_value("pipeline.enable_risk_management", True)
+                max_consecutive_failures = config_service.get_value("pipeline.max_consecutive_failures", 3)
+            else:
+                # Default values if configuration service is not available
+                max_cycles = 100
+                max_duration = 3600  # 1 hour
+                cycle_interval = 10
+                enable_risk_management = True
+                max_consecutive_failures = 3
 
-            # Main pipeline loop with timeout protection
+            # Initialize risk management variables
+            consecutive_failures = 0
+            total_pnl = 0.0
+            max_drawdown = 0.0
+            risk_metrics = {
+                "total_trades": 0,
+                "winning_trades": 0,
+                "losing_trades": 0,
+                "total_pnl": 0.0,
+                "max_drawdown": 0.0,
+                "sharpe_ratio": 0.0,
+                "win_rate": 0.0
+            }
+
+            # Main pipeline loop with timeout protection and risk management
             while self.is_running:
                 try:
                     # Check timeout conditions
@@ -666,6 +692,26 @@ class AresPipeline:
                         )
                         break
 
+                    # Check risk management conditions
+                    if enable_risk_management and consecutive_failures >= max_consecutive_failures:
+                        print(
+                            f"⚠️ Risk management triggered: {consecutive_failures} consecutive failures",
+                        )
+                        self.logger.warning(
+                            f"Risk management triggered: {consecutive_failures} consecutive failures",
+                        )
+                        break
+
+                    # Check drawdown limits
+                    if enable_risk_management and max_drawdown < -0.1:  # 10% drawdown limit
+                        print(
+                            f"⚠️ Risk management triggered: Maximum drawdown exceeded ({max_drawdown:.2%})",
+                        )
+                        self.logger.warning(
+                            f"Risk management triggered: Maximum drawdown exceeded ({max_drawdown:.2%})",
+                        )
+                        break
+
                     print(
                         f"🔄 Executing pipeline cycle {self.cycle_count + 1}... (Time: {elapsed_time:.1f}s)",
                     )
@@ -673,7 +719,33 @@ class AresPipeline:
                         f"🔄 Executing pipeline cycle {self.cycle_count + 1}... (Time: {elapsed_time:.1f}s)",
                     )
 
-                    await self._execute_cycle()
+                    # Execute cycle with risk management
+                    cycle_result = await self._execute_cycle()
+                    
+                    # Update risk metrics based on cycle result
+                    if cycle_result and isinstance(cycle_result, dict):
+                        cycle_pnl = cycle_result.get("pnl", 0.0)
+                        cycle_trades = cycle_result.get("trades", 0)
+                        cycle_success = cycle_result.get("success", False)
+                        
+                        # Update PnL and drawdown
+                        total_pnl += cycle_pnl
+                        if total_pnl < max_drawdown:
+                            max_drawdown = total_pnl
+                        
+                        # Update trade metrics
+                        risk_metrics["total_trades"] += cycle_trades
+                        if cycle_pnl > 0:
+                            risk_metrics["winning_trades"] += cycle_trades
+                        elif cycle_pnl < 0:
+                            risk_metrics["losing_trades"] += cycle_trades
+                        
+                        # Update consecutive failures
+                        if cycle_success:
+                            consecutive_failures = 0
+                        else:
+                            consecutive_failures += 1
+                    
                     self.cycle_count += 1
                     self.last_cycle_time = datetime.now()
 
@@ -682,28 +754,14 @@ class AresPipeline:
                         f"✅ Cycle {self.cycle_count} completed successfully",
                     )
 
-                    # Get cycle interval from configuration
-                    try:
-                        config_service = self.container.resolve("ConfigurationService")
-                        cycle_interval = config_service.get_value(
-                            "pipeline.loop_interval_seconds",
-                            10,
-                        )
-                        print(
-                            f"⏱️ Waiting {cycle_interval} seconds before next cycle...",
-                        )
-                        self.logger.info(
-                            f"⏱️ Waiting {cycle_interval} seconds before next cycle...",
-                        )
-                    except Exception as e:
-                        print(
-                            warning("Error getting cycle interval, using default"),
-                        )
-                        self.logger.warning(
-                            f"Error getting cycle interval, using default: {e}",
-                        )
-                        cycle_interval = 10
+                    # Display current risk metrics
+                    if enable_risk_management:
+                        print(f"📊 Risk Metrics - PnL: {total_pnl:.4f}, Drawdown: {max_drawdown:.4f}, Failures: {consecutive_failures}")
+                        self.logger.info(f"Risk metrics - PnL: {total_pnl:.4f}, Drawdown: {max_drawdown:.4f}, Failures: {consecutive_failures}")
 
+                    # Wait before next cycle
+                    print(f"⏱️ Waiting {cycle_interval} seconds before next cycle...")
+                    self.logger.info(f"⏱️ Waiting {cycle_interval} seconds before next cycle...")
                     await asyncio.sleep(cycle_interval)
 
                 except asyncio.CancelledError:
@@ -726,12 +784,31 @@ class AresPipeline:
             self.logger.info(f"📊 Total cycles executed: {self.cycle_count}")
             self.logger.info(f"⏱️ Total duration: {duration:.2f} seconds")
 
+            # Calculate final risk metrics
+            if risk_metrics["total_trades"] > 0:
+                risk_metrics["win_rate"] = risk_metrics["winning_trades"] / risk_metrics["total_trades"]
+                risk_metrics["total_pnl"] = total_pnl
+                risk_metrics["max_drawdown"] = max_drawdown
+                
+                # Calculate Sharpe ratio (simplified)
+                if risk_metrics["total_trades"] > 1:
+                    returns = [total_pnl / risk_metrics["total_trades"]] * risk_metrics["total_trades"]
+                    if len(returns) > 1:
+                        mean_return = sum(returns) / len(returns)
+                        variance = sum((r - mean_return) ** 2 for r in returns) / (len(returns) - 1)
+                        if variance > 0:
+                            risk_metrics["sharpe_ratio"] = mean_return / (variance ** 0.5)
+
             return {
                 "status": "completed",
                 "cycles_executed": self.cycle_count,
                 "start_time": self.start_time,
                 "end_time": end_time,
                 "duration_seconds": duration,
+                "risk_metrics": risk_metrics,
+                "final_pnl": total_pnl,
+                "max_drawdown": max_drawdown,
+                "consecutive_failures": consecutive_failures
             }
 
         except Exception:
@@ -748,228 +825,647 @@ class AresPipeline:
         default_return=None, 
         context="pipeline cycle execution",
     )
-    async def _execute_cycle(self) -> None:
+    async def _execute_cycle(self) -> dict:
         """Execute a single pipeline cycle."""
         try:
             cycle_start = datetime.now()
             print(f"🔄 Starting pipeline cycle {self.cycle_count + 1}")
             self.logger.info(f"🔄 Starting pipeline cycle {self.cycle_count + 1}")
 
+            # Get configuration for this cycle
+            config_service = self.container.resolve("ConfigurationService")
+            symbol = config_service.get_value("trading.default_symbol", "ETHUSDT") if config_service else "ETHUSDT"
+            timeframes = config_service.get_value("dual_model_system.analyst_timeframes", ["1h", "15m", "5m"]) if config_service else ["1h", "15m", "5m"]
+            
+            cycle_results = {
+                "success": True,
+                "pnl": 0.0,
+                "trades": 0,
+                "analysis_quality": 0.0,
+                "strategy_confidence": 0.0,
+                "execution_quality": 0.0,
+                "errors": []
+            }
+
             # Step 1: Market Analysis
             print("📊 Step 1: Market Analysis")
             self.logger.info("📊 Step 1: Market Analysis")
+            
+            analysis_results = {}
             if self.analyst:
                 print("   🔍 Executing market analysis...")
                 self.logger.info("   🔍 Executing market analysis...")
-                # Provide complete analysis input with all required fields
-                analysis_input = {
-                    "symbol": "ETHUSDT",
-                    "timeframe": "1h",
-                    "limit": 100,
-                    "analysis_type": "technical",  # Add required analysis_type
-                    "include_indicators": True,
-                    "include_patterns": True,
-                }
-                analysis_result = await self.analyst.execute_analysis(analysis_input)
-                if analysis_result:
-                    print("   ✅ Market analysis completed successfully")
-                    self.logger.info("   ✅ Market analysis completed successfully")
+                
+                # Execute analysis for multiple timeframes
+                for timeframe in timeframes:
+                    try:
+                        analysis_input = {
+                            "symbol": symbol,
+                            "timeframe": timeframe,
+                            "limit": 100,
+                            "analysis_type": "technical",
+                            "include_indicators": True,
+                            "include_patterns": True,
+                            "include_sentiment": True,
+                            "include_volume_analysis": True
+                        }
+                        
+                        analysis_result = await self.analyst.execute_analysis(analysis_input)
+                        if analysis_result:
+                            analysis_results[timeframe] = analysis_result
+                            print(f"   ✅ {timeframe} analysis completed")
+                        else:
+                            print(f"   ⚠️ {timeframe} analysis had issues")
+                            cycle_results["errors"].append(f"{timeframe} analysis failed")
+                            
+                    except Exception as e:
+                        print(f"   ❌ {timeframe} analysis error: {e}")
+                        self.logger.exception(f"Error in {timeframe} analysis")
+                        cycle_results["errors"].append(f"{timeframe} analysis error: {e}")
+                
+                # Calculate analysis quality score
+                if analysis_results:
+                    cycle_results["analysis_quality"] = len(analysis_results) / len(timeframes)
+                    print(f"   📊 Analysis quality: {cycle_results['analysis_quality']:.2f}")
                 else:
-                    print("   ⚠️ Market analysis had issues")
-                    self.logger.warning("   ⚠️ Market analysis had issues")
+                    cycle_results["success"] = False
+                    print("   ❌ No analysis results available")
             else:
                 print("   ❌ Analyst component not available")
                 self.logger.error("   ❌ Analyst component not available")
+                cycle_results["success"] = False
+                cycle_results["errors"].append("Analyst component not available")
 
             # Step 2: Strategy Development
             print("🧠 Step 2: Strategy Development")
             self.logger.info("🧠 Step 2: Strategy Development")
-            if self.strategist:
+            
+            strategy_result = None
+            if self.strategist and analysis_results:
                 print("   🎯 Developing trading strategy...")
                 self.logger.info("   🎯 Developing trading strategy...")
-                # Provide basic market context for strategist
-                strategy_market_data = pd.DataFrame(
-                    {
-                        "open": [100.0] * 100,
-                        "high": [101.0] * 100,
-                        "low": [99.0] * 100,
-                        "close": [100.5] * 100,
-                        "volume": [1000.0] * 100,
-                    },
-                )
-                strategy_current_price = 100.5
-                strategy_result = await self.strategist.generate_strategy(
-                    market_data=strategy_market_data, current_price=strategy_current_price,
-                )
-                if strategy_result:
-                    print(
-                        "   ✅ Strategy development completed successfully",
-                    )
-                    self.logger.info(
-                        "   ✅ Strategy development completed successfully",
-                    )
-                else:
-                    print("   ⚠️ Strategy development had issues")
-                    self.logger.warning("   ⚠️ Strategy development had issues")
+                
+                try:
+                    # Aggregate analysis results for strategy generation
+                    aggregated_analysis = self._aggregate_analysis_results(analysis_results)
+                    
+                    # Get current market data for strategy development
+                    current_market_data = await self._get_current_market_data(symbol)
+                    
+                    if current_market_data is not None:
+                        strategy_input = {
+                            "market_data": current_market_data,
+                            "analysis_results": aggregated_analysis,
+                            "current_price": current_market_data.get("close", 100.0),
+                            "market_conditions": self._assess_market_conditions(aggregated_analysis),
+                            "risk_preferences": config_service.get_value("trading.risk_management", {}) if config_service else {},
+                            "timeframes": timeframes
+                        }
+                        
+                        strategy_result = await self.strategist.generate_strategy(**strategy_input)
+                        
+                        if strategy_result:
+                            cycle_results["strategy_confidence"] = strategy_result.get("confidence", 0.0)
+                            print(f"   ✅ Strategy developed with confidence: {cycle_results['strategy_confidence']:.2f}")
+                            self.logger.info(f"   ✅ Strategy developed with confidence: {cycle_results['strategy_confidence']:.2f}")
+                        else:
+                            print("   ⚠️ Strategy development had issues")
+                            cycle_results["errors"].append("Strategy development failed")
+                    else:
+                        print("   ⚠️ Could not retrieve current market data")
+                        cycle_results["errors"].append("Market data retrieval failed")
+                        
+                except Exception as e:
+                    print(f"   ❌ Strategy development error: {e}")
+                    self.logger.exception("Error in strategy development")
+                    cycle_results["errors"].append(f"Strategy development error: {e}")
             else:
-                print("   ❌ Strategist component not available")
-                self.logger.error("   ❌ Strategist component not available")
+                if not self.strategist:
+                    print("   ❌ Strategist component not available")
+                    self.logger.error("   ❌ Strategist component not available")
+                    cycle_results["errors"].append("Strategist component not available")
+                if not analysis_results:
+                    print("   ❌ No analysis results for strategy development")
+                    cycle_results["errors"].append("No analysis results available")
+                cycle_results["success"] = False
 
             # Step 3: Tactical Execution
             print("🎯 Step 3: Tactical Execution")
             self.logger.info("🎯 Step 3: Tactical Execution")
-            if self.tactician:
+            
+            tactical_result = None
+            if self.tactician and strategy_result:
                 print("   ⚡ Executing tactical decisions...")
                 self.logger.info("   ⚡ Executing tactical decisions...")
-                tactical_result = await self.tactician.run()
-                if tactical_result:
-                    print("   ✅ Tactical execution completed successfully")
-                    self.logger.info("   ✅ Tactical execution completed successfully")
-                else:
-                    print("   ⚠️ Tactical execution had issues")
-                    self.logger.warning("   ⚠️ Tactical execution had issues")
+                
+                try:
+                    # Prepare tactical execution parameters
+                    tactical_input = {
+                        "strategy": strategy_result,
+                        "market_data": current_market_data,
+                        "analysis_results": aggregated_analysis,
+                        "risk_parameters": {
+                            "max_position_size": config_service.get_value("trading.risk_management.max_position_size", 0.1) if config_service else 0.1,
+                            "max_leverage": config_service.get_value("trading.risk_management.max_leverage", 3.0) if config_service else 3.0,
+                            "stop_loss_percentage": config_service.get_value("trading.risk_management.stop_loss_percentage", 0.02) if config_service else 0.02,
+                            "take_profit_percentage": config_service.get_value("trading.risk_management.take_profit_percentage", 0.04) if config_service else 0.04
+                        },
+                        "account_balance": await self._get_account_balance(),
+                        "current_positions": await self._get_current_positions(symbol)
+                    }
+                    
+                    tactical_result = await self.tactician.run(**tactical_input)
+                    
+                    if tactical_result:
+                        # Extract execution results
+                        cycle_results["trades"] = tactical_result.get("trades_executed", 0)
+                        cycle_results["pnl"] = tactical_result.get("realized_pnl", 0.0)
+                        cycle_results["execution_quality"] = tactical_result.get("execution_quality", 0.0)
+                        
+                        print(f"   ✅ Tactical execution completed - Trades: {cycle_results['trades']}, PnL: {cycle_results['pnl']:.4f}")
+                        self.logger.info(f"   ✅ Tactical execution completed - Trades: {cycle_results['trades']}, PnL: {cycle_results['pnl']:.4f}")
+                    else:
+                        print("   ⚠️ Tactical execution had issues")
+                        cycle_results["errors"].append("Tactical execution failed")
+                        
+                except Exception as e:
+                    print(f"   ❌ Tactical execution error: {e}")
+                    self.logger.exception("Error in tactical execution")
+                    cycle_results["errors"].append(f"Tactical execution error: {e}")
             else:
-                print("   ❌ Tactician component not available")
-                self.logger.error("   ❌ Tactician component not available")
+                if not self.tactician:
+                    print("   ❌ Tactician component not available")
+                    self.logger.error("   ❌ Tactician component not available")
+                    cycle_results["errors"].append("Tactician component not available")
+                if not strategy_result:
+                    print("   ❌ No strategy for tactical execution")
+                    cycle_results["errors"].append("No strategy available")
+                cycle_results["success"] = False
 
             # Step 4: Dual Model System Decision Making
             print("🤖 Step 4: Dual Model System Decision Making")
             self.logger.info("🤖 Step 4: Dual Model System Decision Making")
-            if self.dual_model_system:
+            
+            dual_model_result = None
+            if self.dual_model_system and analysis_results and strategy_result:
                 print("   🧠 Making trading decisions with dual model system...")
-                self.logger.info(
-                    "   🧠 Making trading decisions with dual model system...",
-                )
+                self.logger.info("   🧠 Making trading decisions with dual model system...")
+                
+                try:
+                    # Prepare market data for dual model system
+                    if current_market_data:
+                        # Convert to DataFrame format expected by dual model system
+                        market_data = pd.DataFrame([current_market_data])
+                        current_price = current_market_data.get("close", 100.0)
+                    else:
+                        # Fallback to mock data if real data unavailable
+                        market_data = pd.DataFrame({
+                            "open": [100.0] * 100,
+                            "high": [101.0] * 100,
+                            "low": [99.0] * 100,
+                            "close": [100.5] * 100,
+                            "volume": [1000.0] * 100,
+                        })
+                        current_price = 100.5
 
-                # Create mock market data for demonstration
-                market_data = pd.DataFrame(
-                    {
-                        "open": [100.0] * 100,
-                        "high": [101.0] * 100,
-                        "low": [99.0] * 100,
-                        "close": [100.5] * 100,
-                        "volume": [1000.0] * 100,
-                    },
-                )
-                current_price = 100.5
+                    # Prepare decision input with comprehensive context
+                    decision_input = {
+                        "market_data": market_data,
+                        "current_price": current_price,
+                        "analysis_results": aggregated_analysis,
+                        "strategy_context": strategy_result,
+                        "tactical_context": tactical_result,
+                        "risk_metrics": {
+                            "current_drawdown": cycle_results.get("pnl", 0.0),
+                            "consecutive_losses": 0,  # Would be tracked across cycles
+                            "volatility": self._calculate_volatility(market_data),
+                            "trend_strength": self._assess_trend_strength(aggregated_analysis)
+                        },
+                        "market_regime": self._classify_market_regime(aggregated_analysis),
+                        "timeframes": timeframes
+                    }
 
-                # Make trading decision
-                decision_result = await self.dual_model_system.make_trading_decision(
-                    market_data=market_data, current_price=current_price,
-                )
-
-                if decision_result:
-                    print("   ✅ Dual model system decision completed successfully")
-                    self.logger.info(
-                        "   ✅ Dual model system decision completed successfully",
-                    )
-
-                    # Integrate with tactician for position sizing and leverage
-                    integrated_decision = (
-                        await self._integrate_dual_model_with_tactician(
-                            dual_model_decision=decision_result,
-                            market_data=market_data,
-                            current_price=current_price,
-                        )
-                    )
-
-                    # Log decision details
-                    action = decision_result.get("action", "UNKNOWN")
-                    analyst_confidence = decision_result.get("analyst_confidence", 0.0)
-                    tactician_confidence = decision_result.get(
-                        "tactician_confidence",
-                        0.0,
-                    )
-                    final_confidence = decision_result.get("final_confidence", 0.0)
-
-                    # Log position sizing and leverage
-                    position_size = integrated_decision.get("position_sizing", {}).get(
-                        "final_position_size",
-                        0.0,
-                    )
-                    leverage = integrated_decision.get("leverage_sizing", {}).get(
-                        "final_leverage",
-                        1.0,
-                    )
-
-                    print(
-                        f"   📊 Decision: {action}, Analyst: {analyst_confidence:.3f}, Tactician: {tactician_confidence:.3f}, Final: {final_confidence:.3f}",
-                    )
-                    self.logger.info(
-                        f"   📊 Decision: {action}, Analyst: {analyst_confidence:.3f}, Tactician: {tactician_confidence:.3f}, Final: {final_confidence:.3f}",
-                    )
-                    print(
-                        f"   💰 Position Size: {position_size:.4f}, Leverage: {leverage:.2f}x",
-                    )
-                    self.logger.info(
-                        f"   💰 Position Size: {position_size:.4f}, Leverage: {leverage:.2f}x",
-                    )
-
-                    # Check if model training should be triggered
-                    if self.dual_model_system.should_trigger_training():
-                        print(
-                            "   🔄 Model training conditions met - triggering training...",
-                        )
-                        self.logger.info(
-                            "   🔄 Model training conditions met - triggering training...",
-                        )
-
-                        # Trigger model training
-                        training_result = (
-                            await self.dual_model_system.trigger_model_training(
+                    # Make trading decision
+                    decision_result = await self.dual_model_system.make_trading_decision(**decision_input)
+                    
+                    if decision_result:
+                        # Extract decision metrics
+                        action = decision_result.get("action", "HOLD")
+                        analyst_confidence = decision_result.get("analyst_confidence", 0.0)
+                        tactician_confidence = decision_result.get("tactician_confidence", 0.0)
+                        final_confidence = decision_result.get("final_confidence", 0.0)
+                        
+                        print(f"   📊 Decision: {action}, Confidence: {final_confidence:.3f}")
+                        self.logger.info(f"   📊 Decision: {action}, Confidence: {final_confidence:.3f}")
+                        
+                        # Integrate with tactician for position sizing and leverage
+                        if tactical_result and hasattr(self.tactician, "position_sizer"):
+                            integrated_decision = await self._integrate_dual_model_with_tactician(
+                                dual_model_decision=decision_result,
                                 market_data=market_data,
-                                force_training=False,
+                                current_price=current_price,
                             )
-                        )
-
-                        if training_result.get("success", False):
-                            print("   ✅ Model training completed successfully")
-                            self.logger.info(
-                                "   ✅ Model training completed successfully",
-                            )
+                            
+                            if integrated_decision:
+                                # Update cycle results with integrated decision
+                                position_size = integrated_decision.get("position_sizing", {}).get("final_position_size", 0.0)
+                                leverage = integrated_decision.get("leverage_sizing", {}).get("final_leverage", 1.0)
+                                
+                                print(f"   💰 Position Size: {position_size:.4f}, Leverage: {leverage:.2f}x")
+                                self.logger.info(f"   💰 Position Size: {position_size:.4f}, Leverage: {leverage:.2f}x")
+                                
+                                # Check if model training should be triggered
+                                if self.dual_model_system.should_trigger_training():
+                                    print("   🔄 Model training conditions met - triggering training...")
+                                    self.logger.info("   🔄 Model training conditions met - triggering training...")
+                                    
+                                    training_result = await self.dual_model_system.trigger_model_training(
+                                        market_data=market_data,
+                                        force_training=False,
+                                    )
+                                    
+                                    if training_result.get("success", False):
+                                        print("   ✅ Model training completed successfully")
+                                        self.logger.info("   ✅ Model training completed successfully")
+                                    else:
+                                        print(f"   ⚠️ Model training failed: {training_result.get('error', 'Unknown error')}")
+                                        self.logger.warning(f"   ⚠️ Model training failed: {training_result.get('error', 'Unknown error')}")
                         else:
-                            print(
-                                f"   ⚠️ Model training failed: {training_result.get('error', 'Unknown error')}",
-                            )
-                            self.logger.warning(
-                                f"   ⚠️ Model training failed: {training_result.get('error', 'Unknown error')}",
-                            )
+                            print("   ⚠️ Could not integrate dual model decision with tactician")
+                            cycle_results["errors"].append("Dual model integration failed")
                     else:
                         print("   ⚠️ Dual model system decision had issues")
-                        self.logger.warning("   ⚠️ Dual model system decision had issues")
-                else:
-                    print("   ⚠️ Dual model system decision had issues")
-                    self.logger.warning("   ⚠️ Dual model system decision had issues")
+                        cycle_results["errors"].append("Dual model decision failed")
+                        
+                except Exception as e:
+                    print(f"   ❌ Dual model system error: {e}")
+                    self.logger.exception("Error in dual model system")
+                    cycle_results["errors"].append(f"Dual model system error: {e}")
             else:
-                print("   ❌ Dual model system not available")
-                self.logger.error("   ❌ Dual model system not available")
+                if not self.dual_model_system:
+                    print("   ❌ Dual model system not available")
+                    self.logger.error("   ❌ Dual model system not available")
+                    cycle_results["errors"].append("Dual model system not available")
+                if not analysis_results:
+                    print("   ❌ No analysis results for dual model system")
+                    cycle_results["errors"].append("No analysis results for dual model")
+                if not strategy_result:
+                    print("   ❌ No strategy for dual model system")
+                    cycle_results["errors"].append("No strategy for dual model")
+                cycle_results["success"] = False
 
             # Step 5: Supervision and Monitoring
             print("👁️ Step 5: Supervision and Monitoring")
             self.logger.info("👁️ Step 5: Supervision and Monitoring")
+            
+            supervision_result = None
             if self.supervisor:
                 print("   📊 Monitoring system performance...")
                 self.logger.info("   📊 Monitoring system performance...")
-                # Use a simple method that exists
-                supervision_result = True  # Assume success for now
-                if supervision_result:
-                    print("   ✅ Supervision completed successfully")
-                    self.logger.info("   ✅ Supervision completed successfully")
-                else:
-                    print("   ⚠️ Supervision had issues")
-                    self.logger.warning("   ⚠️ Supervision had issues")
+                
+                try:
+                    # Prepare supervision input
+                    supervision_input = {
+                        "cycle_results": cycle_results,
+                        "system_health": {
+                            "components": {
+                                "analyst": self.analyst is not None,
+                                "strategist": self.strategist is not None,
+                                "tactician": self.tactician is not None,
+                                "dual_model_system": self.dual_model_system is not None
+                            },
+                            "performance_metrics": {
+                                "cycle_duration": 0,  # Will be calculated below
+                                "memory_usage": self._get_memory_usage(),
+                                "cpu_usage": self._get_cpu_usage(),
+                                "error_count": len(cycle_results["errors"])
+                            },
+                            "risk_metrics": {
+                                "current_pnl": cycle_results["pnl"],
+                                "total_trades": cycle_results["trades"],
+                                "success_rate": 1.0 if cycle_results["success"] else 0.0
+                            }
+                        },
+                        "market_conditions": self._assess_market_conditions(aggregated_analysis) if 'aggregated_analysis' in locals() else {},
+                        "time": datetime.now()
+                    }
+                    
+                    # Execute supervision
+                    supervision_result = await self.supervisor.monitor_system(supervision_input)
+                    
+                    if supervision_result:
+                        # Check for any alerts or warnings
+                        alerts = supervision_result.get("alerts", [])
+                        warnings = supervision_result.get("warnings", [])
+                        
+                        if alerts:
+                            print(f"   🚨 Alerts: {len(alerts)}")
+                            for alert in alerts[:3]:  # Show first 3 alerts
+                                print(f"      - {alert}")
+                        
+                        if warnings:
+                            print(f"   ⚠️ Warnings: {len(warnings)}")
+                            for warning in warnings[:3]:  # Show first 3 warnings
+                                print(f"      - {warning}")
+                        
+                        print("   ✅ Supervision completed successfully")
+                        self.logger.info("   ✅ Supervision completed successfully")
+                    else:
+                        print("   ⚠️ Supervision had issues")
+                        cycle_results["errors"].append("Supervision failed")
+                        
+                except Exception as e:
+                    print(f"   ❌ Supervision error: {e}")
+                    self.logger.exception("Error in supervision")
+                    cycle_results["errors"].append(f"Supervision error: {e}")
             else:
                 print("   ❌ Supervisor component not available")
                 self.logger.error("   ❌ Supervisor component not available")
+                cycle_results["errors"].append("Supervisor component not available")
 
+            # Step 6: Performance Monitoring Update
+            if self.performance_monitor:
+                try:
+                    await self.performance_monitor.record_cycle_metrics(cycle_results)
+                    print("   📊 Performance metrics recorded")
+                except Exception as e:
+                    print(f"   ⚠️ Could not record performance metrics: {e}")
+                    self.logger.warning(f"Could not record performance metrics: {e}")
+
+            # Calculate final cycle metrics
             cycle_duration = (datetime.now() - cycle_start).total_seconds()
+            cycle_results["duration"] = cycle_duration
+            cycle_results["timestamp"] = datetime.now().isoformat()
+            
+            # Determine overall cycle success
+            if len(cycle_results["errors"]) > 0:
+                cycle_results["success"] = False
+                print(f"   ⚠️ Cycle completed with {len(cycle_results['errors'])} errors")
+            else:
+                print(f"   ✅ Cycle completed successfully")
+            
             print(f"✅ Pipeline cycle completed in {cycle_duration:.2f}s")
             self.logger.info(f"✅ Pipeline cycle completed in {cycle_duration:.2f}s")
+            
+            return cycle_results
 
-        except Exception:
+        except Exception as e:
             print(warning(f"Error executing pipeline cycle: {e}"))
             self.logger.exception("Error executing pipeline cycle")
-            raise
+            cycle_results["success"] = False
+            cycle_results["errors"].append(f"Cycle execution error: {e}")
+            return cycle_results
+
+    def _aggregate_analysis_results(self, analysis_results: dict) -> dict:
+        """Aggregate analysis results from multiple timeframes."""
+        try:
+            aggregated = {
+                "technical_indicators": {},
+                "patterns": [],
+                "sentiment": {},
+                "volume_analysis": {},
+                "timeframe_consensus": {},
+                "overall_score": 0.0
+            }
+            
+            if not analysis_results:
+                return aggregated
+            
+            # Aggregate technical indicators
+            all_indicators = {}
+            for timeframe, result in analysis_results.items():
+                if result and isinstance(result, dict):
+                    indicators = result.get("indicators", {})
+                    for indicator, value in indicators.items():
+                        if indicator not in all_indicators:
+                            all_indicators[indicator] = []
+                        all_indicators[indicator].append(value)
+            
+            # Calculate consensus for each indicator
+            for indicator, values in all_indicators.items():
+                if values:
+                    aggregated["technical_indicators"][indicator] = {
+                        "values": values,
+                        "consensus": sum(values) / len(values),
+                        "agreement": len(set(values)) / len(values)  # Lower = more agreement
+                    }
+            
+            # Aggregate patterns
+            all_patterns = []
+            for result in analysis_results.values():
+                if result and isinstance(result, dict):
+                    patterns = result.get("patterns", [])
+                    all_patterns.extend(patterns)
+            
+            # Count pattern frequency
+            pattern_counts = {}
+            for pattern in all_patterns:
+                pattern_counts[pattern] = pattern_counts.get(pattern, 0) + 1
+            
+            aggregated["patterns"] = [
+                {"pattern": pattern, "frequency": count, "timeframes": len(analysis_results)}
+                for pattern, count in pattern_counts.items()
+            ]
+            
+            # Calculate overall score
+            if aggregated["technical_indicators"]:
+                consensus_scores = [ind["consensus"] for ind in aggregated["technical_indicators"].values()]
+                aggregated["overall_score"] = sum(consensus_scores) / len(consensus_scores)
+            
+            return aggregated
+            
+        except Exception as e:
+            self.logger.exception("Error aggregating analysis results")
+            return {"overall_score": 0.0, "error": str(e)}
+
+    def _assess_market_conditions(self, analysis_results: dict) -> dict:
+        """Assess overall market conditions based on analysis results."""
+        try:
+            conditions = {
+                "trend": "neutral",
+                "volatility": "medium",
+                "strength": 0.0,
+                "regime": "normal",
+                "risk_level": "medium"
+            }
+            
+            if not analysis_results:
+                return conditions
+            
+            # Assess trend
+            trend_indicators = ["trend", "direction", "momentum"]
+            trend_scores = []
+            for indicator in trend_indicators:
+                if indicator in analysis_results.get("technical_indicators", {}):
+                    trend_scores.append(analysis_results["technical_indicators"][indicator]["consensus"])
+            
+            if trend_scores:
+                avg_trend = sum(trend_scores) / len(trend_scores)
+                if avg_trend > 0.6:
+                    conditions["trend"] = "bullish"
+                elif avg_trend < 0.4:
+                    conditions["trend"] = "bearish"
+                else:
+                    conditions["trend"] = "neutral"
+                conditions["strength"] = abs(avg_trend - 0.5) * 2
+            
+            # Assess volatility
+            volatility_indicators = ["volatility", "atr", "std"]
+            volatility_scores = []
+            for indicator in volatility_indicators:
+                if indicator in analysis_results.get("technical_indicators", {}):
+                    volatility_scores.append(analysis_results["technical_indicators"][indicator]["consensus"])
+            
+            if volatility_scores:
+                avg_volatility = sum(volatility_scores) / len(volatility_scores)
+                if avg_volatility > 0.7:
+                    conditions["volatility"] = "high"
+                elif avg_volatility < 0.3:
+                    conditions["volatility"] = "low"
+                else:
+                    conditions["volatility"] = "medium"
+            
+            # Determine market regime
+            if conditions["volatility"] == "high" and conditions["strength"] > 0.7:
+                conditions["regime"] = "trending_volatile"
+            elif conditions["volatility"] == "low" and conditions["strength"] < 0.3:
+                conditions["regime"] = "ranging_quiet"
+            elif conditions["trend"] == "neutral":
+                conditions["regime"] = "sideways"
+            else:
+                conditions["regime"] = "trending"
+            
+            # Assess risk level
+            if conditions["volatility"] == "high" or conditions["strength"] > 0.8:
+                conditions["risk_level"] = "high"
+            elif conditions["volatility"] == "low" and conditions["strength"] < 0.5:
+                conditions["risk_level"] = "low"
+            else:
+                conditions["risk_level"] = "medium"
+            
+            return conditions
+            
+        except Exception as e:
+            self.logger.exception("Error assessing market conditions")
+            return {"trend": "neutral", "volatility": "medium", "strength": 0.0, "regime": "normal", "risk_level": "medium"}
+
+    def _classify_market_regime(self, analysis_results: dict) -> str:
+        """Classify the current market regime."""
+        try:
+            conditions = self._assess_market_conditions(analysis_results)
+            return conditions.get("regime", "normal")
+        except Exception as e:
+            self.logger.exception("Error classifying market regime")
+            return "normal"
+
+    def _calculate_volatility(self, market_data: pd.DataFrame) -> float:
+        """Calculate market volatility from price data."""
+        try:
+            if market_data is None or market_data.empty:
+                return 0.0
+            
+            if "close" in market_data.columns:
+                returns = market_data["close"].pct_change().dropna()
+                if len(returns) > 1:
+                    return returns.std()
+            
+            return 0.0
+            
+        except Exception as e:
+            self.logger.exception("Error calculating volatility")
+            return 0.0
+
+    def _assess_trend_strength(self, analysis_results: dict) -> float:
+        """Assess the strength of the current trend."""
+        try:
+            if not analysis_results:
+                return 0.0
+            
+            conditions = self._assess_market_conditions(analysis_results)
+            return conditions.get("strength", 0.0)
+            
+        except Exception as e:
+            self.logger.exception("Error assessing trend strength")
+            return 0.0
+
+    async def _get_current_market_data(self, symbol: str) -> dict:
+        """Get current market data for the specified symbol."""
+        try:
+            # Try to get data from exchange client
+            exchange_client = self.container.resolve("ExchangeClient")
+            if exchange_client and hasattr(exchange_client, "get_ticker"):
+                ticker = await exchange_client.get_ticker(symbol)
+                if ticker:
+                    return {
+                        "symbol": symbol,
+                        "open": ticker.get("open", 0.0),
+                        "high": ticker.get("high", 0.0),
+                        "low": ticker.get("low", 0.0),
+                        "close": ticker.get("close", 0.0),
+                        "volume": ticker.get("volume", 0.0),
+                        "timestamp": ticker.get("timestamp", datetime.now().isoformat())
+                    }
+            
+            # Fallback to mock data
+            return {
+                "symbol": symbol,
+                "open": 100.0,
+                "high": 101.0,
+                "low": 99.0,
+                "close": 100.5,
+                "volume": 1000.0,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.exception(f"Error getting market data for {symbol}")
+            return None
+
+    async def _get_account_balance(self) -> float:
+        """Get current account balance."""
+        try:
+            exchange_client = self.container.resolve("ExchangeClient")
+            if exchange_client and hasattr(exchange_client, "get_balance"):
+                balance = await exchange_client.get_balance()
+                return balance.get("total", 10000.0)  # Default balance
+            return 10000.0  # Default balance
+        except Exception as e:
+            self.logger.exception("Error getting account balance")
+            return 10000.0  # Default balance
+
+    async def _get_current_positions(self, symbol: str) -> list:
+        """Get current positions for the specified symbol."""
+        try:
+            exchange_client = self.container.resolve("ExchangeClient")
+            if exchange_client and hasattr(exchange_client, "get_positions"):
+                positions = await exchange_client.get_positions(symbol)
+                return positions if positions else []
+            return []
+        except Exception as e:
+            self.logger.exception(f"Error getting positions for {symbol}")
+            return []
+
+    def _get_memory_usage(self) -> float:
+        """Get current memory usage percentage."""
+        try:
+            import psutil
+            return psutil.virtual_memory().percent
+        except ImportError:
+            return 0.0
+        except Exception as e:
+            self.logger.exception("Error getting memory usage")
+            return 0.0
+
+    def _get_cpu_usage(self) -> float:
+        """Get current CPU usage percentage."""
+        try:
+            import psutil
+            return psutil.cpu_percent(interval=0.1)
+        except ImportError:
+            return 0.0
+        except Exception as e:
+            self.logger.exception("Error getting CPU usage")
+            return 0.0
 
     async def _integrate_dual_model_with_tactician(self, dual_model_decision: dict, market_data: pd.DataFrame, current_price: float) -> dict:
         """

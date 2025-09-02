@@ -1,0 +1,24 @@
+2025-09-02 08:36:17,652 - INFO - Processing file: src/utils/confidence.py
+2025-09-02 08:36:17,652 - INFO - Performing semantic analysis...
+2025-09-02 08:36:17,652 - INFO - Code quality score: 0.00
+2025-09-02 08:36:17,653 - WARNING - Syntax errors found: 1
+2025-09-02 08:36:17,653 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:36:17,653 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:17,654 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:17,654 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:17,654 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:17,655 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:17,655 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:17,655 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:17,656 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:17,656 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:17,657 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:17,657 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:17,658 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:17,658 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:17,660 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:17,662 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:36:17,662 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:36:17,662 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:36:17,663 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:17,665 - INFO - No fixes needed for: src/utils/confidence.py

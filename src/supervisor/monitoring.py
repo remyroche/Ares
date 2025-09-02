@@ -1,3 +1,9 @@
+"""Monitoring Module.
+
+This module provides system-wide monitoring capabilities for the trading system,
+including health checks, performance tracking, and alerting functionality.
+"""
+
 # src/supervisor/monitoring.py
 
 import asyncio

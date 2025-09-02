@@ -1,3 +1,11 @@
+"""Dynamic Weighter Module.
+
+This module provides dynamic weighting strategies for ensemble models,
+including performance-based, risk-based, adaptive, momentum, and volatility
+weighting methods. It supports regime-aware and uncertainty-aware weighting
+for optimal model combination.
+"""
+
 from datetime import datetime
 from typing import Any
 

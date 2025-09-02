@@ -19,7 +19,7 @@ class TrackingType(Enum):
     async def initialize(self) -> bool:
         """Initialize TrackingType."""
         try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.logger.info(f"🚀 Initializing {class_name}")
             self.is_initialized = True
             self.logger.info(f"✅ {class_name} initialized successfully")
             return True

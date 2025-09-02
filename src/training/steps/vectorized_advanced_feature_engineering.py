@@ -3918,13 +3918,13 @@ class VectorizedAdvancedFeatureEngineering:
 
             # Create adaptive SMA
             adaptive_sma = pd.Series(index=close.index, dtype=float)
-        for i in range(len(close):
+            for i in range(len(close)):
                 period = max(1, int(adaptive_period.iloc[i]))
                 start_idx = max(0, i - period + 1)
                 adaptive_sma.iloc[i] = close.iloc[start_idx : i + 1].mean()
 
             features["adaptive_sma"] = adaptive_sma
-        # Use shift(1) to avoid NaN in first row
+            # Use shift(1) to avoid NaN in first row
             features["adaptive_sma_slope"] = (adaptive_sma - adaptive_sma.shift(1)).fillna(0)
 
             # Adaptive RSI
@@ -4046,7 +4046,7 @@ class VectorizedAdvancedFeatureEngineering:
 
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error selecting optimal features: {e}")
+            self.logger.exception(f"🚨 Error selecting optimal features: {e}")
         return features
 
     @validate_multi_timeframe_data_quality
@@ -4314,17 +4314,6 @@ class VectorizedAdvancedFeatureEngineering:
         except Exception as e:
             self.logger.error(f"❌ Error in traditional multi-timeframe feature engineering: {e}")
             return {}
-        self.logger.warning("⚠️ No valid features generated after validation")
-
-            else:
-        self.logger.warning("⚠️ No features generated")
-
-        return features
-
-        except Exception as e:
-        self.logger.exception(f"🚨 Error engineering multi-timeframe features: {e}")
-        # Don't fall back to basic features - let the error propagate
-            raise
 
     def _remove_constant_features(self, features: dict[str, Any]) -> dict[str, Any]:
         """Remove features with zero or near-zero variance."""
@@ -4333,26 +4322,26 @@ class VectorizedAdvancedFeatureEngineering:
             constant_features = []
             variance_threshold = 1e-12  # Very small threshold for true constants
 
-        for key, value in features.items():
-        if isinstance(value, pd.Series):
-        # Check if feature has meaningful variance
+            for key, value in features.items():
+                if isinstance(value, pd.Series):
+                    # Check if feature has meaningful variance
                     feature_variance = value.var()
-        if feature_variance > variance_threshold:
+                    if feature_variance > variance_threshold:
                         non_constant_features[key] = value
                     else:
                         constant_features.append(key)
                 else:
-        # Keep non-series features
+                    # Keep non-series features
                     non_constant_features[key] = value
 
-        if constant_features:
-        self.logger.info(f"🗑️ Removed {len(constant_features)} constant features: {constant_features[:5]}... (showing first 5)")
+            if constant_features:
+                self.logger.info(f"🗑️ Removed {len(constant_features)} constant features: {constant_features[:5]}... (showing first 5)")
 
-        return non_constant_features
+            return non_constant_features
 
         except Exception as e:
-        self.logger.exception(f"❌ Error removing constant features: {e}")
-        return features
+            self.logger.exception(f"❌ Error removing constant features: {e}")
+            return features
 
     def _ensure_pickle_safe_features(self, features: dict[str, Any]) -> dict[str, Any]:
         """Ensure all features are pickle-safe by removing any coroutines or async objects."""
@@ -4360,30 +4349,30 @@ class VectorizedAdvancedFeatureEngineering:
             pickle_safe_features = {}
             removed_features = []
 
-        for key, value in features.items():
-        # Check if value is a coroutine or async object
-        if hasattr(value, "__await__") or asyncio.iscoroutine(value):
+            for key, value in features.items():
+                # Check if value is a coroutine or async object
+                if hasattr(value, "__await__") or asyncio.iscoroutine(value):
                     removed_features.append(key)
-        self.logger.warning(f"⚠️ Skipping coroutine feature: {key}")
+                    self.logger.warning(f"⚠️ Skipping coroutine feature: {key}")
                     continue
-        if hasattr(value, "__aiter__") or hasattr(value, "__anext__"):
+                if hasattr(value, "__aiter__") or hasattr(value, "__anext__"):
                     removed_features.append(key)
-        self.logger.warning(f"⚠️ Skipping async iterator feature: {key}")
+                    self.logger.warning(f"⚠️ Skipping async iterator feature: {key}")
                     continue
-        if callable(value) and asyncio.iscoroutinefunction(value):
+                if callable(value) and asyncio.iscoroutinefunction(value):
                     removed_features.append(key)
-        self.logger.warning(f"⚠️ Skipping async function feature: {key}")
+                    self.logger.warning(f"⚠️ Skipping async function feature: {key}")
                     continue
                 pickle_safe_features[key] = value
 
-        if removed_features:
-        self.logger.info(f"✅ Removed {len(removed_features)} non-pickle-safe features: {removed_features}")
+            if removed_features:
+                self.logger.info(f"✅ Removed {len(removed_features)} non-pickle-safe features: {removed_features}")
 
-        return pickle_safe_features
+            return pickle_safe_features
 
         except Exception as e:
-        self.logger.exception(f"❌ Error ensuring pickle safety: {e}")
-        return features
+            self.logger.exception(f"❌ Error ensuring pickle safety: {e}")
+            return features
 
     def _resample_price_data(self, price_data: pd.DataFrame, timeframe: str) -> pd.DataFrame | None:
         """Resample price data to target timeframe with irregular interval handling.
@@ -4397,24 +4386,24 @@ class VectorizedAdvancedFeatureEngineering:
 
         """
         try:
-        if price_data.empty:
-        return None
+            if price_data.empty:
+                return None
 
-        # Handle irregular time intervals first
+            # Handle irregular time intervals first
             regularized_data = self._handle_irregular_time_intervals(price_data, timeframe)
 
-        # Use optimized resampler
-            resampled_data, self.optimized_resampler.resample_optimized(regularized_data, timeframe)
+            # Use optimized resampler
+            resampled_data = self.optimized_resampler.resample_optimized(regularized_data, timeframe)
 
-        if resampled_data.empty:
-        self.logger.warning(f"⚠️ Resampling to {timeframe} resulted in empty data")
-        return None
+            if resampled_data.empty:
+                self.logger.warning(f"⚠️ Resampling to {timeframe} resulted in empty data")
+                return None
 
-        return resampled_data
+            return resampled_data
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error resampling price data to {timeframe}: {e}")
-        return None
+            self.logger.exception(f"🚨 Error resampling price data to {timeframe}: {e}")
+            return None
 
     def _resample_volume_data(self, volume_data: pd.DataFrame, timeframe: str) -> pd.DataFrame | None:
         """Resample volume data to target timeframe with irregular interval handling.
@@ -4428,33 +4417,33 @@ class VectorizedAdvancedFeatureEngineering:
 
         """
         try:
-        if volume_data is None or volume_data.empty:
-        return None
+            if volume_data is None or volume_data.empty:
+                return None
 
-        # Handle irregular time intervals first
+            # Handle irregular time intervals first
             regularized_data = self._handle_irregular_time_intervals(volume_data, timeframe)
 
-        # Use optimized resampler
-            resampled_data, self.optimized_resampler.resample_optimized(regularized_data, timeframe)
+            # Use optimized resampler
+            resampled_data = self.optimized_resampler.resample_optimized(regularized_data, timeframe)
 
-        if resampled_data.empty:
-        self.logger.warning(f"⚠️ Resampling volume to {timeframe} resulted in empty data")
-        return None
+            if resampled_data.empty:
+                self.logger.warning(f"⚠️ Resampling volume to {timeframe} resulted in empty data")
+                return None
 
-        return resampled_data
+            return resampled_data
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error resampling volume data to {timeframe}: {e}")
-        return None
+            self.logger.exception(f"🚨 Error resampling volume data to {timeframe}: {e}")
+            return None
 
     def _generate_timeframe_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame, timeframe: str) -> dict[str, Any]:
         """Generate features for a specific timeframe with improved NaN handling."""
         try:
             features = {}
 
-        # Get minimum data requirement for this timeframe
+            # Get minimum data requirement for this timeframe
             min_required_data = self._get_minimum_data_requirement(timeframe)
-        if price_data.empty or len(price_data) < min_required_data:
+            if price_data.empty or len(price_data) < min_required_data:
         self.logger.info(f"ℹ️ Insufficient data for {timeframe} timeframe: {len(price_data)} rows (minimum required: {min_required_data})")
         return features
 

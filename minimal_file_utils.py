@@ -3,6 +3,7 @@ Minimal file utilities for code quality analysis.
 """
 
 import os
+import ast
 from pathlib import Path
 from typing import List, Pattern
 import fnmatch
@@ -49,3 +50,43 @@ def _should_exclude(path: str, exclude_patterns: List[str]) -> bool:
             return True
     
     return False
+
+
+def get_file_dependencies(file_path: str) -> dict:
+    """
+    Extract import dependencies from a Python file.
+    
+    Args:
+        file_path: Path to the Python file
+    
+    Returns:
+        Dictionary with 'imports', 'from_imports', and 'relative_imports' lists
+    """
+    dependencies = {
+        'imports': [],
+        'from_imports': [],
+        'relative_imports': []
+    }
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        tree = ast.parse(content)
+        
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    dependencies['imports'].append(alias.name)
+            elif isinstance(node, ast.ImportFrom):
+                module = node.module or ''
+                for alias in node.names:
+                    if module.startswith('.'):
+                        dependencies['relative_imports'].append(f"{module}.{alias.name}")
+                    else:
+                        dependencies['from_imports'].append(f"{module}.{alias.name}")
+    except Exception:
+        # Best-effort extraction; ignore parse errors
+        pass
+    
+    return dependencies

@@ -20,8 +20,13 @@ from .analyzers.call_graph_analyzer import CallGraphAnalyzer
 from .analyzers.dependency_analyzer import DependencyAnalyzer
 from .analyzers.import_analyzer import ImportAnalyzer, ImportIssue
 from .analyzers.signature_analyzer import SignatureAnalyzer, SignatureIssue, FunctionSignature, FunctionCall
+from .analyzers.complexity_analyzer import ComplexityAnalyzer, ModuleComplexity, FunctionComplexity, ClassComplexity, ComplexityMetrics
+from .analyzers.dead_code_analyzer import DeadCodeAnalyzer, DeadCodeIssue, DeadCodeReport
 
 from .reporters.quality_reporter import QualityReporter
+from .reporters.error_reporter import ErrorReporter, ErrorReport, ErrorSummary, ErrorCategory, FileErrorSummary
+from .reporters.html_reporter import HTMLReporter, HTMLReportConfig
+from .reporters.trend_reporter import TrendReporter, TrendReport, TrendPoint, TrendAnalysis
 
 from .utils.file_utils import (
     find_python_files,
@@ -58,6 +63,8 @@ __all__ = [
     "DependencyAnalyzer",
     "ImportAnalyzer",
     "SignatureAnalyzer",
+    "ComplexityAnalyzer",
+    "DeadCodeAnalyzer",
     
     # Issue classes
     "ImportIssue",
@@ -65,8 +72,35 @@ __all__ = [
     "FunctionSignature",
     "FunctionCall",
     
+    # Complexity analysis classes
+    "ModuleComplexity",
+    "FunctionComplexity", 
+    "ClassComplexity",
+    "ComplexityMetrics",
+    
+    # Dead code analysis classes
+    "DeadCodeIssue",
+    "DeadCodeReport",
+    
     # Reporters
     "QualityReporter",
+    "ErrorReporter",
+    "HTMLReporter",
+    "TrendReporter",
+    
+    # Error reporting classes
+    "ErrorReport",
+    "ErrorSummary",
+    "ErrorCategory",
+    "FileErrorSummary",
+    
+    # HTML reporting classes
+    "HTMLReportConfig",
+    
+    # Trend reporting classes
+    "TrendReport",
+    "TrendPoint",
+    "TrendAnalysis",
     
     # Utilities
     "find_python_files",
@@ -76,7 +110,18 @@ __all__ = [
     "backup_file",
     "restore_file",
     "get_file_dependencies",
-    "find_unused_imports"
+    "find_unused_imports",
+    
+    # Quick access functions
+    "auto_fix",
+    "sequential_fix",
+    "analyze_imports",
+    "analyze_signatures",
+    "analyze_complexity",
+    "analyze_dead_code",
+    "generate_error_report",
+    "generate_html_report",
+    "track_quality_trends"
 ]
 
 
@@ -154,6 +199,99 @@ def analyze_signatures(target: str, config: CodeQualityConfig = None) -> dict:
         return analyzer.analyze_files([target])
     else:
         return analyzer.analyze_directory(target)
+
+
+def analyze_complexity(target: str, config: CodeQualityConfig = None) -> dict:
+    """
+    Quick complexity analysis for Python code.
+    
+    Args:
+        target: File or directory path
+        config: Optional configuration
+        
+    Returns:
+        Complexity analysis results
+    """
+    config = config or get_default_config()
+    analyzer = ComplexityAnalyzer(config)
+    
+    if os.path.isfile(target):
+        return analyzer.analyze_file(target)
+    else:
+        return analyzer.analyze_directory(target)
+
+
+def analyze_dead_code(target: str, config: CodeQualityConfig = None) -> dict:
+    """
+    Quick dead code analysis for Python code.
+    
+    Args:
+        target: File or directory path
+        config: Optional configuration
+        
+    Returns:
+        Dead code analysis results
+    """
+    config = config or get_default_config()
+    analyzer = DeadCodeAnalyzer(config)
+    
+    if os.path.isfile(target):
+        return analyzer.analyze_file(target)
+    else:
+        return analyzer.analyze_directory(target)
+
+
+def generate_error_report(analyzers_results: dict, config: CodeQualityConfig = None) -> ErrorReport:
+    """
+    Generate comprehensive error report from analyzer results.
+    
+    Args:
+        analyzers_results: Results from various analyzers
+        config: Optional configuration
+        
+    Returns:
+        ErrorReport object
+    """
+    config = config or get_default_config()
+    reporter = ErrorReporter(config)
+    
+    # Add results from different analyzers
+    if 'complexity' in analyzers_results:
+        complexity_issues = analyzers_results['complexity'].get('issues', [])
+        reporter.add_complexity_issues(complexity_issues)
+    
+    if 'dead_code' in analyzers_results:
+        dead_code_issues = analyzers_results['dead_code'].get('issues', [])
+        reporter.add_dead_code_issues(dead_code_issues)
+    
+    return reporter.generate_report()
+
+
+def generate_html_report(analyzers_results: dict, title: str = "Code Quality Report") -> str:
+    """
+    Generate HTML report from analyzer results.
+    
+    Args:
+        analyzers_results: Results from various analyzers
+        title: Report title
+        
+    Returns:
+        HTML string
+    """
+    reporter = HTMLReporter()
+    return reporter.generate_from_analyzer_results(analyzers_results, title)
+
+
+def track_quality_trends(metrics: dict, project_name: str = "default") -> None:
+    """
+    Track code quality metrics for trend analysis.
+    
+    Args:
+        metrics: Current quality metrics
+        project_name: Name of the project
+    """
+    reporter = TrendReporter()
+    reporter.add_data_point(metrics, project_name)
 
 
 # Add missing import

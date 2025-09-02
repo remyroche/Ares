@@ -6,9 +6,11 @@ Command-line interface for Code Quality Tools.
 import sys
 import argparse
 from pathlib import Path
+import os
 
 from .core import get_default_config, load_config
 from .fixers.auto_fixer import AutoFixer
+from .fixers.sequential_fixer import SequentialFixer
 from .analyzers.linter_analyzer import LinterAnalyzer
 from .analyzers.call_graph_analyzer import CallGraphAnalyzer
 from .analyzers.dependency_analyzer import DependencyAnalyzer
@@ -28,6 +30,9 @@ Examples:
   
   # Auto-fix code issues
   python -m code_quality.cli fix --path /path/to/code
+  
+  # Run sequential auto-fix pipeline
+  python -m code_quality.cli sequential-fix --target /path/to/code --output reports/
   
   # Validate syntax only
   python -m code_quality.cli validate --path /path/to/code
@@ -51,10 +56,18 @@ Examples:
     
     # Auto-fix command
     fix_parser = subparsers.add_parser('fix', help='Auto-fix code issues')
-    fix_parser.add_argument('--path', required=True, help='Path to directory containing Python files')
+    fix_parser.add_argument('--path', required=True, help='Path to directory or file containing Python code')
     fix_parser.add_argument('--config', help='Path to configuration file')
     fix_parser.add_argument('--max-line-length', type=int, default=88, help='Maximum line length')
     fix_parser.add_argument('--aggressive', action='store_true', help='Enable aggressive fixing')
+    
+    # Sequential fix command
+    sequential_parser = subparsers.add_parser('sequential-fix', help='Run sequential auto-fix pipeline')
+    sequential_parser.add_argument('--target', required=True, 
+                                 help='Path to Python file, directory, or comma-separated list of files')
+    sequential_parser.add_argument('--config', help='Path to configuration file')
+    sequential_parser.add_argument('--output', help='Output directory for reports')
+    sequential_parser.add_argument('--no-backups', action='store_true', help='Disable backup creation')
     
     # Syntax validation command
     validate_parser = subparsers.add_parser('validate', help='Validate Python syntax')
@@ -103,6 +116,8 @@ Examples:
             return _run_comprehensive_analysis(args, config)
         elif args.command == 'fix':
             return _run_auto_fix(args, config)
+        elif args.command == 'sequential-fix':
+            return _run_sequential_fix(args, config)
         elif args.command == 'validate':
             return _run_syntax_validation(args, config)
         elif args.command == 'lint':
@@ -147,7 +162,12 @@ def _run_auto_fix(args, config):
     config.auto_fix.aggressive = args.aggressive
     
     fixer = AutoFixer(config)
-    results = fixer.fix_all(args.path)
+    
+    # Check if path is a file or directory
+    if os.path.isfile(args.path):
+        results = fixer.fix_file(args.path)
+    else:
+        results = fixer.fix_all(args.path)
     
     # Print summary
     summary = fixer.get_fix_summary()
@@ -157,6 +177,35 @@ def _run_auto_fix(args, config):
     print(f"Failed: {', '.join(summary['failed_tools'])}")
     
     return 0 if not summary['failed_tools'] else 1
+
+
+def _run_sequential_fix(args, config):
+    """Run sequential auto-fix pipeline."""
+    print("Running sequential auto-fix pipeline...")
+    
+    # Parse target
+    if "," in args.target:
+        # Comma-separated list of files
+        target = [f.strip() for f in args.target.split(",")]
+    else:
+        target = args.target
+    
+    fixer = SequentialFixer(config)
+    results = fixer.run_pipeline(
+        target=target,
+        output_dir=args.output,
+        create_backups=not args.no_backups
+    )
+    
+    print("Sequential fix pipeline completed!")
+    
+    # Return appropriate exit code
+    if results["summary"]["overall_status"] == "success":
+        return 0
+    elif results["summary"]["overall_status"] == "partial":
+        return 1
+    else:
+        return 2
 
 
 def _run_syntax_validation(args, config):
@@ -258,11 +307,7 @@ def _run_dependency_analysis(args, config):
     print(f"Missing: {results['missing_dependencies']}")
     print(f"Unused: {results['unused_dependencies']}")
     
-    # Generate requirements.txt if requested
-    if args.generate_requirements:
-        analyzer.generate_requirements_txt(args.generate_requirements)
-    
-    # Check security vulnerabilities if requested
+    # Check security vulnerabilities
     if args.check_security:
         print("\nChecking security vulnerabilities...")
         vulnerabilities = analyzer.check_security_vulnerabilities()
@@ -273,7 +318,11 @@ def _run_dependency_analysis(args, config):
         else:
             print("No security vulnerabilities found.")
     
-    # Export results if requested
+    # Generate requirements.txt
+    if args.generate_requirements:
+        analyzer.generate_requirements_txt(args.generate_requirements)
+    
+    # Export results
     if args.output:
         output_dir = Path(args.output)
         output_dir.mkdir(exist_ok=True)

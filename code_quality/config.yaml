@@ -1,13 +1,13 @@
 code_quality:
   auto_fix:
     enabled: true
-    tools: ["black", "isort", "autopep8"]
+    tools: ["black", "isort", "autopep8", "ruff"]
     max_line_length: 88
     aggressive: false
     skip_errors: []
   
   analysis:
-    linters: ["flake8", "pylint", "mypy"]
+    linters: ["flake8", "pylint", "mypy", "ruff"]
     complexity_threshold: 10
     security_checks: true
     dead_code_detection: true

@@ -1,0 +1,30 @@
+================================================================================
+DIRECTORY DATA QUALITY ANALYSIS REPORT
+================================================================================
+
+DIRECTORY INFORMATION:
+----------------------------------------
+Directory Path: docs
+Analysis Time: 2025-09-02T17:29:15.404089
+File Pattern: *
+
+ANALYSIS SUMMARY:
+----------------------------------------
+Overall Quality: EXCELLENT
+Total Files: 1
+Successful Analyses: 1
+Failed Analyses: 0
+Success Rate: 100.0%
+Total Size: 0.003 MB
+
+QUALITY DISTRIBUTION:
+----------------------------------------
+• Excellent: 1 files
+
+INDIVIDUAL FILE RESULTS:
+----------------------------------------
+✅ wavelet_feature_selection_config.yaml: EXCELLENT (0.003 MB)
+
+================================================================================
+End of Report
+================================================================================

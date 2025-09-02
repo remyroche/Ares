@@ -1,0 +1,2 @@
+src/tactician/sr_breakout_predictor.py:1312: error: Invalid syntax  [syntax]
+Found 1 error in 1 file (errors prevented further checking)

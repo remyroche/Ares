@@ -1,0 +1,12 @@
+src/supervisor/dynamic_weighter.py:409:1: W293 blank line contains whitespace
+src/supervisor/dynamic_weighter.py:415:1: W293 blank line contains whitespace
+src/supervisor/dynamic_weighter.py:437:1: W293 blank line contains whitespace
+src/supervisor/dynamic_weighter.py:443:1: W293 blank line contains whitespace
+src/supervisor/dynamic_weighter.py:1125:49: E203 whitespace before ':'
+src/supervisor/enhanced_model_monitor.py:24:1: E303 too many blank lines (3)
+src/supervisor/enhanced_prediction_service.py:582:1: W293 blank line contains whitespace
+src/supervisor/model_behavior_tracker.py:340:114: E203 whitespace before ':'
+src/supervisor/performance_monitor.py:263:49: E203 whitespace before ':'
+src/supervisor/performance_monitor.py:393:113: E203 whitespace before ':'
+src/supervisor/performance_monitor.py:394:107: E203 whitespace before ':'
+src/supervisor/supervisor.py:654:30: F541 f-string is missing placeholders

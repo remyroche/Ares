@@ -1,0 +1,5 @@
+src/supervisor/optimizer.py:196: unused variable 'historical_pnl_data' (100% confidence)
+src/supervisor/optimizer.py:197: unused variable 'strategy_breakdown_data' (100% confidence)
+src/supervisor/optimizer.py:198: unused variable 'checkpoint_file_path' (100% confidence)
+src/supervisor/optimizer.py:199: unused variable 'hpo_ranges' (100% confidence)
+src/supervisor/pnl_loss_functions.py:1110: unreachable code after 'try' (100% confidence)

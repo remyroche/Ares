@@ -1,12 +1,14 @@
 # src/supervisor/risk_allocator.py
 
-from datetime import datetime
-from src.utils.logger import system_logger
-from typing import Any
 import asyncio
+from datetime import datetime
+from typing import Any
+
 import numpy as np
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.logger import system_logger
+
 
 class RiskAllocator:
     """
@@ -15,7 +17,7 @@ class RiskAllocator:
     - Global portfolio guards and kill-switches
     - VaR and ES monitoring
     - Portfolio-level risk limits and allocations
-    
+
     Note: Position sizing is handled by the Tactician component
     """
 
@@ -200,10 +202,7 @@ class RiskAllocator:
     def get_risk_allocations(self) -> dict[str, Any]:
         return self.risk_allocations.copy()
 
-    def calculate_var(
-        self, returns: list[float],
-        confidence_level: float = None
-    ) -> float:
+    def calculate_var(self, returns: list[float], confidence_level: float = None) -> float:
         """
         Calculate Value at Risk (VaR).
 
@@ -228,10 +227,7 @@ class RiskAllocator:
             self.logger.error(f"Error calculating VaR: {e}")
             return 0.0
 
-    def calculate_expected_shortfall(
-        self, returns: list[float],
-        confidence_level: float = None
-    ) -> float:
+    def calculate_expected_shortfall(self, returns: list[float], confidence_level: float = None) -> float:
         """
         Calculate Expected Shortfall (ES) / Conditional VaR.
 
@@ -264,7 +260,8 @@ class RiskAllocator:
             return 0.0
 
     def calculate_multi_timeframe_var(
-        self, portfolio_data: dict[str, Any],
+        self,
+        portfolio_data: dict[str, Any],
     ) -> dict[str, float]:
         """
         Calculate VaR across multiple timeframes.
@@ -293,10 +290,7 @@ class RiskAllocator:
             self.logger.error(f"Error calculating multi-timeframe VaR: {e}")
             return {}
 
-    def monitor_risk_limits(
-        self, current_var: float,
-        current_es: float
-    ) -> dict[str, Any]:
+    def monitor_risk_limits(self, current_var: float, current_es: float) -> dict[str, Any]:
         """
         Monitor risk limits and generate alerts.
 
@@ -320,9 +314,7 @@ class RiskAllocator:
                 alerts.append(
                     {
                         "type": "var_limit_exceeded",
-                        "severity": "high"
-                        if current_var > var_limit * 1.5
-                        else "medium",
+                        "severity": ("high" if current_var > var_limit * 1.5 else "medium"),
                         "message": f"VaR ({current_var:.4f}) exceeds limit ({var_limit:.4f})",
                         "value": current_var,
                         "limit": var_limit,
@@ -387,7 +379,7 @@ class RiskAllocator:
             # Filter by timeframe (simplified implementation)
             return {
                 "latest_metrics": self.var_history[-1] if self.var_history else {},
-                "timeframe": timeframe
+                "timeframe": timeframe,
             }
 
         except Exception as e:
@@ -413,11 +405,7 @@ class RiskAllocator:
                 "min_es": np.min(es_values),
                 "es_volatility": np.std(es_values),
                 "risk_events": len(
-                    [
-                        entry
-                        for entry in self.var_history
-                        if entry["risk_status"] == "elevated"
-                    ],
+                    [entry for entry in self.var_history if entry["risk_status"] == "elevated"],
                 ),
             }
 
@@ -425,7 +413,9 @@ class RiskAllocator:
             self.logger.error(f"Error calculating risk summary: {e}")
             return {}
 
+
 risk_allocator: RiskAllocator | None = None
+
 
 @handle_errors(
     exceptions=(Exception,),

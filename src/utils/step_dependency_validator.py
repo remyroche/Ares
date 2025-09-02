@@ -11,12 +11,10 @@ import logging
 
 try:
     from .logger import system_logger
-    from .pipeline_standards import PipelineStandards, pipeline_standards
     from .warning_symbols import error, warning, critical
 except ImportError:
     # Fallback for when running as standalone
     from src.utils.logger import system_logger
-    from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
     from src.utils.warning_symbols import error, warning, critical
 
 

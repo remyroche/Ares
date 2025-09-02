@@ -1175,11 +1175,11 @@ class EnhancedTrainingManager:
             self.logger.info(f"🔧 Max Trials: {self.max_trials}")
             self.logger.info(f"🔧 N Trials: {self.n_trials}")
 
-        # Initialize enhanced reporting
-        self.current_pipeline_execution_id = f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{enhanced_training_input.get('symbol', 'unknown')}_{enhanced_training_input.get('exchange', 'unknown')}"
-        self.step_reports = {}
+            # Initialize enhanced reporting
+            self.current_pipeline_execution_id = f"pipeline_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{enhanced_training_input.get('symbol', 'unknown')}_{enhanced_training_input.get('exchange', 'unknown')}"
+            self.step_reports = {}
 
-        self.is_training = True
+            self.is_training = True
 
             # Validate training input
             if not self._validate_enhanced_training_inputs(enhanced_training_input):

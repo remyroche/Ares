@@ -3689,101 +3689,101 @@ class VectorizedAdvancedFeatureEngineering:
         try:
             features = {}
 
-        # Ensure we have the required OHLCV columns
+            # Ensure we have the required OHLCV columns
             required_cols = ["open", "high", "low", "close"]
-        if not all(col in price_data.columns for col in required_cols):
-        self.logger.warning(
+            if not all(col in price_data.columns for col in required_cols):
+                self.logger.warning(
                     "⚠️ Missing required OHLCV columns for technical indicators",
                 )
-        return features
+                return features
 
-        # Convert to float to ensure numeric operations
+            # Convert to float to ensure numeric operations
             close = price_data["close"].astype(float)
             high = price_data["high"].astype(float)
             low = price_data["low"].astype(float)
             open_price = price_data["open"].astype(float)
-            volume, price_data.get(
+            volume = price_data.get(
                 "volume", pd.Series(1.0, index=price_data.index)
             ).astype(float)
 
-        # Basic price-based features
-        # features["close_returns"] = close.pct_change().fillna(0)  # REMOVED: Duplicate feature
+            # Basic price-based features
+            # features["close_returns"] = close.pct_change().fillna(0)  # REMOVED: Duplicate feature
             features["high_low_ratio"] = (high / low).fillna(1.0)
             features["close_open_ratio"] = (close / open_price).fillna(1.0)
             features["body_size"] = (close - open_price).abs() / close
             features["upper_shadow"] = (high - np.maximum(close, open_price)) / close
             features["lower_shadow"] = (np.minimum(close, open_price) - low) / close
 
-        # Moving averages
+            # Moving averages
             features["sma_5"] = close.rolling(5, min_periods=1).mean()
             features["sma_20"] = close.rolling(20, min_periods=1).mean()
             features["ema_12"] = close.ewm(span=12, adjust=False).mean()
             features["ema_26"] = close.ewm(span=26, adjust=False).mean()
 
-        # Momentum indicators
+            # Momentum indicators
             features["price_momentum_20"] = close / close.shift(20) - 1
             features["volatility_5"] = (
                 close.rolling(5, min_periods=1).std()
                 / close.rolling(5, min_periods=1).mean()
             )
 
-        # Volume-based features
-        if "volume" in price_data.columns:
-        # features["volume_ma_5"] = volume.rolling(5, min_periods=1).mean()  # REMOVED: Duplicate feature
-        # features["volume_ma_20"] = volume.rolling(20, min_periods=1).mean()  # REMOVED: Duplicate feature
+            # Volume-based features
+            if "volume" in price_data.columns:
+                # features["volume_ma_5"] = volume.rolling(5, min_periods=1).mean()  # REMOVED: Duplicate feature
+                # features["volume_ma_20"] = volume.rolling(20, min_periods=1).mean()  # REMOVED: Duplicate feature
                 features["volume_momentum"] = volume / volume.shift(5) - 1
                 features["volume_ratio"] = (
                     volume / volume.rolling(20, min_periods=1).mean()
                 )
 
-        # RSI
-        # Use shift(1) to avoid NaN in first row
+            # RSI
+            # Use shift(1) to avoid NaN in first row
             delta = close - close.shift(1)
             gain = (delta.where(delta > 0, 0)).rolling(window=14, min_periods=1).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(window=14, min_periods=1).mean()
-            rs, gain / loss.replace(0, np.nan)
+            rs = gain / loss.replace(0, np.nan)
             features["rsi"] = 100 - (100 / (1 + rs)).fillna(50)
 
-        # MACD
-            ema12, close.ewm(span=12, adjust=False).mean()
-            ema26, close.ewm(span=26, adjust=False).mean()
+            # MACD
+            ema12 = close.ewm(span=12, adjust=False).mean()
+            ema26 = close.ewm(span=26, adjust=False).mean()
             features["macd"] = ema12 - ema26
             features["macd_signal"] = features["macd"].ewm(span=9, adjust=False).mean()
             features["macd_histogram"] = features["macd"] - features["macd_signal"]
 
-        # Bollinger Bands
-            sma20, close.rolling(20, min_periods=1).mean()
-            std20, close.rolling(20, min_periods=1).std()
+            # Bollinger Bands
+            sma20 = close.rolling(20, min_periods=1).mean()
+            std20 = close.rolling(20, min_periods=1).std()
             features["bb_upper"] = sma20 + (std20 * 2)
             features["bb_lower"] = sma20 - (std20 * 2)
             features["bb_position"] = (close - features["bb_lower"]) / (
                 features["bb_upper"] - features["bb_lower"]
             )
 
-        # ATR (Average True Range)
+            # ATR (Average True Range)
             tr1 = high - low
             tr2 = abs(high - close.shift(1))
             tr3 = abs(low - close.shift(1))
-            tr, pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+            tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
             features["atr"] = tr.rolling(14, min_periods=1).mean()
 
-        # Stochastic Oscillator
-            lowest_low, low.rolling(14, min_periods=1).min()
-            highest_high, high.rolling(14, min_periods=1).max()
+            # Stochastic Oscillator
+            lowest_low = low.rolling(14, min_periods=1).min()
+            highest_high = high.rolling(14, min_periods=1).max()
             features["stoch_k"] = (
                 100 * (close - lowest_low) / (highest_high - lowest_low)
             )
             features["stoch_d"] = features["stoch_k"].rolling(3, min_periods=1).mean()
 
-        # Williams %R
+            # Williams %R
             features["williams_r"] = (
                 -100 * (highest_high - close) / (highest_high - lowest_low)
             )
 
-        # Commodity Channel Index
+            # Commodity Channel Index
             typical_price = (high + low + close) / 3
-            sma_tp, typical_price.rolling(20, min_periods=1).mean()
-            mad, typical_price.rolling(20, min_periods=1).apply(
+            sma_tp = typical_price.rolling(20, min_periods=1).mean()
+            mad = typical_price.rolling(20, min_periods=1).apply(
                 lambda x: np.mean(np.abs(x - x.mean())),
             )
             features["cci"] = (typical_price - sma_tp) / (0.015 * mad)
@@ -3839,43 +3839,43 @@ class VectorizedAdvancedFeatureEngineering:
             features["volume_velocity_5"] = volume.pct_change(5).fillna(0)
             features["volume_velocity_10"] = volume.pct_change(10).fillna(0)
 
-        # Clean up any infinite or NaN values
-        for key in list(features.keys():
-        if isinstance(features[key], pd.Series):
+            # Clean up any infinite or NaN values
+            for key in list(features.keys()):
+                if isinstance(features[key], pd.Series):
                     features[key] = (
                         features[key].replace([np.inf, -np.inf], np.nan).fillna(0)
                     )
 
-        self.logger.info(f"✅ Generated {len(features)} OHLCV technical indicators")
-        return features
+            self.logger.info(f"✅ Generated {len(features)} OHLCV technical indicators")
+            return features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error engineering OHLCV features: {e}")
-        return {}
+            self.logger.exception(f"🚨 Error engineering OHLCV features: {e}")
+            return {}
 
     @validate_data_quality(validation_level=ValidationLevel.WARNING)
     def _engineer_adaptive_indicators_vectorized(
-        self = price_data: pd.DataFrame, ) -> dict[str, Any]:
+        self, price_data: pd.DataFrame) -> dict[str, Any]:
         """Engineer adaptive indicators that adjust to market conditions."""
         try:
             features = {}
 
-        if "close" not in price_data.columns:
-        self.logger.warning(
+            if "close" not in price_data.columns:
+                self.logger.warning(
                     "⚠️ No 'close' column found in price_data for adaptive indicators",
                 )
-        return features
+                return features
 
             close = price_data["close"].astype(float)
-        self.logger.debug(
+            self.logger.debug(
                 f"🔍 Adaptive indicators: close price range {close.min():.2f} to {close.max():.2f}",
             )
 
-        # Check for NaN/inf values in close price
+            # Check for NaN/inf values in close price
             nan_count = close.isna().sum()
             inf_count = np.isinf(close).sum()
-        if nan_count > 0 or inf_count > 0:
-        self.logger.warning(
+            if nan_count > 0 or inf_count > 0:
+                self.logger.warning(
                     f"⚠️ Found {nan_count} NaN and {inf_count} inf values in close price",
                 )
                 close = (
@@ -3884,43 +3884,43 @@ class VectorizedAdvancedFeatureEngineering:
                     .fillna(method="bfill")
                 )
 
-        # Adaptive moving averages
+            # Adaptive moving averages
             volatility = (
                 close.rolling(20, min_periods=1).std()
                 / close.rolling(20, min_periods=1).mean()
             )
 
-        # Fix: Handle NaN and inf values before converting to int
-            volatility, volatility.replace([np.inf, -np.inf], np.nan).fillna(
+            # Fix: Handle NaN and inf values before converting to int
+            volatility = volatility.replace([np.inf, -np.inf], np.nan).fillna(
                 0.1,
             )  # Default volatility
-        self.logger.debug(
+            self.logger.debug(
                 f"🔍 Volatility range: {volatility.min():.4f} to {volatility.max():.4f}",
             )
 
             adaptive_period = (20 * volatility).clip(5, 50)
-        self.logger.debug(
+            self.logger.debug(
                 f"🔍 Adaptive period range: {adaptive_period.min():.1f} to {adaptive_period.max():.1f}",
             )
 
-        # Convert to int safely after handling non-finite values
-        try:
+            # Convert to int safely after handling non-finite values
+            try:
                 adaptive_period = adaptive_period.astype(int)
-        self.logger.debug("🔍 Successfully converted adaptive_period to int")
-        except Exception as e:
-        self.logger.warning(
+                self.logger.debug("🔍 Successfully converted adaptive_period to int")
+            except Exception as e:
+                self.logger.warning(
                     f"⚠️ Error converting adaptive_period to int: {e}, using default values",
                 )
-        self.logger.debug(
+                self.logger.debug(
                     f"🔍 Adaptive_period sample values: {adaptive_period.head().tolist()}",
                 )
-                adaptive_period, pd.Series(20, index=close.index, dtype=int)
+                adaptive_period = pd.Series(20, index=close.index, dtype=int)
 
-        # Create adaptive SMA
-            adaptive_sma, pd.Series(index=close.index, dtype=float)
+            # Create adaptive SMA
+            adaptive_sma = pd.Series(index=close.index, dtype=float)
         for i in range(len(close):
-                period, max(1, int(adaptive_period.iloc[i]))
-                start_idx, max(0, i - period + 1)
+                period = max(1, int(adaptive_period.iloc[i]))
+                start_idx = max(0, i - period + 1)
                 adaptive_sma.iloc[i] = close.iloc[start_idx : i + 1].mean()
 
             features["adaptive_sma"] = adaptive_sma
@@ -3946,19 +3946,19 @@ class VectorizedAdvancedFeatureEngineering:
         self.logger.debug(
                     f"🔍 Adaptive_rsi_period sample values: {adaptive_rsi_period.head().tolist()}",
                 )
-                adaptive_rsi_period, pd.Series(14, index=close.index, dtype=int)
+                adaptive_rsi_period = pd.Series(14, index=close.index, dtype=int)
 
-            adaptive_rsi, pd.Series(index=close.index, dtype=float)
+            adaptive_rsi = pd.Series(index=close.index, dtype=float)
 
-        for i in range(len(close)):
+            for i in range(len(close)):
                 period = max(1, int(adaptive_rsi_period.iloc[i]))
                 if i >= period:
-        # Use shift(1) to avoid NaN in first row
+                    # Use shift(1) to avoid NaN in first row
                     price_slice = close.iloc[i - period + 1 : i + 1]
                     delta = price_slice - price_slice.shift(1)
                     gain = delta.where(delta > 0, 0).mean()
                     loss = (-delta.where(delta < 0, 0)).mean()
-        if loss != 0:
+                    if loss != 0:
                         rs = gain / loss
                         adaptive_rsi.iloc[i] = 100 - (100 / (1 + rs))
                     else:
@@ -3968,22 +3968,22 @@ class VectorizedAdvancedFeatureEngineering:
 
             features["adaptive_rsi"] = adaptive_rsi
 
-        # Clean up any infinite or NaN values
-        for key in list(features.keys()):
-            if isinstance(features[key], pd.Series):
-                features[key] = (
-                    features[key].replace([np.inf, -np.inf], np.nan).fillna(0)
-                )
+            # Clean up any infinite or NaN values
+            for key in list(features.keys()):
+                if isinstance(features[key], pd.Series):
+                    features[key] = (
+                        features[key].replace([np.inf, -np.inf], np.nan).fillna(0)
+                    )
 
-        self.logger.info(
+            self.logger.info(
                 f"✅ Successfully engineered {len(features)} adaptive indicators",
             )
-        return features
+            return features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error engineering adaptive indicators: {e}")
-        self.logger.debug(f"🔍 Exception details: {type(e).__name__}: {e!s}")
-        return {}
+            self.logger.exception(f"🚨 Error engineering adaptive indicators: {e}")
+            self.logger.debug(f"🔍 Exception details: {type(e).__name__}: {e!s}")
+            return {}
 
 
 

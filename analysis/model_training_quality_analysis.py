@@ -81,25 +81,25 @@ class ModelTrainingQualityAnalyzer:
         ]
         
         for pattern in patterns:
-            files, glob.glob(os.path.join(data_dir, pattern))
+            files = glob.glob(os.path.join(data_dir, pattern))
         if files:
-        try:
-        self.training_data, pd.read_csv(files[0])
-                    print(f"Found training data: {files[0]}")
-                    break
-        except Exception as e:
-                    print(f"Error loading {files[0]}: {e}")
+            try:
+                self.training_data = pd.read_csv(files[0])
+                print(f"Found training data: {files[0]}")
+                break
+            except Exception as e:
+                print(f"Error loading {files[0]}: {e}")
         
         # Also look for model files
-        model_files, glob.glob(os.path.join(data_dir, '*.pkl'))
+        model_files = glob.glob(os.path.join(data_dir, '*.pkl'))
         if model_files:
-        try:
-        with open(model_files[0], 'rb') as f:
-                    model_data, pickle.load(f)
-        if isinstance(model_data, dict):
-        self.model_metrics, model_data
+            try:
+                with open(model_files[0], 'rb') as f:
+                    model_data = pickle.load(f)
+                if isinstance(model_data, dict):
+                    self.model_metrics = model_data
                     print(f"Found model metrics: {model_files[0]}")
-        except Exception as e:
+            except Exception as e:
                 print(f"Error loading model file {model_files[0]}: {e}")
     
 
@@ -156,10 +156,10 @@ class ModelTrainingQualityAnalyzer:
             'learning_rate': ['lr', 'learning_rate', 'rate']
         }
         
-        found_metrics={}
+        found_metrics = {}
         for metric_type, possible_names in metric_columns.items():
-        for name in possible_names:
-        if name in self.training_data.columns:
+            for name in possible_names:
+                if name in self.training_data.columns:
                     found_metrics[metric_type] = name
                     break
         
@@ -171,20 +171,20 @@ class ModelTrainingQualityAnalyzer:
         metrics_analysis={}
         
         for metric_type, column_name in found_metrics.items():
-            values, self.training_data[column_name].dropna()
+            values = self.training_data[column_name].dropna()
             
-        if len(values) > 0:
-        # Basic statistics
-                min_val, values.min()
-                max_val, values.max()
-                mean_val, values.mean()
-                std_val, values.std()
+            if len(values) > 0:
+                # Basic statistics
+                min_val = values.min()
+                max_val = values.max()
+                mean_val = values.mean()
+                std_val = values.std()
                 
-        # Trend analysis
-        if len(values) > 1:
-        # Calculate trend (positive/negative slope)
-                    x, np.arange(len(values))
-                    slope, np.polyfit(x, values, 1)[0]
+                # Trend analysis
+                if len(values) > 1:
+                    # Calculate trend (positive/negative slope)
+                    x = np.arange(len(values))
+                    slope = np.polyfit(x, values, 1)[0]
                     
         # Check for convergence
         if metric_type in ['loss', 'val_loss']:

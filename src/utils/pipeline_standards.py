@@ -9,7 +9,7 @@ This module provides standardized utilities for the data pipeline including:
 - Data quality validation
 - File naming conventions
 - Metadata standards
-"""
+
 
 import sys
 import logging
@@ -40,6 +40,7 @@ sys.path.insert(0, str(project_root))
 
 class DataQualityLevel(Enum):
     """Data quality levels."""
+
     CRITICAL = "critical"
     WARNING = "warning"
     INFO = "info"

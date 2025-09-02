@@ -1,0 +1,20 @@
+2025-09-02 08:20:51,086 - INFO - Processing file: src/utils/decorator_compatibility.py
+2025-09-02 08:20:51,086 - INFO - Performing semantic analysis...
+2025-09-02 08:20:51,086 - INFO - Code quality score: 0.00
+2025-09-02 08:20:51,086 - WARNING - Syntax errors found: 1
+2025-09-02 08:20:51,086 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:20:51,087 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:51,088 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:51,089 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:51,089 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:51,090 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:51,091 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:51,092 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:51,093 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:51,093 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:51,095 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:20:51,095 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:20:51,097 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:20:51,098 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:51,099 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:51,101 - INFO - No fixes needed for: src/utils/decorator_compatibility.py

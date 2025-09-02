@@ -1,0 +1,21 @@
+2025-09-02 08:17:25,416 - INFO - Processing file: src/utils/warning_symbols.py
+2025-09-02 08:17:25,416 - INFO - Performing semantic analysis...
+2025-09-02 08:17:25,417 - INFO - Code quality score: 0.00
+2025-09-02 08:17:25,417 - WARNING - Syntax errors found: 1
+2025-09-02 08:17:25,417 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:17:25,417 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:17:25,418 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:17:25,418 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:17:25,418 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:17:25,419 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:17:25,419 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:17:25,419 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:17:25,420 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:17:25,420 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:17:25,420 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:17:25,421 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:17:25,422 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:17:25,424 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:17:25,424 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:17:25,426 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:17:25,427 - INFO - No fixes needed for: src/utils/warning_symbols.py

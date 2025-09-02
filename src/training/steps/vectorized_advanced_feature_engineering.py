@@ -4444,133 +4444,133 @@ class VectorizedAdvancedFeatureEngineering:
             # Get minimum data requirement for this timeframe
             min_required_data = self._get_minimum_data_requirement(timeframe)
             if price_data.empty or len(price_data) < min_required_data:
-        self.logger.info(f"ℹ️ Insufficient data for {timeframe} timeframe: {len(price_data)} rows (minimum required: {min_required_data})")
-        return features
+                self.logger.info(f"ℹ️ Insufficient data for {timeframe} timeframe: {len(price_data)} rows (minimum required: {min_required_data})")
+                return features
 
-        # Basic price features for this timeframe
+            # Basic price features for this timeframe
             close = price_data["close"].astype(float)
             high = price_data["high"].astype(float)
             low = price_data["low"].astype(float)
             open_price = price_data["open"].astype(float)
 
-        # Handle NaN values in input data
+            # Handle NaN values in input data
             close = close.fillna(method="ffill").fillna(method="bfill").fillna(0)
             high = high.fillna(method="ffill").fillna(method="bfill").fillna(0)
             low = low.fillna(method="ffill").fillna(method="bfill").fillna(0)
             open_price = open_price.fillna(method="ffill").fillna(method="bfill").fillna(0)
 
-        # Validate input data
-        if close.isna().all() or close.std() == 0:
-        self.logger.warning(f"⚠️ Invalid close data for {timeframe} timeframe")
-        return features
+            # Validate input data
+            if close.isna().all() or close.std() == 0:
+                self.logger.warning(f"⚠️ Invalid close data for {timeframe} timeframe")
+                return features
 
-        # For higher timeframes, we need to be more conservative with rolling windows
-        # since we have fewer data points
-        if timeframe == "1m":
-        # Use standard rolling windows for 1m data
+            # For higher timeframes, we need to be more conservative with rolling windows
+            # since we have fewer data points
+            if timeframe == "1m":
+                # Use standard rolling windows for 1m data
                 sma_window = 20
                 rsi_window = 14
                 vol_window = 20
                 min_periods = 5
             elif timeframe in ["5m", "15m"]:
-        # Use smaller windows for 5m and 15m data
+                # Use smaller windows for 5m and 15m data
                 sma_window = 10
                 rsi_window = 7
                 vol_window = 10
                 min_periods = 3
             else:
-        # Use very small windows for higher timeframes
+                # Use very small windows for higher timeframes
                 sma_window = 5
                 rsi_window = 5
                 vol_window = 5
                 min_periods = 2
 
-        # Moving averages (only if we have enough data)
-        if len(close) >= min_periods:
+            # Moving averages (only if we have enough data)
+            if len(close) >= min_periods:
                 sma = close.rolling(sma_window, min_periods=min_periods).mean()
                 sma = sma.fillna(method="ffill").fillna(method="bfill").fillna(0)
-        if sma.var() > 1e-12:  # Check for meaningful variance
+                if sma.var() > 1e-12:  # Check for meaningful variance
                     features[f"sma_{sma_window}_{timeframe}"] = sma
 
                 ema = close.ewm(span=min(12, len(close)//2), adjust=False).mean()
                 ema = ema.fillna(method="ffill").fillna(method="bfill").fillna(0)
-        if ema.var() > 1e-12:
+                if ema.var() > 1e-12:
                     features[f"ema_{min(12, len(close)//2)}_{timeframe}"] = ema
 
-        # Momentum indicators (only if we have enough data)
-        if len(close) >= min_periods:
+            # Momentum indicators (only if we have enough data)
+            if len(close) >= min_periods:
                 rsi = self._calculate_rsi(close, rsi_window)
                 rsi = rsi.fillna(method="ffill").fillna(method="bfill").fillna(50)
-        if rsi.var() > 1e-12:
+                if rsi.var() > 1e-12:
                     features[f"rsi_{timeframe}"] = rsi
 
                 macd = self._calculate_macd(close)
                 macd = macd.fillna(method="ffill").fillna(method="bfill").fillna(0)
-        if macd.var() > 1e-12:
+                if macd.var() > 1e-12:
                     features[f"macd_{timeframe}"] = macd
 
-        # Volatility (only if we have enough data)
-        if len(close) >= min_periods:
+            # Volatility (only if we have enough data)
+            if len(close) >= min_periods:
                 returns = close.pct_change()
-        # Handle NaN values properly
+                # Handle NaN values properly
                 returns = returns.fillna(method="ffill").fillna(method="bfill").fillna(0)
                 volatility = returns.rolling(vol_window, min_periods=min_periods).std()
                 volatility = volatility.fillna(method="ffill").fillna(method="bfill").fillna(0)
-        if volatility.var() > 1e-12:
+                if volatility.var() > 1e-12:
                     features[f"volatility_{timeframe}"] = volatility
 
-        # Volume features if available
-        if volume_data is not None and not volume_data.empty and "volume" in volume_data.columns:
+            # Volume features if available
+            if volume_data is not None and not volume_data.empty and "volume" in volume_data.columns:
                 volume = volume_data["volume"].astype(float)
-                volume, volume.fillna(method="ffill").fillna(method="bfill").fillna(0)
+                volume = volume.fillna(method="ffill").fillna(method="bfill").fillna(0)
 
-        if len(volume) >= min_periods and volume.var() > 1e-12:
+                if len(volume) >= min_periods and volume.var() > 1e-12:
                     volume_ma = volume.rolling(vol_window, min_periods=min_periods).mean()
                     volume_ma = volume_ma.fillna(method="ffill").fillna(method="bfill").fillna(0)
-        if volume_ma.var() > 1e-12:
+                    if volume_ma.var() > 1e-12:
                         features[f"volume_ma_{timeframe}"] = volume_ma
 
-        # Volume ratio with safety check
+                    # Volume ratio with safety check
                     volume_ratio = volume / (volume_ma + 1e-8)  # Avoid division by zero
                     volume_ratio = volume_ratio.fillna(method="ffill").fillna(method="bfill").fillna(1)
-        if volume_ratio.var() > 1e-12:
+                    if volume_ratio.var() > 1e-12:
                         features[f"volume_ratio_{timeframe}"] = volume_ratio
 
-        # Price position (only if we have enough data)
-        if len(close) >= min_periods:
+            # Price position (only if we have enough data)
+            if len(close) >= min_periods:
                 high_roll = high.rolling(vol_window, min_periods=min_periods).max()
                 low_roll = low.rolling(vol_window, min_periods=min_periods).min()
                 high_roll = high_roll.fillna(method="ffill").fillna(method="bfill").fillna(close)
                 low_roll = low_roll.fillna(method="ffill").fillna(method="bfill").fillna(close)
 
-        # Safety check for division by zero
+                # Safety check for division by zero
                 price_range = high_roll - low_roll
                 price_position = (close - low_roll) / (price_range + 1e-8)  # Avoid division by zero
                 price_position = price_position.fillna(method="ffill").fillna(method="bfill").fillna(0.5)
-        if price_position.var() > 1e-12:
+                if price_position.var() > 1e-12:
                     features[f"price_position_{timeframe}"] = price_position
 
-        # Validate generated features with improved NaN handling
+            # Validate generated features with improved NaN handling
             valid_features = {}
-        for name, feature in features.items():
-        if isinstance(feature, pd.Series):
-        # Handle any remaining NaN values
-                    feature, feature.fillna(method="ffill").fillna(method="bfill").fillna(0)
+            for name, feature in features.items():
+                if isinstance(feature, pd.Series):
+                    # Handle any remaining NaN values
+                    feature = feature.fillna(method="ffill").fillna(method="bfill").fillna(0)
 
-        # Check for meaningful variance
-        if feature.var() > 1e-12 and not feature.isna().all():
+                    # Check for meaningful variance
+                    if feature.var() > 1e-12 and not feature.isna().all():
                         valid_features[name] = feature
                     else:
-        self.logger.debug(f"⚠️ Skipping constant feature: {name}")
+                        self.logger.debug(f"⚠️ Skipping constant feature: {name}")
                 else:
                     valid_features[name] = feature
 
-        self.logger.debug(f"✅ Generated {len(valid_features)} valid features for {timeframe} timeframe")
-        return valid_features
+            self.logger.debug(f"✅ Generated {len(valid_features)} valid features for {timeframe} timeframe")
+            return valid_features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error generating features for {timeframe}: {e}")
-        return {}
+            self.logger.exception(f"🚨 Error generating features for {timeframe}: {e}")
+            return {}
 
     def _generate_cross_timeframe_features(self, price_data: pd.DataFrame, volume_data: pd.DataFrame | None = None) -> dict[str, Any]:
         """Generate comprehensive cross-timeframe features."""

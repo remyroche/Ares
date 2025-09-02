@@ -2,7 +2,7 @@
 
 ## Overview
 
-I've successfully created a comprehensive system for automatically detecting and formatting step mentions in both file contents and file names. The system converts `step1`, `step2`, ..., `step9` to `step01`, `step02`, ..., `step09` respectively.
+I've successfully created a comprehensive system for automatically detecting and formatting step mentions in both file contents and file names. The system converts `step01`, `step02`, ..., `step09` to `step01`, `step02`, ..., `step09` respectively.
 
 ## What Was Created
 
@@ -59,7 +59,7 @@ I've successfully created a comprehensive system for automatically detecting and
 
 ### 1. **Detection Algorithm**
 ```python
-# Regex pattern matches step1, step2, ..., step9
+# Regex pattern matches step01, step02, ..., step09
 # Does NOT match: step0, step10, step11, step12, etc.
 pattern = r'\bstep([1-9])\b'
 ```
@@ -67,9 +67,9 @@ pattern = r'\bstep([1-9])\b'
 ### 2. **Transformation Logic**
 ```python
 # Converts:
-step1 → step01
-step2 → step02
-step3 → step03
+step01 → step01
+step02 → step02
+step03 → step03
 # etc.
 ```
 
@@ -112,7 +112,7 @@ stats = formatter.process_directory('/path/to/directory', recursive=True)
 stats = formatter.process_path('/path/to/file.py')
 
 # Format content directly
-formatted_content, changes = formatter.format_step_content("step1 and step2")
+formatted_content, changes = formatter.format_step_content("step01 and step02")
 ```
 
 ## Testing Results

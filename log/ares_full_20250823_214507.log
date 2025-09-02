@@ -27,8 +27,8 @@
 2025-08-23 21:45:07,615 INFO AresTradingSystem.System.SignalHandler Shutdown callback registered - -
 2025-08-23 21:45:07,615 INFO AresSystem ================================================================================ - -
 2025-08-23 21:45:07,615 INFO AresGlobal [SYSTEM] ================================================================================ - -
-2025-08-23 21:45:07,615 INFO AresSystem 🚀 ARES LAUNCHER STARTED - Mode: step2 - Symbol: ETHUSDT - Exchange: BINANCE - -
-2025-08-23 21:45:07,615 INFO AresGlobal [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: step2 - Symbol: ETHUSDT - Exchange: BINANCE - -
+2025-08-23 21:45:07,615 INFO AresSystem 🚀 ARES LAUNCHER STARTED - Mode: step02 - Symbol: ETHUSDT - Exchange: BINANCE - -
+2025-08-23 21:45:07,615 INFO AresGlobal [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: step02 - Symbol: ETHUSDT - Exchange: BINANCE - -
 2025-08-23 21:45:07,615 INFO AresSystem Start time: 2025-08-23 21:45:07 - -
 2025-08-23 21:45:07,615 INFO AresGlobal [SYSTEM] Start time: 2025-08-23 21:45:07 - -
 2025-08-23 21:45:07,615 INFO AresSystem Log directory: log - -
@@ -36,8 +36,8 @@
 2025-08-23 21:45:07,615 INFO AresSystem ================================================================================ - -
 2025-08-23 21:45:07,615 INFO AresGlobal [SYSTEM] ================================================================================ - -
 2025-08-23 21:45:07,616 DEBUG asyncio Using selector: EpollSelector - -
-2025-08-23 21:45:07,616 INFO AresGlobal.AresLauncher 🚀 Running step2 with existing data for ETHUSDT on BINANCE - -
-2025-08-23 21:45:07,616 INFO AresGlobal.AresLauncher 📊 Using existing data from step1 and step1_5 - no new downloads - -
+2025-08-23 21:45:07,616 INFO AresGlobal.AresLauncher 🚀 Running step02 with existing data for ETHUSDT on BINANCE - -
+2025-08-23 21:45:07,616 INFO AresGlobal.AresLauncher 📊 Using existing data from step01 and step1_5 - no new downloads - -
 2025-08-23 21:45:07,616 INFO src.utils.prometheus_metrics Prometheus client not available; metrics disabled. Error: No module named 'prometheus_client' - -
 2025-08-23 21:45:07,616 INFO AresGlobal.AresLauncher 🔍 Validating step1_data_collection using existing validator - -
 2025-08-23 21:45:07,616 INFO AresGlobal.ValidatorOrchestrator 🔍 Running validator for step1_data_collection - -
@@ -53,7 +53,7 @@
 2025-08-23 21:45:07,623 INFO AresGlobal.ProgressManager Initialized ProgressManager for ETHUSDT on BINANCE - -
 2025-08-23 21:45:07,623 INFO AresGlobal.ProgressManager Progress directory: data/training/progress/BINANCE_ETHUSDT - -
 2025-08-23 21:45:07,623 INFO AresGlobal.StepOrchestrator Initialized StepOrchestrator for ETHUSDT on BINANCE - -
-2025-08-23 21:45:07,623 INFO AresGlobal.AresLauncher 📁 Basic validation for step2 execution - -
+2025-08-23 21:45:07,623 INFO AresGlobal.AresLauncher 📁 Basic validation for step02 execution - -
 2025-08-23 21:45:07,623 INFO AresGlobal.AresLauncher ✅ Found consolidated data: data_cache/aggtrades_BINANCE_ETHUSDT_consolidated.parquet - -
 2025-08-23 21:45:07,624 ERROR AresGlobal.AresLauncher ❌ Failed to run step-based training pipeline: asyncio.run() cannot be called from a running event loop - -
 2025-08-23 21:45:07,624 WARNING py.warnings /workspace/ares_launcher.py:1901: RuntimeWarning: coroutine 'StepOrchestrator.execute_from_step' was never awaited

@@ -2,7 +2,7 @@
 Enhanced Scenario-Based Predictor for Tactician
 
 Implements advanced probabilistic scenario analysis with:
-- All step7 technical indicators
+- All step07 technical indicators
 - 15-minute look-ahead period
 - Fractal scenario definitions (linear progression)
 - Full step17 optimization for all parameters
@@ -269,7 +269,7 @@ class EnhancedScenarioBasedPredictor:
 
     def extract_comprehensive_features(self, market_data: pd.DataFrame) -> np.ndarray:
         """
-        Extract comprehensive features using all step7 technical indicators.
+        Extract comprehensive features using all step07 technical indicators.
         
         Args:
             market_data: Market data with OHLCV

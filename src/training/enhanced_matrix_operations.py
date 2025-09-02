@@ -989,7 +989,7 @@ class EnhancedMatrixOperations:
     @handle_errors(
         exceptions=(Exception,),
         default_return=(pd.DataFrame(), {}),
-        context="feature selection step2",
+        context="feature selection step02",
     )
     def select_features_step2(
         self,

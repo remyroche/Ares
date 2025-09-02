@@ -2,7 +2,7 @@
 """
 Simple Step Formatter Wrapper
 
-This script provides an easy way to format step mentions (step1 -> step01, step2 -> step02, etc.)
+This script provides an easy way to format step mentions (step01 -> step01, step02 -> step02, etc.)
 in both file contents and file names.
 
 Usage:

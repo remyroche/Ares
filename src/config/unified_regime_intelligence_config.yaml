@@ -255,7 +255,7 @@ integration:
   # Pipeline integration
   pipeline:
     replaces_steps: ["step9_5", "step10"]
-    input_steps: ["step1_7", "step5"]
+    input_steps: ["step1_7", "step05"]
     output_format: "unified_prediction"
   
   # Expert ensemble integration

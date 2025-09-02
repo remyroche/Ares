@@ -281,7 +281,7 @@ class Step3_5FinalRegimeClusteringValidator(BaseValidator):
             else:
                 # Validate each file using BaseValidator
                 for file_path in step3_files:
-                    file_valid, file_metrics = self.validate_file_exists(str(file_path), "step3 output file")
+                    file_valid, file_metrics = self.validate_file_exists(str(file_path), "step03 output file")
                     if not file_valid:
                         validation_result["warnings"].append(f"File validation failed: {file_path}")
                 

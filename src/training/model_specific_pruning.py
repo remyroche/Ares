@@ -259,7 +259,7 @@ class ModelSpecificPruning:
     @handle_errors(
         exceptions=(Exception,),
         default_return=(pd.DataFrame(), {}),
-        context="step6 hmm model pruning",
+        context="step06 hmm model pruning",
     )
     def prune_for_step6_hmm_models(
         self,
@@ -305,7 +305,7 @@ class ModelSpecificPruning:
     @handle_errors(
         exceptions=(Exception,),
         default_return=(pd.DataFrame(), {}),
-        context="step6.5 unified regime pruning",
+        context="step06.5 unified regime pruning",
     )
     def prune_for_step6_5_unified_regime(
         self,
@@ -359,7 +359,7 @@ class ModelSpecificPruning:
     @handle_errors(
         exceptions=(Exception,),
         default_return=(pd.DataFrame(), {}),
-        context="step7 ensemble pruning",
+        context="step07 ensemble pruning",
     )
     def prune_for_step7_ensemble(
         self,
@@ -403,7 +403,7 @@ class ModelSpecificPruning:
     @handle_errors(
         exceptions=(Exception,),
         default_return=(pd.DataFrame(), {}),
-        context="step9 tactician pruning",
+        context="step09 tactician pruning",
     )
     def prune_for_step9_tactician(
         self,

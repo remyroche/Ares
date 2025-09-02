@@ -13,17 +13,17 @@
 ```python
 def step1_initialize():
     """Initialize the system."""
-    print("Running step1")
+    print("Running step01")
     return True
 
 def step2_process():
     """Process data."""
-    print("Running step2")
+    print("Running step02")
     return True
 
 def step3_cleanup():
     """Clean up resources."""
-    print("Running step3")
+    print("Running step03")
     return True
 ```
 
@@ -52,9 +52,9 @@ def step3_cleanup():
 {
   "workflow": {
     "steps": [
-      {"id": "step1", "name": "Initialize"},
-      {"id": "step2", "name": "Process"},
-      {"id": "step3", "name": "Cleanup"}
+      {"id": "step01", "name": "Initialize"},
+      {"id": "step02", "name": "Process"},
+      {"id": "step03", "name": "Cleanup"}
     ]
   }
 }
@@ -79,9 +79,9 @@ def step3_cleanup():
 ```markdown
 ## Steps
 
-1. **step1**: Initialize the system
-2. **step2**: Process the data
-3. **step3**: Clean up resources
+1. **step01**: Initialize the system
+2. **step02**: Process the data
+3. **step03**: Clean up resources
 
 ## Usage
 
@@ -115,15 +115,15 @@ step3_cleanup()
 ```python
 sample_content = """
 This is a sample workflow:
-1. step1: Initialize
-2. step2: Process
-3. step3: Report
-4. step4: Cleanup
+1. step01: Initialize
+2. step02: Process
+3. step03: Report
+4. step04: Cleanup
 
 The steps should be executed in order:
-- step1 must complete before step2
-- step2 and step3 can run in parallel
-- step4 depends on step2 and step3
+- step01 must complete before step02
+- step02 and step03 can run in parallel
+- step04 depends on step02 and step03
 """
 ```
 
@@ -147,10 +147,10 @@ The steps should be executed in order:
 
 | Original | Formatted | Location |
 |----------|-----------|----------|
-| `step1` | `step01` | Function names, print statements, JSON IDs, markdown |
-| `step2` | `step02` | Function names, print statements, JSON IDs, markdown |
-| `step3` | `step03` | Function names, print statements, JSON IDs, markdown |
-| `step4` | `step04` | Sample content, markdown |
+| `step01` | `step01` | Function names, print statements, JSON IDs, markdown |
+| `step02` | `step02` | Function names, print statements, JSON IDs, markdown |
+| `step03` | `step03` | Function names, print statements, JSON IDs, markdown |
+| `step04` | `step04` | Sample content, markdown |
 
 ## ❌ What Was NOT Formatted
 
@@ -160,7 +160,7 @@ The steps should be executed in order:
 
 ## 🎯 Key Observations
 
-1. **Content formatting**: All `step1`, `step2`, `step3`, `step4` mentions were converted to `step01`, `step02`, `step03`, `step04`
+1. **Content formatting**: All `step01`, `step02`, `step03`, `step04` mentions were converted to `step01`, `step02`, `step03`, `step04`
 2. **Function names preserved**: The actual function names like `step1_initialize()` were not changed
 3. **Consistent formatting**: All step mentions now follow the `step01`, `step02`, etc. pattern
 4. **Backup safety**: Original content was preserved in `demo_step_formatter.py.backup`

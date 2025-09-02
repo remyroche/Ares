@@ -514,7 +514,7 @@ def _validate_step_dataframes_sync(step_name: str, result: Any, logger: Any, log
 
 def validate_step1_operation(func: Callable) -> Callable:
     """Decorator for step 1 operations."""
-    return validate_step_operation("step1", validate_files=True, validate_dataframes=True)(func)
+    return validate_step_operation("step01", validate_files=True, validate_dataframes=True)(func)
 
 
 def validate_step1_5_operation(func: Callable) -> Callable:
@@ -524,9 +524,9 @@ def validate_step1_5_operation(func: Callable) -> Callable:
 
 def validate_step2_operation(func: Callable) -> Callable:
     """Decorator for step 2 operations."""
-    return validate_step_operation("step2", validate_files=True, validate_dataframes=True)(func)
+    return validate_step_operation("step02", validate_files=True, validate_dataframes=True)(func)
 
 
 def validate_step4_operation(func: Callable) -> Callable:
     """Decorator for step 4 operations."""
-    return validate_step_operation("step4", validate_files=True, validate_dataframes=True)(func)
+    return validate_step_operation("step04", validate_files=True, validate_dataframes=True)(func)

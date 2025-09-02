@@ -76,26 +76,26 @@ class Steps1To7ComprehensiveExecutor:
         
         # Initialize step instances
         self.steps = {
-            "step1": DataCollectionStep(config),
+            "step01": DataCollectionStep(config),
             "step1_5": DataConverterStep(config),
-            "step2": DataReadingStep(config),
-            "step3": HMMRegimeDiscoveryStep(config),
-            "step4": RegimeDataSplittingStep(config),
-            "step5": LabelingStep(config),
-            "step6": FeatureEngineeringStep(config),
-            "step7": Step7EnhancedMatrixOperations(config)
+            "step02": DataReadingStep(config),
+            "step03": HMMRegimeDiscoveryStep(config),
+            "step04": RegimeDataSplittingStep(config),
+            "step05": LabelingStep(config),
+            "step06": FeatureEngineeringStep(config),
+            "step07": Step7EnhancedMatrixOperations(config)
         }
         
         # Initialize validators
         self.validators = {
-            "step1": validate_step1,
+            "step01": validate_step1,
             "step1_5": validate_step1_5,
-            "step2": validate_step2,
-            "step3": validate_step3,
-            "step4": validate_step4,
-            "step5": validate_step5,
-            "step6": validate_step6,
-            "step7": validate_step7
+            "step02": validate_step2,
+            "step03": validate_step3,
+            "step04": validate_step4,
+            "step05": validate_step5,
+            "step06": validate_step6,
+            "step07": validate_step7
         }
         
         self.logger.info("🚀 Steps 1-7 Comprehensive Executor initialized")
@@ -177,28 +177,28 @@ class Steps1To7ComprehensiveExecutor:
     def _get_required_columns_for_step(self, step_name: str) -> List[str]:
         """Get required columns for a specific step."""
         column_requirements = {
-            "step1": ["timestamp", "open", "high", "low", "close", "volume"],
+            "step01": ["timestamp", "open", "high", "low", "close", "volume"],
             "step1_5": ["timestamp", "open", "high", "low", "close", "volume"],
-            "step2": ["timestamp", "open", "high", "low", "close", "volume"],
-            "step3": ["timestamp", "open", "high", "low", "close", "volume"],
-            "step4": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"],
-            "step5": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"],
-            "step6": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"],
-            "step7": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"]
+            "step02": ["timestamp", "open", "high", "low", "close", "volume"],
+            "step03": ["timestamp", "open", "high", "low", "close", "volume"],
+            "step04": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"],
+            "step05": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"],
+            "step06": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"],
+            "step07": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"]
         }
         return column_requirements.get(step_name, [])
 
     def _get_required_keys_for_step(self, step_name: str) -> List[str]:
         """Get required keys for a specific step."""
         key_requirements = {
-            "step1": ["symbol", "exchange", "timeframe", "data_dir"],
+            "step01": ["symbol", "exchange", "timeframe", "data_dir"],
             "step1_5": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step2": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step3": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step4": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step5": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step6": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step7": ["symbol", "exchange", "timeframe", "data_dir"]
+            "step02": ["symbol", "exchange", "timeframe", "data_dir"],
+            "step03": ["symbol", "exchange", "timeframe", "data_dir"],
+            "step04": ["symbol", "exchange", "timeframe", "data_dir"],
+            "step05": ["symbol", "exchange", "timeframe", "data_dir"],
+            "step06": ["symbol", "exchange", "timeframe", "data_dir"],
+            "step07": ["symbol", "exchange", "timeframe", "data_dir"]
         }
         return key_requirements.get(step_name, [])
 
@@ -528,7 +528,7 @@ class Steps1To7ComprehensiveExecutor:
             return {"success": False, "error": "Failed to initialize steps"}
         
         # Execute steps in order
-        step_order = ["step1", "step1_5", "step2", "step3", "step4", "step5", "step6", "step7"]
+        step_order = ["step01", "step1_5", "step02", "step03", "step04", "step05", "step06", "step07"]
         step_results = {}
         
         for step_name in step_order:

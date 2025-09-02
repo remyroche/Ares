@@ -80,7 +80,7 @@ class MockStepExecutor:
         
     async def execute_pipeline(self, training_input: Dict[str, Any]) -> Dict[str, Any]:
         """Mock pipeline execution."""
-        step_order = ["step1", "step1_5", "step2", "step3", "step4", "step5", "step6", "step7"]
+        step_order = ["step01", "step1_5", "step02", "step03", "step04", "step05", "step06", "step07"]
         step_results = {}
         
         for step_name in step_order:
@@ -339,7 +339,7 @@ class DemoComprehensivePipelineExecutor:
         
         # Step-by-step results
         print(f"\nStep-by-Step Results:")
-        step_order = ["step1", "step1_5", "step2", "step3", "step4", "step5", "step6", "step7"]
+        step_order = ["step01", "step1_5", "step02", "step03", "step04", "step05", "step06", "step07"]
         
         for step_name in step_order:
             if step_name in execution_summary["completed_steps"]:

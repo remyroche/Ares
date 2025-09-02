@@ -16,15 +16,15 @@ def demonstrate_step_formatting():
     
     # Examples of what gets formatted
     examples = [
-        "step1",
-        "step2", 
-        "step3",
-        "step4",
-        "step5",
-        "step6",
-        "step7",
-        "step8",
-        "step9",
+        "step01",
+        "step02", 
+        "step03",
+        "step04",
+        "step05",
+        "step06",
+        "step07",
+        "step08",
+        "step09",
         "step10",  # This won't change (already double digit)
         "step11",  # This won't change (already double digit)
         "step12"   # This won't change (already double digit)
@@ -48,15 +48,15 @@ def demonstrate_step_formatting():
     print()
     print("📋 WHAT GETS FORMATTED:")
     print("-" * 40)
-    print("  ✅ step1  → step01")
-    print("  ✅ step2  → step02") 
-    print("  ✅ step3  → step03")
-    print("  ✅ step4  → step04")
-    print("  ✅ step5  → step05")
-    print("  ✅ step6  → step06")
-    print("  ✅ step7  → step07")
-    print("  ✅ step8  → step08")
-    print("  ✅ step9  → step09")
+    print("  ✅ step01  → step01")
+    print("  ✅ step02  → step02") 
+    print("  ✅ step03  → step03")
+    print("  ✅ step04  → step04")
+    print("  ✅ step05  → step05")
+    print("  ✅ step06  → step06")
+    print("  ✅ step07  → step07")
+    print("  ✅ step08  → step08")
+    print("  ✅ step09  → step09")
     print("  ❌ step10 → step10 (no change - already double digit)")
     print("  ❌ step11 → step11 (no change - already double digit)")
     print("  ❌ step12 → step12 (no change - already double digit)")

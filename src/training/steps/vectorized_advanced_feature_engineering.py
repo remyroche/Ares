@@ -2507,96 +2507,96 @@ class VectorizedAdvancedFeatureEngineering:
 
         # Validate input data before proceeding
         if price_data is None or price_data.empty:
-        self.logger.error("❌ Price data is required and cannot be empty")
-        return {}
+            self.logger.error("❌ Price data is required and cannot be empty")
+            return {}
 
         if volume_data is None or volume_data.empty:
-        self.logger.error("❌ Volume data is required and cannot be empty")
-        return {}
+            self.logger.error("❌ Volume data is required and cannot be empty")
+            return {}
 
         # Ensure data has datetime index
         if not isinstance(price_data.index, pd.DatetimeIndex):
-        self.logger.error("❌ Price data must have datetime index")
-        return {}
+            self.logger.error("❌ Price data must have datetime index")
+            return {}
 
         if not isinstance(volume_data.index, pd.DatetimeIndex):
-        self.logger.error("❌ Volume data must have datetime index")
-        return {}
+            self.logger.error("❌ Volume data must have datetime index")
+            return {}
 
         # Check for minimum data requirements
         if len(price_data) < 10:
-        self.logger.error(f"❌ Insufficient price data: {len(price_data)} records (minimum: 10)")
-        return {}
+            self.logger.error(f"❌ Insufficient price data: {len(price_data)} records (minimum: 10)")
+            return {}
 
         if len(volume_data) < 10:
-        self.logger.error(f"❌ Insufficient volume data: {len(volume_data)} records (minimum: 10)")
-        return {}
+            self.logger.error(f"❌ Insufficient volume data: {len(volume_data)} records (minimum: 10)")
+            return {}
 
         self.logger.info("✅ Input data validation passed")
         self.logger.info("🔍 Starting feature generation pipeline...")
 
         # Add comprehensive coroutine detection and filtering
-            def filter_coroutines(feature_dict: dict, source_name: str) -> dict:
-                """Filter out any coroutine features from a feature dictionary."""
-        if not isinstance(feature_dict, dict):
-        self.logger.warning(f"⚠️ {source_name} is not a dict: {type(feature_dict)}")
-        return {}
+        def filter_coroutines(feature_dict: dict, source_name: str) -> dict:
+            """Filter out any coroutine features from a feature dictionary."""
+            if not isinstance(feature_dict, dict):
+                self.logger.warning(f"⚠️ {source_name} is not a dict: {type(feature_dict)}")
+                return {}
 
-                filtered_features = {}
-                coroutine_count = 0
-        for key, value in feature_dict.items():
-        if hasattr(value, "__await__"):
-        self.logger.warning(f"⚠️ Skipping coroutine feature from {source_name}: {key}")
-                        coroutine_count += 1
-                        continue
-                    filtered_features[key] = value
+            filtered_features = {}
+            coroutine_count = 0
+            for key, value in feature_dict.items():
+                if hasattr(value, "__await__"):
+                    self.logger.warning(f"⚠️ Skipping coroutine feature from {source_name}: {key}")
+                    coroutine_count += 1
+                    continue
+                filtered_features[key] = value
 
-        if coroutine_count > 0:
-        self.logger.info(f"⚠️ Filtered out {coroutine_count} coroutine features from {source_name}")
+            if coroutine_count > 0:
+                self.logger.info(f"⚠️ Filtered out {coroutine_count} coroutine features from {source_name}")
 
-        return filtered_features
+            return filtered_features
 
         # Market microstructure features
         self.logger.info("🔍 Generating microstructure features...")
-            microstructure_features = (
-        await self._engineer_microstructure_features_vectorized(
-                    price_data,
-                    volume_data,
-                    order_flow_data,
-                )
+        microstructure_features = (
+            await self._engineer_microstructure_features_vectorized(
+                price_data,
+                volume_data,
+                order_flow_data,
             )
+        )
         self.logger.info(f"🔍 Generated {len(microstructure_features)} microstructure features")
         if microstructure_features:
-        self.logger.info(f"🔍 Microstructure feature names: {list(microstructure_features.keys())}")
+            self.logger.info(f"🔍 Microstructure feature names: {list(microstructure_features.keys())}")
 
         # Filter out any coroutine features before updating
-            filtered_microstructure_features, filter_coroutines(microstructure_features, "microstructure")
-            features.update(filtered_microstructure_features)
+        filtered_microstructure_features = filter_coroutines(microstructure_features, "microstructure")
+        features.update(filtered_microstructure_features)
         self.logger.info(f"🔍 Total features after microstructure: {len(features)}")
 
         # Context dynamics for raw contextual signals (avoid using raw magnitudes as features)
         self.logger.info("🔍 Generating context dynamics features...")
-            context_features_count = 0
+        context_features_count = 0
         try:
-                idx = price_data.index
-        # funding_rate
-        if "funding_rate" in price_data.columns:
-                    fr, pd.Series(price_data["funding_rate"].values, index=idx)
-        # Use multi-period difference to reduce correlation with base feature
-                    features["funding_rate_change"] = fr.diff(3).fillna(0)
-        with np.errstate(divide="ignore", invalid="ignore"):
-                        features["funding_rate_returns"] = (
-                            (fr.pct_change())
-                            .replace([np.inf, -np.inf], np.nan)
-                            .fillna(0)
-                        )
-        # z-score for stationarity
-                    fr_roll, fr.rolling(50, min_periods=5)
-                    fr_z = (fr - fr_roll.mean()) / fr_roll.std().replace(0, np.nan)
-                    features["funding_rate_zscore"] = fr_z.replace(
-                        [np.inf, -np.inf], np.nan,
-                    ).fillna(0)
-                    context_features_count += 3
+            idx = price_data.index
+            # funding_rate
+            if "funding_rate" in price_data.columns:
+                fr = pd.Series(price_data["funding_rate"].values, index=idx)
+                # Use multi-period difference to reduce correlation with base feature
+                features["funding_rate_change"] = fr.diff(3).fillna(0)
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    features["funding_rate_returns"] = (
+                        (fr.pct_change())
+                        .replace([np.inf, -np.inf], np.nan)
+                        .fillna(0)
+                    )
+                # z-score for stationarity
+                fr_roll = fr.rolling(50, min_periods=5)
+                fr_z = (fr - fr_roll.mean()) / fr_roll.std().replace(0, np.nan)
+                features["funding_rate_zscore"] = fr_z.replace(
+                    [np.inf, -np.inf], np.nan,
+                ).fillna(0)
+                context_features_count += 3
         # volume_ratio
         if "volume_ratio" in price_data.columns:
                     vr, pd.Series(price_data["volume_ratio"].values, index=idx)
@@ -3434,120 +3434,120 @@ class VectorizedAdvancedFeatureEngineering:
 
         # Additional kline/aggTrades-based proxies
         try:
-        # BB z-score
-                close = price_data["close"].astype(float)
-                sma20, close.rolling(20, min_periods=5).mean()
-                std20, close.rolling(20, min_periods=5).std().replace(0, np.nan)
-        with np.errstate(divide="ignore", invalid="ignore"):
-                    features["bb_zscore_20"] = (
-                        ((close - sma20) / std20)
-                        .replace([np.inf, -np.inf], np.nan)
-                        .fillna(0)
-                    )
-        # MA slopes (first difference per bar)
-                ema20, close.ewm(span=20, adjust=False).mean()
-                sma50, close.rolling(50, min_periods=5).mean()
-        # Use multi-period difference to reduce correlation with base features
-                features["ema20_slope"] = ema20.diff(3).fillna(0)
-                features["sma50_slope"] = sma50.diff(3).fillna(0)
+            # BB z-score
+            close = price_data["close"].astype(float)
+            sma20 = close.rolling(20, min_periods=5).mean()
+            std20 = close.rolling(20, min_periods=5).std().replace(0, np.nan)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                features["bb_zscore_20"] = (
+                    ((close - sma20) / std20)
+                    .replace([np.inf, -np.inf], np.nan)
+                    .fillna(0)
+                )
+            # MA slopes (first difference per bar)
+            ema20 = close.ewm(span=20, adjust=False).mean()
+            sma50 = close.rolling(50, min_periods=5).mean()
+            # Use multi-period difference to reduce correlation with base features
+            features["ema20_slope"] = ema20.diff(3).fillna(0)
+            features["sma50_slope"] = sma50.diff(3).fillna(0)
         except Exception as e:
-        self.logger.debug(f"⚠️ Error calculating MA slopes: {e}")
-        # Use fallback values
-                features["ema20_slope"] = pd.Series(0, index=close.index)
-                features["sma50_slope"] = pd.Series(0, index=close.index)
+            self.logger.debug(f"⚠️ Error calculating MA slopes: {e}")
+            # Use fallback values
+            features["ema20_slope"] = pd.Series(0, index=close.index)
+            features["sma50_slope"] = pd.Series(0, index=close.index)
+
+        except Exception as e:
+            self.logger.exception(f"🚨 Error engineering vectorized advanced features: {e}")
+            return {}
 
         return features
 
-        except Exception as e:
-        self.logger.exception(f"🚨 Error engineering vectorized advanced features: {e}")
-        return {}
-
     def _calculate_market_depth_vectorized(
-        self = price_data: pd.DataFrame, volume_data: pd.DataFrame, ) -> pd.Series:
+        self, price_data: pd.DataFrame, volume_data: pd.DataFrame) -> pd.Series:
         """Calculate market depth using vectorized operations."""
         try:
-        # Use volume as a proxy for market depth
-        if "volume" in volume_data.columns:
-        return volume_data["volume"].fillna(0)
-        # Fallback to price-based depth estimation
+            # Use volume as a proxy for market depth
+            if "volume" in volume_data.columns:
+                return volume_data["volume"].fillna(0)
+            # Fallback to price-based depth estimation
             close = price_data["close"].astype(float)
-        return close.rolling(10, min_periods=1).std().fillna(0)
+            return close.rolling(10, min_periods=1).std().fillna(0)
         except Exception as e:
-        self.logger.exception(f"Error calculating market depth: {e}")
-        return pd.Series(0, index=price_data.index)
+            self.logger.exception(f"Error calculating market depth: {e}")
+            return pd.Series(0, index=price_data.index)
 
     def _calculate_bid_ask_spread_vectorized(
-        self = price_data: pd.DataFrame, ) -> pd.Series:
+        self, price_data: pd.DataFrame) -> pd.Series:
         """Calculate bid-ask spread using aggtrades data for accurate spread estimation."""
         try:
-        if "close" not in price_data.columns:
-        return pd.Series(0.001, index=price_data.index)  # Default 0.1% spread
+            if "close" not in price_data.columns:
+                return pd.Series(0.001, index=price_data.index)  # Default 0.1% spread
 
             close = price_data["close"].astype(float)
 
         # Track NaN origins in input data
         self._track_nan_origins(
-                "bid_ask_spread_input",
-                {
-                    "close": close,
-                    "avg_price": price_data.get("avg_price", pd.Series()),
-                    "min_price": price_data.get("min_price", pd.Series()),
-                    "max_price": price_data.get("max_price", pd.Series()),
-                    "trade_count": price_data.get("trade_count", pd.Series()),
-                    "volume_ratio": price_data.get("volume_ratio", pd.Series()),
-                },
-            )
+            "bid_ask_spread_input",
+            {
+                "close": close,
+                "avg_price": price_data.get("avg_price", pd.Series()),
+                "min_price": price_data.get("min_price", pd.Series()),
+                "max_price": price_data.get("max_price", pd.Series()),
+                "trade_count": price_data.get("trade_count", pd.Series()),
+                "volume_ratio": price_data.get("volume_ratio", pd.Series()),
+            },
+        )
 
         # Use aggtrades data for accurate spread calculation when available
         if all(
-                col in price_data.columns
-        for col in ["avg_price", "min_price", "max_price", "trade_count"]
-            ):
-                avg_price = price_data["avg_price"].astype(float)
-                min_price = price_data["min_price"].astype(float)
-                max_price = price_data["max_price"].astype(float)
-                trade_count = price_data["trade_count"].astype(float)
+            col in price_data.columns
+            for col in ["avg_price", "min_price", "max_price", "trade_count"]
+        ):
+            avg_price = price_data["avg_price"].astype(float)
+            min_price = price_data["min_price"].astype(float)
+            max_price = price_data["max_price"].astype(float)
+            trade_count = price_data["trade_count"].astype(float)
 
         # Track NaN origins in aggtrades data
         self._track_nan_origins(
-                    "bid_ask_spread_aggtrades",
-                    {
-                        "avg_price": avg_price,
-                        "min_price": min_price,
-                        "max_price": max_price,
-                        "trade_count": trade_count,
-                    },
-                )
+            "bid_ask_spread_aggtrades",
+            {
+                "avg_price": avg_price,
+                "min_price": min_price,
+                "max_price": max_price,
+                "trade_count": trade_count,
+            },
+        )
 
         # Calculate spread based on price range within the kline
         # Higher min-max range indicates wider spreads
-                price_range = max_price - min_price
-                mid_price = (max_price + min_price) / 2
+        price_range = max_price - min_price
+        mid_price = (max_price + min_price) / 2
 
         # Spread as percentage of mid price
-                spread_pct = (price_range / mid_price).replace(0, np.nan)
+        spread_pct = (price_range / mid_price).replace(0, np.nan)
 
         # Adjust for trade count - fewer trades often mean wider spreads
-                trade_count_ma, trade_count.rolling(20, min_periods=1).mean()
-                trade_count_ratio, trade_count / trade_count_ma.replace(0, 1)
+        trade_count_ma = trade_count.rolling(20, min_periods=1).mean()
+        trade_count_ratio = trade_count / trade_count_ma.replace(0, 1)
 
         # Lower trade count ratio increases spread
-                trade_adjustment = (
-                    1 - trade_count_ratio.clip(0, 1)
-                ) * 0.01  # Max 1% adjustment
-                spread_pct += trade_adjustment
+        trade_adjustment = (
+            1 - trade_count_ratio.clip(0, 1)
+        ) * 0.01  # Max 1% adjustment
+        spread_pct += trade_adjustment
 
         # Use volume ratio if available for additional adjustment
         if "volume_ratio" in price_data.columns:
-                    volume_ratio = price_data["volume_ratio"].astype(float)
-        # Lower volume ratio (less trade volume relative to kline volume) indicates wider spreads
-                    volume_adjustment = (
-                        1 - volume_ratio.clip(0, 1)
-                    ) * 0.005  # Max 0.5% adjustment
-                    spread_pct += volume_adjustment
+            volume_ratio = price_data["volume_ratio"].astype(float)
+            # Lower volume ratio (less trade volume relative to kline volume) indicates wider spreads
+            volume_adjustment = (
+                1 - volume_ratio.clip(0, 1)
+            ) * 0.005  # Max 0.5% adjustment
+            spread_pct += volume_adjustment
 
         # Ensure spread is within reasonable bounds (0-5%)
-                spread_pct, spread_pct.clip(0, 0.05)
+        spread_pct = spread_pct.clip(0, 0.05)
 
         # Clean up infinite and NaN values
         return spread_pct.replace([np.inf, -np.inf], np.nan).fillna(0.001)

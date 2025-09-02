@@ -61,12 +61,7 @@ def compute_mutual_information_pair(
     task: str = "regression",
     random_state: int = 42,
 ) -> float:
-    """Compute MI(y; [Xi, Xj]) for complementarity checks."""
-    X = pd.DataFrame(
-        {"Xi": Xi.astype(float).fillna(0.0), "Xj": Xj.astype(float).fillna(0.0)}
-    )
-    mi_map = compute_mutual_information(X, y, task=task, random_state=random_state)
-    return float(sum(mi_map.values()))
+    raise NotImplementedError("Removed unused function: compute_mutual_information_pair")
 
 
 @handle_errors(

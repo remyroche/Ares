@@ -1,0 +1,32 @@
+Codebase Remediation Plan
+================================================================================
+
+1) Run automated formatters and quick fixes
+   - ruff check --fix --unsafe-fixes .
+   - isort .
+   - black .
+
+2) Address type errors (mypy)
+   - Prioritize fixing missing imports, incorrect types, and Any leaks
+
+3) Reduce complexity (radon)
+   - Refactor functions with complexity > 10
+
+4) Remove dead code (vulture)
+   - Verify before removal; add to ignore list if false positive
+
+Hotspots by file (top 10):
+ - src/training/optimization/computational_optimization_manager.py: 272 issues
+ - src/training/optimization/progressive_optimizer.py: 138 issues
+ - src/training/optimization/rollback_manager.py: 103 issues
+ - src/training/optimization/adaptive_trial_allocator.py: 93 issues
+ - src/training/optimization/problem_specific_strategies.py: 91 issues
+ - src/supervisor/ab_tester.py: 86 issues
+ - src/custom_types/__init__.py: 66 issues
+ - src/training/optimization/cached_optimizer.py: 65 issues
+ - src/training/optimization/parallel_optimizer.py: 62 issues
+ - src/training/optimization/advanced_surrogate_models.py: 61 issues
+
+Notes:
+ - Re-run analyzers after each round of fixes
+ - Add known intentional dead code to a vulture whitelist if needed

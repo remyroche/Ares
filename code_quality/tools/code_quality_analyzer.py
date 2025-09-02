@@ -8,6 +8,7 @@ import ast
 import os
 import re
 import subprocess
+import json
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, List, Set, Tuple, Optional, Any
@@ -15,10 +16,11 @@ import argparse
 
 
 class CodeQualityAnalyzer:
-    """Enhanced code quality analyzer that integrates multiple tools."""
+    """Enhanced code quality analyzer that integrates multiple tools and can apply automated fixes."""
 
-    def __init__(self, exclusions_file: Optional[str] = None):
+    def __init__(self, exclusions_file: Optional[str] = None, skip_tools: Optional[Set[str]] = None):
         self.exclusions = self._load_exclusions(exclusions_file)
+        self.skip_tools = set(skip_tools or set())
         self.issues = defaultdict(lambda: defaultdict(list))
         self.stats = {
             "files_analyzed": 0,
@@ -32,6 +34,8 @@ class CodeQualityAnalyzer:
             "formatting_issues": 0,
             "placeholder_issues": 0,
         }
+        self.tool_results: Dict[str, Dict[str, List[Dict]]] = {}
+        self.fix_stats: Dict[str, Any] = {}
 
     def _load_exclusions(self, exclusions_file: Optional[str]) -> Set[str]:
         """Load exclusion patterns from file."""
@@ -586,7 +590,9 @@ class CodeQualityAnalyzer:
     def run_ruff_analysis(self, directory: str) -> Dict[str, List[Dict]]:
         """Run ruff linting analysis."""
         print("🔍 Running ruff linting analysis...")
-
+        if "ruff" in self.skip_tools:
+            print("⏭️  Ruff analysis skipped via --skip-tools")
+            return {}
         if not self._check_tool_available("ruff"):
             print("⚠️  ruff not available, skipping linting analysis")
             return {}
@@ -607,7 +613,9 @@ class CodeQualityAnalyzer:
     def run_mypy_analysis(self, directory: str) -> Dict[str, List[Dict]]:
         """Run mypy type checking analysis."""
         print("🔍 Running mypy type checking analysis...")
-
+        if "mypy" in self.skip_tools:
+            print("⏭️  mypy analysis skipped via --skip-tools")
+            return {}
         if not self._check_tool_available("mypy"):
             print("⚠️  mypy not available, skipping type checking analysis")
             return {}
@@ -626,7 +634,9 @@ class CodeQualityAnalyzer:
     def run_radon_analysis(self, directory: str) -> Dict[str, List[Dict]]:
         """Run radon complexity analysis."""
         print("🔍 Running radon complexity analysis...")
-
+        if "radon" in self.skip_tools:
+            print("⏭️  radon analysis skipped via --skip-tools")
+            return {}
         if not self._check_tool_available("radon"):
             print("⚠️  radon not available, skipping complexity analysis")
             return {}
@@ -643,6 +653,105 @@ class CodeQualityAnalyzer:
             f"📊 Found {sum(len(issues) for issues in results.values())} complexity issues"
         )
         return results
+
+    def _parse_vulture_output(self, output: str, cwd: str) -> Dict[str, List[Dict]]:
+        """Parse vulture output and organize by file."""
+        file_issues = defaultdict(list)
+        for line in output.strip().split("\n"):
+            if not line or ":" not in line:
+                continue
+            try:
+                parts = line.split(":", 2)
+                if len(parts) >= 3:
+                    filepath = parts[0]
+                    line_num = int(parts[1]) if parts[1].isdigit() else 0
+                    message = parts[2].strip()
+                    if filepath.startswith(cwd):
+                        filepath = os.path.relpath(filepath, cwd)
+                    file_issues[filepath].append(
+                        {
+                            "tool": "vulture",
+                            "lineno": line_num,
+                            "message": message,
+                            "type": "dead_code",
+                        }
+                    )
+            except Exception:
+                continue
+        return dict(file_issues)
+
+    def run_vulture_analysis(self, directory: str) -> Dict[str, List[Dict]]:
+        """Run vulture dead-code analysis."""
+        print("🔍 Running vulture dead-code analysis...")
+        if "vulture" in self.skip_tools:
+            print("⏭️  vulture analysis skipped via --skip-tools")
+            return {}
+        if not self._check_tool_available("vulture"):
+            print("⚠️  vulture not available, skipping dead-code analysis")
+            return {}
+        command = ["vulture", ".", "--min-confidence", "80"]
+        returncode, stdout, stderr = self._run_command(command, directory)
+        if returncode == 0 and not stdout.strip():
+            print("✅ No dead code found by vulture")
+            return {}
+        results = self._parse_vulture_output(stdout, directory)
+        print(f"📊 Found {sum(len(issues) for issues in results.values())} dead-code findings")
+        return results
+
+    def _run_isort(self, directory: str) -> Tuple[int, str, str]:
+        if "isort" in self.skip_tools:
+            return 0, "", ""
+        if not self._check_tool_available("isort"):
+            return 0, "", ""
+        return self._run_command(["isort", "."], directory)
+
+    def _run_black(self, directory: str) -> Tuple[int, str, str]:
+        if "black" in self.skip_tools:
+            return 0, "", ""
+        if not self._check_tool_available("black"):
+            return 0, "", ""
+        return self._run_command(["black", "."], directory)
+
+    def _run_ruff_fix(self, directory: str) -> Tuple[int, str, str]:
+        if "ruff" in self.skip_tools:
+            return 0, "", ""
+        if not self._check_tool_available("ruff"):
+            return 0, "", ""
+        return self._run_command(["ruff", "check", "--fix", "--unsafe-fixes", "."], directory)
+
+    def apply_fixes(self, directory: str, format_only: bool = False, max_iters: int = 2) -> Dict[str, Any]:
+        """Apply automated fixes iteratively (ruff --fix, isort, black)."""
+        print("🛠️  Applying automated fixes...")
+        iterations = 0
+        changes_detected = True
+        fix_summary: List[Dict[str, Any]] = []
+        while iterations < max_iters and changes_detected:
+            iterations += 1
+            print(f"  Iteration {iterations}/{max_iters}")
+            iter_changes = {"iteration": iterations, "steps": []}
+            changes_detected = False
+
+            if not format_only:
+                code, out, err = self._run_ruff_fix(directory)
+                iter_changes["steps"].append({"tool": "ruff_fix", "rc": code, "stdout": out, "stderr": err})
+                if out.strip():
+                    changes_detected = True
+
+            code, out, err = self._run_isort(directory)
+            iter_changes["steps"].append({"tool": "isort", "rc": code, "stdout": out, "stderr": err})
+            if out.strip() or "reformatted" in out or "Fixing" in out:
+                changes_detected = True
+
+            code, out, err = self._run_black(directory)
+            iter_changes["steps"].append({"tool": "black", "rc": code, "stdout": out, "stderr": err})
+            if out.strip() or "reformatted" in out or "reformatted" in err:
+                changes_detected = True
+
+            fix_summary.append(iter_changes)
+
+        self.fix_stats = {"iterations": iterations, "iterations_run": len(fix_summary), "details": fix_summary}
+        print("✅ Automated fixes complete")
+        return self.fix_stats
 
     def _check_tool_available(self, tool: str) -> bool:
         """Check if a tool is available in PATH."""
@@ -663,6 +772,7 @@ class CodeQualityAnalyzer:
         ruff_results = self.run_ruff_analysis(directory)
         mypy_results = self.run_mypy_analysis(directory)
         radon_results = self.run_radon_analysis(directory)
+        vulture_results = self.run_vulture_analysis(directory)
 
         # Run AST-based analysis
         print("🔍 Running AST-based analysis...")
@@ -689,6 +799,7 @@ class CodeQualityAnalyzer:
             "ruff": ruff_results,
             "mypy": mypy_results,
             "radon": radon_results,
+            "vulture": vulture_results,
             "ast": ast_results,
         }
 
@@ -871,6 +982,50 @@ class CodeQualityAnalyzer:
 
         return "\n".join(report)
 
+    def generate_json_report(self, results: Dict[str, Dict[str, List[Dict]]]) -> str:
+        """Generate a machine-readable JSON report including stats and tool breakdown."""
+        payload = {
+            "stats": self.stats,
+            "results": results,
+            "tool_results": self.tool_results,
+            "fix_stats": self.fix_stats,
+        }
+        return json.dumps(payload, indent=2, sort_keys=False)
+
+    def generate_fix_plan(self, results: Dict[str, Dict[str, List[Dict]]]) -> str:
+        """Generate a pragmatic fix plan with suggested commands and priorities."""
+        plan = []
+        plan.append("Codebase Remediation Plan")
+        plan.append("=" * 80)
+        plan.append("")
+        plan.append("1) Run automated formatters and quick fixes")
+        plan.append("   - ruff check --fix --unsafe-fixes .")
+        plan.append("   - isort .")
+        plan.append("   - black .")
+        plan.append("")
+        plan.append("2) Address type errors (mypy)")
+        plan.append("   - Prioritize fixing missing imports, incorrect types, and Any leaks")
+        plan.append("")
+        plan.append("3) Reduce complexity (radon)")
+        plan.append("   - Refactor functions with complexity > 10")
+        plan.append("")
+        plan.append("4) Remove dead code (vulture)")
+        plan.append("   - Verify before removal; add to ignore list if false positive")
+        plan.append("")
+        plan.append("Hotspots by file (top 10):")
+        file_totals = sorted(
+            ((fp, sum(len(v) for v in issues.values())) for fp, issues in results.items()),
+            key=lambda x: x[1],
+            reverse=True,
+        )
+        for fp, total in file_totals[:10]:
+            plan.append(f" - {fp}: {total} issues")
+        plan.append("")
+        plan.append("Notes:")
+        plan.append(" - Re-run analyzers after each round of fixes")
+        plan.append(" - Add known intentional dead code to a vulture whitelist if needed")
+        return "\n".join(plan)
+
 
 def main():
     """Main entry point."""
@@ -879,24 +1034,52 @@ def main():
     )
     parser.add_argument("directory", help="Directory to analyze")
     parser.add_argument("--exclusions", help="Exclusions file path")
-    parser.add_argument("--output", help="Output report to file")
+    parser.add_argument("--output", help="Output text report to file")
+    parser.add_argument("--json-output", help="Write JSON report to file")
+    parser.add_argument("--plan-output", help="Write remediation plan to file")
     parser.add_argument(
         "--skip-tools",
         nargs="+",
-        choices=["ruff", "mypy", "radon"],
+        choices=["ruff", "mypy", "radon", "vulture", "black", "isort"],
         help="Skip specific tool analyses",
+    )
+    parser.add_argument(
+        "--apply-fixes",
+        action="store_true",
+        help="Apply automated fixes (ruff --fix, isort, black)",
+    )
+    parser.add_argument(
+        "--format-only",
+        action="store_true",
+        help="Only run isort and black (skip ruff --fix)",
+    )
+    parser.add_argument(
+        "--max-iters",
+        type=int,
+        default=2,
+        help="Maximum iterations for automated fixes",
     )
 
     args = parser.parse_args()
 
     # Create analyzer
-    analyzer = CodeQualityAnalyzer(exclusions_file=args.exclusions)
+    analyzer = CodeQualityAnalyzer(exclusions_file=args.exclusions, skip_tools=set(args.skip_tools or []))
 
-    # Analyze directory
+    # Optionally apply automated fixes first
+    if args.apply_fixes or args.format_only:
+        analyzer.apply_fixes(
+            args.directory,
+            format_only=bool(args.format_only),
+            max_iters=int(args.max_iters),
+        )
+
+    # Analyze directory (post-fix if fixes were applied)
     results = analyzer.analyze_directory(args.directory)
 
     # Generate report
     report = analyzer.generate_report(results)
+    json_report = analyzer.generate_json_report(results)
+    plan = analyzer.generate_fix_plan(results)
 
     # Output report
     if args.output:
@@ -905,6 +1088,16 @@ def main():
         print(f"📄 Report written to {args.output}")
     else:
         print("\n" + report)
+
+    if args.json_output:
+        with open(args.json_output, "w") as f:
+            f.write(json_report)
+        print(f"📄 JSON report written to {args.json_output}")
+
+    if args.plan_output:
+        with open(args.plan_output, "w") as f:
+            f.write(plan)
+        print(f"🧭 Plan written to {args.plan_output}")
 
 
 if __name__ == "__main__":

@@ -3,6 +3,12 @@
 
 This module creates comprehensive labels for the training data, combining triple barrier
 labels with additional labeling strategies and meta-labeling features.
+
+Key Enhancements:
+- Dynamic Label Generation: Added the ability to generate triple barrier labels directly within step5 using regime-aware methods
+- Regime-Aware Triple Barrier: Integrated HMM regime-specific barrier optimization for more sophisticated labeling
+- Fallback Mechanisms: Implemented robust fallback to default labeling when regime-aware methods aren't available
+- Configuration-Driven Behavior: Added configurable toggles for automatic barrier recalculation
 """
 
 import asyncio
@@ -97,7 +103,7 @@ logger = system_logger.getChild("Step5Labeling")
 
 
 class LabelingStep:
-    """Step 5: Labeling with standardized data quality management."""
+    """Step 5: Labeling with standardized data quality management and regime-aware triple barrier method."""
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -122,8 +128,35 @@ class LabelingStep:
             self.logger.info("✅ All required dependencies available")
 
     def _initialize_components(self) -> None:
-        """Initialize labeling components."""
+        """Initialize labeling components with regime-aware triple barrier support."""
         self.logger.info("🔧 Initializing labeling components...")
+        
+        # Initialize new configuration options for regime-aware labeling
+        labeling_cfg = self.config.get("vectorized_labelling_orchestrator", {})
+        self.auto_calc = bool(labeling_cfg.get("auto_recalculate_hmm_barriers", True))
+        self.regime_col = str(labeling_cfg.get("hmm_barrier_regime_column", "hmm_regime"))
+        self.time_barrier_minutes = int(labeling_cfg.get("time_barrier_minutes", 30))
+        self.max_lookahead = int(labeling_cfg.get("max_lookahead", 100))
+        
+        self.logger.info(f"📋 Regime-aware labeling configuration:")
+        self.logger.info(f"   - Auto recalculate HMM barriers: {self.auto_calc}")
+        self.logger.info(f"   - HMM regime column: {self.regime_col}")
+        self.logger.info(f"   - Time barrier minutes: {self.time_barrier_minutes}")
+        self.logger.info(f"   - Max lookahead: {self.max_lookahead}")
+        
+        # Initialize only regime-aware triple barrier components
+        self.regime_barrier_optimizer = None
+        
+        try:
+            # Try to import and initialize HMMRegimeBarrierOptimizer
+            from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_specific_triple_barrier_optimizer import (
+                RegimeSpecificTripleBarrierOptimizer
+            )
+            self.regime_barrier_optimizer = RegimeSpecificTripleBarrierOptimizer(self.config)
+            self.logger.info("✅ HMMRegimeBarrierOptimizer initialized successfully")
+        except Exception as e:
+            self.logger.warning(f"⚠️ Could not initialize HMMRegimeBarrierOptimizer: {e}")
+            self.regime_barrier_optimizer = None
         
         # Initialize meta-labeling system if available
         if meta_labeling_system is not None:
@@ -387,14 +420,53 @@ class LabelingStep:
             # Don't fail the step if MLflow logging fails
 
     async def _generate_comprehensive_labels(self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Optional[pd.DataFrame]:
-        """Generate comprehensive labels combining multiple labeling strategies."""
+        """Generate comprehensive labels combining multiple labeling strategies with regime-aware triple barrier method.
+        
+        New Labeling Flow:
+        Primary Path: Attempts regime-aware labeling using HMMRegimeBarrierOptimizer
+        Fallback Path: Uses OptimizedTripleBarrierLabeling if regime-aware methods fail
+        Data Source Flexibility: Can work with unified data or step4 output depending on configuration
+        """
         try:
             result_data = data.copy()
             
-            # 1. Triple barrier labels (already present)
+            # Check if we need to generate triple barrier labels or if they already exist
             if 'triple_barrier_label' not in result_data.columns:
-                self.logger.error("❌ Triple barrier labels not found in data")
-                return None
+                self.logger.info("🔄 Triple barrier labels not found, generating them using regime-aware methods...")
+                
+                # Primary Path: Attempt regime-aware labeling
+                if self.regime_barrier_optimizer is not None and self.auto_calc:
+                    try:
+                        self.logger.info("🚀 Attempting regime-aware triple barrier labeling...")
+                        
+                        # Check if we have regime information
+                        if self.regime_col in result_data.columns:
+                            self.logger.info(f"✅ Found regime column: {self.regime_col}")
+                            
+                            # Generate regime-aware labels
+                            regime_labels = await self._generate_regime_aware_labels(result_data, symbol, exchange, timeframe)
+                            if regime_labels is not None:
+                                result_data['triple_barrier_label'] = regime_labels
+                                result_data['labeling_method'] = 'regime_aware'
+                                self.logger.info("✅ Generated regime-aware triple barrier labels")
+                            else:
+                                raise Exception("Regime-aware labeling failed")
+                        else:
+                            self.logger.warning(f"⚠️ Regime column '{self.regime_col}' not found")
+                            raise Exception("Regime column not found")
+                            
+                    except Exception as e:
+                        self.logger.error(f"❌ Regime-aware labeling failed: {e}")
+                        self.logger.error("❌ No fallback labeling method available - regime-aware labeling is required")
+                        return None
+                else:
+                    # Auto-calculation disabled or optimizer not available
+                    if not self.auto_calc:
+                        self.logger.error("❌ Auto-calculation disabled for regime-aware labeling")
+                    if self.regime_barrier_optimizer is None:
+                        self.logger.error("❌ Regime barrier optimizer not available")
+                    self.logger.error("❌ Regime-aware labeling is required - no fallback available")
+                    return None
             
             # 2. Generate meta-labels if meta-labeling system is available
             if self.meta_labeling_system:
@@ -424,12 +496,13 @@ class LabelingStep:
             composite_label = await self._create_composite_label(result_data)
             result_data['label'] = composite_label
             
-            # 6. Add label metadata
+            # 4. Add label metadata
             result_data['label_confidence'] = await self._calculate_label_confidence(result_data)
             result_data['label_source'] = await self._determine_label_source(result_data)
             
             self.logger.info(f"✅ Generated comprehensive labels with {len(result_data.columns)} columns")
             self.logger.info(f"   - Label distribution: {result_data['label'].value_counts().to_dict()}")
+            self.logger.info(f"   - Labeling method used: {result_data.get('labeling_method', 'unknown')}")
             
             return result_data
 
@@ -503,6 +576,63 @@ class LabelingStep:
             self.logger.warning(f"⚠️ Error determining label source: {e}")
             return pd.Series("unknown", index=data.index)
 
+    async def _generate_regime_aware_labels(self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Optional[pd.Series]:
+        """Generate regime-aware triple barrier labels using HMMRegimeBarrierOptimizer."""
+        try:
+            if self.regime_barrier_optimizer is None:
+                self.logger.error("❌ Regime barrier optimizer not available")
+                return None
+            
+            self.logger.info("🔧 Generating regime-aware triple barrier labels...")
+            
+            # Prepare data for regime-aware labeling
+            if self.regime_col not in data.columns:
+                self.logger.error(f"❌ Regime column '{self.regime_col}' not found in data")
+                return None
+            
+            # Check if we have the required OHLCV columns
+            required_columns = ['open', 'high', 'low', 'close', 'volume']
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            if missing_columns:
+                self.logger.error(f"❌ Missing required columns for triple barrier labeling: {missing_columns}")
+                return None
+            
+            # Generate regime-aware labels
+            try:
+                # Use the regime-aware triple barrier labeling
+                from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import (
+                    RegimeAwareTripleBarrierLabeling
+                )
+                
+                regime_labeler = RegimeAwareTripleBarrierLabeling(
+                    default_profit_take_multiplier=0.002,
+                    default_stop_loss_multiplier=0.001,
+                    default_time_barrier_minutes=self.time_barrier_minutes,
+                    default_max_lookahead=self.max_lookahead
+                )
+                
+                # Generate labels
+                labels = regime_labeler.generate_labels(
+                    data,
+                    regime_column=self.regime_col,
+                    time_barrier_minutes=self.time_barrier_minutes,
+                    max_lookahead=self.max_lookahead
+                )
+                
+                if labels is not None:
+                    self.logger.info(f"✅ Generated {len(labels)} regime-aware labels")
+                    return labels
+                else:
+                    raise Exception("Regime-aware labeling returned None")
+                    
+            except Exception as e:
+                self.logger.warning(f"⚠️ Regime-aware labeling failed: {e}")
+                return None
+                
+        except Exception as e:
+            self.logger.exception(f"❌ Error in regime-aware labeling: {e}")
+            return None
+
 
 async def run_step(
     symbol: str,
@@ -543,6 +673,14 @@ async def run_step(
             "enable_trend_labels": True,
             "enable_volatility_labels": True,
             "composite_label_strategy": "weighted_combination",
+        },
+        "vectorized_labelling_orchestrator": {
+            "auto_recalculate_hmm_barriers": True,
+            "hmm_barrier_regime_column": "hmm_regime",
+            "time_barrier_minutes": 30,
+            "max_lookahead": 100,
+            "profit_take_multiplier": 0.002,
+            "stop_loss_multiplier": 0.001,
         },
         **config
     }

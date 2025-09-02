@@ -1,0 +1,89 @@
+# Code Quality Tools Configuration Example
+# Copy this file to config.yaml and customize as needed
+
+# Project-specific settings
+project:
+  name: "Ares Trading Bot"
+  root: "."
+  exclude_patterns:
+    - "*/__pycache__/*"
+    - "*/\.*/*"
+    - "*/venv/*"
+    - "*/env/*"
+    - "*/node_modules/*"
+    - "*.pyc"
+    - "*.pyo"
+    - "*.pyd"
+    - "*/tests/*"  # Optional: exclude test files
+    - "*/docs/*"   # Optional: exclude documentation
+
+# Validation settings
+validation:
+  # Function validation
+  function:
+    check_existence: true
+    check_async_await: true
+    check_parameters: true
+    max_arguments: 7
+  
+  # Import validation
+  imports:
+    check_consistency: true
+    check_circular: true
+    check_unused: true
+  
+  # Code style
+  style:
+    max_line_length: 120
+    check_trailing_whitespace: true
+    check_missing_newline_eof: true
+    check_encoding: true
+  
+  # Security checks
+  security:
+    check_hardcoded_secrets: true
+    check_sql_injection: true
+    check_bare_except: true
+  
+  # Documentation
+  documentation:
+    require_function_docstrings: true
+    require_class_docstrings: true
+    require_module_docstrings: false
+
+# Output settings
+output:
+  format: ["json", "text"]
+  output_dir: "./reports"
+  include_code_snippets: true
+  include_suggestions: true
+
+# Severity levels
+severity:
+  # Issues that will cause validation to fail
+  error:
+    - "undefined_function"
+    - "missing_await"
+    - "syntax_error"
+    - "hardcoded_secret"
+    - "sql_injection"
+  
+  # Issues that should be addressed but won't fail validation
+  warning:
+    - "missing_docstring"
+    - "too_many_arguments"
+    - "magic_number"
+    - "trailing_whitespace"
+    - "import_conflict"
+  
+  # Informational issues
+  info:
+    - "line_too_long"
+    - "missing_newline_at_eof"
+    - "unused_import"
+
+# Performance settings
+performance:
+  max_files_per_batch: 100
+  enable_parallel_processing: true
+  memory_limit_mb: 1024

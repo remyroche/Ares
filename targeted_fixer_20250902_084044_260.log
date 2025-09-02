@@ -1,0 +1,13 @@
+2025-09-02 08:40:44,264 - INFO - Processing file: src/utils/data_loader.py
+2025-09-02 08:40:44,264 - INFO - Performing semantic analysis...
+2025-09-02 08:40:44,280 - INFO - Code quality score: 0.50
+2025-09-02 08:40:44,280 - WARNING - Semantic issues found: 59
+2025-09-02 08:40:44,280 - WARNING - Structure issues found: 39
+2025-09-02 08:40:44,281 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:40:44,285 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:40:44,288 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:40:44,288 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:40:44,289 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:40:44,289 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:40:44,299 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:40:44,301 - INFO - No fixes needed for: src/utils/data_loader.py

@@ -1,0 +1,20 @@
+2025-09-02 08:18:09,899 - INFO - Processing file: src/utils/optimization_integration_test.py
+2025-09-02 08:18:09,900 - INFO - Performing semantic analysis...
+2025-09-02 08:18:09,900 - INFO - Code quality score: 0.00
+2025-09-02 08:18:09,900 - WARNING - Syntax errors found: 1
+2025-09-02 08:18:09,900 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:18:09,901 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:09,902 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:09,902 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:09,903 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:09,903 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:09,904 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:09,905 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:09,907 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:18:09,907 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:18:09,908 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:09,910 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:09,910 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:18:09,911 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:18:09,912 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:09,914 - INFO - No fixes needed for: src/utils/optimization_integration_test.py

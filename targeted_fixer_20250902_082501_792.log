@@ -1,0 +1,12 @@
+2025-09-02 08:25:01,795 - INFO - Processing file: src/utils/validation_decorators.py
+2025-09-02 08:25:01,795 - INFO - Performing semantic analysis...
+2025-09-02 08:25:01,809 - INFO - Code quality score: 0.50
+2025-09-02 08:25:01,809 - WARNING - Semantic issues found: 52
+2025-09-02 08:25:01,809 - WARNING - Structure issues found: 50
+2025-09-02 08:25:01,817 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:25:01,819 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:25:01,820 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:25:01,827 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:25:01,830 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:25:01,840 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:25:01,843 - INFO - No fixes needed for: src/utils/validation_decorators.py

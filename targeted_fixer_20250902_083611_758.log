@@ -1,0 +1,31 @@
+2025-09-02 08:36:11,761 - INFO - Processing file: src/utils/centralized_decorators.py
+2025-09-02 08:36:11,761 - INFO - Performing semantic analysis...
+2025-09-02 08:36:11,761 - INFO - Code quality score: 0.00
+2025-09-02 08:36:11,761 - WARNING - Syntax errors found: 1
+2025-09-02 08:36:11,762 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:36:11,762 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ======
+2025-09-02 08:36:11,762 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ======
+2025-09-02 08:36:11,762 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ======
+2025-09-02 08:36:11,762 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ======
+2025-09-02 08:36:11,763 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ======
+2025-09-02 08:36:11,763 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ======
+2025-09-02 08:36:11,763 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ======
+2025-09-02 08:36:11,763 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ======
+2025-09-02 08:36:11,763 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ======
+2025-09-02 08:36:11,763 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ======
+2025-09-02 08:36:11,763 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ======
+2025-09-02 08:36:11,764 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ======
+2025-09-02 08:36:11,764 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ======
+2025-09-02 08:36:11,764 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ======
+2025-09-02 08:36:11,764 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ======
+2025-09-02 08:36:11,765 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ======
+2025-09-02 08:36:11,765 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ======
+2025-09-02 08:36:11,765 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ======
+2025-09-02 08:36:11,767 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ======
+2025-09-02 08:36:11,767 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ======
+2025-09-02 08:36:11,767 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ======
+2025-09-02 08:36:11,773 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ======
+2025-09-02 08:36:11,773 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ======
+2025-09-02 08:36:11,773 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ======
+2025-09-02 08:36:11,777 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ======
+2025-09-02 08:36:11,782 - INFO - No fixes needed for: src/utils/centralized_decorators.py

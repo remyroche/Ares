@@ -27294,3 +27294,65 @@
 2025-09-02 07:00:05,644 - WARNING - Syntax errors found: 1
 2025-09-02 07:00:05,644 - WARNING - Skipping file due to safety concerns: Code has syntax errors - cannot safely apply fixes
 2025-09-02 07:00:05,644 - INFO - Directory processing complete
+2025-09-02 07:11:26,995 - INFO - Processing file: src/monitoring/performance_monitor.py
+2025-09-02 07:11:26,996 - INFO - Performing semantic analysis...
+2025-09-02 07:11:26,996 - INFO - Code quality score: 0.00
+2025-09-02 07:11:26,996 - WARNING - Syntax errors found: 1
+2025-09-02 07:11:26,996 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 07:11:26,996 - WARNING - Skipping file due to safety concerns: Code quality critically low - manual intervention required
+2025-09-02 07:11:39,271 - INFO - Processing file: src/monitoring/performance_monitor.py
+2025-09-02 07:11:39,272 - INFO - Performing semantic analysis...
+2025-09-02 07:11:39,272 - INFO - Code quality score: 0.00
+2025-09-02 07:11:39,272 - WARNING - Syntax errors found: 1
+2025-09-02 07:11:39,272 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 07:11:39,272 - WARNING - Skipping file due to safety concerns: Code quality critically low - file appears to be severely corrupted beyond repair
+2025-09-02 07:11:53,086 - INFO - Processing file: src/monitoring/performance_monitor.py
+2025-09-02 07:11:53,086 - INFO - Performing semantic analysis...
+2025-09-02 07:11:53,086 - INFO - Code quality score: 0.00
+2025-09-02 07:11:53,086 - WARNING - Syntax errors found: 1
+2025-09-02 07:11:53,086 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 07:11:53,086 - WARNING - Skipping file due to safety concerns: Code quality critically low - file appears to be severely corrupted beyond repair
+2025-09-02 07:12:06,172 - INFO - Processing file: src/monitoring/performance_monitor.py
+2025-09-02 07:12:06,172 - INFO - Performing semantic analysis...
+2025-09-02 07:12:06,173 - INFO - Code quality score: 0.00
+2025-09-02 07:12:06,173 - WARNING - Syntax errors found: 1
+2025-09-02 07:12:06,173 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 07:12:06,173 - WARNING - Skipping file due to safety concerns: Code quality critically low - file appears to be severely corrupted beyond repair
+2025-09-02 07:12:18,518 - INFO - Processing file: src/monitoring/performance_monitor.py
+2025-09-02 07:12:18,518 - INFO - Performing semantic analysis...
+2025-09-02 07:12:18,518 - INFO - Code quality score: 0.00
+2025-09-02 07:12:18,518 - WARNING - Syntax errors found: 1
+2025-09-02 07:12:18,518 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 07:12:18,518 - WARNING - Skipping file due to safety concerns: Code quality critically low - file appears to be severely corrupted beyond repair
+2025-09-02 07:12:30,563 - INFO - Processing file: src/monitoring/performance_monitor.py
+2025-09-02 07:12:30,563 - INFO - Performing semantic analysis...
+2025-09-02 07:12:30,563 - INFO - Code quality score: 0.00
+2025-09-02 07:12:30,563 - WARNING - Syntax errors found: 1
+2025-09-02 07:12:30,563 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 07:12:30,567 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 07:12:30,568 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:12:30,568 - INFO - No fixes needed for: src/monitoring/performance_monitor.py
+2025-09-02 07:13:08,124 - INFO - Processing file: src/monitoring/performance_monitor.py
+2025-09-02 07:13:08,124 - INFO - Performing semantic analysis...
+2025-09-02 07:13:08,124 - INFO - Code quality score: 0.00
+2025-09-02 07:13:08,124 - WARNING - Syntax errors found: 1
+2025-09-02 07:13:08,124 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 07:13:08,126 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 07:13:08,127 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:13:08,127 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:13:08,128 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 07:13:08,128 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:13:08,128 - INFO - No fixes needed for: src/monitoring/performance_monitor.py
+2025-09-02 07:13:38,079 - INFO - Processing file: src/monitoring/performance_monitor.py
+2025-09-02 07:13:38,079 - INFO - Performing semantic analysis...
+2025-09-02 07:13:38,079 - INFO - Code quality score: 0.00
+2025-09-02 07:13:38,079 - WARNING - Syntax errors found: 1
+2025-09-02 07:13:38,079 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 07:13:38,081 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 07:13:38,081 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 07:13:38,082 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:13:38,082 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:13:38,082 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:13:38,083 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 07:13:38,083 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:13:38,083 - INFO - No fixes needed for: src/monitoring/performance_monitor.py

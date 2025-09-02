@@ -1,306 +1,128 @@
 # src/core/enhanced_factories.py
 
-"""
-Enhanced factory classes that use dependency injection.
-
-This module provides factory classes that create trading components
-using proper dependency injection patterns.
-"""
-
-from src.database.firestore_manager import FirestoreManager
-from src.supervisor.performance_reporter import PerformanceReporter
+from typing import Any, Dict
 from src.core.dependency_injection import DependencyContainer
-from src.utils.logger import system_logger
-from typing import Any
-from src.database.influxdb_manager import InfluxDBManager
-from exchange.factory import ExchangeFactory
-from src.utils.state_manager import StateManager
 from src.interfaces.base_interfaces import (
-IAnalyst,
-IExchangeClient,
-IPerformanceReporter,
-IStateManager,
-IStrategist,
-ISupervisor,
-ITactician,
+    IAnalyst,
+    IStrategist,
+    ITactician,
+    ISupervisor,
+    IExchangeClient,
+    IStateManager,
+    IPerformanceReporter,
 )
-from src.utils.warning_symbols import failed
 
 
 class TradingSystemFactory:
+    """
+    Factory for creating complete trading systems with dependency injection.
+    """
+    
+    def __init__(self, container: DependencyContainer):
+        self.container = container
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="tradingsystemfactory initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize TradingSystemFactory."""
+    async def create_complete_trading_system(
+        self,
+        exchange_client: IExchangeClient,
+        state_manager: IStateManager,
+        performance_reporter: IPerformanceReporter,
+    ) -> Dict[str, Any]:
+        """Create a complete trading system."""
         try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
+            # Register runtime dependencies
+            self.container.register_instance(IExchangeClient, exchange_client)
+            self.container.register_instance(IStateManager, state_manager)
+            self.container.register_instance(IPerformanceReporter, performance_reporter)
+
+            # Create all components using dependency injection
+            components = {
+                "analyst": self.container.resolve(IAnalyst),
+                "strategist": self.container.resolve(IStrategist),
+                "tactician": self.container.resolve(ITactician),
+                "supervisor": self.container.resolve(ISupervisor),
+            }
+
+            # Initialize all components
+            for name, component in components.items():
+                if hasattr(component, "initialize"):
+                    success = await component.initialize()
+                    if not success:
+                        msg = f"Failed to initialize {name}"
+                        raise RuntimeError(msg)
+
+            return components
+
         except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class TradingSystemFactory:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class TradingSystemFactory:
-    pass"""
-Factory for creating complete trading systems with dependency injection.
-"""
-
-def __init__(...):
-    passpasspassdef __init__(...):
-    passdef __init__(...):
-    passdef __init__(...):
-    passself.container = container
-self.logger = system_logger.getChild("TradingSystemFactory")
-
-async def create_complete_trading_system(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-self.logger.info("Creating complete trading system")
-
-# Register runtime dependencies
-self.container.register_instance(IExchangeClient, exchange_client)
-self.container.register_instance(IStateManager, state_manager)
-self.container.register_instance(IPerformanceReporter, performance_reporter)
-
-# Create all components using dependency injection
-components = {
-"analyst": self.container.resolve(IAnalyst),
-"strategist": self.container.resolve(IStrategist),
-"tactician": self
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="exchangeclientfactory initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize ExchangeClientFactory."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-.container.resolve(ITactician),
-"supervisor": self.container.resolve(ISupervisor),
-}
-
-# Initialize all components
-for name, component in components.items():
-    passif hasattr(component, "initialize"):
-    passsuccess = await component.initialize()
-if not success:
-    passmsg = f"Failed to initialize {name}"
-raise RuntimeError(msg)
-
-self.logger.info("Complete trading system created successfully")
-return components
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(failed(f"Failed to create trading system: {e}"))
-rais
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="databasefactory initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize DatabaseFactory."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-e
+            raise RuntimeError(f"Failed to create trading system: {e}")
 
 
 class ExchangeClientFactory:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class ExchangeClientFactory:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class ExchangeClientFactory:
-    pass"""
-Factory for creating exchange clients with dependency injection support.
-"""
+    """
+    Factory for creating exchange clients with dependency injection support.
+    """
+    
+    def __init__(self, container: DependencyContainer):
+        self.container = container
 
-def __init__(...):
-    passpasspassdef __init__(...):
-    passdef __init__(...):
-    passdef __init__(...):
-    passself.container = container
-self.logger = system_logger.getChild("ExchangeClientFactory")
-
-def create_exchange_client(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Use the exchange factory to create the client
-factory = ExchangeFactory()
-cl
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="statemanagerfactory initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize StateManagerFactory."""
+    async def create_exchange_client(self, config: Dict[str, Any]) -> IExchangeClient:
+        """Create an exchange client."""
         try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
+            # This would create a specific exchange client implementation
+            # For now, return a mock or raise NotImplementedError
+            raise NotImplementedError("Exchange client creation not implemented")
         except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-ient = factory.create_exchange(exchange_name, config or {})
-
-# Register the client in the container
-self.container.register_instance(IExchangeClient, client)
-
-self.logger.info(f"Created exchange client for {exchange_name}")
-return client
-
-except Exception as e:
-    passpasspasspasspasspasspasspassself.logger.exception(f"Failed to create exchange client: {e}")
-raise
+            raise RuntimeError(f"Failed to create exchange client: {e}")
 
 
-cla
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="performancereporterfactory initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize PerformanceReporterFactory."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-ss DatabaseFactory:
-    passself.logger.info("Implementation placeholder - needs specific logic")
 class DatabaseFactory:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class DatabaseFactory:
-    pass"""
-Factory for creating database managers with dependency injection support.
-"""
+    """
+    Factory for creating database connections with dependency injection support.
+    """
+    
+    def __init__(self, container: DependencyContainer):
+        self.container = container
 
-def __init__(...):
-    passpasspassdef __init__(...):
-    passdef __init__(...):
-    passdef __init__(...):
-    passself.container = container
-self.logger = system_logger.getChild("DatabaseFactory")
-
-def create_firestore_manager(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-manager = FirestoreManager(config)
-self.logger.info("Created Firestore manager")
-return manager
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.exception(f"Failed to create Firestore manager: {e}")
-raise
-
-def create_influxdb_manager(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-manager = InfluxDBManager(config)
-self.logger.info("Created InfluxDB manager")
-return manager
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.exception(f"Failed to create InfluxDB manager: {e}")
-raise
+    async def create_database_connection(self, config: Dict[str, Any]) -> Any:
+        """Create a database connection."""
+        try:
+            # This would create a specific database connection
+            # For now, return a mock or raise NotImplementedError
+            raise NotImplementedError("Database connection creation not implemented")
+        except Exception as e:
+            raise RuntimeError(f"Failed to create database connection: {e}")
 
 
-class StateManagerFactory:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class StateManagerFactory:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class StateManagerFactory:
-    pass"""
-Factory for creating state managers with dependency injection support.
-"""
+class ModelFactory:
+    """
+    Factory for creating ML models with dependency injection support.
+    """
+    
+    def __init__(self, container: DependencyContainer):
+        self.container = container
 
-def __init__(...):
-    passpasspassdef __init__(...):
-    passdef __init__(...):
-    passdef __init__(...):
-    passself.container = container
-self.logger = system_logger.getChild("StateManagerFactory")
-
-def create_state_manager(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-manager = StateManager(config)
-self.container.register_instance(IStateManager, manager)
-self.logger.info("Created state manager")
-return manager
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.exception(f"Failed to create state manager: {e}")
-raise
+    async def create_model(self, model_type: str, config: Dict[str, Any]) -> Any:
+        """Create a model of the specified type."""
+        try:
+            # This would create a specific model implementation
+            # For now, return a mock or raise NotImplementedError
+            raise NotImplementedError(f"Model creation for type {model_type} not implemented")
+        except Exception as e:
+            raise RuntimeError(f"Failed to create model: {e}")
 
 
-class PerformanceReporterFactory:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class PerformanceReporterFactory:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class PerformanceReporterFactory:
-    pass"""
-Factory for creating performance reporters with dependency injection support.
-"""
+class StrategyFactory:
+    """
+    Factory for creating trading strategies with dependency injection support.
+    """
+    
+    def __init__(self, container: DependencyContainer):
+        self.container = container
 
-def __init__(...):
-    passpasspassdef __init__(...):
-    passdef __init__(...):
-    passdef __init__(...):
-    passself.container = container
-self.logger = system_logger.getChild("PerformanceReporterFactory")
-
-def create_performance_reporter(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-reporter = PerformanceReporter(config)
-self.container.register_instance(IPerformanceReporter, reporter)
-self.logger.info("Created performance reporter")
-return reporter
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.exception(f"Failed to create performance reporter: {e}")
-raise
+    async def create_strategy(self, strategy_type: str, config: Dict[str, Any]) -> IStrategist:
+        """Create a strategy of the specified type."""
+        try:
+            # This would create a specific strategy implementation
+            # For now, return a mock or raise NotImplementedError
+            raise NotImplementedError(f"Strategy creation for type {strategy_type} not implemented")
+        except Exception as e:
+            raise RuntimeError(f"Failed to create strategy: {e}")

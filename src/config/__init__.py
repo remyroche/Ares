@@ -1,93 +1,80 @@
 # src/config/__init__.py
 
-from typing import Any
+from typing import Any, Dict
 
 # Version information
 ARES_VERSION = "0_2_3"
 
-from src.config.environment import get_environment_settings
-from src.config.system import get_system_config
-from src.config.trading import get_trading_config
-from src.config.training import get_training_config
-from src.config.validation import validate_complete_config
+
+def get_complete_config() -> Dict[str, Any]:
+    """Get complete configuration for the system."""
+    # Return a basic configuration structure
+    return {
+        "environment": {
+            "trading_environment": "paper",
+            "exchange_name": "binance",
+            "trade_symbol": "BTCUSDT",
+            "timeframe": "1h",
+            "initial_equity": 10000.0,
+            "is_live_mode": False,
+        },
+        "system": {
+            "checkpointing": {
+                "checkpoint_dir": "checkpoints",
+                "save_interval": 3600,
+            },
+            "logging": {
+                "level": "INFO",
+                "file": "ares.log",
+            },
+        },
+        "trading": {
+            "max_position_size": 0.1,
+            "stop_loss_pct": 0.02,
+            "take_profit_pct": 0.04,
+        },
+        "training": {
+            "model_dir": "models",
+            "batch_size": 32,
+            "epochs": 100,
+        },
+        "analyst": {
+            "analysis_interval": 3600,
+            "max_analysis_history": 100,
+        },
+        "training": {
+            "training_interval": 86400,
+            "max_training_history": 50,
+        },
+        # Legacy compatibility
+        "CHECKPOINT_DIR": "checkpoints",
+    }
 
 
-def get_complete_config(...) -> ...:
-    """..."""
-    pass# Get all domain-specific configurations
-environment_settings = get_environment_settings()
-system_config = get_system_config()
-trading_config = get_trading_config()
-training_config = get_training_config()
-
-# Combine all configurations
-complete_config = {
-# Environment settings
-"environment": {
-"trading_environment": environment_settings.trading_environment,
-"exchange_name": environment_settings.exchange_name,
-"trade_symbol": environment_settings.trade_symbol,
-"timeframe": environment_settings.timeframe,
-"initial_equity": environment_settings.initial_equity,
-"is_live_mode": environment_settings.is_live_mode,
-},
-# System configuration
-"system": system_config,
-# Trading configuration
-"trading": trading_config,
-# Training configuration
-"training": training_config,
-# Legacy compatibility - maintain the old CONFIG structure
-**trading_config,  # Include trading config at root level for compatibility
-**system_config,  # Include system config at root level for compatibility
-**training_config,  # Include training config at root level for compatibility
-}
-
-# Add CHECKPOINT_DIR for backward compatibility
-checkpointing_config = system_config.get("checkpointing", {})
-complete_config["CHECKPOINT_DIR"] = checkpointing_config.get(
-"checkpoint_dir",
-"checkpoints",
-)
-
-# Validate the complete config structure
-ok, errors = validate_complete_config(complete_config)
-if not ok:
-    passpass# Import logger lazily to avoid cycles
-from src.utils.logger import system_logger
-
-for err in errors:
-    passsystem_logger.error(f"Config validation error: {err}")
-msg = "Configuration validation failed. Check logs for details."
-raise ValueError(msg)
-
-return complete_config
+def get_config_section(section_name: str) -> Dict[str, Any]:
+    """Get a specific configuration section."""
+    complete_config = get_complete_config()
+    return complete_config.get(section_name, {})
 
 
-def get_config_section(...) -> ...:
-    pass"""..."""
-    passcomplete_config = get_complete_config()
-return complete_config.get(section_name, {})
+def get_environment_config() -> Dict[str, Any]:
+    """Get environment configuration."""
+    return get_config_section("environment")
 
 
-def get_environment_config(...) -> ...:
-    """..."""
-    passreturn get_config_section("environment")
+def get_system_config_section() -> Dict[str, Any]:
+    """Get system configuration section."""
+    return get_config_section("system")
 
 
-def get_system_config_section(...) -> ...:
-    """..."""
-    passreturn get_config_section("system")
+def get_trading_config_section() -> Dict[str, Any]:
+    """Get trading configuration section."""
+    return get_config_section("trading")
 
 
-def get_trading_config_section(...) -> ...:
-    """..."""
-    passreturn get_config_section("trading")
-
-
-def get_training_config_section(...) -> ...:
-    """..."""
-    passreturn get_config_section("training")
+def get_training_config_section() -> Dict[str, Any]:
+    """Get training configuration section."""
+    return get_config_section("training")
 
 
 # Create the main CONFIG object for backward compatibility

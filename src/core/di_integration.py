@@ -11,220 +11,202 @@ from src.core.dependency_injection import DependencyContainer, ServiceLifetime
 from src.core.enhanced_factories import TradingSystemFactory
 from src.core.service_registry import ServiceRegistry
 from src.utils.logger import system_logger
-from typing import Any
+from typing import Any, Dict
 from src.analyst.di_analyst import DIAnalyst
 from src.config import CONFIG
 from src.training.di_training_manager import DITrainingManager
 from src.interfaces.base_interfaces import (
-IAnalyst,
-IEventBus,
-IStrategist,
-ISupervisor,
-ITactician,
+    IAnalyst,
+    IEventBus,
+    IStrategist,
+    ISupervisor,
+    ITactician,
 )
 
 
 class DIIntegration:
+    """
+    Integration class that demonstrates proper dependency injection usage
+    throughout the Ares trading system.
+    """
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="diintegration initialization",
-    )
+    def __init__(self, config=None):
+        """Initialize DIIntegration with configuration."""
+        self.config = config or CONFIG
+        self.logger = system_logger.getChild("DIIntegration")
+
+        # Initialize DI container
+        self.container = DependencyContainer(self.config)
+        self.registry = ServiceRegistry(self.container)
+
+        # Initialize factories
+        self.factory = TradingSystemFactory(self.container)
+
+        # System state
+        self.is_initialized = False
+        self.system_components: Dict[str, Any] = {}
+
     async def initialize(self) -> bool:
         """Initialize DIIntegration."""
         try:
+            class_name = self.__class__.__name__
             self.logger.info(f"🚀 Initializing {class_name}...")
             self.is_initialized = True
             self.logger.info(f"✅ {class_name} initialized successfully")
             return True
         except Exception as e:
+            class_name = self.__class__.__name__
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
             return False
-    passpassself.logger.info("Implementation placeholder - needs specific logic")
-class DIIntegration:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class DIIntegration:
-    pass"""
-Integration class that demonstrates proper dependency injection usage
-throughout the Ares trading system.
-"""
 
-def __init__(...):
-    passdef __init__(...):
-    passdef __init__(...):
-    passdef __init__(...):
-    passself.config = config or CONFIG
-self.logger = system_logger.getChild("DIIntegration")
+    async def demonstrate_full_di_integration(self) -> Dict[str, Any]:
+        """Demonstrate full dependency injection integration."""
+        try:
+            self.logger.info("Demonstrating full dependency injection integration")
 
-# Initialize DI container
-self.container = DependencyContainer(self.config)
-self.registry = ServiceRegistry(self.container)
+            # Step 1: Register all services
+            await self._register_all_services()
 
-# Initialize factories
-self.factory = TradingSystemFactory(self.container)
+            # Step 2: Create core infrastructure
+            infrastructure = await self._create_infrastructure()
 
-# System state
-self.is_initialized = False
-self.system_components: dict[str, Any] = {}
+            # Step 3: Create trading components with DI
+            trading_components = await self._create_trading_components()
 
-async def demonstrate_full_di_integration(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-self.logger.info("Demonstrating full dependency injection integration")
+            # Step 4: Create specialized services
+            specialized_services = await self._create_specialized_services()
 
-# Step 1: Register all services
-await self._register_all_services()
+            # Step 5: Wire everything together
+            complete_system = {
+                **infrastructure,
+                **trading_components,
+                **specialized_services,
+            }
 
-# Step 2: Create core infrastructure
-infrastructure = await self._create_infrastructure()
+            # Step 6: Initialize all components
+            await self._initialize_all_components(complete_system)
 
-# Step 3: Create trading components with DI
-trading_components = await self._create_trading_components()
+            self.system_components = complete_system
+            self.is_initialized = True
 
-# Step 4: Create specialized services
-specialized_services = await self._create_specialized_services()
+            self.logger.info("Full DI integration demonstration completed")
+            return complete_system
 
-# Step 5: Wire everything together
-complete_system = {
-**infrastructure,
-**trading_components,
-**specialized_services,
-}
+        except Exception as e:
+            self.logger.exception(f"DI integration demonstration failed: {e}")
+            raise
 
-# Step 6: Initialize all components
-await self._initialize_all_components(complete_system)
+    async def _register_all_services(self) -> None:
+        """Register all services in the DI container."""
+        self.logger.info("Registering all services")
 
-self.system_components = complete_system
-self.is_initialized = True
+        # Register core infrastructure services
+        self.registry.register_all_services(self.config)
 
-self.logger.info("Full DI integration demonstration completed")
-return complete_system
+        # Register custom implementations
+        self.container.register(
+            IAnalyst,
+            DIAnalyst,
+            lifetime=ServiceLifetime.SINGLETON,
+            config=self.config.get("analyst", {}),
+        )
 
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.exception(f"DI integration demonstration failed: {e}")
-raise
+        self.container.register(
+            DITrainingManager,
+            DITrainingManager,
+            lifetime=ServiceLifetime.SINGLETON,
+            config=self.config.get("training", {}),
+        )
 
-async def _register_all_services(...) -> ...:
-    """..."""
-    passself.logger.info("Registering all services")
+        self.logger.info("All services registered successfully")
 
-# Register core infrastructure services
-self.registry.register_all_services(self.config)
+    async def _create_infrastructure(self) -> Dict[str, Any]:
+        """Create core infrastructure components."""
+        self.logger.info("Creating infrastructure components")
 
-# Register custom implementations
-self.container.register(
-IAnalyst,
-DIAnalyst,
-lifetime=ServiceLifetime.SINGLETON,
-config=self.config.get("analyst", {}),
-)
+        # Create event bus
+        event_bus = self.container.resolve(IEventBus)
 
-self.container.register(
-DITrainingManager,
-DITrainingManager,
-lifetime=ServiceLifetime.SINGLETON,
-config=self.config.get("training", {}),
-)
+        # Create other infrastructure components as needed
+        infrastructure = {
+            "event_bus": event_bus,
+        }
 
-self.logger.info("All services registered successfully")
+        self.logger.info("Infrastructure components created")
+        return infrastructure
 
-async def _create_infrastructure(...) -> ...:
-    """..."""
-    passself.logger.info("Creating infrastructure components")
+    async def _create_trading_components(self) -> Dict[str, Any]:
+        """Create trading components through DI."""
+        self.logger.info("Creating trading components")
 
-# Create event bus
-event_bus = self.container.resolve(IEventBus)
+        # Create trading components through DI
+        components = {
+            "analyst": self.container.resolve(IAnalyst),
+            "strategist": self.container.resolve(IStrategist),
+            "tactician": self.container.resolve(ITactician),
+            "supervisor": self.container.resolve(ISupervisor),
+        }
 
-# Create other infrastructure components as needed
-infrastructure = {
-"event_bus": event_bus,
-}
+        self.logger.info("Trading components created")
+        return components
 
-self.logger.info("Infrastructure components created")
-return infrastructure
+    async def _create_specialized_services(self) -> Dict[str, Any]:
+        """Create specialized services."""
+        self.logger.info("Creating specialized services")
 
-async def _create_trading_components(...) -> ...:
-    """..."""
-    passself.logger.info("Creating trading components")
+        # Create training manager
+        training_manager = self.container.resolve(DITrainingManager)
 
-# Create trading components through DI
-components = {
-"analyst": self.container.resolve(IAnalyst),
-"strategist": self.container.resolve(IStrategist),
-"tactician": self.container.resolve(ITactician),
-"supervisor": self.container.resolve(ISupervisor),
-}
+        specialized_services = {
+            "training_manager": training_manager,
+        }
 
-self.logger.info("Trading components created")
-return components
+        self.logger.info("Specialized services created")
+        return specialized_services
 
-async def _create_specialized_services(...) -> ...:
-    """..."""
-    passself.logger.info("Creating specialized services")
+    async def _initialize_all_components(self, components: Dict[str, Any]) -> None:
+        """Initialize all components."""
+        self.logger.info("Initializing all components")
 
-# Create training manager
-training_manager = self.container.resolve(DITrainingManager)
+        for name, component in components.items():
+            if hasattr(component, "initialize"):
+                try:
+                    success = await component.initialize()
+                    if success:
+                        self.logger.info(f"Initialized component: {name}")
+                    else:
+                        self.logger.error(f"Failed to initialize component: {name}")
+                except Exception as e:
+                    self.logger.exception(f"Error initializing {name}: {e}")
 
-specialized_services = {
-"training_manager": training_manager,
-}
+        self.logger.info("Component initialization completed")
 
-self.logger.info("Specialized services created")
-return specialized_services
+    def get_integration_status(self) -> Dict[str, Any]:
+        """Get the current integration status."""
+        return {
+            "is_initialized": self.is_initialized,
+            "components": list(self.system_components.keys()),
+            "container_services": list(self.container.get_all_services().keys()),
+        }
 
-async def _initialize_all_components(...) -> ...:
-    """..."""
-    passself.logger.info("Initializing all components")
+    async def shutdown(self) -> None:
+        """Shutdown the DI integration."""
+        self.logger.info("Shutting down DI integration")
 
-for name, component in components.items():
-    passif hasattr(component, "initialize"):
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-success = await component.initialize()
-if success:
-    passself.logger.info(f"Initialized component: {name}")
-else:
-    passself.logger.error(f"Failed to initialize component: {name}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.exception(f"Error initializing {name}: {e}")
+        for name, component in self.system_components.items():
+            if hasattr(component, "shutdown"):
+                try:
+                    await component.shutdown()
+                    self.logger.info(f"Shutdown component: {name}")
+                except Exception as e:
+                    self.logger.exception(f"Error shutting down {name}: {e}")
 
-self.logger.info("Component initialization completed")
-
-def get_integration_status(...) -> ...:
-    """..."""
-    passreturn {
-"is_initialized": self.is_initialized,
-"components": list(self.system_components.keys()),
-"container_services": list(self.container.get_all_services().keys()),
-}
-
-async def shutdown(...) -> ...:
-    """..."""
-    passself.logger.info("Shutting down DI integration")
-
-for name, component in self.system_components.items():
-    passif hasattr(component, "shutdown"):
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-await component.shutdown()
-self.logger.info(f"Shutdown component: {name}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.exception(f"Error shutting down {name}: {e}")
-
-self.is_initialized = False
-self.logger.info("DI integration shutdown completed")
+        self.is_initialized = False
+        self.logger.info("DI integration shutdown completed")
 
 
 # Convenience function for quick integration demonstration
-async def demonstrate_di_integration(...) -> ...:
-    pass"""..."""
-    passintegration = DIIntegration(config)
-return await integration.demonstrate_full_di_integration()
+async def demonstrate_di_integration(config=None) -> Dict[str, Any]:
+    """Convenience function to demonstrate DI integration."""
+    integration = DIIntegration(config)
+    return await integration.demonstrate_full_di_integration()

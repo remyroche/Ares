@@ -15,6 +15,7 @@ from dataclasses import dataclass
 import asyncio
 from pathlib import Path
 import json
+import copy
 
 @dataclass
 class OptimizedTimeframeConfig:

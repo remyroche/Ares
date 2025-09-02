@@ -36,6 +36,8 @@ except ImportError:
 # Import Optuna for optimization
 try:
     import optuna
+import copy
+
     OPTUNA_AVAILABLE = True
 except ImportError:
     OPTUNA_AVAILABLE = False

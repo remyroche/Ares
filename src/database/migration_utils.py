@@ -408,6 +408,7 @@ async def validate_migration_file(file_path: str) -> dict[str, Any]:
 
 if __name__ == "__main__":
     import sys
+import os.path
 
     if len(sys.argv) < 2:
         print("Usage:")

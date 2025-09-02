@@ -7,6 +7,9 @@ from src.utils.logger import system_logger
 from typing import Any
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import (
+import copy
+import os.path
+
     error,
     failed,
     invalid,

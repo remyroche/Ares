@@ -7,6 +7,7 @@ import asyncio
 import numpy as np
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
+import copy
 
 class RiskAllocator:
     """

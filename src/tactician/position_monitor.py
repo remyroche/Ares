@@ -585,6 +585,8 @@ class PositionMonitor:
                     try:
                         with open(path, 'r') as f:
                             import yaml
+import copy
+
                             updated_config = yaml.safe_load(f)
                             
                         # Check if this is newer than our current config

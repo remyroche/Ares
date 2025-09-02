@@ -12,6 +12,8 @@ from dataclasses import dataclass
 
 # Import the new modular configuration
 from src.config.modular_config import (
+import asyncio
+
     CONFIG,
     AresConfig,
     get_complete_config,
@@ -52,7 +54,7 @@ __all__=[
 
 # Legacy compatibility - maintain the old CONFIG structure
 
-def get_config() -> dict[str, Any]:
+def get_config() :-> dict[str, Any]:
     """
     Get the complete configuration (legacy function).
 
@@ -164,6 +166,7 @@ class RiskConfig:
 # Legacy ConfigurationManager class for backward compatibility
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import invalid, warning, failed
+import copy
 
 class ConfigurationManager:
     """
@@ -171,7 +174,7 @@ class ConfigurationManager:
     This class now uses the new modular configuration structure.
     """
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: dict[str, Any]) :-> None:
         """
         Initialize configuration manager.
 
@@ -206,7 +209,7 @@ class ConfigurationManager:
         },
         default_return=False, context="configuration manager initialization",
     )
-    async def initialize(self) -> bool:
+    async def initialize(self) :-> bool:
         """
         Initialize configuration manager.
 
@@ -254,7 +257,7 @@ class ConfigurationManager:
         exceptions=(ValueError, AttributeError),
         default_return=None, context="config manager configuration loading",
     )
-    async def _load_config_manager_configuration(self) -> None:
+    async def _load_config_manager_configuration(self) :-> None:
         """Load configuration manager specific configuration."""
         try:
             # Configuration manager specific settings are already loaded
@@ -276,7 +279,7 @@ class ConfigurationManager:
         default_return=False, context="configuration validation",
     )
 
-    def _validate_configuration(self) -> bool:
+    def _validate_configuration(self) :-> bool:
         """
         Validate configuration manager configuration.
 
@@ -304,7 +307,7 @@ class ConfigurationManager:
         exceptions=(Exception,),
         default_return=None, context="config sections initialization",
     )
-    async def _initialize_config_sections(self) -> None:
+    async def _initialize_config_sections(self) :-> None:
         """Initialize configuration sections."""
         try:
             # Initialize all configuration sections
@@ -327,7 +330,7 @@ class ConfigurationManager:
         exceptions=(Exception,),
         default_return=None, context="config service initialization",
     )
-    async def _initialize_config_service(self) -> None:
+    async def _initialize_config_service(self) :-> None:
         """Initialize configuration service."""
         try:
             # Configuration service is handled by the new modular structure
@@ -343,7 +346,7 @@ class ConfigurationManager:
         },
         default_return=False, context="configuration manager run",
     )
-    async def run(self) -> bool:
+    async def run(self) :-> bool:
         """
         Run the configuration manager.
 
@@ -373,7 +376,7 @@ class ConfigurationManager:
         exceptions=(Exception,),
         default_return=None, context="configuration update",
     )
-    async def _update_configuration(self) -> None:
+    async def _update_configuration(self) :-> None:
         """Update configuration."""
         try:
             # Add to configuration history
@@ -399,7 +402,7 @@ class ConfigurationManager:
         exceptions=(Exception,),
         default_return=None, context="configuration reload",
     )
-    async def _reload_configuration(self) -> None:
+    async def _reload_configuration(self) :-> None:
         """Reload configuration."""
         try:
             # Reinitialize configuration sections
@@ -414,7 +417,7 @@ class ConfigurationManager:
         exceptions=(Exception,),
         default_return=None, context="configuration sections validation",
     )
-    async def _validate_configuration_sections(self) -> None:
+    async def _validate_configuration_sections(self) :-> None:
         """Validate configuration sections."""
         try:
             # Validate each configuration section
@@ -435,7 +438,7 @@ class ConfigurationManager:
         exceptions=(Exception,),
         default_return=None, context="config service update",
     )
-    async def _update_config_service(self) -> None:
+    async def _update_config_service(self) :-> None:
         """Update configuration service."""
         try:
             # Configuration service updates are handled by the new modular structure
@@ -448,7 +451,7 @@ class ConfigurationManager:
         exceptions=(Exception,),
         default_return=None, context="configuration manager stop",
     )
-    async def stop(self) -> None:
+    async def stop(self) :-> None:
         """Stop the configuration manager and cleanup resources."""
         try:
             self.logger.info("🛑 Stopping Configuration Manager...")
@@ -458,21 +461,21 @@ class ConfigurationManager:
         except Exception:
             self.print(failed("❌ Failed to stop Configuration Manager: {e}"))
 
-    def get_status(self) -> dict[str, Any]:
+    def get_status(self) :-> dict[str, Any]:
         """Get configuration manager status."""
         return {
             "is_initialized": self.is_initialized, "config_sections_count": len(self.config_sections),
             "history_count": len(self.config_history),
         }
 
-    def get_history(self, limit: int | None=None) -> list[dict[str, Any]]:
+    def get_history(self, limit: int | None=None) :-> list[dict[str, Any]]:
         """Get configuration history."""
         history=self.config_history.copy()
         if limit:
             history=history[-limit:]
         return history
 
-    def get_config_sections(self) -> dict[str, Any]:
+    def get_config_sections(self) :-> dict[str, Any]:
         """Get configuration sections."""
         return self.config_sections.copy()
 
@@ -481,39 +484,39 @@ class ConfigurationManager:
         # This would return the actual configuration service if needed
         return
 
-    def get_dual_model_config(self) -> dict[str, Any]:
+    def get_dual_model_config(self) :-> dict[str, Any]:
         """Get dual model configuration."""
         return get_dual_model_config()
 
-    def get_ml_confidence_predictor_config(self) -> dict[str, Any]:
+    def get_ml_confidence_predictor_config(self) :-> dict[str, Any]:
         """Get ML confidence predictor configuration."""
         return get_ml_confidence_predictor_config()
 
-    def get_position_sizing_config(self) -> dict[str, Any]:
+    def get_position_sizing_config(self) :-> dict[str, Any]:
         """Get position sizing configuration."""
         return get_position_sizing_config()
 
-    def get_leverage_sizing_config(self) -> dict[str, Any]:
+    def get_leverage_sizing_config(self) :-> dict[str, Any]:
         """Get leverage sizing configuration."""
         return get_leverage_sizing_config()
 
-    def get_position_closing_config(self) -> dict[str, Any]:
+    def get_position_closing_config(self) :-> dict[str, Any]:
         """Get position closing configuration."""
         return get_position_closing_config()
 
-    def get_position_division_config(self) -> dict[str, Any]:
+    def get_position_division_config(self) :-> dict[str, Any]:
         """Get position division configuration."""
         return get_position_division_config()
 
-    def get_position_monitoring_config(self) -> dict[str, Any]:
+    def get_position_monitoring_config(self) :-> dict[str, Any]:
         """Get position monitoring configuration."""
         return get_position_monitoring_config()
 
-    def get_enhanced_training_config(self) -> dict[str, Any]:
+    def get_enhanced_training_config(self) :-> dict[str, Any]:
         """Get enhanced training configuration."""
         return get_enhanced_training_config()
 
-    def get_complete_config(self) -> dict[str, Any]:
+    def get_complete_config(self) :-> dict[str, Any]:
         """Get complete configuration."""
         return get_complete_config()
 
@@ -524,7 +527,7 @@ class ConfigurationManager:
 )
 async def setup_configuration_manager(
     config: dict[str, Any] | None=None,
-) -> ConfigurationManager | None:
+) :-> ConfigurationManager | None:
     """
     Setup and return a configured ConfigurationManager instance.
 

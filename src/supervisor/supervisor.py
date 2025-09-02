@@ -7,6 +7,8 @@ from typing import Any, Dict
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import (
+import pandas as pd
+
     error,
     failed,
     initialization_error,
@@ -589,6 +591,8 @@ class Supervisor:
         try:
             # Import enhanced execution manager
             from src.tactician.enhanced_execution_manager import EnhancedExecutionManager
+import copy
+import numpy as np
             
             # Initialize enhanced execution manager
             enhanced_manager = EnhancedExecutionManager(self.config)

@@ -301,4 +301,4 @@ async def main():
         print(f"Error in demo: {e}")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(await main())

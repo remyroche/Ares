@@ -6,6 +6,7 @@ import asyncio
 import pandas as pd
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
+import copy
 
 class Optimizer:
     """

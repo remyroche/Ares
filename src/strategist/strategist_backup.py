@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING, Any
 import pandas as pd
 
 from src.utils.error_handler import (
+import asyncio
+
     handle_errors,
     handle_specific_errors,
 )
@@ -30,6 +32,8 @@ from src.utils.warning_symbols import (
 if TYPE_CHECKING:
     from src.analyst.analyst import Analyst
     from src.tactician.tactician import Tactician
+import copy
+import numpy as np
 
 
 class Strategist:

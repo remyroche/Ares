@@ -17,6 +17,8 @@ from src.utils.error_handler import (
 )
 from src.utils.warning_symbols import error, failed, warning
 import yaml
+import copy
+import os.path
 
 # Try to import watchdog for file watching using dynamic import to avoid linter warnings
 try:

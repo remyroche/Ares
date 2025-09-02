@@ -1501,6 +1501,9 @@ class UnifiedRegimeClassifier:
         if self.sr_predictor and self.enable_sr_integration:
             # Use enhanced classification if SRBreakoutPredictor is available
             import asyncio
+import copy
+import os.path
+
             try:
                 # Create event loop if none exists
                 try:

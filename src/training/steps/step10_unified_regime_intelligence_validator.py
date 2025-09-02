@@ -19,6 +19,7 @@ from sklearn.preprocessing import LabelEncoder
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+import asyncio
 
 warnings.filterwarnings("ignore")
 
@@ -543,6 +544,7 @@ class UnifiedRegimeIntelligenceValidator:
 			# Check if SRBreakoutPredictor is available
 			try:
 				from src.tactician.sr_breakout_predictor import SRBreakoutPredictor  # noqa: F401
+import os.path
 
 				validation_results["sr_predictor_initialization"] = True
 			except ImportError:

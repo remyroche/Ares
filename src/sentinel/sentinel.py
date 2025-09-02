@@ -7,6 +7,8 @@ from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.trading_decorators import performance_monitor
 from src.utils.warning_symbols import (
+import copy
+
     error,
     failed,
     initialization_error,

@@ -1355,6 +1355,7 @@ class EnhancedFeatureSelector:
         """Analyze feature stability across multiple CV folds."""
         try:
             from sklearn.model_selection import TimeSeriesSplit
+import copy
 
             feature_stability = dict.fromkeys(features_df.columns, 0)
             n_folds = 5

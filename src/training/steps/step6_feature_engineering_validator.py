@@ -319,6 +319,7 @@ async def run_validator(
 if __name__ == "__main__":
     # Test the validator
     import asyncio
+import datetime as datetime
     
     test_input = {
         "symbol": "ETHUSDT",

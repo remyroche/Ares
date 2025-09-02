@@ -390,6 +390,7 @@ def validate_system_resources() -> tuple[bool, list[str]]:
 
     # Check if we're in blank training mode by looking at environment or config
     import os as _os
+import os.path
 
     blank_mode = _os.getenv("BLANK_TRAINING_MODE", "0") == "1"
 

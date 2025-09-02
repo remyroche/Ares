@@ -400,6 +400,7 @@ async def run_enhanced_step1(
 # Example usage
 if __name__ == "__main__":
     import asyncio
+import os.path
     
     # Set up logging
     logging.basicConfig(

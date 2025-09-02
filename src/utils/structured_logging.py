@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+import asyncio
 
 if TYPE_CHECKING:
     from fastapi import Request

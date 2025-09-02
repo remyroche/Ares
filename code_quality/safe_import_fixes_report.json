@@ -1,0 +1,28 @@
+{
+  "fixed": 130,
+  "failed": 267,
+  "fixed_files": [
+    "/workspace/src/config.py",
+    "/workspace/src/paper_trader.py",
+    "/workspace/src/monitoring/error_detection_system.py",
+    "/workspace/src/monitoring/tracking_system.py",
+    "/workspace/src/monitoring/correlation_manager.py",
+    "/workspace/src/monitoring/report_scheduler.py",
+    "/workspace/src/monitoring/enhanced_ml_tracker.py",
+    "/workspace/src/monitoring/performance_monitor.py",
+    "/workspace/src/monitoring/csv_exporter.py",
+    "/workspace/src/monitoring/regime_sr_tracker.py"
+  ],
+  "failed_files": [
+    "/workspace/src/tasks.py",
+    "/workspace/src/ares_pipeline.py",
+    "/workspace/src/monitoring/fractional_system_monitor.py",
+    "/workspace/src/monitoring/performance_dashboard.py",
+    "/workspace/src/monitoring/integration_manager.py",
+    "/workspace/src/monitoring/surrogate_optimization_monitor.py",
+    "/workspace/src/monitoring/metrics_dashboard.py",
+    "/workspace/src/monitoring/fractional_performance_tracker.py",
+    "/workspace/src/monitoring/advanced_tracer.py",
+    "/workspace/src/interfaces/event_bus.py"
+  ]
+}

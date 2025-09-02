@@ -18,6 +18,8 @@ import joblib
 import numpy as np
 
 from src.utils.error_handler import (
+import asyncio
+
     error,
     failed,
     handle_errors,
@@ -79,6 +81,7 @@ def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
         return
     try:
         import numpy.random._pickle as np_random_pickle  # type: ignore[attr-defined]
+import os.path
 
         original_ctor = getattr(np_random_pickle, "__bit_generator_ctor", None)
         if original_ctor is None:

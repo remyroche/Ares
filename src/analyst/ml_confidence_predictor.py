@@ -9,6 +9,8 @@ import pandas as pd
 
 # Import enhanced order manager for tactician order management
 from src.tactician.enhanced_order_manager import (
+import asyncio
+
     OrderSide,
 )
 from src.utils.error_handler import (
@@ -2317,6 +2319,9 @@ class MLConfidencePredictor:
 
             # Import required components
             from src.tactician.async_order_executor import (
+import copy
+import os.path
+
                 ExecutionRequest,
                 ExecutionStrategy,
                 OrderSide,

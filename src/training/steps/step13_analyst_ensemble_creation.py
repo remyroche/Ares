@@ -151,6 +151,10 @@ class AnalystEnsembleCreationStep:
             # Apply optimized feature selection for ensemble creation
             try:
                 from src.training.optimized_feature_selection_manager import (
+import copy
+import datetime as datetime
+import os.path
+
                     OptimizedFeatureSelectionManager,
                 )
 

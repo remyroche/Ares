@@ -14,6 +14,7 @@ from src.config import (
     INFLUXDB_URL,
 )
 from src.utils.logger import logger
+import copy
 
 
 class InfluxDBManager:

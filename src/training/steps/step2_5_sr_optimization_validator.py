@@ -396,5 +396,5 @@ if __name__ == "__main__":
     }
     
     # Run validation
-    success = asyncio.run(run_validation(test_config, "ETHUSDT", "BINANCE", "1m"))
+    success = asyncio.run(await run_validation(test_config, "ETHUSDT", "BINANCE", "1m"))
     print(f"Validation {'successful' if success else 'failed'}")

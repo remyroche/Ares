@@ -28,6 +28,8 @@ from src.config import ARES_VERSION
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.mlflow_utils import (
+import asyncio
+
     extract_training_metadata,
     log_artifacts_with_metadata,
     log_enhanced_training_metadata,

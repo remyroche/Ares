@@ -18,6 +18,8 @@ from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import failed, missing
 import numpy as np
 import pandas as pd
+import copy
+import asyncio
 
 class TradeStatus(Enum):
     """Trade status enumeration."""

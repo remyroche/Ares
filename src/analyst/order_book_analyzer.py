@@ -3,6 +3,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from src.utils.centralized_decorators_simple import (
+import copy
+
     comprehensive_data_validation,
     validate_data_quality,
     with_tracing_span,

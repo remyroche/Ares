@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 
 from .model_probability_generator import ModelProbabilityGenerator
+import os.path
 
 logger = logging.getLogger(__name__)
 

@@ -20,6 +20,8 @@ import pandas as pd
 import torch
 import torch.nn as nn
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from pathlib import Path
+import asyncio
 
 # Optional imports for additional model types
 try:
@@ -1755,6 +1757,8 @@ class MultiOutputModelTrainer:
         # Handle class imbalance
         try:
             from sklearn.utils.class_weight import compute_class_weight
+import copy
+
             class_weights = compute_class_weight(
                 'balanced', 
                 classes=np.unique(y_train), 

@@ -12,6 +12,8 @@ from src.analyst.advanced_feature_engineering import AdvancedFeatureEngineering
 from src.analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
 from src.config import CONFIG
 from src.utils.error_handler import (
+import asyncio
+
     handle_data_processing_errors,
     handle_errors,
     handle_file_operations,
@@ -330,6 +332,8 @@ class FeatureEngineeringOrchestrator:
         """Calculate standard technical indicators using price differences."""
         try:
             import pandas_ta as ta
+import copy
+import os.path
 
             # Convert price data to differences for technical indicators
             close_diff = df["close"].diff().fillna(0)

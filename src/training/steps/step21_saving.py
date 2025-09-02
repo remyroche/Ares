@@ -427,6 +427,8 @@ class SavingStep:
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
+import pandas as pd
+
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,

@@ -315,6 +315,7 @@ class EnhancedMissingValueHandler:
             # Import exchange-specific downloader
             if exchange.lower() == "binance":
                 from src.training.steps.data_downloader import DataDownloader
+import copy
 
                 downloader = DataDownloader()
 

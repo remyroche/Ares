@@ -407,6 +407,9 @@ class RegimeDataSplittingStep:
             
             metadata_file = Path(data_dir) / "training" / f"{exchange}_{symbol}_{timeframe}_regime_metadata.json"
             import json
+import numpy as np
+import pandas as pd
+
             with open(metadata_file, 'w') as f:
                 json.dump(metadata, f, indent=2)
             

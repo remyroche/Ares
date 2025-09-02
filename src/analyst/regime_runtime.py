@@ -8,6 +8,7 @@ import os
 import joblib
 import numpy as np
 import pandas as pd
+import os.path
 
 def _load_parquet(path: str) -> pd.DataFrame | None:
     try:

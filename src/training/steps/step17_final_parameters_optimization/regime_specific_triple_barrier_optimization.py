@@ -36,6 +36,8 @@ from scipy import stats
 
 from src.utils.logger import setup_logging
 from src.config.config_optuna import (
+from pathlib import Path
+
     SROptimizationParameters,
     HyperparameterOptimizationConfig,
     get_parameter_search_space
@@ -453,6 +455,8 @@ class RegimeSpecificTripleBarrierOptimizer:
         try:
             # Import the optimized triple barrier labeling
             from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
+import copy
+
                 OptimizedTripleBarrierLabeling
             )
             

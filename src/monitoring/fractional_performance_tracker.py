@@ -14,6 +14,7 @@ import seaborn as sns
 
 from src.utils.logger import get_logger
 from src.config.fractional_implementations_config import FractionalImplementationsConfig
+import copy
 
 
 class FractionalPerformanceTracker:

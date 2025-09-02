@@ -20,6 +20,8 @@ from src.training.enhanced_training_manager_optimized import (
 from src.training.factory import OptimizedTrainingFactory
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import copy
+
     failed,
 )
 

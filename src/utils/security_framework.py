@@ -30,6 +30,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from .error_handler import handle_errors
 from .logger import system_logger
 from .pipeline_standards import PipelineStandards, pipeline_standards
+import copy
 
 
 class SecurityLevel(Enum):

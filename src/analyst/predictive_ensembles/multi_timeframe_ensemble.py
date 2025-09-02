@@ -319,6 +319,8 @@ class MultiTimeframeEnsemble:
 
             # For now, use a simple neural network as LSTM placeholder
             from sklearn.neural_network import MLPClassifier
+import copy
+import os.path
 
             model = MLPClassifier(
                 hidden_layer_sizes=(100, 50),

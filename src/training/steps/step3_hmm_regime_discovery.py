@@ -3371,7 +3371,7 @@ if __name__ == "__main__":
 
     # Use a more robust approach to prevent segmentation fault
     try:
-        asyncio.run(main())
+        asyncio.run(await main())
     except KeyboardInterrupt:
         print("\n🛑 Interrupted by user")
     except Exception as e:
@@ -3379,4 +3379,9 @@ if __name__ == "__main__":
     finally:
         # Final cleanup
         import gc
+import copy
+import numpy as np
+import os.path
+import pandas as pd
+
         gc.collect()

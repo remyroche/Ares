@@ -1015,6 +1015,8 @@ class DataEfficiencyOptimizer:
 
             # Load pickle data
             import pickle
+import asyncio
+import copy
 
             with open(pickle_file_path, "rb") as f:
                 data = pickle.load(f)

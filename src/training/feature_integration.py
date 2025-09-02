@@ -15,6 +15,8 @@ from sklearn.preprocessing import StandardScaler
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import asyncio
+
     error,
     initialization_error,
 )
@@ -64,6 +66,8 @@ class FeatureIntegrationManager:
             # Initialize advanced feature engineering
             if self.enable_advanced_features:
                 from src.analyst.advanced_feature_engineering import (
+import copy
+
                     AdvancedFeatureEngineering,
                 )
 

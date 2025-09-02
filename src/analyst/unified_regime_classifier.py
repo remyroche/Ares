@@ -14,6 +14,7 @@ from src.config import CONFIG
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.logger import system_logger
 from src.utils.error_handler import (
+import logging
     handle_errors,
 )
 from src.utils.warning_symbols import (
@@ -37,6 +38,7 @@ class UnifiedRegimeClassifier:
     """
 
     def __init__(
+        self.logger = logging.getLogger(self.__class__.__name__)
         self,
         config: dict[str, Any],
         exchange: str = "UNKNOWN",

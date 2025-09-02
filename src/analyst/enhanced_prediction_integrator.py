@@ -15,6 +15,7 @@ from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, warning, failed, missing
 from src.utils.centralized_decorators import (
+import logging
     validate_data_quality,
     with_tracing_span,
     comprehensive_validation,
@@ -45,6 +46,7 @@ class EnhancedPredictionIntegrator:
             config: Configuration dictionary
         """
         self.config: dict[str, Any] = config
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.logger = system_logger.getChild("EnhancedPredictionIntegrator")
 
         # Model state

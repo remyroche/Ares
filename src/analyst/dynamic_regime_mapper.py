@@ -8,6 +8,7 @@ import os
 
 from src.utils.error_handler import handle_errors
 import pandas as pd
+import logging
 
 
 class DynamicRegimeMapper:
@@ -17,6 +18,7 @@ class DynamicRegimeMapper:
     """
 
     def __init__(self, config: dict[str, Any]):
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.config = config
         self.logger = system_logger.getChild("DynamicRegimeMapper")
 

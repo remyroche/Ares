@@ -13,6 +13,7 @@ import pandas as pd
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
 from src.analyst.predictive_ensembles.ensemble_orchestrator import (
+import logging
     RegimePredictiveEnsembles,
 )
 from src.analyst.regime_runtime import get_current_regime_info
@@ -27,6 +28,7 @@ class RegimeExpertOrchestrator:
     """
 
     def __init__(self, config: dict[str, Any]):
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.config = config
         self.logger = system_logger.getChild("RegimeExpertOrchestrator")
 

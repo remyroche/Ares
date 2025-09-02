@@ -757,19 +757,39 @@ def main():
     # Generate report
     report = finder.generate_report(results)
 
+    # Auto-append datetime to output filenames if they don't already contain a timestamp
+    current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
     if args.output:
-        with open(args.output, 'w', encoding='utf-8') as f:
+        # Check if filename already contains a timestamp pattern
+        if not re.search(r'\d{8}_\d{6}', args.output):
+            # Split filename and extension
+            name, ext = os.path.splitext(args.output)
+            output_file = f"{name}_{current_time}{ext}"
+        else:
+            output_file = args.output
+        
+        with open(output_file, 'w', encoding='utf-8') as f:
             f.write(report)
-        print(f"Report written to {args.output}")
+        print(f"Report written to {output_file}")
     else:
         print(report)
 
     # Export JSON if requested
     if args.json:
         json_data = finder.export_json(results)
-        with open(args.json, 'w', encoding='utf-8') as f:
+        
+        # Check if filename already contains a timestamp pattern
+        if not re.search(r'\d{8}_\d{6}', args.json):
+            # Split filename and extension
+            name, ext = os.path.splitext(args.json)
+            json_file = f"{name}_{current_time}{ext}"
+        else:
+            json_file = args.json
+        
+        with open(json_file, 'w', encoding='utf-8') as f:
             f.write(json_data)
-        print(f"JSON export written to {args.json}")
+        print(f"JSON export written to {json_file}")
 
 
 if __name__ == '__main__':

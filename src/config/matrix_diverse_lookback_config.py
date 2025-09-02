@@ -394,69 +394,6 @@ def get_matrix_diverse_lookback_config() -> dict[str, Any]:
                     "step": 1,
                     "description": "Volume Price Oscillator Lower Band for oversold",
                     "expected_insights": ["Oversold levels", "Lower support", "Buy signals"]
-                },
-                "VWAP_Momentum": {
-                    "min": 3,
-                    "max": 50,
-                    "step": 1,
-                    "description": "VWAP momentum for trend analysis",
-                    "expected_insights": ["VWAP trend strength", "Volume-weighted momentum", "Trend confirmation"]
-                },
-                "VWAP_Acceleration": {
-                    "min": 3,
-                    "max": 50,
-                    "step": 1,
-                    "description": "VWAP acceleration for momentum changes",
-                    "expected_insights": ["Momentum acceleration", "Trend changes", "Signal generation"]
-                },
-                "VWAP_Volatility": {
-                    "min": 5,
-                    "max": 50,
-                    "step": 1,
-                    "description": "VWAP volatility for risk assessment",
-                    "expected_insights": ["Volume-weighted volatility", "Risk measurement", "Volatility regime"]
-                },
-                "VWAP_Momentum_Volatility": {
-                    "min": 5,
-                    "max": 50,
-                    "step": 1,
-                    "description": "VWAP momentum volatility for momentum stability",
-                    "expected_insights": ["Momentum stability", "Trend reliability", "Signal quality"]
-                },
-                "VWAP_Returns": {
-                    "min": 5,
-                    "max": 50,
-                    "step": 1,
-                    "description": "VWAP returns for volume-weighted analysis",
-                    "expected_insights": ["Volume-weighted returns", "Fair value analysis", "Price efficiency"]
-                },
-                "VWAP_Log_Returns": {
-                    "min": 5,
-                    "max": 50,
-                    "step": 1,
-                    "description": "VWAP log returns for continuous compounding",
-                    "expected_insights": ["Continuous returns", "Compounding effects", "Return analysis"]
-                },
-                "Price_VWAP_Ratio": {
-                    "min": 5,
-                    "max": 50,
-                    "step": 1,
-                    "description": "Price to VWAP ratio for relative valuation",
-                    "expected_insights": ["Relative valuation", "Over/under valued", "Mean reversion"]
-                },
-                "Price_VWAP_Deviation": {
-                    "min": 5,
-                    "max": 50,
-                    "step": 1,
-                    "description": "Price to VWAP deviation for mispricing",
-                    "expected_insights": ["Mispricing detection", "Deviation from fair value", "Reversion signals"]
-                },
-                "Price_VWAP_Spread": {
-                    "min": 5,
-                    "max": 50,
-                    "step": 1,
-                    "description": "Price to VWAP spread for absolute deviation",
-                    "expected_insights": ["Absolute deviation", "Spread analysis", "Price efficiency"]
                 }
             }
         },

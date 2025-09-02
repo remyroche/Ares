@@ -708,3 +708,98 @@ def apply_regime_aware_triple_barrier_labeling(
         labeler = RegimeAwareTripleBarrierLabeling(binary_classification=binary_classification)
     
     return labeler.apply_regime_aware_triple_barrier_labeling(data, regime_column)
+
+
+def apply_regime_aware_triple_barrier_labeling_with_barriers(
+    data: pd.DataFrame,
+    barrier_map_or_path: Union[str, Dict[str, Any]],
+    regime_column: str = "hmm_regime",
+    binary_classification: bool = True,
+    default_time_barrier_minutes: int = 30,
+    default_max_lookahead: int = 100
+) -> pd.DataFrame:
+    """
+    Apply regime-aware triple barrier labeling using a barrier map or path.
+    
+    This function is designed to work with the HMMRegimeBarrierOptimizer and
+    provides the interface needed by the vectorized labeling orchestrator.
+    
+    Args:
+        data: DataFrame with OHLCV and regime data
+        barrier_map_or_path: Either a path to a barrier map file or a barrier map dictionary
+        regime_column: Column containing regime labels
+        binary_classification: Whether to use binary classification
+        default_time_barrier_minutes: Default time barrier in minutes
+        default_max_lookahead: Default maximum lookahead
+        
+    Returns:
+        DataFrame with regime-aware labels
+    """
+    try:
+        import json
+        from pathlib import Path
+        
+        # Load barrier map if path is provided
+        if isinstance(barrier_map_or_path, str):
+            barrier_path = Path(barrier_map_or_path)
+            if barrier_path.exists():
+                with open(barrier_path, 'r') as f:
+                    barrier_map = json.load(f)
+            else:
+                raise FileNotFoundError(f"Barrier map file not found: {barrier_map_or_path}")
+        else:
+            barrier_map = barrier_map_or_path
+        
+        # Validate barrier map
+        if not isinstance(barrier_map, dict):
+            raise ValueError("Invalid barrier map format")
+        
+        # Check if regime column exists
+        if regime_column not in data.columns:
+            raise ValueError(f"Regime column '{regime_column}' not found in data")
+        
+        # Create regime-aware labeler with barrier-specific configuration
+        config = RegimeTripleBarrierConfig()
+        
+        # Configure regime-specific parameters from barrier map
+        for regime_id, regime_config in barrier_map.items():
+            if isinstance(regime_config, dict):
+                # Set regime-specific parameters
+                config.regime_profit_take_multipliers[regime_id] = regime_config.get(
+                    'profit_take_multiplier', 0.002
+                )
+                config.regime_stop_loss_multipliers[regime_id] = regime_config.get(
+                    'stop_loss_multiplier', 0.001
+                )
+                config.regime_time_barrier_minutes[regime_id] = regime_config.get(
+                    'time_barrier_minutes', default_time_barrier_minutes
+                )
+                config.regime_max_lookahead[regime_id] = regime_config.get(
+                    'max_lookahead', default_max_lookahead
+                )
+        
+        # Create labeler with configuration
+        labeler = RegimeAwareTripleBarrierLabeling(config)
+        
+        # Apply regime-aware labeling
+        labeled_data = labeler.apply_regime_aware_triple_barrier_labeling(data, regime_column)
+        
+        # Add labeling metadata
+        labeled_data['labeling_method'] = 'regime_aware_with_barriers'
+        labeled_data['barrier_map_source'] = str(barrier_map_or_path) if isinstance(barrier_map_or_path, str) else 'dict'
+        
+        return labeled_data
+        
+    except Exception as e:
+        # Log error and return original data with error indicator
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"❌ Error in regime-aware triple barrier labeling with barriers: {e}")
+        
+        # Return data with error indicator
+        data_copy = data.copy()
+        data_copy['label'] = 0  # Default to HOLD
+        data_copy['labeling_method'] = 'error_fallback'
+        data_copy['labeling_error'] = str(e)
+        
+        return data_copy

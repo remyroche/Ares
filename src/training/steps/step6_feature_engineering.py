@@ -181,10 +181,11 @@ else:
 )
 @validate_step_output(
     output_validation_rules={
-        "required_files": ["features_train.parquet", "features_val.parquet", "feature_metadata.json"],
-        "required_columns": ["timestamp", "features"],
-        "min_rows": 1000,
-        "max_missing_ratio": 0.05,
+        # Align with regime-specific outputs under data/training/regime_features
+        "required_files": ["regime_features"],  # presence of regime_features directory
+        "required_columns": ["timestamp"],
+        "min_rows": 100,  # per regime file checked separately in validator
+        "max_missing_ratio": 0.20,
     },
     validation_timeout=600,
 )

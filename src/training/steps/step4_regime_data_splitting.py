@@ -245,6 +245,17 @@ class RegimeDataSplittingStep:
                 on='timestamp', 
                 how='inner'
             )
+            # Retention check: ensure we didn't lose too many rows during merge
+            try:
+                retention_ratio = (len(merged_data) / max(len(unified_df), 1)) if len(unified_df) else 0.0
+                self.logger.info(f"📈 Merge retention ratio: {retention_ratio:.3f}")
+                min_retention = float(self.config.get("regime_merge_min_retention", 0.80))
+                if retention_ratio < min_retention:
+                    self.logger.warning(
+                        f"⚠️ Low retention after regime merge: {retention_ratio:.3f} (< {min_retention:.2f}). Check timestamp alignment and data coverage."
+                    )
+            except Exception:
+                pass
             
             self.logger.info(f"✅ Loaded {len(merged_data)} data points with regime information")
             return merged_data

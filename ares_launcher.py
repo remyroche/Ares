@@ -30,8 +30,8 @@ Usage:
     # Show available training modes and their configurations
     python ares_launcher.py modes
 
-    # Start from step2 with existing data (no new downloads)
-    python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE
+    # Start from step02 with existing data (no new downloads)
+    python ares_launcher.py step02 --symbol ETHUSDT --exchange BINANCE
 
     # Step-based training with validation (new steps 1-21)
     python ares_launcher.py step2_5 --symbol ETHUSDT --exchange BINANCE --training-mode blank
@@ -1490,15 +1490,15 @@ class AresLauncher:
         force_rerun: bool=False,
         with_gui: bool=False,
     ):
-        """Run step2 with existing data from step1 and step1_5 without triggering new downloads."""
+        """Run step02 with existing data from step01 and step1_5 without triggering new downloads."""
         self.logger.info(
-            f"🚀 Running step2 with existing data for {symbol} on {exchange}"
+            f"🚀 Running step02 with existing data for {symbol} on {exchange}"
         )
         self.logger.info(
-            "📊 Using existing data from step1 and step1_5 - no new downloads"
+            "📊 Using existing data from step01 and step1_5 - no new downloads"
         )
         
-        # Use existing validator orchestrator to validate step1 and step1_5
+        # Use existing validator orchestrator to validate step01 and step1_5
         try:
             from src.utils.validator_orchestrator import ValidatorOrchestrator
             
@@ -1516,7 +1516,7 @@ class AresLauncher:
             # Empty pipeline state since we're checking existing data
             pipeline_state={}
             
-            # Validate step1 and step1_5 using existing validators
+            # Validate step01 and step1_5 using existing validators
             self.logger.info("🔍 Validating step1_data_collection using existing validator")
             step1_result=await validator_orchestrator.run_step_validator(
                 "step1_data_collection", training_input, pipeline_state, CONFIG
@@ -1536,8 +1536,8 @@ class AresLauncher:
             can_start=step1_passed and step1_5_passed
             
             if not can_start:
-                self.logger.error("❌ Cannot start from step2 - data validation failed")
-                self.logger.error("Please run step1 and step1_5 first to collect and process data")
+                self.logger.error("❌ Cannot start from step02 - data validation failed")
+                self.logger.error("Please run step01 and step1_5 first to collect and process data")
                 return False
             
             # Log warnings if any issues found
@@ -1578,7 +1578,7 @@ class AresLauncher:
             start_step=start_step,
             force_rerun=force_rerun,
             with_gui=with_gui,
-            training_mode="blank",  # Use blank mode for step2 with existing data
+            training_mode="blank",  # Use blank mode for step02 with existing data
         )
 
     async def _validate_previous_steps(self, symbol: str, exchange: str, start_step: str) -> bool:
@@ -1716,7 +1716,7 @@ class AresLauncher:
         print("="*80)
 
     def _print_step2_validation_report(self, step1_result: dict, step1_5_result: dict, symbol: str, exchange: str):
-        """Print a formatted validation report for step2 readiness."""
+        """Print a formatted validation report for step02 readiness."""
         print("\n" + "="*80)
         print(f"📊 DATA VALIDATION REPORT FOR STEP2")
         print(f"🎯 Symbol: {symbol}")
@@ -2094,7 +2094,7 @@ class AresLauncher:
                 "📊 FULL TRAINING MODE: Set FULL_TRAINING_MODE=1 for step-based training (730 days)"
             )
 
-        # Prevent blank mode with step1 data collection
+        # Prevent blank mode with step01 data collection
         if training_mode== "blank" and start_step == "step1_data_collection":
             self.logger.error("❌ Cannot use blank mode with step1_data_collection")
             self.logger.error(
@@ -2165,17 +2165,17 @@ Examples:
   python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --gui
   python ares_launcher.py light --symbol ETHUSDT --exchange BINANCE
       python ares_launcher.py blank --symbol ETHUSDT --exchange BINANCE --step step4_regime_data_splitting
-    python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE  # Start from step2 with existing data
-    python ares_launcher.py step2 --symbol ETHUSDT --exchange BINANCE --step step2_data_reading  # Specific step2
+    python ares_launcher.py step02 --symbol ETHUSDT --exchange BINANCE  # Start from step02 with existing data
+    python ares_launcher.py step02 --symbol ETHUSDT --exchange BINANCE --step step2_data_reading  # Specific step02
     
     # New step-based commands with validation
-    python ares_launcher.py step1 --symbol ETHUSDT --exchange BINANCE --training-mode light
+    python ares_launcher.py step01 --symbol ETHUSDT --exchange BINANCE --training-mode light
     python ares_launcher.py step2_5 --symbol ETHUSDT --exchange BINANCE --training-mode blank
     python ares_launcher.py step3_5 --symbol ETHUSDT --exchange BINANCE --training-mode blank
-    python ares_launcher.py step4 --symbol ETHUSDT --exchange BINANCE --training-mode blank
-    python ares_launcher.py step8 --symbol ETHUSDT --exchange BINANCE --training-mode full
+    python ares_launcher.py step04 --symbol ETHUSDT --exchange BINANCE --training-mode blank
+    python ares_launcher.py step08 --symbol ETHUSDT --exchange BINANCE --training-mode full
     python ares_launcher.py step9_5 --symbol ETHUSDT --exchange BINANCE --training-mode blank
-    python ares_launcher.py step5 --symbol ETHUSDT --exchange BINANCE --training-mode light --force
+    python ares_launcher.py step05 --symbol ETHUSDT --exchange BINANCE --training-mode light --force
     python ares_launcher.py step10 --symbol ETHUSDT --exchange BINANCE --training-mode blank --gui
     python ares_launcher.py step18 --symbol ETHUSDT --exchange BINANCE --training-mode full
     python ares_launcher.py step21 --symbol ETHUSDT --exchange BINANCE --training-mode full
@@ -2229,7 +2229,7 @@ Examples:
             "gui",
             "light",
             "blank",
-            "step2",  # New command to start from step2 with existing data
+            "step02",  # New command to start from step02 with existing data
             "full",
             "multi-timeframe",
             "load",
@@ -2238,8 +2238,8 @@ Examples:
             "resume",
             "modes",  # Show available training modes
             # New step-based commands
-            "step1", "step1_5", "step2", "step2_5", "step3", "step3_5", "step4", "step5", "step6", "step7", "step8",
-            "step8_5", "step9", "step9_5", "step10", "step11", "step12", "step13", "step14", "step15", "step16", "step17",
+            "step01", "step1_5", "step02", "step2_5", "step03", "step3_5", "step04", "step05", "step06", "step07", "step08",
+            "step8_5", "step09", "step9_5", "step10", "step11", "step12", "step13", "step14", "step15", "step16", "step17",
             "step18", "step19", "step20", "step21",
         ],
         help="The command to execute",
@@ -2381,8 +2381,8 @@ def validate_arguments(args: argparse.Namespace) -> None:
         "load",
         "precompute",
         # Step-based commands
-        "step1", "step1_5", "step2", "step2_5", "step3", "step3_5", "step4", "step5", "step6", "step7", "step8",
-        "step8_5", "step9", "step9_5", "step10", "step11", "step12", "step13", "step14", "step15", "step16", "step17",
+        "step01", "step1_5", "step02", "step2_5", "step03", "step3_5", "step04", "step05", "step06", "step07", "step08",
+        "step8_5", "step09", "step9_5", "step10", "step11", "step12", "step13", "step14", "step15", "step16", "step17",
         "step18", "step19", "step20", "step21",
     ]
 
@@ -2444,7 +2444,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             lookback_days=getattr(args, "lookback_days", None),
             with_gui=args.gui,
         ),
-        "step2": lambda: asyncio.run(
+        "step02": lambda: asyncio.run(
             launcher.run_step2_with_existing_data(
                 args.symbol,
                 args.exchange,
@@ -2454,7 +2454,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             ),
         ),
         # New step-based commands with validation
-        "step1": lambda: asyncio.run(
+        "step01": lambda: asyncio.run(
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
@@ -2484,7 +2484,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
                 with_gui=args.gui,
             ),
         ),
-        "step3": lambda: asyncio.run(
+        "step03": lambda: asyncio.run(
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
@@ -2504,7 +2504,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
                 with_gui=args.gui,
             ),
         ),
-        "step4": lambda: asyncio.run(
+        "step04": lambda: asyncio.run(
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
@@ -2514,7 +2514,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
                 with_gui=args.gui,
             ),
         ),
-        "step5": lambda: asyncio.run(
+        "step05": lambda: asyncio.run(
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
@@ -2524,7 +2524,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
                 with_gui=args.gui,
             ),
         ),
-        "step6": lambda: asyncio.run(
+        "step06": lambda: asyncio.run(
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
@@ -2534,7 +2534,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
                 with_gui=args.gui,
             ),
         ),
-        "step7": lambda: asyncio.run(
+        "step07": lambda: asyncio.run(
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
@@ -2544,7 +2544,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
                 with_gui=args.gui,
             ),
         ),
-        "step8": lambda: asyncio.run(
+        "step08": lambda: asyncio.run(
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,
@@ -2564,7 +2564,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
                 with_gui=args.gui,
             ),
         ),
-        "step9": lambda: asyncio.run(
+        "step09": lambda: asyncio.run(
             launcher.run_step_based_training_with_validation(
                 args.symbol,
                 args.exchange,

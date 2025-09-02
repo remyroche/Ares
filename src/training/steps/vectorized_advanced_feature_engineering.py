@@ -3927,23 +3927,23 @@ class VectorizedAdvancedFeatureEngineering:
         # Use shift(1) to avoid NaN in first row
             features["adaptive_sma_slope"] = (adaptive_sma - adaptive_sma.shift(1)).fillna(0)
 
-        # Adaptive RSI
+            # Adaptive RSI
             adaptive_rsi_period = (14 * volatility).clip(5, 30)
-        self.logger.debug(
+            self.logger.debug(
                 f"🔍 Adaptive RSI period range: {adaptive_rsi_period.min():.1f} to {adaptive_rsi_period.max():.1f}",
             )
 
-        # Convert to int safely after handling non-finite values
-        try:
+            # Convert to int safely after handling non-finite values
+            try:
                 adaptive_rsi_period = adaptive_rsi_period.astype(int)
-        self.logger.debug(
+                self.logger.debug(
                     "🔍 Successfully converted adaptive_rsi_period to int",
                 )
-        except Exception as e:
-        self.logger.warning(
+            except Exception as e:
+                self.logger.warning(
                     f"⚠️ Error converting adaptive_rsi_period to int: {e}, using default values",
                 )
-        self.logger.debug(
+                self.logger.debug(
                     f"🔍 Adaptive_rsi_period sample values: {adaptive_rsi_period.head().tolist()}",
                 )
                 adaptive_rsi_period = pd.Series(14, index=close.index, dtype=int)
@@ -3991,56 +3991,56 @@ class VectorizedAdvancedFeatureEngineering:
         self, features: dict[str, Any], ) -> dict[str, Any]:
         """Select optimal features based on variance and correlation."""
         try:
-        if not features:
-        return features
+            if not features:
+                return features
 
-        # Convert to DataFrame for analysis
+            # Convert to DataFrame for analysis
             df = pd.DataFrame(features)
 
-        # Remove constant features with a more appropriate threshold for financial data
-        # Use a more reasonable threshold for financial time series data
-        # Increased threshold to be less aggressive - financial data often has small but meaningful variations
+            # Remove constant features with a more appropriate threshold for financial data
+            # Use a more reasonable threshold for financial time series data
+            # Increased threshold to be less aggressive - financial data often has small but meaningful variations
             variance = df.var()
 
-        # More lenient threshold for financial data - many features have small but meaningful variations
-        # Use 1e-8 instead of 1e-12 to be less aggressive
+            # More lenient threshold for financial data - many features have small but meaningful variations
+            # Use 1e-8 instead of 1e-12 to be less aggressive
             non_constant = variance[
                 variance > 1e-8
             ].index.tolist()
 
-        if len(non_constant) < len(features):
+            if len(non_constant) < len(features):
                 constant_features = [
                     col for col in features if col not in non_constant
                 ]
 
-        # Only log if we're removing a significant number of features
-        if len(constant_features) > 5:
-        self.logger.info(
+                # Only log if we're removing a significant number of features
+                if len(constant_features) > 5:
+                    self.logger.info(
                         f"🗑️ Removed {len(constant_features)} constant features: {constant_features[:5]}... (showing first 5)",
                     )
                 elif len(constant_features) > 0:
-        self.logger.info(
+                    self.logger.info(
                         f"🗑️ Removed {len(constant_features)} constant features: {constant_features}",
                     )
 
-        self.logger.info(
+                self.logger.info(
                     f"📊 Remaining features: {len(non_constant)} out of {len(features)} total",
                 )
 
-        # Log details about the removed features for debugging
-        for feature in constant_features:
-        if feature in variance.index:
+                # Log details about the removed features for debugging
+                for feature in constant_features:
+                    if feature in variance.index:
                         feature_variance = variance[feature]
-        self.logger.debug(
+                        self.logger.debug(
                             f"🔍 Removed feature '{feature}' with variance: {feature_variance:.2e}",
                         )
             else:
-        self.logger.info(
+                self.logger.info(
                     f"✅ No constant features found - all {len(features)} features have sufficient variance",
                 )
 
-        # Select non-constant features
-        return {
+            # Select non-constant features
+            return {
                 col: features[col] for col in non_constant if col in features
             }
 

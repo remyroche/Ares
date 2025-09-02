@@ -1,138 +1,269 @@
-# Code Quality Tools
+# Code Quality Validation Tools
 
-A comprehensive suite of Python code quality analysis, auto-fixing, and reporting tools.
+This directory contains comprehensive tools for validating code quality in Python projects, with a specific focus on function existence, parameter validation, and async/await usage.
 
-## Features
+## Tools Overview
 
-### 🔧 Auto-Fixers
-- **Syntax Auto-Fix**: Comprehensive Python syntax correction using multiple tools
-- **Code Formatting**: Black, isort, autopep8, and yapf integration
-- **Import Organization**: Automatic import sorting and organization
-- **Style Consistency**: Enforce consistent coding standards
+### 1. Comprehensive Code Review (`comprehensive_code_review.py`)
+A full-featured code quality analyzer that checks:
+- **Function existence and import validation**
+- **Parameter validation and type checking**
+- **Async/await usage verification**
+- **Code style and formatting**
+- **Security vulnerabilities** (hardcoded secrets, SQL injection)
+- **Performance issues** (magic numbers, unused variables)
+- **Documentation quality** (missing docstrings)
+- **Error handling patterns** (bare except clauses)
 
-### 📊 Analysis Tools
-- **Linter Integration**: Flake8, pylint, mypy, and pycodestyle
-- **Code Complexity**: Radon-based complexity analysis
-- **Security Analysis**: Bandit security vulnerability detection
-- **Dead Code Detection**: Vulture-based unused code identification
-- **Dependency Analysis**: Import and package dependency assessment
+### 2. Function Validator (`function_validator.py`)
+A focused tool specifically for function-related validation:
+- **Function existence verification**
+- **Import consistency checking**
+- **Async/await pattern validation**
+- **Function call analysis**
+- **Parameter validation**
 
-### 📈 Reporting
-- **Error Reports**: Per-file and per-directory error counts
-- **Quality Metrics**: Complexity scores, maintainability indices
-- **Visual Reports**: Rich terminal output and HTML reports
-- **Trend Analysis**: Historical quality tracking
+### 3. Runner Script (`run_validation.py`)
+A convenient wrapper that runs both tools with easy configuration.
 
-## Quick Start
+## Installation
 
-1. **Install Dependencies**:
+The tools use only Python standard library modules, so no additional installation is required beyond Python 3.7+.
+
+Optional dependencies (for enhanced functionality):
+```bash
+pip install astroid mypy bandit
+```
+
+## Usage
+
+### Quick Start
+
+Run both validation tools on the current directory:
+```bash
+python code_quality/run_validation.py
+```
+
+### Command Line Options
+
+#### Runner Script
+```bash
+python code_quality/run_validation.py [OPTIONS]
+
+Options:
+  --mode {comprehensive,function,both}  Validation mode to run (default: both)
+  --project-root PATH                   Project root directory (default: current)
+  --output-dir PATH                     Output directory for reports (default: ./reports)
+  --verbose, -v                         Verbose output
+```
+
+#### Individual Tools
+
+**Comprehensive Review:**
+```bash
+python code_quality/comprehensive_code_review.py --project-root /path/to/project --output report.json
+```
+
+**Function Validator:**
+```bash
+python code_quality/function_validator.py --project-root /path/to/project --output validation.json
+```
+
+### Examples
+
+1. **Validate current project:**
    ```bash
-   pip install -r requirements.txt
+   cd /path/to/your/project
+   python code_quality/run_validation.py
    ```
 
-2. **Run Auto-Fix**:
+2. **Run only function validation:**
    ```bash
-   python -m code_quality.fixers.auto_fixer --path /path/to/your/code
+   python code_quality/run_validation.py --mode function
    ```
 
-3. **Generate Quality Report**:
+3. **Custom output directory:**
    ```bash
-   python -m code_quality.reporters.quality_reporter --path /path/to/your/code
+   python code_quality/run_validation.py --output-dir ./my_reports
    ```
 
-4. **Analyze Dependencies**:
+4. **Exclude specific patterns:**
    ```bash
-   python -m code_quality.analyzers.dependency_analyzer --path /path/to/your/code
+   python code_quality/comprehensive_code_review.py --exclude "*/tests/*" "*/venv/*"
    ```
 
-## Tool Categories
+## What Gets Checked
 
-### Core (`core/`)
-- Configuration management
-- Common utilities
-- Base classes and interfaces
+### Function Existence
+- ✅ Functions defined in the same file
+- ✅ Functions imported from other modules
+- ✅ Built-in Python functions
+- ❌ Undefined functions (reported as errors)
 
-### Fixers (`fixers/`)
-- `auto_fixer.py`: Main auto-fixing orchestrator
-- `syntax_fixer.py`: Syntax error correction
-- `import_fixer.py`: Import organization
-- `style_fixer.py`: Code style formatting
+### Async/Await Usage
+- ✅ Async functions properly awaited
+- ❌ Async functions called without await (reported as errors)
+- ✅ Proper async function definitions
 
-### Analyzers (`analyzers/`)
-- `linter_analyzer.py`: Linting and syntax analysis
-- `complexity_analyzer.py`: Code complexity metrics
-- `dead_code_analyzer.py`: Unused code detection
-- `dependency_analyzer.py`: Import and package analysis
-- `security_analyzer.py`: Security vulnerability detection
+### Parameter Validation
+- ✅ Function argument counts
+- ✅ Default parameter values
+- ⚠️ Functions with too many arguments (warnings)
 
-### Reporters (`reporters/`)
-- `quality_reporter.py`: Comprehensive quality reports
-- `error_reporter.py`: Error summary and statistics
-- `html_reporter.py`: HTML-formatted reports
-- `trend_reporter.py`: Historical quality tracking
+### Import Consistency
+- ✅ Import statement validation
+- ⚠️ Potential naming conflicts
+- ✅ Import path verification
 
-### Utils (`utils/`)
-- File processing utilities
-- Output formatting
-- Configuration helpers
+### Code Style
+- ✅ Line length limits (120 characters)
+- ✅ Trailing whitespace
+- ✅ File encoding (UTF-8)
+- ✅ File ending with newline
+- ✅ Naming conventions (snake_case for functions, PascalCase for classes)
+
+### Security
+- ❌ Hardcoded secrets in function calls
+- ❌ Potential SQL injection vulnerabilities
+- ⚠️ Bare except clauses
+
+### Documentation
+- ⚠️ Missing function docstrings
+- ⚠️ Missing class docstrings
+
+## Output
+
+Each tool generates two types of reports:
+
+### 1. JSON Report
+Detailed machine-readable report with all issues, metadata, and statistics.
+
+### 2. Text Summary
+Human-readable summary grouped by issue type and severity.
+
+### Report Structure
+
+```json
+{
+  "summary": {
+    "project_root": "/path/to/project",
+    "files_processed": 42,
+    "total_issues": 15,
+    "errors": 3,
+    "warnings": 10,
+    "info": 2,
+    "processing_time_seconds": 2.34
+  },
+  "issues": [
+    {
+      "file_path": "src/main.py",
+      "line_number": 25,
+      "issue_type": "missing_await",
+      "severity": "error",
+      "message": "Async function 'fetch_data' is called without await",
+      "suggestion": "Add 'await' before the function call: await fetch_data(...)",
+      "code_snippet": "result = fetch_data(url)"
+    }
+  ],
+  "function_analysis": {
+    "total_calls": 156,
+    "total_definitions": 89,
+    "async_functions": 23
+  }
+}
+```
 
 ## Configuration
 
-Create a `config.yaml` file in your project root:
+### Exclude Patterns
+Default patterns that are automatically excluded:
+- `*/__pycache__/*`
+- `*/.git/*`
+- `*/venv/*`
+- `*/env/*`
+- `*/node_modules/*`
+- `*.pyc`, `*.pyo`, `*.pyd`
 
+### Custom Exclusions
+Add your own exclusion patterns:
+```bash
+python code_quality/comprehensive_code_review.py --exclude "*/tests/*" "*/docs/*"
+```
+
+## Integration
+
+### CI/CD Pipeline
+Add to your CI/CD pipeline:
 ```yaml
-code_quality:
-  auto_fix:
-    enabled: true
-    tools: ["black", "isort", "autopep8"]
-  
-  analysis:
-    linters: ["flake8", "pylint", "mypy"]
-    complexity_threshold: 10
-    security_checks: true
-  
-  reporting:
-    output_format: ["terminal", "html"]
-    include_metrics: true
-    save_reports: true
+# GitHub Actions example
+- name: Run Code Quality Validation
+  run: |
+    python code_quality/run_validation.py --mode both --output-dir ./reports
+    # Fail if there are errors
+    if grep -q '"severity": "error"' ./reports/*.json; then
+      echo "Code quality validation failed!"
+      exit 1
+    fi
 ```
 
-## Examples
+### Pre-commit Hooks
+Add to your pre-commit configuration:
+```yaml
+repos:
+  - repo: local
+    hooks:
+      - id: code-quality-check
+        name: Code Quality Validation
+        entry: python code_quality/function_validator.py
+        language: system
+        types: [python]
+```
 
-### Fix All Issues in a Directory
+## Customization
+
+### Adding New Checks
+Extend the tools by subclassing the visitor classes:
+
 ```python
-from code_quality.fixers.auto_fixer import AutoFixer
-
-fixer = AutoFixer("/path/to/code")
-fixer.fix_all()
+class CustomVisitor(FunctionValidatorVisitor):
+    def visit_Call(self, node):
+        # Add your custom logic here
+        super().visit_Call(node)
 ```
 
-### Generate Quality Report
+### Custom Issue Types
+Add new issue types by extending the issue classes:
+
 ```python
-from code_quality.reporters.quality_reporter import QualityReporter
-
-reporter = QualityReporter("/path/to/code")
-report = reporter.generate_report()
-reporter.save_report("quality_report.html")
+@dataclass
+class CustomIssue(FunctionIssue):
+    custom_field: str
 ```
 
-### Analyze Dependencies
-```python
-from code_quality.analyzers.dependency_analyzer import DependencyAnalyzer
+## Troubleshooting
 
-analyzer = DependencyAnalyzer("/path/to/code")
-dependencies = analyzer.analyze()
-analyzer.generate_report()
-```
+### Common Issues
+
+1. **Import Errors**: Make sure you're running from the project root
+2. **Permission Errors**: Check file permissions for the target directory
+3. **Memory Issues**: For very large projects, consider running on subsets
+
+### Performance Tips
+
+- Use `--exclude` to skip unnecessary directories
+- Run on specific subdirectories for focused analysis
+- Use the focused function validator for quick checks
 
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure all tests pass
-5. Submit a pull request
+To add new validation rules:
+
+1. Identify the AST node type to check
+2. Add a new visitor method in the appropriate visitor class
+3. Implement the validation logic
+4. Add appropriate issue reporting
+5. Update tests and documentation
 
 ## License
 
-MIT License - see LICENSE file for details.
+This code quality validation tool is part of the Ares Trading Bot project and follows the same licensing terms.

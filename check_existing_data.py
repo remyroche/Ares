@@ -35,10 +35,9 @@ def check_existing_data():
                     print(f"Error reading {file_path}: {e}")
 
             if latest_ts:
-    pass  # TODO: Add proper implementation
                 latest_date=datetime.fromtimestamp(
                     latest_ts / 1000,
-                    tz, UTC=UTC).date()
+                    tz=UTC).date()
                 print(f"Latest timestamp: {latest_ts}")
                 print(f"Latest date: {latest_date}")
             else:

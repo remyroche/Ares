@@ -5,7 +5,7 @@ Download Aggtrades Range: 2025-05-01 to 2025-08-18
 This script downloads aggtrades data for the gap between existing files.
 """
 
-from backtesting.ares_data_downloader_optimized import (DownloadConfig), OptimizedDataDownloader)
+from backtesting.ares_data_downloader_optimized import DownloadConfig, OptimizedDataDownloader
 from datetime import datetime, timedelta
 from pathlib import Path
 import asyncio
@@ -15,7 +15,7 @@ import sys
 import time
 
 # Add project root to path
-project_root, Path(__file__).parent
+project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 # Setup logging
@@ -28,7 +28,7 @@ logger=logging.getLogger(__name__)
 shutdown_requested=False
 
 
-def signal_handler(signum = frame):
+def signal_handler(signum, frame):
     """Handle interrupt signals gracefully"""
     global shutdown_requested
     print(f"\n⚠️ Received signal {signum}. Gracefully shutting down...")
@@ -36,11 +36,11 @@ def signal_handler(signum = frame):
 
 
 # Register signal handlers
-signal.signal(signal.SIGINT = signal_handler)
-signal.signal(signal.SIGTERM=signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
 
-async def download_aggtrades_range(start_date: str=end_date: str) -> bool:
+async def download_aggtrades_range(start_date: str, end_date: str) -> bool:
     """Download aggtrades data for a date range"""
     if shutdown_requested:
         print("⚠️ Download cancelled due to shutdown request")
@@ -50,12 +50,13 @@ async def download_aggtrades_range(start_date: str=end_date: str) -> bool:
     print("=" * 80)
 
     try:
-        config=DownloadConfig(
+        config = DownloadConfig(
             symbol="ETHUSDT",
             exchange="BINANCE",
             interval="1m",
             lookback_years=2,
-            start_date_str, start_date=end_date_str=end_date,
+            start_date_str=start_date,
+            end_date_str=end_date,
         )
 
         downloader=OptimizedDataDownloader(config)

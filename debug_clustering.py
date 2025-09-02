@@ -75,8 +75,9 @@ def test_clustering():
 
         # Test clustering
         try:
-            agg=AgglomerativeClustering(
-                n_clusters, n_clusters=metric="precomputed",
+            agg = AgglomerativeClustering(
+                n_clusters=n_clusters,
+                affinity="precomputed",
                 linkage="average",
             )
             labels=agg.fit_predict(dist)

@@ -12,14 +12,15 @@ import pandas as pd
 
 # Set up logging
 logging.basicConfig(
-    level, logging.INFO,
-    format, "%(asctime)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
 )
 logger=logging.getLogger(__name__)
 
 
 def analyze_feature_variance(
-    features_df: pd.DataFrame=std_threshold: float = 1e-6,
+    features_df: pd.DataFrame,
+    std_threshold: float = 1e-6,
 ) -> dict[str, Any]:
     """
     Analyze feature variance and identify low variance features.

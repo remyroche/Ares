@@ -29,7 +29,7 @@ def analyze_data_availability() -> None:
     aggtrades_dates.sort()
 
     if aggtrades_dates:
-    pass  # TODO: Add proper implementation
+        pass  # TODO: Add proper implementation
     # Analyze klines data
     klines_files=list(
         data_cache_path.glob("klines_BINANCE_ETHUSDT_*_consolidated.parquet"),
@@ -73,11 +73,11 @@ def analyze_data_availability() -> None:
     target_years=[2023, 2024, 2025]
 
     for year in target_years:
-    pass  # TODO: Add proper implementation
+        pass  # TODO: Add proper implementation
         # Aggtrades analysis for this year
         year_aggtrades=[d for d in aggtrades_dates if d.year == year]
         if year_aggtrades:
-    pass  # TODO: Add proper implementation
+            pass  # TODO: Add proper implementation
             # Find gaps
             expected_dates = []
             current_date = datetime(year, 1, 1).date()
@@ -90,7 +90,7 @@ def analyze_data_availability() -> None:
             missing_dates=[d for d in expected_dates if d not in year_aggtrades]
             if missing_dates:
                 if len(missing_dates) <= 10:
-    pass  # TODO: Add proper implementation
+                    pass  # TODO: Add proper implementation
                 else:
                     pass
         else:
@@ -103,7 +103,7 @@ def analyze_data_availability() -> None:
                 df["timestamp"] = pd.to_datetime(df["timestamp"])
                 year_klines=df[df["timestamp"].dt.year == year]
                 if len(year_klines) > 0:
-    pass  # TODO: Add proper implementation
+                    pass  # TODO: Add proper implementation
                 else:
                     pass
             except Exception:
@@ -112,7 +112,7 @@ def analyze_data_availability() -> None:
         # Futures analysis for this year
         year_futures=[p for p in futures_periods if p.startswith(str(year))]
         if year_futures:
-    pass  # TODO: Add proper implementation
+            pass  # TODO: Add proper implementation
         else:
             pass
 
@@ -125,7 +125,7 @@ def analyze_data_availability() -> None:
     # Detailed gap analysis
 
     for year in target_years:
-    pass  # TODO: Add proper implementation
+        pass  # TODO: Add proper implementation
         # Aggtrades gaps
         year_aggtrades=[d for d in aggtrades_dates if d.year == year]
         if year_aggtrades:
@@ -156,7 +156,9 @@ def analyze_data_availability() -> None:
                 df["timestamp"] = pd.to_datetime(df["timestamp"])
                 year_klines=df[df["timestamp"].dt.year == year]
                 if len(year_klines) > 0:
-    pass  # TODO: Add proper implementation
+                    pass  # TODO: Add proper implementation
+                if len(year_klines) > 0:
+                    pass  # TODO: Add proper implementation
                 else:
                     pass
             except Exception:
@@ -165,7 +167,7 @@ def analyze_data_availability() -> None:
         # Futures gaps
         year_futures=[p for p in futures_periods if p.startswith(str(year))]
         if year_futures:
-    pass  # TODO: Add proper implementation
+            pass  # TODO: Add proper implementation
         else:
             pass
 

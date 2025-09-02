@@ -257,7 +257,7 @@ class CleanGapFiller:
         files = list(self.data_cache_path.glob(pattern))
 
         if not files:
-            return total_files, 0
+            return 0, 0
         total_files_with_gaps = 0
         total_gaps = 0
         total_filled = 0
@@ -265,7 +265,7 @@ class CleanGapFiller:
         total_calls = 0
 
         for file_path in files:
-    pass  # TODO: Add proper implementation
+            pass  # TODO: Add proper implementation
             gaps = self.detect_gaps_in_file(file_path)
             total_files += 1
 
@@ -274,7 +274,7 @@ class CleanGapFiller:
                 total_gaps += len(gaps)
 
                 for _i, gap in enumerate(gaps):
-    pass  # TODO: Add proper implementation
+                    pass  # TODO: Add proper implementation
                     result=await self.fill_gap_until_complete(gap, symbol)
                     total_calls += result.get("calls_made", 0)
 

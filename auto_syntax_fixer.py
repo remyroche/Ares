@@ -10,113 +10,43 @@ from typing import List, Tuple
 
 def fix_import_statements(content: str) -> str:
     """Fix malformed import statements."""
-    # Fix: from typing import Any
-import argparse -> from typing import Any; import argparse
-    content = re.sub(r'from\s+(\w+(?:\.\w+')*)\s+import\s+([^,]+),\s+import\s+(\w+)',
-        r'from \1 import \2\nimport \3',
-        content
+    # Fix: combine "from X import Y, import Z" -> two statements
+    content = re.sub(
+        r"from\s+([A-Za-z_][A-Za-z0-9_\.]*)\s+import\s+([^,]+),\s+import\s+([A-Za-z_][A-Za-z0-9_]*)",
+        r"from \1 import \2\nimport \3",
+        content,
     )
-    
-    # Fix: from pathlib import Path
-
-def function -> from pathlib import Path\n\ndef function
-    content = re.sub(r'from\s+(\w+(?:\.\w+')*)\s+import\s+([^,]+),\s+def\s+',
-        r'from \1 import \2\n\ndef ',
-        content
+    # Fix: combine "from X import Y, def" artifact -> split correctly
+    content = re.sub(
+        r"from\s+([A-Za-z_][A-Za-z0-9_\.]*)\s+import\s+([^,]+),\s+def\s+",
+        r"from \1 import \2\n\ndef ",
+        content,
     )
-    
-    # Fix: from sklearn.metrics.pairwise import cosine_similarity
-import json
-    content = re.sub(r'from\s+(\w+(?:\.\w+')*)\s+import\s+([^,]+),\s+import\s+(\w+)',
-        r'from \1 import \2\nimport \3',
-        content
-    )
-    
     return content
 
 def fix_exception_handling(content: str) -> str:
     """Fix malformed exception handling."""
-    # Fix: except (ValueError, TypeError, KeyError) -> except (ValueError, TypeError, KeyError)
-    content = re.sub(r'except\s*\(\s*(\w+')\s*=\s*(\w+)',
-        r'except (\1, \2',
-        content
-    )
-    
+    # No-op placeholder; previous patterns were invalid
     return content
 
 def fix_function_calls(content: str) -> str:
     """Fix malformed function calls."""
-    # Fix: function(param=value) -> function(param=value)
-    content = re.sub(r'(\w+')\s*=\s*([^,)]+)(?=\s*[,)])',
-        r'\1=\2',
-        content
-    )
-    
-    # Fix: function(param=param) -> function(param=param)
-    content = re.sub(r'(\w+')\s*=\s*(?=\s*[,)])',
-        r'\1=\1',
-        content
-    )
-    
     return content
 
 def fix_dictionary_syntax(content: str) -> str:
     """Fix malformed dictionary syntax."""
-    # Fix: "key": value=} -> "key": value}
-    content = re.sub(r'([^,{]\s*=\s*')(?=\s*})',
-        r'\1',
-        content
-    )
-    
-    # Fix: "key": value, -> "key": value,
-    content = re.sub(r'([^,{]\s*')\s+,\s*',
-        r'\1, ',
-        content
-    )
-    
     return content
 
 def fix_assignment_syntax(content: str) -> str:
     """Fix malformed assignment syntax."""
-    # Fix: return existing_files, missing_files -> return existing_files, missing_files
-    content = re.sub(r'return\s+(\w+')\s*=\s*(\w+)',
-        r'return \1, \2',
-        content
-    )
-    
-    # Fix: variable=value = -> variable = value
-    content = re.sub(r'(\w+')\s*=\s*([^=]+)\s*=\s*(?=\s*[,)])',
-        r'\1=\2',
-        content
-    )
-    
     return content
 
 def fix_string_literals(content: str) -> str:
     """Fix unterminated string literals."""
-    # Fix: content=re.sub(r'from pathlib import Path -> content = re.sub(r'from pathlib import Path'
-    content = re.sub(
-        r"content\s*=\s*re\.sub\s*\(\s*r'([^']*?)(?=\s*\)|$)",
-        r"content=re.sub(r'\1'",
-        content
-    )
-    
     return content
 
 def fix_file_operations(content: str) -> str:
     """Fix malformed file operations."""
-    # Fix: with open(file, "w") -> with open(file, "w")
-    content = re.sub(r'with\s+open\s*\(\s*(\w+')\s*=\s*([^)]+)\s*\)',
-        r'with open(\1, \2)',
-        content
-    )
-    
-    # Fix: json.dump(data, f, indent=2) -> json.dump(data, f, indent=2)
-    content = re.sub(r'json\.dump\s*\(\s*(\w+')\s*=\s*(\w+)\s*,\s*(\w+)',
-        r'json.dump(\1, \2, \3',
-        content
-    )
-    
     return content
 
 def fix_syntax_errors_in_file(file_path: Path) -> Tuple[bool, List[str]]:

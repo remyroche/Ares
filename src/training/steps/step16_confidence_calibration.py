@@ -28,8 +28,8 @@ class RegimeAwareConfidenceCalibrationStep:
     """Step 16: Regime-Aware Confidence Calibration for individual models and ensembles."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config, config
-        self.logger, system_logger
+        self.config = config
+        self.logger = system_logger
         
         # Initialize regime-specific configuration
         self.regime_config = self._initialize_regime_config()
@@ -1120,7 +1120,7 @@ async def run_step(
     try:
         # Create step instance
         config = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}
-        step, RegimeAwareConfidenceCalibrationStep(config)
+        step = RegimeAwareConfidenceCalibrationStep(config)
         await step.initialize()
 
         # Execute step

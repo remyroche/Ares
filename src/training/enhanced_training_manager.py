@@ -196,6 +196,12 @@ class EnhancedTrainingManager:
             "step13_monte_carlo_validation",   # Monte Carlo validation
             "step14_ab_testing",               # A/B testing
             "step15_saving",                   # Save final models
+            "step16_confidence_calibration",   # Extended confidence calibration
+            "step17_final_parameters_optimization", # Extended final parameters optimization
+            "step18_walk_forward_validation",  # Extended walk forward validation
+            "step19_monte_carlo_validation",   # Extended Monte Carlo validation
+            "step20_ab_testing",               # Extended A/B testing
+            "step21_saving",                   # Extended saving results
         ]
 
         # Define critical artifact patterns for each step
@@ -262,6 +268,24 @@ class EnhancedTrainingManager:
             ],
             "step15_saving": [
                 "data/training/{exchange}_{symbol}_{timeframe}_final_models.pkl",
+            ],
+            "step16_confidence_calibration": [
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_calibration_results.pkl",
+            ],
+            "step17_final_parameters_optimization": [
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_optimization_results.json",
+            ],
+            "step18_walk_forward_validation": [
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_walk_forward_results.json",
+            ],
+            "step19_monte_carlo_validation": [
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_monte_carlo_results.json",
+            ],
+            "step20_ab_testing": [
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_ab_test_results.json",
+            ],
+            "step21_saving": [
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_final_models.pkl",
             ],
         }
 
@@ -344,6 +368,30 @@ class EnhancedTrainingManager:
             "step15_saving": [
                 "data/training/{exchange}_{symbol}_{timeframe}_final_models_*.pkl",
                 "data/training/{exchange}_{symbol}_{timeframe}_final_results_*.json",
+            ],
+            "step16_confidence_calibration": [
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_calibration_*.pkl",
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_calibration_*.json",
+            ],
+            "step17_final_parameters_optimization": [
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_optimization_*.json",
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_best_params_*.json",
+            ],
+            "step18_walk_forward_validation": [
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_walk_forward_*.json",
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_validation_*.parquet",
+            ],
+            "step19_monte_carlo_validation": [
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_monte_carlo_*.json",
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_mc_results_*.parquet",
+            ],
+            "step20_ab_testing": [
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_ab_test_*.json",
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_ab_results_*.parquet",
+            ],
+            "step21_saving": [
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_final_models_*.pkl",
+                "data/training/{exchange}_{symbol}_{timeframe}_extended_final_results_*.json",
             ],
         }
 
@@ -844,6 +892,12 @@ class EnhancedTrainingManager:
                 "step13_monte_carlo_validation": 8,
                 "step14_ab_testing": 5,
                 "step15_saving": 2,
+                "step16_confidence_calibration": 3,
+                "step17_final_parameters_optimization": 15,
+                "step18_walk_forward_validation": 8,
+                "step19_monte_carlo_validation": 8,
+                "step20_ab_testing": 5,
+                "step21_saving": 2,
             }
         return {
             "step1_data_collection": 15,
@@ -863,6 +917,12 @@ class EnhancedTrainingManager:
             "step13_monte_carlo_validation": 60,
             "step14_ab_testing": 30,
             "step15_saving": 5,
+            "step16_confidence_calibration": 10,
+            "step17_final_parameters_optimization": 240,
+            "step18_walk_forward_validation": 60,
+            "step19_monte_carlo_validation": 60,
+            "step20_ab_testing": 30,
+            "step21_saving": 5,
         }
 
     def _optimize_memory_usage(self) -> None:
@@ -2969,6 +3029,228 @@ class EnhancedTrainingManager:
                             "🎉 Step 15: Saving Results completed successfully and validation passed",
                         )
 
+                # Step 16: Extended Confidence Calibration
+                should_run_step16 = _should_run("step16_confidence_calibration")
+                if not should_run_step16:
+                    self.logger.info(
+                        f"⏭️ Skipping Step 16: Extended Confidence Calibration (starting from '{start_step_key}')",
+                    )
+                    pipeline_state["extended_confidence_calibration"] = {
+                        "status": "SKIPPED",
+                        "success": True, "skipped": True, "reason": f"start_step={start_step_key}",
+                    }
+                else:
+                    with self._timed_step("Step 16: Extended Confidence Calibration", step_times):
+                        self.logger.info("🎯 STEP 16: Extended Confidence Calibration...")
+
+                    # Validate step dependencies before execution
+                    if not await self._validate_step_dependencies("step16_confidence_calibration", pipeline_state):
+                        self.logger.error("❌ Step 16 dependencies not met, skipping")
+                        return False
+
+                    from src.training.steps import step16_confidence_calibration
+
+                    step16_success = await step16_confidence_calibration.run_step(
+                        symbol=symbol, data_dir=data_dir,
+                        timeframe=timeframe, exchange=exchange
+                    )
+                    if not step16_success:
+                        return False
+
+                    # Run validator for Step 16
+                    step16_validation = await self._run_step_validator(
+                        "step16_confidence_calibration", training_input, pipeline_state
+                    )
+                    if step16_validation and step16_validation.get("validation_passed", False):
+                        self.logger.info(
+                            "🎉 Step 16: Extended Confidence Calibration completed successfully and validation passed",
+                        )
+
+                # Step 17: Extended Final Parameters Optimization
+                should_run_step17 = _should_run("step17_final_parameters_optimization")
+                if not should_run_step17:
+                    self.logger.info(
+                        f"⏭️ Skipping Step 17: Extended Final Parameters Optimization (starting from '{start_step_key}')",
+                    )
+                    pipeline_state["extended_final_parameters_optimization"] = {
+                        "status": "SKIPPED",
+                        "success": True, "skipped": True, "reason": f"start_step={start_step_key}",
+                    }
+                else:
+                    with self._timed_step("Step 17: Extended Final Parameters Optimization", step_times):
+                        self.logger.info("🔧 STEP 17: Extended Final Parameters Optimization...")
+
+                    # Validate step dependencies before execution
+                    if not await self._validate_step_dependencies("step17_final_parameters_optimization", pipeline_state):
+                        self.logger.error("❌ Step 17 dependencies not met, skipping")
+                        return False
+
+                    from src.training.steps import step17_final_parameters_optimization
+
+                    step17_success = await step17_final_parameters_optimization.run_step(
+                        symbol=symbol, data_dir=data_dir,
+                        timeframe=timeframe, exchange=exchange
+                    )
+                    if not step17_success:
+                        return False
+
+                    # Run validator for Step 17
+                    step17_validation = await self._run_step_validator(
+                        "step17_final_parameters_optimization", training_input, pipeline_state
+                    )
+                    if step17_validation and step17_validation.get("validation_passed", False):
+                        self.logger.info(
+                            "🎉 Step 17: Extended Final Parameters Optimization completed successfully and validation passed",
+                        )
+
+                # Step 18: Extended Walk Forward Validation
+                should_run_step18 = _should_run("step18_walk_forward_validation")
+                if not should_run_step18:
+                    self.logger.info(
+                        f"⏭️ Skipping Step 18: Extended Walk Forward Validation (starting from '{start_step_key}')",
+                    )
+                    pipeline_state["extended_walk_forward_validation"] = {
+                        "status": "SKIPPED",
+                        "success": True, "skipped": True, "reason": f"start_step={start_step_key}",
+                    }
+                else:
+                    with self._timed_step("Step 18: Extended Walk Forward Validation", step_times):
+                        self.logger.info("🚶 STEP 18: Extended Walk Forward Validation...")
+
+                    # Validate step dependencies before execution
+                    if not await self._validate_step_dependencies("step18_walk_forward_validation", pipeline_state):
+                        self.logger.error("❌ Step 18 dependencies not met, skipping")
+                        return False
+
+                    from src.training.steps import step18_walk_forward_validation
+
+                    step18_success = await step18_walk_forward_validation.run_step(
+                        symbol=symbol, data_dir=data_dir,
+                        timeframe=timeframe, exchange=exchange
+                    )
+                    if not step18_success:
+                        return False
+
+                    # Run validator for Step 18
+                    step18_validation = await self._run_step_validator(
+                        "step18_walk_forward_validation", training_input, pipeline_state
+                    )
+                    if step18_validation and step18_validation.get("validation_passed", False):
+                        self.logger.info(
+                            "🎉 Step 18: Extended Walk Forward Validation completed successfully and validation passed",
+                        )
+
+                # Step 19: Extended Monte Carlo Validation
+                should_run_step19 = _should_run("step19_monte_carlo_validation")
+                if not should_run_step19:
+                    self.logger.info(
+                        f"⏭️ Skipping Step 19: Extended Monte Carlo Validation (starting from '{start_step_key}')",
+                    )
+                    pipeline_state["extended_monte_carlo_validation"] = {
+                        "status": "SKIPPED",
+                        "success": True, "skipped": True, "reason": f"start_step={start_step_key}",
+                    }
+                else:
+                    with self._timed_step("Step 19: Extended Monte Carlo Validation", step_times):
+                        self.logger.info("🎲 STEP 19: Extended Monte Carlo Validation...")
+
+                    # Validate step dependencies before execution
+                    if not await self._validate_step_dependencies("step19_monte_carlo_validation", pipeline_state):
+                        self.logger.error("❌ Step 19 dependencies not met, skipping")
+                        return False
+
+                    from src.training.steps import step19_monte_carlo_validation
+
+                    step19_success = await step19_monte_carlo_validation.run_step(
+                        symbol=symbol, data_dir=data_dir,
+                        timeframe=timeframe, exchange=exchange
+                    )
+                    if not step19_success:
+                        return False
+
+                    # Run validator for Step 19
+                    step19_validation = await self._run_step_validator(
+                        "step19_monte_carlo_validation", training_input, pipeline_state
+                    )
+                    if step19_validation and step19_validation.get("validation_passed", False):
+                        self.logger.info(
+                            "🎉 Step 19: Extended Monte Carlo Validation completed successfully and validation passed",
+                        )
+
+                # Step 20: Extended A/B Testing
+                should_run_step20 = _should_run("step20_ab_testing")
+                if not should_run_step20:
+                    self.logger.info(
+                        f"⏭️ Skipping Step 20: Extended A/B Testing (starting from '{start_step_key}')",
+                    )
+                    pipeline_state["extended_ab_testing"] = {
+                        "status": "SKIPPED",
+                        "success": True, "skipped": True, "reason": f"start_step={start_step_key}",
+                    }
+                else:
+                    with self._timed_step("Step 20: Extended A/B Testing", step_times):
+                        self.logger.info("🧪 STEP 20: Extended A/B Testing...")
+
+                    # Validate step dependencies before execution
+                    if not await self._validate_step_dependencies("step20_ab_testing", pipeline_state):
+                        self.logger.error("❌ Step 20 dependencies not met, skipping")
+                        return False
+
+                    from src.training.steps import step20_ab_testing
+
+                    step20_success = await step20_ab_testing.run_step(
+                        symbol=symbol, data_dir=data_dir,
+                        timeframe=timeframe, exchange=exchange
+                    )
+                    if not step20_success:
+                        return False
+
+                    # Run validator for Step 20
+                    step20_validation = await self._run_step_validator(
+                        "step20_ab_testing", training_input, pipeline_state
+                    )
+                    if step20_validation and step20_validation.get("validation_passed", False):
+                        self.logger.info(
+                            "🎉 Step 20: Extended A/B Testing completed successfully and validation passed",
+                        )
+
+                # Step 21: Extended Saving Results
+                should_run_step21 = _should_run("step21_saving")
+                if not should_run_step21:
+                    self.logger.info(
+                        f"⏭️ Skipping Step 21: Extended Saving Results (starting from '{start_step_key}')",
+                    )
+                    pipeline_state["extended_saving_results"] = {
+                        "status": "SKIPPED",
+                        "success": True, "skipped": True, "reason": f"start_step={start_step_key}",
+                    }
+                else:
+                    with self._timed_step("Step 21: Extended Saving Results", step_times):
+                        self.logger.info("💾 STEP 21: Extended Saving Results...")
+
+                    # Validate step dependencies before execution
+                    if not await self._validate_step_dependencies("step21_saving", pipeline_state):
+                        self.logger.error("❌ Step 21 dependencies not met, skipping")
+                        return False
+
+                    from src.training.steps import step21_saving
+
+                    step21_success = await step21_saving.run_step(
+                        symbol=symbol, data_dir=data_dir,
+                        timeframe=timeframe, exchange=exchange
+                    )
+                    if not step21_success:
+                        return False
+
+                    # Run validator for Step 21
+                    step21_validation = await self._run_step_validator(
+                        "step21_saving", training_input, pipeline_state
+                    )
+                    if step21_validation and step21_validation.get("validation_passed", False):
+                        self.logger.info(
+                            "🎉 Step 21: Extended Saving Results completed successfully and validation passed",
+                        )
+
                 # Calculate total time and summary
                 total_time = time.time() - start_time
                 total_memory = (
@@ -2978,7 +3260,7 @@ class EnhancedTrainingManager:
                 # Log comprehensive summary
                 self.logger.info("=" * 100)
                 self.logger.info(
-                    "🎉 COMPREHENSIVE 15-STEP TRAINING PIPELINE COMPLETED SUCCESSFULLY",
+                    "🎉 COMPREHENSIVE 21-STEP TRAINING PIPELINE COMPLETED SUCCESSFULLY",
                 )
                 self.logger.info("=" * 100)
                 self.logger.info(

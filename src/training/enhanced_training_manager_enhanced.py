@@ -1204,9 +1204,9 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
         
         try:
-            from src.training.steps import step6_hmm_based_training
+            from src.training.steps import step6_feature_generation
             
-            result = await step6_hmm_based_training.run_step(
+            result = await step6_feature_generation.run_step(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
@@ -1233,7 +1233,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report even on failure
             await self._generate_step_report(
-                "step6_hmm_based_training",
+                "step6_feature_generation",
                 None,
                 step_start_time,
                 False,
@@ -1267,9 +1267,9 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
         
         try:
-            from src.training.steps import step7_analyst_enhancement
+            from src.training.steps import step7_matrix_feature_selection
             
-            result = await step7_analyst_enhancement.run_step(
+            result = await step7_matrix_feature_selection.run_step(
                 symbol=symbol,
                 exchange=exchange,
                 timeframe=timeframe,
@@ -1296,7 +1296,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report even on failure
             await self._generate_step_report(
-                "step7_analyst_enhancement",
+                "step7_matrix_feature_selection",
                 None,
                 step_start_time,
                 False,
@@ -2740,41 +2740,41 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         
         return warnings
     
-    def _generate_hmm_training_warnings(self, result: Any) -> List[str]:
-        """Generate warnings for HMM training."""
+    def _generate_feature_generation_warnings(self, result: Any) -> List[str]:
+        """Generate warnings for feature generation (Step 6)."""
         warnings = []
         
         try:
-            if result.get("model_performance", {}).get("overfitting_score", {}).get("is_overfitting") == True:
-                warnings.append("Model shows signs of overfitting")
+            if result.get("feature_generation_analysis", {}).get("feature_increase", 0) > 200:
+                warnings.append("Large increase in feature count may cause overfitting")
             
-            if result.get("training_analysis", {}).get("convergence_status") == False:
-                warnings.append("Model did not converge")
+            if result.get("feature_quality", {}).get("feature_relevance", 0) < 0.5:
+                warnings.append("Low feature relevance in generated features")
             
-            if result.get("model_performance", {}).get("validation_accuracy", 0) < 0.5:
-                warnings.append("Low validation accuracy")
+            if result.get("generation_performance", {}).get("generation_time", 0) > 300:
+                warnings.append("Feature generation took longer than expected")
                 
         except Exception:
-            warnings.append("Could not generate HMM training warnings")
+            warnings.append("Could not generate feature generation warnings")
         
         return warnings
     
-    def _generate_analyst_enhancement_warnings(self, result: Any) -> List[str]:
-        """Generate warnings for analyst enhancement."""
+    def _generate_matrix_selection_warnings(self, result: Any) -> List[str]:
+        """Generate warnings for matrix feature selection (Step 7)."""
         warnings = []
         
         try:
-            if result.get("performance_impact", {}).get("accuracy_improvement", 0) < 0.01:
-                warnings.append("Minimal accuracy improvement from enhancement")
+            if result.get("selection_analysis", {}).get("reduction_ratio", 0) > 0.8:
+                warnings.append("High feature reduction may lose important information")
             
-            if result.get("enhancement_quality", {}).get("feature_relevance", 0) < 0.5:
-                warnings.append("Low feature relevance in enhancements")
+            if result.get("performance_impact", {}).get("accuracy_change", 0) < -0.02:
+                warnings.append("Feature selection caused significant accuracy drop")
             
-            if result.get("enhancement_analysis", {}).get("feature_increase", 0) > 100:
-                warnings.append("Large increase in feature count may cause overfitting")
+            if result.get("selection_quality", {}).get("selection_stability", 0) < 0.7:
+                warnings.append("Low selection stability across different samples")
                 
         except Exception:
-            warnings.append("Could not generate analyst enhancement warnings")
+            warnings.append("Could not generate matrix selection warnings")
         
         return warnings
     
@@ -3139,9 +3139,9 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
         
         try:
-            from src.training.steps import step6_hmm_based_training
+            from src.training.steps import step6_feature_generation
             
-            result = await step6_hmm_based_training.run_step(
+            result = await step6_feature_generation.run_step(
                 enhanced_training_input=enhanced_training_input,
                 feature_config=feature_config,
                 config=self.config,
@@ -3190,9 +3190,9 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         step_warnings = []
         
         try:
-            from src.training.steps import step7_analyst_enhancement
+            from src.training.steps import step7_matrix_feature_selection
             
-            result = await step7_analyst_enhancement.run_step(
+            result = await step7_matrix_feature_selection.run_step(
                 enhanced_training_input=enhanced_training_input,
                 config=self.config,
             )

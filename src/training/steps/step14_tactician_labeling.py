@@ -25,7 +25,7 @@ import pandas as pd
 from src.training.data_sharing_manager import get_data_sharing_manager
 from src.training.steps.unified_data_loader import get_unified_data_loader
 from src.utils.error_handler import handle_errors
-from src.utils.logger import system_logger
+from src.utils.logger import system_logger, dependency_status
 
 # Preference order for selecting analyst ensembles
 ENSEMBLE_PREFERENCE_ORDER = ("stacking_cv", "dynamic_weighting", "voting")
@@ -93,6 +93,9 @@ class RegimeAwareTacticianLabeler:
         self.timeframes = self.config.get("timeframes", ["1m", "5m"])
         self.primary_timeframe = self.config.get("primary_timeframe", "1m")
         self.secondary_timeframe = self.config.get("secondary_timeframe", "5m")
+
+        # Labeling mode
+        self.binary_classification = self.config.get("binary_classification", True)
 
         # Log configuration
         self.logger.info(f"🔧 Enhanced Regime-Aware Tactician Configuration:")
@@ -689,11 +692,13 @@ class TacticianLabelingStep:
                 strategic_signals,
             ) = await self._generate_strategic_signals(data_1m, analyst_ensembles)
 
-        # Apply the specialized Tactician Triple Barrier
-            labeler, RegimeAwareTacticianLabeler(self.config)
-            labeled_data, await labeler.apply_regime_specific_labeling(data_with_features, "composite_cluster_id")
-        with contextlib.suppress(Exception):
-        self.logger.info(
+            # Apply the specialized Tactician Triple Barrier
+            labeler = RegimeAwareTacticianLabeler(self.config)
+            labeled_data = await labeler.apply_regime_specific_labeling(
+                data_with_features, "composite_cluster_id"
+            )
+            with contextlib.suppress(Exception):
+                self.logger.info(
                     f"Strategic signals summary: total={len(strategic_signals)}, nonzero={(strategic_signals != 0).sum()}"
                 )
 

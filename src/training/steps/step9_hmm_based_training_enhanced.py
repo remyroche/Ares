@@ -115,6 +115,15 @@ class EnhancedHMMBasedTrainingStep:
         self.regime_models = {}
         self.regime_validation_results = {}
 
+        # Validation configuration (default fallback)
+        self.validation_config = {
+            "n_splits": 5,
+            "test_size": 0.2,
+            "validation_size": 0.2,
+            "min_samples_per_split": 1000,
+            "regime_aware_splitting": True,
+        }
+
         self.logger.info("🎯 Enhanced HMM-Based Training Step initialized with regime-specific logic")
 
     def print(self, message: str) -> None:
@@ -294,6 +303,37 @@ class EnhancedHMMBasedTrainingStep:
             self.logger.error(f"❌ Error optimizing hyperparameters for regime {regime}: {e}")
             return self._get_default_params()
 
+    async def _get_regime_specific_params(self, regime: str) -> Dict[str, Any]:
+        """Provide initial parameter ranges for a given regime (placeholder)."""
+        try:
+            return {
+                "learning_rate": [0.01, 0.05, 0.1],
+                "max_depth": [4, 6, 8],
+                "n_estimators": [100, 200, 400],
+                "regime": str(regime),
+            }
+        except Exception:
+            return self._get_default_params()
+
+    async def _optimize_params_for_regime(
+        self, regime_features: pd.DataFrame, regime_params: Dict[str, Any], regime: str
+    ) -> Dict[str, Any]:
+        """Select a reasonable parameter set from ranges (lightweight placeholder)."""
+        try:
+            # Simple heuristic: pick middle values
+            return {
+                "learning_rate": float(regime_params.get("learning_rate", [0.05])[0 if len(regime_params.get("learning_rate", [])) == 1 else 1]),
+                "max_depth": int(regime_params.get("max_depth", [6])[0 if len(regime_params.get("max_depth", [])) == 1 else 1]),
+                "n_estimators": int(regime_params.get("n_estimators", [200])[0 if len(regime_params.get("n_estimators", [])) == 1 else 1]),
+                "regime": str(regime),
+            }
+        except Exception:
+            return self._get_default_params()
+
+    def _get_default_params(self) -> Dict[str, Any]:
+        """Default hyperparameters as a safe fallback."""
+        return {"learning_rate": 0.1, "max_depth": 6, "n_estimators": 100}
+
     async def _train_model_with_regime_params(
         self, regime_features: pd.DataFrame, regime_params: dict, regime: str
     ) -> Any:
@@ -468,7 +508,7 @@ class EnhancedHMMBasedTrainingStep:
                     os.makedirs(regime_save_path, exist_ok=True)
                     
                     # Save regime-specific model
-                    await self.save_enhanced_models(results, regime_save_path)
+                    self.save_enhanced_models(results, regime_save_path)
                     
                     self.logger.info(f"✅ Saved regime {regime} models to {regime_save_path}")
                     
@@ -1010,6 +1050,27 @@ class EnhancedHMMBasedTrainingStep:
             
         except Exception as e:
             self.logger.error(f"❌ Failed to load enhanced models: {e}")
+
+    async def _apply_regime_specific_feature_selection(
+        self, features_df: pd.DataFrame, regime: str
+    ) -> pd.DataFrame:
+        """Apply simple regime-aware feature selection placeholder.
+
+        Drops all-zero columns and ensures numeric dtype; keeps columns with variance.
+        """
+        try:
+            df = features_df.copy()
+            # Keep numeric columns only
+            df = df.select_dtypes(include=[np.number])
+            # Drop columns with zero variance
+            variances = df.var(axis=0, ddof=0)
+            keep_cols = [c for c, v in variances.items() if np.isfinite(v) and v > 0]
+            if keep_cols:
+                df = df[keep_cols]
+            return df
+        except Exception as e:
+            self.logger.warning(f"⚠️ Feature selection fallback for regime {regime}: {e}")
+            return features_df
 
 
 async def run_enhanced_step(

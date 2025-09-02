@@ -2568,29 +2568,17 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                         "short_positions": len([h for h in lower_hits_with_upper_first if h["position_type"] == "short"])
                     }
                 },
-                "price_deviation_analysis": {
-                    "upper_barrier_deviations": {
-                        "total_deviations": len(upper_barrier_price_deviations),
-                        "mean_deviation": sum(upper_barrier_price_deviations) / len(upper_barrier_price_deviations) if upper_barrier_price_deviations else 0,
-                        "max_deviation": max(upper_barrier_price_deviations) if upper_barrier_price_deviations else 0,
-                        "min_deviation": min(upper_barrier_price_deviations) if upper_barrier_price_deviations else 0,
-                        "deviation_percentiles": self._calculate_percentiles(upper_barrier_price_deviations),
-                        "deviation_distribution": {
-                            "small_deviations": len([d for d in upper_barrier_price_deviations if d <= 0.01]),  # <= 1%
-                            "medium_deviations": len([d for d in upper_barrier_price_deviations if 0.01 < d <= 0.05]),  # 1-5%
-                            "large_deviations": len([d for d in upper_barrier_price_deviations if d > 0.05])  # > 5%
-                        }
-                    },
-                    "lower_barrier_deviations": {
-                        "total_deviations": len(lower_barrier_price_deviations),
-                        "mean_deviation": sum(lower_barrier_price_deviations) / len(lower_barrier_price_deviations) if lower_barrier_price_deviations else 0,
-                        "max_deviation": max(lower_barrier_price_deviations) if lower_barrier_price_deviations else 0,
-                        "min_deviation": min(lower_barrier_price_deviations) if lower_barrier_price_deviations else 0,
-                        "deviation_percentiles": self._calculate_percentiles(lower_barrier_price_deviations),
-                        "deviation_distribution": {
-                            "small_deviations": len([d for d in lower_barrier_price_deviations if d <= 0.01]),  # <= 1%
-                            "medium_deviations": len([d for d in lower_barrier_price_deviations if 0.01 < d <= 0.05]),  # 1-5%
-                            "large_deviations": len([d for d in lower_barrier_price_deviations if d > 0.05])  # > 5%
+                "upper_barrier_post_hit_analysis": {
+                    "total_post_hit_movements": len(upper_barrier_post_hit_movements),
+                    "mean_post_hit_movement": sum(upper_barrier_post_hit_movements) / len(upper_barrier_post_hit_movements) if upper_barrier_post_hit_movements else 0,
+                    "max_post_hit_movement": max(upper_barrier_post_hit_movements) if upper_barrier_post_hit_movements else 0,
+                    "min_post_hit_movement": min(upper_barrier_post_hit_movements) if upper_barrier_post_hit_movements else 0,
+                    "post_hit_movement_percentiles": self._calculate_percentiles(upper_barrier_post_hit_movements),
+                    "post_hit_movement_distribution": {
+                        "small_movements": len([d for d in upper_barrier_post_hit_movements if d <= 0.01]),  # <= 1%
+                        "medium_movements": len([d for d in upper_barrier_post_hit_movements if 0.01 < d <= 0.05]),  # 1-5%
+                        "large_movements": len([d for d in upper_barrier_post_hit_movements if d > 0.05])  # > 5%
+
                         }
                     }
                 },

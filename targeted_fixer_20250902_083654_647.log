@@ -1,0 +1,12 @@
+2025-09-02 08:36:54,651 - INFO - Processing file: src/pipelines/__init__.py
+2025-09-02 08:36:54,651 - INFO - Performing semantic analysis...
+2025-09-02 08:36:54,651 - INFO - Code quality score: 0.00
+2025-09-02 08:36:54,651 - WARNING - Syntax errors found: 1
+2025-09-02 08:36:54,651 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:36:54,652 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:54,652 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:54,652 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:54,653 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:54,656 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:54,656 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:54,657 - INFO - No fixes needed for: src/pipelines/__init__.py

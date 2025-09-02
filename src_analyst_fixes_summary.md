@@ -27,7 +27,7 @@ Implemented or improved placeholder code:
 - **meta_labeling_system.py:812-813** - Implemented order book imbalance calculation using bid/ask volumes
 - **predictive_ensembles.py:18** - Improved import comments with clear instructions
 - **multi_timeframe_ensemble.py:320** - Added TODO comment explaining MLP usage as LSTM substitute
-- **ml_confidence_predictor.py:2645** - Implemented regime-specific weighting logic
+- **ml_confidence_predictor.py:2645** - Implemented adaptive weighting based on model consistency and performance trends
 
 ### 5. ✅ Broad Exception Handlers (324 fixes)
 Replaced generic `except Exception:` with specific exceptions based on context:
@@ -81,7 +81,7 @@ Removed all `.corrupted` backup files:
 1. **Better Error Handling**: Specific exceptions make debugging easier and prevent masking of critical errors
 2. **Proper Logging**: Structured logging with appropriate levels improves observability
 3. **Cleaner Codebase**: Removed 8 corrupted files reducing clutter
-4. **Implemented Features**: Order book imbalance and regime-specific weighting now functional
+4. **Implemented Features**: Order book imbalance and adaptive ensemble weighting now functional
 
 ## Recommendations for Future Work
 

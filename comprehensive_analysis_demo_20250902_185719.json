@@ -1,0 +1,750 @@
+{
+  "metadata": {
+    "generated_at": "2025-09-02 18:57:19",
+    "project_root": "/workspace/test_analysis_dir",
+    "analysis_duration": 0.003793954849243164,
+    "note": "This is a DEMO using basic Python tools. Install the full toolkit for professional analysis."
+  },
+  "global_metrics": {
+    "total_directories": 1,
+    "total_files": 3,
+    "total_analyzers_run": 3,
+    "total_issues_found": 22,
+    "total_issues_fixed": 0,
+    "total_processing_time": 0.003793954849243164,
+    "success_rate": 100.0,
+    "categories_covered": [
+      "style",
+      "complexity",
+      "syntax"
+    ],
+    "top_issues": [
+      [
+        "syntax",
+        3
+      ],
+      [
+        "style",
+        2
+      ]
+    ]
+  },
+  "directory_summaries": {
+    "root": {
+      "directory": "root",
+      "total_files": 3,
+      "files_analyzed": 3,
+      "total_issues": 22,
+      "total_fixed": 0,
+      "analyzers_run": [
+        "style",
+        "complexity",
+        "syntax"
+      ],
+      "categories_covered": [
+        "style",
+        "complexity",
+        "syntax"
+      ],
+      "processing_time": 0.0033211708068847656
+    }
+  },
+  "detailed_results": {
+    "by_directory": {
+      "root": {
+        "syntax": [
+          {
+            "file_path": "/workspace/test_analysis_dir/simple_test.py",
+            "directory": "root",
+            "analyzer_name": "syntax",
+            "category": "syntax",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "status": "error",
+              "issues_found": 1,
+              "issues_fixed": 0,
+              "details": {
+                "error": "object of type 'generator' has no len()"
+              },
+              "processing_time": 0.0005595684051513672
+            },
+            "processing_time": 0.0005795955657958984,
+            "status": "success"
+          },
+          {
+            "file_path": "/workspace/test_analysis_dir/__init__.py",
+            "directory": "root",
+            "analyzer_name": "syntax",
+            "category": "syntax",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "status": "error",
+              "issues_found": 1,
+              "issues_fixed": 0,
+              "details": {
+                "error": "object of type 'generator' has no len()"
+              },
+              "processing_time": 5.507469177246094e-05
+            },
+            "processing_time": 6.270408630371094e-05,
+            "status": "success"
+          },
+          {
+            "file_path": "/workspace/test_analysis_dir/another_test.py",
+            "directory": "root",
+            "analyzer_name": "syntax",
+            "category": "syntax",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "status": "error",
+              "issues_found": 1,
+              "issues_fixed": 0,
+              "details": {
+                "error": "object of type 'generator' has no len()"
+              },
+              "processing_time": 0.0006890296936035156
+            },
+            "processing_time": 0.0007150173187255859,
+            "status": "success"
+          }
+        ],
+        "complexity": [
+          {
+            "file_path": "/workspace/test_analysis_dir/simple_test.py",
+            "directory": "root",
+            "analyzer_name": "complexity",
+            "category": "complexity",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "status": "success",
+              "issues_found": 0,
+              "issues_fixed": 0,
+              "details": {
+                "overall_complexity": 2,
+                "function_complexities": [
+                  1,
+                  2,
+                  1,
+                  1,
+                  1,
+                  1
+                ],
+                "average_function_complexity": 1.1666666666666667,
+                "high_complexity_functions": 0
+              },
+              "processing_time": 0.0004968643188476562
+            },
+            "processing_time": 0.0005147457122802734,
+            "status": "success"
+          },
+          {
+            "file_path": "/workspace/test_analysis_dir/__init__.py",
+            "directory": "root",
+            "analyzer_name": "complexity",
+            "category": "complexity",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "status": "success",
+              "issues_found": 0,
+              "issues_fixed": 0,
+              "details": {
+                "overall_complexity": 0,
+                "function_complexities": [],
+                "average_function_complexity": 0,
+                "high_complexity_functions": 0
+              },
+              "processing_time": 4.6253204345703125e-05
+            },
+            "processing_time": 5.078315734863281e-05,
+            "status": "success"
+          },
+          {
+            "file_path": "/workspace/test_analysis_dir/another_test.py",
+            "directory": "root",
+            "analyzer_name": "complexity",
+            "category": "complexity",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "status": "success",
+              "issues_found": 0,
+              "issues_fixed": 0,
+              "details": {
+                "overall_complexity": 5,
+                "function_complexities": [
+                  1,
+                  2,
+                  3,
+                  1,
+                  2,
+                  1
+                ],
+                "average_function_complexity": 1.6666666666666667,
+                "high_complexity_functions": 0
+              },
+              "processing_time": 0.0005624294281005859
+            },
+            "processing_time": 0.0005822181701660156,
+            "status": "success"
+          }
+        ],
+        "style": [
+          {
+            "file_path": "/workspace/test_analysis_dir/simple_test.py",
+            "directory": "root",
+            "analyzer_name": "style",
+            "category": "style",
+            "issues_found": 9,
+            "issues_fixed": 0,
+            "details": {
+              "status": "success",
+              "issues_found": 9,
+              "issues_fixed": 0,
+              "details": {
+                "style_issues": [
+                  "Line 18: Trailing whitespace",
+                  "Line 25: Trailing whitespace",
+                  "Line 28: Trailing whitespace",
+                  "Line 33: Trailing whitespace",
+                  "Line 37: Trailing whitespace",
+                  "Line 41: Trailing whitespace",
+                  "Line 52: Trailing whitespace",
+                  "Line 55: Trailing whitespace",
+                  "Function '__init__' missing docstring"
+                ],
+                "line_count": 61,
+                "long_lines": 0
+              },
+              "processing_time": 0.00032210350036621094
+            },
+            "processing_time": 0.0003476142883300781,
+            "status": "success"
+          },
+          {
+            "file_path": "/workspace/test_analysis_dir/__init__.py",
+            "directory": "root",
+            "analyzer_name": "style",
+            "category": "style",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "status": "success",
+              "issues_found": 0,
+              "issues_fixed": 0,
+              "details": {
+                "style_issues": [],
+                "line_count": 6,
+                "long_lines": 0
+              },
+              "processing_time": 4.100799560546875e-05
+            },
+            "processing_time": 4.5299530029296875e-05,
+            "status": "success"
+          },
+          {
+            "file_path": "/workspace/test_analysis_dir/another_test.py",
+            "directory": "root",
+            "analyzer_name": "style",
+            "category": "style",
+            "issues_found": 10,
+            "issues_fixed": 0,
+            "details": {
+              "status": "success",
+              "issues_found": 10,
+              "issues_fixed": 0,
+              "details": {
+                "style_issues": [
+                  "Line 28: Trailing whitespace",
+                  "Line 33: Trailing whitespace",
+                  "Line 37: Trailing whitespace",
+                  "Line 51: Trailing whitespace",
+                  "Line 55: Trailing whitespace",
+                  "Line 65: Trailing whitespace",
+                  "Line 77: Trailing whitespace",
+                  "Line 81: Trailing whitespace",
+                  "Line 84: Trailing whitespace",
+                  "Function '__init__' missing docstring"
+                ],
+                "line_count": 88,
+                "long_lines": 0
+              },
+              "processing_time": 0.00039958953857421875
+            },
+            "processing_time": 0.00042319297790527344,
+            "status": "success"
+          }
+        ]
+      }
+    },
+    "by_category": {
+      "syntax": [
+        {
+          "file_path": "/workspace/test_analysis_dir/simple_test.py",
+          "directory": "root",
+          "analyzer_name": "syntax",
+          "category": "syntax",
+          "issues_found": 1,
+          "issues_fixed": 0,
+          "details": {
+            "status": "error",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "error": "object of type 'generator' has no len()"
+            },
+            "processing_time": 0.0005595684051513672
+          },
+          "processing_time": 0.0005795955657958984,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/__init__.py",
+          "directory": "root",
+          "analyzer_name": "syntax",
+          "category": "syntax",
+          "issues_found": 1,
+          "issues_fixed": 0,
+          "details": {
+            "status": "error",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "error": "object of type 'generator' has no len()"
+            },
+            "processing_time": 5.507469177246094e-05
+          },
+          "processing_time": 6.270408630371094e-05,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/another_test.py",
+          "directory": "root",
+          "analyzer_name": "syntax",
+          "category": "syntax",
+          "issues_found": 1,
+          "issues_fixed": 0,
+          "details": {
+            "status": "error",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "error": "object of type 'generator' has no len()"
+            },
+            "processing_time": 0.0006890296936035156
+          },
+          "processing_time": 0.0007150173187255859,
+          "status": "success"
+        }
+      ],
+      "complexity": [
+        {
+          "file_path": "/workspace/test_analysis_dir/simple_test.py",
+          "directory": "root",
+          "analyzer_name": "complexity",
+          "category": "complexity",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "overall_complexity": 2,
+              "function_complexities": [
+                1,
+                2,
+                1,
+                1,
+                1,
+                1
+              ],
+              "average_function_complexity": 1.1666666666666667,
+              "high_complexity_functions": 0
+            },
+            "processing_time": 0.0004968643188476562
+          },
+          "processing_time": 0.0005147457122802734,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/__init__.py",
+          "directory": "root",
+          "analyzer_name": "complexity",
+          "category": "complexity",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "overall_complexity": 0,
+              "function_complexities": [],
+              "average_function_complexity": 0,
+              "high_complexity_functions": 0
+            },
+            "processing_time": 4.6253204345703125e-05
+          },
+          "processing_time": 5.078315734863281e-05,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/another_test.py",
+          "directory": "root",
+          "analyzer_name": "complexity",
+          "category": "complexity",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "overall_complexity": 5,
+              "function_complexities": [
+                1,
+                2,
+                3,
+                1,
+                2,
+                1
+              ],
+              "average_function_complexity": 1.6666666666666667,
+              "high_complexity_functions": 0
+            },
+            "processing_time": 0.0005624294281005859
+          },
+          "processing_time": 0.0005822181701660156,
+          "status": "success"
+        }
+      ],
+      "style": [
+        {
+          "file_path": "/workspace/test_analysis_dir/simple_test.py",
+          "directory": "root",
+          "analyzer_name": "style",
+          "category": "style",
+          "issues_found": 9,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 9,
+            "issues_fixed": 0,
+            "details": {
+              "style_issues": [
+                "Line 18: Trailing whitespace",
+                "Line 25: Trailing whitespace",
+                "Line 28: Trailing whitespace",
+                "Line 33: Trailing whitespace",
+                "Line 37: Trailing whitespace",
+                "Line 41: Trailing whitespace",
+                "Line 52: Trailing whitespace",
+                "Line 55: Trailing whitespace",
+                "Function '__init__' missing docstring"
+              ],
+              "line_count": 61,
+              "long_lines": 0
+            },
+            "processing_time": 0.00032210350036621094
+          },
+          "processing_time": 0.0003476142883300781,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/__init__.py",
+          "directory": "root",
+          "analyzer_name": "style",
+          "category": "style",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "style_issues": [],
+              "line_count": 6,
+              "long_lines": 0
+            },
+            "processing_time": 4.100799560546875e-05
+          },
+          "processing_time": 4.5299530029296875e-05,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/another_test.py",
+          "directory": "root",
+          "analyzer_name": "style",
+          "category": "style",
+          "issues_found": 10,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 10,
+            "issues_fixed": 0,
+            "details": {
+              "style_issues": [
+                "Line 28: Trailing whitespace",
+                "Line 33: Trailing whitespace",
+                "Line 37: Trailing whitespace",
+                "Line 51: Trailing whitespace",
+                "Line 55: Trailing whitespace",
+                "Line 65: Trailing whitespace",
+                "Line 77: Trailing whitespace",
+                "Line 81: Trailing whitespace",
+                "Line 84: Trailing whitespace",
+                "Function '__init__' missing docstring"
+              ],
+              "line_count": 88,
+              "long_lines": 0
+            },
+            "processing_time": 0.00039958953857421875
+          },
+          "processing_time": 0.00042319297790527344,
+          "status": "success"
+        }
+      ]
+    },
+    "by_analyzer": {
+      "syntax": [
+        {
+          "file_path": "/workspace/test_analysis_dir/simple_test.py",
+          "directory": "root",
+          "analyzer_name": "syntax",
+          "category": "syntax",
+          "issues_found": 1,
+          "issues_fixed": 0,
+          "details": {
+            "status": "error",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "error": "object of type 'generator' has no len()"
+            },
+            "processing_time": 0.0005595684051513672
+          },
+          "processing_time": 0.0005795955657958984,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/__init__.py",
+          "directory": "root",
+          "analyzer_name": "syntax",
+          "category": "syntax",
+          "issues_found": 1,
+          "issues_fixed": 0,
+          "details": {
+            "status": "error",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "error": "object of type 'generator' has no len()"
+            },
+            "processing_time": 5.507469177246094e-05
+          },
+          "processing_time": 6.270408630371094e-05,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/another_test.py",
+          "directory": "root",
+          "analyzer_name": "syntax",
+          "category": "syntax",
+          "issues_found": 1,
+          "issues_fixed": 0,
+          "details": {
+            "status": "error",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "error": "object of type 'generator' has no len()"
+            },
+            "processing_time": 0.0006890296936035156
+          },
+          "processing_time": 0.0007150173187255859,
+          "status": "success"
+        }
+      ],
+      "complexity": [
+        {
+          "file_path": "/workspace/test_analysis_dir/simple_test.py",
+          "directory": "root",
+          "analyzer_name": "complexity",
+          "category": "complexity",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "overall_complexity": 2,
+              "function_complexities": [
+                1,
+                2,
+                1,
+                1,
+                1,
+                1
+              ],
+              "average_function_complexity": 1.1666666666666667,
+              "high_complexity_functions": 0
+            },
+            "processing_time": 0.0004968643188476562
+          },
+          "processing_time": 0.0005147457122802734,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/__init__.py",
+          "directory": "root",
+          "analyzer_name": "complexity",
+          "category": "complexity",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "overall_complexity": 0,
+              "function_complexities": [],
+              "average_function_complexity": 0,
+              "high_complexity_functions": 0
+            },
+            "processing_time": 4.6253204345703125e-05
+          },
+          "processing_time": 5.078315734863281e-05,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/another_test.py",
+          "directory": "root",
+          "analyzer_name": "complexity",
+          "category": "complexity",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "overall_complexity": 5,
+              "function_complexities": [
+                1,
+                2,
+                3,
+                1,
+                2,
+                1
+              ],
+              "average_function_complexity": 1.6666666666666667,
+              "high_complexity_functions": 0
+            },
+            "processing_time": 0.0005624294281005859
+          },
+          "processing_time": 0.0005822181701660156,
+          "status": "success"
+        }
+      ],
+      "style": [
+        {
+          "file_path": "/workspace/test_analysis_dir/simple_test.py",
+          "directory": "root",
+          "analyzer_name": "style",
+          "category": "style",
+          "issues_found": 9,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 9,
+            "issues_fixed": 0,
+            "details": {
+              "style_issues": [
+                "Line 18: Trailing whitespace",
+                "Line 25: Trailing whitespace",
+                "Line 28: Trailing whitespace",
+                "Line 33: Trailing whitespace",
+                "Line 37: Trailing whitespace",
+                "Line 41: Trailing whitespace",
+                "Line 52: Trailing whitespace",
+                "Line 55: Trailing whitespace",
+                "Function '__init__' missing docstring"
+              ],
+              "line_count": 61,
+              "long_lines": 0
+            },
+            "processing_time": 0.00032210350036621094
+          },
+          "processing_time": 0.0003476142883300781,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/__init__.py",
+          "directory": "root",
+          "analyzer_name": "style",
+          "category": "style",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "style_issues": [],
+              "line_count": 6,
+              "long_lines": 0
+            },
+            "processing_time": 4.100799560546875e-05
+          },
+          "processing_time": 4.5299530029296875e-05,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/another_test.py",
+          "directory": "root",
+          "analyzer_name": "style",
+          "category": "style",
+          "issues_found": 10,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 10,
+            "issues_fixed": 0,
+            "details": {
+              "style_issues": [
+                "Line 28: Trailing whitespace",
+                "Line 33: Trailing whitespace",
+                "Line 37: Trailing whitespace",
+                "Line 51: Trailing whitespace",
+                "Line 55: Trailing whitespace",
+                "Line 65: Trailing whitespace",
+                "Line 77: Trailing whitespace",
+                "Line 81: Trailing whitespace",
+                "Line 84: Trailing whitespace",
+                "Function '__init__' missing docstring"
+              ],
+              "line_count": 88,
+              "long_lines": 0
+            },
+            "processing_time": 0.00039958953857421875
+          },
+          "processing_time": 0.00042319297790527344,
+          "status": "success"
+        }
+      ]
+    }
+  },
+  "summary": {
+    "total_analysis_runs": 9,
+    "successful_runs": 9,
+    "failed_runs": 0,
+    "categories_analyzed": 3,
+    "analyzers_used": 3
+  }
+}

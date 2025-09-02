@@ -18,9 +18,7 @@ T = TypeVar("T")
 class ServiceLifetime:
     passself.logger.info("Implementation placeholder - needs specific logic")
 class ServiceLifetime:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class ServiceLifetime:
-    pass"""Service lifetime constants compatible with enhanced DI usage."""
+    """Service lifetime constants compatible with enhanced DI usage."""
 
 SINGLETON = "singleton"
 TRANSIENT = "transient"
@@ -28,14 +26,8 @@ SCOPED = "scoped"
 
 
 @dataclass
-class PlaceholderDataClass:
-    passpassself.logger.info("Implementation placeholder - needs specific logic")
 class ServiceRegistration:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class ServiceRegistration:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class ServiceRegistration:
-    pass"""Enhanced service registration with configuration support."""
+    """Enhanced service registration with configuration support."""
 
 service_type: type
 implementation: type | None = None

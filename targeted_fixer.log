@@ -27356,3 +27356,30 @@
 2025-09-02 07:13:38,083 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
 2025-09-02 07:13:38,083 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
 2025-09-02 07:13:38,083 - INFO - No fixes needed for: src/monitoring/performance_monitor.py
+2025-09-02 07:35:05,360 - INFO - Processing file: src/core/generic_base.py
+2025-09-02 07:35:05,360 - INFO - Performing semantic analysis...
+2025-09-02 07:35:05,360 - INFO - Code quality score: 0.00
+2025-09-02 07:35:05,360 - WARNING - Syntax errors found: 1
+2025-09-02 07:35:05,360 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 07:35:05,364 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:05,367 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:05,371 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:05,374 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:05,377 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:05,380 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:05,383 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:05,386 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:05,389 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:05,392 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:05,395 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:05,397 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 07:35:05,397 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 07:35:05,400 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:05,403 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:05,406 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:05,409 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:05,414 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:05,417 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:05,420 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:05,425 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:05,427 - INFO - No fixes needed for: src/core/generic_base.py

@@ -1,7 +1,8 @@
 # src/core/__init__.py
 
-from .dependency_injection import (ComponentFactory, DependencyContainer,
-                                   ModularTradingSystem, ServiceRegistration)
+# Temporarily commented out due to corruption issues
+# from .dependency_injection import (ComponentFactory, DependencyContainer,
+#                                    ModularTradingSystem, ServiceRegistration)
 
 __all__ = [
     "DependencyContainer",

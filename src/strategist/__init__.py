@@ -1,5 +1,10 @@
-# src/strategist/__init__.py
-# This file makes the 'strategist' directory a Python package.
+"""
+Strategist module for trading strategy generation.
 
-# You can import sub-modules here for easier access, e.g.:
-# from .strategist import Strategist
+This module provides the Strategist class for generating and managing trading strategies.
+"""
+
+from .strategist import Strategist
+
+__all__ = ['Strategist']
+__version__ = '1.0.0'

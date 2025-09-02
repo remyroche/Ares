@@ -122,7 +122,7 @@ class ComprehensiveProfessionalAnalyzer:
         self.fixers = {}
         self._initialize_tools()
         
-        # Analysis categories
+        # Analysis categories - focusing on actionable, fixable issues
         self.categories = {
             "syntax": "Syntax and AST Analysis",
             "complexity": "Code Complexity Metrics",
@@ -130,7 +130,6 @@ class ComprehensiveProfessionalAnalyzer:
             "dependencies": "Import and Dependency Analysis",
             "call_graph": "Function Call Graph Analysis",
             "signatures": "Function Signature Analysis",
-            "linting": "Code Style and Linting",
             "auto_fixing": "Automatic Code Fixing"
         }
     
@@ -140,7 +139,7 @@ class ComprehensiveProfessionalAnalyzer:
             return
         
         try:
-            # Initialize analyzers
+            # Initialize analyzers - focusing on actionable, fixable issues
             self.analyzers = {
                 "syntax": SyntaxValidator(self.config),
                 "complexity": ComplexityAnalyzer(self.config),
@@ -148,8 +147,7 @@ class ComprehensiveProfessionalAnalyzer:
                 "dependencies": DependencyAnalyzer(self.config),
                 "imports": ImportAnalyzer(self.config),
                 "call_graph": CallGraphAnalyzer(self.config),
-                "signatures": SignatureAnalyzer(self.config),
-                "linting": LinterAnalyzer(self.config)
+                "signatures": SignatureAnalyzer(self.config)
             }
             
             # Initialize fixers
@@ -412,8 +410,7 @@ class ComprehensiveProfessionalAnalyzer:
             "dependencies": "dependencies",
             "imports": "dependencies",
             "call_graph": "call_graph",
-            "signatures": "signatures",
-            "linting": "linting"
+            "signatures": "signatures"
         }
         return category_mapping.get(analyzer_name, "other")
     

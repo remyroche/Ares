@@ -3,6 +3,10 @@
 ## Overview
 Successfully implemented the HMM regime-aware triple barrier labeling with auto-recalculation as specified in commit b13148c3. The implementation provides automatic HMM barrier recalculation, regime-specific barrier optimization, and graceful fallback mechanisms.
 
+**Note**: There are two different implementations in the codebase:
+- **Primary**: `vectorized_labelling_orchestrator.py` with new `HMMRegimeBarrierOptimizer` (commit b13148c3)
+- **Secondary**: `step5_labeling.py` with existing `RegimeSpecificTripleBarrierOptimizer` (legacy implementation)
+
 ## 1. Cherry-Picked Commit ✅
 - **Commit**: b13148c3 (07:46:20 +0000) - "Add HMM regime-aware triple barrier labeling with auto-recalculation"
 - **Status**: Successfully cherry-picked to current branch `cursor/apply-hmm-regime-aware-triple-barrier-labeling-0533`
@@ -174,7 +178,28 @@ config = {
 }
 ```
 
-## 10. Summary of Implementation Status ✅
+## 10. Implementation Differences Between Files
+
+### Primary Implementation: vectorized_labelling_orchestrator.py
+- **Optimizer**: Uses `HMMRegimeBarrierOptimizer` (new implementation)
+- **Configuration**: Uses `self.auto_recalculate_hmm_barriers` parameter
+- **Status**: Fully implemented and tested (commit b13148c3)
+- **Purpose**: Main production implementation for regime-aware labeling
+
+### Secondary Implementation: step5_labeling.py
+- **Optimizer**: Uses `RegimeSpecificTripleBarrierOptimizer` (legacy implementation)
+- **Configuration**: Uses `self.auto_recalculate_hmm_barriers` parameter (recently standardized)
+- **Status**: Legacy implementation with updated configuration consistency
+- **Purpose**: Alternative implementation path for specific use cases
+
+### Configuration Parameter Standardization
+Both implementations now use consistent parameter names:
+- `auto_recalculate_hmm_barriers`: Controls automatic barrier recalculation
+- `hmm_barrier_regime_column`: Specifies the regime column name
+- `time_barrier_minutes`: Sets the time barrier duration
+- `max_lookahead`: Controls the maximum lookahead period
+
+## 11. Summary of Implementation Status ✅
 
 | Component | Status | Details |
 |-----------|--------|---------|
@@ -186,6 +211,24 @@ config = {
 | **Backward Compatibility** | ✅ Complete | Existing systems preserved |
 | **Code Quality** | ✅ Complete | All files pass syntax validation |
 | **Integration** | ✅ Complete | All components properly connected |
+| **Parameter Consistency** | ✅ Complete | Both implementations use standardized naming |
+
+## 12. Recent Fixes Applied ✅
+
+### Logging Inconsistencies Fixed
+- **Issue**: `step5_labeling.py` was logging about `HMMRegimeBarrierOptimizer` but actually using `RegimeSpecificTripleBarrierOptimizer`
+- **Fix**: Updated all logging messages and documentation to correctly reflect the actual optimizer being used
+- **Files Modified**: `src/training/steps/step5_labeling.py`
+
+### Configuration Parameter Consistency Fixed
+- **Issue**: `step5_labeling.py` used `self.auto_calc` while `vectorized_labelling_orchestrator.py` used `self.auto_recalculate_hmm_barriers`
+- **Fix**: Standardized both implementations to use `self.auto_recalculate_hmm_barriers` for consistency
+- **Files Modified**: `src/training/steps/step5_labeling.py`
+
+### Documentation Updates
+- **Issue**: `IMPLEMENTATION_SUMMARY.md` didn't clarify the differences between the two implementations
+- **Fix**: Added comprehensive documentation explaining both implementations and their differences
+- **Files Modified**: `IMPLEMENTATION_SUMMARY.md`
 
 ## Conclusion
 

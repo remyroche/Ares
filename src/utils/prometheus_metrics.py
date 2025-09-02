@@ -1,7 +1,12 @@
 """
-Prometheus metrics collection utility for training step validators.
+Prometheus Metrics Module
+
+This module provides Prometheus metrics collection for the Ares trading system,
+including step execution metrics, data quality metrics, and system performance metrics.
 """
 
+import os
+import sys
 import logging
 import socket
 from typing import Optional
@@ -13,6 +18,7 @@ try:
         Histogram,
         generate_latest,
     )
+
     from prometheus_client.exposition import start_http_server
     _PROM_AVAILABLE = True
     _PROM_IMPORT_ERROR = None
@@ -36,6 +42,7 @@ class PrometheusMetrics:
 
         if not _PROM_AVAILABLE:
             self.logger.info(
+
                 "Prometheus client not available; metrics disabled. Error: %s",
                 str(_PROM_IMPORT_ERROR),
             )
@@ -60,7 +67,6 @@ class PrometheusMetrics:
             "Time spent executing training steps",
             ["step_name", "status"],
         )
-
         self.step_success_counter = Counter(
             "step_success_total",
             "Number of successful step executions",
@@ -106,11 +112,11 @@ class PrometheusMetrics:
         )
 
         # System metrics
+
         self.memory_usage = Gauge(
             "memory_usage_bytes",
             "Memory usage in bytes",
             ["step_name"],
-        )
 
         self.cpu_usage = Gauge(
             "cpu_usage_percent",
@@ -277,3 +283,4 @@ def get_metrics() -> PrometheusMetrics:
 
 # For backward compatibility
 metrics = get_metrics()
+

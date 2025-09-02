@@ -1,0 +1,31 @@
+2025-09-02 08:21:14,504 - INFO - Processing file: src/utils/enhanced_error_handling.py
+2025-09-02 08:21:14,504 - INFO - Performing semantic analysis...
+2025-09-02 08:21:14,504 - INFO - Code quality score: 0.00
+2025-09-02 08:21:14,504 - WARNING - Syntax errors found: 1
+2025-09-02 08:21:14,504 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:21:14,507 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:14,509 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:14,510 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:14,512 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:14,514 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:14,516 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:14,518 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:14,519 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:14,521 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:14,523 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:14,525 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:14,526 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:14,529 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:14,530 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:14,532 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:14,534 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:14,536 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:14,539 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:14,541 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:14,543 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:14,545 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:14,547 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:14,549 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:14,550 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:14,554 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:14,556 - INFO - No fixes needed for: src/utils/enhanced_error_handling.py

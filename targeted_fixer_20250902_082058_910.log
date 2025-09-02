@@ -1,0 +1,26 @@
+2025-09-02 08:20:58,914 - INFO - Processing file: src/utils/decorator_registry.py
+2025-09-02 08:20:58,914 - INFO - Performing semantic analysis...
+2025-09-02 08:20:58,914 - INFO - Code quality score: 0.00
+2025-09-02 08:20:58,914 - WARNING - Syntax errors found: 1
+2025-09-02 08:20:58,914 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:20:58,915 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:58,916 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:58,917 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:58,917 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:58,918 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:58,918 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:58,919 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:58,919 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:58,920 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:58,921 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:58,921 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:58,922 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:58,923 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:58,924 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:58,924 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:58,926 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:58,928 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:20:58,928 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:20:58,928 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:20:58,929 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:58,930 - INFO - No fixes needed for: src/utils/decorator_registry.py

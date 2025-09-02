@@ -1,0 +1,26 @@
+2025-09-02 08:21:19,205 - INFO - Processing file: src/utils/enhanced_memory_management.py
+2025-09-02 08:21:19,205 - INFO - Performing semantic analysis...
+2025-09-02 08:21:19,205 - INFO - Code quality score: 0.00
+2025-09-02 08:21:19,206 - WARNING - Syntax errors found: 1
+2025-09-02 08:21:19,206 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:21:19,206 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:19,206 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:19,207 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:19,207 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:19,207 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:19,207 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:19,207 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:19,208 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:19,208 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:19,208 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:19,208 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:19,209 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:19,210 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:19,211 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:19,212 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:19,213 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:19,213 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:19,215 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:19,215 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:19,217 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:19,220 - INFO - No fixes needed for: src/utils/enhanced_memory_management.py

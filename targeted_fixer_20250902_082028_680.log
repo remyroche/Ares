@@ -1,0 +1,30 @@
+2025-09-02 08:20:28,683 - INFO - Processing file: src/utils/data_quality_decorators.py
+2025-09-02 08:20:28,684 - INFO - Performing semantic analysis...
+2025-09-02 08:20:28,684 - INFO - Code quality score: 0.00
+2025-09-02 08:20:28,684 - WARNING - Syntax errors found: 1
+2025-09-02 08:20:28,684 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:20:28,685 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:28,686 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:28,687 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:28,688 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:28,689 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:28,690 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:28,690 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:28,691 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:28,692 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:28,693 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:28,694 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:28,695 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:28,696 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:28,697 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:28,698 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:28,699 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:28,700 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:28,702 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:28,703 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:28,707 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:20:28,708 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:20:28,708 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:20:28,708 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:20:28,712 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:28,716 - INFO - No fixes needed for: src/utils/data_quality_decorators.py

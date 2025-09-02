@@ -51,8 +51,11 @@ class ColorCodes:
     BG_WHITE = "\033[47m"
 
 
+from src.utils.logger import system_logger
+
 class WarningSymbols:
     """Warning symbols and formatting utilities."""
+
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize WarningSymbols."""
@@ -123,3 +126,4 @@ def debug(message: str) -> str:
 def failed(message: str) -> str:
     """Format a failure message."""
     return warning_symbols.error(message)
+

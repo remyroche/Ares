@@ -1,0 +1,28 @@
+2025-09-02 08:20:46,511 - INFO - Processing file: src/utils/database_security.py
+2025-09-02 08:20:46,512 - INFO - Performing semantic analysis...
+2025-09-02 08:20:46,512 - INFO - Code quality score: 0.00
+2025-09-02 08:20:46,512 - WARNING - Syntax errors found: 1
+2025-09-02 08:20:46,512 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:20:46,513 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,514 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,515 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,515 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,516 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,517 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,518 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,519 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,519 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,520 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,521 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,522 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,523 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,523 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,524 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,526 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,527 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,528 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,530 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:20:46,531 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:20:46,531 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:20:46,533 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,535 - INFO - No fixes needed for: src/utils/database_security.py

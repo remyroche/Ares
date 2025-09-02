@@ -1,0 +1,27 @@
+2025-09-02 08:21:04,236 - INFO - Processing file: src/utils/enhanced_missing_value_handler.py
+2025-09-02 08:21:04,236 - INFO - Performing semantic analysis...
+2025-09-02 08:21:04,237 - INFO - Code quality score: 0.00
+2025-09-02 08:21:04,237 - WARNING - Syntax errors found: 1
+2025-09-02 08:21:04,237 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:21:04,238 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:04,239 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:04,240 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:04,241 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:04,242 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:04,243 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:04,244 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:04,245 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:04,246 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:04,247 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:04,248 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:04,249 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:04,250 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:04,251 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:04,252 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:04,254 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:04,255 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:04,259 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:04,259 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:04,259 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:04,267 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:04,269 - INFO - No fixes needed for: src/utils/enhanced_missing_value_handler.py

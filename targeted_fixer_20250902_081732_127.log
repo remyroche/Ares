@@ -1,0 +1,25 @@
+2025-09-02 08:17:32,131 - INFO - Processing file: src/utils/lookahead_bias_detector.py
+2025-09-02 08:17:32,131 - INFO - Performing semantic analysis...
+2025-09-02 08:17:32,131 - INFO - Code quality score: 0.00
+2025-09-02 08:17:32,132 - WARNING - Syntax errors found: 1
+2025-09-02 08:17:32,132 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:17:32,133 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:32,134 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:32,135 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:32,135 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:32,136 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:32,137 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:32,138 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:32,139 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:32,140 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:32,141 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:32,142 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:32,142 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:32,143 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:32,144 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:32,147 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:32,152 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:17:32,153 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:17:32,154 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:17:32,157 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:32,161 - INFO - No fixes needed for: src/utils/lookahead_bias_detector.py

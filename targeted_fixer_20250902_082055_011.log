@@ -1,0 +1,39 @@
+2025-09-02 08:20:55,014 - INFO - Processing file: src/utils/decorator_config.py
+2025-09-02 08:20:55,014 - INFO - Performing semantic analysis...
+2025-09-02 08:20:55,014 - INFO - Code quality score: 0.00
+2025-09-02 08:20:55,014 - WARNING - Syntax errors found: 1
+2025-09-02 08:20:55,014 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:20:55,016 - INFO - Applied placeholder_fixes fix: """\.\.\.""" -> """Implementation placeholder - needs specific logic"""
+2025-09-02 08:20:55,018 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 08:20:55,019 - INFO - Applied pass_patterns fix: passself\. -> pass\n        self.
+2025-09-02 08:20:55,021 - INFO - Applied pass_patterns fix: passreturn -> pass\n        return
+2025-09-02 08:20:55,023 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 08:20:55,024 - INFO - Applied string_literals fix: pass"""([^"]+)""" -> """\1"""
+2025-09-02 08:20:55,025 - INFO - Applied string_literals fix: pass"([^"]+)" -> "\1"
+2025-09-02 08:20:55,029 - INFO - Applied decorator_fixes fix: @(\w+)\s*$ -> @\1\n
+2025-09-02 08:20:55,031 - INFO - Applied decorator_fixes fix: @dataclass\s*$ -> @dataclass\nclass PlaceholderClass:\n    pass
+2025-09-02 08:20:55,032 - INFO - Applied decorator_fixes fix: @dataclass\s*$ -> @dataclass\nclass PlaceholderClass:\n    pass
+2025-09-02 08:20:55,033 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:20:55,036 - WARNING - AST validation failed for syntax_fixes: AST validation failed: invalid syntax at line 28, column 12
+Context:      27:     def __init__(self, config: dict[str, Any] | None = None) -> None:
+>>>  28:         """Initialize PerformanceMode."""
+     29:         self.co
+                ^
+2025-09-02 08:20:55,037 - INFO - 
+📝 CHANGES MADE IN src/utils/decorator_config.py:
+2025-09-02 08:20:55,037 - INFO -   1. placeholder_fixes: Line 136 - '    """..."""' → '    """Implementation placeholder - needs specific logic"""'
+2025-09-02 08:20:55,037 - INFO -   2. placeholder_fixes: Line 18 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 08:20:55,037 - INFO -   3. pass_patterns: Line 104 - '    passself.logger.info("Implementation placeholder - needs specific logic")' → '    pass'
+2025-09-02 08:20:55,037 - INFO -   4. pass_patterns: Line 140 - '    passreturn cls(**config_dict)' → '    pass'
+2025-09-02 08:20:55,037 - INFO -   5. pass_patterns: Line 92 - '    passSTRICT , "strict"' → '    pass'
+2025-09-02 08:20:55,037 - INFO -   6. string_literals: Line 114 - '    pass"""Global configuration for decorators."""' → '    """Global configuration for decorators."""'
+2025-09-02 08:20:55,037 - INFO -   7. string_literals: Line 18 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}")'
+2025-09-02 08:20:55,037 - INFO -   8. decorator_fixes: Line 104 - 'class PlaceholderDataClass:' → ''
+2025-09-02 08:20:55,037 - INFO -   9. decorator_fixes: Line 104 - '' → 'class PlaceholderClass:'
+2025-09-02 08:20:55,037 - INFO -   10. decorator_fixes: Line 106 - 'class PlaceholderDataClass:' → 'class PlaceholderClass:'
+2025-09-02 08:20:55,037 - INFO - 
+2025-09-02 08:20:55,037 - ERROR - Final AST validation failed: AST validation failed: invalid syntax at line 28, column 12
+Context:      27:     def __init__(self, config: dict[str, Any] | None = None) -> None:
+>>>  28:         """Initialize PerformanceMode."""
+     29:         self.co
+                ^

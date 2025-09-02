@@ -1,0 +1,27 @@
+2025-09-02 08:20:35,890 - INFO - Processing file: src/utils/validation_decorators.py
+2025-09-02 08:20:35,890 - INFO - Performing semantic analysis...
+2025-09-02 08:20:35,890 - INFO - Code quality score: 0.00
+2025-09-02 08:20:35,890 - WARNING - Syntax errors found: 1
+2025-09-02 08:20:35,890 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:20:35,892 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:35,893 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:35,894 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:35,895 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:35,896 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:35,897 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:35,898 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:35,899 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:35,900 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:35,901 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:35,902 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:35,903 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:35,905 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:35,906 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:35,907 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:35,908 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:35,910 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:20:35,911 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:20:35,912 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:35,917 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:20:35,920 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:35,923 - INFO - No fixes needed for: src/utils/validation_decorators.py

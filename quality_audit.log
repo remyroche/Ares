@@ -1,0 +1,42 @@
+2025-09-02 17:50:22,444 - INFO - Starting exhaustive audit of: .
+2025-09-02 17:50:22,444 - INFO - Auditing directory: .
+2025-09-02 17:50:22,446 - WARNING - Limiting analysis to 10 files (found 188)
+2025-09-02 17:50:22,446 - INFO - Found 10 files to audit
+2025-09-02 17:50:22,446 - INFO - Auditing file 1/10: quality_audit.log
+2025-09-02 17:50:22,446 - INFO - Analyzing file: quality_audit.log
+2025-09-02 17:50:22,446 - INFO - Auditing file 2/10: data_quality_directory_report.txt
+2025-09-02 17:50:22,446 - INFO - Analyzing file: data_quality_directory_report.txt
+2025-09-02 17:50:22,446 - INFO - Auditing file 3/10: feature_action_plan.txt
+2025-09-02 17:50:22,446 - INFO - Analyzing file: feature_action_plan.txt
+2025-09-02 17:50:22,446 - INFO - Auditing file 4/10: requirements_quality_report.txt
+2025-09-02 17:50:22,446 - INFO - Analyzing file: requirements_quality_report.txt
+2025-09-02 17:50:22,447 - INFO - Auditing file 5/10: trade_data_quality_report.txt
+2025-09-02 17:50:22,447 - INFO - Analyzing file: trade_data_quality_report.txt
+2025-09-02 17:50:22,447 - INFO - Auditing file 6/10: requirements.txt
+2025-09-02 17:50:22,447 - INFO - Analyzing file: requirements.txt
+2025-09-02 17:50:22,447 - INFO - Auditing file 7/10: feature_specific_thresholds_summary.txt
+2025-09-02 17:50:22,447 - INFO - Analyzing file: feature_specific_thresholds_summary.txt
+2025-09-02 17:50:22,447 - INFO - Auditing file 8/10: results_directory_quality_report.txt
+2025-09-02 17:50:22,447 - INFO - Analyzing file: results_directory_quality_report.txt
+2025-09-02 17:50:22,447 - INFO - Auditing file 9/10: unified_quality_report_20250902_172616.txt
+2025-09-02 17:50:22,447 - INFO - Analyzing file: unified_quality_report_20250902_172616.txt
+2025-09-02 17:50:22,447 - INFO - Auditing file 10/10: syntax_error_report.txt
+2025-09-02 17:50:22,447 - INFO - Analyzing file: syntax_error_report.txt
+2025-09-02 17:50:22,449 - INFO - Exhaustive audit completed in 0.01 seconds
+2025-09-02 17:50:26,033 - INFO - Starting exhaustive audit of: .
+2025-09-02 17:50:26,033 - INFO - Auditing directory: .
+2025-09-02 17:50:26,035 - WARNING - Limiting analysis to 5 files (found 188)
+2025-09-02 17:50:26,035 - INFO - Found 5 files to audit
+2025-09-02 17:50:26,035 - INFO - Auditing file 1/5: step_formatter.py
+2025-09-02 17:50:26,035 - INFO - Analyzing file: step_formatter.py
+2025-09-02 17:50:26,037 - INFO - Auditing file 2/5: kelly_criterion_fix.py
+2025-09-02 17:50:26,037 - INFO - Analyzing file: kelly_criterion_fix.py
+2025-09-02 17:50:26,038 - INFO - Auditing file 3/5: check_trade_data.py
+2025-09-02 17:50:26,038 - INFO - Analyzing file: check_trade_data.py
+2025-09-02 17:50:26,038 - INFO - Auditing file 4/5: create_regime_splits.py
+2025-09-02 17:50:26,038 - INFO - Analyzing file: create_regime_splits.py
+2025-09-02 17:50:26,039 - INFO - Auditing file 5/5: demo_step_formatting.py
+2025-09-02 17:50:26,039 - INFO - Analyzing file: demo_step_formatting.py
+2025-09-02 17:50:26,039 - INFO - Exhaustive audit completed in 0.01 seconds
+2025-09-02 17:50:26,040 - INFO - JSON report saved to: comprehensive_audit_report_20250902_175026.json
+2025-09-02 17:50:26,040 - INFO - Text report saved to: comprehensive_audit_report_20250902_175026.txt

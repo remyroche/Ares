@@ -11,8 +11,10 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from collections import defaultdict
 
-from ..core.config import CodeQualityConfig, get_default_config
-from ..utils.file_utils import find_python_files
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from minimal_config import CodeQualityConfig, get_default_config
+from minimal_file_utils import find_python_files
 
 
 class LinterResult:

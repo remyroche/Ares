@@ -1,0 +1,485 @@
+{
+  "metadata": {
+    "generated_at": "2025-09-02 19:01:37",
+    "project_root": "/workspace/test_analysis_dir",
+    "analysis_duration": 0.0028171539306640625,
+    "note": "This is a DEMO using basic Python tools. Install the full toolkit for professional analysis."
+  },
+  "global_metrics": {
+    "total_directories": 1,
+    "total_files": 3,
+    "total_analyzers_run": 2,
+    "total_issues_found": 3,
+    "total_issues_fixed": 0,
+    "total_processing_time": 0.0028171539306640625,
+    "success_rate": 100.0,
+    "categories_covered": [
+      "syntax",
+      "complexity"
+    ],
+    "top_issues": [
+      [
+        "syntax",
+        3
+      ]
+    ]
+  },
+  "directory_summaries": {
+    "root": {
+      "directory": "root",
+      "total_files": 3,
+      "files_analyzed": 3,
+      "total_issues": 3,
+      "total_fixed": 0,
+      "analyzers_run": [
+        "syntax",
+        "complexity"
+      ],
+      "categories_covered": [
+        "syntax",
+        "complexity"
+      ],
+      "processing_time": 0.002433300018310547
+    }
+  },
+  "detailed_results": {
+    "by_directory": {
+      "root": {
+        "syntax": [
+          {
+            "file_path": "/workspace/test_analysis_dir/simple_test.py",
+            "directory": "root",
+            "analyzer_name": "syntax",
+            "category": "syntax",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "status": "error",
+              "issues_found": 1,
+              "issues_fixed": 0,
+              "details": {
+                "error": "object of type 'generator' has no len()"
+              },
+              "processing_time": 0.0005500316619873047
+            },
+            "processing_time": 0.0005705356597900391,
+            "status": "success"
+          },
+          {
+            "file_path": "/workspace/test_analysis_dir/__init__.py",
+            "directory": "root",
+            "analyzer_name": "syntax",
+            "category": "syntax",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "status": "error",
+              "issues_found": 1,
+              "issues_fixed": 0,
+              "details": {
+                "error": "object of type 'generator' has no len()"
+              },
+              "processing_time": 5.555152893066406e-05
+            },
+            "processing_time": 6.389617919921875e-05,
+            "status": "success"
+          },
+          {
+            "file_path": "/workspace/test_analysis_dir/another_test.py",
+            "directory": "root",
+            "analyzer_name": "syntax",
+            "category": "syntax",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "status": "error",
+              "issues_found": 1,
+              "issues_fixed": 0,
+              "details": {
+                "error": "object of type 'generator' has no len()"
+              },
+              "processing_time": 0.0006093978881835938
+            },
+            "processing_time": 0.0006315708160400391,
+            "status": "success"
+          }
+        ],
+        "complexity": [
+          {
+            "file_path": "/workspace/test_analysis_dir/simple_test.py",
+            "directory": "root",
+            "analyzer_name": "complexity",
+            "category": "complexity",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "status": "success",
+              "issues_found": 0,
+              "issues_fixed": 0,
+              "details": {
+                "overall_complexity": 2,
+                "function_complexities": [
+                  1,
+                  2,
+                  1,
+                  1,
+                  1,
+                  1
+                ],
+                "average_function_complexity": 1.1666666666666667,
+                "high_complexity_functions": 0
+              },
+              "processing_time": 0.0005180835723876953
+            },
+            "processing_time": 0.0005345344543457031,
+            "status": "success"
+          },
+          {
+            "file_path": "/workspace/test_analysis_dir/__init__.py",
+            "directory": "root",
+            "analyzer_name": "complexity",
+            "category": "complexity",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "status": "success",
+              "issues_found": 0,
+              "issues_fixed": 0,
+              "details": {
+                "overall_complexity": 0,
+                "function_complexities": [],
+                "average_function_complexity": 0,
+                "high_complexity_functions": 0
+              },
+              "processing_time": 3.910064697265625e-05
+            },
+            "processing_time": 4.363059997558594e-05,
+            "status": "success"
+          },
+          {
+            "file_path": "/workspace/test_analysis_dir/another_test.py",
+            "directory": "root",
+            "analyzer_name": "complexity",
+            "category": "complexity",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "status": "success",
+              "issues_found": 0,
+              "issues_fixed": 0,
+              "details": {
+                "overall_complexity": 5,
+                "function_complexities": [
+                  1,
+                  2,
+                  3,
+                  1,
+                  2,
+                  1
+                ],
+                "average_function_complexity": 1.6666666666666667,
+                "high_complexity_functions": 0
+              },
+              "processing_time": 0.0005705356597900391
+            },
+            "processing_time": 0.0005891323089599609,
+            "status": "success"
+          }
+        ]
+      }
+    },
+    "by_category": {
+      "syntax": [
+        {
+          "file_path": "/workspace/test_analysis_dir/simple_test.py",
+          "directory": "root",
+          "analyzer_name": "syntax",
+          "category": "syntax",
+          "issues_found": 1,
+          "issues_fixed": 0,
+          "details": {
+            "status": "error",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "error": "object of type 'generator' has no len()"
+            },
+            "processing_time": 0.0005500316619873047
+          },
+          "processing_time": 0.0005705356597900391,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/__init__.py",
+          "directory": "root",
+          "analyzer_name": "syntax",
+          "category": "syntax",
+          "issues_found": 1,
+          "issues_fixed": 0,
+          "details": {
+            "status": "error",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "error": "object of type 'generator' has no len()"
+            },
+            "processing_time": 5.555152893066406e-05
+          },
+          "processing_time": 6.389617919921875e-05,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/another_test.py",
+          "directory": "root",
+          "analyzer_name": "syntax",
+          "category": "syntax",
+          "issues_found": 1,
+          "issues_fixed": 0,
+          "details": {
+            "status": "error",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "error": "object of type 'generator' has no len()"
+            },
+            "processing_time": 0.0006093978881835938
+          },
+          "processing_time": 0.0006315708160400391,
+          "status": "success"
+        }
+      ],
+      "complexity": [
+        {
+          "file_path": "/workspace/test_analysis_dir/simple_test.py",
+          "directory": "root",
+          "analyzer_name": "complexity",
+          "category": "complexity",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "overall_complexity": 2,
+              "function_complexities": [
+                1,
+                2,
+                1,
+                1,
+                1,
+                1
+              ],
+              "average_function_complexity": 1.1666666666666667,
+              "high_complexity_functions": 0
+            },
+            "processing_time": 0.0005180835723876953
+          },
+          "processing_time": 0.0005345344543457031,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/__init__.py",
+          "directory": "root",
+          "analyzer_name": "complexity",
+          "category": "complexity",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "overall_complexity": 0,
+              "function_complexities": [],
+              "average_function_complexity": 0,
+              "high_complexity_functions": 0
+            },
+            "processing_time": 3.910064697265625e-05
+          },
+          "processing_time": 4.363059997558594e-05,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/another_test.py",
+          "directory": "root",
+          "analyzer_name": "complexity",
+          "category": "complexity",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "overall_complexity": 5,
+              "function_complexities": [
+                1,
+                2,
+                3,
+                1,
+                2,
+                1
+              ],
+              "average_function_complexity": 1.6666666666666667,
+              "high_complexity_functions": 0
+            },
+            "processing_time": 0.0005705356597900391
+          },
+          "processing_time": 0.0005891323089599609,
+          "status": "success"
+        }
+      ]
+    },
+    "by_analyzer": {
+      "syntax": [
+        {
+          "file_path": "/workspace/test_analysis_dir/simple_test.py",
+          "directory": "root",
+          "analyzer_name": "syntax",
+          "category": "syntax",
+          "issues_found": 1,
+          "issues_fixed": 0,
+          "details": {
+            "status": "error",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "error": "object of type 'generator' has no len()"
+            },
+            "processing_time": 0.0005500316619873047
+          },
+          "processing_time": 0.0005705356597900391,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/__init__.py",
+          "directory": "root",
+          "analyzer_name": "syntax",
+          "category": "syntax",
+          "issues_found": 1,
+          "issues_fixed": 0,
+          "details": {
+            "status": "error",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "error": "object of type 'generator' has no len()"
+            },
+            "processing_time": 5.555152893066406e-05
+          },
+          "processing_time": 6.389617919921875e-05,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/another_test.py",
+          "directory": "root",
+          "analyzer_name": "syntax",
+          "category": "syntax",
+          "issues_found": 1,
+          "issues_fixed": 0,
+          "details": {
+            "status": "error",
+            "issues_found": 1,
+            "issues_fixed": 0,
+            "details": {
+              "error": "object of type 'generator' has no len()"
+            },
+            "processing_time": 0.0006093978881835938
+          },
+          "processing_time": 0.0006315708160400391,
+          "status": "success"
+        }
+      ],
+      "complexity": [
+        {
+          "file_path": "/workspace/test_analysis_dir/simple_test.py",
+          "directory": "root",
+          "analyzer_name": "complexity",
+          "category": "complexity",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "overall_complexity": 2,
+              "function_complexities": [
+                1,
+                2,
+                1,
+                1,
+                1,
+                1
+              ],
+              "average_function_complexity": 1.1666666666666667,
+              "high_complexity_functions": 0
+            },
+            "processing_time": 0.0005180835723876953
+          },
+          "processing_time": 0.0005345344543457031,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/__init__.py",
+          "directory": "root",
+          "analyzer_name": "complexity",
+          "category": "complexity",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "overall_complexity": 0,
+              "function_complexities": [],
+              "average_function_complexity": 0,
+              "high_complexity_functions": 0
+            },
+            "processing_time": 3.910064697265625e-05
+          },
+          "processing_time": 4.363059997558594e-05,
+          "status": "success"
+        },
+        {
+          "file_path": "/workspace/test_analysis_dir/another_test.py",
+          "directory": "root",
+          "analyzer_name": "complexity",
+          "category": "complexity",
+          "issues_found": 0,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "issues_found": 0,
+            "issues_fixed": 0,
+            "details": {
+              "overall_complexity": 5,
+              "function_complexities": [
+                1,
+                2,
+                3,
+                1,
+                2,
+                1
+              ],
+              "average_function_complexity": 1.6666666666666667,
+              "high_complexity_functions": 0
+            },
+            "processing_time": 0.0005705356597900391
+          },
+          "processing_time": 0.0005891323089599609,
+          "status": "success"
+        }
+      ]
+    }
+  },
+  "summary": {
+    "total_analysis_runs": 6,
+    "successful_runs": 6,
+    "failed_runs": 0,
+    "categories_analyzed": 2,
+    "analyzers_used": 2
+  }
+}

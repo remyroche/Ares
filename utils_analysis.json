@@ -1,0 +1,1682 @@
+{
+  "stats": {
+    "files_analyzed": 75,
+    "syntax_errors": 75,
+    "syntax_issues": 0,
+    "linting_issues": 0,
+    "type_errors": 0,
+    "complexity_issues": 0,
+    "unused_imports": 0,
+    "dead_code": 0,
+    "formatting_issues": 0,
+    "placeholder_issues": 0
+  },
+  "results": {
+    "src/utils/lookahead_bias_detector_example.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 16,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/supervisor_error_handler_example.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 30,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/observability.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 10,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/comprehensive_file_validation.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 44,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/step_dependency_validator.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 36,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/enhanced_validation_decorators.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 44,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/data_quality_framework.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 25,
+          "message": "Syntax error: expected ':'",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/model_performance_monitor.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 21,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/data_quality_validator.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 111,
+          "message": "Syntax error: invalid decimal literal",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/state_manager.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 32,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/structured_logging.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 9,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/async_utils.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 28,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/enhanced_data_quality_decorators.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 160,
+          "message": "Syntax error: invalid decimal literal",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/enhanced_config_management.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 20,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/supervisor_error_handler.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 63,
+          "message": "Syntax error: expected 'except' or 'finally' block",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/time_utils.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 10,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/data_preprocessing.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 17,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/feature_output_validator.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 1084,
+          "message": "Syntax error: invalid decimal literal",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/intelligent_feature_cache.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 45,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/parallel_processing_optimizer.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 48,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/decorators.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 29,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/data_loader.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 26,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/enhanced_memory_management.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 20,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/standardized_model_manager.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 57,
+          "message": "Syntax error: unterminated string literal (detected at line 57)",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/advanced_decorators.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 20,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/training_pipeline_decorators.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 21,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/decorator_config.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 28,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/enhanced_decorators.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 33,
+          "message": "Syntax error: expected 'except' or 'finally' block",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/standardized_config_manager.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 37,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/optimization_integration_test.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 61,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/enhanced_mlflow_integration.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 35,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/purged_kfold.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 25,
+          "message": "Syntax error: expected ':'",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/centralized_decorators.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 41,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/warning_symbols.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 28,
+          "message": "Syntax error: expected ':'",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/config_loader.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 31,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/centralized_decorators_v2.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 19,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/decorator_compatibility.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 34,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/validation_decorators.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 28,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/enhanced_pipeline_decorators.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 24,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/error_handler.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 26,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/data_validation.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 138,
+          "message": "Syntax error: invalid decimal literal",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/parquet_utils.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 34,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/standardized_error_handler.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 34,
+          "message": "Syntax error: f-string: expecting '=', or '!', or ':', or '}'",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/comprehensive_logger.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 40,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/validator_orchestrator.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 47,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/hmm_composite_manager.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 50,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/signal_handler.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 29,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/data_optimizer.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 25,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/configuration_security.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 41,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/security_framework.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 47,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/centralized_decorators_simple.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 14,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/enhanced_missing_value_handler.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 29,
+          "message": "Syntax error: unterminated f-string literal (detected at line 29)",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/trading_decorators.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 36,
+          "message": "Syntax error: expected 'except' or 'finally' block",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/data_formatting_framework.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 26,
+          "message": "Syntax error: unterminated string literal (detected at line 26)",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/enhanced_data_quality_validator.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 21,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/data_quality_decorators.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 26,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/quality_alert_system.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 47,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/mlflow_utils.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 13,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/base_validator.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 36,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/confidence.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 9,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/pipeline_standards.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 31,
+          "message": "Syntax error: expected an indented block after function definition on line 29",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/enhanced_error_handling.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 22,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/prometheus_metrics.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 20,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/decorator_registry.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 44,
+          "message": "Syntax error: unindent does not match any outer indentation level",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/steps_1_7_compatibility_framework.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 35,
+          "message": "Syntax error: expected ':'",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/advanced_ml_validation.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 39,
+          "message": "Syntax error: expected ':'",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/model_manager.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 40,
+          "message": "Syntax error: expected an indented block after function definition on line 39",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/domain_errors.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 27,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/database_security.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 37,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/enhanced_outlier_handler.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 125,
+          "message": "Syntax error: unterminated string literal (detected at line 125)",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/enhanced_error_handler.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 40,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/logger.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 37,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/lookahead_bias_detector.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 37,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/comprehensive_data_quality_validator.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 29,
+          "message": "Syntax error: invalid syntax",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    },
+    "src/utils/data_type_optimizer.py": {
+      "syntax_errors": [
+        {
+          "tool": "ast_analysis",
+          "type": "syntax_error",
+          "lineno": 54,
+          "message": "Syntax error: invalid decimal literal",
+          "suggestion": "Fix syntax error to enable further analysis"
+        }
+      ]
+    }
+  },
+  "tool_results": {
+    "ruff": {},
+    "mypy": {},
+    "radon": {},
+    "vulture": {},
+    "ast": {
+      "src/utils/lookahead_bias_detector_example.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 16,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/supervisor_error_handler_example.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 30,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/observability.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 10,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/comprehensive_file_validation.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 44,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/step_dependency_validator.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 36,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/enhanced_validation_decorators.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 44,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/data_quality_framework.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 25,
+            "message": "Syntax error: expected ':'",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/model_performance_monitor.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 21,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/data_quality_validator.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 111,
+            "message": "Syntax error: invalid decimal literal",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/state_manager.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 32,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/structured_logging.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 9,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/async_utils.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 28,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/enhanced_data_quality_decorators.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 160,
+            "message": "Syntax error: invalid decimal literal",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/enhanced_config_management.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 20,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/supervisor_error_handler.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 63,
+            "message": "Syntax error: expected 'except' or 'finally' block",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/time_utils.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 10,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/data_preprocessing.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 17,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/feature_output_validator.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 1084,
+            "message": "Syntax error: invalid decimal literal",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/intelligent_feature_cache.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 45,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/parallel_processing_optimizer.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 48,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/decorators.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 29,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/data_loader.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 26,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/enhanced_memory_management.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 20,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/standardized_model_manager.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 57,
+            "message": "Syntax error: unterminated string literal (detected at line 57)",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/advanced_decorators.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 20,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/training_pipeline_decorators.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 21,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/decorator_config.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 28,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/enhanced_decorators.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 33,
+            "message": "Syntax error: expected 'except' or 'finally' block",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/standardized_config_manager.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 37,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/optimization_integration_test.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 61,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/enhanced_mlflow_integration.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 35,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/purged_kfold.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 25,
+            "message": "Syntax error: expected ':'",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/centralized_decorators.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 41,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/warning_symbols.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 28,
+            "message": "Syntax error: expected ':'",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/config_loader.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 31,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/centralized_decorators_v2.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 19,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/decorator_compatibility.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 34,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/validation_decorators.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 28,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/enhanced_pipeline_decorators.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 24,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/error_handler.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 26,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/data_validation.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 138,
+            "message": "Syntax error: invalid decimal literal",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/parquet_utils.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 34,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/standardized_error_handler.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 34,
+            "message": "Syntax error: f-string: expecting '=', or '!', or ':', or '}'",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/comprehensive_logger.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 40,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/validator_orchestrator.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 47,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/hmm_composite_manager.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 50,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/signal_handler.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 29,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/data_optimizer.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 25,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/configuration_security.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 41,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/security_framework.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 47,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/centralized_decorators_simple.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 14,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/enhanced_missing_value_handler.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 29,
+            "message": "Syntax error: unterminated f-string literal (detected at line 29)",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/trading_decorators.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 36,
+            "message": "Syntax error: expected 'except' or 'finally' block",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/data_formatting_framework.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 26,
+            "message": "Syntax error: unterminated string literal (detected at line 26)",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/enhanced_data_quality_validator.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 21,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/data_quality_decorators.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 26,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/quality_alert_system.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 47,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/mlflow_utils.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 13,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/base_validator.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 36,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/confidence.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 9,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/pipeline_standards.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 31,
+            "message": "Syntax error: expected an indented block after function definition on line 29",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/enhanced_error_handling.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 22,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/prometheus_metrics.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 20,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/__init__.py": {
+        "unused_imports": [],
+        "dead_code": [],
+        "formatting_issues": [],
+        "placeholder_issues": [],
+        "syntax_issues": []
+      },
+      "src/utils/decorator_registry.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 44,
+            "message": "Syntax error: unindent does not match any outer indentation level",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/steps_1_7_compatibility_framework.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 35,
+            "message": "Syntax error: expected ':'",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/advanced_ml_validation.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 39,
+            "message": "Syntax error: expected ':'",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/model_manager.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 40,
+            "message": "Syntax error: expected an indented block after function definition on line 39",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/domain_errors.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 27,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/database_security.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 37,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/enhanced_outlier_handler.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 125,
+            "message": "Syntax error: unterminated string literal (detected at line 125)",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/enhanced_error_handler.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 40,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/logger.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 37,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/lookahead_bias_detector.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 37,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/comprehensive_data_quality_validator.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 29,
+            "message": "Syntax error: invalid syntax",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      },
+      "src/utils/data_type_optimizer.py": {
+        "syntax_errors": [
+          {
+            "tool": "ast_analysis",
+            "type": "syntax_error",
+            "lineno": 54,
+            "message": "Syntax error: invalid decimal literal",
+            "suggestion": "Fix syntax error to enable further analysis"
+          }
+        ]
+      }
+    }
+  },
+  "fix_stats": {}
+}

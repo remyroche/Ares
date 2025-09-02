@@ -1,0 +1,244 @@
+{
+  "summary": {
+    "total_functions": 0,
+    "total_classes": 0,
+    "unused_functions": 0,
+    "unused_classes": 0,
+    "unused_modules": 0,
+    "files_with_syntax_errors": 75,
+    "unused_imports_files": 0
+  },
+  "unused_functions": [],
+  "unused_classes": [],
+  "unused_modules": [],
+  "unused_imports": {},
+  "syntax_errors": {
+    "src/utils/lookahead_bias_detector_example.py": [
+      "Syntax error: invalid syntax (<unknown>, line 16)"
+    ],
+    "src/utils/supervisor_error_handler_example.py": [
+      "Syntax error: invalid syntax (<unknown>, line 30)"
+    ],
+    "src/utils/observability.py": [
+      "Syntax error: invalid syntax (<unknown>, line 10)"
+    ],
+    "src/utils/comprehensive_file_validation.py": [
+      "Syntax error: invalid syntax (<unknown>, line 44)"
+    ],
+    "src/utils/step_dependency_validator.py": [
+      "Syntax error: invalid syntax (<unknown>, line 36)"
+    ],
+    "src/utils/enhanced_validation_decorators.py": [
+      "Syntax error: invalid syntax (<unknown>, line 44)"
+    ],
+    "src/utils/data_quality_framework.py": [
+      "Syntax error: expected ':' (<unknown>, line 25)"
+    ],
+    "src/utils/model_performance_monitor.py": [
+      "Syntax error: invalid syntax (<unknown>, line 21)"
+    ],
+    "src/utils/data_quality_validator.py": [
+      "Syntax error: invalid decimal literal (<unknown>, line 111)"
+    ],
+    "src/utils/state_manager.py": [
+      "Syntax error: invalid syntax (<unknown>, line 32)"
+    ],
+    "src/utils/structured_logging.py": [
+      "Syntax error: invalid syntax (<unknown>, line 9)"
+    ],
+    "src/utils/async_utils.py": [
+      "Syntax error: invalid syntax (<unknown>, line 28)"
+    ],
+    "src/utils/enhanced_data_quality_decorators.py": [
+      "Syntax error: invalid decimal literal (<unknown>, line 160)"
+    ],
+    "src/utils/enhanced_config_management.py": [
+      "Syntax error: invalid syntax (<unknown>, line 20)"
+    ],
+    "src/utils/supervisor_error_handler.py": [
+      "Syntax error: expected 'except' or 'finally' block (<unknown>, line 63)"
+    ],
+    "src/utils/time_utils.py": [
+      "Syntax error: invalid syntax (<unknown>, line 10)"
+    ],
+    "src/utils/data_preprocessing.py": [
+      "Syntax error: invalid syntax (<unknown>, line 17)"
+    ],
+    "src/utils/feature_output_validator.py": [
+      "Syntax error: invalid decimal literal (<unknown>, line 1084)"
+    ],
+    "src/utils/intelligent_feature_cache.py": [
+      "Syntax error: invalid syntax (<unknown>, line 45)"
+    ],
+    "src/utils/parallel_processing_optimizer.py": [
+      "Syntax error: invalid syntax (<unknown>, line 48)"
+    ],
+    "src/utils/decorators.py": [
+      "Syntax error: invalid syntax (<unknown>, line 29)"
+    ],
+    "src/utils/data_loader.py": [
+      "Syntax error: invalid syntax (<unknown>, line 26)"
+    ],
+    "src/utils/enhanced_memory_management.py": [
+      "Syntax error: invalid syntax (<unknown>, line 20)"
+    ],
+    "src/utils/standardized_model_manager.py": [
+      "Syntax error: unterminated string literal (detected at line 57) (<unknown>, line 57)"
+    ],
+    "src/utils/advanced_decorators.py": [
+      "Syntax error: invalid syntax (<unknown>, line 20)"
+    ],
+    "src/utils/training_pipeline_decorators.py": [
+      "Syntax error: invalid syntax (<unknown>, line 21)"
+    ],
+    "src/utils/decorator_config.py": [
+      "Syntax error: invalid syntax (<unknown>, line 28)"
+    ],
+    "src/utils/enhanced_decorators.py": [
+      "Syntax error: expected 'except' or 'finally' block (<unknown>, line 33)"
+    ],
+    "src/utils/standardized_config_manager.py": [
+      "Syntax error: invalid syntax (<unknown>, line 37)"
+    ],
+    "src/utils/optimization_integration_test.py": [
+      "Syntax error: invalid syntax (<unknown>, line 61)"
+    ],
+    "src/utils/enhanced_mlflow_integration.py": [
+      "Syntax error: invalid syntax (<unknown>, line 35)"
+    ],
+    "src/utils/purged_kfold.py": [
+      "Syntax error: expected ':' (<unknown>, line 25)"
+    ],
+    "src/utils/centralized_decorators.py": [
+      "Syntax error: invalid syntax (<unknown>, line 41)"
+    ],
+    "src/utils/warning_symbols.py": [
+      "Syntax error: expected ':' (<unknown>, line 28)"
+    ],
+    "src/utils/config_loader.py": [
+      "Syntax error: invalid syntax (<unknown>, line 31)"
+    ],
+    "src/utils/centralized_decorators_v2.py": [
+      "Syntax error: invalid syntax (<unknown>, line 19)"
+    ],
+    "src/utils/decorator_compatibility.py": [
+      "Syntax error: invalid syntax (<unknown>, line 34)"
+    ],
+    "src/utils/validation_decorators.py": [
+      "Syntax error: invalid syntax (<unknown>, line 28)"
+    ],
+    "src/utils/enhanced_pipeline_decorators.py": [
+      "Syntax error: invalid syntax (<unknown>, line 24)"
+    ],
+    "src/utils/error_handler.py": [
+      "Syntax error: invalid syntax (<unknown>, line 26)"
+    ],
+    "src/utils/data_validation.py": [
+      "Syntax error: invalid decimal literal (<unknown>, line 138)"
+    ],
+    "src/utils/parquet_utils.py": [
+      "Syntax error: invalid syntax (<unknown>, line 34)"
+    ],
+    "src/utils/standardized_error_handler.py": [
+      "Syntax error: f-string: expecting '=', or '!', or ':', or '}' (<unknown>, line 34)"
+    ],
+    "src/utils/comprehensive_logger.py": [
+      "Syntax error: invalid syntax (<unknown>, line 40)"
+    ],
+    "src/utils/validator_orchestrator.py": [
+      "Syntax error: invalid syntax (<unknown>, line 47)"
+    ],
+    "src/utils/hmm_composite_manager.py": [
+      "Syntax error: invalid syntax (<unknown>, line 50)"
+    ],
+    "src/utils/signal_handler.py": [
+      "Syntax error: invalid syntax (<unknown>, line 29)"
+    ],
+    "src/utils/data_optimizer.py": [
+      "Syntax error: invalid syntax (<unknown>, line 25)"
+    ],
+    "src/utils/configuration_security.py": [
+      "Syntax error: invalid syntax (<unknown>, line 41)"
+    ],
+    "src/utils/security_framework.py": [
+      "Syntax error: invalid syntax (<unknown>, line 47)"
+    ],
+    "src/utils/centralized_decorators_simple.py": [
+      "Syntax error: invalid syntax (<unknown>, line 14)"
+    ],
+    "src/utils/enhanced_missing_value_handler.py": [
+      "Syntax error: unterminated f-string literal (detected at line 29) (<unknown>, line 29)"
+    ],
+    "src/utils/trading_decorators.py": [
+      "Syntax error: expected 'except' or 'finally' block (<unknown>, line 36)"
+    ],
+    "src/utils/data_formatting_framework.py": [
+      "Syntax error: unterminated string literal (detected at line 26) (<unknown>, line 26)"
+    ],
+    "src/utils/enhanced_data_quality_validator.py": [
+      "Syntax error: invalid syntax (<unknown>, line 21)"
+    ],
+    "src/utils/data_quality_decorators.py": [
+      "Syntax error: invalid syntax (<unknown>, line 26)"
+    ],
+    "src/utils/quality_alert_system.py": [
+      "Syntax error: invalid syntax (<unknown>, line 47)"
+    ],
+    "src/utils/mlflow_utils.py": [
+      "Syntax error: invalid syntax (<unknown>, line 13)"
+    ],
+    "src/utils/base_validator.py": [
+      "Syntax error: invalid syntax (<unknown>, line 36)"
+    ],
+    "src/utils/confidence.py": [
+      "Syntax error: invalid syntax (<unknown>, line 9)"
+    ],
+    "src/utils/pipeline_standards.py": [
+      "Syntax error: expected an indented block after function definition on line 29 (<unknown>, line 31)"
+    ],
+    "src/utils/enhanced_error_handling.py": [
+      "Syntax error: invalid syntax (<unknown>, line 22)"
+    ],
+    "src/utils/prometheus_metrics.py": [
+      "Syntax error: invalid syntax (<unknown>, line 20)"
+    ],
+    "src/utils/decorator_registry.py": [
+      "Syntax error: unindent does not match any outer indentation level (<unknown>, line 44)"
+    ],
+    "src/utils/steps_1_7_compatibility_framework.py": [
+      "Syntax error: expected ':' (<unknown>, line 35)"
+    ],
+    "src/utils/advanced_ml_validation.py": [
+      "Syntax error: expected ':' (<unknown>, line 39)"
+    ],
+    "src/utils/model_manager.py": [
+      "Syntax error: expected an indented block after function definition on line 39 (<unknown>, line 40)"
+    ],
+    "src/utils/domain_errors.py": [
+      "Syntax error: invalid syntax (<unknown>, line 27)"
+    ],
+    "src/utils/database_security.py": [
+      "Syntax error: invalid syntax (<unknown>, line 37)"
+    ],
+    "src/utils/enhanced_outlier_handler.py": [
+      "Syntax error: unterminated string literal (detected at line 125) (<unknown>, line 125)"
+    ],
+    "src/utils/enhanced_error_handler.py": [
+      "Syntax error: invalid syntax (<unknown>, line 40)"
+    ],
+    "src/utils/logger.py": [
+      "Syntax error: invalid syntax (<unknown>, line 37)"
+    ],
+    "src/utils/lookahead_bias_detector.py": [
+      "Syntax error: invalid syntax (<unknown>, line 37)"
+    ],
+    "src/utils/comprehensive_data_quality_validator.py": [
+      "Syntax error: invalid syntax (<unknown>, line 29)"
+    ],
+    "src/utils/data_type_optimizer.py": [
+      "Syntax error: invalid decimal literal (<unknown>, line 54)"
+    ]
+  },
+  "function_calls": {},
+  "class_instantiations": {}
+}

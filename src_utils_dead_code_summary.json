@@ -1,0 +1,279 @@
+{
+  "analysis_summary": {
+    "total_files_analyzed": 75,
+    "files_with_syntax_errors": 75,
+    "files_with_dead_code": 45,
+    "total_unused_functions": 150,
+    "total_unused_imports": 50,
+    "analysis_date": "2024-12-19",
+    "analysis_source": "src_quality_report.txt"
+  },
+  "dead_code_by_file": {
+    "training_pipeline_decorators.py": {
+      "unused_functions": [
+        "end_pipeline_monitoring",
+        "ensure_data_integrity",
+        "nan_inf_and_constant_guard",
+        "artifact_versioning",
+        "secure_step_execution",
+        "resource_monitor",
+        "validate_step_prerequisites",
+        "circuit_breaker_protection",
+        "artifact_write_lock",
+        "memory_efficient",
+        "validate_step_output",
+        "monitor_optimization",
+        "monitor_pipeline_performance",
+        "clear_pipeline_metrics",
+        "monitor_model_training",
+        "sync_wrapper",
+        "decorator",
+        "monitor_data_collection",
+        "monitor_step_execution",
+        "monitor_feature_engineering",
+        "time_budget_watchdog",
+        "idempotent_step",
+        "async_wrapper",
+        "debug_training_step",
+        "validate_pipeline_input",
+        "monitor_validation",
+        "secure_data_processing",
+        "get_pipeline_metrics",
+        "prevent_data_leakage",
+        "validate_pipeline_step",
+        "start_pipeline_monitoring",
+        "quality_gate",
+        "deterministic_seed"
+      ],
+      "unused_imports": [
+        "Union",
+        "timedelta"
+      ],
+      "impact_level": "high"
+    },
+    "error_handler.py": {
+      "unused_functions": [
+        "format_assertion_message",
+        "create_graceful_degradation_strategy",
+        "retry_with_backoff",
+        "safe_operation",
+        "execute_with_recovery",
+        "handle_assertion_errors",
+        "safe_numeric_operation",
+        "safe_dict_access",
+        "call",
+        "create_fallback_strategy",
+        "safe_async_operation",
+        "safe_network_operation",
+        "safe_dataframe_access",
+        "create_circuit_breaker",
+        "create_retry_strategy",
+        "handle_network_operations",
+        "safe_database_operation",
+        "sync_wrapper",
+        "decorator",
+        "safe_division",
+        "fallback_chain",
+        "wrapper",
+        "async_wrapper",
+        "handle_data_processing_errors",
+        "handle_type_conversions",
+        "handle_errors",
+        "add_circuit_breaker",
+        "safe_dataframe_operation",
+        "safe_assertion",
+        "handle_file_operations",
+        "clean_dataframe",
+        "call_method_robust",
+        "handle_nan_issues",
+        "add_strategy"
+      ],
+      "unused_imports": [],
+      "impact_level": "high"
+    },
+    "enhanced_mlflow_integration.py": {
+      "unused_functions": [
+        "validate_current_run",
+        "log_parameters",
+        "log_model",
+        "log_step_dataframe_with_standardized_name",
+        "log_step_metadata",
+        "log_metrics",
+        "log_step_report",
+        "decorator",
+        "log_pipeline_completion",
+        "wrapper",
+        "log_step_model",
+        "create_detailed_step_report",
+        "log_dataframe",
+        "log_model_performance",
+        "log_step_artifact_with_standardized_name",
+        "log_step_metrics",
+        "get_run_metadata",
+        "log_training_summary",
+        "with_enhanced_mlflow_logging"
+      ],
+      "unused_imports": [],
+      "duplicate_imports": ["json"],
+      "impact_level": "high"
+    },
+    "decorators.py": {
+      "unused_functions": [
+        "sync_wrapper",
+        "cached_wrapper",
+        "wrapper",
+        "async_wrapper",
+        "monitored_wrapper",
+        "decorator"
+      ],
+      "unused_imports": [
+        "Optional",
+        "register_decorator"
+      ],
+      "impact_level": "medium"
+    },
+    "advanced_decorators.py": {
+      "unused_functions": [
+        "comprehensive_validation",
+        "performance_monitor",
+        "adaptive_resource_allocation",
+        "async_wrapper",
+        "model_validation",
+        "pipeline_checkpoint",
+        "sync_wrapper",
+        "decorator",
+        "intelligent_caching"
+      ],
+      "unused_imports": ["List"],
+      "impact_level": "medium"
+    },
+    "data_optimizer.py": {
+      "unused_functions": [
+        "get_optimization_stats",
+        "setup_data_optimizer",
+        "get_data_optimizer",
+        "optimize_ensemble_data",
+        "cached_optimization",
+        "regime_columns",
+        "ohlcv_columns",
+        "optimize_market_data",
+        "trade_columns",
+        "stop"
+      ],
+      "unused_imports": [],
+      "impact_level": "medium"
+    },
+    "security_framework.py": {
+      "unused_functions": [
+        "validate_credential",
+        "check_permission",
+        "revoke_token",
+        "secure_api_call",
+        "decrypt_sensitive_data",
+        "get_security_report",
+        "decrypt_file",
+        "generate_access_token",
+        "encrypt_sensitive_data",
+        "rotate_credential",
+        "encrypt_file"
+      ],
+      "unused_imports": [
+        "Tuple",
+        "PipelineStandards"
+      ],
+      "impact_level": "medium"
+    },
+    "time_utils.py": {
+      "unused_functions": [
+        "calculate_duration_ms",
+        "format_timestamp_ms",
+        "resolve_time_window_ms",
+        "format_duration_ms",
+        "is_valid_timestamp_ms"
+      ],
+      "unused_imports": [],
+      "impact_level": "low"
+    },
+    "data_preprocessing.py": {
+      "unused_functions": [
+        "preprocess_data_for_multi_timeframe",
+        "validate_and_fix_data_quality"
+      ],
+      "unused_imports": [],
+      "impact_level": "low"
+    },
+    "intelligent_feature_cache.py": {
+      "unused_functions": [
+        "clear_feature_cache",
+        "log_feature_cache_stats",
+        "cache_feature_engineering",
+        "async_wrapper",
+        "sync_wrapper",
+        "decorator"
+      ],
+      "unused_imports": [],
+      "impact_level": "low"
+    },
+    "parallel_processing_optimizer.py": {
+      "unused_functions": [
+        "decorator",
+        "apply_func",
+        "wrapper",
+        "rolling_operation",
+        "parallel_rolling_operations",
+        "optimize_for_m1_mac"
+      ],
+      "unused_imports": [],
+      "impact_level": "low"
+    }
+  },
+  "unused_imports_summary": {
+    "typing_module": [
+      "List",
+      "Union",
+      "Optional",
+      "Tuple",
+      "Callable",
+      "Any",
+      "overload"
+    ],
+    "pipeline_standards": ["PipelineStandards"],
+    "datetime": ["timedelta"],
+    "decorator_registry": ["register_decorator", "decorator_registry"],
+    "other": ["psutil", "pandas", "os", "logging", "asyncio", "json"]
+  },
+  "duplicate_imports": {
+    "psutil": ["enhanced_decorators.py", "enhanced_data_quality_decorators.py"],
+    "pandas": ["training_pipeline_decorators.py"],
+    "os": ["training_pipeline_decorators.py"],
+    "random": ["training_pipeline_decorators.py"],
+    "logging": ["centralized_decorators.py"],
+    "asyncio": ["signal_handler.py"],
+    "json": ["enhanced_mlflow_integration.py"],
+    "re": ["data_formatting_framework.py"]
+  },
+  "recommendations": {
+    "immediate_actions": [
+      "Fix syntax errors in all files before dead code removal",
+      "Prioritize high-impact files with most dead code",
+      "Clean up unused import statements"
+    ],
+    "dead_code_removal_strategy": [
+      "Conservative approach starting with clearly unused functions",
+      "Dependency analysis before removal",
+      "Testing to verify no functionality is broken",
+      "Documentation updates"
+    ],
+    "code_quality_improvements": [
+      "Import organization and consolidation",
+      "Function documentation with proper docstrings",
+      "Consistent coding standards implementation"
+    ]
+  },
+  "cleanup_potential": {
+    "estimated_functions_removable": 150,
+    "estimated_code_reduction": "20-30%",
+    "maintenance_improvement": "Significant",
+    "cognitive_load_reduction": "High"
+  }
+}

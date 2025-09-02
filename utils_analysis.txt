@@ -1,0 +1,776 @@
+====================================================================================================
+COMPREHENSIVE CODE QUALITY ANALYSIS REPORT
+====================================================================================================
+
+📊 SUMMARY STATISTICS:
+  Files analyzed: 75
+  Total issues found: 75
+  Syntax errors: 75
+  Syntax issues: 0
+  Linting issues: 0
+  Type errors: 0
+  Complexity issues: 0
+  Unused imports: 0
+  Dead code: 0
+  Formatting issues: 0
+  Placeholder issues: 0
+
+📁 PER DIRECTORY BREAKDOWN:
+
+  📂 Directory: src/utils
+    📊 Summary: 75 files, 75 total issues
+    🔍 Issues by type:
+      • syntax_errors: 75
+    📄 Files with issues:
+      📝 src/utils/lookahead_bias_detector_example.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/supervisor_error_handler_example.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/observability.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/comprehensive_file_validation.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/step_dependency_validator.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/enhanced_validation_decorators.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/data_quality_framework.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/model_performance_monitor.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/data_quality_validator.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/state_manager.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/structured_logging.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/async_utils.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/enhanced_data_quality_decorators.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/enhanced_config_management.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/supervisor_error_handler.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/time_utils.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/data_preprocessing.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/feature_output_validator.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/intelligent_feature_cache.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/parallel_processing_optimizer.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/decorators.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/data_loader.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/enhanced_memory_management.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/standardized_model_manager.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/advanced_decorators.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/training_pipeline_decorators.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/decorator_config.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/enhanced_decorators.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/standardized_config_manager.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/optimization_integration_test.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/enhanced_mlflow_integration.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/purged_kfold.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/centralized_decorators.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/warning_symbols.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/config_loader.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/centralized_decorators_v2.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/decorator_compatibility.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/validation_decorators.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/enhanced_pipeline_decorators.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/error_handler.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/data_validation.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/parquet_utils.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/standardized_error_handler.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/comprehensive_logger.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/validator_orchestrator.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/hmm_composite_manager.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/signal_handler.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/data_optimizer.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/configuration_security.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/security_framework.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/centralized_decorators_simple.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/enhanced_missing_value_handler.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/trading_decorators.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/data_formatting_framework.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/enhanced_data_quality_validator.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/data_quality_decorators.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/quality_alert_system.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/mlflow_utils.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/base_validator.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/confidence.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/pipeline_standards.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/enhanced_error_handling.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/prometheus_metrics.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/decorator_registry.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/steps_1_7_compatibility_framework.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/advanced_ml_validation.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/model_manager.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/domain_errors.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/database_security.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/enhanced_outlier_handler.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/enhanced_error_handler.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/logger.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/lookahead_bias_detector.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/comprehensive_data_quality_validator.py: 1 issues
+        - syntax_errors: 1
+      📝 src/utils/data_type_optimizer.py: 1 issues
+        - syntax_errors: 1
+
+📄 DETAILED PER FILE BREAKDOWN:
+
+  📁 File: src/utils/lookahead_bias_detector_example.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 16)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/supervisor_error_handler_example.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 30)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/observability.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 10)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/comprehensive_file_validation.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 44)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/step_dependency_validator.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 36)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/enhanced_validation_decorators.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 44)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/data_quality_framework.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: expected ':' (line 25)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/model_performance_monitor.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 21)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/data_quality_validator.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid decimal literal (line 111)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/state_manager.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 32)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/structured_logging.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 9)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/async_utils.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 28)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/enhanced_data_quality_decorators.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid decimal literal (line 160)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/enhanced_config_management.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 20)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/supervisor_error_handler.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: expected 'except' or 'finally' block (line 63)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/time_utils.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 10)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/data_preprocessing.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 17)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/feature_output_validator.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid decimal literal (line 1084)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/intelligent_feature_cache.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 45)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/parallel_processing_optimizer.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 48)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/decorators.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 29)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/data_loader.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 26)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/enhanced_memory_management.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 20)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/standardized_model_manager.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: unterminated string literal (detected at line 57) (line 57)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/advanced_decorators.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 20)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/training_pipeline_decorators.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 21)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/decorator_config.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 28)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/enhanced_decorators.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: expected 'except' or 'finally' block (line 33)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/standardized_config_manager.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 37)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/optimization_integration_test.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 61)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/enhanced_mlflow_integration.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 35)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/purged_kfold.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: expected ':' (line 25)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/centralized_decorators.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 41)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/warning_symbols.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: expected ':' (line 28)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/config_loader.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 31)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/centralized_decorators_v2.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 19)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/decorator_compatibility.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 34)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/validation_decorators.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 28)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/enhanced_pipeline_decorators.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 24)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/error_handler.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 26)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/data_validation.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid decimal literal (line 138)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/parquet_utils.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 34)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/standardized_error_handler.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: f-string: expecting '=', or '!', or ':', or '}' (line 34)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/comprehensive_logger.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 40)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/validator_orchestrator.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 47)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/hmm_composite_manager.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 50)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/signal_handler.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 29)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/data_optimizer.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 25)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/configuration_security.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 41)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/security_framework.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 47)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/centralized_decorators_simple.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 14)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/enhanced_missing_value_handler.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: unterminated f-string literal (detected at line 29) (line 29)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/trading_decorators.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: expected 'except' or 'finally' block (line 36)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/data_formatting_framework.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: unterminated string literal (detected at line 26) (line 26)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/enhanced_data_quality_validator.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 21)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/data_quality_decorators.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 26)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/quality_alert_system.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 47)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/mlflow_utils.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 13)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/base_validator.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 36)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/confidence.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 9)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/pipeline_standards.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: expected an indented block after function definition on line 29 (line 31)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/enhanced_error_handling.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 22)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/prometheus_metrics.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 20)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/decorator_registry.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: unindent does not match any outer indentation level (line 44)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/steps_1_7_compatibility_framework.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: expected ':' (line 35)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/advanced_ml_validation.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: expected ':' (line 39)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/model_manager.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: expected an indented block after function definition on line 39 (line 40)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/domain_errors.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 27)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/database_security.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 37)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/enhanced_outlier_handler.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: unterminated string literal (detected at line 125) (line 125)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/enhanced_error_handler.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 40)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/logger.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 37)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/lookahead_bias_detector.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 37)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/comprehensive_data_quality_validator.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid syntax (line 29)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1
+
+  📁 File: src/utils/data_type_optimizer.py
+  ==================================================
+    🔍 Syntax_Errors: 1 issues
+      • [ast_analysis] Syntax error: invalid decimal literal (line 54)
+        💡 Fix syntax error to enable further analysis
+
+    📊 Total issues in file: 1

@@ -38,7 +38,7 @@ class SimpleQualityOrchestrator:
         self.logger = logger
         
         # Supported file extensions
-        self.supported_extensions = {'.csv', '.json', '.txt', '.py'}
+        self.supported_extensions = {'.csv', '.json', '.txt', '.py', '.yaml', '.yml'}
     
     def analyze_file(self, file_path: str, context: str = "") -> Dict[str, Any]:
         """
@@ -66,7 +66,7 @@ class SimpleQualityOrchestrator:
                 return self._analyze_json_file(file_path_obj, context)
             elif file_path_obj.suffix.lower() == '.csv':
                 return self._analyze_csv_file(file_path_obj, context)
-            elif file_path_obj.suffix.lower() in ['.txt', '.py']:
+            elif file_path_obj.suffix.lower() in ['.txt', '.py', '.yaml', '.yml']:
                 return self._analyze_text_file(file_path_obj, context)
             else:
                 return {"error": f"Unsupported file format: {file_path_obj.suffix}"}

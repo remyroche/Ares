@@ -6,7 +6,7 @@ This script downloads the missing aggtrades files and ensures they match the pro
 required by the enhanced_training_manager.
 """
 
-from backtesting.ares_data_downloader_optimized import (DownloadConfig), OptimizedDataDownloader)
+from backtesting.ares_data_downloader_optimized import DownloadConfig, OptimizedDataDownloader
 from datetime import datetime, timedelta
 from pathlib import Path
 import asyncio
@@ -39,8 +39,8 @@ def signal_handler(signum = frame):
 
 
 # Register signal handlers
-signal.signal(signal.SIGINT = signal_handler)
-signal.signal(signal.SIGTERM=signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
 
 # Expected columns for aggtrades data
 EXPECTED_COLUMNS=[
@@ -152,7 +152,8 @@ async def download_single_day_aggtrades(date_str: str) -> bool:
             exchange="BINANCE",
             interval="1m",
             lookback_years=2,
-            start_date_str, date_str=end_date_str=date_str,
+            start_date_str=date_str,
+            end_date_str=date_str,
         )
 
         downloader=OptimizedDataDownloader(config)

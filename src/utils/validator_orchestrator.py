@@ -410,44 +410,44 @@ class ValidatorOrchestrator:
             Dictionary containing validation results
         """
         # Map step names to validator modules
-            validator_mapping = {
-        "step1_data_collection": "step1_data_collection_validator",
-        "step1_5_data_converter": "step1_5_data_converter_validator",
+        validator_mapping = {
+            "step1_data_collection": "step1_data_collection_validator",
+            "step1_5_data_converter": "step1_5_data_converter_validator",
             "step2_data_reading": "step2_data_reading_validator",
             "step2_5_sr_optimization": "step2_5_sr_optimization_validator",
-    "step3_hmm_regime_discovery": "step3_hmm_regime_discovery_validator",
-        "step4_triple_barrier_method": "step4_triple_barrier_method_validator",
-        "step4_regime_data_splitting": "step4_regime_data_splitting_validator",
-        "step5_labeling": "step5_labeling_validator",
+            "step3_hmm_regime_discovery": "step3_hmm_regime_discovery_validator",
+            "step4_triple_barrier_method": "step4_triple_barrier_method_validator",
+            "step4_regime_data_splitting": "step4_regime_data_splitting_validator",
+            "step5_labeling": "step5_labeling_validator",
             "step6_feature_engineering": "step6_feature_engineering_validator",
-    "step7_enhanced_matrix_operations": "step7_enhanced_matrix_operations_validator",
-        "step8_regime_data_splitting": "step8_regime_data_splitting_validator",
-        "step9_hmm_based_training": "step9_hmm_based_training_validator",
-    "step9_5_multi_timeframe_hmm_ensemble": "step9_5_multi_timeframe_hmm_ensemble_validator",
-        "step9_5_hmm_lm_generalist_training": "step9_5_hmm_lm_generalist_training_validator",
-        "step10_unified_regime_intelligence": "step10_unified_regime_intelligence_validator",
-        "step11_analyst_creation": "step11_analyst_creation_validator",
-        "step12_analyst_enhancement": "step12_analyst_enhancement_validator",
-        "step13_analyst_ensemble_creation": "step13_analyst_ensemble_creation_validator",
-        "step14_tactician_labeling": "step14_tactician_labeling_validator",
-        "step15_tactician_specialist_training": (
-            "step15_tactician_specialist_training_validator"
-        ),
-        "step16_confidence_calibration": (
-            "step16_confidence_calibration_validator"
-        ),
-        "step17_final_parameters_optimization": (
-            "step17_final_parameters_optimization_validator"
-        ),
-        "step18_walk_forward_validation": (
-            "step18_walk_forward_validation_validator"
-        ),
-        "step19_monte_carlo_validation": (
-            "step19_monte_carlo_validation_validator"
-        ),
-        "step20_ab_testing": "step20_ab_testing_validator",
-        "step21_saving": "step21_saving_validator",
-    }
+            "step7_enhanced_matrix_operations": "step7_enhanced_matrix_operations_validator",
+            "step8_regime_data_splitting": "step8_regime_data_splitting_validator",
+            "step9_hmm_based_training": "step9_hmm_based_training_validator",
+            "step9_5_multi_timeframe_hmm_ensemble": "step9_5_multi_timeframe_hmm_ensemble_validator",
+            "step9_5_hmm_lm_generalist_training": "step9_5_hmm_lm_generalist_training_validator",
+            "step10_unified_regime_intelligence": "step10_unified_regime_intelligence_validator",
+            "step11_analyst_creation": "step11_analyst_creation_validator",
+            "step12_analyst_enhancement": "step12_analyst_enhancement_validator",
+            "step13_analyst_ensemble_creation": "step13_analyst_ensemble_creation_validator",
+            "step14_tactician_labeling": "step14_tactician_labeling_validator",
+            "step15_tactician_specialist_training": (
+                "step15_tactician_specialist_training_validator"
+            ),
+            "step16_confidence_calibration": (
+                "step16_confidence_calibration_validator"
+            ),
+            "step17_final_parameters_optimization": (
+                "step17_final_parameters_optimization_validator"
+            ),
+            "step18_walk_forward_validation": (
+                "step18_walk_forward_validation_validator"
+            ),
+            "step19_monte_carlo_validation": (
+                "step19_monte_carlo_validation_validator"
+            ),
+            "step20_ab_testing": "step20_ab_testing_validator",
+            "step21_saving": "step21_saving_validator",
+        }
 
         validator_module_name = validator_mapping.get(step_name)
         if not validator_module_name:

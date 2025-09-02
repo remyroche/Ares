@@ -1,43 +1,29 @@
-# Code Quality Tools Dependencies
-# Core analysis and fixing
+# Code Quality Tools Requirements
+# These are optional dependencies that enhance the functionality
+
+# Enhanced AST analysis
+astroid>=2.14.0
+
+# Type checking
+mypy>=1.0.0
+
+# Security analysis
+bandit>=1.7.0
+
+# Code formatting (optional)
 black>=23.0.0
 isort>=5.12.0
+
+# Linting (optional)
 flake8>=6.0.0
 pylint>=2.17.0
-mypy>=1.3.0
-autopep8>=2.0.0
-pycodestyle>=2.10.0
-pyflakes>=3.0.0
-ruff>=0.1.0
 
-# Advanced analysis
+# Complexity analysis (optional)
 radon>=5.1.0
 mccabe>=0.7.0
-bandit>=1.7.0
-safety>=2.3.0
+
+# Dead code detection (optional)
 vulture>=2.9.0
-pyre-check>=0.9.0
 
-# Code formatting and organization
-yapf>=0.32.0
-docformatter>=1.4.0
-unify>=0.5.0
-
-# Import and dependency analysis
+# Import sorting (optional)
 importlib-metadata>=4.13.0
-pipdeptree>=2.7.0
-pip-check>=2.0.0
-
-# Reporting and visualization
-rich>=13.0.0
-tabulate>=0.9.0
-colorama>=0.4.6
-plotly>=5.14.0
-matplotlib>=3.7.0
-
-# Utilities
-click>=8.1.0
-pathlib2>=2.3.7
-tqdm>=4.65.0
-pyyaml>=6.0
-toml>=0.10.2

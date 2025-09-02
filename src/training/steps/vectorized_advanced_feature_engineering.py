@@ -2794,95 +2794,95 @@ class VectorizedAdvancedFeatureEngineering:
                 self.logger.info("🔍 Generating S/R levels from price data...")
                 sr_levels = self._generate_sr_levels(price_data)
             else:
-        # Normalize incoming sr_levels to the format expected by the calculator
-        try:
-        if "support" not in sr_levels and "support_levels" in sr_levels:
-                            sr_levels = {
-                                "support": [
-                                    lvl["price"] if isinstance(lvl, dict) and "price" in lvl else float(lvl)
-        for lvl in sr_levels.get("support_levels", [])
-                                ],
-                                "resistance": [
-                                    lvl["price"] if isinstance(lvl, dict) and "price" in lvl else float(lvl)
-        for lvl in sr_levels.get("resistance_levels", [])
-                                ],
-                            }
-                        elif "support" in sr_levels:
-        # Ensure numeric arrays
-        for k in ("support", "resistance"):
-        if k in sr_levels:
-                                    vals = sr_levels[k]
-        if isinstance(vals, list):
-                                        sr_levels[k] = [
-                                            v["price"] if isinstance(v, dict) and "price" in v else float(v)
-        for v in vals
-                                        ]
-        except Exception as _e:
-        self.logger.warning(
-                            f"⚠️ Failed to normalize provided SR levels, will attempt auto-generation instead: {_e}",
-                        )
-                        sr_levels = self._generate_sr_levels(price_data)
-
-        if sr_levels:
-                    sr_distance_features = (
-        await self.sr_distance_calculator.calculate_sr_distances(
-                            price_data,
-                            sr_levels,
-                        )
+                # Normalize incoming sr_levels to the format expected by the calculator
+                try:
+                    if "support" not in sr_levels and "support_levels" in sr_levels:
+                        sr_levels = {
+                            "support": [
+                                lvl["price"] if isinstance(lvl, dict) and "price" in lvl else float(lvl)
+                                for lvl in sr_levels.get("support_levels", [])
+                            ],
+                            "resistance": [
+                                lvl["price"] if isinstance(lvl, dict) and "price" in lvl else float(lvl)
+                                for lvl in sr_levels.get("resistance_levels", [])
+                            ],
+                        }
+                    elif "support" in sr_levels:
+                        # Ensure numeric arrays
+                        for k in ("support", "resistance"):
+                            if k in sr_levels:
+                                vals = sr_levels[k]
+                                if isinstance(vals, list):
+                                    sr_levels[k] = [
+                                        v["price"] if isinstance(v, dict) and "price" in v else float(v)
+                                        for v in vals
+                                    ]
+                except Exception as _e:
+                    self.logger.warning(
+                        f"⚠️ Failed to normalize provided SR levels, will attempt auto-generation instead: {_e}",
                     )
-        self.logger.info(f"🔍 Generated {len(sr_distance_features)} S/R distance features")
-        if sr_distance_features:
-        self.logger.info(f"🔍 S/R distance feature names: {list(sr_distance_features.keys())}")
+                    sr_levels = self._generate_sr_levels(price_data)
+
+            if sr_levels:
+                sr_distance_features = (
+                    await self.sr_distance_calculator.calculate_sr_distances(
+                        price_data,
+                        sr_levels,
+                    )
+                )
+                self.logger.info(f"🔍 Generated {len(sr_distance_features)} S/R distance features")
+                if sr_distance_features:
+                    self.logger.info(f"🔍 S/R distance feature names: {list(sr_distance_features.keys())}")
                     features.update(sr_distance_features)
-        self.logger.info(f"🔍 Total features after S/R distance: {len(features)}")
-                else:
-                    self.logger.warning("⚠️ Failed to generate S/R levels, skipping S/R distance features")
+                self.logger.info(f"🔍 Total features after S/R distance: {len(features)}")
             else:
-        self.logger.warning("⚠️ S/R distance calculator not available")
+                self.logger.warning("⚠️ Failed to generate S/R levels, skipping S/R distance features")
+        else:
+            self.logger.warning("⚠️ S/R distance calculator not available")
 
         # Wavelet transform features with caching
         self.logger.info("🔍 Generating wavelet transform features...")
         if self.wavelet_analyzer:
-                wavelet_features, await self._get_wavelet_features_with_caching(
-                    price_data,
-                    volume_data,
-                )
-        self.logger.info(f"🔍 Generated {len(wavelet_features)} wavelet features")
-        if wavelet_features:
-        self.logger.info(f"🔍 Wavelet feature names: {list(wavelet_features.keys())}")
+            wavelet_features = await self._get_wavelet_features_with_caching(
+                price_data,
+                volume_data,
+            )
+            self.logger.info(f"🔍 Generated {len(wavelet_features)} wavelet features")
+            if wavelet_features:
+                self.logger.info(f"🔍 Wavelet feature names: {list(wavelet_features.keys())}")
                 features.update(wavelet_features)
-        self.logger.info(f"🔍 Total features after wavelet: {len(features)}")
-            else:
-        self.logger.warning("⚠️ Wavelet analyzer not available")
+            self.logger.info(f"🔍 Total features after wavelet: {len(features)}")
+        else:
+            self.logger.warning("⚠️ Wavelet analyzer not available")
 
         # Adaptive indicators
         self.logger.info("🔍 Generating adaptive indicators...")
-            adaptive_features, self._engineer_adaptive_indicators_vectorized(
-                price_data,
-            )
+        adaptive_features = self._engineer_adaptive_indicators_vectorized(
+            price_data,
+        )
         self.logger.info(f"🔍 Generated {len(adaptive_features)} adaptive features")
         if adaptive_features:
-        self.logger.info(f"🔍 Adaptive feature names: {list(adaptive_features.keys())}")
+            self.logger.info(f"🔍 Adaptive feature names: {list(adaptive_features.keys())}")
             features.update(adaptive_features)
         self.logger.info(f"🔍 Total features after adaptive indicators: {len(features)}")
 
         # Debug: Log feature generation before selection
         self.logger.info(f"🔍 Generated {len(features)} features before selection")
         if len(features) < 10:
-        self.logger.warning(f"⚠️ Very few features generated before selection: {list(features.keys())}")
+            self.logger.warning(f"⚠️ Very few features generated before selection: {list(features.keys())}")
 
         # Add basic features as fallback to ensure we have features
         self.logger.info("ℹ️ No fallback features needed")
 
         # Feature selection and dimensionality reduction
         # Re-enable feature selection for comprehensive feature engineering
-            selected_features = self._select_optimal_features_vectorized(features)
+        selected_features = self._select_optimal_features_vectorized(features)
         self.logger.info("🔍 Feature selection re-enabled for comprehensive feature engineering")
 
         # Debug: Log feature selection results
         self.logger.info(f"🔍 Selected {len(selected_features)} features after selection")
         if len(selected_features) < 10:
-        self.logger.warning(f"⚠️ Very few features selected: {list(selected_features.keys())}")
+            self.logger.warning(f"⚠️ Very few features selected: {list(selected_features.keys())}")
 
         # Add profit-based features if available
         if self.profit_feature_engineer and "potential_profit_pct" in price_data.columns:
@@ -2915,24 +2915,24 @@ class VectorizedAdvancedFeatureEngineering:
 
         # Add multi-timeframe features if enabled
         if self.enable_multi_timeframe:
-        self.logger.info("🔍 Generating multi-timeframe features...")
-                multi_timeframe_features = (
-        await self._engineer_multi_timeframe_features_vectorized(
-                        price_data,
-                        volume_data,
-                        order_flow_data,
-                        sr_levels,
-                    )
+            self.logger.info("🔍 Generating multi-timeframe features...")
+            multi_timeframe_features = (
+                await self._engineer_multi_timeframe_features_vectorized(
+                    price_data,
+                    volume_data,
+                    order_flow_data,
+                    sr_levels,
                 )
-        self.logger.info(f"🔍 Generated {len(multi_timeframe_features)} multi-timeframe features")
-        if multi_timeframe_features:
-        self.logger.info(f"🔍 Multi-timeframe feature names: {list(multi_timeframe_features.keys())}")
-        # Filter out any coroutine features from multi_timeframe_features before updating
-                filtered_multi_timeframe_features, filter_coroutines(multi_timeframe_features, "multi_timeframe")
+            )
+            self.logger.info(f"🔍 Generated {len(multi_timeframe_features)} multi-timeframe features")
+            if multi_timeframe_features:
+                self.logger.info(f"🔍 Multi-timeframe feature names: {list(multi_timeframe_features.keys())}")
+                # Filter out any coroutine features from multi_timeframe_features before updating
+                filtered_multi_timeframe_features = filter_coroutines(multi_timeframe_features, "multi_timeframe")
                 selected_features.update(filtered_multi_timeframe_features)
-        self.logger.info(f"🔍 Total features after multi-timeframe: {len(selected_features)}")
-            else:
-        self.logger.info("🔍 Multi-timeframe features disabled")
+            self.logger.info(f"🔍 Total features after multi-timeframe: {len(selected_features)}")
+        else:
+            self.logger.info("🔍 Multi-timeframe features disabled")
 
         # Meta-labeling deprecated
         self.logger.info("ℹ️ Meta-labeling is deprecated and disabled")
@@ -2941,36 +2941,37 @@ class VectorizedAdvancedFeatureEngineering:
         self.logger.info("ℹ️ Explicit meta-labels are deprecated and disabled")
 
         # Enforce generator contract: ensure all values are 1D arrays of length n
-            n = len(price_data)
-            sanitized: dict[str = Any] = {}
-            offenders: list[str] = []
+        n = len(price_data)
+        sanitized: dict[str, Any] = {}
+        offenders: list[str] = []
         for k, v in selected_features.items():
-        try: if isinstance(v = pd.Series):
-                        arr = v.values.reshape(-1)
-                    elif isinstance(v, np.ndarray):
-                        arr, v.reshape(-1) if v.ndim >= 1 else None
-                    elif isinstance(v, list):
-                        arr = np.asarray(v).reshape(-1)
-                    else:
-        # scalar or unsupported type; mark offender and skip
-                        offenders.append(k)
-                        continue
-        # Align to n rows (pad left with NaN or trim head)
-        if len(arr) > n:
-                        arr = arr[-n:]
-                    elif len(arr) < n:
-                        pad = n - len(arr)
-                        arr, np.concatenate([np.full(pad, np.nan), arr])
-                    sanitized[k] = arr
-        except Exception:
+            try:
+                if isinstance(v, pd.Series):
+                    arr = v.values.reshape(-1)
+                elif isinstance(v, np.ndarray):
+                    arr = v.reshape(-1) if v.ndim >= 1 else None
+                elif isinstance(v, list):
+                    arr = np.asarray(v).reshape(-1)
+                else:
+                    # scalar or unsupported type; mark offender and skip
                     offenders.append(k)
                     continue
+                # Align to n rows (pad left with NaN or trim head)
+                if len(arr) > n:
+                    arr = arr[-n:]
+                elif len(arr) < n:
+                    pad = n - len(arr)
+                    arr = np.concatenate([np.full(pad, np.nan), arr])
+                sanitized[k] = arr
+            except Exception:
+                offenders.append(k)
+                continue
 
         if offenders:
-        self.logger.warning(
-                    f"⚠️ Feature generator contract: skipped scalar/invalid outputs for features: {offenders[:20]}"
-                    + (" ..." if len(offenders) > 20 else ""),
-                )
+            self.logger.warning(
+                f"⚠️ Feature generator contract: skipped scalar/invalid outputs for features: {offenders[:20]}"
+                + (" ..." if len(offenders) > 20 else ""),
+            )
 
         # Apply comprehensive NaN handling
             sanitized = self._handle_nan_values_robust(sanitized)
@@ -2980,85 +2981,85 @@ class VectorizedAdvancedFeatureEngineering:
 
         # Engineer difference and acceleration features
         if self.enable_difference_acceleration_features:
-        self.logger.info("🔍 Generating difference and acceleration features...")
+            self.logger.info("🔍 Generating difference and acceleration features...")
 
-        # Validate that sanitized doesn't contain coroutines before processing
-                valid_sanitized = {}
-        for key, value in sanitized.items():
-        if hasattr(value, "__await__"):
-        self.logger.warning(f"⚠️ Skipping coroutine feature in sanitized: {key}")
-                        continue
-                    valid_sanitized[key] = value
+            # Validate that sanitized doesn't contain coroutines before processing
+            valid_sanitized = {}
+            for key, value in sanitized.items():
+                if hasattr(value, "__await__"):
+                    self.logger.warning(f"⚠️ Skipping coroutine feature in sanitized: {key}")
+                    continue
+                valid_sanitized[key] = value
 
-        # Validate input data before difference engineering
-        self._validate_difference_engineering_inputs(valid_sanitized, price_data)
+            # Validate input data before difference engineering
+            self._validate_difference_engineering_inputs(valid_sanitized, price_data)
 
-                enhanced_features, await self._engineer_difference_and_acceleration_features(valid_sanitized, price_data)
+            enhanced_features = await self._engineer_difference_and_acceleration_features(valid_sanitized, price_data)
 
-        # Validate enhanced features before merging
-        self._validate_enhanced_features(enhanced_features)
+            # Validate enhanced features before merging
+            self._validate_enhanced_features(enhanced_features)
 
-        self.logger.info(f"🔍 Generated {len(enhanced_features)} difference and acceleration features")
-        if enhanced_features:
-        self.logger.info(f"🔍 Difference/acceleration feature names: {list(enhanced_features.keys())}")
+            self.logger.info(f"🔍 Generated {len(enhanced_features)} difference and acceleration features")
+            if enhanced_features:
+                self.logger.info(f"🔍 Difference/acceleration feature names: {list(enhanced_features.keys())}")
 
-        # Validate enhanced features before merging to ensure no coroutines
+                # Validate enhanced features before merging to ensure no coroutines
                 valid_enhanced_features = {}
                 coroutine_count = 0
-        for key, value in enhanced_features.items():
-        if hasattr(value, "__await__"):
-        self.logger.warning(f"⚠️ Skipping coroutine feature before merging: {key}")
+                for key, value in enhanced_features.items():
+                    if hasattr(value, "__await__"):
+                        self.logger.warning(f"⚠️ Skipping coroutine feature before merging: {key}")
                         coroutine_count += 1
                         continue
                     valid_enhanced_features[key] = value
 
-        if coroutine_count > 0:
-        self.logger.info(f"⚠️ Filtered out {coroutine_count} coroutine features before merging")
+                if coroutine_count > 0:
+                    self.logger.info(f"⚠️ Filtered out {coroutine_count} coroutine features before merging")
 
                 sanitized.update(valid_enhanced_features)
-        self.logger.info(f"🔍 Total features after difference/acceleration: {len(sanitized)}")
+            self.logger.info(f"🔍 Total features after difference/acceleration: {len(sanitized)}")
 
-        # Apply final NaN handling to enhanced features
-                sanitized = self._handle_nan_values_robust(sanitized)
+            # Apply final NaN handling to enhanced features
+            sanitized = self._handle_nan_values_robust(sanitized)
 
-        # Log feature engineering summary
-        self._log_feature_engineering_summary(sanitized, enhanced_features)
-            else:
-        self.logger.info("ℹ️ Difference and acceleration features disabled by configuration")
+            # Log feature engineering summary
+            self._log_feature_engineering_summary(sanitized, enhanced_features)
+        else:
+            self.logger.info("ℹ️ Difference and acceleration features disabled by configuration")
 
         # 🔍 LOOKAHEAD BIAS DETECTION - Check for temporal alignment issues
         try:
-        # Convert to DataFrame for detection
-                features_df = pd.DataFrame(sanitized)
+            # Convert to DataFrame for detection
+            features_df = pd.DataFrame(sanitized)
 
-        # Run lookahead bias detection
-                bias_results, detect_lookahead_bias(
-                    features_df=features_df
-                    target_series=pd.Series(
-                        [0] * len(features_df),
-                    ),  # Dummy target for feature-only check
-                    timestamp_col=None
+            # Run lookahead bias detection
+            bias_results = detect_lookahead_bias(
+                features_df=features_df,
+                target_series=pd.Series(
+                    [0] * len(features_df),
+                ),  # Dummy target for feature-only check
+                timestamp_col=None
+            )
+
+            if bias_results.get("lookahead_bias_detected", False):
+                self.logger.critical(
+                    "🚨 LOOKAHEAD BIAS DETECTED IN FEATURE ENGINEERING!",
                 )
+                for issue in bias_results.get("critical_issues", []):
+                    self.logger.critical(f"   ❌ {issue}")
 
-        if bias_results.get("lookahead_bias_detected", False):
-        self.logger.critical(
-                        "🚨 LOOKAHEAD BIAS DETECTED IN FEATURE ENGINEERING!",
-                    )
-        for issue in bias_results.get("critical_issues", []):
-        self.logger.critical(f"   ❌ {issue}")
+                # Apply automatic lagging fix
+                self.logger.info("🔧 Applying automatic lagging fix...")
+                lagged_features = apply_feature_lagging(features_df, lag_periods=1)
+                sanitized = lagged_features.to_dict("series")
 
-        # Apply automatic lagging fix
-        self.logger.info("🔧 Applying automatic lagging fix...")
-                    lagged_features, apply_feature_lagging(features_df, lag_periods=1)
-                    sanitized = lagged_features.to_dict("series")
-
-                elif bias_results.get("warnings", []):
-        self.logger.warning("⚠️ LOOKAHEAD BIAS WARNINGS DETECTED:")
-        for warning in bias_results.get("warnings", []):
-        self.logger.warning(f"   ⚠️ {warning}")
+            elif bias_results.get("warnings", []):
+                self.logger.warning("⚠️ LOOKAHEAD BIAS WARNINGS DETECTED:")
+                for warning in bias_results.get("warnings", []):
+                    self.logger.warning(f"   ⚠️ {warning}")
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Lookahead bias detection failed: {e}")
+            self.logger.warning(f"⚠️ Lookahead bias detection failed: {e}")
 
         # Final summary logging
         self.logger.info(
@@ -3066,47 +3067,43 @@ class VectorizedAdvancedFeatureEngineering:
             )
 
         # Log feature categories summary
-            feature_categories = {}
+        feature_categories = {}
         for feature_name in sanitized:
-        if "potential_profit_pct" in feature_name.lower():
-                    feature_categories["profit_based"] = feature_categories.get("profit_based", 0) + 1
-                elif "wavelet" in feature_name.lower():
-                    feature_categories["wavelet"] = feature_categories.get("wavelet", 0) + 1
-                elif "momentum" in feature_name.lower() or "rsi" in feature_name.lower() or "macd" in feature_name.lower():
-                    feature_categories["momentum"] = feature_categories.get("momentum", 0) + 1
-                elif "volatility" in feature_name.lower():
-                    feature_categories["volatility"] = feature_categories.get("volatility", 0) + 1
-                elif "correlation" in feature_name.lower():
-                    feature_categories["correlation"] = feature_categories.get("correlation", 0) + 1
-                elif "volume" in feature_name.lower() or "liquidity" in feature_name.lower():
-                    feature_categories["liquidity"] = feature_categories.get("liquidity", 0) + 1
-                elif "candlestick" in feature_name.lower() or "pattern" in feature_name.lower():
-                    feature_categories["candlestick"] = feature_categories.get("candlestick", 0) + 1
-                elif "microstructure" in feature_name.lower() or "impact" in feature_name.lower():
-                    feature_categories["microstructure"] = feature_categories.get("microstructure", 0) + 1
-                elif "sr" in feature_name.lower() or "support" in feature_name.lower() or "resistance" in feature_name.lower():
-                    feature_categories["sr_distance"] = feature_categories.get("sr_distance", 0) + 1
-                elif "meta" in feature_name.lower():
-                    feature_categories["meta_labeling"] = feature_categories.get("meta_labeling", 0) + 1
-                elif "timeframe" in feature_name.lower():
-                    feature_categories["multi_timeframe"] = feature_categories.get("multi_timeframe", 0) + 1
-                else:
-                    feature_categories["other"] = feature_categories.get("other", 0) + 1
+            if "potential_profit_pct" in feature_name.lower():
+                feature_categories["profit_based"] = feature_categories.get("profit_based", 0) + 1
+            elif "wavelet" in feature_name.lower():
+                feature_categories["wavelet"] = feature_categories.get("wavelet", 0) + 1
+            elif "momentum" in feature_name.lower() or "rsi" in feature_name.lower() or "macd" in feature_name.lower():
+                feature_categories["momentum"] = feature_categories.get("momentum", 0) + 1
+            elif "volatility" in feature_name.lower():
+                feature_categories["volatility"] = feature_categories.get("volatility", 0) + 1
+            elif "correlation" in feature_name.lower():
+                feature_categories["correlation"] = feature_categories.get("correlation", 0) + 1
+            elif "volume" in feature_name.lower() or "liquidity" in feature_name.lower():
+                feature_categories["liquidity"] = feature_categories.get("liquidity", 0) + 1
+            elif "candlestick" in feature_name.lower() or "pattern" in feature_name.lower():
+                feature_categories["candlestick"] = feature_categories.get("candlestick", 0) + 1
+            elif "microstructure" in feature_name.lower() or "impact" in feature_name.lower():
+                feature_categories["microstructure"] = feature_categories.get("microstructure", 0) + 1
+            elif "sr" in feature_name.lower() or "support" in feature_name.lower() or "resistance" in feature_name.lower():
+                feature_categories["sr_distance"] = feature_categories.get("sr_distance", 0) + 1
+            elif "meta" in feature_name.lower():
+                feature_categories["meta_labeling"] = feature_categories.get("meta_labeling", 0) + 1
+            elif "timeframe" in feature_name.lower():
+                feature_categories["multi_timeframe"] = feature_categories.get("multi_timeframe", 0) + 1
+            else:
+                feature_categories["other"] = feature_categories.get("other", 0) + 1
 
         self.logger.info(f"📊 Feature categories: {feature_categories}")
 
         try:
-        self.logger.info(
-                    f"🧾 Vectorized feature list ({len(sanitized)}): {sorted(sanitized.keys())}",
-                )
+            self.logger.info(
+                f"🧾 Vectorized feature list ({len(sanitized)}): {sorted(sanitized.keys())}",
+            )
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to log vectorized feature list: {e}")
+            self.logger.warning(f"⚠️ Failed to log vectorized feature list: {e}")
 
         return sanitized
-
-        except Exception as e:
-        self.logger.exception(f"🚨 Error engineering vectorized advanced features: {e}")
-        return {}
 
     @validate_wavelet_data_quality
     async def _get_wavelet_features_with_caching(
@@ -3122,73 +3119,73 @@ class VectorizedAdvancedFeatureEngineering:
 
         """
         try:
-        if not self.wavelet_cache:
-        # Fallback to direct computation if cache is not available
-        return await self.wavelet_analyzer.analyze_wavelet_transforms(
-                    price_data = # Only pass price_data
+            if not self.wavelet_cache:
+                # Fallback to direct computation if cache is not available
+                return await self.wavelet_analyzer.analyze_wavelet_transforms(
+                    price_data  # Only pass price_data
                 )
 
-        # Generate cache key
+            # Generate cache key
             wavelet_config = self.wavelet_analyzer.wavelet_config
-            cache_key, self.wavelet_cache.generate_cache_key(
+            cache_key = self.wavelet_cache.generate_cache_key(
                 price_data,
                 wavelet_config,
                 {
                     "volume_data_shape": volume_data.shape
-        if volume_data is not None
+                    if volume_data is not None
                     else None,
                 },
             )
 
-        # Check if cache exists
-        if self.wavelet_cache.cache_exists(cache_key):
-        self.logger.info(f"📦 Loading wavelet features from cache: {cache_key}")
-                cached_features, metadata, self.wavelet_cache.load_from_cache(
+            # Check if cache exists
+            if self.wavelet_cache.cache_exists(cache_key):
+                self.logger.info(f"📦 Loading wavelet features from cache: {cache_key}")
+                cached_features, metadata = self.wavelet_cache.load_from_cache(
                     cache_key,
                 )
-        if cached_features:
-        return cached_features
-        # Fallthrough to recompute if cache was empty or invalid
+                if cached_features:
+                    return cached_features
+                # Fallthrough to recompute if cache was empty or invalid
 
-        # Compute wavelet features
-        self.logger.info(f"🔧 Computing wavelet features (not cached): {cache_key}")
-            wavelet_features, await self.wavelet_analyzer.analyze_wavelet_transforms(
-                price_data = # Only pass price_data
+            # Compute wavelet features
+            self.logger.info(f"🔧 Computing wavelet features (not cached): {cache_key}")
+            wavelet_features = await self.wavelet_analyzer.analyze_wavelet_transforms(
+                price_data  # Only pass price_data
             )
 
-        # Save to cache (only if non-empty)
+            # Save to cache (only if non-empty)
             metadata = {
                 "data_shape": price_data.shape,
                 "volume_data_shape": volume_data.shape
-        if volume_data is not None
+                if volume_data is not None
                 else None,
                 "computation_time": time.time(),
             }
 
-            cache_success, self.wavelet_cache.save_to_cache(
-                cache_key = wavelet_features, metadata,
+            cache_success = self.wavelet_cache.save_to_cache(
+                cache_key, wavelet_features, metadata,
             )
-        if cache_success:
-        self.logger.info(f"💾 Cached wavelet features: {cache_key}")
+            if cache_success:
+                self.logger.info(f"💾 Cached wavelet features: {cache_key}")
             else:
-        self.logger.warning(f"⚠️ Failed to cache wavelet features: {cache_key}")
+                self.logger.warning(f"⚠️ Failed to cache wavelet features: {cache_key}")
 
-        return wavelet_features
+            return wavelet_features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error getting wavelet features with caching: {e}")
-        return {}
+            self.logger.exception(f"🚨 Error getting wavelet features with caching: {e}")
+            return {}
 
     def get_cache_stats(self) -> dict[str, Any]:
         """Get cache statistics."""
         if self.wavelet_cache:
-        return self.wavelet_cache.get_cache_stats()
+            return self.wavelet_cache.get_cache_stats()
         return {"error": "Wavelet cache not initialized"}
 
     def clear_wavelet_cache(self, cache_key: str | None = None) -> bool:
         """Clear wavelet cache."""
         if self.wavelet_cache:
-        return self.wavelet_cache.clear_cache(cache_key)
+            return self.wavelet_cache.clear_cache(cache_key)
         return False
 
     async def _engineer_microstructure_features_vectorized(
@@ -3196,11 +3193,11 @@ class VectorizedAdvancedFeatureEngineering:
     ) -> dict[str, Any]:
         """Engineer market microstructure features using vectorized operations."""
         try:
-        self.logger.info("🔍 Starting microstructure feature engineering...")
+            self.logger.info("🔍 Starting microstructure feature engineering...")
             features = {}
 
-        # Enhanced NaN tracking for microstructure features
-        self._track_nan_origins(
+            # Enhanced NaN tracking for microstructure features
+            self._track_nan_origins(
                 "microstructure_input",
                 {
                     "price_data": price_data,
@@ -3209,13 +3206,13 @@ class VectorizedAdvancedFeatureEngineering:
                 },
             )
 
-        # Price impact features (vectorized per-row)
-            price_impact, self._calculate_price_impact_vectorized(
-                price_data = volume_data,
+            # Price impact features (vectorized per-row)
+            price_impact = self._calculate_price_impact_vectorized(
+                price_data, volume_data,
             )
-        self._track_nan_origins("price_impact", {"price_impact": price_impact})
+            self._track_nan_origins("price_impact", {"price_impact": price_impact})
             features["price_impact"] = price_impact
-        self.logger.info(f"🔍 Added price_impact feature, total features: {len(features)}")
+            self.logger.info(f"🔍 Added price_impact feature, total features: {len(features)}")
 
             volume_price_impact, self._calculate_volume_price_impact_vectorized(
                 price_data = volume_data,

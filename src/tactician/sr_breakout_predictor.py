@@ -1310,20 +1310,20 @@ async def extract_ml_features(self, market_data: pd.DataFrame, current_price: fl
     async def extract_ml_features(self, market_data: pd.DataFrame, current_price: float) -> dict[str, float]:
         """
         Extract comprehensive SR features for ML model training.
-        
+
         This method provides a standardized interface for extracting all SR features
         that should be used in ML model training, ensuring consistency across
         all components (Analyst, Tactician, etc.).
-        
+
         Args:
             market_data: Market data DataFrame
             current_price: Current market price
-            
+
         Returns:
             dict[str, float]: Comprehensive SR features for ML training
-"""
-try:
-            self.logger.info("🔧 Extracting comprehensive SR features for ML training...")
+        """
+        try:
+            self.logger.info("Extracting comprehensive SR features for ML training...")
 
             # Get comprehensive SR context
             sr_context = await self.get_sr_context(market_data, current_price)

@@ -131,7 +131,7 @@ class DataCollectionQualityAnalyzer:
         completeness_stats={}
         
         for source, df in self.data.items():
-        if df is None or df.empty:
+            if df is None or df.empty:
                 completeness_stats[source] = {
                     'total_rows': 0,
                     'missing_rows': 0,
@@ -141,21 +141,21 @@ class DataCollectionQualityAnalyzer:
                 }
                 continue
             
-        # Calculate expected rows based on time range
-        if 'timestamp' in df.columns or 'time' in df.columns:
-                time_col='timestamp' if 'timestamp' in df.columns else 'time'
+            # Calculate expected rows based on time range
+            if 'timestamp' in df.columns or 'time' in df.columns:
+                time_col = 'timestamp' if 'timestamp' in df.columns else 'time'
                 df[time_col] = pd.to_datetime(df[time_col], unit='ms', errors='coerce')
                 
-        if not df[time_col].isna().all():
-                    date_range, df[time_col].max() - df[time_col].min()
-                    expected_rows, self._estimate_expected_rows(source, date_range)
+                if not df[time_col].isna().all():
+                    date_range = df[time_col].max() - df[time_col].min()
+                    expected_rows = self._estimate_expected_rows(source, date_range)
                 else:
-                    expected_rows, len(df)
+                    expected_rows = len(df)
             else:
-                expected_rows, len(df)
+                expected_rows = len(df)
             
-            missing_rows, max(0, expected_rows - len(df))
-            completeness_pct=(len(df) / expected_rows * 100) if expected_rows > 0 else 0
+            missing_rows = max(0, expected_rows - len(df))
+            completeness_pct = (len(df) / expected_rows * 100) if expected_rows > 0 else 0
             
             completeness_stats[source] = {
                 'total_rows': len(df),
@@ -178,19 +178,19 @@ class DataCollectionQualityAnalyzer:
 
     def _estimate_expected_rows(self, source, date_range):
         """Estimate expected number of rows based on source type and time range."""
-        days, date_range.days
+        days = date_range.days
         
-        if source== 'klines':
-        # Assuming 1-hour candles
-        return days * 24
+        if source == 'klines':
+            # Assuming 1-hour candles
+            return days * 24
         elif source == 'agg_trades':
-        # Trades can vary significantly
-        return days * 1000  # Rough estimate
+            # Trades can vary significantly
+            return days * 1000  # Rough estimate
         elif source == 'futures':
-        # Funding rates are typically 8-hour intervals
-        return days * 3
+            # Funding rates are typically 8-hour intervals
+            return days * 3
         else:
-        return days * 24  # Default assumption
+            return days * 24  # Default assumption
     
 
     def _analyze_data_freshness(self):
@@ -201,7 +201,7 @@ class DataCollectionQualityAnalyzer:
         freshness_stats={}
         
         for source, df in self.data.items():
-        if df is None or df.empty:
+            if df is None or df.empty:
                 freshness_stats[source] = {
                     'latest_timestamp': None,
                     'oldest_timestamp': None,
@@ -211,22 +211,22 @@ class DataCollectionQualityAnalyzer:
                 }
                 continue
             
-        # Find timestamp column
-            time_col, None
-        for col in df.columns:
-        if 'time' in col.lower() or 'timestamp' in col.lower():
-                    time_col, col
+            # Find timestamp column
+            time_col = None
+            for col in df.columns:
+                if 'time' in col.lower() or 'timestamp' in col.lower():
+                    time_col = col
                     break
             
-        if time_col:
-        try:
+            if time_col:
+                try:
                     df[time_col] = pd.to_datetime(df[time_col], unit='ms', errors='coerce')
-                    latest_time, df[time_col].max()
-                    oldest_time, df[time_col].min()
+                    latest_time = df[time_col].max()
+                    oldest_time = df[time_col].min()
                     
-        if pd.notna(latest_time) and pd.notna(oldest_time):
-                        data_age, datetime.now() - latest_time
-                        data_age_hours, data_age.total_seconds() / 3600
+                    if pd.notna(latest_time) and pd.notna(oldest_time):
+                        data_age = datetime.now() - latest_time
+                        data_age_hours = data_age.total_seconds() / 3600
                         
         # Calculate update frequency
                         time_diff, df[time_col].diff().dropna()

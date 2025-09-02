@@ -146,9 +146,6 @@ class HMMRegimeDiscoveryStep:
         else:
             self.logger.warning("⚠️ SR Breakout Predictor not available")
             self.sr_predictor = None
-        except Exception as e:
-            self.logger.warning(f"⚠️ Could not initialize SR Breakout Predictor: {e}")
-            self.logger.info("📝 Proceeding without SR analysis")
 
     @handle_errors(
         exceptions=(Exception,),

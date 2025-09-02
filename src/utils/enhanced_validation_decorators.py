@@ -296,7 +296,7 @@ def smart_validation_cache(
             if cache_key_func:
                 cache_key = cache_key_func(*args, **kwargs)
             else:
-                cache_key = str(hash(str(args) + str(sorted(kwargs.items())))
+                cache_key = str(hash(str(args) + str(sorted(kwargs.items()))))
             
             # Check cache
             current_time = time.time()

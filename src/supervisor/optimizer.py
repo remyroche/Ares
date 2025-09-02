@@ -193,10 +193,10 @@ class Optimizer:
     )
     async def implement_global_system_optimization(
         self,
-        historical_pnl_data: pd.DataFrame,
-        strategy_breakdown_data: dict,
-        checkpoint_file_path: str,
-        hpo_ranges: dict,
+        historical_pnl_data: pd.DataFrame,  # pylint: disable=unused-argument
+        strategy_breakdown_data: dict,  # pylint: disable=unused-argument
+        checkpoint_file_path: str,  # pylint: disable=unused-argument
+        hpo_ranges: dict,  # pylint: disable=unused-argument
         klines_df: pd.DataFrame,
         agg_trades_df: pd.DataFrame,
         futures_df: pd.DataFrame,

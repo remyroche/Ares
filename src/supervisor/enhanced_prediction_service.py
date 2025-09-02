@@ -579,7 +579,7 @@ class EnhancedPredictionService:
                         f"⚠️ Triple barrier probability ({triple_barrier}) > direction probability ({direction}) for model {model_name}"
                     )
                 )
-            
+
             # Magnitude probability should be reasonable
             if magnitude < 0.3 or magnitude > 0.9:
                 self.logger.warning(

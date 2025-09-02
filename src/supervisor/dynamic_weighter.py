@@ -396,7 +396,7 @@ class DynamicWeighter:
         default_return=None,
         context="performance weighting",
     )
-    async def _perform_performance_weighting(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    async def _perform_performance_weighting(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform performance-based weighting."""
         try:
             # Define performance weighting methods
@@ -406,13 +406,13 @@ class DynamicWeighter:
                 "sortino_based_weighting": self._perform_sortino_based_weighting,
                 "calmar_based_weighting": self._perform_calmar_based_weighting,
             }
-            
+
             # Execute enabled weighting methods
             results = {}
             for method_name, method_func in weighting_methods.items():
                 if self.performance_weighting_components.get(method_name, False):
                     results[method_name] = method_func(weighting_input)
-            
+
             return results
 
         except Exception as e:
@@ -424,7 +424,7 @@ class DynamicWeighter:
         default_return=None,
         context="risk weighting",
     )
-    async def _perform_risk_weighting(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    async def _perform_risk_weighting(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform risk-based weighting."""
         try:
             # Define risk weighting methods
@@ -434,13 +434,13 @@ class DynamicWeighter:
                 "drawdown_based_weighting": self._perform_drawdown_based_weighting,
                 "correlation_based_weighting": self._perform_correlation_based_weighting,
             }
-            
+
             # Execute enabled weighting methods
             results = {}
             for method_name, method_func in weighting_methods.items():
                 if self.risk_weighting_components.get(method_name, False):
                     results[method_name] = method_func(weighting_input)
-            
+
             return results
 
         except Exception as e:
@@ -452,7 +452,7 @@ class DynamicWeighter:
         default_return=None,
         context="adaptive weighting",
     )
-    async def _perform_adaptive_weighting(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    async def _perform_adaptive_weighting(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform adaptive weighting."""
         try:
             results = {}
@@ -481,7 +481,7 @@ class DynamicWeighter:
 
     # Performance weighting methods
 
-    def _perform_return_based_weighting(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_return_based_weighting(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform return based weighting."""
         try:
             # Simulate return based weighting
@@ -496,7 +496,7 @@ class DynamicWeighter:
             self.logger.error(f"Error performing return based weighting: {e}")
             return {}
 
-    def _perform_sharpe_based_weighting(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_sharpe_based_weighting(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform Sharpe based weighting."""
         try:
             # Simulate Sharpe based weighting
@@ -511,7 +511,7 @@ class DynamicWeighter:
             self.logger.error(f"Error performing Sharpe based weighting: {e}")
             return {}
 
-    def _perform_sortino_based_weighting(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_sortino_based_weighting(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform Sortino based weighting."""
         try:
             # Simulate Sortino based weighting
@@ -526,7 +526,7 @@ class DynamicWeighter:
             self.logger.error(f"Error performing Sortino based weighting: {e}")
             return {}
 
-    def _perform_calmar_based_weighting(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_calmar_based_weighting(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform Calmar based weighting."""
         try:
             # Simulate Calmar based weighting
@@ -543,7 +543,7 @@ class DynamicWeighter:
 
     # Risk weighting methods
 
-    def _perform_var_based_weighting(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_var_based_weighting(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform VaR based weighting."""
         try:
             # Simulate VaR based weighting
@@ -558,7 +558,7 @@ class DynamicWeighter:
             self.logger.error(f"Error performing VaR based weighting: {e}")
             return {}
 
-    def _perform_volatility_based_weighting(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_volatility_based_weighting(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform volatility based weighting."""
         try:
             # Simulate volatility based weighting
@@ -573,7 +573,7 @@ class DynamicWeighter:
             self.logger.error(f"Error performing volatility based weighting: {e}")
             return {}
 
-    def _perform_drawdown_based_weighting(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_drawdown_based_weighting(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform drawdown based weighting."""
         try:
             # Simulate drawdown based weighting
@@ -588,7 +588,7 @@ class DynamicWeighter:
             self.logger.error(f"Error performing drawdown based weighting: {e}")
             return {}
 
-    def _perform_correlation_based_weighting(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_correlation_based_weighting(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform correlation based weighting."""
         try:
             # Simulate correlation based weighting
@@ -605,7 +605,7 @@ class DynamicWeighter:
 
     # Adaptive weighting methods
 
-    def _perform_market_regime_weighting(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_market_regime_weighting(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform market regime weighting."""
         try:
             # Simulate market regime weighting
@@ -620,7 +620,7 @@ class DynamicWeighter:
             self.logger.error(f"Error performing market regime weighting: {e}")
             return {}
 
-    def _perform_regime_detection(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_regime_detection(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform regime detection."""
         try:
             # Simulate regime detection
@@ -635,7 +635,7 @@ class DynamicWeighter:
             self.logger.error(f"Error performing regime detection: {e}")
             return {}
 
-    def _perform_regime_transition(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_regime_transition(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform regime transition."""
         try:
             # Simulate regime transition
@@ -650,7 +650,7 @@ class DynamicWeighter:
             self.logger.error(f"Error performing regime transition: {e}")
             return {}
 
-    def _perform_regime_optimization(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_regime_optimization(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform regime optimization."""
         try:
             # Simulate regime optimization
@@ -665,7 +665,7 @@ class DynamicWeighter:
             self.logger.error(f"Error performing regime optimization: {e}")
             return {}
 
-    def _perform_adaptive_learning(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_adaptive_learning(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform adaptive learning weighting."""
         try:
             # Simulate adaptive learning weighting
@@ -680,7 +680,7 @@ class DynamicWeighter:
             self.logger.error(f"Error performing adaptive learning: {e}")
             return {}
 
-    def _perform_dynamic_adjustment(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_dynamic_adjustment(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform dynamic adjustment weighting."""
         try:
             # Simulate dynamic adjustment weighting
@@ -697,7 +697,7 @@ class DynamicWeighter:
 
     # Momentum weighting methods
 
-    def _perform_price_momentum(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_price_momentum(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform price momentum weighting."""
         try:
             # Simulate price momentum weighting
@@ -712,7 +712,7 @@ class DynamicWeighter:
             self.logger.error(f"Error performing price momentum: {e}")
             return {}
 
-    def _perform_volume_momentum(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_volume_momentum(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform volume momentum weighting."""
         try:
             # Simulate volume momentum weighting
@@ -727,7 +727,7 @@ class DynamicWeighter:
             self.logger.error(f"Error performing volume momentum: {e}")
             return {}
 
-    def _perform_momentum_regime(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_momentum_regime(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform momentum regime weighting."""
         try:
             # Simulate momentum regime weighting
@@ -742,7 +742,7 @@ class DynamicWeighter:
             self.logger.error(f"Error performing momentum regime: {e}")
             return {}
 
-    def _perform_momentum_optimization(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_momentum_optimization(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform momentum optimization."""
         try:
             # Simulate momentum optimization
@@ -762,7 +762,7 @@ class DynamicWeighter:
         default_return=None,
         context="momentum weighting",
     )
-    async def _perform_momentum_weighting(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    async def _perform_momentum_weighting(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform momentum-based weighting."""
         try:
             results = {}
@@ -789,7 +789,7 @@ class DynamicWeighter:
             self.logger.error(f"Error performing momentum weighting: {e}")
             return {}
 
-    def _perform_price_momentum_weighting(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_price_momentum_weighting(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform price momentum weighting."""
         try:
             # Simulate price momentum weighting
@@ -804,7 +804,7 @@ class DynamicWeighter:
             self.logger.error(f"Error performing price momentum weighting: {e}")
             return {}
 
-    def _perform_volume_momentum_weighting(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_volume_momentum_weighting(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform volume momentum weighting."""
         try:
             # Simulate volume momentum weighting
@@ -819,7 +819,7 @@ class DynamicWeighter:
             self.logger.error(f"Error performing volume momentum weighting: {e}")
             return {}
 
-    def _perform_momentum_breakout_weighting(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_momentum_breakout_weighting(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform momentum breakout weighting."""
         try:
             # Simulate momentum breakout weighting
@@ -834,7 +834,7 @@ class DynamicWeighter:
             self.logger.error(f"Error performing momentum breakout weighting: {e}")
             return {}
 
-    def _perform_momentum_reversal_weighting(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_momentum_reversal_weighting(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform momentum reversal weighting."""
         try:
             # Simulate momentum reversal weighting
@@ -851,7 +851,7 @@ class DynamicWeighter:
 
     # Volatility weighting methods
 
-    def _perform_historical_volatility_weighting(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_historical_volatility_weighting(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform historical volatility weighting."""
         try:
             # Simulate historical volatility weighting
@@ -868,7 +868,7 @@ class DynamicWeighter:
             )
             return {}
 
-    def _perform_implied_volatility_weighting(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_implied_volatility_weighting(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform implied volatility weighting."""
         try:
             # Simulate implied volatility weighting
@@ -883,7 +883,7 @@ class DynamicWeighter:
             self.logger.error(f"Error performing implied volatility weighting: {e}")
             return {}
 
-    def _perform_volatility_regime_weighting(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_volatility_regime_weighting(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform volatility regime weighting."""
         try:
             # Simulate volatility regime weighting
@@ -898,7 +898,7 @@ class DynamicWeighter:
             self.logger.error(f"Error performing volatility regime weighting: {e}")
             return {}
 
-    def _perform_volatility_optimization(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_volatility_optimization(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform volatility optimization."""
         try:
             # Simulate volatility optimization
@@ -918,7 +918,7 @@ class DynamicWeighter:
         default_return=None,
         context="volatility weighting",
     )
-    async def _perform_volatility_weighting(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    async def _perform_volatility_weighting(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform volatility-based weighting."""
         try:
             results = {}
@@ -945,7 +945,7 @@ class DynamicWeighter:
             self.logger.error(f"Error performing volatility weighting: {e}")
             return {}
 
-    def _perform_realized_volatility_weighting(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_realized_volatility_weighting(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform realized volatility weighting."""
         try:
             # Simulate realized volatility weighting
@@ -960,7 +960,7 @@ class DynamicWeighter:
             self.logger.error(f"Error performing realized volatility weighting: {e}")
             return {}
 
-    def _perform_volatility_forecast_weighting(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
+    def _perform_volatility_forecast_weighting(self, _weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform volatility forecast weighting."""
         try:
             # Simulate volatility forecast weighting
@@ -1122,7 +1122,7 @@ class DynamicWeighter:
                 # Maintain performance window
                 if len(self.model_performances[model_name]) > self.performance_window:
                     self.model_performances[model_name] = self.model_performances[model_name][
-                        -self.performance_window :
+                        -self.performance_window:
                     ]
 
                 # Update weight using gradient descent

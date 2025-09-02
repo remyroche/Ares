@@ -1107,182 +1107,183 @@ async def setup_pnl_loss_functions(
         system_logger.error(f"Error setting up PnL loss functions: {e}")
         return None
 
+
     def _perform_treynor_ratio(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
-        """Perform Treynor ratio calculation."""
-        try:
-            # Simulate Treynor ratio calculation
-            return {
-                "treynor_ratio_completed": True,
-                "treynor_ratio_value": 1.15,
-                "beta": 0.85,
-                "risk_free_rate": 0.02,
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing Treynor ratio: {e}")
-            return {}
+            """Perform Treynor ratio calculation."""
+            try:
+                # Simulate Treynor ratio calculation
+                return {
+                    "treynor_ratio_completed": True,
+                    "treynor_ratio_value": 1.15,
+                    "beta": 0.85,
+                    "risk_free_rate": 0.02,
+                    "training_time": datetime.now().isoformat(),
+                }
+            except Exception as e:
+                self.logger.error(f"Error performing Treynor ratio: {e}")
+                return {}
 
     def _perform_jensen_alpha(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
-        """Perform Jensen alpha calculation."""
-        try:
-            # Simulate Jensen alpha calculation
-            return {
-                "jensen_alpha_completed": True,
-                "jensen_alpha_value": 0.05,
-                "expected_return": 0.12,
-                "actual_return": 0.17,
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing Jensen alpha: {e}")
-            return {}
+            """Perform Jensen alpha calculation."""
+            try:
+                # Simulate Jensen alpha calculation
+                return {
+                    "jensen_alpha_completed": True,
+                    "jensen_alpha_value": 0.05,
+                    "expected_return": 0.12,
+                    "actual_return": 0.17,
+                    "training_time": datetime.now().isoformat(),
+                }
+            except Exception as e:
+                self.logger.error(f"Error performing Jensen alpha: {e}")
+                return {}
 
     def _perform_var_95(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
-        """Perform VaR 95% calculation."""
-        try:
-            # Simulate VaR 95% calculation
-            return {
-                "var_95_completed": True,
-                "var_95_value": -0.025,
-                "confidence_level": 0.95,
-                "calculation_method": "historical",
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing VaR 95%: {e}")
-            return {}
+            """Perform VaR 95% calculation."""
+            try:
+                # Simulate VaR 95% calculation
+                return {
+                    "var_95_completed": True,
+                    "var_95_value": -0.025,
+                    "confidence_level": 0.95,
+                    "calculation_method": "historical",
+                    "training_time": datetime.now().isoformat(),
+                }
+            except Exception as e:
+                self.logger.error(f"Error performing VaR 95%: {e}")
+                return {}
 
     def _perform_var_99(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
-        """Perform VaR 99% calculation."""
-        try:
-            # Simulate VaR 99% calculation
-            return {
-                "var_99_completed": True,
-                "var_99_value": -0.035,
-                "confidence_level": 0.99,
-                "calculation_method": "historical",
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing VaR 99%: {e}")
-            return {}
+            """Perform VaR 99% calculation."""
+            try:
+                # Simulate VaR 99% calculation
+                return {
+                    "var_99_completed": True,
+                    "var_99_value": -0.035,
+                    "confidence_level": 0.99,
+                    "calculation_method": "historical",
+                    "training_time": datetime.now().isoformat(),
+                }
+            except Exception as e:
+                self.logger.error(f"Error performing VaR 99%: {e}")
+                return {}
 
     def _perform_cvar_95(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
-        """Perform CVaR 95% calculation."""
-        try:
-            # Simulate CVaR 95% calculation
-            return {
-                "cvar_95_completed": True,
-                "cvar_95_value": -0.032,
-                "confidence_level": 0.95,
-                "calculation_method": "historical",
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing CVaR 95%: {e}")
-            return {}
+            """Perform CVaR 95% calculation."""
+            try:
+                # Simulate CVaR 95% calculation
+                return {
+                    "cvar_95_completed": True,
+                    "cvar_95_value": -0.032,
+                    "confidence_level": 0.95,
+                    "calculation_method": "historical",
+                    "training_time": datetime.now().isoformat(),
+                }
+            except Exception as e:
+                self.logger.error(f"Error performing CVaR 95%: {e}")
+                return {}
 
     def _perform_cvar_99(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
-        """Perform CVaR 99% calculation."""
-        try:
-            # Simulate CVaR 99% calculation
-            return {
-                "cvar_99_completed": True,
-                "cvar_99_value": -0.045,
-                "confidence_level": 0.99,
-                "calculation_method": "historical",
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing CVaR 99%: {e}")
-            return {}
+            """Perform CVaR 99% calculation."""
+            try:
+                # Simulate CVaR 99% calculation
+                return {
+                    "cvar_99_completed": True,
+                    "cvar_99_value": -0.045,
+                    "confidence_level": 0.99,
+                    "calculation_method": "historical",
+                    "training_time": datetime.now().isoformat(),
+                }
+            except Exception as e:
+                self.logger.error(f"Error performing CVaR 99%: {e}")
+                return {}
 
     def _perform_expected_shortfall(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
-        """Perform expected shortfall calculation."""
-        try:
-            # Simulate expected shortfall calculation
-            return {
-                "expected_shortfall_completed": True,
-                "expected_shortfall_value": -0.038,
-                "calculation_method": "historical",
-                "tail_percentile": 0.05,
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing expected shortfall: {e}")
-            return {}
+            """Perform expected shortfall calculation."""
+            try:
+                # Simulate expected shortfall calculation
+                return {
+                    "expected_shortfall_completed": True,
+                    "expected_shortfall_value": -0.038,
+                    "calculation_method": "historical",
+                    "tail_percentile": 0.05,
+                    "training_time": datetime.now().isoformat(),
+                }
+            except Exception as e:
+                self.logger.error(f"Error performing expected shortfall: {e}")
+                return {}
 
     def _perform_tail_risk(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
-        """Perform tail risk calculation."""
-        try:
-            # Simulate tail risk calculation
-            return {
-                "tail_risk_completed": True,
-                "tail_risk_value": 0.15,
-                "calculation_method": "kurtosis",
-                "tail_threshold": 0.05,
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing tail risk: {e}")
-            return {}
+            """Perform tail risk calculation."""
+            try:
+                # Simulate tail risk calculation
+                return {
+                    "tail_risk_completed": True,
+                    "tail_risk_value": 0.15,
+                    "calculation_method": "kurtosis",
+                    "tail_threshold": 0.05,
+                    "training_time": datetime.now().isoformat(),
+                }
+            except Exception as e:
+                self.logger.error(f"Error performing tail risk: {e}")
+                return {}
 
     def _perform_kelly_criterion(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
-        """Perform Kelly criterion calculation."""
-        try:
-            # Simulate Kelly criterion calculation
-            return {
-                "kelly_criterion_completed": True,
-                "kelly_fraction": 0.25,
-                "win_probability": 0.55,
-                "win_loss_ratio": 1.2,
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing Kelly criterion: {e}")
-            return {}
+            """Perform Kelly criterion calculation."""
+            try:
+                # Simulate Kelly criterion calculation
+                return {
+                    "kelly_criterion_completed": True,
+                    "kelly_fraction": 0.25,
+                    "win_probability": 0.55,
+                    "win_loss_ratio": 1.2,
+                    "training_time": datetime.now().isoformat(),
+                }
+            except Exception as e:
+                self.logger.error(f"Error performing Kelly criterion: {e}")
+                return {}
 
     def _perform_optimal_leverage(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
-        """Perform optimal leverage calculation."""
-        try:
-            # Simulate optimal leverage calculation
-            return {
-                "optimal_leverage_completed": True,
-                "optimal_leverage": 1.5,
-                "risk_tolerance": 0.02,
-                "expected_return": 0.15,
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing optimal leverage: {e}")
-            return {}
+            """Perform optimal leverage calculation."""
+            try:
+                # Simulate optimal leverage calculation
+                return {
+                    "optimal_leverage_completed": True,
+                    "optimal_leverage": 1.5,
+                    "risk_tolerance": 0.02,
+                    "expected_return": 0.15,
+                    "training_time": datetime.now().isoformat(),
+                }
+            except Exception as e:
+                self.logger.error(f"Error performing optimal leverage: {e}")
+                return {}
 
     def _perform_position_sizing(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
-        """Perform position sizing calculation."""
-        try:
-            # Simulate position sizing calculation
-            return {
-                "position_sizing_completed": True,
-                "position_size": 0.1,
-                "risk_per_trade": 0.02,
-                "account_size": 100000,
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing position sizing: {e}")
-            return {}
+            """Perform position sizing calculation."""
+            try:
+                # Simulate position sizing calculation
+                return {
+                    "position_sizing_completed": True,
+                    "position_size": 0.1,
+                    "risk_per_trade": 0.02,
+                    "account_size": 100000,
+                    "training_time": datetime.now().isoformat(),
+                }
+            except Exception as e:
+                self.logger.error(f"Error performing position sizing: {e}")
+                return {}
 
     def _perform_risk_budget(self, calculation_input: dict[str, Any]) -> dict[str, Any]:
-        """Perform risk budget calculation."""
-        try:
-            # Simulate risk budget calculation
-            return {
-                "risk_budget_completed": True,
-                "total_risk_budget": 0.05,
-                "allocated_risk": 0.03,
-                "remaining_risk": 0.02,
-                "training_time": datetime.now().isoformat(),
-            }
-        except Exception as e:
-            self.logger.error(f"Error performing risk budget: {e}")
-            return {}
+            """Perform risk budget calculation."""
+            try:
+                # Simulate risk budget calculation
+                return {
+                    "risk_budget_completed": True,
+                    "total_risk_budget": 0.05,
+                    "allocated_risk": 0.03,
+                    "remaining_risk": 0.02,
+                    "training_time": datetime.now().isoformat(),
+                }
+            except Exception as e:
+                self.logger.error(f"Error performing risk budget: {e}")
+                return {}

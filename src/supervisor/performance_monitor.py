@@ -260,7 +260,7 @@ class PerformanceMonitor:
             # Keep only recent history
             if len(self.model_performance_history[model_name]) > self.drift_detection_window:
                 self.model_performance_history[model_name] = self.model_performance_history[model_name][
-                    -self.drift_detection_window :
+                    -self.drift_detection_window:
                 ]
 
             # Need enough data to detect drift
@@ -390,8 +390,8 @@ class PerformanceMonitor:
 
             # Maintain performance window
             if len(self.model_predictions[model_name]) > self.performance_window:
-                self.model_predictions[model_name] = self.model_predictions[model_name][-self.performance_window :]
-                self.model_outcomes[model_name] = self.model_outcomes[model_name][-self.performance_window :]
+                self.model_predictions[model_name] = self.model_predictions[model_name][-self.performance_window:]
+                self.model_outcomes[model_name] = self.model_outcomes[model_name][-self.performance_window:]
 
             # Calculate real-time metrics
             await self._calculate_real_time_metrics(model_name)

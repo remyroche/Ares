@@ -651,7 +651,7 @@ class Supervisor:
                 }
             )
 
-            self.logger.info(f"🎯 Enhanced Tactician Execution Parameters:")
+            self.logger.info("🎯 Enhanced Tactician Execution Parameters:")
             self.logger.info(f"   Symbol: {symbol}")
             self.logger.info(f"   Direction: {execution_params.get('trade_direction', 'unknown')}")
             self.logger.info(f"   Precision Score: {execution_params.get('precision_score', 0.0):.3f}")

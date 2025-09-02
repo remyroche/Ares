@@ -1,0 +1,3232 @@
+{
+  "total_nodes": 17818,
+  "total_edges": 9223,
+  "node_types": {
+    "module": 688,
+    "class": 1113,
+    "method": 5929,
+    "function": 7002,
+    "external": 3086
+  },
+  "file_stats": {
+    "/workspace/step_formatter.py": {
+      "functions": 10,
+      "classes": 1,
+      "methods": 9
+    },
+    "/workspace/kelly_criterion_fix.py": {
+      "functions": 2,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/create_regime_splits.py": {
+      "functions": 1,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/demo_step_formatting.py": {
+      "functions": 1,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/comprehensive_analysis_core.py": {
+      "functions": 13,
+      "classes": 4,
+      "methods": 12
+    },
+    "/workspace/fix_metadata_and_naming.py": {
+      "functions": 5,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/complete_remaining_steps_integration.py": {
+      "functions": 7,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/comprehensive_analysis_demo.py": {
+      "functions": 16,
+      "classes": 10,
+      "methods": 31
+    },
+    "/workspace/final_targeted_fix_v3.py": {
+      "functions": 3,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/test_step_formatter.py": {
+      "functions": 2,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/enhanced_validation_logging.py": {
+      "functions": 3,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/example_enhanced_multi_timeframe_optimization.py": {
+      "functions": 7,
+      "classes": 1,
+      "methods": 7
+    },
+    "/workspace/quick_error_scanner.py": {
+      "functions": 6,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/standardize_utility_modules.py": {
+      "functions": 2,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/test_data_quality_and_formatting.py": {
+      "functions": 21,
+      "classes": 1,
+      "methods": 20
+    },
+    "/workspace/optimize_hmm_regime_parameters.py": {
+      "functions": 36,
+      "classes": 1,
+      "methods": 34
+    },
+    "/workspace/fix_critical_imports.py": {
+      "functions": 4,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/download_futures_only.py": {
+      "functions": 1,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/update_all_steps_mlflow_integration.py": {
+      "functions": 6,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/validate_advanced_sr_methods.py": {
+      "functions": 6,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/fix_syntax_errors_enhanced.py": {
+      "functions": 14,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/test_tactician_multi_output_system.py": {
+      "functions": 9,
+      "classes": 1,
+      "methods": 7
+    },
+    "/workspace/demo_step_formatter.py": {
+      "functions": 3,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/test_plugins.py": {
+      "functions": 5,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/download_missing_aggtrades_days.py": {
+      "functions": 1,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/download_missing_aggtrades_2023_2024.py": {
+      "functions": 4,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/format_steps.py": {
+      "functions": 1,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/check_syntax.py": {
+      "functions": 2,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/debug_metadata_detection.py": {
+      "functions": 2,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/comprehensive_quality_auditor.py": {
+      "functions": 23,
+      "classes": 2,
+      "methods": 22
+    },
+    "/workspace/ares_launcher.py": {
+      "functions": 41,
+      "classes": 1,
+      "methods": 35
+    },
+    "/workspace/analyze_strict_thresholds.py": {
+      "functions": 3,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/consolidate_aggtrades.py": {
+      "functions": 1,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/comprehensive_analysis_simplified.py": {
+      "functions": 13,
+      "classes": 4,
+      "methods": 12
+    },
+    "/workspace/automated_syntax_fixer.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 7
+    },
+    "/workspace/simple_syntax_check.py": {
+      "functions": 3,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/standalone_analyzers.py": {
+      "functions": 30,
+      "classes": 6,
+      "methods": 45
+    },
+    "/workspace/test_comprehensive_analysis.py": {
+      "functions": 3,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/feature_analysis_script.py": {
+      "functions": 3,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/test_enhanced_outlier_handler_and_schema.py": {
+      "functions": 20,
+      "classes": 1,
+      "methods": 19
+    },
+    "/workspace/comprehensive_professional_analysis.py": {
+      "functions": 16,
+      "classes": 4,
+      "methods": 15
+    },
+    "/workspace/systematic_code_improver.py": {
+      "functions": 9,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/complete_remaining_16_steps.py": {
+      "functions": 8,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/core_syntax_checker.py": {
+      "functions": 2,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/minimal_config.py": {
+      "functions": 1,
+      "classes": 2,
+      "methods": 0
+    },
+    "/workspace/optimize_hmm_regime_parameters_advanced.py": {
+      "functions": 28,
+      "classes": 5,
+      "methods": 30
+    },
+    "/workspace/fix_partially_integrated_steps.py": {
+      "functions": 5,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/create_correct_mock_data.py": {
+      "functions": 8,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/run_syntax_fix.py": {
+      "functions": 3,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/fix_import_errors.py": {
+      "functions": 3,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/debug_hmm_combinations.py": {
+      "functions": 2,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/update_imports.py": {
+      "functions": 2,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/consolidate_data.py": {
+      "functions": 2,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/analyst_scanner.py": {
+      "functions": 9,
+      "classes": 1,
+      "methods": 6
+    },
+    "/workspace/analyze_validation_issues.py": {
+      "functions": 4,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/test_comprehensive_security.py": {
+      "functions": 16,
+      "classes": 1,
+      "methods": 15
+    },
+    "/workspace/fix_syntax_errors.py": {
+      "functions": 13,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/debug_interaction_flow.py": {
+      "functions": 4,
+      "classes": 1,
+      "methods": 4
+    },
+    "/workspace/convert_csv_to_parquet.py": {
+      "functions": 1,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/simple_code_analysis.py": {
+      "functions": 7,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/standardize_remaining_steps.py": {
+      "functions": 2,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/syntax_checker.py": {
+      "functions": 5,
+      "classes": 1,
+      "methods": 4
+    },
+    "/workspace/final_comprehensive_analysis.py": {
+      "functions": 13,
+      "classes": 4,
+      "methods": 12
+    },
+    "/workspace/style_analysis.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 7
+    },
+    "/workspace/fix_decorator_application.py": {
+      "functions": 4,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/syntax_error_count_analysis.py": {
+      "functions": 5,
+      "classes": 1,
+      "methods": 4
+    },
+    "/workspace/conservative_syntax_fixer.py": {
+      "functions": 7,
+      "classes": 1,
+      "methods": 6
+    },
+    "/workspace/optimize_hmm_regime_parameters_enhanced.py": {
+      "functions": 13,
+      "classes": 1,
+      "methods": 12
+    },
+    "/workspace/multi_objective_hmm_optimizer.py": {
+      "functions": 42,
+      "classes": 3,
+      "methods": 41
+    },
+    "/workspace/complete_remaining_steps.py": {
+      "functions": 8,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/syntax_error_scanner.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 7
+    },
+    "/workspace/test_file.py": {
+      "functions": 3,
+      "classes": 1,
+      "methods": 2
+    },
+    "/workspace/fix_multi_timeframe_data.py": {
+      "functions": 4,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/test_comprehensive_sr_integration.py": {
+      "functions": 3,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/download_specific_missing_data.py": {
+      "functions": 1,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/cleanup_actions.py": {
+      "functions": 2,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/minimal_file_utils.py": {
+      "functions": 3,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/diagnose_interaction_features.py": {
+      "functions": 7,
+      "classes": 1,
+      "methods": 4
+    },
+    "/workspace/diagnose_feature_pipeline.py": {
+      "functions": 3,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/comprehensive_code_quality_assessment.py": {
+      "functions": 12,
+      "classes": 1,
+      "methods": 11
+    },
+    "/workspace/scripts/optimize_fractional_differentiation_params.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 7
+    },
+    "/workspace/scripts/verify_timeframe_data.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 7
+    },
+    "/workspace/scripts/update_entire_repository_logging.py": {
+      "functions": 6,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/analyze_sr_position.py": {
+      "functions": 4,
+      "classes": 1,
+      "methods": 4
+    },
+    "/workspace/scripts/diagnose_feature_quality.py": {
+      "functions": 14,
+      "classes": 1,
+      "methods": 9
+    },
+    "/workspace/scripts/verify_feature_calculations.py": {
+      "functions": 13,
+      "classes": 1,
+      "methods": 12
+    },
+    "/workspace/scripts/launch_advanced_monitoring.py": {
+      "functions": 4,
+      "classes": 1,
+      "methods": 4
+    },
+    "/workspace/scripts/unified_optuna_optimization_demo.py": {
+      "functions": 12,
+      "classes": 1,
+      "methods": 12
+    },
+    "/workspace/scripts/run_enhanced_training.py": {
+      "functions": 1,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/setup_challenger_model.py": {
+      "functions": 5,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/post_steps_cleaner.py": {
+      "functions": 5,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/training_cli.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 4
+    },
+    "/workspace/scripts/train_multi_timeframe_hmm_ensemble.py": {
+      "functions": 4,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/assess_data_quality.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 5
+    },
+    "/workspace/scripts/validate_multicollinearity_fix.py": {
+      "functions": 1,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/compare_agg_trades_formats.py": {
+      "functions": 1,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/fix_multicollinearity_issue.py": {
+      "functions": 5,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/regenerate_timeframes.py": {
+      "functions": 4,
+      "classes": 1,
+      "methods": 4
+    },
+    "/workspace/scripts/universal_checker.py": {
+      "functions": 16,
+      "classes": 4,
+      "methods": 0
+    },
+    "/workspace/scripts/download_missing_timeframes.py": {
+      "functions": 4,
+      "classes": 1,
+      "methods": 3
+    },
+    "/workspace/scripts/update_logging_warnings.py": {
+      "functions": 6,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/debug_analysis.py": {
+      "functions": 1,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/launch_with_monitoring.py": {
+      "functions": 2,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/show_timeframe_config.py": {
+      "functions": 3,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/analyze_timeframe_incremental.py": {
+      "functions": 12,
+      "classes": 1,
+      "methods": 10
+    },
+    "/workspace/scripts/fix_consolidated_data.py": {
+      "functions": 2,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/analyze_sr_position_enhanced.py": {
+      "functions": 4,
+      "classes": 1,
+      "methods": 4
+    },
+    "/workspace/scripts/launch_portfolio_manager.py": {
+      "functions": 1,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/run_scans.py": {
+      "functions": 10,
+      "classes": 3,
+      "methods": 9
+    },
+    "/workspace/scripts/investigate_high_vif_features.py": {
+      "functions": 1,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/optimize_fractional_labeling_params.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 7
+    },
+    "/workspace/scripts/fix_corrupted_data.py": {
+      "functions": 7,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/database_migration.py": {
+      "functions": 1,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/consolidate_binance_15m.py": {
+      "functions": 2,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/configure_optimization_settings.py": {
+      "functions": 12,
+      "classes": 1,
+      "methods": 9
+    },
+    "/workspace/scripts/advanced_syntax_repair.py": {
+      "functions": 5,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/analyze_timeframe.py": {
+      "functions": 12,
+      "classes": 1,
+      "methods": 10
+    },
+    "/workspace/scripts/validate_fractional_differentiation_performance.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 8
+    },
+    "/workspace/scripts/analyze_hmm_regimes.py": {
+      "functions": 23,
+      "classes": 1,
+      "methods": 22
+    },
+    "/workspace/scripts/regenerate_pickle_files.py": {
+      "functions": 4,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/run_multi_timeframe_training.py": {
+      "functions": 2,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/fix_multicollinearity.py": {
+      "functions": 5,
+      "classes": 1,
+      "methods": 4
+    },
+    "/workspace/scripts/optimize_partitions.py": {
+      "functions": 7,
+      "classes": 1,
+      "methods": 6
+    },
+    "/workspace/scripts/analyze_small_files.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 5
+    },
+    "/workspace/scripts/migrate_parquet_datasets.py": {
+      "functions": 14,
+      "classes": 1,
+      "methods": 8
+    },
+    "/workspace/scripts/demo_enhanced_validation.py": {
+      "functions": 3,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/surgical_pass2.py": {
+      "functions": 4,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/run_feature_diagnostic.py": {
+      "functions": 10,
+      "classes": 1,
+      "methods": 9
+    },
+    "/workspace/scripts/run_sr_optimization.py": {
+      "functions": 9,
+      "classes": 1,
+      "methods": 9
+    },
+    "/workspace/scripts/optimize_combined_parameters.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 6
+    },
+    "/workspace/scripts/bot_monitor.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 7
+    },
+    "/workspace/scripts/mock_baseline_analysis.py": {
+      "functions": 4,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/syntax_error_scanner.py": {
+      "functions": 12,
+      "classes": 1,
+      "methods": 10
+    },
+    "/workspace/scripts/check_notifications.py": {
+      "functions": 3,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/bulk_steps_fixer.py": {
+      "functions": 4,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/rename_data_files.py": {
+      "functions": 3,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/scripts/investigate_regime_calculations.py": {
+      "functions": 11,
+      "classes": 1,
+      "methods": 10
+    },
+    "/workspace/scripts/establish_baseline_performance.py": {
+      "functions": 10,
+      "classes": 1,
+      "methods": 9
+    },
+    "/workspace/code_quality/example_usage_extended.py": {
+      "functions": 6,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/code_quality/function_validator.py": {
+      "functions": 22,
+      "classes": 6,
+      "methods": 23
+    },
+    "/workspace/code_quality/cli.py": {
+      "functions": 11,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/code_quality/merge_conflict_detector.py": {
+      "functions": 11,
+      "classes": 1,
+      "methods": 10
+    },
+    "/workspace/code_quality/comprehensive_code_review.py": {
+      "functions": 36,
+      "classes": 5,
+      "methods": 37
+    },
+    "/workspace/code_quality/quick_start.py": {
+      "functions": 3,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/code_quality/run_validation.py": {
+      "functions": 3,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/code_quality/__init__.py": {
+      "functions": 9,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/code_quality/example_usage.py": {
+      "functions": 5,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/code_quality/test_tools.py": {
+      "functions": 3,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/code_quality/reporters/trend_reporter.py": {
+      "functions": 17,
+      "classes": 4,
+      "methods": 17
+    },
+    "/workspace/code_quality/reporters/error_reporter.py": {
+      "functions": 22,
+      "classes": 5,
+      "methods": 22
+    },
+    "/workspace/code_quality/reporters/quality_reporter.py": {
+      "functions": 11,
+      "classes": 1,
+      "methods": 10
+    },
+    "/workspace/code_quality/reporters/html_reporter.py": {
+      "functions": 15,
+      "classes": 2,
+      "methods": 15
+    },
+    "/workspace/code_quality/plugins/docformatter_fixer.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 8
+    },
+    "/workspace/code_quality/plugins/isort_fixer.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 8
+    },
+    "/workspace/code_quality/plugins/unify_fixer.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 8
+    },
+    "/workspace/code_quality/plugins/ruff_analyzer.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 8
+    },
+    "/workspace/code_quality/plugins/pyre_analyzer.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 8
+    },
+    "/workspace/code_quality/plugins/black_fixer.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 8
+    },
+    "/workspace/code_quality/plugins/flake8_analyzer.py": {
+      "functions": 9,
+      "classes": 1,
+      "methods": 9
+    },
+    "/workspace/code_quality/plugins/yapf_fixer.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 8
+    },
+    "/workspace/code_quality/plugins/autopep8_fixer.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 8
+    },
+    "/workspace/code_quality/fixers/sequential_fixer.py": {
+      "functions": 11,
+      "classes": 1,
+      "methods": 10
+    },
+    "/workspace/code_quality/fixers/auto_fixer.py": {
+      "functions": 18,
+      "classes": 1,
+      "methods": 17
+    },
+    "/workspace/code_quality/analyzers/type_checker.py": {
+      "functions": 13,
+      "classes": 3,
+      "methods": 16
+    },
+    "/workspace/code_quality/analyzers/syntax_validator.py": {
+      "functions": 19,
+      "classes": 3,
+      "methods": 22
+    },
+    "/workspace/code_quality/analyzers/error_handling_analyzer.py": {
+      "functions": 20,
+      "classes": 3,
+      "methods": 23
+    },
+    "/workspace/code_quality/analyzers/call_graph_analyzer.py": {
+      "functions": 22,
+      "classes": 2,
+      "methods": 22
+    },
+    "/workspace/code_quality/analyzers/dead_code_analyzer.py": {
+      "functions": 20,
+      "classes": 3,
+      "methods": 20
+    },
+    "/workspace/code_quality/analyzers/code_duplication_analyzer.py": {
+      "functions": 15,
+      "classes": 2,
+      "methods": 16
+    },
+    "/workspace/code_quality/analyzers/architecture_analyzer.py": {
+      "functions": 24,
+      "classes": 3,
+      "methods": 27
+    },
+    "/workspace/code_quality/analyzers/complexity_analyzer.py": {
+      "functions": 14,
+      "classes": 5,
+      "methods": 14
+    },
+    "/workspace/code_quality/analyzers/advanced_ast_analyzer.py": {
+      "functions": 31,
+      "classes": 3,
+      "methods": 34
+    },
+    "/workspace/code_quality/analyzers/import_analyzer.py": {
+      "functions": 13,
+      "classes": 2,
+      "methods": 13
+    },
+    "/workspace/code_quality/analyzers/signature_analyzer.py": {
+      "functions": 20,
+      "classes": 4,
+      "methods": 20
+    },
+    "/workspace/code_quality/analyzers/concurrency_analyzer.py": {
+      "functions": 15,
+      "classes": 3,
+      "methods": 18
+    },
+    "/workspace/code_quality/analyzers/linter_analyzer.py": {
+      "functions": 14,
+      "classes": 2,
+      "methods": 14
+    },
+    "/workspace/code_quality/analyzers/dependency_analyzer.py": {
+      "functions": 23,
+      "classes": 2,
+      "methods": 23
+    },
+    "/workspace/code_quality/core/plugins.py": {
+      "functions": 27,
+      "classes": 7,
+      "methods": 37
+    },
+    "/workspace/code_quality/core/config.py": {
+      "functions": 10,
+      "classes": 5,
+      "methods": 8
+    },
+    "/workspace/code_quality/utils/progress.py": {
+      "functions": 20,
+      "classes": 4,
+      "methods": 23
+    },
+    "/workspace/code_quality/utils/file_utils.py": {
+      "functions": 8,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/tasks.py": {
+      "functions": 2,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/ares_pipeline.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 6
+    },
+    "/workspace/src/config.py": {
+      "functions": 18,
+      "classes": 5,
+      "methods": 16
+    },
+    "/workspace/src/config_optuna.py": {
+      "functions": 15,
+      "classes": 9,
+      "methods": 9
+    },
+    "/workspace/src/paper_trader.py": {
+      "functions": 11,
+      "classes": 1,
+      "methods": 11
+    },
+    "/workspace/src/monitoring/error_detection_system.py": {
+      "functions": 1,
+      "classes": 4,
+      "methods": 1
+    },
+    "/workspace/src/monitoring/tracking_system.py": {
+      "functions": 1,
+      "classes": 2,
+      "methods": 1
+    },
+    "/workspace/src/monitoring/correlation_manager.py": {
+      "functions": 3,
+      "classes": 3,
+      "methods": 3
+    },
+    "/workspace/src/monitoring/report_scheduler.py": {
+      "functions": 1,
+      "classes": 6,
+      "methods": 1
+    },
+    "/workspace/src/monitoring/fractional_system_monitor.py": {
+      "functions": 17,
+      "classes": 1,
+      "methods": 16
+    },
+    "/workspace/src/monitoring/enhanced_ml_tracker.py": {
+      "functions": 1,
+      "classes": 3,
+      "methods": 1
+    },
+    "/workspace/src/monitoring/performance_dashboard.py": {
+      "functions": 1,
+      "classes": 2,
+      "methods": 1
+    },
+    "/workspace/src/monitoring/integration_manager.py": {
+      "functions": 1,
+      "classes": 2,
+      "methods": 1
+    },
+    "/workspace/src/monitoring/performance_monitor.py": {
+      "functions": 3,
+      "classes": 2,
+      "methods": 3
+    },
+    "/workspace/src/monitoring/surrogate_optimization_monitor.py": {
+      "functions": 19,
+      "classes": 3,
+      "methods": 19
+    },
+    "/workspace/src/monitoring/metrics_dashboard.py": {
+      "functions": 1,
+      "classes": 3,
+      "methods": 1
+    },
+    "/workspace/src/monitoring/fractional_performance_tracker.py": {
+      "functions": 12,
+      "classes": 1,
+      "methods": 12
+    },
+    "/workspace/src/monitoring/csv_exporter.py": {
+      "functions": 2,
+      "classes": 1,
+      "methods": 2
+    },
+    "/workspace/src/monitoring/regime_sr_tracker.py": {
+      "functions": 1,
+      "classes": 2,
+      "methods": 1
+    },
+    "/workspace/src/monitoring/advanced_tracer.py": {
+      "functions": 7,
+      "classes": 6,
+      "methods": 7
+    },
+    "/workspace/src/monitoring/trade_conditions_monitor.py": {
+      "functions": 1,
+      "classes": 2,
+      "methods": 1
+    },
+    "/workspace/src/monitoring/ml_monitor.py": {
+      "functions": 3,
+      "classes": 5,
+      "methods": 3
+    },
+    "/workspace/src/launcher/enhanced_trading_launcher.py": {
+      "functions": 6,
+      "classes": 2,
+      "methods": 6
+    },
+    "/workspace/src/components/modular_analyst.py": {
+      "functions": 26,
+      "classes": 1,
+      "methods": 26
+    },
+    "/workspace/src/components/modular_tactician.py": {
+      "functions": 22,
+      "classes": 1,
+      "methods": 22
+    },
+    "/workspace/src/components/modular_supervisor.py": {
+      "functions": 28,
+      "classes": 1,
+      "methods": 28
+    },
+    "/workspace/src/components/modular_strategist.py": {
+      "functions": 22,
+      "classes": 1,
+      "methods": 22
+    },
+    "/workspace/src/interfaces/event_bus.py": {
+      "functions": 8,
+      "classes": 3,
+      "methods": 8
+    },
+    "/workspace/src/interfaces/base_interfaces.py": {
+      "functions": 8,
+      "classes": 13,
+      "methods": 8
+    },
+    "/workspace/src/interfaces/enhanced_event_bus.py": {
+      "functions": 13,
+      "classes": 9,
+      "methods": 15
+    },
+    "/workspace/src/trading/live_wavelet_analyzer.py": {
+      "functions": 10,
+      "classes": 2,
+      "methods": 10
+    },
+    "/workspace/src/trading/live_wavelet_demo.py": {
+      "functions": 9,
+      "classes": 1,
+      "methods": 9
+    },
+    "/workspace/src/trading/live_wavelet_integration.py": {
+      "functions": 13,
+      "classes": 1,
+      "methods": 13
+    },
+    "/workspace/src/trading/sr_trading_intelligence.py": {
+      "functions": 5,
+      "classes": 1,
+      "methods": 5
+    },
+    "/workspace/src/supervisor/enhanced_prediction_service.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 6
+    },
+    "/workspace/src/supervisor/performance_monitor.py": {
+      "functions": 14,
+      "classes": 1,
+      "methods": 14
+    },
+    "/workspace/src/supervisor/global_portfolio_manager.py": {
+      "functions": 25,
+      "classes": 1,
+      "methods": 25
+    },
+    "/workspace/src/supervisor/performance_reporter.py": {
+      "functions": 26,
+      "classes": 2,
+      "methods": 30
+    },
+    "/workspace/src/supervisor/dynamic_weighter.py": {
+      "functions": 35,
+      "classes": 1,
+      "methods": 35
+    },
+    "/workspace/src/supervisor/enhanced_model_monitor.py": {
+      "functions": 1,
+      "classes": 6,
+      "methods": 1
+    },
+    "/workspace/src/supervisor/exchange_volume_adapter.py": {
+      "functions": 9,
+      "classes": 1,
+      "methods": 9
+    },
+    "/workspace/src/supervisor/monitoring.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 6
+    },
+    "/workspace/src/supervisor/main.py": {
+      "functions": 4,
+      "classes": 2,
+      "methods": 5
+    },
+    "/workspace/src/supervisor/risk_allocator.py": {
+      "functions": 11,
+      "classes": 1,
+      "methods": 11
+    },
+    "/workspace/src/supervisor/pnl_loss_functions.py": {
+      "functions": 41,
+      "classes": 1,
+      "methods": 27
+    },
+    "/workspace/src/supervisor/supervisor.py": {
+      "functions": 21,
+      "classes": 3,
+      "methods": 23
+    },
+    "/workspace/src/supervisor/model_behavior_tracker.py": {
+      "functions": 16,
+      "classes": 5,
+      "methods": 16
+    },
+    "/workspace/src/supervisor/optimizer.py": {
+      "functions": 7,
+      "classes": 1,
+      "methods": 7
+    },
+    "/workspace/src/pipelines/live_trading_pipeline.py": {
+      "functions": 1,
+      "classes": 1,
+      "methods": 1
+    },
+    "/workspace/src/pipelines/improved_pipeline_executor.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 6
+    },
+    "/workspace/src/pipelines/base_pipeline.py": {
+      "functions": 3,
+      "classes": 3,
+      "methods": 3
+    },
+    "/workspace/src/pipelines/components/monitoring_manager.py": {
+      "functions": 1,
+      "classes": 1,
+      "methods": 1
+    },
+    "/workspace/src/pipelines/components/lifecycle_manager.py": {
+      "functions": 1,
+      "classes": 1,
+      "methods": 1
+    },
+    "/workspace/src/pipelines/components/data_manager.py": {
+      "functions": 1,
+      "classes": 1,
+      "methods": 1
+    },
+    "/workspace/src/sentinel/sentinel.py": {
+      "functions": 7,
+      "classes": 1,
+      "methods": 7
+    },
+    "/workspace/src/transition/seq2seq_trainer.py": {
+      "functions": 14,
+      "classes": 3,
+      "methods": 10
+    },
+    "/workspace/src/transition/combined_features_builder.py": {
+      "functions": 6,
+      "classes": 2,
+      "methods": 6
+    },
+    "/workspace/src/transition/baseline_rf.py": {
+      "functions": 3,
+      "classes": 2,
+      "methods": 3
+    },
+    "/workspace/src/transition/inference_combiner.py": {
+      "functions": 6,
+      "classes": 2,
+      "methods": 6
+    },
+    "/workspace/src/transition/rolling_inference.py": {
+      "functions": 7,
+      "classes": 2,
+      "methods": 7
+    },
+    "/workspace/src/transition/event_trigger_indexer.py": {
+      "functions": 9,
+      "classes": 2,
+      "methods": 9
+    },
+    "/workspace/src/transition/multitask_rf.py": {
+      "functions": 8,
+      "classes": 2,
+      "methods": 8
+    },
+    "/workspace/src/transition/rolling_window_dataset.py": {
+      "functions": 4,
+      "classes": 2,
+      "methods": 4
+    },
+    "/workspace/src/transition/path_targets.py": {
+      "functions": 2,
+      "classes": 2,
+      "methods": 2
+    },
+    "/workspace/src/transition/state_sequence_builder.py": {
+      "functions": 3,
+      "classes": 2,
+      "methods": 3
+    },
+    "/workspace/src/transition/event_window_dataset.py": {
+      "functions": 4,
+      "classes": 2,
+      "methods": 4
+    },
+    "/workspace/src/custom_types/config_types.py": {
+      "functions": 0,
+      "classes": 8,
+      "methods": 0
+    },
+    "/workspace/src/custom_types/trading_types.py": {
+      "functions": 0,
+      "classes": 8,
+      "methods": 0
+    },
+    "/workspace/src/custom_types/ml_types.py": {
+      "functions": 0,
+      "classes": 11,
+      "methods": 0
+    },
+    "/workspace/src/custom_types/validation.py": {
+      "functions": 14,
+      "classes": 2,
+      "methods": 3
+    },
+    "/workspace/src/custom_types/protocol_types.py": {
+      "functions": 12,
+      "classes": 11,
+      "methods": 12
+    },
+    "/workspace/src/custom_types/data_types.py": {
+      "functions": 0,
+      "classes": 8,
+      "methods": 0
+    },
+    "/workspace/src/protocols/trading_protocols.py": {
+      "functions": 3,
+      "classes": 3,
+      "methods": 3
+    },
+    "/workspace/src/integration/paper_trading_integration.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 6
+    },
+    "/workspace/src/tactician/position_sizer.py": {
+      "functions": 12,
+      "classes": 1,
+      "methods": 12
+    },
+    "/workspace/src/tactician/sr_weight_optimizer.py": {
+      "functions": 11,
+      "classes": 2,
+      "methods": 11
+    },
+    "/workspace/src/tactician/position_closing.py": {
+      "functions": 9,
+      "classes": 1,
+      "methods": 9
+    },
+    "/workspace/src/tactician/ml_target_updater.py": {
+      "functions": 9,
+      "classes": 1,
+      "methods": 9
+    },
+    "/workspace/src/tactician/position_division_strategy.py": {
+      "functions": 11,
+      "classes": 1,
+      "methods": 11
+    },
+    "/workspace/src/tactician/enhanced_prediction_integrator.py": {
+      "functions": 14,
+      "classes": 1,
+      "methods": 14
+    },
+    "/workspace/src/tactician/tactician.py": {
+      "functions": 7,
+      "classes": 1,
+      "methods": 7
+    },
+    "/workspace/src/tactician/comprehensive_enhanced_scenario_predictor.py": {
+      "functions": 7,
+      "classes": 1,
+      "methods": 5
+    },
+    "/workspace/src/tactician/enhanced_execution_manager.py": {
+      "functions": 11,
+      "classes": 1,
+      "methods": 11
+    },
+    "/workspace/src/tactician/tactics_orchestrator.py": {
+      "functions": 9,
+      "classes": 3,
+      "methods": 12
+    },
+    "/workspace/src/tactician/position_monitor.py": {
+      "functions": 11,
+      "classes": 4,
+      "methods": 11
+    },
+    "/workspace/src/tactician/enhanced_order_manager.py": {
+      "functions": 5,
+      "classes": 7,
+      "methods": 5
+    },
+    "/workspace/src/tactician/sr_data_integration.py": {
+      "functions": 4,
+      "classes": 1,
+      "methods": 4
+    },
+    "/workspace/src/tactician/dynamic_barrier_calculator.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 8
+    },
+    "/workspace/src/tactician/scenario_based_predictor.py": {
+      "functions": 10,
+      "classes": 1,
+      "methods": 10
+    },
+    "/workspace/src/tactician/leverage_sizer.py": {
+      "functions": 10,
+      "classes": 1,
+      "methods": 10
+    },
+    "/workspace/src/tactician/sr_levels_manager.py": {
+      "functions": 17,
+      "classes": 2,
+      "methods": 18
+    },
+    "/workspace/src/tactician/step17_optimized_tactician.py": {
+      "functions": 18,
+      "classes": 1,
+      "methods": 16
+    },
+    "/workspace/src/tactician/enhanced_scenario_based_predictor.py": {
+      "functions": 13,
+      "classes": 1,
+      "methods": 11
+    },
+    "/workspace/src/tactician/sr_detection_optimization.py": {
+      "functions": 18,
+      "classes": 2,
+      "methods": 18
+    },
+    "/workspace/src/tactician/ml_target_validator.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 6
+    },
+    "/workspace/src/tactician/async_order_executor.py": {
+      "functions": 6,
+      "classes": 5,
+      "methods": 6
+    },
+    "/workspace/src/tactician/ml_tactics_manager.py": {
+      "functions": 24,
+      "classes": 1,
+      "methods": 24
+    },
+    "/workspace/src/tactician/fully_migrated_tactician.py": {
+      "functions": 13,
+      "classes": 1,
+      "methods": 11
+    },
+    "/workspace/src/tracking/trade_tracker.py": {
+      "functions": 11,
+      "classes": 10,
+      "methods": 11
+    },
+    "/workspace/src/training/model_trainer.py": {
+      "functions": 20,
+      "classes": 3,
+      "methods": 19
+    },
+    "/workspace/src/training/enhanced_lm_config.py": {
+      "functions": 10,
+      "classes": 9,
+      "methods": 7
+    },
+    "/workspace/src/training/enhanced_training_manager.py": {
+      "functions": 61,
+      "classes": 1,
+      "methods": 58
+    },
+    "/workspace/src/training/data_cleaning.py": {
+      "functions": 1,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/training/enhanced_training_manager_enhanced.py": {
+      "functions": 27,
+      "classes": 1,
+      "methods": 27
+    },
+    "/workspace/src/training/enhanced_dynamic_feature_selection.py": {
+      "functions": 15,
+      "classes": 1,
+      "methods": 15
+    },
+    "/workspace/src/training/multi_output_probability_trainer.py": {
+      "functions": 17,
+      "classes": 3,
+      "methods": 20
+    },
+    "/workspace/src/training/data_access_utils.py": {
+      "functions": 13,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/training/gpu_acceleration_m1.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 8
+    },
+    "/workspace/src/training/regularization.py": {
+      "functions": 9,
+      "classes": 2,
+      "methods": 11
+    },
+    "/workspace/src/training/feature_engineering_optimizer.py": {
+      "functions": 16,
+      "classes": 1,
+      "methods": 16
+    },
+    "/workspace/src/training/feature_integration.py": {
+      "functions": 4,
+      "classes": 1,
+      "methods": 4
+    },
+    "/workspace/src/training/feature_engineering.py": {
+      "functions": 10,
+      "classes": 1,
+      "methods": 10
+    },
+    "/workspace/src/training/wavelet_integration_demo.py": {
+      "functions": 1,
+      "classes": 1,
+      "methods": 1
+    },
+    "/workspace/src/training/enhanced_feature_engineering_optimizer.py": {
+      "functions": 16,
+      "classes": 1,
+      "methods": 16
+    },
+    "/workspace/src/training/enhanced_matrix_operations.py": {
+      "functions": 25,
+      "classes": 2,
+      "methods": 25
+    },
+    "/workspace/src/training/model_saving_utils.py": {
+      "functions": 10,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/training/probabilistic_model_integration.py": {
+      "functions": 11,
+      "classes": 2,
+      "methods": 11
+    },
+    "/workspace/src/training/enhanced_lm_optimizer.py": {
+      "functions": 22,
+      "classes": 7,
+      "methods": 32
+    },
+    "/workspace/src/training/step_orchestrator.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 8
+    },
+    "/workspace/src/training/enhanced_training_manager_optimized.py": {
+      "functions": 42,
+      "classes": 10,
+      "methods": 50
+    },
+    "/workspace/src/training/early_stage_optimization.py": {
+      "functions": 10,
+      "classes": 1,
+      "methods": 9
+    },
+    "/workspace/src/training/multi_objective_optimizer.py": {
+      "functions": 11,
+      "classes": 2,
+      "methods": 11
+    },
+    "/workspace/src/training/data_sharing_manager.py": {
+      "functions": 16,
+      "classes": 1,
+      "methods": 14
+    },
+    "/workspace/src/training/bayesian_optimizer.py": {
+      "functions": 20,
+      "classes": 1,
+      "methods": 20
+    },
+    "/workspace/src/training/memory_profiler.py": {
+      "functions": 22,
+      "classes": 2,
+      "methods": 24
+    },
+    "/workspace/src/training/integration_guide.py": {
+      "functions": 4,
+      "classes": 1,
+      "methods": 2
+    },
+    "/workspace/src/training/matrix_diverse_lookback_optimizer.py": {
+      "functions": 70,
+      "classes": 1,
+      "methods": 70
+    },
+    "/workspace/src/training/unified_data_orchestrator.py": {
+      "functions": 18,
+      "classes": 1,
+      "methods": 17
+    },
+    "/workspace/src/training/timeframe_relevance_analyzer.py": {
+      "functions": 18,
+      "classes": 1,
+      "methods": 18
+    },
+    "/workspace/src/training/comprehensive_sr_training_pipeline.py": {
+      "functions": 2,
+      "classes": 1,
+      "methods": 2
+    },
+    "/workspace/src/training/dual_model_system.py": {
+      "functions": 20,
+      "classes": 1,
+      "methods": 20
+    },
+    "/workspace/src/training/performance_comparison.py": {
+      "functions": 1,
+      "classes": 2,
+      "methods": 1
+    },
+    "/workspace/src/training/steps_1_7_comprehensive_executor.py": {
+      "functions": 10,
+      "classes": 1,
+      "methods": 10
+    },
+    "/workspace/src/training/enhanced_training_manager_backup.py": {
+      "functions": 61,
+      "classes": 1,
+      "methods": 58
+    },
+    "/workspace/src/training/adaptive_optimizer.py": {
+      "functions": 16,
+      "classes": 3,
+      "methods": 18
+    },
+    "/workspace/src/training/demo_pipeline_execution.py": {
+      "functions": 1,
+      "classes": 3,
+      "methods": 3
+    },
+    "/workspace/src/training/launcher_integration_patch.py": {
+      "functions": 9,
+      "classes": 1,
+      "methods": 6
+    },
+    "/workspace/src/training/optimized_feature_selection_manager.py": {
+      "functions": 19,
+      "classes": 1,
+      "methods": 19
+    },
+    "/workspace/src/training/feature_selection_manager.py": {
+      "functions": 14,
+      "classes": 1,
+      "methods": 14
+    },
+    "/workspace/src/training/progress_manager.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 8
+    },
+    "/workspace/src/training/comprehensive_pipeline_executor.py": {
+      "functions": 1,
+      "classes": 1,
+      "methods": 1
+    },
+    "/workspace/src/training/wavelet_feature_selection_demo.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 6
+    },
+    "/workspace/src/training/multi_output_model_trainer.py": {
+      "functions": 31,
+      "classes": 3,
+      "methods": 32
+    },
+    "/workspace/src/training/calibration_manager.py": {
+      "functions": 5,
+      "classes": 1,
+      "methods": 5
+    },
+    "/workspace/src/training/model_probability_generator.py": {
+      "functions": 11,
+      "classes": 1,
+      "methods": 10
+    },
+    "/workspace/src/training/training_orchestrator.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 6
+    },
+    "/workspace/src/training/advanced_neural_models.py": {
+      "functions": 7,
+      "classes": 8,
+      "methods": 19
+    },
+    "/workspace/src/training/comprehensive_feature_optimizer.py": {
+      "functions": 22,
+      "classes": 2,
+      "methods": 22
+    },
+    "/workspace/src/training/model_specific_pruning.py": {
+      "functions": 22,
+      "classes": 1,
+      "methods": 22
+    },
+    "/workspace/src/training/matrix_enhancement_manager.py": {
+      "functions": 8,
+      "classes": 2,
+      "methods": 8
+    },
+    "/workspace/src/training/factory.py": {
+      "functions": 9,
+      "classes": 1,
+      "methods": 7
+    },
+    "/workspace/src/training/training_manager.py": {
+      "functions": 21,
+      "classes": 1,
+      "methods": 21
+    },
+    "/workspace/src/training/enhanced_matrix_gpu_integration.py": {
+      "functions": 3,
+      "classes": 1,
+      "methods": 3
+    },
+    "/workspace/src/training/enhanced_coarse_optimizer.py": {
+      "functions": 28,
+      "classes": 1,
+      "methods": 28
+    },
+    "/workspace/src/training/hmm_regime_barrier_optimizer.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 8
+    },
+    "/workspace/src/training/ensemble_manager.py": {
+      "functions": 5,
+      "classes": 1,
+      "methods": 5
+    },
+    "/workspace/src/training/data_quality_monitor.py": {
+      "functions": 20,
+      "classes": 6,
+      "methods": 20
+    },
+    "/workspace/src/training/model_training_integrator.py": {
+      "functions": 6,
+      "classes": 2,
+      "methods": 8
+    },
+    "/workspace/src/training/di_training_manager.py": {
+      "functions": 2,
+      "classes": 1,
+      "methods": 2
+    },
+    "/workspace/src/training/probability_calculators.py": {
+      "functions": 8,
+      "classes": 3,
+      "methods": 11
+    },
+    "/workspace/src/training/wavelet_feature_selection_workflow.py": {
+      "functions": 8,
+      "classes": 2,
+      "methods": 8
+    },
+    "/workspace/src/training/data_efficiency_optimizer.py": {
+      "functions": 18,
+      "classes": 1,
+      "methods": 18
+    },
+    "/workspace/src/training/optimization_manager.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 6
+    },
+    "/workspace/src/training/validator.py": {
+      "functions": 16,
+      "classes": 1,
+      "methods": 16
+    },
+    "/workspace/src/training/tpsl_optimizer.py": {
+      "functions": 9,
+      "classes": 1,
+      "methods": 8
+    },
+    "/workspace/src/training/vectorized_training_pipeline.py": {
+      "functions": 2,
+      "classes": 2,
+      "methods": 2
+    },
+    "/workspace/src/training/enhanced_optimization_orchestrator.py": {
+      "functions": 9,
+      "classes": 1,
+      "methods": 9
+    },
+    "/workspace/src/training/enhanced_multi_timeframe_optimizer.py": {
+      "functions": 18,
+      "classes": 2,
+      "methods": 18
+    },
+    "/workspace/src/training/data_manager.py": {
+      "functions": 15,
+      "classes": 1,
+      "methods": 15
+    },
+    "/workspace/src/training/probabilistic_bayesian_optimizer.py": {
+      "functions": 19,
+      "classes": 2,
+      "methods": 17
+    },
+    "/workspace/src/training/diverse_lookback_optimizer.py": {
+      "functions": 16,
+      "classes": 1,
+      "methods": 16
+    },
+    "/workspace/src/training/optimization/cached_optimizer.py": {
+      "functions": 11,
+      "classes": 2,
+      "methods": 11
+    },
+    "/workspace/src/training/optimization/transfer_learning_system.py": {
+      "functions": 27,
+      "classes": 7,
+      "methods": 30
+    },
+    "/workspace/src/training/optimization/progressive_optimizer.py": {
+      "functions": 9,
+      "classes": 3,
+      "methods": 9
+    },
+    "/workspace/src/training/optimization/problem_specific_strategies.py": {
+      "functions": 18,
+      "classes": 11,
+      "methods": 32
+    },
+    "/workspace/src/training/optimization/parallel_optimizer.py": {
+      "functions": 10,
+      "classes": 2,
+      "methods": 10
+    },
+    "/workspace/src/training/optimization/rollback_manager.py": {
+      "functions": 17,
+      "classes": 3,
+      "methods": 16
+    },
+    "/workspace/src/training/optimization/computational_optimization_manager.py": {
+      "functions": 69,
+      "classes": 13,
+      "methods": 84
+    },
+    "/workspace/src/training/optimization/advanced_surrogate_models.py": {
+      "functions": 22,
+      "classes": 6,
+      "methods": 38
+    },
+    "/workspace/src/training/optimization/adaptive_trial_allocator.py": {
+      "functions": 10,
+      "classes": 2,
+      "methods": 10
+    },
+    "/workspace/src/training/steps/multi_timeframe_hmm_ensemble.py": {
+      "functions": 17,
+      "classes": 3,
+      "methods": 17
+    },
+    "/workspace/src/training/steps/update_steps_for_unified_data.py": {
+      "functions": 5,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/training/steps/fractional_feature_selector.py": {
+      "functions": 16,
+      "classes": 1,
+      "methods": 15
+    },
+    "/workspace/src/training/steps/step13_analyst_ensemble_creation_validator.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 5
+    },
+    "/workspace/src/training/steps/step9_5_hmm_lm_generalist_training.py": {
+      "functions": 18,
+      "classes": 5,
+      "methods": 23
+    },
+    "/workspace/src/training/steps/step20_ab_testing_validator.py": {
+      "functions": 1,
+      "classes": 1,
+      "methods": 1
+    },
+    "/workspace/src/training/steps/step2_5_sr_optimization.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 6
+    },
+    "/workspace/src/training/steps/step14_tactician_labeling_validator.py": {
+      "functions": 5,
+      "classes": 1,
+      "methods": 5
+    },
+    "/workspace/src/training/steps/step5_hmm_based_training_validator.py": {
+      "functions": 7,
+      "classes": 1,
+      "methods": 7
+    },
+    "/workspace/src/training/steps/step10_unified_regime_intelligence.py": {
+      "functions": 25,
+      "classes": 2,
+      "methods": 23
+    },
+    "/workspace/src/training/steps/step18_walk_forward_validation_validator.py": {
+      "functions": 5,
+      "classes": 1,
+      "methods": 5
+    },
+    "/workspace/src/training/steps/step14_tactician_labeling.py": {
+      "functions": 9,
+      "classes": 2,
+      "methods": 10
+    },
+    "/workspace/src/training/steps/step4_triple_barrier_method.py": {
+      "functions": 4,
+      "classes": 1,
+      "methods": 4
+    },
+    "/workspace/src/training/steps/step5_labeling.py": {
+      "functions": 7,
+      "classes": 1,
+      "methods": 4
+    },
+    "/workspace/src/training/steps/hmm_feature_enhancer.py": {
+      "functions": 20,
+      "classes": 1,
+      "methods": 20
+    },
+    "/workspace/src/training/steps/step1_5_data_converter.py": {
+      "functions": 31,
+      "classes": 5,
+      "methods": 30
+    },
+    "/workspace/src/training/steps/step4_regime_data_splitting_validator.py": {
+      "functions": 3,
+      "classes": 1,
+      "methods": 3
+    },
+    "/workspace/src/training/steps/step2_5_sr_optimization_validator.py": {
+      "functions": 2,
+      "classes": 1,
+      "methods": 2
+    },
+    "/workspace/src/training/steps/step2_data_reading.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 3
+    },
+    "/workspace/src/training/steps/step11_analyst_creation_validator.py": {
+      "functions": 5,
+      "classes": 1,
+      "methods": 4
+    },
+    "/workspace/src/training/steps/step20_ab_testing.py": {
+      "functions": 1,
+      "classes": 1,
+      "methods": 1
+    },
+    "/workspace/src/training/steps/step17_final_parameters_optimization_new.py": {
+      "functions": 17,
+      "classes": 1,
+      "methods": 17
+    },
+    "/workspace/src/training/steps/enhanced_step1_data_collection.py": {
+      "functions": 5,
+      "classes": 1,
+      "methods": 5
+    },
+    "/workspace/src/training/steps/step19_monte_carlo_validation_validator.py": {
+      "functions": 5,
+      "classes": 1,
+      "methods": 5
+    },
+    "/workspace/src/training/steps/step9_hmm_based_training.py": {
+      "functions": 18,
+      "classes": 9,
+      "methods": 28
+    },
+    "/workspace/src/training/steps/step3_parameter_optimization.py": {
+      "functions": 5,
+      "classes": 1,
+      "methods": 5
+    },
+    "/workspace/src/training/steps/step9_5_multi_timeframe_hmm_ensemble_validator.py": {
+      "functions": 1,
+      "classes": 1,
+      "methods": 1
+    },
+    "/workspace/src/training/steps/step16_confidence_calibration.py": {
+      "functions": 12,
+      "classes": 2,
+      "methods": 12
+    },
+    "/workspace/src/training/steps/step21_saving.py": {
+      "functions": 3,
+      "classes": 1,
+      "methods": 2
+    },
+    "/workspace/src/training/steps/step3_parameter_optimization_validator.py": {
+      "functions": 3,
+      "classes": 1,
+      "methods": 3
+    },
+    "/workspace/src/training/steps/step1_5_data_converter_validator.py": {
+      "functions": 1,
+      "classes": 1,
+      "methods": 1
+    },
+    "/workspace/src/training/steps/step3_5_final_regime_clustering.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 8
+    },
+    "/workspace/src/training/steps/combined_fractional_system.py": {
+      "functions": 9,
+      "classes": 2,
+      "methods": 9
+    },
+    "/workspace/src/training/steps/step6_feature_interaction_engineering.py": {
+      "functions": 20,
+      "classes": 1,
+      "methods": 20
+    },
+    "/workspace/src/training/steps/step5_labeling_validator.py": {
+      "functions": 3,
+      "classes": 1,
+      "methods": 3
+    },
+    "/workspace/src/training/steps/step3_hmm_regime_discovery.py": {
+      "functions": 57,
+      "classes": 1,
+      "methods": 26
+    },
+    "/workspace/src/training/steps/step10_unified_regime_intelligence_validator.py": {
+      "functions": 2,
+      "classes": 1,
+      "methods": 2
+    },
+    "/workspace/src/training/steps/vectorized_advanced_feature_engineering.py": {
+      "functions": 65,
+      "classes": 10,
+      "methods": 77
+    },
+    "/workspace/src/training/steps/precompute_wavelet_features.py": {
+      "functions": 5,
+      "classes": 1,
+      "methods": 5
+    },
+    "/workspace/src/training/steps/step6_feature_engineering.py": {
+      "functions": 14,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/training/steps/step1_data_collection_validator.py": {
+      "functions": 2,
+      "classes": 1,
+      "methods": 2
+    },
+    "/workspace/src/training/steps/step21_saving_validator.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 6
+    },
+    "/workspace/src/training/steps/step6_feature_engineering_validator.py": {
+      "functions": 3,
+      "classes": 1,
+      "methods": 3
+    },
+    "/workspace/src/training/steps/step2_feature_engineering_validator.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 6
+    },
+    "/workspace/src/training/steps/step19_monte_carlo_validation.py": {
+      "functions": 2,
+      "classes": 1,
+      "methods": 2
+    },
+    "/workspace/src/training/steps/step7_enhanced_matrix_operations_validator.py": {
+      "functions": 9,
+      "classes": 1,
+      "methods": 9
+    },
+    "/workspace/src/training/steps/unified_data_loader.py": {
+      "functions": 11,
+      "classes": 1,
+      "methods": 2
+    },
+    "/workspace/src/training/steps/step11_analyst_creation.py": {
+      "functions": 4,
+      "classes": 1,
+      "methods": 4
+    },
+    "/workspace/src/training/steps/step12_analyst_enhancement_validator.py": {
+      "functions": 5,
+      "classes": 1,
+      "methods": 5
+    },
+    "/workspace/src/training/steps/step9_5_multi_timeframe_hmm_ensemble.py": {
+      "functions": 2,
+      "classes": 1,
+      "methods": 2
+    },
+    "/workspace/src/training/steps/vectorized_labelling_orchestrator.py": {
+      "functions": 38,
+      "classes": 4,
+      "methods": 43
+    },
+    "/workspace/src/training/steps/step9_5_hmm_lm_generalist_training_validator.py": {
+      "functions": 5,
+      "classes": 1,
+      "methods": 4
+    },
+    "/workspace/src/training/steps/integrated_data_quality_pipeline.py": {
+      "functions": 3,
+      "classes": 1,
+      "methods": 3
+    },
+    "/workspace/src/training/steps/step9_hmm_based_training_enhanced.py": {
+      "functions": 7,
+      "classes": 1,
+      "methods": 7
+    },
+    "/workspace/src/training/steps/enhanced_step1_5_data_converter.py": {
+      "functions": 5,
+      "classes": 2,
+      "methods": 6
+    },
+    "/workspace/src/training/steps/step17_final_parameters_optimization.py": {
+      "functions": 30,
+      "classes": 1,
+      "methods": 30
+    },
+    "/workspace/src/training/steps/sr_outcome_model_trainer.py": {
+      "functions": 15,
+      "classes": 1,
+      "methods": 15
+    },
+    "/workspace/src/training/steps/step1_data_collection.py": {
+      "functions": 5,
+      "classes": 1,
+      "methods": 2
+    },
+    "/workspace/src/training/steps/step16_confidence_calibration_validator.py": {
+      "functions": 2,
+      "classes": 1,
+      "methods": 2
+    },
+    "/workspace/src/training/steps/step12_analyst_enhancement.py": {
+      "functions": 23,
+      "classes": 1,
+      "methods": 21
+    },
+    "/workspace/src/training/steps/raw_data_quality_checker.py": {
+      "functions": 37,
+      "classes": 1,
+      "methods": 35
+    },
+    "/workspace/src/training/steps/step17_final_parameters_optimization_validator.py": {
+      "functions": 5,
+      "classes": 1,
+      "methods": 5
+    },
+    "/workspace/src/training/steps/step3_5_final_regime_clustering_validator.py": {
+      "functions": 3,
+      "classes": 1,
+      "methods": 3
+    },
+    "/workspace/src/training/steps/step18_walk_forward_validation.py": {
+      "functions": 2,
+      "classes": 1,
+      "methods": 2
+    },
+    "/workspace/src/training/steps/step15_tactician_specialist_training.py": {
+      "functions": 9,
+      "classes": 1,
+      "methods": 4
+    },
+    "/workspace/src/training/steps/step15_tactician_specialist_training_validator.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 6
+    },
+    "/workspace/src/training/steps/step5_regime_data_splitting_validator.py": {
+      "functions": 1,
+      "classes": 1,
+      "methods": 1
+    },
+    "/workspace/src/training/steps/fractional_differentiation.py": {
+      "functions": 8,
+      "classes": 2,
+      "methods": 9
+    },
+    "/workspace/src/training/steps/step4_regime_data_splitting.py": {
+      "functions": 7,
+      "classes": 1,
+      "methods": 4
+    },
+    "/workspace/src/training/steps/step13_analyst_ensemble_creation.py": {
+      "functions": 9,
+      "classes": 1,
+      "methods": 8
+    },
+    "/workspace/src/training/steps/step8_regime_data_splitting.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 5
+    },
+    "/workspace/src/training/steps/step7_enhanced_matrix_operations.py": {
+      "functions": 19,
+      "classes": 1,
+      "methods": 16
+    },
+    "/workspace/src/training/steps/step17_final_parameters_optimization/evaluation_engine.py": {
+      "functions": 16,
+      "classes": 2,
+      "methods": 15
+    },
+    "/workspace/src/training/steps/step17_final_parameters_optimization/advanced_optimization_engine.py": {
+      "functions": 29,
+      "classes": 8,
+      "methods": 29
+    },
+    "/workspace/src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization_enhanced.py": {
+      "functions": 31,
+      "classes": 3,
+      "methods": 31
+    },
+    "/workspace/src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization.py": {
+      "functions": 9,
+      "classes": 1,
+      "methods": 9
+    },
+    "/workspace/src/training/steps/step17_final_parameters_optimization/optimized_step17_implementation.py": {
+      "functions": 29,
+      "classes": 7,
+      "methods": 33
+    },
+    "/workspace/src/training/steps/step17_final_parameters_optimization/hyperparameter_optimization_config.py": {
+      "functions": 9,
+      "classes": 11,
+      "methods": 12
+    },
+    "/workspace/src/training/steps/step17_final_parameters_optimization/comprehensive_parameter_integration.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 5
+    },
+    "/workspace/src/training/steps/step17_final_parameters_optimization/sr_optuna_optimization.py": {
+      "functions": 19,
+      "classes": 2,
+      "methods": 19
+    },
+    "/workspace/src/training/steps/step17_final_parameters_optimization/efficiency_optimizer.py": {
+      "functions": 14,
+      "classes": 2,
+      "methods": 12
+    },
+    "/workspace/src/training/steps/step17_final_parameters_optimization/step17_probabilistic_bayesian_optimization.py": {
+      "functions": 10,
+      "classes": 1,
+      "methods": 9
+    },
+    "/workspace/src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py": {
+      "functions": 28,
+      "classes": 4,
+      "methods": 26
+    },
+    "/workspace/src/training/steps/step1/missing_data_downloader_and_gap_filler.py": {
+      "functions": 10,
+      "classes": 1,
+      "methods": 1
+    },
+    "/workspace/src/training/steps/step1/data_quality_dashboard.py": {
+      "functions": 5,
+      "classes": 2,
+      "methods": 5
+    },
+    "/workspace/src/training/steps/step1/validate_and_fix_aggtrades_format.py": {
+      "functions": 12,
+      "classes": 1,
+      "methods": 12
+    },
+    "/workspace/src/training/steps/step1/comprehensive_gap_filler.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 8
+    },
+    "/workspace/src/training/steps/step1/aggtrades_validator.py": {
+      "functions": 7,
+      "classes": 1,
+      "methods": 7
+    },
+    "/workspace/src/training/steps/step1/step1_orchestrator.py": {
+      "functions": 5,
+      "classes": 1,
+      "methods": 5
+    },
+    "/workspace/src/training/steps/step1/data_resampler.py": {
+      "functions": 12,
+      "classes": 1,
+      "methods": 12
+    },
+    "/workspace/src/training/steps/step1/run_step1.py": {
+      "functions": 1,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/training/steps/step1/gap_filler_pipeline.py": {
+      "functions": 3,
+      "classes": 1,
+      "methods": 3
+    },
+    "/workspace/src/training/steps/step1/data_gap_detector.py": {
+      "functions": 7,
+      "classes": 1,
+      "methods": 7
+    },
+    "/workspace/src/training/steps/step1/data_quality_monitor.py": {
+      "functions": 14,
+      "classes": 2,
+      "methods": 11
+    },
+    "/workspace/src/training/steps/step1/enhanced_data_quality_manager.py": {
+      "functions": 2,
+      "classes": 1,
+      "methods": 2
+    },
+    "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py": {
+      "functions": 7,
+      "classes": 1,
+      "methods": 5
+    },
+    "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_specific_triple_barrier_optimizer.py": {
+      "functions": 12,
+      "classes": 1,
+      "methods": 11
+    },
+    "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_aware_triple_barrier_labeling.py": {
+      "functions": 15,
+      "classes": 2,
+      "methods": 12
+    },
+    "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/fractional_triple_barrier_labeling.py": {
+      "functions": 9,
+      "classes": 1,
+      "methods": 9
+    },
+    "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/profit_based_feature_engineering.py": {
+      "functions": 15,
+      "classes": 1,
+      "methods": 11
+    },
+    "/workspace/src/training/steps/multi_timeframe_training/multi_timeframe_training_manager.py": {
+      "functions": 22,
+      "classes": 1,
+      "methods": 22
+    },
+    "/workspace/src/training/steps/analyst_training_components/regime_specific_tpsl_optimizer.py": {
+      "functions": 5,
+      "classes": 1,
+      "methods": 5
+    },
+    "/workspace/src/training/steps/data_preparation_components/aggtrades_data_formatting.py": {
+      "functions": 17,
+      "classes": 2,
+      "methods": 13
+    },
+    "/workspace/src/training/steps/data_preparation_components/training_validation_config.py": {
+      "functions": 18,
+      "classes": 1,
+      "methods": 9
+    },
+    "/workspace/src/training/core/stage_registry.py": {
+      "functions": 1,
+      "classes": 1,
+      "methods": 1
+    },
+    "/workspace/src/training/core/checkpoint_manager.py": {
+      "functions": 22,
+      "classes": 1,
+      "methods": 22
+    },
+    "/workspace/src/training/core/stage_context.py": {
+      "functions": 22,
+      "classes": 1,
+      "methods": 22
+    },
+    "/workspace/src/training/core/pipeline_base.py": {
+      "functions": 26,
+      "classes": 2,
+      "methods": 26
+    },
+    "/workspace/src/training/core/pipeline_orchestrator.py": {
+      "functions": 22,
+      "classes": 1,
+      "methods": 22
+    },
+    "/workspace/src/exchange/binance.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 6
+    },
+    "/workspace/src/core/di_integration.py": {
+      "functions": 2,
+      "classes": 1,
+      "methods": 2
+    },
+    "/workspace/src/core/injectable_base.py": {
+      "functions": 5,
+      "classes": 2,
+      "methods": 6
+    },
+    "/workspace/src/core/di_launcher.py": {
+      "functions": 4,
+      "classes": 1,
+      "methods": 4
+    },
+    "/workspace/src/core/enhanced_factories.py": {
+      "functions": 6,
+      "classes": 5,
+      "methods": 10
+    },
+    "/workspace/src/core/generic_base.py": {
+      "functions": 20,
+      "classes": 8,
+      "methods": 26
+    },
+    "/workspace/src/core/service_registry.py": {
+      "functions": 7,
+      "classes": 1,
+      "methods": 7
+    },
+    "/workspace/src/core/enhanced_dependency_injection.py": {
+      "functions": 2,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/core/dependency_injection.py": {
+      "functions": 17,
+      "classes": 5,
+      "methods": 19
+    },
+    "/workspace/src/core/config_service.py": {
+      "functions": 12,
+      "classes": 6,
+      "methods": 12
+    },
+    "/workspace/src/config/sr_optimization_config.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 1
+    },
+    "/workspace/src/config/training_modes.py": {
+      "functions": 12,
+      "classes": 1,
+      "methods": 0
+    },
+    "/workspace/src/config/system.py": {
+      "functions": 7,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/config/fractional_implementations_config.py": {
+      "functions": 2,
+      "classes": 3,
+      "methods": 0
+    },
+    "/workspace/src/config/computational_optimization_config.py": {
+      "functions": 10,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/config/label_model_mapping.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 4
+    },
+    "/workspace/src/config/config_confidence.py": {
+      "functions": 2,
+      "classes": 1,
+      "methods": 0
+    },
+    "/workspace/src/config/multi_timeframe_hmm_ensemble_config.py": {
+      "functions": 6,
+      "classes": 2,
+      "methods": 0
+    },
+    "/workspace/src/config/enhanced_feature_selection_config.py": {
+      "functions": 4,
+      "classes": 1,
+      "methods": 0
+    },
+    "/workspace/src/config/config.py": {
+      "functions": 2,
+      "classes": 6,
+      "methods": 0
+    },
+    "/workspace/src/config/m1_gpu_config.py": {
+      "functions": 6,
+      "classes": 3,
+      "methods": 0
+    },
+    "/workspace/src/config/config_tpsl.py": {
+      "functions": 3,
+      "classes": 1,
+      "methods": 1
+    },
+    "/workspace/src/config/config_regime_transitions.py": {
+      "functions": 2,
+      "classes": 1,
+      "methods": 0
+    },
+    "/workspace/src/config/config_position_sizing.py": {
+      "functions": 3,
+      "classes": 1,
+      "methods": 1
+    },
+    "/workspace/src/config/enhanced_multi_timeframe_config.py": {
+      "functions": 6,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/config/config_manager.py": {
+      "functions": 14,
+      "classes": 1,
+      "methods": 12
+    },
+    "/workspace/src/config/typed_config.py": {
+      "functions": 22,
+      "classes": 1,
+      "methods": 19
+    },
+    "/workspace/src/config/config_sr.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 6
+    },
+    "/workspace/src/config/matrix_diverse_lookback_config.py": {
+      "functions": 5,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/config/diverse_lookback_config.py": {
+      "functions": 4,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/config/computational_optimization.py": {
+      "functions": 11,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/config/multi_output_config.py": {
+      "functions": 4,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/config/config_two_tier.py": {
+      "functions": 3,
+      "classes": 1,
+      "methods": 1
+    },
+    "/workspace/src/config/config_technical_indicators.py": {
+      "functions": 2,
+      "classes": 1,
+      "methods": 0
+    },
+    "/workspace/src/config/enhanced_reporting_config.py": {
+      "functions": 6,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/config/config_system_monitoring.py": {
+      "functions": 3,
+      "classes": 1,
+      "methods": 1
+    },
+    "/workspace/src/config/training.py": {
+      "functions": 8,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/config/enhanced_matrix_config.py": {
+      "functions": 10,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/config/validation.py": {
+      "functions": 5,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/config/enhanced_prediction_service_config.py": {
+      "functions": 4,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/config/config_training_optimization.py": {
+      "functions": 2,
+      "classes": 1,
+      "methods": 0
+    },
+    "/workspace/src/config/__init__.py": {
+      "functions": 6,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/config/feature_engineering_optimization_config.py": {
+      "functions": 4,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/config/config_leverage.py": {
+      "functions": 3,
+      "classes": 1,
+      "methods": 1
+    },
+    "/workspace/src/config/enhanced_feature_optimization_config.py": {
+      "functions": 5,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/config/regime_specific_optimization_config.py": {
+      "functions": 13,
+      "classes": 3,
+      "methods": 7
+    },
+    "/workspace/src/config/trading.py": {
+      "functions": 7,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/config/config_ensemble.py": {
+      "functions": 2,
+      "classes": 2,
+      "methods": 0
+    },
+    "/workspace/src/utils/observability.py": {
+      "functions": 3,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/utils/step_dependency_validator.py": {
+      "functions": 5,
+      "classes": 1,
+      "methods": 5
+    },
+    "/workspace/src/utils/enhanced_validation_decorators.py": {
+      "functions": 26,
+      "classes": 1,
+      "methods": 3
+    },
+    "/workspace/src/utils/data_quality_framework.py": {
+      "functions": 28,
+      "classes": 3,
+      "methods": 28
+    },
+    "/workspace/src/utils/vif_calculator.py": {
+      "functions": 5,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/utils/model_performance_monitor.py": {
+      "functions": 2,
+      "classes": 1,
+      "methods": 2
+    },
+    "/workspace/src/utils/state_manager.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 6
+    },
+    "/workspace/src/utils/statistical_distribution_validation.py": {
+      "functions": 12,
+      "classes": 1,
+      "methods": 12
+    },
+    "/workspace/src/utils/structured_logging.py": {
+      "functions": 8,
+      "classes": 2,
+      "methods": 2
+    },
+    "/workspace/src/utils/async_utils.py": {
+      "functions": 7,
+      "classes": 3,
+      "methods": 10
+    },
+    "/workspace/src/utils/vif_validation_decorators.py": {
+      "functions": 21,
+      "classes": 1,
+      "methods": 0
+    },
+    "/workspace/src/utils/enhanced_config_management.py": {
+      "functions": 14,
+      "classes": 4,
+      "methods": 15
+    },
+    "/workspace/src/utils/time_utils.py": {
+      "functions": 8,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/utils/data_preprocessing.py": {
+      "functions": 5,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/utils/feature_output_validator.py": {
+      "functions": 17,
+      "classes": 3,
+      "methods": 17
+    },
+    "/workspace/src/utils/intelligent_feature_cache.py": {
+      "functions": 20,
+      "classes": 1,
+      "methods": 14
+    },
+    "/workspace/src/utils/parallel_processing_optimizer.py": {
+      "functions": 16,
+      "classes": 1,
+      "methods": 11
+    },
+    "/workspace/src/utils/decorators.py": {
+      "functions": 30,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/utils/data_loader.py": {
+      "functions": 12,
+      "classes": 1,
+      "methods": 12
+    },
+    "/workspace/src/utils/enhanced_memory_management.py": {
+      "functions": 18,
+      "classes": 3,
+      "methods": 13
+    },
+    "/workspace/src/utils/standardized_model_manager.py": {
+      "functions": 12,
+      "classes": 2,
+      "methods": 13
+    },
+    "/workspace/src/utils/advanced_decorators.py": {
+      "functions": 10,
+      "classes": 3,
+      "methods": 0
+    },
+    "/workspace/src/utils/training_pipeline_decorators.py": {
+      "functions": 40,
+      "classes": 5,
+      "methods": 10
+    },
+    "/workspace/src/utils/decorator_config.py": {
+      "functions": 2,
+      "classes": 3,
+      "methods": 2
+    },
+    "/workspace/src/utils/enhanced_decorators.py": {
+      "functions": 19,
+      "classes": 2,
+      "methods": 5
+    },
+    "/workspace/src/utils/standardized_config_manager.py": {
+      "functions": 10,
+      "classes": 1,
+      "methods": 8
+    },
+    "/workspace/src/utils/enhanced_mlflow_integration.py": {
+      "functions": 28,
+      "classes": 1,
+      "methods": 12
+    },
+    "/workspace/src/utils/purged_kfold.py": {
+      "functions": 2,
+      "classes": 1,
+      "methods": 2
+    },
+    "/workspace/src/utils/centralized_decorators.py": {
+      "functions": 34,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/utils/warning_symbols.py": {
+      "functions": 22,
+      "classes": 2,
+      "methods": 0
+    },
+    "/workspace/src/utils/config_loader.py": {
+      "functions": 9,
+      "classes": 1,
+      "methods": 9
+    },
+    "/workspace/src/utils/centralized_decorators_v2.py": {
+      "functions": 21,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/utils/decorator_compatibility.py": {
+      "functions": 21,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/utils/validation_decorators.py": {
+      "functions": 17,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/utils/enhanced_pipeline_decorators.py": {
+      "functions": 11,
+      "classes": 3,
+      "methods": 6
+    },
+    "/workspace/src/utils/error_handler.py": {
+      "functions": 48,
+      "classes": 17,
+      "methods": 25
+    },
+    "/workspace/src/utils/data_validation.py": {
+      "functions": 5,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/utils/parquet_utils.py": {
+      "functions": 5,
+      "classes": 1,
+      "methods": 4
+    },
+    "/workspace/src/utils/standardized_error_handler.py": {
+      "functions": 13,
+      "classes": 5,
+      "methods": 16
+    },
+    "/workspace/src/utils/validator_orchestrator.py": {
+      "functions": 7,
+      "classes": 1,
+      "methods": 7
+    },
+    "/workspace/src/utils/hmm_composite_manager.py": {
+      "functions": 14,
+      "classes": 1,
+      "methods": 13
+    },
+    "/workspace/src/utils/signal_handler.py": {
+      "functions": 16,
+      "classes": 2,
+      "methods": 16
+    },
+    "/workspace/src/utils/data_optimizer.py": {
+      "functions": 10,
+      "classes": 1,
+      "methods": 2
+    },
+    "/workspace/src/utils/configuration_security.py": {
+      "functions": 19,
+      "classes": 1,
+      "methods": 19
+    },
+    "/workspace/src/utils/security_framework.py": {
+      "functions": 26,
+      "classes": 7,
+      "methods": 31
+    },
+    "/workspace/src/utils/enhanced_missing_value_handler.py": {
+      "functions": 14,
+      "classes": 3,
+      "methods": 15
+    },
+    "/workspace/src/utils/trading_decorators.py": {
+      "functions": 24,
+      "classes": 5,
+      "methods": 6
+    },
+    "/workspace/src/utils/data_formatting_framework.py": {
+      "functions": 18,
+      "classes": 3,
+      "methods": 18
+    },
+    "/workspace/src/utils/enhanced_data_quality_validator.py": {
+      "functions": 20,
+      "classes": 4,
+      "methods": 17
+    },
+    "/workspace/src/utils/quality_alert_system.py": {
+      "functions": 14,
+      "classes": 3,
+      "methods": 15
+    },
+    "/workspace/src/utils/mlflow_utils.py": {
+      "functions": 14,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/utils/base_validator.py": {
+      "functions": 11,
+      "classes": 1,
+      "methods": 11
+    },
+    "/workspace/src/utils/feature_engineering_validation.py": {
+      "functions": 14,
+      "classes": 1,
+      "methods": 14
+    },
+    "/workspace/src/utils/confidence.py": {
+      "functions": 7,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/utils/pipeline_standards.py": {
+      "functions": 15,
+      "classes": 4,
+      "methods": 15
+    },
+    "/workspace/src/utils/enhanced_error_handling.py": {
+      "functions": 13,
+      "classes": 7,
+      "methods": 4
+    },
+    "/workspace/src/utils/prometheus_metrics.py": {
+      "functions": 10,
+      "classes": 1,
+      "methods": 10
+    },
+    "/workspace/src/utils/decorator_registry.py": {
+      "functions": 12,
+      "classes": 2,
+      "methods": 11
+    },
+    "/workspace/src/utils/steps_1_7_compatibility_framework.py": {
+      "functions": 11,
+      "classes": 2,
+      "methods": 12
+    },
+    "/workspace/src/utils/model_manager.py": {
+      "functions": 5,
+      "classes": 1,
+      "methods": 3
+    },
+    "/workspace/src/utils/domain_errors.py": {
+      "functions": 1,
+      "classes": 9,
+      "methods": 9
+    },
+    "/workspace/src/utils/database_security.py": {
+      "functions": 19,
+      "classes": 2,
+      "methods": 19
+    },
+    "/workspace/src/utils/enhanced_outlier_handler.py": {
+      "functions": 17,
+      "classes": 4,
+      "methods": 19
+    },
+    "/workspace/src/utils/enhanced_error_handler.py": {
+      "functions": 24,
+      "classes": 3,
+      "methods": 16
+    },
+    "/workspace/src/utils/logger.py": {
+      "functions": 32,
+      "classes": 6,
+      "methods": 24
+    },
+    "/workspace/src/utils/lookahead_bias_detector.py": {
+      "functions": 18,
+      "classes": 1,
+      "methods": 15
+    },
+    "/workspace/src/utils/cross_step_validation.py": {
+      "functions": 7,
+      "classes": 1,
+      "methods": 7
+    },
+    "/workspace/src/utils/data_type_optimizer.py": {
+      "functions": 4,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/strategist/config.py": {
+      "functions": 1,
+      "classes": 7,
+      "methods": 1
+    },
+    "/workspace/src/strategist/strategist_backup.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 8
+    },
+    "/workspace/src/strategist/strategist.py": {
+      "functions": 9,
+      "classes": 1,
+      "methods": 9
+    },
+    "/workspace/src/strategist/utils.py": {
+      "functions": 14,
+      "classes": 5,
+      "methods": 9
+    },
+    "/workspace/src/validation/critical_path_validators.py": {
+      "functions": 16,
+      "classes": 2,
+      "methods": 8
+    },
+    "/workspace/src/analyst/order_book_analyzer.py": {
+      "functions": 5,
+      "classes": 1,
+      "methods": 5
+    },
+    "/workspace/src/analyst/advanced_feature_engineering.py": {
+      "functions": 41,
+      "classes": 7,
+      "methods": 47
+    },
+    "/workspace/src/analyst/feature_engineering_orchestrator.py": {
+      "functions": 15,
+      "classes": 2,
+      "methods": 16
+    },
+    "/workspace/src/analyst/meta_labeling_system.py": {
+      "functions": 21,
+      "classes": 1,
+      "methods": 21
+    },
+    "/workspace/src/analyst/autoencoder_feature_generator.py": {
+      "functions": 29,
+      "classes": 7,
+      "methods": 38
+    },
+    "/workspace/src/analyst/enhanced_prediction_integrator.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 6
+    },
+    "/workspace/src/analyst/predictive_ensembles.py": {
+      "functions": 26,
+      "classes": 1,
+      "methods": 26
+    },
+    "/workspace/src/analyst/regime_runtime.py": {
+      "functions": 9,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/analyst/liquidation_risk_model.py": {
+      "functions": 10,
+      "classes": 1,
+      "methods": 10
+    },
+    "/workspace/src/analyst/multi_timeframe_feature_engineering.py": {
+      "functions": 13,
+      "classes": 1,
+      "methods": 13
+    },
+    "/workspace/src/analyst/dynamic_regime_mapper.py": {
+      "functions": 12,
+      "classes": 1,
+      "methods": 12
+    },
+    "/workspace/src/analyst/enhanced_regime_predictor.py": {
+      "functions": 15,
+      "classes": 1,
+      "methods": 15
+    },
+    "/workspace/src/analyst/decision_aggregator.py": {
+      "functions": 3,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/src/analyst/data_utils.py": {
+      "functions": 41,
+      "classes": 1,
+      "methods": 22
+    },
+    "/workspace/src/analyst/regime_expert_orchestrator.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 6
+    },
+    "/workspace/src/analyst/meta_label_relevance.py": {
+      "functions": 8,
+      "classes": 1,
+      "methods": 3
+    },
+    "/workspace/src/analyst/ml_confidence_predictor.py": {
+      "functions": 36,
+      "classes": 1,
+      "methods": 36
+    },
+    "/workspace/src/analyst/di_analyst.py": {
+      "functions": 1,
+      "classes": 1,
+      "methods": 1
+    },
+    "/workspace/src/analyst/unified_regime_classifier.py": {
+      "functions": 18,
+      "classes": 1,
+      "methods": 18
+    },
+    "/workspace/src/analyst/analyst.py": {
+      "functions": 14,
+      "classes": 1,
+      "methods": 14
+    },
+    "/workspace/src/analyst/predictive_ensembles/multi_timeframe_ensemble.py": {
+      "functions": 16,
+      "classes": 1,
+      "methods": 16
+    },
+    "/workspace/src/analyst/predictive_ensembles/ensemble_orchestrator.py": {
+      "functions": 15,
+      "classes": 1,
+      "methods": 15
+    },
+    "/workspace/src/analyst/predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py": {
+      "functions": 10,
+      "classes": 1,
+      "methods": 10
+    },
+    "/workspace/src/analyst/predictive_ensembles/regime_ensembles/base_ensemble.py": {
+      "functions": 27,
+      "classes": 2,
+      "methods": 28
+    },
+    "/workspace/src/database/efficient_features_database.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 6
+    },
+    "/workspace/src/database/influxdb_manager.py": {
+      "functions": 4,
+      "classes": 1,
+      "methods": 4
+    },
+    "/workspace/src/database/precomputed_features_manager.py": {
+      "functions": 7,
+      "classes": 1,
+      "methods": 7
+    },
+    "/workspace/src/database/migration_utils.py": {
+      "functions": 1,
+      "classes": 1,
+      "methods": 1
+    },
+    "/workspace/src/database/firestore_manager.py": {
+      "functions": 5,
+      "classes": 1,
+      "methods": 5
+    },
+    "/workspace/src/database/sqlite_manager.py": {
+      "functions": 4,
+      "classes": 2,
+      "methods": 5
+    },
+    "/workspace/analysis/model_training_quality_analysis.py": {
+      "functions": 14,
+      "classes": 1,
+      "methods": 13
+    },
+    "/workspace/analysis/missing_values_analysis.py": {
+      "functions": 12,
+      "classes": 1,
+      "methods": 11
+    },
+    "/workspace/analysis/data_collection_quality_analysis.py": {
+      "functions": 15,
+      "classes": 1,
+      "methods": 14
+    },
+    "/workspace/analysis/data_preparation_quality_analysis.py": {
+      "functions": 12,
+      "classes": 1,
+      "methods": 11
+    },
+    "/workspace/tests/test_strategist.py": {
+      "functions": 16,
+      "classes": 5,
+      "methods": 16
+    },
+    "/workspace/test_analysis_dir/simple_test.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 3
+    },
+    "/workspace/test_analysis_dir/another_test.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 3
+    },
+    "/workspace/crypto_analysis/data_downloader.py": {
+      "functions": 6,
+      "classes": 1,
+      "methods": 4
+    },
+    "/workspace/crypto_analysis/data_analyzer.py": {
+      "functions": 15,
+      "classes": 1,
+      "methods": 14
+    },
+    "/workspace/crypto_analysis/run_analysis.py": {
+      "functions": 2,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/data_quality/test_directory_functionality.py": {
+      "functions": 3,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/data_quality/generate_unified_report.py": {
+      "functions": 3,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/data_quality/simple_quality_orchestrator.py": {
+      "functions": 26,
+      "classes": 2,
+      "methods": 25
+    },
+    "/workspace/data_quality/example_usage.py": {
+      "functions": 9,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/data_quality/unified_quality_orchestrator.py": {
+      "functions": 26,
+      "classes": 8,
+      "methods": 25
+    },
+    "/workspace/data_quality/mapping/dependency_graph.py": {
+      "functions": 5,
+      "classes": 0,
+      "methods": 0
+    },
+    "/workspace/exchange/mexc_optimized.py": {
+      "functions": 0,
+      "classes": 1,
+      "methods": 0
+    },
+    "/workspace/exchange/okx.py": {
+      "functions": 1,
+      "classes": 1,
+      "methods": 1
+    },
+    "/workspace/exchange/gateio.py": {
+      "functions": 1,
+      "classes": 1,
+      "methods": 1
+    },
+    "/workspace/exchange/mexc.py": {
+      "functions": 1,
+      "classes": 1,
+      "methods": 1
+    },
+    "/workspace/exchange/factory.py": {
+      "functions": 1,
+      "classes": 1,
+      "methods": 1
+    },
+    "/workspace/exchange/base_exchange.py": {
+      "functions": 2,
+      "classes": 1,
+      "methods": 2
+    }
+  },
+  "call_relationships": [
+    {
+      "caller": {
+        "name": "create_regime_splits_file",
+        "file_path": 

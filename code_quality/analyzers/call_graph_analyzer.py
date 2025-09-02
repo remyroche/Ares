@@ -41,7 +41,7 @@ class CallNode:
             "name": self.name,
             "file_path": self.file_path,
             "node_type": self.node_type,
-            "line": line,
+            "line": self.line,
             "module_path": self.module_path,
             "is_imported": self.is_imported,
             "calls": self.calls,
@@ -72,6 +72,8 @@ class CallGraphAnalyzer:
             Dictionary containing call graph analysis results
         """
         python_files = find_python_files(directory, self.config.analysis.exclude_patterns)
+        # Normalize to string paths for consistency/JSON friendliness
+        python_files = [str(p) for p in python_files]
         print(f"Analyzing call graph for {len(python_files)} Python files...")
         
         # Clear previous results
@@ -99,6 +101,7 @@ class CallGraphAnalyzer:
     def _collect_definitions(self, file_path: str) -> None:
         """Collect all function, class, and method definitions from a file."""
         try:
+            file_path = str(file_path)
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
             
@@ -158,10 +161,13 @@ class CallGraphAnalyzer:
     def _analyze_calls_and_imports(self, file_path: str) -> None:
         """Analyze function calls and imports in a file."""
         try:
+            file_path = str(file_path)
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
             
             tree = ast.parse(content)
+            # Attach parent references to AST nodes for upward traversal
+            self._attach_parents(tree)
             module_name = Path(file_path).stem
             
             # Get file dependencies
@@ -180,6 +186,12 @@ class CallGraphAnalyzer:
                     
         except Exception as e:
             print(f"Warning: Could not analyze calls in {file_path}: {e}")
+
+    def _attach_parents(self, tree: ast.AST) -> None:
+        """Attach parent references to all AST nodes."""
+        for parent in ast.walk(tree):
+            for child in ast.iter_child_nodes(parent):
+                setattr(child, 'parent', parent)
     
     def _analyze_function_call(self, node: ast.Call, file_path: str, module_name: str) -> None:
         """Analyze a function call and add it to the call graph."""
@@ -212,16 +224,18 @@ class CallGraphAnalyzer:
     def _find_calling_function(self, node: ast.Call, file_path: str) -> Optional[str]:
         """Find the function that contains this call."""
         current = node
-        while current.parent:
-            if isinstance(current.parent, ast.FunctionDef):
-                return f"{file_path}::{current.parent.name}"
-            elif isinstance(current.parent, ast.ClassDef):
+        parent = getattr(current, 'parent', None)
+        while parent is not None:
+            if isinstance(parent, ast.FunctionDef):
+                return f"{file_path}::{parent.name}"
+            elif isinstance(parent, ast.ClassDef):
                 # Find the method containing this call
-                for child in ast.walk(current.parent):
+                for child in ast.walk(parent):
                     if isinstance(child, ast.FunctionDef) and self._contains_node(child, node):
-                        return f"{file_path}::{current.parent.name}.{child.name}"
+                        return f"{file_path}::{parent.name}.{child.name}"
                 return None
-            current = current.parent
+            current = parent
+            parent = getattr(current, 'parent', None)
         return None
     
     def _contains_node(self, container: ast.AST, target: ast.AST) -> bool:
@@ -383,6 +397,9 @@ class CallGraphAnalyzer:
                 "alias": edge[2].get("name", "")
             })
         
+        # Convert defaultdict and any PosixPath keys to JSON-serializable types
+        analysis["node_types"] = dict(analysis["node_types"])
+        analysis["file_stats"] = {str(k): v for k, v in analysis["file_stats"].items()}
         return analysis
     
     def find_dead_code(self) -> List[Dict[str, Any]]:

@@ -91,8 +91,7 @@ class ImportAnalyzer:
                             'type': 'import',
                             'module': import_name,
                             'as_name': as_name,
-                            'line': node.lineno,
-                            'node': node
+                            'line': node.lineno
                         })
                         
                         # Add to import graph
@@ -110,8 +109,7 @@ class ImportAnalyzer:
                             'name': alias.name,
                             'full_name': import_name,
                             'as_name': as_name,
-                            'line': node.lineno,
-                            'node': node
+                            'line': node.lineno
                         })
                         
                         # Add to import graph

@@ -1104,7 +1104,7 @@ async def setup_pnl_loss_functions(
         return None
 
     except Exception as e:
-        self.logger.error(f"Error setting up PnL loss functions: {e}")
+        system_logger.error(f"Error setting up PnL loss functions: {e}")
         return None
 
     def _perform_treynor_ratio(self, calculation_input: dict[str, Any]) -> dict[str, Any]:

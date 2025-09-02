@@ -399,24 +399,20 @@ class DynamicWeighter:
     async def _perform_performance_weighting(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform performance-based weighting."""
         try:
+            # Define performance weighting methods
+            weighting_methods = {
+                "return_based_weighting": self._perform_return_based_weighting,
+                "sharpe_based_weighting": self._perform_sharpe_based_weighting,
+                "sortino_based_weighting": self._perform_sortino_based_weighting,
+                "calmar_based_weighting": self._perform_calmar_based_weighting,
+            }
+            
+            # Execute enabled weighting methods
             results = {}
-
-            # Return-based weighting
-            if self.performance_weighting_components.get("return_based_weighting", False):
-                results["return_based_weighting"] = self._perform_return_based_weighting(weighting_input)
-
-            # Sharpe-based weighting
-            if self.performance_weighting_components.get("sharpe_based_weighting", False):
-                results["sharpe_based_weighting"] = self._perform_sharpe_based_weighting(weighting_input)
-
-            # Sortino-based weighting
-            if self.performance_weighting_components.get("sortino_based_weighting", False):
-                results["sortino_based_weighting"] = self._perform_sortino_based_weighting(weighting_input)
-
-            # Calmar-based weighting
-            if self.performance_weighting_components.get("calmar_based_weighting", False):
-                results["calmar_based_weighting"] = self._perform_calmar_based_weighting(weighting_input)
-
+            for method_name, method_func in weighting_methods.items():
+                if self.performance_weighting_components.get(method_name, False):
+                    results[method_name] = method_func(weighting_input)
+            
             return results
 
         except Exception as e:
@@ -431,24 +427,20 @@ class DynamicWeighter:
     async def _perform_risk_weighting(self, weighting_input: dict[str, Any]) -> dict[str, Any]:
         """Perform risk-based weighting."""
         try:
+            # Define risk weighting methods
+            weighting_methods = {
+                "var_based_weighting": self._perform_var_based_weighting,
+                "volatility_based_weighting": self._perform_volatility_based_weighting,
+                "drawdown_based_weighting": self._perform_drawdown_based_weighting,
+                "correlation_based_weighting": self._perform_correlation_based_weighting,
+            }
+            
+            # Execute enabled weighting methods
             results = {}
-
-            # VaR-based weighting
-            if self.risk_weighting_components.get("var_based_weighting", False):
-                results["var_based_weighting"] = self._perform_var_based_weighting(weighting_input)
-
-            # Volatility-based weighting
-            if self.risk_weighting_components.get("volatility_based_weighting", False):
-                results["volatility_based_weighting"] = self._perform_volatility_based_weighting(weighting_input)
-
-            # Drawdown-based weighting
-            if self.risk_weighting_components.get("drawdown_based_weighting", False):
-                results["drawdown_based_weighting"] = self._perform_drawdown_based_weighting(weighting_input)
-
-            # Correlation-based weighting
-            if self.risk_weighting_components.get("correlation_based_weighting", False):
-                results["correlation_based_weighting"] = self._perform_correlation_based_weighting(weighting_input)
-
+            for method_name, method_func in weighting_methods.items():
+                if self.risk_weighting_components.get(method_name, False):
+                    results[method_name] = method_func(weighting_input)
+            
             return results
 
         except Exception as e:
@@ -1161,46 +1153,8 @@ class DynamicWeighter:
                 # Return equal weights if regime awareness is disabled
                 return {model: 1.0 / len(model_names) for model in model_names}
 
-            # Define regime-specific base weights
-            regime_weights = {
-                "BULL": {
-                    "tcn": 0.4,
-                    "transformer": 0.3,
-                    "lstm": 0.3,
-                    "gru": 0.2,
-                    "tabnet": 0.3,
-                },
-                "BEAR": {
-                    "tcn": 0.3,
-                    "transformer": 0.4,
-                    "lstm": 0.3,
-                    "gru": 0.3,
-                    "tabnet": 0.2,
-                },
-                "SIDEWAYS": {
-                    "tcn": 0.3,
-                    "transformer": 0.3,
-                    "lstm": 0.4,
-                    "gru": 0.3,
-                    "tabnet": 0.3,
-                },
-                "SR": {
-                    "tcn": 0.5,
-                    "transformer": 0.3,
-                    "lstm": 0.2,
-                    "gru": 0.2,
-                    "tabnet": 0.4,
-                },
-                "CANDLE": {
-                    "tcn": 0.3,
-                    "transformer": 0.5,
-                    "lstm": 0.3,
-                    "gru": 0.3,
-                    "tabnet": 0.2,
-                },
-            }
-
-            base_weights = regime_weights.get(current_regime, {})
+            # Get regime-specific base weights
+            base_weights = self._get_regime_base_weights(current_regime)
 
             # Initialize regime performance tracking
             if current_regime not in self.regime_performances:
@@ -1313,6 +1267,47 @@ class DynamicWeighter:
         except Exception as e:
             self.logger.exception(f"Error calculating enhanced ensemble weights: {e}")
             return {model: 1.0 / len(model_predictions) for model in model_predictions.keys()}
+
+    def _get_regime_base_weights(self, regime: str) -> dict[str, float]:
+        """Get base weights for models in a specific regime."""
+        regime_weights = {
+            "BULL": {
+                "tcn": 0.4,
+                "transformer": 0.3,
+                "lstm": 0.3,
+                "gru": 0.2,
+                "tabnet": 0.3,
+            },
+            "BEAR": {
+                "tcn": 0.3,
+                "transformer": 0.4,
+                "lstm": 0.3,
+                "gru": 0.3,
+                "tabnet": 0.2,
+            },
+            "SIDEWAYS": {
+                "tcn": 0.3,
+                "transformer": 0.3,
+                "lstm": 0.4,
+                "gru": 0.3,
+                "tabnet": 0.3,
+            },
+            "SR": {
+                "tcn": 0.5,
+                "transformer": 0.3,
+                "lstm": 0.2,
+                "gru": 0.2,
+                "tabnet": 0.4,
+            },
+            "CANDLE": {
+                "tcn": 0.3,
+                "transformer": 0.5,
+                "lstm": 0.3,
+                "gru": 0.3,
+                "tabnet": 0.2,
+            },
+        }
+        return regime_weights.get(regime, {})
 
     def _get_recent_regime_performance(self, model_name: str, regime: str) -> float:
         """Get recent performance of a model in a specific regime."""

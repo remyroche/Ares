@@ -4,6 +4,8 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any, Dict
 
+import pandas as pd
+
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.tracing import with_tracing_span
@@ -1360,7 +1362,7 @@ class Supervisor:
 
         # Monitor each feature
         for monitor_key, feature_name in analyst_features.items():
-            analyst_monitors[monitor_key] = hasattr(analyst=feature_name) and getattr(analyst=feature_name) is not None
+            analyst_monitors[monitor_key] = hasattr(analyst, feature_name) and getattr(analyst, feature_name) is not None
 
     def _monitor_strategist_features(self) -> None:
         """Monitor Strategist component features."""
@@ -1380,7 +1382,7 @@ class Supervisor:
         # Monitor each feature
         for monitor_key, feature_name in strategist_features.items():
             strategist_monitors[monitor_key] = (
-                hasattr(strategist=feature_name) and getattr(strategist=feature_name) is not None
+                hasattr(strategist, feature_name) and getattr(strategist, feature_name) is not None
             )
 
     def _monitor_tactician_features(self) -> None:
@@ -1403,7 +1405,7 @@ class Supervisor:
         # Monitor each feature
         for monitor_key, feature_name in tactician_features.items():
             tactician_monitors[monitor_key] = (
-                hasattr(tactician=feature_name) and getattr(tactician=feature_name) is not None
+                hasattr(tactician, feature_name) and getattr(tactician, feature_name) is not None
             )
 
     def _monitor_enhanced_training_manager_features(self) -> None:
@@ -1427,7 +1429,7 @@ class Supervisor:
         # Monitor each feature
         for monitor_key, feature_name in training_features.items():
             training_monitors[monitor_key] = (
-                hasattr(training_manager=feature_name) and getattr(training_manager=feature_name) is not None
+                hasattr(training_manager, feature_name) and getattr(training_manager, feature_name) is not None
             )
 
     def _log_component_feature_status(self) -> None:
@@ -1522,14 +1524,14 @@ class Supervisor:
             # Share regime classification results
             if hasattr(analyst, "regime_classifier") and analyst.regime_classifier:
                 regime_info = await analyst._perform_regime_classification({})
-                if regime_info and hasattr(strategist="current_regime"):
+                if regime_info and hasattr(strategist, "current_regime"):
                     strategist.current_regime = regime_info.get("regime")
                     strategist.regime_confidence = regime_info.get("confidence", 0.0)
 
             # Share ML confidence predictions
-            if hasattr(analyst="ml_confidence_predictor") and analyst.ml_confidence_predictor:
+            if hasattr(analyst, "ml_confidence_predictor") and analyst.ml_confidence_predictor:
                 ml_predictions = await analyst._perform_ml_predictions({})
-                if ml_predictions and hasattr(strategist="ml_confidence_predictor"):
+                if ml_predictions and hasattr(strategist, "ml_confidence_predictor"):
                     strategist.ml_confidence_predictor = ml_predictions
 
             self.logger.info("Analyst-Strategist coordination completed")
@@ -1588,17 +1590,17 @@ class Supervisor:
             # Coordinate with Analyst for model updates
             if self.components.get("analyst"):
                 analyst = self.components["analyst"]
-                if hasattr(training_manager="get_enhanced_training_results"):
+                if hasattr(training_manager, "get_enhanced_training_results"):
                     training_results = training_manager.get_enhanced_training_results()
-                    if training_results and hasattr(analyst="update_models"):
+                    if training_results and hasattr(analyst, "update_models"):
                         await analyst.update_models(training_results)
 
             # Coordinate with Strategist for model updates
             if self.components.get("strategist"):
                 strategist = self.components["strategist"]
-                if hasattr(training_manager="get_enhanced_training_results"):
+                if hasattr(training_manager, "get_enhanced_training_results"):
                     training_results = training_manager.get_enhanced_training_results()
-                    if training_results and hasattr(strategist="update_models"):
+                    if training_results and hasattr(strategist, "update_models"):
                         await strategist.update_models(training_results)
 
             self.logger.info("Training Manager coordination completed")
@@ -1620,7 +1622,7 @@ class Supervisor:
             # Get performances from Analyst
             if self.components.get("analyst"):
                 analyst = self.components["analyst"]
-                if hasattr(analyst="get_analysis_results"):
+                if hasattr(analyst, "get_analysis_results"):
                     analysis_results = analyst.get_analysis_results()
                     if analysis_results:
                         model_performances["analyst"] = analysis_results.get(
@@ -1642,7 +1644,7 @@ class Supervisor:
             # Get performances from Tactician
             if self.components.get("tactician"):
                 tactician = self.components["tactician"]
-                if hasattr(tactician="get_tactics_results"):
+                if hasattr(tactician, "get_tactics_results"):
                     tactics_results = tactician.get_tactics_results()
                     if tactics_results:
                         model_performances["tactician"] = tactics_results.get(
@@ -1984,7 +1986,7 @@ class Supervisor:
             breach = (max_drawdown <= dd_limit) or (daily_return <= daily_loss_limit)
             if breach:
                 # Pause tactician run loop or set is_running flag down
-                if hasattr(tactician="is_running"):
+                if hasattr(tactician, "is_running"):
                     tactician.is_running = False
                 self.logger.warning(
                     f"⛔ Portfolio guard triggered. MDD={max_drawdown:.2%}, Daily={daily_return:.2%}. Pausing Tactician.",

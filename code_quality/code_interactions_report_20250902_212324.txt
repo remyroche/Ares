@@ -1,0 +1,276 @@
+CODE INTERACTION ANALYSIS REPORT
+================================================================================
+
+SUMMARY STATISTICS
+----------------------------------------
+Total files analyzed: 480
+Total issues found: 32508
+Undefined functions: 23979
+Missing await calls: 197
+
+TOP 20 UNDEFINED FUNCTIONS
+----------------------------------------
+run_async: 1 occurrences
+  - /workspace/src/tasks.py:31
+
+run_full_training: 1 occurrences
+  - /workspace/src/tasks.py:54
+
+append: 2914 occurrences
+  - /workspace/src/ares_pipeline.py:62
+  - /workspace/src/config.py:385
+  - /workspace/src/paper_trader.py:314
+  ... and 2911 more
+
+exception: 1350 occurrences
+  - /workspace/src/ares_pipeline.py:149
+  - /workspace/src/ares_pipeline.py:184
+  - /workspace/src/ares_pipeline.py:206
+  ... and 1347 more
+
+get_exchange: 1 occurrences
+  - /workspace/src/ares_pipeline.py:215
+
+lower: 376 occurrences
+  - /workspace/src/ares_pipeline.py:216
+  - /workspace/src/supervisor/performance_monitor.py:599
+  - /workspace/src/supervisor/supervisor.py:542
+  ... and 373 more
+
+create_task: 22 occurrences
+  - /workspace/src/ares_pipeline.py:439
+  - /workspace/src/trading/sr_trading_intelligence.py:103
+  - /workspace/src/supervisor/main.py:171
+  ... and 19 more
+
+now: 920 occurrences
+  - /workspace/src/ares_pipeline.py:468
+  - /workspace/src/ares_pipeline.py:481
+  - /workspace/src/ares_pipeline.py:511
+  ... and 917 more
+
+total_seconds: 67 occurrences
+  - /workspace/src/ares_pipeline.py:482
+  - /workspace/src/ares_pipeline.py:552
+  - /workspace/src/ares_pipeline.py:792
+  ... and 64 more
+
+sleep: 64 occurrences
+  - /workspace/src/ares_pipeline.py:540
+  - /workspace/src/ares_pipeline.py:549
+  - /workspace/src/monitoring/surrogate_optimization_monitor.py:116
+  ... and 61 more
+
+DataFrame: 394 occurrences
+  - /workspace/src/ares_pipeline.py:623
+  - /workspace/src/ares_pipeline.py:675
+  - /workspace/src/monitoring/surrogate_optimization_monitor.py:490
+  ... and 391 more
+
+isoformat: 726 occurrences
+  - /workspace/src/ares_pipeline.py:886
+  - /workspace/src/monitoring/fractional_system_monitor.py:404
+  - /workspace/src/monitoring/fractional_system_monitor.py:587
+  ... and 723 more
+
+get_dashboard_summary: 1 occurrences
+  - /workspace/src/ares_pipeline.py:944
+
+insert: 68 occurrences
+  - /workspace/src/ares_pipeline.py:1107
+  - /workspace/src/tactician/sr_data_integration.py:26
+  - /workspace/src/training/integration_guide.py:14
+  ... and 65 more
+
+ArgumentParser: 3 occurrences
+  - /workspace/src/ares_pipeline.py:1115
+  - /workspace/src/training/steps/step1_5_data_converter.py:1879
+  - /workspace/src/training/steps/step1/run_step1.py:39
+
+add_argument: 14 occurrences
+  - /workspace/src/ares_pipeline.py:1116
+  - /workspace/src/ares_pipeline.py:1117
+  - /workspace/src/ares_pipeline.py:1118
+  ... and 11 more
+
+parse_args: 3 occurrences
+  - /workspace/src/ares_pipeline.py:1120
+  - /workspace/src/training/steps/step1_5_data_converter.py:1885
+  - /workspace/src/training/steps/step1/run_step1.py:48
+
+upper: 75 occurrences
+  - /workspace/src/ares_pipeline.py:1123
+  - /workspace/src/monitoring/fractional_system_monitor.py:429
+  - /workspace/src/monitoring/surrogate_optimization_monitor.py:352
+  ... and 72 more
+
+copy: 485 occurrences
+  - /workspace/src/config.py:382
+  - /workspace/src/config.py:470
+  - /workspace/src/config.py:477
+  ... and 482 more
+
+items: 936 occurrences
+  - /workspace/src/config.py:421
+  - /workspace/src/paper_trader.py:532
+  - /workspace/src/monitoring/fractional_system_monitor.py:562
+  ... and 933 more
+
+
+ASYNC/AWAIT ISSUES
+----------------------------------------
+Total missing await calls: 197
+
+initialize: 35 missing await calls
+  - /workspace/src/utils/data_optimizer.py:467
+  - /workspace/src/utils/model_manager.py:625
+  - /workspace/src/utils/logger.py:561
+  ... and 32 more
+
+main: 22 missing await calls
+  - /workspace/src/ares_pipeline.py:1158
+  - /workspace/src/trading/live_wavelet_demo.py:304
+  - /workspace/src/training/wavelet_integration_demo.py:521
+  ... and 19 more
+
+run_validator: 22 missing await calls
+  - /workspace/src/training/steps/step14_tactician_labeling_validator.py:692
+  - /workspace/src/training/steps/step5_hmm_based_training_validator.py:723
+  - /workspace/src/training/steps/step18_walk_forward_validation_validator.py:443
+  ... and 19 more
+
+run_step: 19 missing await calls
+  - /workspace/src/training/steps/step9_5_hmm_lm_generalist_training.py:1365
+  - /workspace/src/training/steps/step2_5_sr_optimization.py:1542
+  - /workspace/src/training/steps/step14_tactician_labeling.py:1060
+  ... and 16 more
+
+test: 17 missing await calls
+  - /workspace/src/training/steps/step9_5_hmm_lm_generalist_training.py:1367
+  - /workspace/src/training/steps/step14_tactician_labeling.py:1062
+  - /workspace/src/training/steps/step4_triple_barrier_method.py:562
+  ... and 14 more
+
+test_validator: 12 missing await calls
+  - /workspace/src/training/steps/step14_tactician_labeling_validator.py:694
+  - /workspace/src/training/steps/step5_hmm_based_training_validator.py:725
+  - /workspace/src/training/steps/step18_walk_forward_validation_validator.py:445
+  ... and 9 more
+
+_attempt_recovery: 9 missing await calls
+  - /workspace/src/database/sqlite_manager.py:571
+  - /workspace/src/database/sqlite_manager.py:648
+  - /workspace/src/database/sqlite_manager.py:708
+  ... and 6 more
+
+stop: 6 missing await calls
+  - /workspace/src/core/di_launcher.py:202
+  - /workspace/src/core/generic_base.py:153
+  - /workspace/src/core/config_service.py:579
+  ... and 3 more
+
+load_config: 4 missing await calls
+  - /workspace/src/training/wavelet_caching_workflow.py:291
+  - /workspace/src/config/typed_config.py:260
+  - /workspace/src/utils/enhanced_config_management.py:324
+  ... and 1 more
+
+load_unified_data: 3 missing await calls
+  - /workspace/src/training/steps/unified_data_loader.py:484
+  - /workspace/src/training/steps/step12_analyst_enhancement.py:628
+  - /workspace/src/training/steps/step8_regime_data_splitting.py:156
+
+
+MODULE INTERACTION ANALYSIS
+----------------------------------------
+/.workspace.src.training.steps: 78 files
+/.workspace.src.training: 73 files
+/.workspace.src.utils: 68 files
+/.workspace.src.config: 40 files
+/.workspace.src.tactician: 25 files
+/.workspace.src.analyst: 20 files
+/.workspace.src.monitoring: 17 files
+/.workspace.src.supervisor: 14 files
+/.workspace.src.training.steps.step1: 13 files
+/.workspace.src.training.steps.step17_final_parameters_optimization: 12 files
+
+
+IMPORT CONFLICTS
+----------------------------------------
+
+/workspace/src/tasks.py:
+  - Potential naming conflict with 'asyncio' from 'asyncio'
+  - Potential naming conflict with 'os' from 'os'
+  - Potential naming conflict with 'get_environment_settings' from 'src.config'
+
+/workspace/src/ares_pipeline.py:
+  - Potential naming conflict with 'asyncio' from 'asyncio'
+  - Potential naming conflict with 'os' from 'os'
+  - Potential naming conflict with 'SQLiteManager' from 'src.database.sqlite_manager'
+
+/workspace/src/monitoring/performance_dashboard.py:
+  - Potential naming conflict with 'asyncio' from 'asyncio'
+  - Potential naming conflict with 'annotations' from '__future__'
+  - Potential naming conflict with 'Path' from 'pathlib'
+
+/workspace/src/monitoring/integration_manager.py:
+  - Potential naming conflict with 'asyncio' from 'asyncio'
+  - Potential naming conflict with 'annotations' from '__future__'
+  - Potential naming conflict with 'Any' from 'typing'
+
+/workspace/src/monitoring/surrogate_optimization_monitor.py:
+  - Potential naming conflict with 'asyncio' from 'asyncio'
+  - Potential naming conflict with 'os' from 'os'
+  - Potential naming conflict with 'datetime' from 'datetime'
+
+/workspace/src/monitoring/metrics_dashboard.py:
+  - Potential naming conflict with 'asyncio' from 'asyncio'
+  - Potential naming conflict with 'annotations' from '__future__'
+  - Potential naming conflict with 'datetime' from 'datetime'
+
+/workspace/src/monitoring/advanced_tracer.py:
+  - Potential naming conflict with 'asyncio' from 'asyncio'
+  - Potential naming conflict with 'annotations' from '__future__'
+  - Potential naming conflict with 'datetime' from 'datetime'
+
+/workspace/src/interfaces/event_bus.py:
+  - Potential naming conflict with 'asyncio' from 'asyncio'
+  - Potential naming conflict with 'datetime' from 'datetime'
+  - Potential naming conflict with 'Any' from 'typing'
+
+/workspace/src/interfaces/enhanced_event_bus.py:
+  - Potential naming conflict with 'asyncio' from 'asyncio'
+  - Potential naming conflict with 'Path' from 'pathlib'
+  - Potential naming conflict with 'datetime' from 'datetime'
+
+/workspace/src/trading/live_wavelet_analyzer.py:
+  - Potential naming conflict with 'asyncio' from 'asyncio'
+  - Potential naming conflict with 'Any' from 'typing'
+  - Potential naming conflict with 'pandas' from 'pandas'
+
+
+KEY INSIGHTS
+----------------------------------------
+Common undefined function prefixes (potential missing modules):
+  - _*: 42 functions
+  - get_*: 35 functions
+  - set_*: 18 functions
+  - to_*: 15 functions
+  - is_*: 14 functions
+  - run_*: 11 functions
+  - write_*: 7 functions
+  - log_*: 7 functions
+  - create_*: 6 functions
+  - predict_*: 6 functions
+
+Files with most issues:
+  - /workspace/src/training/steps/vectorized_advanced_feature_engineering.py: 1320 issues
+  - /workspace/src/training/steps/step9_hmm_based_training.py: 728 issues
+  - /workspace/src/training/enhanced_training_manager_enhanced.py: 522 issues
+  - /workspace/src/training/steps/step12_analyst_enhancement.py: 512 issues
+  - /workspace/src/training/steps/vectorized_labelling_orchestrator.py: 454 issues
+  - /workspace/src/training/steps/step3_hmm_regime_discovery.py: 425 issues
+  - /workspace/src/training/steps/step1_5_data_converter.py: 418 issues
+  - /workspace/src/training/steps/step10_unified_regime_intelligence.py: 375 issues
+  - /workspace/src/training/enhanced_training_manager.py: 345 issues
+  - /workspace/src/training/steps/raw_data_quality_checker.py: 339 issues

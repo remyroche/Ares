@@ -144,9 +144,8 @@ class LabelingStep:
         self.logger.info(f"   - Time barrier minutes: {self.time_barrier_minutes}")
         self.logger.info(f"   - Max lookahead: {self.max_lookahead}")
         
-        # Initialize regime-aware triple barrier components
+        # Initialize only regime-aware triple barrier components
         self.regime_barrier_optimizer = None
-        self.optimized_triple_barrier_labeler = None
         
         try:
             # Try to import and initialize HMMRegimeBarrierOptimizer
@@ -158,22 +157,6 @@ class LabelingStep:
         except Exception as e:
             self.logger.warning(f"⚠️ Could not initialize HMMRegimeBarrierOptimizer: {e}")
             self.regime_barrier_optimizer = None
-        
-        try:
-            # Initialize fallback OptimizedTripleBarrierLabeling
-            from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
-                OptimizedTripleBarrierLabeling
-            )
-            self.optimized_triple_barrier_labeler = OptimizedTripleBarrierLabeling(
-                profit_take_multiplier=labeling_cfg.get("profit_take_multiplier", 0.002),
-                stop_loss_multiplier=labeling_cfg.get("stop_loss_multiplier", 0.001),
-                time_barrier_minutes=self.time_barrier_minutes,
-                max_lookahead=self.max_lookahead,
-            )
-            self.logger.info("✅ OptimizedTripleBarrierLabeling initialized successfully")
-        except Exception as e:
-            self.logger.warning(f"⚠️ Could not initialize OptimizedTripleBarrierLabeling: {e}")
-            self.optimized_triple_barrier_labeler = None
         
         # Initialize meta-labeling system if available
         if meta_labeling_system is not None:
@@ -469,44 +452,21 @@ class LabelingStep:
                             else:
                                 raise Exception("Regime-aware labeling failed")
                         else:
-                            self.logger.warning(f"⚠️ Regime column '{self.regime_col}' not found, falling back to standard method")
+                            self.logger.warning(f"⚠️ Regime column '{self.regime_col}' not found")
                             raise Exception("Regime column not found")
                             
                     except Exception as e:
-                        self.logger.warning(f"⚠️ Regime-aware labeling failed: {e}")
-                        self.logger.info("🔄 Falling back to standard triple barrier labeling...")
-                        
-                        # Fallback Path: Use standard triple barrier labeling
-                        if self.optimized_triple_barrier_labeler is not None:
-                            try:
-                                standard_labels = await self._generate_standard_triple_barrier_labels(result_data, symbol, exchange, timeframe)
-                                if standard_labels is not None:
-                                    result_data['triple_barrier_label'] = standard_labels
-                                    result_data['labeling_method'] = 'standard_fallback'
-                                    self.logger.info("✅ Generated standard triple barrier labels (fallback)")
-                                else:
-                                    raise Exception("Standard labeling failed")
-                            except Exception as fallback_error:
-                                self.logger.error(f"❌ Both regime-aware and standard labeling failed: {fallback_error}")
-                                return None
-                        else:
-                            self.logger.error("❌ No triple barrier labeling methods available")
-                            return None
-                else:
-                    # Auto-calculation disabled or optimizer not available, use standard method
-                    if self.optimized_triple_barrier_labeler is not None:
-                        self.logger.info("🔄 Auto-calculation disabled, using standard triple barrier labeling...")
-                        standard_labels = await self._generate_standard_triple_barrier_labels(result_data, symbol, exchange, timeframe)
-                        if standard_labels is not None:
-                            result_data['triple_barrier_label'] = standard_labels
-                            result_data['labeling_method'] = 'standard_manual'
-                            self.logger.info("✅ Generated standard triple barrier labels (manual)")
-                        else:
-                            self.logger.error("❌ Standard labeling failed")
-                            return None
-                    else:
-                        self.logger.error("❌ No triple barrier labeling methods available")
+                        self.logger.error(f"❌ Regime-aware labeling failed: {e}")
+                        self.logger.error("❌ No fallback labeling method available - regime-aware labeling is required")
                         return None
+                else:
+                    # Auto-calculation disabled or optimizer not available
+                    if not self.auto_calc:
+                        self.logger.error("❌ Auto-calculation disabled for regime-aware labeling")
+                    if self.regime_barrier_optimizer is None:
+                        self.logger.error("❌ Regime barrier optimizer not available")
+                    self.logger.error("❌ Regime-aware labeling is required - no fallback available")
+                    return None
             
             # 2. Generate meta-labels if meta-labeling system is available
             if self.meta_labeling_system:
@@ -671,40 +631,6 @@ class LabelingStep:
                 
         except Exception as e:
             self.logger.exception(f"❌ Error in regime-aware labeling: {e}")
-            return None
-
-    async def _generate_standard_triple_barrier_labels(self, data: pd.DataFrame, symbol: str, exchange: str, timeframe: str) -> Optional[pd.Series]:
-        """Generate standard triple barrier labels using OptimizedTripleBarrierLabeling."""
-        try:
-            if self.optimized_triple_barrier_labeler is None:
-                self.logger.error("❌ Optimized triple barrier labeler not available")
-                return None
-            
-            self.logger.info("🔧 Generating standard triple barrier labels...")
-            
-            # Check if we have the required OHLCV columns
-            required_columns = ['open', 'high', 'low', 'close', 'volume']
-            missing_columns = [col for col in required_columns if col not in data.columns]
-            if missing_columns:
-                self.logger.error(f"❌ Missing required columns for triple barrier labeling: {missing_columns}")
-                return None
-            
-            # Generate standard labels
-            try:
-                labels = self.optimized_triple_barrier_labeler.generate_labels(data)
-                
-                if labels is not None:
-                    self.logger.info(f"✅ Generated {len(labels)} standard triple barrier labels")
-                    return labels
-                else:
-                    raise Exception("Standard labeling returned None")
-                    
-            except Exception as e:
-                self.logger.warning(f"⚠️ Standard labeling failed: {e}")
-                return None
-                
-        except Exception as e:
-            self.logger.exception(f"❌ Error in standard triple barrier labeling: {e}")
             return None
 
 

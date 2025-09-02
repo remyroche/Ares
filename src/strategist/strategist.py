@@ -59,6 +59,18 @@ class Strategist:
         # Strategy parameters (position sizing handled by Tactician)
         self.min_confidence_threshold: float = self.strategist_config.get("min_confidence_threshold", 0.6)
 
+        # Technical indicator thresholds and strategy type (for profile/reference only)
+        tech_cfg = self.strategist_config.get("technical_indicator_thresholds", {})
+        self.rsi_oversold: float = tech_cfg.get("rsi_oversold", 30.0)
+        self.rsi_overbought: float = tech_cfg.get("rsi_overbought", 70.0)
+        self.sma_fast_window: int = tech_cfg.get("sma_fast_window", 20)
+        self.sma_slow_window: int = tech_cfg.get("sma_slow_window", 50)
+        self.volume_ratio_high: float = tech_cfg.get("volume_ratio_high", 1.5)
+        self.volume_ratio_low: float = tech_cfg.get("volume_ratio_low", 0.5)
+        self.price_volatility_window: int = tech_cfg.get("price_volatility_window", 20)
+
+        self.strategy_type: str = self.strategist_config.get("strategy_type", "technical_analysis")
+
         # Component references (will be set during initialization)
         self.analyst: Analyst | None = None
         self.tactician: Tactician | None = None
@@ -247,15 +259,22 @@ class Strategist:
             # Price indicators
             indicators["current_price"] = current_price
             indicators["price_change"] = (current_price - market_data["close"].iloc[-2]) / market_data["close"].iloc[-2]
-            indicators["price_volatility"] = market_data["close"].pct_change().std()
+
+            # Price volatility with configurable window
+            volatility_window = max(2, int(self.price_volatility_window))
+            indicators["price_volatility"] = (
+                market_data["close"].pct_change().rolling(window=volatility_window).std().iloc[-1]
+            )
 
             # Volume indicators
             indicators["volume_ma"] = market_data["volume"].rolling(window=20).mean().iloc[-1]
             indicators["volume_ratio"] = market_data["volume"].iloc[-1] / indicators["volume_ma"]
 
             # Technical indicators
-            indicators["sma_20"] = market_data["close"].rolling(window=20).mean().iloc[-1]
-            indicators["sma_50"] = market_data["close"].rolling(window=50).mean().iloc[-1]
+            sma_fast = max(2, int(self.sma_fast_window))
+            sma_slow = max(sma_fast + 1, int(self.sma_slow_window))
+            indicators["sma_20"] = market_data["close"].rolling(window=sma_fast).mean().iloc[-1]
+            indicators["sma_50"] = market_data["close"].rolling(window=sma_slow).mean().iloc[-1]
             indicators["rsi"] = self._calculate_rsi(market_data["close"])
 
             # Trend indicators
@@ -297,68 +316,30 @@ class Strategist:
         try:
             strategy = {
                 "timestamp": datetime.now().isoformat(),
-                "strategy_type": "technical_analysis",
-                "confidence": 0.0,
-                "direction": "HOLD",
+                "strategy_type": self.strategy_type,
+                "confidence": 0.0,  # To be set by ML/HMM via analysis integration
+                "direction": "HOLD",  # To be set by ML/HMM via analysis integration
                 "entry_price": current_price,
                 "stop_loss": None,
                 "take_profit": None,
                 "position_size": 0.0,
                 "risk_level": "MEDIUM",
                 "indicators": indicators,
-                "reasoning": [],
+                "reasoning": [
+                    "Base strategy initialized; awaiting ML/HMM decision from DualModelSystem",
+                ],
+                "strategy_profile": {
+                    "rsi_oversold": self.rsi_oversold,
+                    "rsi_overbought": self.rsi_overbought,
+                    "sma_fast_window": self.sma_fast_window,
+                    "sma_slow_window": self.sma_slow_window,
+                    "volume_ratio_high": self.volume_ratio_high,
+                    "volume_ratio_low": self.volume_ratio_low,
+                    "price_volatility_window": self.price_volatility_window,
+                },
             }
-
-            # Determine strategy direction based on indicators
-            confidence_factors = []
-
-            # Trend analysis
-            if indicators["trend"] == "BULLISH":
-                confidence_factors.append(0.3)
-                strategy["reasoning"].append("Bullish trend detected")
-            elif indicators["trend"] == "BEARISH":
-                confidence_factors.append(-0.3)
-                strategy["reasoning"].append("Bearish trend detected")
-
-            # Momentum analysis
-            if indicators["momentum"] == "POSITIVE":
-                confidence_factors.append(0.2)
-                strategy["reasoning"].append("Positive momentum")
-            elif indicators["momentum"] == "NEGATIVE":
-                confidence_factors.append(-0.2)
-                strategy["reasoning"].append("Negative momentum")
-
-            # RSI analysis
-            rsi = indicators["rsi"]
-            if rsi < 30:
-                confidence_factors.append(0.2)
-                strategy["reasoning"].append("Oversold conditions (RSI < 30)")
-            elif rsi > 70:
-                confidence_factors.append(-0.2)
-                strategy["reasoning"].append("Overbought conditions (RSI > 70)")
-
-            # Volume analysis
-            if indicators["volume_ratio"] > 1.5:
-                confidence_factors.append(0.1)
-                strategy["reasoning"].append("High volume confirmation")
-            elif indicators["volume_ratio"] < 0.5:
-                confidence_factors.append(-0.1)
-                strategy["reasoning"].append("Low volume - weak signal")
-
-            # Calculate overall confidence
-            if confidence_factors:
-                strategy["confidence"] = min(max(sum(confidence_factors), -1.0), 1.0)
-                strategy["confidence"] = abs(strategy["confidence"])
-
-            # Determine direction
-            if strategy["confidence"] >= self.min_confidence_threshold:
-                if sum(confidence_factors) > 0:
-                    strategy["direction"] = "LONG"
-                else:
-                    strategy["direction"] = "SHORT"
-            else:
-                strategy["direction"] = "HOLD"
-                strategy["reasoning"].append("Insufficient confidence for trade")
+            # Do not use handcrafted feature weights for direction/confidence
+            # Direction and confidence will be set by ML/HMM via _integrate_analysis_results
 
             return strategy
 
@@ -394,24 +375,18 @@ class Strategist:
                     strategy["confidence"] *= 0.8  # Reduce confidence for high risk
                     strategy["reasoning"].append("High liquidation risk - reduced confidence")
 
-            # Integrate trading decision from dual model system
+            # Integrate trading decision from dual model system (ML/HMM-driven)
             trading_decision = analysis_results.get("trading_decision", {})
             if trading_decision:
                 decision_confidence = trading_decision.get("final_confidence", 0.0)
                 decision_direction = trading_decision.get("direction", "HOLD")
                 
-                # Align strategy with dual model decision
-                if decision_direction != "HOLD":
-                    strategy["dual_model_direction"] = decision_direction
-                    strategy["dual_model_confidence"] = decision_confidence
-                    
-                    # Adjust strategy confidence based on dual model
-                    if decision_direction == strategy["direction"]:
-                        strategy["confidence"] = (strategy["confidence"] + decision_confidence) / 2
-                        strategy["reasoning"].append("Strategy aligned with dual model decision")
-                    else:
-                        strategy["confidence"] *= 0.7  # Reduce confidence for misalignment
-                        strategy["reasoning"].append("Strategy misaligned with dual model - reduced confidence")
+                # Set strategy solely from ML/HMM decision
+                strategy["dual_model_direction"] = decision_direction
+                strategy["dual_model_confidence"] = decision_confidence
+                strategy["direction"] = decision_direction
+                strategy["confidence"] = decision_confidence
+                strategy["reasoning"].append("Direction and confidence set by DualModelSystem")
 
             return strategy
 

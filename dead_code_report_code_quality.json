@@ -1,0 +1,37 @@
+{
+  "timestamp": "2025-09-02T21:20:59.651718",
+  "target_path": "/workspace/code_quality",
+  "dead_code": {
+    "total_issues": 0,
+    "issues_by_type": {},
+    "confidence_distribution": {
+      "high": 0,
+      "medium": 0,
+      "low": 0
+    },
+    "potential_lines_to_remove": 0
+  },
+  "unused_imports": {
+    "total": 0,
+    "imports": []
+  },
+  "unused_functions": {
+    "from_call_graph": {
+      "error": "name 'line' is not defined"
+    },
+    "from_signature": {
+      "total": 0,
+      "functions": []
+    }
+  },
+  "unused_dependencies": {
+    "error": "'int' object is not iterable"
+  },
+  "summary": {
+    "total_dead_code_issues": 0,
+    "total_unused_imports": 0,
+    "total_unused_functions": 0,
+    "total_unused_dependencies": 0,
+    "total_issues": 0
+  }
+}

@@ -1,0 +1,344 @@
+{
+  "timestamp": "2025-09-02T21:19:50.187887",
+  "target_path": "/workspace",
+  "dead_code": {
+    "total_issues": 43,
+    "issues_by_type": {
+      "syntax_error": {
+        "count": 43,
+        "files": [
+          {
+            "file": "/workspace/create_30m_hmm_artifacts.py",
+            "line": 7,
+            "description": "Syntax error: unexpected indent (<unknown>, line 7)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/targeted_fix.py",
+            "line": 18,
+            "description": "Syntax error: unexpected character after line continuation character (<unknown>, line 18)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/simulate_regime_merging_from_existing_data.py",
+            "line": 46,
+            "description": "Syntax error: parameter without a default follows parameter with a default (<unknown>, line 46)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/final_utils_fix.py",
+            "line": 54,
+            "description": "Syntax error: invalid syntax (<unknown>, line 54)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/detect_and_fill_gaps_immediate.py",
+            "line": 9,
+            "description": "Syntax error: unexpected indent (<unknown>, line 9)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/fix_remaining_25.py",
+            "line": 14,
+            "description": "Syntax error: unexpected character after line continuation character (<unknown>, line 14)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/comprehensive_gap_filler.py",
+            "line": 72,
+            "description": "Syntax error: invalid syntax (<unknown>, line 72)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/run_30m_hmm_step.py",
+            "line": 7,
+            "description": "Syntax error: unexpected indent (<unknown>, line 7)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/extract_feature_details.py",
+            "line": 67,
+            "description": "Syntax error: invalid syntax (<unknown>, line 67)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/debug_low_variance_features.py",
+            "line": 22,
+            "description": "Syntax error: invalid syntax (<unknown>, line 22)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/implement_feature_specific_validation.py",
+            "line": 7,
+            "description": "Syntax error: unexpected indent (<unknown>, line 7)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/check_existing_data.py",
+            "line": 38,
+            "description": "Syntax error: expected an indented block after 'if' statement on line 37 (<unknown>, line 38)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/comprehensive_fix.py",
+            "line": 13,
+            "description": "Syntax error: unexpected character after line continuation character (<unknown>, line 13)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/gap_filler_clean.py",
+            "line": 268,
+            "description": "Syntax error: expected an indented block after 'for' statement on line 267 (<unknown>, line 268)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/auto_syntax_fixer.py",
+            "line": 15,
+            "description": "Syntax error: unmatched ')' (<unknown>, line 15)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/final_fix.py",
+            "line": 13,
+            "description": "Syntax error: invalid syntax (<unknown>, line 13)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/cleanup_script.py",
+            "line": 70,
+            "description": "Syntax error: positional argument follows keyword argument (<unknown>, line 70)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/download_aggtrades_range.py",
+            "line": 8,
+            "description": "Syntax error: unmatched ')' (<unknown>, line 8)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/fix_remaining_issues.py",
+            "line": 14,
+            "description": "Syntax error: invalid syntax (<unknown>, line 14)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/fix_data_issues.py",
+            "line": 32,
+            "description": "Syntax error: expected an indented block after 'if' statement on line 31 (<unknown>, line 32)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/targeted_syntax_fixer.py",
+            "line": 137,
+            "description": "Syntax error: invalid syntax (<unknown>, line 137)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/debug_clustering.py",
+            "line": 79,
+            "description": "Syntax error: invalid syntax (<unknown>, line 79)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/run_fixed_hmm_regime_discovery.py",
+            "line": 42,
+            "description": "Syntax error: positional argument follows keyword argument (<unknown>, line 42)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/identify_deleted_aggtrades.py",
+            "line": 96,
+            "description": "Syntax error: expected an indented block after 'for' statement on line 95 (<unknown>, line 96)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/final_targeted_fix_v2.py",
+            "line": 14,
+            "description": "Syntax error: unexpected character after line continuation character (<unknown>, line 14)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/fix_remaining_files.py",
+            "line": 19,
+            "description": "Syntax error: unexpected character after line continuation character (<unknown>, line 19)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/diagnose_regime_data.py",
+            "line": 7,
+            "description": "Syntax error: unexpected indent (<unknown>, line 7)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/fix_remaining_errors.py",
+            "line": 49,
+            "description": "Syntax error: invalid syntax (<unknown>, line 49)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/enhanced_validation_wrapper.py",
+            "line": 5,
+            "description": "Syntax error: invalid syntax (<unknown>, line 5)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/fix_exception_handling.py",
+            "line": 94,
+            "description": "Syntax error: invalid syntax. Maybe you meant '==' or ':=' instead of '='? (<unknown>, line 94)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/simulate_regime_merging_optimization.py",
+            "line": 20,
+            "description": "Syntax error: invalid syntax (<unknown>, line 20)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/final_targeted_fix.py",
+            "line": 26,
+            "description": "Syntax error: closing parenthesis ')' does not match opening parenthesis '[' (<unknown>, line 26)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/temp_fixed2.py",
+            "line": 1785,
+            "description": "Syntax error: unexpected indent (<unknown>, line 1785)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/feature_specific_validation.py",
+            "line": 2,
+            "description": "Syntax error: invalid syntax (<unknown>, line 2)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/fix_utils_syntax.py",
+            "line": 14,
+            "description": "Syntax error: invalid syntax (<unknown>, line 14)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/download_missing_futures.py",
+            "line": 10,
+            "description": "Syntax error: unmatched ')' (<unknown>, line 10)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/fix_remaining_indentation.py",
+            "line": 77,
+            "description": "Syntax error: cannot assign to function call (<unknown>, line 77)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/fix_all_remaining_files.py",
+            "line": 20,
+            "description": "Syntax error: unexpected character after line continuation character (<unknown>, line 20)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/comprehensive_gap_filler_v2.py",
+            "line": 329,
+            "description": "Syntax error: expected an indented block after 'for' statement on line 328 (<unknown>, line 329)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/final_fix_script.py",
+            "line": 14,
+            "description": "Syntax error: invalid syntax (<unknown>, line 14)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/download_remaining_aggtrades.py",
+            "line": 9,
+            "description": "Syntax error: unmatched ')' (<unknown>, line 9)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/src/tactician/sr_breakout_predictor.py",
+            "line": 1312,
+            "description": "Syntax error: invalid syntax (<unknown>, line 1312)",
+            "confidence": 100.0,
+            "severity": "high"
+          },
+          {
+            "file": "/workspace/GUI/api_server.py",
+            "line": 57,
+            "description": "Syntax error: expected an indented block after function definition on line 56 (<unknown>, line 57)",
+            "confidence": 100.0,
+            "severity": "high"
+          }
+        ]
+      }
+    },
+    "confidence_distribution": {
+      "high": 43,
+      "medium": 0,
+      "low": 0
+    },
+    "potential_lines_to_remove": 43
+  },
+  "unused_imports": {
+    "total": 0,
+    "imports": []
+  },
+  "unused_functions": {
+    "from_call_graph": {
+      "error": "name 'line' is not defined"
+    },
+    "from_signature": {
+      "total": 0,
+      "functions": []
+    }
+  },
+  "unused_dependencies": {
+    "error": "'int' object is not iterable"
+  },
+  "summary": {
+    "total_dead_code_issues": 43,
+    "total_unused_imports": 0,
+    "total_unused_functions": 0,
+    "total_unused_dependencies": 0,
+    "total_issues": 43
+  }
+}

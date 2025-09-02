@@ -9,6 +9,7 @@ set -Eeuo pipefail
 # - Writes reports to reports/YYYYmmdd_HHMMSS/ by default and records the path in reports/_latest.txt
 # - Never deletes files. Only writes new reports.
 # - --file option allows checking individual files instead of directories
+# - Automatically runs targeted_corruption_fixer.py on Python files for corruption fixes
 
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$script_dir/.." && pwd)"
@@ -80,6 +81,138 @@ run_py_tool() {
   fi
 }
 
+# Run targeted corruption fixer on Python files
+run_corruption_fixer() {
+  local target="$1"
+  local fixer_script="$repo_root/targeted_corruption_fixer.py"
+  
+  if [[ ! -f "$fixer_script" ]]; then
+    say "Warning: targeted_corruption_fixer.py not found, skipping corruption fixes"
+    return 1
+  fi
+  
+  if [[ -n "$target_file" ]]; then
+    # Single file mode
+    if [[ "$target_file" == *.py ]]; then
+      say "Running: targeted corruption fixer (single file)"
+      
+      # Create backup for comparison
+      local backup_file="$report_dir/$(basename "$target_file").before"
+      cp "$target_file" "$backup_file"
+      say "Created backup: $backup_file"
+      
+      # Run the corruption fixer
+      if python3 "$fixer_script" "$target_file" 2>>"$log"; then
+        say "Corruption fixer completed successfully"
+        
+        # Create after backup for comparison
+        local after_file="$report_dir/$(basename "$target_file").after"
+        cp "$target_file" "$after_file"
+        say "Created after backup: $after_file"
+        
+        # Generate diff report
+        if have diff; then
+          diff -u "$backup_file" "$after_file" > "$report_dir/corruption_fixer.diff" 2>>"$log" || true
+          say "Generated diff report: $report_dir/corruption_fixer.diff"
+        fi
+        
+        # Generate summary report
+        echo "Corruption Fixer Results for: $target_file" > "$report_dir/corruption_fixer_summary.txt"
+        echo "===============================================" >> "$report_dir/corruption_fixer_summary.txt"
+        echo "Backup file: $backup_file" >> "$report_dir/corruption_fixer_summary.txt"
+        echo "After file: $after_file" >> "$report_dir/corruption_fixer_summary.txt"
+        echo "Diff file: $report_dir/corruption_fixer.diff" >> "$report_dir/corruption_fixer_summary.txt"
+        echo "" >> "$report_dir/corruption_fixer_summary.txt"
+        echo "File size before: $(wc -c < "$backup_file") bytes" >> "$report_dir/corruption_fixer_summary.txt"
+        echo "File size after: $(wc -c < "$after_file") bytes" >> "$report_dir/corruption_fixer_summary.txt"
+        
+        if have diff; then
+          local diff_lines=$(wc -l < "$report_dir/corruption_fixer.diff" 2>/dev/null || echo "0")
+          echo "Changes made: $diff_lines lines" >> "$report_dir/corruption_fixer_summary.txt"
+        fi
+        
+        say "Generated summary report: $report_dir/corruption_fixer_summary.txt"
+      else
+        say "Warning: Corruption fixer failed, using original file"
+        # Restore from backup if fixer failed
+        cp "$backup_file" "$target_file"
+      fi
+    else
+      say "Target file is not a Python file, skipping corruption fixer"
+    fi
+  else
+    # Directory mode
+    say "Running: targeted corruption fixer (directory)"
+    
+    # Create backup directory
+    local backup_dir="$report_dir/corruption_fixer_backups"
+    mkdir -p "$backup_dir"
+    
+    # Find Python files and create backups
+    local python_files=()
+    while IFS= read -r -d '' file; do
+      if [[ "$file" == *.py ]]; then
+        python_files+=("$file")
+        local rel_path="${file#$target_dir/}"
+        local backup_path="$backup_dir/${rel_path//\//_}"
+        mkdir -p "$(dirname "$backup_path")"
+        cp "$file" "$backup_path"
+      fi
+    done < <(find "$target_dir" -type f -name "*.py" -print0)
+    
+    if (( ${#python_files[@]} > 0 )); then
+      say "Created backups for ${#python_files[@]} Python files in: $backup_dir"
+      
+      # Run the corruption fixer on the directory
+      if python3 "$fixer_script" "$target_dir" 2>>"$log"; then
+        say "Corruption fixer completed successfully"
+        
+        # Generate summary report
+        echo "Corruption Fixer Results for Directory: $target_dir" > "$report_dir/corruption_fixer_summary.txt"
+        echo "=====================================================" >> "$report_dir/corruption_fixer_summary.txt"
+        echo "Backup directory: $backup_dir" >> "$report_dir/corruption_fixer_summary.txt"
+        echo "Python files processed: ${#python_files[@]}" >> "$report_dir/corruption_fixer_summary.txt"
+        echo "" >> "$report_dir/corruption_fixer_summary.txt"
+        
+        # Check for changes in each file
+        local changed_files=0
+        for file in "${python_files[@]}"; do
+          local rel_path="${file#$target_dir/}"
+          local backup_path="$backup_dir/${rel_path//\//_}"
+          if [[ -f "$backup_path" ]]; then
+            if ! cmp -s "$file" "$backup_path"; then
+              ((changed_files++))
+              echo "Changed: $rel_path" >> "$report_dir/corruption_fixer_summary.txt"
+              
+              # Generate individual diff
+              local diff_file="$report_dir/corruption_fixer_${rel_path//\//_}.diff"
+              if have diff; then
+                diff -u "$backup_path" "$file" > "$diff_file" 2>>"$log" || true
+              fi
+            fi
+          fi
+        done
+        
+        echo "" >> "$report_dir/corruption_fixer_summary.txt"
+        echo "Files changed: $changed_files" >> "$report_dir/corruption_fixer_summary.txt"
+        say "Generated summary report: $report_dir/corruption_fixer_summary.txt"
+      else
+        say "Warning: Corruption fixer failed, using original files"
+        # Restore from backups if fixer failed
+        for file in "${python_files[@]}"; do
+          local rel_path="${file#$target_dir/}"
+          local backup_path="$backup_dir/${rel_path//\//_}"
+          if [[ -f "$backup_path" ]]; then
+            cp "$backup_path" "$file"
+          fi
+        done
+      fi
+    else
+      say "No Python files found for corruption fixing"
+    fi
+  fi
+}
+
 # Common find exclusions
 exclude_prune=(-name .git -o -name node_modules -o -name .venv -o -name venv -o -name .mypy_cache -o -name .pytest_cache -o -name dist -o -name build -o -name reports)
 
@@ -105,6 +238,14 @@ if [[ -n "$target_file" ]]; then
 fi
 say "Report dir: $report_dir"
 say "Autofix: $autofix, Skip tests: $skip_tests, Only: ${only_sets:-all}"
+
+# --------------------
+# Python Corruption Fixing (Run First)
+# --------------------
+if [[ "$want_python" == "true" ]] && has_pyproj; then
+  say "Running targeted corruption fixer on Python files..."
+  run_corruption_fixer "$target_dir"
+fi
 
 # --------------------
 # Python

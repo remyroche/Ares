@@ -781,6 +781,337 @@ class UnifiedQualityOrchestrator:
         self.logger.info(f"✅ Quality report saved to: {output_path}")
         return str(output_path)
 
+    def analyze_directory(self, directory_path: str, file_pattern: str = "*", recursive: bool = True) -> Dict[str, Any]:
+        """
+        Analyze all data files in a directory.
+        
+        Args:
+            directory_path: Path to directory to analyze
+            file_pattern: Glob pattern for file matching (default: "*")
+            recursive: Whether to search subdirectories recursively
+            
+        Returns:
+            Dictionary with directory analysis results
+        """
+        directory = Path(directory_path)
+        if not directory.is_dir():
+            raise ValueError(f"Path is not a directory: {directory_path}")
+        
+        self.logger.info(f"🔍 Analyzing directory: {directory_path}")
+        
+        # Find all data files
+        if recursive:
+            data_files = list(directory.rglob(file_pattern))
+        else:
+            data_files = list(directory.glob(file_pattern))
+        
+        # Filter for supported data formats
+        supported_extensions = {'.csv', '.parquet', '.json'}
+        data_files = [f for f in data_files if f.is_file() and f.suffix.lower() in supported_extensions]
+        
+        if not data_files:
+            self.logger.warning(f"No supported data files found in {directory_path}")
+            return {"error": "No supported data files found"}
+        
+        self.logger.info(f"Found {len(data_files)} data files to analyze")
+        
+        # Analyze each file
+        results = {}
+        summary_stats = {
+            "total_files": len(data_files),
+            "successful_analyses": 0,
+            "failed_analyses": 0,
+            "overall_quality_scores": [],
+            "critical_issues_total": 0,
+            "high_issues_total": 0,
+            "medium_issues_total": 0,
+            "low_issues_total": 0,
+            "warnings_total": 0,
+            "recommendations": set()
+        }
+        
+        for file_path in data_files:
+            try:
+                self.logger.info(f"Analyzing file: {file_path.name}")
+                
+                # Load data
+                data = self._load_data_file(file_path)
+                if data is None:
+                    continue
+                
+                # Generate report
+                context = f"File: {file_path.name} (Path: {file_path.relative_to(directory)})"
+                report = self.generate_comprehensive_report(data, context)
+                
+                # Store results
+                results[str(file_path)] = report
+                summary_stats["successful_analyses"] += 1
+                
+                # Aggregate statistics
+                if report.get("summary"):
+                    summary = report["summary"]
+                    summary_stats["overall_quality_scores"].append(summary.get("overall_quality", "unknown"))
+                    
+                    # Count issues by severity
+                    if report.get("quality_validation"):
+                        quality_val = report["quality_validation"]
+                        summary_stats["critical_issues_total"] += quality_val.get("issue_count", 0)
+                    
+                    if report.get("temporal_validation"):
+                        temp_val = report["temporal_validation"]
+                        summary_stats["critical_issues_total"] += temp_val.get("issue_count", 0)
+                    
+                    # Collect recommendations
+                    if summary.get("recommendations"):
+                        summary_stats["recommendations"].update(summary["recommendations"])
+                
+            except Exception as e:
+                self.logger.error(f"Failed to analyze {file_path.name}: {e}")
+                results[str(file_path)] = {"error": str(e)}
+                summary_stats["failed_analyses"] += 1
+        
+        # Generate directory summary
+        directory_summary = self._generate_directory_summary(summary_stats, results)
+        
+        return {
+            "directory_path": str(directory),
+            "analysis_timestamp": datetime.now().isoformat(),
+            "file_pattern": file_pattern,
+            "recursive": recursive,
+            "summary": directory_summary,
+            "file_results": results
+        }
+    
+    def _load_data_file(self, file_path: Path) -> Optional[pd.DataFrame]:
+        """Load a single data file."""
+        try:
+            if file_path.suffix.lower() == '.csv':
+                return pd.read_csv(file_path)
+            elif file_path.suffix.lower() == '.parquet':
+                return pd.read_parquet(file_path)
+            elif file_path.suffix.lower() == '.json':
+                return pd.read_json(file_path)
+            else:
+                self.logger.warning(f"Unsupported file format: {file_path.suffix}")
+                return None
+        except Exception as e:
+            self.logger.error(f"Failed to load {file_path.name}: {e}")
+            return None
+    
+    def _generate_directory_summary(self, summary_stats: Dict[str, Any], results: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate a summary for directory analysis."""
+        # Calculate overall quality score
+        quality_scores = summary_stats["overall_quality_scores"]
+        if quality_scores:
+            quality_counts = {}
+            for score in quality_scores:
+                quality_counts[score] = quality_counts.get(score, 0) + 1
+            
+            # Determine overall directory quality
+            if "critical" in quality_counts:
+                overall_quality = "critical"
+            elif "poor" in quality_counts:
+                overall_quality = "poor"
+            elif "acceptable" in quality_counts:
+                overall_quality = "acceptable"
+            elif "good" in quality_counts:
+                overall_quality = "good"
+            else:
+                overall_quality = "excellent"
+        else:
+            overall_quality = "unknown"
+            quality_counts = {}
+        
+        # Generate directory-level recommendations
+        directory_recommendations = list(summary_stats["recommendations"])
+        
+        # Add file-specific recommendations
+        if summary_stats["failed_analyses"] > 0:
+            directory_recommendations.append(f"Review {summary_stats['failed_analyses']} failed file analyses")
+        
+        if summary_stats["critical_issues_total"] > 0:
+            directory_recommendations.append(f"Address {summary_stats['critical_issues_total']} critical issues across files")
+        
+        if summary_stats["overall_quality_scores"].count("poor") > len(summary_stats["overall_quality_scores"]) * 0.3:
+            directory_recommendations.append("Many files have poor quality - consider systematic data cleaning")
+        
+        return {
+            "overall_quality": overall_quality,
+            "total_files": summary_stats["total_files"],
+            "successful_analyses": summary_stats["successful_analyses"],
+            "failed_analyses": summary_stats["failed_analyses"],
+            "success_rate": summary_stats["successful_analyses"] / summary_stats["total_files"] if summary_stats["total_files"] > 0 else 0,
+            "quality_distribution": quality_counts,
+            "critical_issues_total": summary_stats["critical_issues_total"],
+            "high_issues_total": summary_stats["high_issues_total"],
+            "medium_issues_total": summary_stats["medium_issues_total"],
+            "low_issues_total": summary_stats["low_issues_total"],
+            "warnings_total": summary_stats["warnings_total"],
+            "recommendations": directory_recommendations
+        }
+    
+    def analyze_file_batch(self, file_paths: List[str], parallel: bool = False) -> Dict[str, Any]:
+        """
+        Analyze multiple files in batch.
+        
+        Args:
+            file_paths: List of file paths to analyze
+            parallel: Whether to process files in parallel (not yet implemented)
+            
+        Returns:
+            Dictionary with batch analysis results
+        """
+        self.logger.info(f"🔍 Analyzing batch of {len(file_paths)} files")
+        
+        results = {}
+        summary_stats = {
+            "total_files": len(file_paths),
+            "successful_analyses": 0,
+            "failed_analyses": 0,
+            "overall_quality_scores": [],
+            "critical_issues_total": 0,
+            "high_issues_total": 0,
+            "medium_issues_total": 0,
+            "low_issues_total": 0,
+            "warnings_total": 0,
+            "recommendations": set()
+        }
+        
+        for file_path in file_paths:
+            try:
+                file_path_obj = Path(file_path)
+                if not file_path_obj.exists():
+                    self.logger.warning(f"File not found: {file_path}")
+                    results[file_path] = {"error": "File not found"}
+                    summary_stats["failed_analyses"] += 1
+                    continue
+                
+                # Load and analyze data
+                data = self._load_data_file(file_path_obj)
+                if data is None:
+                    summary_stats["failed_analyses"] += 1
+                    continue
+                
+                # Generate report
+                context = f"File: {file_path_obj.name}"
+                report = self.generate_comprehensive_report(data, context)
+                
+                # Store results
+                results[file_path] = report
+                summary_stats["successful_analyses"] += 1
+                
+                # Aggregate statistics
+                if report.get("summary"):
+                    summary = report["summary"]
+                    summary_stats["overall_quality_scores"].append(summary.get("overall_quality", "unknown"))
+                    
+                    # Count issues
+                    if report.get("quality_validation"):
+                        quality_val = report["quality_validation"]
+                        summary_stats["critical_issues_total"] += quality_val.get("issue_count", 0)
+                    
+                    if report.get("temporal_validation"):
+                        temp_val = report["temporal_validation"]
+                        summary_stats["critical_issues_total"] += temp_val.get("issue_count", 0)
+                    
+                    # Collect recommendations
+                    if summary.get("recommendations"):
+                        summary_stats["recommendations"].update(summary["recommendations"])
+                
+            except Exception as e:
+                self.logger.error(f"Failed to analyze {file_path}: {e}")
+                results[file_path] = {"error": str(e)}
+                summary_stats["failed_analyses"] += 1
+        
+        # Generate batch summary
+        batch_summary = self._generate_directory_summary(summary_stats, results)
+        
+        return {
+            "batch_analysis_timestamp": datetime.now().isoformat(),
+            "file_paths": file_paths,
+            "summary": batch_summary,
+            "file_results": results
+        }
+    
+    def scan_directory_for_data_files(self, directory_path: str, recursive: bool = True) -> List[str]:
+        """
+        Scan a directory for data files.
+        
+        Args:
+            directory_path: Path to directory to scan
+            recursive: Whether to search subdirectories recursively
+            
+        Returns:
+            List of data file paths found
+        """
+        directory = Path(directory_path)
+        if not directory.is_dir():
+            raise ValueError(f"Path is not a directory: {directory_path}")
+        
+        # Supported file extensions
+        supported_extensions = {'.csv', '.parquet', '.json'}
+        
+        # Find files
+        if recursive:
+            all_files = directory.rglob("*")
+        else:
+            all_files = directory.glob("*")
+        
+        # Filter for data files
+        data_files = [
+            str(f) for f in all_files 
+            if f.is_file() and f.suffix.lower() in supported_extensions
+        ]
+        
+        return sorted(data_files)
+    
+    def get_directory_summary(self, directory_path: str, file_pattern: str = "*", recursive: bool = True) -> Dict[str, Any]:
+        """
+        Get a quick summary of data files in a directory without full analysis.
+        
+        Args:
+            directory_path: Path to directory
+            file_pattern: Glob pattern for file matching
+            recursive: Whether to search subdirectories recursively
+            
+        Returns:
+            Quick directory summary
+        """
+        directory = Path(directory_path)
+        if not directory.is_dir():
+            raise ValueError(f"Path is not a directory: {directory_path}")
+        
+        # Find data files
+        data_files = self.scan_directory_for_data_files(directory_path, recursive)
+        
+        # Group by file type
+        file_types = {}
+        total_size = 0
+        
+        for file_path in data_files:
+            file_path_obj = Path(file_path)
+            file_type = file_path_obj.suffix.lower()
+            file_size = file_path_obj.stat().st_size if file_path_obj.exists() else 0
+            
+            if file_type not in file_types:
+                file_types[file_type] = {"count": 0, "total_size": 0}
+            
+            file_types[file_type]["count"] += 1
+            file_types[file_type]["total_size"] += file_size
+            total_size += file_size
+        
+        return {
+            "directory_path": str(directory),
+            "scan_timestamp": datetime.now().isoformat(),
+            "file_pattern": file_pattern,
+            "recursive": recursive,
+            "total_files": len(data_files),
+            "total_size_bytes": total_size,
+            "total_size_mb": total_size / (1024 * 1024),
+            "file_types": file_types,
+            "supported_formats": ['.csv', '.parquet', '.json']
+        }
+
 
 def main():
     """Main function for command-line usage."""
@@ -789,6 +1120,14 @@ def main():
     parser.add_argument("--context", default="", help="Context description for the data")
     parser.add_argument("--output", help="Output file for the report")
     parser.add_argument("--thresholds", help="JSON file with custom thresholds")
+    parser.add_argument("--mode", choices=["file", "directory", "auto"], default="auto", 
+                       help="Analysis mode: file, directory, or auto-detect")
+    parser.add_argument("--recursive", action="store_true", default=True,
+                       help="Search subdirectories recursively (for directory mode)")
+    parser.add_argument("--file_pattern", default="*", 
+                       help="File pattern for directory analysis (e.g., '*.csv')")
+    parser.add_argument("--quick_scan", action="store_true",
+                       help="Quick directory scan without full analysis")
     
     args = parser.parse_args()
     
@@ -805,41 +1144,139 @@ def main():
     # Initialize orchestrator
     orchestrator = UnifiedQualityOrchestrator(thresholds)
     
-    # Load data
+    # Determine analysis mode
     data_path = Path(args.data_path)
-    if data_path.is_file():
-        if data_path.suffix == '.csv':
-            data = pd.read_csv(data_path)
-        elif data_path.suffix == '.parquet':
-            data = pd.read_parquet(data_path)
-        elif data_path.suffix == '.json':
-            data = pd.read_json(data_path)
+    if args.mode == "auto":
+        if data_path.is_file():
+            mode = "file"
+        elif data_path.is_dir():
+            mode = "directory"
         else:
+            print(f"Path not found: {data_path}")
+            return
+    else:
+        mode = args.mode
+    
+    # Perform analysis based on mode
+    if mode == "file":
+        # Single file analysis
+        if not data_path.is_file():
+            print(f"Path is not a file: {data_path}")
+            return
+            
+        if data_path.suffix.lower() not in ['.csv', '.parquet', '.json']:
             print(f"Unsupported file format: {data_path.suffix}")
             return
-    elif data_path.is_dir():
-        print("Directory analysis not yet implemented")
-        return
-    else:
-        print(f"Path not found: {data_path}")
-        return
-    
-    # Generate comprehensive report
-    report = orchestrator.generate_comprehensive_report(data, args.context)
-    
-    # Save report
-    if args.output:
-        output_file = orchestrator.save_report(report, args.output)
-    else:
-        output_file = orchestrator.save_report(report)
-    
-    # Print summary
-    summary = report.get("summary", {})
-    print(f"\n📊 QUALITY REPORT SUMMARY")
-    print(f"Overall Quality: {summary.get('overall_quality', 'unknown').upper()}")
-    print(f"Critical Issues: {summary.get('critical_issues', 0)}")
-    print(f"Recommendations: {len(summary.get('recommendations', []))}")
-    print(f"Report saved to: {output_file}")
+        
+        print(f"📁 Analyzing single file: {data_path.name}")
+        
+        # Load data
+        try:
+            if data_path.suffix.lower() == '.csv':
+                data = pd.read_csv(data_path)
+            elif data_path.suffix.lower() == '.parquet':
+                data = pd.read_parquet(data_path)
+            elif data_path.suffix.lower() == '.json':
+                data = pd.read_json(data_path)
+        except Exception as e:
+            print(f"Error loading file: {e}")
+            return
+        
+        # Generate comprehensive report
+        report = orchestrator.generate_comprehensive_report(data, args.context or f"File: {data_path.name}")
+        
+        # Save report
+        if args.output:
+            output_file = orchestrator.save_report(report, args.output)
+        else:
+            output_file = orchestrator.save_report(report)
+        
+        # Print summary
+        summary = report.get("summary", {})
+        print(f"\n📊 QUALITY REPORT SUMMARY")
+        print(f"Overall Quality: {summary.get('overall_quality', 'unknown').upper()}")
+        print(f"Critical Issues: {summary.get('critical_issues', 0)}")
+        print(f"Recommendations: {len(summary.get('recommendations', []))}")
+        print(f"Report saved to: {output_file}")
+        
+    elif mode == "directory":
+        # Directory analysis
+        if not data_path.is_dir():
+            print(f"Path is not a directory: {data_path}")
+            return
+        
+        print(f"📁 Analyzing directory: {data_path}")
+        
+        if args.quick_scan:
+            # Quick directory scan
+            print("🔍 Performing quick directory scan...")
+            scan_summary = orchestrator.get_directory_summary(
+                str(data_path), 
+                args.file_pattern, 
+                args.recursive
+            )
+            
+            print(f"\n📊 DIRECTORY SCAN SUMMARY")
+            print(f"Directory: {scan_summary['directory_path']}")
+            print(f"Total data files: {scan_summary['total_files']}")
+            print(f"Total size: {scan_summary['total_size_mb']:.2f} MB")
+            print(f"File types:")
+            for file_type, info in scan_summary['file_types'].items():
+                print(f"  - {file_type}: {info['count']} files ({info['total_size'] / (1024*1024):.2f} MB)")
+            
+            # Save scan summary
+            if args.output:
+                output_file = args.output
+            else:
+                output_file = f"directory_scan_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            
+            with open(output_file, 'w') as f:
+                json.dump(scan_summary, f, indent=2, default=str)
+            
+            print(f"Scan summary saved to: {output_file}")
+            
+        else:
+            # Full directory analysis
+            print("🔍 Performing full directory analysis...")
+            directory_report = orchestrator.analyze_directory(
+                str(data_path), 
+                args.file_pattern, 
+                args.recursive
+            )
+            
+            if "error" in directory_report:
+                print(f"❌ Directory analysis failed: {directory_report['error']}")
+                return
+            
+            # Print directory summary
+            summary = directory_report.get("summary", {})
+            print(f"\n📊 DIRECTORY QUALITY SUMMARY")
+            print(f"Directory: {directory_report['directory_path']}")
+            print(f"Total files: {summary['total_files']}")
+            print(f"Successful analyses: {summary['successful_analyses']}")
+            print(f"Failed analyses: {summary['failed_analyses']}")
+            print(f"Success rate: {summary['success_rate']:.1%}")
+            print(f"Overall Quality: {summary['overall_quality'].upper()}")
+            print(f"Critical Issues Total: {summary['critical_issues_total']}")
+            
+            if summary.get('quality_distribution'):
+                print(f"Quality Distribution:")
+                for quality, count in summary['quality_distribution'].items():
+                    print(f"  - {quality.capitalize()}: {count} files")
+            
+            if summary.get('recommendations'):
+                print(f"Recommendations:")
+                for rec in summary['recommendations'][:5]:  # Show first 5
+                    print(f"  - {rec}")
+            
+            # Save directory report
+            if args.output:
+                output_file = args.output
+            else:
+                output_file = f"directory_quality_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            
+            orchestrator.save_report(directory_report, output_file)
+            print(f"Directory report saved to: {output_file}")
 
 
 if __name__ == "__main__":

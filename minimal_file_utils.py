@@ -4,7 +4,10 @@ Minimal file utilities for code quality analysis.
 
 import os
 from pathlib import Path
-from typing import List, Pattern
+from typing import List, Pattern, Dict
+from code_quality.utils.file_utils import (
+    get_file_dependencies as _cq_get_file_dependencies,
+)
 import fnmatch
 
 
@@ -49,3 +52,12 @@ def _should_exclude(path: str, exclude_patterns: List[str]) -> bool:
             return True
     
     return False
+
+
+def get_file_dependencies(file_path: str) -> Dict[str, List[str]]:
+    """Proxy to the full implementation used by code_quality.
+
+    Some analyzers import this symbol from minimal_file_utils. Provide a thin
+    wrapper that delegates to the canonical implementation to satisfy imports.
+    """
+    return _cq_get_file_dependencies(file_path)

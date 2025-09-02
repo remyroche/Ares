@@ -26681,3 +26681,508 @@
 2025-09-02 06:47:19,266 - INFO -   2. string_literals: Line 39 - '    pass"""Implementation placeholder - needs specific logic"""' → '    """Implementation placeholder - needs specific logic"""'
 2025-09-02 06:47:19,266 - INFO - 
 2025-09-02 06:47:19,267 - INFO - Applied 2 fixes to: src/monitoring/correlation_manager.py
+2025-09-02 06:53:09,545 - INFO - Processing file: src/monitoring/tracking_system.py
+2025-09-02 06:53:09,546 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:53:09,549 - INFO - Applied decorator_fixes fix: @(\w+)\s*\(\s*([^)]*)\s*\) -> <bound method EnhancedConservativeTargetedCorruptionFixer._fix_decorator_params of <__main__.EnhancedConservativeTargetedCorruptionFixer object at 0x7f79f6b7ae40>>
+2025-09-02 06:53:09,550 - INFO - Applied assignment_fixes fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:53:09,550 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:09,551 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:09,552 - INFO - 
+📝 CHANGES MADE IN src/monitoring/tracking_system.py:
+2025-09-02 06:53:09,552 - INFO -   1. pass_patterns: Line 36 - '    passENSEMBLE_DECISION, "ensemble_decision"' → '    pass'
+2025-09-02 06:53:09,552 - INFO -   2. decorator_fixes: Line 14 - '    @handle_errors(' → '    @handle_errors(exceptions=(Exception,),'
+2025-09-02 06:53:09,552 - INFO -   3. assignment_fixes: Line 15 - '        default_return=False,' → '        default_return, False="trackingtype initialization",'
+2025-09-02 06:53:09,552 - INFO - 
+2025-09-02 06:53:09,552 - INFO - [DRY RUN] Would apply 3 fixes to: src/monitoring/tracking_system.py
+2025-09-02 06:53:13,449 - INFO - Processing file: src/monitoring/correlation_manager.py
+2025-09-02 06:53:13,450 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:13,451 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:13,452 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:13,452 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:13,454 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:13,455 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:13,456 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:13,456 - INFO - Applied indentation_fixes fix: ^for\s+([^:]+):\s*$ ->         for \1:
+2025-09-02 06:53:13,456 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:13,458 - INFO - 
+📝 CHANGES MADE IN src/monitoring/correlation_manager.py:
+2025-09-02 06:53:13,458 - INFO -   1. indentation_fixes: Line 9 - 'for the Ares trading bot.' → '        for the Ares trading bot.'
+2025-09-02 06:53:13,458 - INFO - 
+2025-09-02 06:53:13,458 - INFO - [DRY RUN] Would apply 1 fixes to: src/monitoring/correlation_manager.py
+2025-09-02 06:53:33,800 - INFO - Processing file: src/monitoring/correlation_manager.py
+2025-09-02 06:53:33,801 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:33,801 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:33,802 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:33,802 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:33,804 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:33,805 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:33,806 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:33,806 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:33,807 - INFO - No fixes needed for: src/monitoring/correlation_manager.py
+2025-09-02 06:53:37,726 - INFO - Processing file: src/monitoring/performance_monitor.py
+2025-09-02 06:53:37,729 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:37,730 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:37,730 - INFO - No fixes needed for: src/monitoring/performance_monitor.py
+2025-09-02 06:53:41,652 - INFO - Starting to fix Python files in: src/monitoring
+2025-09-02 06:53:41,652 - INFO - Found 18 Python files
+2025-09-02 06:53:41,652 - INFO - Processing file: src/monitoring/error_detection_system.py
+2025-09-02 06:53:41,653 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,654 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,656 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,658 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,658 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,659 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,660 - INFO - No fixes needed for: src/monitoring/error_detection_system.py
+2025-09-02 06:53:41,660 - INFO - Processing file: src/monitoring/tracking_system.py
+2025-09-02 06:53:41,660 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:53:41,661 - INFO - Applied decorator_fixes fix: @(\w+)\s*\(\s*([^)]*)\s*\) -> <bound method EnhancedConservativeTargetedCorruptionFixer._fix_decorator_params of <__main__.EnhancedConservativeTargetedCorruptionFixer object at 0x7fdaeb1dae40>>
+2025-09-02 06:53:41,661 - INFO - Applied assignment_fixes fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:53:41,661 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,662 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:41,662 - INFO - 
+📝 CHANGES MADE IN src/monitoring/tracking_system.py:
+2025-09-02 06:53:41,662 - INFO -   1. pass_patterns: Line 36 - '    passENSEMBLE_DECISION, "ensemble_decision"' → '    pass'
+2025-09-02 06:53:41,662 - INFO -   2. decorator_fixes: Line 14 - '    @handle_errors(' → '    @handle_errors(exceptions=(Exception,),'
+2025-09-02 06:53:41,662 - INFO -   3. assignment_fixes: Line 15 - '        default_return=False,' → '        default_return, False="trackingtype initialization",'
+2025-09-02 06:53:41,662 - INFO - 
+2025-09-02 06:53:41,662 - INFO - [DRY RUN] Would apply 3 fixes to: src/monitoring/tracking_system.py
+2025-09-02 06:53:41,662 - INFO - Processing file: src/monitoring/correlation_manager.py
+2025-09-02 06:53:41,663 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:41,663 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:41,663 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:41,664 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:41,664 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:41,665 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:41,665 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:41,665 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,666 - INFO - No fixes needed for: src/monitoring/correlation_manager.py
+2025-09-02 06:53:41,666 - INFO - Processing file: src/monitoring/report_scheduler.py
+2025-09-02 06:53:41,666 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:53:41,667 - INFO - Applied string_literals fix: pass"([^"]+)" -> "\1"
+2025-09-02 06:53:41,668 - INFO - Applied decorator_fixes fix: @(\w+)\s*\(\s*([^)]*)\s*\) -> <bound method EnhancedConservativeTargetedCorruptionFixer._fix_decorator_params of <__main__.EnhancedConservativeTargetedCorruptionFixer object at 0x7fdaeb1dae40>>
+2025-09-02 06:53:41,669 - INFO - Applied assignment_fixes fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:53:41,670 - INFO - Applied syntax_fixes fix: (\w+)\s*\(\s*([^)]*)\s*\)\s*$ -> \1(\2)
+2025-09-02 06:53:41,671 - INFO - 
+📝 CHANGES MADE IN src/monitoring/report_scheduler.py:
+2025-09-02 06:53:41,671 - INFO -   1. placeholder_fixes: Line 25 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:53:41,671 - INFO -   2. string_literals: Line 25 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}")'
+2025-09-02 06:53:41,671 - INFO -   3. decorator_fixes: Line 17 - '    @handle_errors(' → '    @handle_errors(exceptions=(Exception,),'
+2025-09-02 06:53:41,671 - INFO -   4. assignment_fixes: Line 18 - '        default_return=False,' → '        default_return, False="reporttype initialization",'
+2025-09-02 06:53:41,671 - INFO -   5. syntax_fixes: Line 3 - 'Report Scheduler (minimal scaffold)' → 'Report Scheduler(minimal scaffold)'
+2025-09-02 06:53:41,671 - INFO - 
+2025-09-02 06:53:41,671 - INFO - [DRY RUN] Would apply 5 fixes to: src/monitoring/report_scheduler.py
+2025-09-02 06:53:41,671 - INFO - Processing file: src/monitoring/fractional_system_monitor.py
+2025-09-02 06:53:41,672 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,673 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,674 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,675 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,676 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,677 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,677 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,678 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,679 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,680 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,681 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,683 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,684 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,685 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,686 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,692 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,696 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,697 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,697 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,700 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,704 - INFO - No fixes needed for: src/monitoring/fractional_system_monitor.py
+2025-09-02 06:53:41,704 - INFO - Processing file: src/monitoring/enhanced_ml_tracker.py
+2025-09-02 06:53:41,704 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,705 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,705 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,707 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,707 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,707 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,708 - INFO - No fixes needed for: src/monitoring/enhanced_ml_tracker.py
+2025-09-02 06:53:41,708 - INFO - Processing file: src/monitoring/performance_dashboard.py
+2025-09-02 06:53:41,708 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,708 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,708 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,708 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,708 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,708 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,709 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,709 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,710 - INFO - No fixes needed for: src/monitoring/performance_dashboard.py
+2025-09-02 06:53:41,710 - INFO - Processing file: src/monitoring/integration_manager.py
+2025-09-02 06:53:41,710 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,710 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,710 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,711 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,712 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,712 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,712 - INFO - No fixes needed for: src/monitoring/integration_manager.py
+2025-09-02 06:53:41,712 - INFO - Processing file: src/monitoring/performance_monitor.py
+2025-09-02 06:53:41,713 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,713 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:41,713 - INFO - No fixes needed for: src/monitoring/performance_monitor.py
+2025-09-02 06:53:41,713 - INFO - Processing file: src/monitoring/surrogate_optimization_monitor.py
+2025-09-02 06:53:41,714 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,716 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,717 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,718 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,720 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,721 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,722 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,724 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,725 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,727 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,728 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,729 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,732 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,733 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,734 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,736 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,737 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,743 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,746 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,747 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,747 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,747 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,750 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,753 - INFO - No fixes needed for: src/monitoring/surrogate_optimization_monitor.py
+2025-09-02 06:53:41,753 - INFO - Processing file: src/monitoring/metrics_dashboard.py
+2025-09-02 06:53:41,753 - INFO - Applied placeholder_fixes fix: """\.\.\.""" -> """Implementation placeholder - needs specific logic"""
+2025-09-02 06:53:41,753 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:53:41,754 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:53:41,754 - INFO - Applied string_literals fix: pass"""([^"]+)""" -> """\1"""
+2025-09-02 06:53:41,755 - INFO - Applied string_literals fix: pass"([^"]+)" -> "\1"
+2025-09-02 06:53:41,755 - INFO - Applied decorator_fixes fix: @(\w+)\s*\(\s*([^)]*)\s*\) -> <bound method EnhancedConservativeTargetedCorruptionFixer._fix_decorator_params of <__main__.EnhancedConservativeTargetedCorruptionFixer object at 0x7fdaeb1dae40>>
+2025-09-02 06:53:41,756 - INFO - Applied assignment_fixes fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:53:41,756 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,756 - INFO - 
+📝 CHANGES MADE IN src/monitoring/metrics_dashboard.py:
+2025-09-02 06:53:41,756 - INFO -   1. placeholder_fixes: Line 37 - '    pass"""..."""' → '    pass"""Implementation placeholder - needs specific logic"""'
+2025-09-02 06:53:41,756 - INFO -   2. placeholder_fixes: Line 14 - 'class MetricType(...):' → 'class MetricType(pass):'
+2025-09-02 06:53:41,756 - INFO -   3. pass_patterns: Line 38 - '    passPERFORMANCE = "performance"' → '    pass'
+2025-09-02 06:53:41,756 - INFO -   4. string_literals: Line 37 - '    pass"""Implementation placeholder - needs specific logic"""' → '    """Implementation placeholder - needs specific logic"""'
+2025-09-02 06:53:41,756 - INFO -   5. string_literals: Line 25 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}")'
+2025-09-02 06:53:41,756 - INFO -   6. decorator_fixes: Line 17 - '    @handle_errors(' → '    @handle_errors(exceptions=(Exception,),'
+2025-09-02 06:53:41,756 - INFO -   7. assignment_fixes: Line 18 - '        default_return=False,' → '        default_return, False="metrictype initialization",'
+2025-09-02 06:53:41,756 - INFO - 
+2025-09-02 06:53:41,757 - INFO - [DRY RUN] Would apply 7 fixes to: src/monitoring/metrics_dashboard.py
+2025-09-02 06:53:41,757 - INFO - Processing file: src/monitoring/fractional_performance_tracker.py
+2025-09-02 06:53:41,757 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,758 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,759 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,760 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,760 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,761 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,762 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,762 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,763 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,764 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,765 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,767 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,767 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,768 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,769 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,770 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,774 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,777 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,777 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,777 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,779 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:41,781 - INFO - No fixes needed for: src/monitoring/fractional_performance_tracker.py
+2025-09-02 06:53:41,781 - INFO - Processing file: src/monitoring/csv_exporter.py
+2025-09-02 06:53:41,781 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,782 - INFO - No fixes needed for: src/monitoring/csv_exporter.py
+2025-09-02 06:53:41,782 - INFO - Processing file: src/monitoring/regime_sr_tracker.py
+2025-09-02 06:53:41,782 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:53:41,782 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:53:41,783 - INFO - Applied string_literals fix: pass"([^"]+)" -> "\1"
+2025-09-02 06:53:41,783 - INFO - Applied decorator_fixes fix: @(\w+)\s*\(\s*([^)]*)\s*\) -> <bound method EnhancedConservativeTargetedCorruptionFixer._fix_decorator_params of <__main__.EnhancedConservativeTargetedCorruptionFixer object at 0x7fdaeb1dae40>>
+2025-09-02 06:53:41,784 - INFO - Applied assignment_fixes fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:53:41,784 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,784 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:41,784 - INFO - 
+📝 CHANGES MADE IN src/monitoring/regime_sr_tracker.py:
+2025-09-02 06:53:41,784 - INFO -   1. placeholder_fixes: Line 22 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:53:41,784 - INFO -   2. pass_patterns: Line 36 - '    passBULL_TREND, "bull_trend"' → '    pass'
+2025-09-02 06:53:41,784 - INFO -   3. string_literals: Line 22 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}")'
+2025-09-02 06:53:41,784 - INFO -   4. decorator_fixes: Line 14 - '    @handle_errors(' → '    @handle_errors(exceptions=(Exception,),'
+2025-09-02 06:53:41,784 - INFO -   5. assignment_fixes: Line 15 - '        default_return=False,' → '        default_return, False="regimetype initialization",'
+2025-09-02 06:53:41,784 - INFO - 
+2025-09-02 06:53:41,785 - INFO - [DRY RUN] Would apply 5 fixes to: src/monitoring/regime_sr_tracker.py
+2025-09-02 06:53:41,785 - INFO - Processing file: src/monitoring/advanced_tracer.py
+2025-09-02 06:53:41,785 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,785 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,785 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,785 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,785 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,786 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,786 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,786 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,786 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,789 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,789 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,789 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,790 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,791 - INFO - No fixes needed for: src/monitoring/advanced_tracer.py
+2025-09-02 06:53:41,791 - INFO - Processing file: src/monitoring/__init__.py
+2025-09-02 06:53:41,792 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,792 - INFO - No fixes needed for: src/monitoring/__init__.py
+2025-09-02 06:53:41,792 - INFO - Processing file: src/monitoring/trade_conditions_monitor.py
+2025-09-02 06:53:41,793 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:53:41,793 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:53:41,793 - INFO - Applied string_literals fix: pass"([^"]+)" -> "\1"
+2025-09-02 06:53:41,794 - INFO - Applied decorator_fixes fix: @(\w+)\s*\(\s*([^)]*)\s*\) -> <bound method EnhancedConservativeTargetedCorruptionFixer._fix_decorator_params of <__main__.EnhancedConservativeTargetedCorruptionFixer object at 0x7fdaeb1dae40>>
+2025-09-02 06:53:41,794 - INFO - Applied assignment_fixes fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:53:41,794 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:41,795 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:41,795 - INFO - 
+📝 CHANGES MADE IN src/monitoring/trade_conditions_monitor.py:
+2025-09-02 06:53:41,795 - INFO -   1. placeholder_fixes: Line 22 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:53:41,795 - INFO -   2. pass_patterns: Line 36 - '    passENTER_LONG, "enter_long"' → '    pass'
+2025-09-02 06:53:41,795 - INFO -   3. string_literals: Line 22 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}")'
+2025-09-02 06:53:41,795 - INFO -   4. decorator_fixes: Line 14 - '    @handle_errors(' → '    @handle_errors(exceptions=(Exception,),'
+2025-09-02 06:53:41,795 - INFO -   5. assignment_fixes: Line 15 - '        default_return=False,' → '        default_return, False="tradeaction initialization",'
+2025-09-02 06:53:41,795 - INFO - 
+2025-09-02 06:53:41,795 - INFO - [DRY RUN] Would apply 5 fixes to: src/monitoring/trade_conditions_monitor.py
+2025-09-02 06:53:41,795 - INFO - Processing file: src/monitoring/ml_monitor.py
+2025-09-02 06:53:41,796 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 06:53:41,796 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 06:53:41,796 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 06:53:41,796 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 06:53:41,797 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 06:53:41,797 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 06:53:41,797 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 06:53:41,800 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 06:53:41,802 - INFO - No fixes needed for: src/monitoring/ml_monitor.py
+2025-09-02 06:53:41,802 - INFO - Directory processing complete
+2025-09-02 06:53:46,092 - INFO - Processing file: src/monitoring/enhanced_ml_tracker.py
+2025-09-02 06:53:46,093 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:46,094 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:46,096 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:46,098 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:46,098 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:46,099 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:53:46,100 - INFO - No fixes needed for: src/monitoring/enhanced_ml_tracker.py
+2025-09-02 06:53:54,189 - INFO - Processing file: src/monitoring/integration_manager.py
+2025-09-02 06:53:54,190 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:54,190 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:54,190 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:54,193 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:54,194 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:54,195 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:54,196 - INFO - No fixes needed for: src/monitoring/integration_manager.py
+2025-09-02 06:53:58,403 - INFO - Processing file: src/monitoring/tracking_system.py
+2025-09-02 06:53:58,404 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:53:58,407 - INFO - Applied decorator_fixes fix: @(\w+)\s*\(\s*([^)]*)\s*\) -> <bound method EnhancedConservativeTargetedCorruptionFixer._fix_decorator_params of <__main__.EnhancedConservativeTargetedCorruptionFixer object at 0x7fde7aab2e40>>
+2025-09-02 06:53:58,408 - INFO - Applied assignment_fixes fix: (\w+)\s*=\s*(\w+)\s*,\s*(\w+) -> \1, \2
+2025-09-02 06:53:58,408 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:53:58,409 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:53:58,409 - INFO - 
+📝 CHANGES MADE IN src/monitoring/tracking_system.py:
+2025-09-02 06:53:58,409 - INFO -   1. pass_patterns: Line 36 - '    passENSEMBLE_DECISION, "ensemble_decision"' → '    pass'
+2025-09-02 06:53:58,409 - INFO -   2. decorator_fixes: Line 14 - '    @handle_errors(' → '    @handle_errors(exceptions=(Exception,),'
+2025-09-02 06:53:58,409 - INFO -   3. assignment_fixes: Line 15 - '        default_return=False,' → '        default_return, False="trackingtype initialization",'
+2025-09-02 06:53:58,409 - INFO - 
+2025-09-02 06:53:58,409 - INFO - [DRY RUN] Would apply 3 fixes to: src/monitoring/tracking_system.py
+2025-09-02 06:54:10,419 - INFO - Processing file: src/monitoring/tracking_system.py
+2025-09-02 06:54:10,421 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:54:10,423 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:10,424 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:54:10,424 - INFO - 
+📝 CHANGES MADE IN src/monitoring/tracking_system.py:
+2025-09-02 06:54:10,425 - INFO -   1. pass_patterns: Line 36 - '    passENSEMBLE_DECISION, "ensemble_decision"' → '    pass'
+2025-09-02 06:54:10,425 - INFO - 
+2025-09-02 06:54:10,425 - INFO - [DRY RUN] Would apply 1 fixes to: src/monitoring/tracking_system.py
+2025-09-02 06:54:14,592 - INFO - Starting to fix Python files in: src/monitoring
+2025-09-02 06:54:14,592 - INFO - Found 18 Python files
+2025-09-02 06:54:14,592 - INFO - Processing file: src/monitoring/error_detection_system.py
+2025-09-02 06:54:14,593 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,594 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,597 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,598 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,599 - INFO - No fixes needed for: src/monitoring/error_detection_system.py
+2025-09-02 06:54:14,599 - INFO - Processing file: src/monitoring/tracking_system.py
+2025-09-02 06:54:14,599 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:54:14,599 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,600 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:54:14,600 - INFO - 
+📝 CHANGES MADE IN src/monitoring/tracking_system.py:
+2025-09-02 06:54:14,600 - INFO -   1. pass_patterns: Line 36 - '    passENSEMBLE_DECISION, "ensemble_decision"' → '    pass'
+2025-09-02 06:54:14,600 - INFO - 
+2025-09-02 06:54:14,601 - INFO - [DRY RUN] Would apply 1 fixes to: src/monitoring/tracking_system.py
+2025-09-02 06:54:14,601 - INFO - Processing file: src/monitoring/correlation_manager.py
+2025-09-02 06:54:14,601 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:54:14,601 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:54:14,602 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:54:14,602 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:54:14,602 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:54:14,603 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,603 - INFO - No fixes needed for: src/monitoring/correlation_manager.py
+2025-09-02 06:54:14,603 - INFO - Processing file: src/monitoring/report_scheduler.py
+2025-09-02 06:54:14,604 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:54:14,604 - INFO - Applied string_literals fix: pass"([^"]+)" -> "\1"
+2025-09-02 06:54:14,606 - INFO - Applied syntax_fixes fix: (\w+)\s*\(\s*([^)]*)\s*\)\s*$ -> \1(\2)
+2025-09-02 06:54:14,606 - INFO - 
+📝 CHANGES MADE IN src/monitoring/report_scheduler.py:
+2025-09-02 06:54:14,606 - INFO -   1. placeholder_fixes: Line 25 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:54:14,606 - INFO -   2. string_literals: Line 25 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}")'
+2025-09-02 06:54:14,606 - INFO -   3. syntax_fixes: Line 3 - 'Report Scheduler (minimal scaffold)' → 'Report Scheduler(minimal scaffold)'
+2025-09-02 06:54:14,606 - INFO - 
+2025-09-02 06:54:14,607 - INFO - [DRY RUN] Would apply 3 fixes to: src/monitoring/report_scheduler.py
+2025-09-02 06:54:14,607 - INFO - Processing file: src/monitoring/fractional_system_monitor.py
+2025-09-02 06:54:14,608 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,609 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,610 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,611 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,612 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,613 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,613 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,614 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,615 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,616 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,617 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,619 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,620 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,621 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,625 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,625 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,628 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,631 - INFO - No fixes needed for: src/monitoring/fractional_system_monitor.py
+2025-09-02 06:54:14,631 - INFO - Processing file: src/monitoring/enhanced_ml_tracker.py
+2025-09-02 06:54:14,632 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,633 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,633 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,634 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,634 - INFO - No fixes needed for: src/monitoring/enhanced_ml_tracker.py
+2025-09-02 06:54:14,634 - INFO - Processing file: src/monitoring/performance_dashboard.py
+2025-09-02 06:54:14,634 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,634 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,634 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,634 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,634 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,635 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,636 - INFO - No fixes needed for: src/monitoring/performance_dashboard.py
+2025-09-02 06:54:14,636 - INFO - Processing file: src/monitoring/integration_manager.py
+2025-09-02 06:54:14,636 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,636 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,636 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,637 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,637 - INFO - No fixes needed for: src/monitoring/integration_manager.py
+2025-09-02 06:54:14,637 - INFO - Processing file: src/monitoring/performance_monitor.py
+2025-09-02 06:54:14,637 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,638 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:54:14,638 - INFO - No fixes needed for: src/monitoring/performance_monitor.py
+2025-09-02 06:54:14,638 - INFO - Processing file: src/monitoring/surrogate_optimization_monitor.py
+2025-09-02 06:54:14,639 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,640 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,642 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,643 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,645 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,646 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,647 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,649 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,650 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,651 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,653 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,654 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,656 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,657 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,659 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,660 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,663 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,663 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,663 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,667 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,669 - INFO - No fixes needed for: src/monitoring/surrogate_optimization_monitor.py
+2025-09-02 06:54:14,669 - INFO - Processing file: src/monitoring/metrics_dashboard.py
+2025-09-02 06:54:14,669 - INFO - Applied placeholder_fixes fix: """\.\.\.""" -> """Implementation placeholder - needs specific logic"""
+2025-09-02 06:54:14,670 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:54:14,670 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:54:14,671 - INFO - Applied string_literals fix: pass"""([^"]+)""" -> """\1"""
+2025-09-02 06:54:14,671 - INFO - Applied string_literals fix: pass"([^"]+)" -> "\1"
+2025-09-02 06:54:14,671 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,672 - INFO - 
+📝 CHANGES MADE IN src/monitoring/metrics_dashboard.py:
+2025-09-02 06:54:14,672 - INFO -   1. placeholder_fixes: Line 37 - '    pass"""..."""' → '    pass"""Implementation placeholder - needs specific logic"""'
+2025-09-02 06:54:14,672 - INFO -   2. placeholder_fixes: Line 14 - 'class MetricType(...):' → 'class MetricType(pass):'
+2025-09-02 06:54:14,672 - INFO -   3. pass_patterns: Line 38 - '    passPERFORMANCE = "performance"' → '    pass'
+2025-09-02 06:54:14,672 - INFO -   4. string_literals: Line 37 - '    pass"""Implementation placeholder - needs specific logic"""' → '    """Implementation placeholder - needs specific logic"""'
+2025-09-02 06:54:14,672 - INFO -   5. string_literals: Line 25 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}")'
+2025-09-02 06:54:14,672 - INFO - 
+2025-09-02 06:54:14,672 - INFO - [DRY RUN] Would apply 5 fixes to: src/monitoring/metrics_dashboard.py
+2025-09-02 06:54:14,672 - INFO - Processing file: src/monitoring/fractional_performance_tracker.py
+2025-09-02 06:54:14,673 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,673 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,674 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,675 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,676 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,676 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,677 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,678 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,679 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,679 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,680 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,682 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,683 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,683 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,684 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,686 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,686 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,689 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 06:54:14,691 - INFO - No fixes needed for: src/monitoring/fractional_performance_tracker.py
+2025-09-02 06:54:14,691 - INFO - Processing file: src/monitoring/csv_exporter.py
+2025-09-02 06:54:14,691 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,691 - INFO - No fixes needed for: src/monitoring/csv_exporter.py
+2025-09-02 06:54:14,691 - INFO - Processing file: src/monitoring/regime_sr_tracker.py
+2025-09-02 06:54:14,691 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:54:14,692 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:54:14,692 - INFO - Applied string_literals fix: pass"([^"]+)" -> "\1"
+2025-09-02 06:54:14,692 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,693 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:54:14,693 - INFO - 
+📝 CHANGES MADE IN src/monitoring/regime_sr_tracker.py:
+2025-09-02 06:54:14,693 - INFO -   1. placeholder_fixes: Line 22 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:54:14,693 - INFO -   2. pass_patterns: Line 36 - '    passBULL_TREND, "bull_trend"' → '    pass'
+2025-09-02 06:54:14,693 - INFO -   3. string_literals: Line 22 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}")'
+2025-09-02 06:54:14,693 - INFO - 
+2025-09-02 06:54:14,693 - INFO - [DRY RUN] Would apply 3 fixes to: src/monitoring/regime_sr_tracker.py
+2025-09-02 06:54:14,693 - INFO - Processing file: src/monitoring/advanced_tracer.py
+2025-09-02 06:54:14,693 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,693 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,694 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,694 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,694 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,694 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,694 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,694 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,696 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,696 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,697 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,698 - INFO - No fixes needed for: src/monitoring/advanced_tracer.py
+2025-09-02 06:54:14,698 - INFO - Processing file: src/monitoring/__init__.py
+2025-09-02 06:54:14,698 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,698 - INFO - No fixes needed for: src/monitoring/__init__.py
+2025-09-02 06:54:14,698 - INFO - Processing file: src/monitoring/trade_conditions_monitor.py
+2025-09-02 06:54:14,699 - INFO - Applied placeholder_fixes fix: \.\.\. -> pass
+2025-09-02 06:54:14,699 - INFO - Applied pass_patterns fix: pass(\w+) -> pass\n        \1
+2025-09-02 06:54:14,700 - INFO - Applied string_literals fix: pass"([^"]+)" -> "\1"
+2025-09-02 06:54:14,700 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 06:54:14,700 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 06:54:14,700 - INFO - 
+📝 CHANGES MADE IN src/monitoring/trade_conditions_monitor.py:
+2025-09-02 06:54:14,700 - INFO -   1. placeholder_fixes: Line 22 - '            self.logger.info(f"🚀 Initializing {class_name}...")' → '            self.logger.info(f"🚀 Initializing {class_name}pass")'
+2025-09-02 06:54:14,700 - INFO -   2. pass_patterns: Line 36 - '    passENTER_LONG, "enter_long"' → '    pass'
+2025-09-02 06:54:14,700 - INFO -   3. string_literals: Line 22 - '            self.logger.info(f"🚀 Initializing {class_name}pass")' → '            self.logger.info(f"🚀 Initializing {class_name}")'
+2025-09-02 06:54:14,701 - INFO - 
+2025-09-02 06:54:14,701 - INFO - [DRY RUN] Would apply 3 fixes to: src/monitoring/trade_conditions_monitor.py
+2025-09-02 06:54:14,701 - INFO - Processing file: src/monitoring/ml_monitor.py
+2025-09-02 06:54:14,701 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 06:54:14,701 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 06:54:14,702 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 06:54:14,702 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 06:54:14,702 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 06:54:14,703 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 06:54:14,705 - INFO - No fixes needed for: src/monitoring/ml_monitor.py
+2025-09-02 06:54:14,705 - INFO - Directory processing complete

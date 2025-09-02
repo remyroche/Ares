@@ -12,10 +12,48 @@ import json
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-import numpy as np
-import pandas as pd
+# Dependency imports with graceful fallbacks
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    # Create a mock numpy for basic operations
+    class MockNumpy:
+        def mean(self, values):
+            if not values:
+                return 0.0
+            return sum(values) / len(values)
+        
+        def std(self, values):
+            if len(values) < 2:
+                return 0.0
+            mean_val = self.mean(values)
+            variance = sum((x - mean_val) ** 2 for x in values) / (len(values) - 1)
+            return variance ** 0.5
+        
+        def sqrt(self, value):
+            return value ** 0.5
+    
+    np = MockNumpy()
+
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    # Create a mock pandas for basic operations
+    class MockPandas:
+        class Timedelta:
+            def __init__(self, days):
+                self.days = days
+        
+        def Timedelta(self, **kwargs):
+            return self.Timedelta(**kwargs)
+    
+    pd = MockPandas()
 
 from src.utils.centralized_decorators import (
     handle_errors,
@@ -29,6 +67,103 @@ from src.utils.centralized_decorators import (
 from src.utils.logger import system_logger
 
 
+class ConfigurationError(Exception):
+    """Raised when configuration validation fails."""
+    pass
+
+
+class DependencyError(Exception):
+    """Raised when required dependencies are not available."""
+    pass
+
+
+def validate_config(config: Dict[str, Any]) -> Dict[str, Any]:
+    """Validate and sanitize configuration.
+    
+    Args:
+        config: Configuration dictionary to validate
+        
+    Returns:
+        Validated and sanitized configuration
+        
+    Raises:
+        ConfigurationError: If configuration is invalid
+    """
+    if not isinstance(config, dict):
+        raise ConfigurationError("Configuration must be a dictionary")
+    
+    # Default configuration
+    default_config = {
+        "model_performance_monitor": {
+            "enable_real_time_monitoring": True,
+            "results_dir": "results/model_performance",
+            "performance_thresholds": {
+                "min_accuracy": 0.6,
+                "min_precision": 0.5,
+                "min_recall": 0.5,
+                "min_f1_score": 0.5,
+                "max_drift": 0.1
+            },
+            "max_history_size": 10000,
+            "cleanup_interval_days": 90,
+            "export_formats": ["json", "csv"],
+            "enable_drift_detection": True,
+            "drift_detection_window": 10
+        }
+    }
+    
+    # Merge with provided config
+    if "model_performance_monitor" in config:
+        default_config["model_performance_monitor"].update(config["model_performance_monitor"])
+    
+    # Validate performance thresholds
+    thresholds = default_config["model_performance_monitor"]["performance_thresholds"]
+    for threshold_name, value in thresholds.items():
+        if not isinstance(value, (int, float)):
+            raise ConfigurationError(f"Threshold {threshold_name} must be numeric, got {type(value)}")
+        if threshold_name.startswith("min_") and (value < 0 or value > 1):
+            raise ConfigurationError(f"Threshold {threshold_name} must be between 0 and 1, got {value}")
+        if threshold_name.startswith("max_") and value < 0:
+            raise ConfigurationError(f"Threshold {threshold_name} must be non-negative, got {value}")
+    
+    # Validate other settings
+    if not isinstance(default_config["model_performance_monitor"]["enable_real_time_monitoring"], bool):
+        raise ConfigurationError("enable_real_time_monitoring must be boolean")
+    
+    if not isinstance(default_config["model_performance_monitor"]["max_history_size"], int):
+        raise ConfigurationError("max_history_size must be integer")
+    
+    if default_config["model_performance_monitor"]["max_history_size"] <= 0:
+        raise ConfigurationError("max_history_size must be positive")
+    
+    return default_config
+
+
+def check_dependencies() -> Dict[str, bool]:
+    """Check availability of required dependencies.
+    
+    Returns:
+        Dictionary mapping dependency names to availability status
+    """
+    dependencies = {
+        "numpy": NUMPY_AVAILABLE,
+        "pandas": PANDAS_AVAILABLE,
+        "sklearn": False,  # Will check if needed
+        "asyncio": True,   # Built-in
+        "json": True,      # Built-in
+        "pathlib": True    # Built-in
+    }
+    
+    # Check sklearn if not already checked
+    try:
+        import sklearn
+        dependencies["sklearn"] = True
+    except ImportError:
+        pass
+    
+    return dependencies
+
+
 class ModelPerformanceMonitor:
     """Comprehensive model performance monitoring system."""
 
@@ -37,8 +172,23 @@ class ModelPerformanceMonitor:
         
         Args:
             config: Configuration dictionary for the monitor
+            
+        Raises:
+            ConfigurationError: If configuration is invalid
+            DependencyError: If required dependencies are not available
         """
-        self.config = config or {}
+        # Check dependencies
+        deps = check_dependencies()
+        if not deps["numpy"]:
+            self.logger = system_logger.getChild("ModelPerformanceMonitor")
+            self.logger.warning("⚠️ NumPy not available, using fallback implementation")
+        
+        # Validate configuration
+        try:
+            self.config = validate_config(config or {})
+        except ConfigurationError as e:
+            raise ConfigurationError(f"Invalid configuration: {e}")
+        
         self.logger = system_logger.getChild("ModelPerformanceMonitor")
         
         # Performance tracking
@@ -47,18 +197,12 @@ class ModelPerformanceMonitor:
         self.model_registry: Dict[str, Dict[str, Any]] = {}
         
         # Configuration
-        self.monitor_config = self.config.get("model_performance_monitor", {})
-        self.enable_real_time_monitoring = self.monitor_config.get("enable_real_time_monitoring", True)
-        self.performance_thresholds = self.monitor_config.get("performance_thresholds", {
-            "min_accuracy": 0.6,
-            "min_precision": 0.5,
-            "min_recall": 0.5,
-            "min_f1_score": 0.5,
-            "max_drift": 0.1
-        })
+        self.monitor_config = self.config["model_performance_monitor"]
+        self.enable_real_time_monitoring = self.monitor_config["enable_real_time_monitoring"]
+        self.performance_thresholds = self.monitor_config["performance_thresholds"]
         
         # Storage
-        self.results_dir = Path(self.monitor_config.get("results_dir", "results/model_performance"))
+        self.results_dir = Path(self.monitor_config["results_dir"])
         self.results_dir.mkdir(parents=True, exist_ok=True)
         
         # Initialize performance tracking
@@ -129,6 +273,11 @@ class ModelPerformanceMonitor:
                 self.logger.warning(f"Unknown model type: {model_type}")
                 return False
             
+            # Validate metrics
+            if not self._validate_metrics(metrics):
+                self.logger.warning(f"Invalid metrics format for model {model_id}")
+                return False
+            
             # Create performance record
             performance_record = {
                 "model_id": model_id,
@@ -167,6 +316,12 @@ class ModelPerformanceMonitor:
                     "timestamp": timestamp.isoformat()
                 }
             
+            # Enforce history size limit
+            max_history = self.monitor_config["max_history_size"]
+            if len(self.performance_history[model_type]) > max_history:
+                self.performance_history[model_type] = self.performance_history[model_type][-max_history:]
+                self.logger.info(f"Truncated history for {model_type} to {max_history} records")
+            
             # Save to disk
             await self._save_performance_data()
             
@@ -176,6 +331,34 @@ class ModelPerformanceMonitor:
         except Exception as e:
             self.logger.exception(f"❌ Error tracking model performance: {e}")
             return False
+
+    def _validate_metrics(self, metrics: Dict[str, Any]) -> bool:
+        """Validate that metrics have the expected format.
+        
+        Args:
+            metrics: Dictionary of performance metrics
+            
+        Returns:
+            bool: True if metrics are valid, False otherwise
+        """
+        if not isinstance(metrics, dict):
+            return False
+        
+        # Check for required metrics
+        required_metrics = ["accuracy", "precision", "recall", "f1_score"]
+        has_required = any(metric in metrics for metric in required_metrics)
+        
+        if not has_required:
+            return False
+        
+        # Validate metric values
+        for metric_name, value in metrics.items():
+            if not isinstance(value, (int, float)):
+                return False
+            if metric_name in required_metrics and (value < 0 or value > 1):
+                return False
+        
+        return True
 
     def _check_thresholds(self, metrics: Dict[str, Any]) -> Dict[str, bool]:
         """Check if metrics meet performance thresholds.
@@ -355,7 +538,7 @@ class ModelPerformanceMonitor:
         self,
         model_type: str,
         current_metrics: Dict[str, Any],
-        window_size: int = 10
+        window_size: Optional[int] = None
     ) -> Optional[Dict[str, Any]]:
         """Detect performance drift by comparing current metrics to historical performance.
         
@@ -368,9 +551,16 @@ class ModelPerformanceMonitor:
             Dictionary containing drift analysis or None if insufficient data
         """
         try:
+            if not self.monitor_config["enable_drift_detection"]:
+                self.logger.info("Drift detection is disabled in configuration")
+                return None
+            
             if model_type not in self.performance_history:
                 self.logger.warning(f"Unknown model type: {model_type}")
                 return None
+            
+            if window_size is None:
+                window_size = self.monitor_config["drift_detection_window"]
             
             history = self.performance_history[model_type]
             if len(history) < window_size:
@@ -447,13 +637,19 @@ class ModelPerformanceMonitor:
             if output_path is None:
                 output_path = self.results_dir / f"performance_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             
+            # Validate format
+            if format.lower() not in self.monitor_config["export_formats"]:
+                self.logger.warning(f"Unsupported format: {format}. Supported: {self.monitor_config['export_formats']}")
+                return False
+            
             # Generate comprehensive report
             report = {
                 "generated_at": datetime.now().isoformat(),
                 "summary": self.get_performance_summary(),
                 "model_registry": self.model_registry,
                 "performance_thresholds": self.performance_thresholds,
-                "configuration": self.monitor_config
+                "configuration": self.monitor_config,
+                "dependencies": check_dependencies()
             }
             
             if format.lower() == "json":
@@ -504,8 +700,8 @@ class ModelPerformanceMonitor:
     )
     async def cleanup_old_records(
         self,
-        max_age_days: int = 90,
-        max_records_per_model: int = 1000
+        max_age_days: Optional[int] = None,
+        max_records_per_model: Optional[int] = None
     ) -> bool:
         """Clean up old performance records to manage storage.
         
@@ -517,6 +713,12 @@ class ModelPerformanceMonitor:
             bool: True if cleanup was successful, False otherwise
         """
         try:
+            if max_age_days is None:
+                max_age_days = self.monitor_config["cleanup_interval_days"]
+            
+            if max_records_per_model is None:
+                max_records_per_model = self.monitor_config["max_history_size"]
+            
             cutoff_date = datetime.now() - pd.Timedelta(days=max_age_days)
             cleaned_count = 0
             
@@ -547,9 +749,6 @@ class ModelPerformanceMonitor:
 
     async def __aenter__(self):
         """Async context manager entry."""
-        # The original code had an initialize method here, but it's now in __init__.
-        # Keeping the structure as per the new_code, but noting the change.
-        # await self.initialize() # This line is removed as initialize is now in __init__
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -567,6 +766,10 @@ def create_model_performance_monitor(config: Optional[Dict[str, Any]] = None) ->
         
     Returns:
         Configured ModelPerformanceMonitor instance
+        
+    Raises:
+        ConfigurationError: If configuration is invalid
+        DependencyError: If required dependencies are not available
     """
     return ModelPerformanceMonitor(config)
 
@@ -574,6 +777,10 @@ def create_model_performance_monitor(config: Optional[Dict[str, Any]] = None) ->
 # Example usage
 if __name__ == "__main__":
     async def main():
+        # Check dependencies
+        deps = check_dependencies()
+        print(f"📦 Dependencies: {deps}")
+        
         # Example configuration
         config = {
             "model_performance_monitor": {
@@ -589,33 +796,44 @@ if __name__ == "__main__":
             }
         }
         
-        # Create monitor
-        monitor = ModelPerformanceMonitor(config)
-        
-        # Example metrics
-        example_metrics = {
-            "accuracy": 0.85,
-            "precision": 0.82,
-            "recall": 0.88,
-            "f1_score": 0.85
-        }
-        
-        # Track performance
-        success = await monitor.track_model_performance(
-            model_id="test_model_001",
-            model_type="hmm_regime_discovery",
-            metrics=example_metrics,
-            step_name="validation_step_1"
-        )
-        
-        if success:
-            print("✅ Performance tracked successfully")
+        try:
+            # Create monitor
+            monitor = ModelPerformanceMonitor(config)
             
-            # Get summary
-            summary = monitor.get_performance_summary()
-            print(f"Performance summary: {summary}")
-        else:
-            print("❌ Failed to track performance")
+            # Example metrics
+            example_metrics = {
+                "accuracy": 0.85,
+                "precision": 0.82,
+                "recall": 0.88,
+                "f1_score": 0.85
+            }
+            
+            # Track performance
+            success = await monitor.track_model_performance(
+                model_id="test_model_001",
+                model_type="hmm_regime_discovery",
+                metrics=example_metrics,
+                step_name="validation_step_1"
+            )
+            
+            if success:
+                print("✅ Performance tracked successfully")
+                
+                # Get summary
+                summary = monitor.get_performance_summary()
+                print(f"Performance summary: {summary}")
+                
+                # Export report
+                await monitor.export_performance_report(format="json")
+            else:
+                print("❌ Failed to track performance")
+                
+        except ConfigurationError as e:
+            print(f"❌ Configuration error: {e}")
+        except DependencyError as e:
+            print(f"❌ Dependency error: {e}")
+        except Exception as e:
+            print(f"❌ Unexpected error: {e}")
     
     # Run example
     asyncio.run(main())

@@ -552,74 +552,74 @@ class RayModelTrainer:
                     )
                     return None
             data = handle_missing_data(data)
-            FeatureGenerator()
-                    # Check if we have multi-output targets (direction and profit)
-        has_direction = "direction" in data.columns
-        has_profit = "potential_profit_pct" in data.columns
+            
+            # Check if we have multi-output targets (direction and profit)
+            has_direction = "direction" in data.columns
+            has_profit = "potential_profit_pct" in data.columns
         
-        # Use all columns except labels as features
-        exclude_cols = ["label", "tactician_label", "target", "direction", "potential_profit_pct"]
-        feature_cols = [col for col in data.columns if col not in exclude_cols]
-        
-        # Prepare single-output data (backward compatibility)
-        label_col = (
-            "label"
-            if "label" in data.columns
-            else (
-                "tactician_label" if "tactician_label" in data.columns else "target"
+            # Use all columns except labels as features
+            exclude_cols = ["label", "tactician_label", "target", "direction", "potential_profit_pct"]
+            feature_cols = [col for col in data.columns if col not in exclude_cols]
+            
+            # Prepare single-output data (backward compatibility)
+            label_col = (
+                "label"
+                if "label" in data.columns
+                else (
+                    "tactician_label" if "tactician_label" in data.columns else "target"
+                )
             )
-        )
-        features = data[feature_cols]
-        labels = data[label_col]
-        
-        prepared_data["tactician_1m"] = TrainingData(
-            features=features,
-            labels=labels,
-            timeframe="1m",
-            model_type="tactician",
-            data_info={
-                "rows": len(data),
-                "columns": len(features.columns),
-                "timeframe": "1m",
-                "has_multi_output": has_direction and has_profit,
-            },
-        )
-        
-        # Prepare multi-output data if available
-        if has_direction and has_profit and self.enable_multi_output:
-            self.logger.info("🔧 Multi-output targets detected - preparing multi-output training data")
+            features = data[feature_cols]
+            labels = data[label_col]
             
-            # Initialize multi-output trainer if not already done
-            if self.multi_output_trainer is None:
-                multi_output_config = MultiOutputModelConfig(
-                    model_type="LightGBM",
-                    use_profit_features=True,
-                    direction_target="direction",
-                    profit_target="potential_profit_pct"
-                )
-                self.multi_output_trainer = create_multi_output_trainer(
-                    model_type="LightGBM",
-                    use_profit_features=True
-                )
-            
-            # Store multi-output data
-            prepared_data["multi_output_1m"] = {
-                "features": features,
-                "direction_target": data["direction"],
-                "profit_target": data["potential_profit_pct"],
-                "timeframe": "1m",
-                "model_type": "multi_output",
-                "data_info": {
+            prepared_data["tactician_1m"] = TrainingData(
+                features=features,
+                labels=labels,
+                timeframe="1m",
+                model_type="tactician",
+                data_info={
                     "rows": len(data),
                     "columns": len(features.columns),
                     "timeframe": "1m",
-                    "has_multi_output": True,
-                }
-            }
-            self.logger.info(
-                "✅ Training data prepared successfully from labeled/enhanced pipeline output",
+                    "has_multi_output": has_direction and has_profit,
+                },
             )
-            return prepared_data
+            
+            # Prepare multi-output data if available
+            if has_direction and has_profit and self.enable_multi_output:
+                self.logger.info("🔧 Multi-output targets detected - preparing multi-output training data")
+                
+                # Initialize multi-output trainer if not already done
+                if self.multi_output_trainer is None:
+                    multi_output_config = MultiOutputModelConfig(
+                        model_type="LightGBM",
+                        use_profit_features=True,
+                        direction_target="direction",
+                        profit_target="potential_profit_pct"
+                    )
+                    self.multi_output_trainer = create_multi_output_trainer(
+                        model_type="LightGBM",
+                        use_profit_features=True
+                    )
+                
+                # Store multi-output data
+                prepared_data["multi_output_1m"] = {
+                    "features": features,
+                    "direction_target": data["direction"],
+                    "profit_target": data["potential_profit_pct"],
+                    "timeframe": "1m",
+                    "model_type": "multi_output",
+                    "data_info": {
+                        "rows": len(data),
+                        "columns": len(features.columns),
+                        "timeframe": "1m",
+                        "has_multi_output": True,
+                    }
+                }
+                self.logger.info(
+                    "✅ Training data prepared successfully from labeled/enhanced pipeline output",
+                )
+                return prepared_data
         except Exception as e:
             self.logger.error(f"❌ Failed to prepare training data: {e}")
             return None

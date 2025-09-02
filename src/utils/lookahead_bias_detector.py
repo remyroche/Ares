@@ -10,9 +10,9 @@ from typing import Any
 
 import pandas as pd
 
+from src.utils.error_handler import handle_data_processing_errors, handle_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-from src.utils.error_handler import handle_data_processing_errors, handle_errors
 
 
 class LookaheadBiasDetector:
@@ -159,8 +159,7 @@ class LookaheadBiasDetector:
 
             elif abs_corr > 0.7:
                 results["warnings"].append(
-                    f"MODERATE CORRELATION: {feature} has {corr:.4f} correlation with target "
-                    f"(investigate further)",
+                    f"MODERATE CORRELATION: {feature} has {corr:.4f} correlation with target " f"(investigate further)",
                 )
 
         results["feature_correlations"] = correlations
@@ -352,21 +351,16 @@ class LookaheadBiasDetector:
                 continue
 
             # Check for legitimate lagging indicators (enhanced)
-            has_legitimate_lagging = any(
-                lag_pattern in col_lower for lag_pattern in enhanced_legitimate_patterns
-            )
+            has_legitimate_lagging = any(lag_pattern in col_lower for lag_pattern in enhanced_legitimate_patterns)
 
             # Check if feature is inherently lagged
-            is_inherently_lagged = any(
-                lag_pattern in col_lower for lag_pattern in inherently_lagged_patterns
-            )
+            is_inherently_lagged = any(lag_pattern in col_lower for lag_pattern in inherently_lagged_patterns)
 
             # Additional checks for common legitimate patterns
             is_common_technical_indicator = any(
                 [
                     "_" in col_lower
-                    and col_lower.split("_")[0]
-                    in ["sma", "ema", "bb", "rsi", "macd", "atr", "cci", "mfi"],
+                    and col_lower.split("_")[0] in ["sma", "ema", "bb", "rsi", "macd", "atr", "cci", "mfi"],
                     any(
                         pattern in col_lower
                         for pattern in [
@@ -378,19 +372,12 @@ class LookaheadBiasDetector:
                         ]
                     ),
                     col_lower.endswith(("_upper", "_lower", "_signal", "_histogram")),
-                    any(
-                        pattern in col_lower
-                        for pattern in ["volatility", "momentum", "returns", "change"]
-                    ),
+                    any(pattern in col_lower for pattern in ["volatility", "momentum", "returns", "change"]),
                 ],
             )
 
             # Enhanced analysis based on feature type
-            if (
-                has_legitimate_lagging
-                or is_inherently_lagged
-                or is_common_technical_indicator
-            ):
+            if has_legitimate_lagging or is_inherently_lagged or is_common_technical_indicator:
                 # This feature likely has proper lagging - add to potentially legitimate
                 potentially_legitimate_features.append(
                     {
@@ -554,11 +541,7 @@ class LookaheadBiasDetector:
 
         # Correlation-based recommendations
         if results["feature_correlations"]:
-            high_corr_features = [
-                feat
-                for feat, corr in results["feature_correlations"].items()
-                if abs(corr) > 0.8
-            ]
+            high_corr_features = [feat for feat, corr in results["feature_correlations"].items() if abs(corr) > 0.8]
             if high_corr_features:
                 recommendations.append(
                     f"📊 {len(high_corr_features)} features have high correlation (>0.8) - consider feature selection",
@@ -712,9 +695,7 @@ class LookaheadBiasDetector:
                     {
                         "pattern": pattern_name,
                         "matches": matches,
-                        "lag_periods": [
-                            int(m) if str(m).isdigit() else 1 for m in matches
-                        ],
+                        "lag_periods": [int(m) if str(m).isdigit() else 1 for m in matches],
                     },
                 )
 

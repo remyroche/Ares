@@ -8,7 +8,6 @@ strategies, circuit breaker pattern, and safe operation wrappers with
 """
 
 import asyncio
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 import functools
 import logging
 import time
@@ -20,29 +19,42 @@ from enum import Enum, auto
 from functools import wraps
 from typing import Any, TypeVar, cast
 
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+
 try:
     import numpy as np
 except Exception:  # Minimal fallback for environments without numpy
+
     class _NP:
         def nan_to_num(self, arr, nan=0.0, posinf=0.0, neginf=0.0):
             return arr
+
         def isnan(self, x):
             return False
+
         def isinf(self, x):
             return False
+
         def random(self):
             class _R:
                 def random(self):
                     return 0.5
+
             return _R()
+
     np = _NP()  # type: ignore
 
 try:
     import pandas as pd
 except Exception:  # Minimal fallback for environments without pandas
+
     class _PD:
-        class DataFrame: ...
-        class Series: ...
+        class DataFrame:
+            ...
+
+        class Series:
+            ...
+
     pd = _PD()  # type: ignore
 
 # Type variables for generic functions
@@ -53,6 +65,7 @@ F = TypeVar("F", bound=Callable[..., Any])
 
 class ErrorSeverity(Enum):
     """Error severity levels."""
+
     LOW = auto()
     MEDIUM = auto()
     HIGH = auto()
@@ -116,23 +129,17 @@ def call_method_robust(
             method = getattr(obj, fallback_method)
             if callable(method):
                 if logger:
-                    logger.debug(
-                        f"Primary method '{method_name}' not available, using fallback '{fallback_method}'"
-                    )
+                    logger.debug(f"Primary method '{method_name}' not available, using fallback '{fallback_method}'")
                 return method(*args, **kwargs)
 
         # Return default if no methods available
         if logger:
-            logger.warning(
-                f"Neither '{method_name}' nor '{fallback_method}' methods available on {type(obj).__name__}"
-            )
+            logger.warning(f"Neither '{method_name}' nor '{fallback_method}' methods available on {type(obj).__name__}")
         return default_return
 
     except Exception as e:
         if logger:
-            logger.error(
-                f"Error calling method '{method_name}' on {type(obj).__name__}: {e}"
-            )
+            logger.error(f"Error calling method '{method_name}' on {type(obj).__name__}: {e}")
         return default_return
 
 
@@ -449,13 +456,14 @@ class ErrorHandler:
                             if strategy.can_handle(e):
                                 try:
                                     # For sync functions, handle recovery differently
+                                    error_obj = e  # Capture exception for closure
                                     async def run_recovery() -> Any | None:
                                         return await strategy.execute(
                                             {
                                                 "operation": func,
                                                 "args": args,
                                                 "kwargs": kwargs,
-                                                "error": e,
+                                                "error": error_obj,
                                             },
                                         )
 
@@ -538,14 +546,14 @@ class ErrorHandler:
                             for strategy in recovery_strategies:
                                 if strategy.can_handle(e):
                                     try:
-
+                                        error_obj = e  # Capture exception for closure
                                         async def run_recovery() -> Any | None:
                                             return await strategy.execute(
                                                 {
                                                     "operation": func,
                                                     "args": args,
                                                     "kwargs": kwargs,
-                                                    "error": e,
+                                                    "error": error_obj,
                                                 },
                                             )
 
@@ -849,8 +857,7 @@ async def _execute_with_retries(
             else:
                 system_logger = get_system_logger()
                 system_logger.exception(
-                    f"Max retries ({max_retries}) reached. "
-                    f"Returning default value.",
+                    f"Max retries ({max_retries}) reached. " f"Returning default value.",
                 )
                 return default_return
 
@@ -1140,8 +1147,7 @@ async def safe_network_operation(
                     wait_time = 2**attempt  # Exponential backoff
                     system_logger = get_system_logger()
                     system_logger.warning(
-                        f"Network error (attempt {attempt + 1}/{max_retries}): "
-                        f"{e}. Retrying in {wait_time}s...",
+                        f"Network error (attempt {attempt + 1}/{max_retries}): " f"{e}. Retrying in {wait_time}s...",
                     )
                     await asyncio.sleep(wait_time)
                 else:
@@ -1311,8 +1317,7 @@ class ErrorRecoveryStrategies:
                 delay = base_delay * (2**attempt)
                 system_logger = get_system_logger()
                 system_logger.warning(
-                    f"Operation failed (attempt {attempt + 1}/{max_retries + 1}): "
-                    f"{e}. Retrying in {delay}s...",
+                    f"Operation failed (attempt {attempt + 1}/{max_retries + 1}): " f"{e}. Retrying in {delay}s...",
                 )
                 time.sleep(delay)
 
@@ -1572,9 +1577,7 @@ def handle_nan_issues(func: Callable) -> Callable:
                         result[col] = result[col].fillna(0)
                     else:
                         # For other types, use forward fill then backward fill
-                        result[col] = (
-                            result[col].fillna(method="ffill").fillna(method="bfill")
-                        )
+                        result[col] = result[col].fillna(method="ffill").fillna(method="bfill")
 
                 # Log any remaining NaN issues
                 nan_counts = result.isnull().sum()
@@ -1665,11 +1668,7 @@ def safe_division(numerator: float, denominator: float, default: float = 0.0) ->
                     else np.full_like(numerator, default)
                 )
             result = numerator / denominator
-            return (
-                result.fillna(default)
-                if isinstance(result, pd.Series)
-                else np.nan_to_num(result, nan=default)
-            )
+            return result.fillna(default) if isinstance(result, pd.Series) else np.nan_to_num(result, nan=default)
         # Handle scalar division
         if denominator == 0:
             return default

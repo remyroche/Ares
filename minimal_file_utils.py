@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 from typing import List, Pattern
 import fnmatch
+import re
 
 
 def find_python_files(directory: str, exclude_patterns: List[str] = None) -> List[Path]:
@@ -49,3 +50,46 @@ def _should_exclude(path: str, exclude_patterns: List[str]) -> bool:
             return True
     
     return False
+
+
+def get_file_dependencies(file_path: str) -> List[str]:
+    """
+    Get the dependencies (imports) from a Python file.
+    
+    Args:
+        file_path: Path to the Python file
+        
+    Returns:
+        List of imported module names
+    """
+    dependencies = []
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        # Simple regex-based import extraction
+        import re
+        
+        # Match import statements
+        import_pattern = r'^\s*(?:from\s+(\S+)\s+)?import\s+([^#\n]+)'
+        
+        for line in content.split('\n'):
+            match = re.match(import_pattern, line)
+            if match:
+                if match.group(1):  # from X import Y
+                    dependencies.append(match.group(1).split('.')[0])
+                else:  # import X
+                    imports = match.group(2).split(',')
+                    for imp in imports:
+                        imp = imp.strip().split(' as ')[0].split('.')[0]
+                        if imp:
+                            dependencies.append(imp)
+        
+        # Remove duplicates
+        dependencies = list(set(dependencies))
+        
+    except Exception:
+        pass
+    
+    return dependencies

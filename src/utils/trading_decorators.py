@@ -367,6 +367,7 @@ def trade_validation(func: F) -> F:
 
 # Helper functions (implementations would depend on your specific trading system)
 
+
 def get_current_drawdown() -> float:
     """Get current portfolio drawdown."""
     # Implementation would depend on your portfolio tracking system
@@ -393,12 +394,13 @@ def validate_trade_params(*args, **kwargs) -> bool:
 
 def get_trade_tracker():
     """Get a trade tracker instance for monitoring trade execution."""
+
     # Simple implementation - in a real system this would be more sophisticated
     class TradeTracker:
         def __init__(self):
             self.trades = []
             self.current_trade = None
-            
+
         def start_trade(self, trade_id: str, symbol: str, side: str, quantity: float, price: float):
             """Start tracking a new trade."""
             self.current_trade = {
@@ -408,9 +410,9 @@ def get_trade_tracker():
                 "quantity": quantity,
                 "price": price,
                 "start_time": time.time(),
-                "status": "executing"
+                "status": "executing",
             }
-            
+
         def complete_trade(self, trade_id: str, final_price: float, commission: float = 0.0):
             """Complete tracking a trade."""
             if self.current_trade and self.current_trade["trade_id"] == trade_id:
@@ -420,15 +422,15 @@ def get_trade_tracker():
                 self.current_trade["status"] = "completed"
                 self.trades.append(self.current_trade)
                 self.current_trade = None
-                
+
         def get_trade_history(self):
             """Get all tracked trades."""
             return self.trades.copy()
-            
+
         def get_current_trade(self):
             """Get the currently executing trade."""
             return self.current_trade
-    
+
     return TradeTracker()
 
 

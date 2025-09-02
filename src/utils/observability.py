@@ -4,10 +4,18 @@ import logging
 import os
 from typing import Any
 
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import (
     failed,
 )
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+
+# Try to import Sentry SDK modules
+try:
+    from sentry_sdk.integrations.logging import LoggingIntegration
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+except ImportError:
+    LoggingIntegration = None
+    FastApiIntegration = None
 
 logger = logging.getLogger(__name__)
 
@@ -24,24 +32,40 @@ def init_sentry() -> None:
     try:
         import sentry_sdk
         from sentry_sdk.integrations.aiohttp import AioHttpIntegration
-        from sentry_sdk.integrations.fastapi import FastApiIntegration
-        from sentry_sdk.integrations.logging import LoggingIntegration
+        SENTRY_AVAILABLE = True
+    except ImportError:
+        sentry_sdk = None
+        AioHttpIntegration = None
+        SENTRY_AVAILABLE = False
 
-        sentry_logging = LoggingIntegration(
-            level=logging.INFO,
-            event_level=logging.ERROR,
-        )
-        sentry_sdk.init(
-            dsn=dsn,
-            environment=os.getenv("SENTRY_ENV", "production"),
-            traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.0")),
-            profiles_sample_rate=float(os.getenv("SENTRY_PROFILES_SAMPLE_RATE", "0.0")),
-            integrations=[sentry_logging, AioHttpIntegration(), FastApiIntegration()],
-            send_default_pii=False,
-        )
-        logger.info("Sentry initialized")
-    except Exception:  # pragma: no cover
-        print(failed("Failed to initialize Sentry: {exc}"))
+    try:
+        if SENTRY_AVAILABLE and sentry_sdk:
+            integrations = []
+            
+            if LoggingIntegration:
+                sentry_logging = LoggingIntegration(
+                    level=logging.INFO,
+                    event_level=logging.ERROR,
+                )
+                integrations.append(sentry_logging)
+            
+            if AioHttpIntegration:
+                integrations.append(AioHttpIntegration())
+            
+            if FastApiIntegration:
+                integrations.append(FastApiIntegration())
+
+            sentry_sdk.init(
+                dsn=dsn,
+                environment=os.getenv("SENTRY_ENV", "production"),
+                traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.0")),
+                profiles_sample_rate=float(os.getenv("SENTRY_PROFILES_SAMPLE_RATE", "0.0")),
+                integrations=integrations,
+                send_default_pii=False,
+            )
+            logger.info("Sentry initialized")
+    except Exception as exc:  # pragma: no cover
+        print(failed(f"Failed to initialize Sentry: {exc}"))
 
 
 def init_otlp_logging() -> None:

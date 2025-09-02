@@ -1,0 +1,22 @@
+2025-09-02 08:37:37,102 - INFO - Processing file: src/components/modular_tactician.py
+2025-09-02 08:37:37,102 - INFO - Performing semantic analysis...
+2025-09-02 08:37:37,103 - INFO - Code quality score: 0.00
+2025-09-02 08:37:37,103 - WARNING - Syntax errors found: 1
+2025-09-02 08:37:37,103 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:37:37,106 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:37,109 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:37,112 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:37,115 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:37,118 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:37,121 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:37,124 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:37,127 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:37,130 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:37,134 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:37,137 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:37,142 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:37,150 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:37,153 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:37,153 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:37:37,160 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:37,165 - INFO - No fixes needed for: src/components/modular_tactician.py

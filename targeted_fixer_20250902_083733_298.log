@@ -1,0 +1,22 @@
+2025-09-02 08:37:33,302 - INFO - Processing file: src/components/modular_supervisor.py
+2025-09-02 08:37:33,302 - INFO - Performing semantic analysis...
+2025-09-02 08:37:33,303 - INFO - Code quality score: 0.00
+2025-09-02 08:37:33,303 - WARNING - Syntax errors found: 1
+2025-09-02 08:37:33,303 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:37:33,307 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:33,310 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:33,314 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:33,317 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:33,321 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:33,325 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:33,328 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:33,332 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:33,335 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:33,340 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:33,344 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:33,349 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:33,358 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:33,358 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:37:33,359 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:37:33,366 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:33,371 - INFO - No fixes needed for: src/components/modular_supervisor.py

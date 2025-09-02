@@ -1,0 +1,25 @@
+2025-09-02 08:21:19,908 - INFO - Processing file: src/utils/enhanced_pipeline_decorators.py
+2025-09-02 08:21:19,908 - INFO - Performing semantic analysis...
+2025-09-02 08:21:19,909 - INFO - Code quality score: 0.00
+2025-09-02 08:21:19,909 - WARNING - Syntax errors found: 1
+2025-09-02 08:21:19,909 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:21:19,910 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:19,912 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:19,913 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:19,914 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:19,915 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:19,916 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:19,918 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:19,919 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:19,920 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:19,922 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:19,923 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:19,924 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:19,926 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:19,929 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:19,930 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:19,934 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:19,934 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:19,935 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:19,939 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:19,942 - INFO - No fixes needed for: src/utils/enhanced_pipeline_decorators.py

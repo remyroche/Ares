@@ -67,10 +67,8 @@ class ConservativeSyntaxFixer:
         fixes=0
         
         # Fix the specific import error we found
-        if 'from pathlib import Path
-import glob' in content:
-            content = content.replace('from pathlib import Path
-import glob', 'from pathlib import Path\nimport glob')
+        if 'from pathlib import Path\nimport glob' in content:
+            content = content.replace('from pathlib import Path\nimport glob', 'from pathlib import Path\nimport glob')
             fixes += 1
         
         return content, fixes
@@ -80,21 +78,21 @@ import glob', 'from pathlib import Path\nimport glob')
         fixes=0
         
         # Fix logging.basicConfig calls with syntax errors
-        content = re.sub(r'logging\.basicConfig\(\s*level\s*,\s*logging\.INFO\s*,\s*format\s*,\s*"([^"]*')"\s*\)',
+        content = re.sub(r'logging\.basicConfig\(\s*level\s*,\s*logging\.INFO\s*,\s*format\s*,\s*"([^"]*)"\s*\)',
             r'logging.basicConfig(level=logging.INFO, format=r"\1")',
             content
         )
         fixes += len(re.findall(r'logging\.basicConfig\(\s*level\s*,\s*logging\.INFO\s*,\s*format\s*,\s*"', content))
         
         # Fix max() function calls with syntax errors
-        content = re.sub(r'max\(([^,]+'),\s*key\s*=\s*([^)]+)\)',
+        content = re.sub(r'max\(([^,]+),\s*key\s*=\s*([^)]+)\)',
             r'max(\1, key=\2)',
             content
         )
         fixes += len(re.findall(r'max\([^,]+,\s*key\s*=\s*[^)]+\)', content))
         
         # Fix to_parquet calls with syntax errors
-        content = re.sub(r'\.to_parquet\(([^,]+'),\s*index\s*=\s*False\)',
+        content = re.sub(r'\.to_parquet\(([^,]+),\s*index\s*=\s*False\)',
             r'.to_parquet(\1, index=False)',
             content
         )
@@ -166,7 +164,7 @@ def main():
     import subprocess
     try:
         result=subprocess.run(
-            "find . -name '*.py' -type f -exec python -m py_compile {} \; 2>&1 | wc -l",
+            "find . -name '*.py' -type f -exec python -m py_compile {} \\; 2>&1 | wc -l",
             shell=True, capture_output=True, text=True
         )
         remaining_errors=int(result.stdout.strip())

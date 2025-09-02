@@ -140,20 +140,18 @@ class SyntaxFixer:
         fixes=0
         
         # Fix import statements with syntax errors
-        content = re.sub(r'from pathlib import Path
-import glob', 'from pathlib import Path\nimport glob', content)
-        fixes += len(re.findall(r'from pathlib import Path
-import glob', content))
+        content = re.sub(r'from pathlib import Path\nimport glob', 'from pathlib import Path\nimport glob', content)
+        fixes += len(re.findall(r'from pathlib import Path\nimport glob', content))
         
         # Fix function calls with syntax errors
-        content = re.sub(r'(\w+')\s*=\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)', r'\1=\2, \3=\4', content)
+        content = re.sub(r'(\w+)\s*=\s*(\w+)\s*,\s*(\w+)\s*,\s*(\w+)', r'\1=\2, \3=\4', content)
         
         # Fix unmatched parentheses (basic pattern)
         # This is a simplified fix - more complex cases would need AST parsing
         content = re.sub(r'\(\s*\')\s*$', '', content, flags=re.MULTILINE)
         
         # Fix invalid assignments
-        content = re.sub(r'(\w+')\s*=\s*(\w+)\s*=\s*(\w+)', r'\1=\2 == \3', content)
+        content = re.sub(r'(\w+)\s*=\s*(\w+)\s*=\s*(\w+)', r'\1=\2 == \3', content)
         
         return content, fixes
     
@@ -224,7 +222,7 @@ def main():
     
     # Run a verification scan
     logger.info("🔍 Running verification scan...")
-    verification_cmd="find . -name '*.py' -type f -exec python -m py_compile {} \; 2>&1 | wc -l"
+    verification_cmd="find . -name '*.py' -type f -exec python -m py_compile {} \\; 2>&1 | wc -l"
     import subprocess
     try:
         result = subprocess.run(verification_cmd, shell=True, capture_output=True, text=True)

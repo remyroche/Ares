@@ -1,0 +1,26 @@
+2025-09-02 08:19:08,446 - INFO - Processing file: src/utils/standardized_model_manager.py
+2025-09-02 08:19:08,446 - INFO - Performing semantic analysis...
+2025-09-02 08:19:08,446 - INFO - Code quality score: 0.00
+2025-09-02 08:19:08,446 - WARNING - Syntax errors found: 1
+2025-09-02 08:19:08,446 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:19:08,447 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:08,448 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:08,449 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:08,450 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:08,451 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:08,451 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:08,452 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:08,453 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:08,454 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:08,455 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:08,456 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:08,457 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:08,458 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:08,460 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:08,462 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:08,463 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:19:08,463 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:19:08,464 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:08,464 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:19:08,466 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:08,468 - INFO - No fixes needed for: src/utils/standardized_model_manager.py

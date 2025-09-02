@@ -1,7 +1,7 @@
 code_quality:
   auto_fix:
     enabled: true
-    tools: ["black", "isort", "autopep8", "ruff"]
+    tools: ["black", "isort", "autopep8", "yapf", "docformatter", "unify", "ruff"]
     max_line_length: 88
     aggressive: false
     skip_errors: []

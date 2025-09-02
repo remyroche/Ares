@@ -13,7 +13,14 @@ from dataclasses import dataclass, field
 class AutoFixConfig:
     """Configuration for auto-fixing tools."""
     enabled: bool = True
-    tools: List[str] = field(default_factory=lambda: ["black", "isort", "autopep8"])
+    tools: List[str] = field(default_factory=lambda: [
+        "black",
+        "isort",
+        "autopep8",
+        "yapf",
+        "docformatter",
+        "unify"
+    ])
     max_line_length: int = 88
     aggressive: bool = False
     skip_errors: List[str] = field(default_factory=list)
@@ -59,7 +66,14 @@ class ConfigManager:
     DEFAULT_CONFIG = {
         "auto_fix": {
             "enabled": True,
-            "tools": ["black", "isort", "autopep8"],
+            "tools": [
+                "black",
+                "isort",
+                "autopep8",
+                "yapf",
+                "docformatter",
+                "unify"
+            ],
             "max_line_length": 88,
             "aggressive": False,
             "skip_errors": []

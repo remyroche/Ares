@@ -381,12 +381,11 @@ class Step7EnhancedMatrixOperations:
                 report_data=report_data,
                 report_type="matrix_operations_report",
                 additional_metadata={
-                    "matrix_operations_success": pipeline_state.get("step7_enhanced_matrix_operations", {,
+                    "matrix_operations_success": pipeline_state.get("step7_enhanced_matrix_operations", {}).get("status") == "completed",
+                    "matrix_operations_count": len(matrix_results) if matrix_results else 0,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
                     "project_version": self.config.get("project_version", "1.0.0"),
-                }).get("status") == "completed",
-                    "matrix_operations_count": len(matrix_results) if matrix_results else 0,
                     "timeframe": timeframe,
                 }
             )
@@ -402,11 +401,10 @@ class Step7EnhancedMatrixOperations:
                     additional_metadata={
                         "matrix_operations_count": len(matrix_results),
                         "timeframe": timeframe,
-                    ,
-                    "asset": symbol,
-                    "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
-                }
+                        "asset": symbol,
+                        "lookback_period": self.config.get("lookback_days", 1095),
+                        "project_version": self.config.get("project_version", "1.0.0"),
+                    }
                 )
                 self.logger.info(f"✅ Logged matrix results: {matrix_report_name}")
             
@@ -420,11 +418,10 @@ class Step7EnhancedMatrixOperations:
                     additional_metadata={
                         "overall_quality_score": quality_metrics.get("overall_quality", 0.0),
                         "timeframe": timeframe,
-                    ,
-                    "asset": symbol,
-                    "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
-                }
+                        "asset": symbol,
+                        "lookback_period": self.config.get("lookback_days", 1095),
+                        "project_version": self.config.get("project_version", "1.0.0"),
+                    }
                 )
                 self.logger.info(f"✅ Logged quality metrics: {quality_report_name}")
             
@@ -436,7 +433,6 @@ class Step7EnhancedMatrixOperations:
                 additional_metadata={
                     "metrics_type": "matrix_operations_performance",
                     "timeframe": timeframe,
-                ,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
                     "project_version": self.config.get("project_version", "1.0.0"),

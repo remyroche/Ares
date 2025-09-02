@@ -4990,7 +4990,7 @@ class VectorizedAdvancedFeatureEngineering:
         try:
             stability = np.zeros(len(cluster_ids))
 
-            for i in range(1, len(cluster_ids):
+            for i in range(1, len(cluster_ids)):
                 # Count how many times the regime changes in a window
                 window_size = min(20, i)
                 recent_clusters = cluster_ids[max(0, i-window_size):i+1]
@@ -5008,7 +5008,7 @@ class VectorizedAdvancedFeatureEngineering:
         try:
             transitions = np.zeros(len(cluster_ids))
 
-            for i in range(1, len(cluster_ids):
+            for i in range(1, len(cluster_ids)):
                 if cluster_ids[i] != cluster_ids[i-1]:
                     transitions[i] = 1.0
 
@@ -5092,44 +5092,44 @@ class VectorizedAdvancedFeatureEngineering:
         context="Difference and Acceleration Feature Engineering"
     )
     @secure_data_processing(
-        backup_before=True
-        integrity_checks=True
-        memory_cleanup=True
+        backup_before=True,
+        integrity_checks=True,
+        memory_cleanup=True,
         data_validation=True
     )
     @prevent_data_leakage(
-        temporal_validation=True
-        feature_leakage_detection=True
-        cross_validation_isolation=True
+        temporal_validation=True,
+        feature_leakage_detection=True,
+        cross_validation_isolation=True,
         lookahead_bias_prevention=True
     )
     @resource_monitor(
-        memory_threshold_gb=16.0
-        cpu_threshold_percent=90.0
-        disk_threshold_gb=10.0
-        monitor_interval=30.0
+        memory_threshold_gb=16.0,
+        cpu_threshold_percent=90.0,
+        disk_threshold_gb=10.0,
+        monitor_interval=30.0,
         auto_cleanup=True
     )
     @memory_efficient(
-        chunk_size=5000
-        streaming_processing=True
-        memory_pool=True
+        chunk_size=5000,
+        streaming_processing=True,
+        memory_pool=True,
         cleanup_frequency=20
     )
     @debug_training_step(
-        log_intermediate_results=True
-        save_debug_artifacts=True
-        performance_profiling=True
+        log_intermediate_results=True,
+        save_debug_artifacts=True,
+        performance_profiling=True,
         error_context_preservation=True
     )
     @circuit_breaker_protection(
-        failure_threshold=3
-        recovery_timeout=300.0
-        expected_exception=Exception
+        failure_threshold=3,
+        recovery_timeout=300.0,
+        expected_exception=Exception,
         monitor_interval=60.0
     )
     @validate_step_output(
-        required_files=["data/feature_cache/*.parquet"]
+        required_files=["data/feature_cache/*.parquet"],
         data_quality_checks={
             "min_rows": 50,
             "required_columns": ["features"],
@@ -5145,14 +5145,14 @@ class VectorizedAdvancedFeatureEngineering:
             "feature_quality": 0.8,
             "feature_completeness": 0.9,
         },
-        data_quality_metrics={"completeness": 0.9, "consistency": 0.8}
-        convergence_checks=True
-        overfitting_detection=True
+        data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
+        convergence_checks=True,
+        overfitting_detection=True,
         validation_score_requirements={"feature_engineering_score": 0.8}
     )
     @handle_errors(
-        exceptions=(ValueError, AttributeError, MemoryError)
-        default_return={}
+        exceptions=(ValueError, AttributeError, MemoryError),
+        default_return={},
         context="difference and acceleration feature engineering"
     )
     async def _engineer_difference_and_acceleration_features(

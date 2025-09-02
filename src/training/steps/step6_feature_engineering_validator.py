@@ -130,7 +130,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
             # Check for infinite or NaN values in features
             numeric_features = df[feature_columns].select_dtypes(include=['number'])
             if not numeric_features.empty:
-                infinite_count = numeric_features.isin([float('inf'), float('-inf')).sum().sum()
+                infinite_count = numeric_features.isin([float('inf'), float('-inf')]).sum().sum()
                 nan_count = numeric_features.isna().sum().sum()
                 
                 if infinite_count > 0:

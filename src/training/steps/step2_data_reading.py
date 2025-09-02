@@ -486,7 +486,6 @@ class DataReadingStep:
                 additional_metadata={
                     "metrics_type": "data_reading_performance",
                     "timeframe": timeframe,
-                ,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
                     "project_version": self.config.get("project_version", "1.0.0"),

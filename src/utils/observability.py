@@ -5,9 +5,9 @@ import os
 from typing import Any
 
 from src.utils.warning_symbols import (
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
     failed,
 )
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 logger = logging.getLogger(__name__)
 

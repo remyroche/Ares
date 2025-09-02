@@ -14,14 +14,18 @@ from pathlib import Path
 from typing import Dict, Tuple, List, Optional, Any
 import logging
 import ast
+from datetime import datetime
 
 # Set up logging
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+log_filename = f"targeted_fixer_{timestamp}.log"
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler("targeted_fixer.log"),
+        logging.FileHandler(log_filename),
     ],
 )
 logger = logging.getLogger(__name__)

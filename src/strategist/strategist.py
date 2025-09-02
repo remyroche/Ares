@@ -1,3 +1,12 @@
+"""
+Strategist module for trading strategy generation.
+
+This module provides the Strategist class which is responsible for:
+- Strategy Generation: Create trading strategies based on market analysis
+- Market Analysis Integration: Combine analyst and tactician inputs
+- Strategy History Management: Track and store strategy performance
+"""
+
 # src/strategist/strategist.py
 
 from datetime import datetime
@@ -24,6 +33,7 @@ if TYPE_CHECKING:
 
 
 class Strategist:
+    # TODO: Consider extracting common error logging patterns into helper methods
     """
     Strategy-Level Strategist component responsible for:
     - Strategy Generation: Create trading strategies based on market analysis
@@ -51,13 +61,21 @@ class Strategist:
 
         # Configuration
         self.strategist_config: dict[str, Any] = self.config.get("strategist", {})
-        self.strategy_interval: int = self.strategist_config.get("strategy_interval", 1800)
-        self.max_strategy_history: int = self.strategist_config.get("max_strategy_history", 50)
+        self.strategy_interval: int = (
+            self.strategist_config.get("strategy_interval", 1800)
+        )
+        self.max_strategy_history: int = (
+            self.strategist_config.get("max_strategy_history", 50)
+        )
         # Risk management (excluding position sizing which is handled by Tactician)
-        self.enable_risk_management: bool = self.strategist_config.get("enable_risk_management", True)
+        self.enable_risk_management: bool = (
+            self.strategist_config.get("enable_risk_management", True)
+        )
 
         # Strategy parameters (position sizing handled by Tactician)
-        self.min_confidence_threshold: float = self.strategist_config.get("min_confidence_threshold", 0.6)
+        self.min_confidence_threshold: float = (
+            self.strategist_config.get("min_confidence_threshold", 0.6)
+        )
 
         # Technical indicator thresholds and strategy type (for profile/reference only)
         tech_cfg = self.strategist_config.get("technical_indicator_thresholds", {})
@@ -69,7 +87,9 @@ class Strategist:
         self.volume_ratio_low: float = tech_cfg.get("volume_ratio_low", 0.5)
         self.price_volatility_window: int = tech_cfg.get("price_volatility_window", 20)
 
-        self.strategy_type: str = self.strategist_config.get("strategy_type", "technical_analysis")
+        self.strategy_type: str = (
+            self.strategist_config.get("strategy_type", "technical_analysis")
+        )
 
         # Component references (will be set during initialization)
         self.analyst: Analyst | None = None
@@ -105,7 +125,7 @@ class Strategist:
             self.logger.info("✅ Strategist initialized successfully")
             return True
 
-        except Exception as e:
+        except (ValueError, TypeError, KeyError) as e:
             self.logger.error(failed(f"❌ Strategist initialization failed: {e}"))
             return False
 
@@ -126,7 +146,7 @@ class Strategist:
 
             self.logger.info("✅ Strategy components initialized successfully")
 
-        except Exception as e:
+        except Exception as e:  # TODO: Consider more specific exception types
             self.logger.error(f"Error initializing strategy components: {e}")
             raise
 
@@ -135,6 +155,8 @@ class Strategist:
         default_return=False,
         context="configuration validation",
     )
+    # TODO: Refactor to reduce complexity (current: 6)
+
     def _validate_configuration(self) -> bool:
         """Validate strategist configuration."""
         try:
@@ -153,7 +175,7 @@ class Strategist:
 
             return True
 
-        except Exception as e:
+        except Exception as e:  # TODO: Consider more specific exception types
             self.logger.error(f"Error validating configuration: {e}")
             return False
 
@@ -213,7 +235,7 @@ class Strategist:
             self.logger.info("✅ Strategy generation completed successfully")
             return base_strategy
 
-        except Exception as e:
+        except Exception as e:  # TODO: Consider more specific exception types
             self.logger.error(f"Error generating strategy: {e}")
             return None
 
@@ -222,6 +244,8 @@ class Strategist:
         default_return=False,
         context="market data validation",
     )
+    # TODO: Refactor to reduce complexity (current: 6)
+
     def _validate_market_data(self, market_data: pd.DataFrame) -> bool:
         """Validate market data for strategy generation."""
         try:
@@ -242,7 +266,7 @@ class Strategist:
 
             return True
 
-        except Exception as e:
+        except Exception as e:  # TODO: Consider more specific exception types
             self.logger.error(f"Error validating market data: {e}")
             return False
 
@@ -283,7 +307,7 @@ class Strategist:
 
             return indicators
 
-        except Exception as e:
+        except Exception as e:  # TODO: Consider more specific exception types
             self.logger.error(f"Error extracting market indicators: {e}")
             return {}
 
@@ -302,7 +326,7 @@ class Strategist:
             rsi = 100 - (100 / (1 + rs))
             return rsi.iloc[-1] if not pd.isna(rsi.iloc[-1]) else 50.0
 
-        except Exception as e:
+        except Exception as e:  # TODO: Consider more specific exception types
             self.logger.error(f"Error calculating RSI: {e}")
             return 50.0
 
@@ -343,7 +367,7 @@ class Strategist:
 
             return strategy
 
-        except Exception as e:
+        except Exception as e:  # TODO: Consider more specific exception types
             self.logger.error(f"Error generating base strategy: {e}")
             return {}
 
@@ -352,6 +376,8 @@ class Strategist:
         default_return={},
         context="analysis results integration",
     )
+    # TODO: Refactor to reduce complexity (current: 7)
+
     async def _integrate_analysis_results(self, strategy: dict[str, Any], analysis_results: dict[str, Any]) -> dict[str, Any]:
         """Integrate analysis results from Step 1 into strategy."""
         try:
@@ -390,7 +416,7 @@ class Strategist:
 
             return strategy
 
-        except Exception as e:
+        except Exception as e:  # TODO: Consider more specific exception types
             self.logger.error(f"Error integrating analysis results: {e}")
             return strategy
 
@@ -427,7 +453,7 @@ class Strategist:
 
             return strategy
 
-        except Exception as e:
+        except Exception as e:  # TODO: Consider more specific exception types
             self.logger.error(f"Error applying risk management: {e}")
             return strategy
 
@@ -459,7 +485,7 @@ class Strategist:
                 "last_updated": datetime.now().isoformat(),
             }
 
-        except Exception as e:
+        except Exception as e:  # TODO: Consider more specific exception types
             self.logger.error(f"Error storing strategy results: {e}")
 
     def get_strategy_results(self) -> dict[str, Any]:
@@ -507,5 +533,5 @@ class Strategist:
             self.is_running = False
             self.logger.info("✅ Strategist stopped successfully")
 
-        except Exception as e:
+        except Exception as e:  # TODO: Consider more specific exception types
             self.logger.error(failed(f"❌ Failed to stop Strategist: {e}"))

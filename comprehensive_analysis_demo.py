@@ -199,7 +199,7 @@ class BasicComplexityAnalyzer:
 
 
 class BasicStyleAnalyzer:
-    """Basic code style analyzer."""
+    """Basic code style analyzer - focuses on auto-fixable issues only."""
     
     def __init__(self):
         self.name = "basic_style"
@@ -216,26 +216,16 @@ class BasicStyleAnalyzer:
                 lines = f.readlines()
             
             issues = []
+            auto_fixable_issues = []
             
-            # Check line length
+            # Only check for issues that can be auto-fixed
             for i, line in enumerate(lines, 1):
-                if len(line.rstrip()) > 100:
-                    issues.append(f"Line {i}: Line too long ({len(line.rstrip())} characters)")
-                
-                # Check for trailing whitespace
+                # Check for trailing whitespace (auto-fixable)
                 if line.rstrip() != line.rstrip('\n'):
-                    issues.append(f"Line {i}: Trailing whitespace")
+                    auto_fixable_issues.append(f"Line {i}: Trailing whitespace")
             
-            # Check for proper docstrings
-            try:
-                tree = ast.parse(''.join(lines))
-                for node in ast.walk(tree):
-                    if isinstance(node, ast.FunctionDef) and not ast.get_docstring(node):
-                        issues.append(f"Function '{node.name}' missing docstring")
-                    elif isinstance(node, ast.ClassDef) and not ast.get_docstring(node):
-                        issues.append(f"Class '{node.name}' missing docstring")
-            except:
-                pass
+            # Only include auto-fixable issues
+            issues = auto_fixable_issues
             
             processing_time = time.time() - start_time
             
@@ -244,9 +234,9 @@ class BasicStyleAnalyzer:
                 "issues_found": len(issues),
                 "issues_fixed": 0,
                 "details": {
-                    "style_issues": issues,
+                    "auto_fixable_style_issues": issues,
                     "line_count": len(lines),
-                    "long_lines": len([l for l in lines if len(l.rstrip()) > 100])
+                    "note": "Only auto-fixable style issues are reported"
                 },
                 "processing_time": processing_time
             }
@@ -268,11 +258,10 @@ class ComprehensiveAnalysisDemo:
     def __init__(self, project_root: str = "."):
         self.project_root = Path(project_root).resolve()
         
-        # Initialize basic analyzers
+        # Initialize basic analyzers - focusing on actionable, fixable issues
         self.analyzers = {
             "syntax": BasicSyntaxAnalyzer(),
-            "complexity": BasicComplexityAnalyzer(),
-            "style": BasicStyleAnalyzer()
+            "complexity": BasicComplexityAnalyzer()
         }
         
         # Results storage

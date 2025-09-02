@@ -15,6 +15,8 @@ from src.utils.comprehensive_logger import get_comprehensive_logger
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import (
+import asyncio
+
     error,
     failed,
     initialization_error,
@@ -96,6 +98,8 @@ class PaperTradingIntegration:
             if self.enable_detailed_reporting:
                 try:
                     from src.reports.paper_trading_reporter import (
+import os.path
+
                         setup_paper_trading_reporter as _setup_reporter,
                     )
 

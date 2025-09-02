@@ -3682,6 +3682,9 @@ async def run_step(
     # Import logger for step-level logging
     from src.utils.logger import system_logger
     from src.utils.enhanced_mlflow_integration import (
+import copy
+import os.path
+
         with_enhanced_mlflow_logging,
         log_step_report,
         create_detailed_step_report,

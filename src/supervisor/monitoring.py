@@ -7,6 +7,8 @@ import asyncio
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import (
+import copy
+
     error,
     failed,
     invalid

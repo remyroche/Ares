@@ -260,6 +260,7 @@ class DataReadingStep:
         try:
             import json
             from datetime import datetime
+import pandas as pd
             
             # Create reports directory
             reports_dir = Path(data_dir) / "reports" / "data_quality"

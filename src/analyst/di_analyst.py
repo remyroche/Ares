@@ -18,6 +18,8 @@ from src.analyst.liquidation_risk_model import LiquidationRiskModel
 from src.analyst.market_health_analyzer import MarketHealthAnalyzer
 from src.core.injectable_base import AnalystBase
 from src.interfaces.base_interfaces import (
+import asyncio
+
     AnalysisResult,
     IAnalyst,
     IEventBus,

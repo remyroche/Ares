@@ -512,6 +512,7 @@ class Step17ProbabilisticBayesianOptimization:
             # This would integrate with your actual Analyst model
             # For now, returning a placeholder
             from sklearn.ensemble import RandomForestRegressor
+import os.path
             
             model = RandomForestRegressor(
                 n_estimators=params.get('n_estimators', 200),

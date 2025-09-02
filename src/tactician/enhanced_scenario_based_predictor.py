@@ -19,6 +19,7 @@ from sklearn.calibration import CalibratedClassifierCV
 from sklearn.metrics import log_loss, accuracy_score
 import logging
 import talib
+import asyncio
 
 # Simple logger setup
 logger = logging.getLogger(__name__)

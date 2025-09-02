@@ -1,8 +1,8 @@
 {
   "total_files": 481,
-  "files_analyzed": 50,
-  "total_functions": 825,
-  "functions_with_hints": 618,
+  "files_analyzed": 44,
+  "total_functions": 672,
+  "functions_with_hints": 505,
   "files_needing_hints": [
     {
       "file": "/workspace/src/tasks.py",
@@ -94,105 +94,105 @@
         },
         {
           "name": "initialize",
-          "line": 209,
+          "line": 210,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "run",
-          "line": 346,
+          "line": 347,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "stop",
-          "line": 451,
+          "line": 452,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_status",
-          "line": 461,
+          "line": 462,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_config_sections",
-          "line": 475,
+          "line": 476,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_config_service",
-          "line": 479,
+          "line": 480,
           "has_return_type": false,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_dual_model_config",
-          "line": 484,
+          "line": 485,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_ml_confidence_predictor_config",
-          "line": 488,
+          "line": 489,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_position_sizing_config",
-          "line": 492,
+          "line": 493,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_leverage_sizing_config",
-          "line": 496,
+          "line": 497,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_position_closing_config",
-          "line": 500,
+          "line": 501,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_position_division_config",
-          "line": 504,
+          "line": 505,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_position_monitoring_config",
-          "line": 508,
+          "line": 509,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_enhanced_training_config",
-          "line": 512,
+          "line": 513,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_complete_config",
-          "line": 516,
+          "line": 517,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
@@ -297,55 +297,6 @@
         }
       ],
       "coverage": 0.2777777777777778
-    },
-    {
-      "file": "/workspace/src/paper_trader.py",
-      "total_functions": 18,
-      "functions_without_hints": [
-        {
-          "name": "initialize",
-          "line": 89,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "get_all_positions",
-          "line": 546,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "get_balance",
-          "line": 564,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "calculate_performance",
-          "line": 608,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "get_trader_status",
-          "line": 689,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "stop",
-          "line": 711,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        }
-      ],
-      "coverage": 0.6666666666666667
     },
     {
       "file": "/workspace/src/monitoring/error_detection_system.py",
@@ -536,7 +487,7 @@
       "functions_without_hints": [
         {
           "name": "__init__",
-          "line": 61,
+          "line": 62,
           "has_return_type": false,
           "has_param_types": true,
           "params": [
@@ -545,21 +496,21 @@
         },
         {
           "name": "get_performance_summary",
-          "line": 222,
+          "line": 223,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "stop_monitoring",
-          "line": 494,
+          "line": 495,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "__del__",
-          "line": 501,
+          "line": 502,
           "has_return_type": false,
           "has_param_types": false,
           "params": []
@@ -587,7 +538,7 @@
       "functions_without_hints": [
         {
           "name": "__init__",
-          "line": 22,
+          "line": 23,
           "has_return_type": false,
           "has_param_types": true,
           "params": [
@@ -597,7 +548,7 @@
         },
         {
           "name": "set_baseline_metrics",
-          "line": 80,
+          "line": 81,
           "has_return_type": false,
           "has_param_types": true,
           "params": [
@@ -606,7 +557,7 @@
         },
         {
           "name": "update_current_metrics",
-          "line": 90,
+          "line": 91,
           "has_return_type": false,
           "has_param_types": true,
           "params": [
@@ -615,14 +566,14 @@
         },
         {
           "name": "get_performance_summary",
-          "line": 309,
+          "line": 310,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_alert_summary",
-          "line": 350,
+          "line": 351,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
@@ -722,68 +673,26 @@
       "coverage": 0.6
     },
     {
-      "file": "/workspace/src/launcher/enhanced_trading_launcher.py",
-      "total_functions": 16,
-      "functions_without_hints": [
-        {
-          "name": "initialize",
-          "line": 87,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "get_performance_metrics",
-          "line": 393,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "get_portfolio_summary",
-          "line": 423,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "get_launcher_status",
-          "line": 519,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "stop",
-          "line": 538,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        }
-      ],
-      "coverage": 0.6875
-    },
-    {
       "file": "/workspace/src/components/modular_analyst.py",
       "total_functions": 41,
       "functions_without_hints": [
         {
           "name": "initialize",
-          "line": 54,
+          "line": 55,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_analyst_status",
-          "line": 840,
+          "line": 841,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "stop",
-          "line": 869,
+          "line": 870,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
@@ -797,21 +706,21 @@
       "functions_without_hints": [
         {
           "name": "initialize",
-          "line": 57,
+          "line": 58,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_tactician_status",
-          "line": 979,
+          "line": 980,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "stop",
-          "line": 1008,
+          "line": 1009,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
@@ -825,21 +734,21 @@
       "functions_without_hints": [
         {
           "name": "initialize",
-          "line": 60,
+          "line": 61,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_supervisor_status",
-          "line": 1032,
+          "line": 1033,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "stop",
-          "line": 1061,
+          "line": 1062,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
@@ -853,21 +762,21 @@
       "functions_without_hints": [
         {
           "name": "initialize",
-          "line": 61,
+          "line": 62,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_strategist_status",
-          "line": 988,
+          "line": 989,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "stop",
-          "line": 1017,
+          "line": 1018,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
@@ -881,35 +790,35 @@
       "functions_without_hints": [
         {
           "name": "initialize",
-          "line": 78,
+          "line": 79,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "run",
-          "line": 149,
+          "line": 150,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "stop",
-          "line": 235,
+          "line": 236,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_status",
-          "line": 304,
+          "line": 305,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_subscribers",
-          "line": 319,
+          "line": 320,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
@@ -1056,80 +965,6 @@
         }
       ],
       "coverage": 0.5128205128205128
-    },
-    {
-      "file": "/workspace/src/interfaces/enhanced_event_bus.py",
-      "total_functions": 36,
-      "functions_without_hints": [
-        {
-          "name": "to_dict",
-          "line": 83,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "__init__",
-          "line": 179,
-          "has_return_type": false,
-          "has_param_types": true,
-          "params": [
-            "storage_path"
-          ]
-        },
-        {
-          "name": "__init__",
-          "line": 304,
-          "has_return_type": false,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "__init__",
-          "line": 420,
-          "has_return_type": false,
-          "has_param_types": true,
-          "params": [
-            "config"
-          ]
-        },
-        {
-          "name": "initialize",
-          "line": 467,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "run",
-          "line": 579,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "stop",
-          "line": 713,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "get_status",
-          "line": 886,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "get_metrics",
-          "line": 911,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        }
-      ],
-      "coverage": 0.75
     },
     {
       "file": "/workspace/src/trading/live_wavelet_analyzer.py",
@@ -1363,159 +1198,47 @@
       "coverage": 0.6875
     },
     {
-      "file": "/workspace/src/supervisor/performance_monitor.py",
-      "total_functions": 27,
-      "functions_without_hints": [
-        {
-          "name": "initialize",
-          "line": 70,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "run",
-          "line": 127,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "stop",
-          "line": 213,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "get_status",
-          "line": 222,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "get_performance_metrics",
-          "line": 231,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "get_alerts",
-          "line": 234,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "get_drift_alerts",
-          "line": 237,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "clear_drift_alerts",
-          "line": 368,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "get_performance_feedback",
-          "line": 618,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "get_retraining_triggers",
-          "line": 671,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "clear_retraining_triggers",
-          "line": 675,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        }
-      ],
-      "coverage": 0.5925925925925926
-    },
-    {
-      "file": "/workspace/src/supervisor/global_portfolio_manager.py",
-      "total_functions": 42,
-      "functions_without_hints": [
-        {
-          "name": "initialize",
-          "line": 70,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "get_management_status",
-          "line": 1089,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "stop",
-          "line": 1118,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        }
-      ],
-      "coverage": 0.9285714285714286
-    },
-    {
       "file": "/workspace/src/supervisor/performance_reporter.py",
       "total_functions": 51,
       "functions_without_hints": [
         {
           "name": "initialize",
-          "line": 428,
+          "line": 430,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "run",
-          "line": 595,
+          "line": 597,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "stop",
-          "line": 820,
+          "line": 822,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_status",
-          "line": 829,
+          "line": 831,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_latest_report",
-          "line": 855,
+          "line": 857,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_real_time_metrics",
-          "line": 859,
+          "line": 861,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
@@ -1529,21 +1252,21 @@
       "functions_without_hints": [
         {
           "name": "initialize",
-          "line": 80,
+          "line": 81,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_weighting_status",
-          "line": 1230,
+          "line": 1231,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "stop",
-          "line": 1506,
+          "line": 1507,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
@@ -1604,61 +1327,12 @@
       "coverage": 0.8125
     },
     {
-      "file": "/workspace/src/supervisor/monitoring.py",
-      "total_functions": 14,
-      "functions_without_hints": [
-        {
-          "name": "initialize",
-          "line": 40,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "run",
-          "line": 91,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "stop",
-          "line": 156,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "get_status",
-          "line": 165,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "get_metrics",
-          "line": 174,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        },
-        {
-          "name": "get_alerts",
-          "line": 177,
-          "has_return_type": true,
-          "has_param_types": false,
-          "params": []
-        }
-      ],
-      "coverage": 0.5714285714285714
-    },
-    {
       "file": "/workspace/src/supervisor/main.py",
       "total_functions": 13,
       "functions_without_hints": [
         {
           "name": "__init__",
-          "line": 26,
+          "line": 27,
           "has_return_type": false,
           "has_param_types": true,
           "params": [
@@ -1671,35 +1345,35 @@
         },
         {
           "name": "start",
-          "line": 149,
+          "line": 150,
           "has_return_type": false,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "initialize",
-          "line": 336,
+          "line": 337,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "run",
-          "line": 390,
+          "line": 391,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "stop",
-          "line": 424,
+          "line": 425,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_status",
-          "line": 433,
+          "line": 434,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
@@ -1713,35 +1387,35 @@
       "functions_without_hints": [
         {
           "name": "initialize",
-          "line": 54,
+          "line": 55,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "run",
-          "line": 108,
+          "line": 109,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "stop",
-          "line": 182,
+          "line": 183,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_status",
-          "line": 191,
+          "line": 192,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_risk_allocations",
-          "line": 200,
+          "line": 201,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
@@ -1755,7 +1429,7 @@
       "functions_without_hints": [
         {
           "name": "create_pnl_aware_loss",
-          "line": 7,
+          "line": 8,
           "has_return_type": false,
           "has_param_types": false,
           "params": [
@@ -1766,7 +1440,7 @@
         },
         {
           "name": "pnl_aware_loss",
-          "line": 19,
+          "line": 20,
           "has_return_type": false,
           "has_param_types": false,
           "params": [
@@ -1776,21 +1450,21 @@
         },
         {
           "name": "initialize",
-          "line": 133,
+          "line": 134,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "get_calculation_status",
-          "line": 1097,
+          "line": 1098,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
         },
         {
           "name": "stop",
-          "line": 1121,
+          "line": 1122,
           "has_return_type": true,
           "has_param_types": false,
           "params": []
@@ -1799,5 +1473,5 @@
       "coverage": 0.9122807017543859
     }
   ],
-  "overall_coverage": 0.7490909090909091
+  "overall_coverage": 0.7514880952380952
 }

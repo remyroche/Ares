@@ -13,6 +13,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
+import asyncio
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent

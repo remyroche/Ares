@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any
 from dataclasses import dataclass
 import pandas as pd
+import asyncio
 
 
 @dataclass

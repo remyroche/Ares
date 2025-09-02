@@ -16,6 +16,8 @@ from src.database.influxdb_manager import InfluxDBManager
 from exchange.factory import ExchangeFactory
 from src.utils.state_manager import StateManager
 from src.interfaces.base_interfaces import (
+import asyncio
+
     IAnalyst,
     IExchangeClient,
     IPerformanceReporter,

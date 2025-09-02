@@ -8,6 +8,8 @@ from typing import Any
 from dataclasses import dataclass
 import numpy as np
 import pandas as pd
+import copy
+import asyncio
 
 FEATURE_POOL_COLUMNS , [
     "log_returns",

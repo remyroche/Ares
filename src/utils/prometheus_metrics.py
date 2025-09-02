@@ -3,6 +3,7 @@ Prometheus metrics collection utility for training step validators.
 """
 
 import logging
+from collections import Counter
 
 try:
     from prometheus_client import (

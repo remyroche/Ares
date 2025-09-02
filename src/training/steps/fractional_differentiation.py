@@ -16,6 +16,7 @@ from src.utils.centralized_decorators import (
     with_tracing_span,
 )
 from src.utils.logger import get_logger
+import copy
 
 
 class FractionalDifferentiation:

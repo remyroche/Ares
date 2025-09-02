@@ -214,6 +214,8 @@ class DataQualityMonitor:
         """Check data quality for a specific symbol/exchange/timeframe combination."""
         try:
             from .enhanced_data_quality_manager import EnhancedDataQualityManager
+import copy
+import os.path
             
             manager = EnhancedDataQualityManager(str(self.data_cache_path))
             

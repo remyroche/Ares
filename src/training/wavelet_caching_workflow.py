@@ -241,6 +241,8 @@ async def step4_cache_management(config: dict) -> bool | None:
         logger = system_logger.getChild("WaveletWorkflow")
         # Initialize cache management
         from src.training.steps.vectorized_advanced_feature_engineering import (
+import copy
+
             WaveletFeatureCache,
         )
 

@@ -15,6 +15,7 @@ from src.supervisor.monitoring import Monitoring
 from src.supervisor.risk_allocator import RiskAllocator
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.state_manager import StateManager
+import copy
 
 class Supervisor:
     """

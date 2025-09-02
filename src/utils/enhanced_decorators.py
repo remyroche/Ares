@@ -434,6 +434,7 @@ def _get_cpu_usage() -> float:
     """Get current CPU usage percentage."""
     try:
         import psutil
+import os.path
 
         return psutil.cpu_percent(interval=0.1)
     except ImportError:

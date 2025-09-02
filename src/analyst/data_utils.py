@@ -8,11 +8,15 @@ import pandas as pd
 from scipy.signal import find_peaks  # For volume profile peaks
 
 from src.utils.error_handler import (
+import asyncio
+
     handle_errors,
     handle_specific_errors,
 )
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+import copy
+
     critical,
     error,
     failed,

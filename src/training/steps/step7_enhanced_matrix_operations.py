@@ -1677,6 +1677,10 @@ async def run_step(
         
         # Load configuration
         from src.config.training import get_training_config
+import numpy as np
+import os.path
+import pandas as pd
+
         config = get_training_config()
         
         # Create step instance

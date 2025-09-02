@@ -931,6 +931,8 @@ class ComprehensiveGapFiller:
     ) -> dict[str, Any] | None:
         """Process all gaps in all data types (aggtrades, futures, klines)."""
         from src.utils.logger import system_logger
+import copy
+
         logger = system_logger.getChild("ComprehensiveGapFiller")
         
         gap_filling_start = datetime.now()

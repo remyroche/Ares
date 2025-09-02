@@ -820,6 +820,9 @@ from src.utils.training_pipeline_decorators import (
     validate_step_prerequisites,
 )
 from src.utils.enhanced_mlflow_integration import (
+import copy
+import os.path
+
     with_enhanced_mlflow_logging,
     log_step_report,
     create_detailed_step_report,
@@ -1143,7 +1146,7 @@ async def run_step(
 
 if __name__ == "__main__":
     # Test the step
-    async def test() -> None:
+    async def await test() -> None:
         await run_step("ETHUSDT", "BINANCE", "data/training")
 
     asyncio.run(test())

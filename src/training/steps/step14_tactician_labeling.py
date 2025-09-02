@@ -942,6 +942,8 @@ from src.utils.centralized_decorators import (
 )
 
 from src.utils.enhanced_mlflow_integration import (
+import copy
+
     with_enhanced_mlflow_logging,
     log_step_report,
     create_detailed_step_report,

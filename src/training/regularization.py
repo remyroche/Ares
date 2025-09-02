@@ -11,6 +11,8 @@ from torch import nn
 # These imports are here to allow the apply_regularization_to_ensembles method
 # to correctly apply the config to the ensemble instances.
 from src.analyst.predictive_ensembles.ensemble_orchestrator import (
+import asyncio
+
     RegimePredictiveEnsembles,
 )
 from src.analyst.predictive_ensembles.regime_ensembles.base_ensemble import BaseEnsemble
@@ -324,6 +326,8 @@ class RegularizationManager:
 
                     # Convert to tensors for PyTorch model
                     import torch
+import numpy as np
+
                     X_tensor = torch.FloatTensor(X_scaled)
 
                     if model_type == "classification":

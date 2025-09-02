@@ -619,6 +619,8 @@ class UnifiedDataManager:
             raise FileNotFoundError(msg)
 
         import json
+import copy
+import os.path
 
         with open(self.metadata_file) as f:
             return json.load(f)

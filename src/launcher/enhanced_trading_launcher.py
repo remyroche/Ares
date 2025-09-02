@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Any, TYPE_CHECKING
 import json
 import os
+import asyncio
 
 try:
     import pandas as pd
@@ -158,6 +159,8 @@ class EnhancedTradingLauncher:
             if self.enable_backtesting:
                 try:
                     from src.backtesting.enhanced_backtester import (
+import os.path
+
                         setup_enhanced_backtester as _setup_backtester,
                     )
                     self.enhanced_backtester = await _setup_backtester(self.config)

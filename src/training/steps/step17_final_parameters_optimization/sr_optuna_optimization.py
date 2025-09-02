@@ -811,4 +811,4 @@ if __name__ == "__main__":
         else:
             print("❌ Optimization failed")
 
-    asyncio.run(main())
+    asyncio.run(await main())

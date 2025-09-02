@@ -524,6 +524,9 @@ class RayModelTrainer:
             import os
 
             import pandas as pd
+import copy
+import numpy as np
+import os.path
 
             if os.path.exists(labeled_path):
                 try:

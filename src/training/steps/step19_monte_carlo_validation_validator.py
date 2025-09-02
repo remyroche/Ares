@@ -511,4 +511,4 @@ if __name__ == "__main__":
 
         await run_validator(training_input, pipeline_state)
 
-    _asyncio.run(test_validator())
+    _asyncio.run(await test_validator())

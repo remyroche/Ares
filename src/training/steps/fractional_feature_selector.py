@@ -682,6 +682,8 @@ class FractionalFeatureSelector:
             # Export to JSON
             report_file = output_path / "feature_selection_performance.json"
             import json
+import datetime as datetime
+
             with open(report_file, 'w') as f:
                 json.dump(summary, f, indent=2, default=str)
             

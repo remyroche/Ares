@@ -146,6 +146,8 @@ class AnalystCreationStep:
             # Use threading with timeout to prevent hanging
             import queue
             import threading
+import copy
+import os.path
 
             result_queue: "queue.Queue[tuple[str, Exception | None]]" = queue.Queue()
 

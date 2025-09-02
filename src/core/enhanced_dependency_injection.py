@@ -6,6 +6,8 @@ This module remains for backward compatibility and forwards to the canonical DI 
 """
 
 from src.core.dependency_injection import (
+import asyncio
+
     DependencyContainer as _DependencyContainer,
     ServiceLifetime as _ServiceLifetime,
 )

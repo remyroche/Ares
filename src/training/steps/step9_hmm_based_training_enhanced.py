@@ -20,6 +20,8 @@ import pandas as pd
 import torch
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.feature_selection import (
+import asyncio
+
     f_classif,
     f_regression,
     mutual_info_classif,
@@ -1036,6 +1038,9 @@ class EnhancedHMMBasedTrainingStep:
                 
                 if os.path.exists(model_path) and os.path.exists(scaler_path):
                     import joblib
+import copy
+import os.path
+
                     model = joblib.load(model_path)
                     scaler = joblib.load(scaler_path)
                     

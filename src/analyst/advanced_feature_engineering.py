@@ -16,6 +16,8 @@ import pywt
 
 from src.config import CONFIG
 from src.utils.error_handler import (
+import asyncio
+
     handle_errors,
 )
 from src.utils.logger import system_logger
@@ -1279,6 +1281,7 @@ class AdvancedFeatureEngineering:
             # Initialize meta-labeling system
             if self.enable_meta_labeling:
                 from src.analyst.meta_labeling_system import MetaLabelingSystem
+import copy
 
                 self.meta_labeling_system = MetaLabelingSystem(self.config)
                 await self.meta_labeling_system.initialize()

@@ -52,6 +52,7 @@ except ImportError:
 # Utilities
 from src.utils.logger import system_logger
 from src.utils.decorators import handle_errors
+import copy
 
 
 class BaseSurrogateModel(ABC):

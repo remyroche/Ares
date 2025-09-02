@@ -43,10 +43,10 @@ class PlaceholderFinder:
         
         # Enhanced patterns for detection
         self.todo_patterns = [
-            r'#\s*(TODO|FIXME|HACK|XXX|BUG|NOTE|OPTIMIZE|REFACTOR|CLEANUP|REVIEW):?\s*(.+)',
-            r'"""\s*(TODO|FIXME|HACK|XXX|BUG|NOTE|OPTIMIZE|REFACTOR|CLEANUP|REVIEW):?\s*(.+)',
-            r"'''\s*(TODO|FIXME|HACK|XXX|BUG|NOTE|OPTIMIZE|REFACTOR|CLEANUP|REVIEW):?\s*(.+)",
-            r'#\s*(.+?)\s*#\s*(TODO|FIXME|HACK|XXX|BUG|NOTE|OPTIMIZE|REFACTOR|CLEANUP|REVIEW)',
+            r'#\s*(TODO|FIXME|HACK|XXX|BUG|NOTE|REFACTOR|CLEANUP|REVIEW):?\s*(.+)',
+            r'"""\s*(TODO|FIXME|HACK|XXX|BUG|NOTE|REFACTOR|CLEANUP|REVIEW):?\s*(.+)',
+            r"'''\s*(TODO|FIXME|HACK|XXX|BUG|NOTE|REFACTOR|CLEANUP|REVIEW):?\s*(.+)",
+            r'#\s*(.+?)\s*#\s*(TODO|FIXME|HACK|XXX|BUG|NOTE|REFACTOR|CLEANUP|REVIEW)',
         ]
         
         self.placeholder_patterns = [

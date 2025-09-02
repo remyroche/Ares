@@ -1,0 +1,28 @@
+2025-09-02 09:08:43,999 - INFO - Processing file: src/tactician/sr_backtesting_validator.py
+2025-09-02 09:08:43,999 - INFO - Performing semantic analysis...
+2025-09-02 09:08:44,000 - INFO - Code quality score: 0.00
+2025-09-02 09:08:44,000 - WARNING - Syntax errors found: 1
+2025-09-02 09:08:44,000 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 09:08:44,005 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:44,009 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:44,013 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:44,018 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:44,023 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:44,027 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:44,031 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:44,036 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:44,040 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:44,045 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:44,050 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:44,054 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:44,059 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:44,063 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:44,069 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:44,075 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:44,079 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:44,083 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:44,088 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:08:44,088 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:08:44,089 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:08:44,095 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:44,099 - INFO - No fixes needed for: src/tactician/sr_backtesting_validator.py

@@ -22,7 +22,7 @@ from src.tactician.sr_data_integration_simple import SRDataIntegrationSimple, cr
 
 @dataclass
 class SRLevelTest:
-    passpass"""Individual S/R level test result."""
+    """Individual S/R level test result."""
     level_price: float
     level_type: str  # "support" or "resistance"
     test_start_time: datetime
@@ -60,7 +60,7 @@ class SRLevelTest:
 
 @dataclass
 class BacktestResult:
-    passpass"""Result of S/R backtesting."""
+    """Result of S/R backtesting."""
 
     # Overall metrics
     total_levels_tested: int = 0
@@ -101,13 +101,13 @@ class BacktestResult:
     # Detailed results
     level_tests: List[SRLevelTest] = None
 
-    def __post_init__(...):
-    passif self.level_tests is None:
-    passself.level_tests = []
+    def __post_init__(self):
+        if self.level_tests is None:
+            self.level_tests = []
 
 
 class SRBacktestingValidator:
-    pass"""
+    """
     Comprehensive S/R backtesting validator.
 
     This class implements proper backtesting to validate S/R levels by:
@@ -117,9 +117,9 @@ class SRBacktestingValidator:
         4. Simulating trading strategies based on S/R levels
     """
 
-    def __init__(...) -> ...:
-    """..."""
-    passself.config = config
+    def __init__(self, config: Dict[str, Any]) -> None:
+        """Initialize the S/R backtesting validator with configuration."""
+        self.config = config
         self.logger = system_logger.getChild("SRBacktestingValidator")
 
         # Backtesting configuration
@@ -156,14 +156,11 @@ class SRBacktestingValidator:
         # Data integration
         self.data_integration: Optional[SRDataIntegrationSimple] = None
 
-    async def initialize_data_integration(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def initialize_data_integration(self, symbol: str, exchange: str, timeframes: List[str], lookback_days: int, training_mode: bool) -> bool:
+        """Initialize data integration for S/R backtesting."""
+        try:
             if self.logger:
-    passself.logger.info("🔧 Initializing data integration for S/R backtesting...")
+                self.logger.info("🔧 Initializing data integration for S/R backtesting...")
 
             # Create and initialize data integration
             self.data_integration = await create_sr_data_integration_simple(
@@ -175,33 +172,22 @@ except Exception as e:
             )
 
             if self.data_integration:
-    passpassif self.logger:
-    passself.logger.info("✅ Data integration initialized successfully")
+                if self.logger:
+                    self.logger.info("✅ Data integration initialized successfully")
                 return True
             else:
-    passif self.logger:
-    passself.logger.error("❌ Failed to initialize data integration")
+                if self.logger:
+                    self.logger.error("❌ Failed to initialize data integration")
                 return False
 
         except Exception as e:
-    passpasspasspasspasspasspassif self.logger:
-    passself.logger.error(f"❌ Data integration initialization failed: {e}")
+            if self.logger:
+                self.logger.error(f"❌ Data integration initialization failed: {e}")
             return False
 
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (None, "Invalid data for S/R backtesting"),
-            AttributeError: (None, "Backtesting validator not properly initialized"),
-        },
-        default_return=None,
-        context="S/R backtesting validation"
-    )
-    async def validate_sr_levels(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def validate_sr_levels(self, sr_levels: List[Dict[str, Any]], market_data: pd.DataFrame, current_price: float, multi_timeframe_data: Dict[str, pd.DataFrame]) -> Optional[BacktestResult]:
+        """Validate S/R levels through comprehensive backtesting."""
+        try:
             self.logger.info(f"🔍 Starting S/R level validation with {len(sr_levels)} levels")
 
             # Initialize results
@@ -210,34 +196,31 @@ except Exception as e:
 
             # Test each S/R level
             for level in sr_levels:
-    passpasslevel_test = await self._test_single_level(
+                level_test = await self._test_single_level(
                     market_data, level, current_price, multi_timeframe_data
                 )
                 if level_test:
-    passresult.level_tests.append(level_test)
+                    result.level_tests.append(level_test)
                     # Update overall metrics
                     if level_test.bounce_rate > self.min_bounce_rate:
-    passresult.successful_levels += 1
+                        result.successful_levels += 1
 
             # Calculate overall metrics
             await self._calculate_overall_metrics(result)
-
+            
             # Calculate S/R validation score
             await self._calculate_sr_validation_score(result)
 
-            self.logger.info(f"✅ S/R validation completed. Validation score: {result.sr_validation_score:.3f}")
+            self.logger.info(f"✅ S/R validation completed. Success rate: {result.level_detection_accuracy:.2%}")
             return result
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"S/R validation failed: {e}")
+            self.logger.error(f"S/R validation failed: {e}")
             return None
 
-    async def _test_single_level(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def _test_single_level(self, market_data: pd.DataFrame, level: Dict[str, Any], current_price: float, multi_timeframe_data: Dict[str, pd.DataFrame]) -> Optional[SRLevelTest]:
+        """Test a single S/R level for validation."""
+        try:
             level_price = level.get("price", 0.0)
             level_type = level.get("type", "support")
             level_strength = level.get("enhanced_strength", level.get("strength", 0.5))
@@ -246,18 +229,14 @@ except Exception as e:
             test = SRLevelTest(
                 level_price=level_price,
                 level_type=level_type,
-                test_start_time=market_data.index[0],
-                test_end_time=market_data.index[-1],
-                level_strength=level_strength
+                test_start_time=market_data.index[0] if len(market_data) > 0 else datetime.now(),
+                test_end_time=market_data.index[-1] if len(market_data) > 0 else datetime.now()
             )
 
-            # Analyze price interactions with this level
-            touch_data = await self._analyze_level_interactions(
+            # Analyze level interactions
+            touches, bounces, breakouts, false_breakouts, touch_volumes, touch_indices = await self._analyze_level_interactions(
                 market_data, level_price, level_type
             )
-
-            touches, bounces, breakouts, false_breakouts = touch_data[:4]
-            touch_volumes, touch_indices = touch_data[4:6]
 
             # Update test results
             test.touches = touches
@@ -267,7 +246,7 @@ except Exception as e:
 
             # Calculate rates
             if touches > 0:
-    passtest.bounce_rate = bounces / touches
+                test.bounce_rate = bounces / touches
                 test.breakout_rate = breakouts / touches
                 test.false_breakout_rate = false_breakouts / touches
 
@@ -277,21 +256,19 @@ except Exception as e:
             # Analyze time-based factors
             await self._analyze_time_based_factors(test, market_data, touch_indices)
 
-            # Calculate confidence score with comprehensive analysis
+            # Calculate level strength and confidence
+            test.level_strength = level_strength
             test.confidence_score = self._calculate_level_confidence(test)
 
             return test
 
         except Exception as e:
-    passpasspasspasspasspasspasspassself.logger.error(f"Failed to test level {level.get('price', 0)}: {e}")
+            self.logger.error(f"Failed to test level {level.get('price', 0)}: {e}")
             return None
 
-    async def _analyze_level_interactions(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def _analyze_level_interactions(self, market_data: pd.DataFrame, level_price: float, level_type: str) -> Tuple[int, int, int, int, List[float], List[int]]:
+        """Analyze how price interacts with a specific S/R level."""
+        try:
             touches = 0
             bounces = 0
             breakouts = 0
@@ -300,17 +277,18 @@ except Exception as e:
             touch_indices = []
 
             # Define touch zone around the level
-            touch_zone_upper = level_price * (1 + self.touch_threshold)
             touch_zone_lower = level_price * (1 - self.touch_threshold)
+            touch_zone_upper = level_price * (1 + self.touch_threshold)
 
+            # Analyze each price bar for touches
             i = 0
             while i < len(market_data) - self.confirmation_periods:
-    pass# Check if price touches the level
+                # Check if price touches the level
                 high = market_data['high'].iloc[i]
                 low = market_data['low'].iloc[i]
 
                 if low <= touch_zone_upper and high >= touch_zone_lower:
-    passtouches += 1
+                    touches += 1
                     touch_volumes.append(market_data['volume'].iloc[i])
                     touch_indices.append(i)
 
@@ -320,18 +298,18 @@ except Exception as e:
                     )
 
                     if touch_result == "bounce":
-    passbounces += 1
+                        bounces += 1
                     elif touch_result == "breakout":
-    passpassbreakouts += 1
+                        breakouts += 1
                     elif touch_result == "false_breakout":
-    passpassfalse_breakouts += 1
+                        false_breakouts += 1
 
                 i += 1
 
             return touches, bounces, breakouts, false_breakouts, touch_volumes, touch_indices
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Failed to analyze level interactions: {e}")
+            self.logger.error(f"Failed to analyze level interactions: {e}")
             return 0, 0, 0, 0, [], []
 
     async def _analyze_touch_outcome(
@@ -342,151 +320,139 @@ except Exception as e:
         level_type: str
     ) -> str:
         """
-        Analyze what happens after price touches an S/R level.
-
+        Analyze what happens after a price touches an S/R level.
+        
         Returns:
             "bounce", "breakout", "false_breakout", or "inconclusive"
         """
         try:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Look ahead for confirmation
             end_index = min(touch_index + self.confirmation_periods, len(market_data))
             future_data = market_data.iloc[touch_index:end_index]
 
             if level_type == "support":
-    pass# For support levels, check if price bounces up or breaks down
+                # For support levels, check if price bounces up or breaks down
                 min_price = future_data['low'].min()
                 max_price = future_data['high'].max()
 
                 # Check for bounce (price moves up significantly)
                 if max_price > level_price * (1 + self.bounce_threshold):
-    passpassreturn "bounce"
+                    return "bounce"
 
                 # Check for breakout (price moves down significantly)
                 elif min_price < level_price * (1 - self.breakout_threshold):
-    passpasspass# Check if it's a false breakout (price comes back)
+                    # Check if it's a false breakout (price comes back)
                     if max_price > level_price * (1 + self.false_breakout_threshold):
-    passreturn "false_breakout"
+                        return "false_breakout"
                     else:
-    passreturn "breakout"
+                        return "breakout"
 
             elif level_type == "resistance":
-    passpass# For resistance levels, check if price bounces down or breaks up
+                # For resistance levels, check if price bounces down or breaks up
                 min_price = future_data['low'].min()
                 max_price = future_data['high'].max()
 
                 # Check for bounce (price moves down significantly)
                 if min_price < level_price * (1 - self.bounce_threshold):
-    passpassreturn "bounce"
+                    return "bounce"
 
                 # Check for breakout (price moves up significantly)
                 elif max_price > level_price * (1 + self.breakout_threshold):
-    passpasspass# Check if it's a false breakout (price comes back)
+                    # Check if it's a false breakout (price comes back)
                     if min_price < level_price * (1 - self.false_breakout_threshold):
-    passreturn "false_breakout"
+                        return "false_breakout"
                     else:
-    passreturn "breakout"
+                        return "breakout"
 
             return "inconclusive"
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Failed to analyze touch outcome: {e}")
+            self.logger.error(f"Failed to analyze touch outcome: {e}")
             return "inconclusive"
 
-    async def _analyze_volume_patterns(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def _analyze_volume_patterns(self, test: SRLevelTest, market_data: pd.DataFrame, touch_volumes: List[float], touch_indices: List[int], level_price: float) -> None:
+        """Analyze volume patterns around S/R level touches."""
+        try:
             if not touch_volumes or len(touch_volumes) == 0:
-    passreturn
+                return
 
             # Calculate volume baseline
             avg_volume = market_data['volume'].rolling(window=self.volume_lookback_periods).mean()
-
-            # 1. Average volume at touches
-            test.avg_volume_at_touches = np.mean(touch_volumes)
-
-            # 2. Volume spike ratio (volume at touches vs average volume)
+            
+            # 1. Volume spike analysis
             volume_spikes = []
             volume_confirmations = 0
             institutional_volumes = 0
 
             for i, touch_idx in enumerate(touch_indices):
-    passif touch_idx < len(avg_volume):
-    passbaseline_volume = avg_volume.iloc[touch_idx]
+                if touch_idx < len(avg_volume):
+                    baseline_volume = avg_volume.iloc[touch_idx]
                     if baseline_volume > 0:
-    passvolume_ratio = touch_volumes[i] / baseline_volume
+                        volume_ratio = touch_volumes[i] / baseline_volume
                         volume_spikes.append(volume_ratio)
 
                         # Check for volume confirmation
                         if volume_ratio >= self.volume_confirmation_threshold:
-    passpassvolume_confirmations += 1
+                            volume_confirmations += 1
 
                         # Check for institutional volume
                         if volume_ratio >= self.institutional_volume_threshold:
-    passpassinstitutional_volumes += 1
+                            institutional_volumes += 1
 
             if volume_spikes:
-    passtest.volume_spike_ratio = np.mean(volume_spikes)
+                test.volume_spike_ratio = np.mean(volume_spikes)
                 test.volume_confirmation_rate = volume_confirmations / len(touch_indices)
                 test.institutional_volume_ratio = institutional_volumes / len(touch_indices)
 
-            # 3. Volume-weighted bounce rate
+            # 2. Volume-weighted bounce rate
             bounce_volumes = []
             total_volume = 0
 
             for i, touch_idx in enumerate(touch_indices):
-    passif touch_idx < len(market_data) - self.confirmation_periods:
-    pass# Check if this touch resulted in a bounce
+                if touch_idx < len(market_data) - self.confirmation_periods:
+                    # Check if this touch resulted in a bounce
                     touch_result = await self._analyze_touch_outcome(
                         market_data, touch_idx, level_price, test.level_type
                     )
 
                     if touch_result == "bounce":
-    passbounce_volumes.append(touch_volumes[i])
+                        bounce_volumes.append(touch_volumes[i])
 
                     total_volume += touch_volumes[i]
 
             if total_volume > 0 and bounce_volumes:
-    passtest.volume_weighted_bounce_rate = sum(bounce_volumes) / total_volume
+                test.volume_weighted_bounce_rate = sum(bounce_volumes) / total_volume
 
-            # 4. Volume clustering analysis
+            # 3. Volume clustering analysis
             test.volume_cluster_score = await self._calculate_volume_cluster_score(
                 market_data, level_price, touch_indices
             )
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Failed to analyze volume patterns: {e}")
+            self.logger.error(f"Failed to analyze volume patterns: {e}")
 
-    async def _calculate_volume_cluster_score(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def _calculate_volume_cluster_score(self, market_data: pd.DataFrame, level_price: float, touch_indices: List[int]) -> float:
+        """Calculate volume clustering score around the S/R level."""
+        try:
             if not touch_indices:
-    passreturn 0.0
+                return 0.0
 
             # Define the level zone
             level_zone_upper = level_price * (1 + self.volume_cluster_radius)
             level_zone_lower = level_price * (1 - self.volume_cluster_radius)
 
-            # Calculate total volume in the level zone
+            # Calculate volume in the level zone vs total volume
             level_zone_volume = 0
             total_volume = market_data['volume'].sum()
 
             for i in range(len(market_data)):
-    passprice = market_data['close'].iloc[i]
+                price = market_data['close'].iloc[i]
                 if level_zone_lower <= price <= level_zone_upper:
-    passlevel_zone_volume += market_data['volume'].iloc[i]
+                    level_zone_volume += market_data['volume'].iloc[i]
 
             # Calculate volume concentration ratio
             if total_volume > 0:
-    passvolume_concentration = level_zone_volume / total_volume
+                volume_concentration = level_zone_volume / total_volume
 
                 # Normalize by the size of the zone relative to the price range
                 price_range = market_data['high'].max() - market_data['low'].min()
@@ -494,69 +460,66 @@ except Exception as e:
                 expected_concentration = zone_size / price_range if price_range > 0 else 0
 
                 if expected_concentration > 0:
-    passcluster_score = volume_concentration / expected_concentration
+                    cluster_score = volume_concentration / expected_concentration
                     return min(cluster_score, 5.0)  # Cap at 5x concentration
 
             return 0.0
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Failed to calculate volume cluster score: {e}")
+            self.logger.error(f"Failed to calculate volume cluster score: {e}")
             return 0.0
 
-    def _calculate_level_confidence(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    def _calculate_level_confidence(self, test: SRLevelTest) -> float:
+        """Calculate confidence score for an S/R level based on multiple factors."""
+        try:
             confidence = 0.0
 
             # Base confidence from bounce rate (40% weight)
             if test.bounce_rate > 0.8:
-    passconfidence += 0.4
+                confidence += 0.4
             elif test.bounce_rate > 0.6:
-    passpassconfidence += 0.3
+                confidence += 0.3
             elif test.bounce_rate > 0.4:
-    passpassconfidence += 0.2
+                confidence += 0.2
             elif test.bounce_rate > 0.2:
-    passpassconfidence += 0.1
+                confidence += 0.1
 
             # Volume analysis (30% weight)
             volume_confidence = 0.0
 
             # Volume spike ratio
             if test.volume_spike_ratio > 2.0:
-    passvolume_confidence += 0.15
+                volume_confidence += 0.15
             elif test.volume_spike_ratio > 1.5:
-    passpassvolume_confidence += 0.1
+                volume_confidence += 0.1
             elif test.volume_spike_ratio > 1.2:
-    passpassvolume_confidence += 0.05
+                volume_confidence += 0.05
 
             # Volume confirmation rate
             if test.volume_confirmation_rate > 0.8:
-    passvolume_confidence += 0.1
+                volume_confidence += 0.1
             elif test.volume_confirmation_rate > 0.6:
-    passpassvolume_confidence += 0.05
+                volume_confidence += 0.05
 
             # Institutional volume presence
             if test.institutional_volume_ratio > 0.3:
-    passvolume_confidence += 0.05
+                volume_confidence += 0.05
 
             confidence += volume_confidence
 
             # Penalty for false breakouts (15% weight)
             if test.false_breakout_rate > 0.3:
-    passpassconfidence -= 0.15
+                confidence -= 0.15
             elif test.false_breakout_rate > 0.2:
-    passpassconfidence -= 0.1
+                confidence -= 0.1
             elif test.false_breakout_rate > 0.1:
-    passpassconfidence -= 0.05
+                confidence -= 0.05
 
             # Bonus for number of touches (10% weight)
             if test.touches >= 5:
-    passpassconfidence += 0.1
+                confidence += 0.1
             elif test.touches >= 3:
-    passpassconfidence += 0.05
+                confidence += 0.05
 
             # Bonus for level strength (5% weight)
             confidence += test.level_strength * 0.05
@@ -564,17 +527,14 @@ except Exception as e:
             return max(0.0, min(1.0, confidence))
 
         except Exception as e:
-    passpasspasspasspasspasspasspassself.logger.error(f"Failed to calculate level confidence: {e}")
+            self.logger.error(f"Failed to calculate level confidence: {e}")
             return 0.5
 
-    async def _calculate_overall_metrics(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def _calculate_overall_metrics(self, result: BacktestResult) -> None:
+        """Calculate overall metrics for the backtesting results."""
+        try:
             if not result.level_tests:
-    passreturn
+                return
 
             # Calculate overall rates
             total_touches = sum(test.touches for test in result.level_tests)
@@ -583,134 +543,139 @@ except Exception as e:
             total_false_breakouts = sum(test.false_breakouts for test in result.level_tests)
 
             if total_touches > 0:
-    passpassresult.overall_bounce_rate = total_bounces / total_touches
+                result.overall_bounce_rate = total_bounces / total_touches
                 result.overall_breakout_rate = total_breakouts / total_touches
                 result.overall_false_breakout_rate = total_false_breakouts / total_touches
 
-            # Calculate support vs resistance rates
+            # Calculate support vs resistance metrics
             support_tests = [test for test in result.level_tests if test.level_type == "support"]
             resistance_tests = [test for test in result.level_tests if test.level_type == "resistance"]
 
             if support_tests:
-    passpasssupport_touches = sum(test.touches for test in support_tests)
+                support_touches = sum(test.touches for test in support_tests)
                 support_bounces = sum(test.bounces for test in support_tests)
                 support_breakouts = sum(test.breakouts for test in support_tests)
 
                 if support_touches > 0:
-    passpassresult.support_bounce_rate = support_bounces / support_touches
+                    result.support_bounce_rate = support_bounces / support_touches
                     result.support_breakout_rate = support_breakouts / support_touches
 
             if resistance_tests:
-    passresistance_touches = sum(test.touches for test in resistance_tests)
+                resistance_touches = sum(test.touches for test in resistance_tests)
                 resistance_bounces = sum(test.bounces for test in resistance_tests)
                 resistance_breakouts = sum(test.breakouts for test in resistance_tests)
 
                 if resistance_touches > 0:
-    passpassresult.resistance_bounce_rate = resistance_bounces / resistance_touches
+                    result.resistance_bounce_rate = resistance_bounces / resistance_touches
                     result.resistance_breakout_rate = resistance_breakouts / resistance_touches
 
             # Calculate average metrics
-            result.avg_level_strength = np.mean([test.level_strength for test in result.level_tests])
-            result.avg_confidence_score = np.mean([test.confidence_score for test in result.level_tests])
+            if result.level_tests:
+                result.avg_level_strength = np.mean([test.level_strength for test in result.level_tests])
+                result.avg_confidence_score = np.mean([test.confidence_score for test in result.level_tests])
 
             # Calculate volume-related metrics
             if result.level_tests:
-    passpassresult.avg_volume_spike_ratio = np.mean([test.volume_spike_ratio for test in result.level_tests])
+                result.avg_volume_spike_ratio = np.mean([test.volume_spike_ratio for test in result.level_tests])
                 result.avg_volume_confirmation_rate = np.mean([test.volume_confirmation_rate for test in result.level_tests])
                 result.avg_institutional_volume_ratio = np.mean([test.institutional_volume_ratio for test in result.level_tests])
                 result.avg_volume_cluster_score = np.mean([test.volume_cluster_score for test in result.level_tests])
 
             # Calculate time-based metrics
             if result.level_tests:
-    passpassresult.avg_level_age_days = np.mean([test.level_age_days for test in result.level_tests])
+                result.avg_level_age_days = np.mean([test.level_age_days for test in result.level_tests])
                 result.avg_age_decay_factor = np.mean([test.age_decay_factor for test in result.level_tests])
                 result.level_persistence_score = np.mean([1 - test.age_decay_factor for test in result.level_tests])
 
             # Calculate multi-timeframe metrics
             if result.level_tests:
-    passpassresult.avg_multi_timeframe_score = np.mean([test.multi_timeframe_score for test in result.level_tests])
+                result.avg_multi_timeframe_score = np.mean([test.multi_timeframe_score for test in result.level_tests])
                 result.avg_higher_timeframe_alignment = np.mean([test.higher_timeframe_alignment for test in result.level_tests])
 
             # Calculate level detection accuracy
             if result.total_levels_tested > 0:
-    passpassresult.level_detection_accuracy = result.successful_levels / result.total_levels_tested
+                result.level_detection_accuracy = result.successful_levels / result.total_levels_tested
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Failed to calculate overall metrics: {e}")
+            self.logger.error(f"Failed to calculate overall metrics: {e}")
 
-    async def _calculate_sr_validation_score(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def _calculate_sr_validation_score(self, result: BacktestResult) -> None:
+        """Calculate the overall S/R validation score."""
+        try:
             # S/R validation score components (0-1)
             bounce_score = min(result.overall_bounce_rate / self.min_bounce_rate, 1.0)
-
-            false_breakout_score = max(0, 1 - (result.overall_false_breakout_rate / self.max_false_breakout_rate))
-
+            
+            # Volume score based on confirmation rate
             volume_score = min(result.avg_volume_confirmation_rate / self.min_volume_confirmation, 1.0)
-
-            confidence_score = result.avg_confidence_score
-
-            level_accuracy_score = result.level_detection_accuracy
-
-            # S/R validation score with core factors
+            
+            # False breakout penalty
+            false_breakout_penalty = max(0, (result.overall_false_breakout_rate - self.max_false_breakout_rate) / (1 - self.max_false_breakout_rate))
+            
+            # Level strength score
+            strength_score = result.avg_level_strength
+            
+            # Multi-timeframe score
+            multi_timeframe_score = result.avg_multi_timeframe_score
+            
+            # Calculate weighted validation score
+            weights = {
+                'bounce': 0.35,
+                'volume': 0.25,
+                'false_breakout': 0.20,
+                'strength': 0.15,
+                'multi_timeframe': 0.05
+            }
+            
             result.sr_validation_score = (
-                bounce_score * 0.35 +                    # 35% - Bounce rate
-                false_breakout_score * 0.25 +            # 25% - Low false breakouts
-                volume_score * 0.20 +                    # 20% - Volume confirmation
-                confidence_score * 0.15 +                # 15% - Overall confidence
-                level_accuracy_score * 0.05              # 5% - Level detection accuracy
+                bounce_score * weights['bounce'] +
+                volume_score * weights['volume'] +
+                (1 - false_breakout_penalty) * weights['false_breakout'] +
+                strength_score * weights['strength'] +
+                multi_timeframe_score * weights['multi_timeframe']
             )
-
-            self.logger.info(f"📊 S/R Validation Score Components:")
-            self.logger.info(f"  Bounce Score: {bounce_score:.3f}")
-            self.logger.info(f"  False Breakout Score: {false_breakout_score:.3f}")
-            self.logger.info(f"  Volume Score: {volume_score:.3f}")
-            self.logger.info(f"  Confidence Score: {confidence_score:.3f}")
-            self.logger.info(f"  Level Accuracy Score: {level_accuracy_score:.3f}")
+            
+            # Ensure score is between 0 and 1
+            result.sr_validation_score = max(0.0, min(1.0, result.sr_validation_score))
+            
             self.logger.info(f"  Overall S/R Validation Score: {result.sr_validation_score:.3f}")
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Failed to calculate S/R validation score: {e}")
+            self.logger.error(f"Failed to calculate S/R validation score: {e}")
 
-    async def _analyze_time_based_factors(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def _analyze_time_based_factors(self, test: SRLevelTest, market_data: pd.DataFrame, touch_indices: List[int]) -> None:
+        """Analyze time-based factors affecting S/R level validity."""
+        try:
             if not touch_indices:
-    passreturn
+                return
 
             # Calculate level age
             first_touch_idx = min(touch_indices)
             last_touch_idx = max(touch_indices)
 
-            test.first_touch_date = market_data.index[first_touch_idx]
-            test.last_touch_date = market_data.index[last_touch_idx]
+            if first_touch_idx < len(market_data) and last_touch_idx < len(market_data):
+                test.first_touch_date = market_data.index[first_touch_idx]
+                test.last_touch_date = market_data.index[last_touch_idx]
 
             # Calculate age in days
             if test.first_touch_date and test.last_touch_date:
-    passage_delta = test.last_touch_date - test.first_touch_date
+                age_delta = test.last_touch_date - test.first_touch_date
                 test.level_age_days = age_delta.days
 
             # Calculate age decay factor
             if test.level_age_days > 0:
-    pass# Exponential decay based on age
+                # Exponential decay based on age
                 test.age_decay_factor = self.age_decay_factor ** (test.level_age_days / 30)  # Decay per month
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Failed to analyze time-based factors: {e}")
+            self.logger.error(f"Failed to analyze time-based factors: {e}")
 
 
 # Setup function for easy integration
-async def setup_sr_backtesting_validator(...) -> ...:
-    pass"""..."""
-    passtry:
-    passvalidator = SRBacktestingValidator(config)
+async def setup_sr_backtesting_validator(config: Dict[str, Any]) -> Optional[SRBacktestingValidator]:
+    """Setup and return a configured S/R backtesting validator."""
+    try:
+        validator = SRBacktestingValidator(config)
         return validator
     except Exception as e:
-    passpasspasspasspasspasspasssystem_logger.error(f"Failed to setup S/R backtesting validator: {e}")
+        system_logger.error(f"Failed to setup S/R backtesting validator: {e}")
         return None

@@ -8,411 +8,452 @@ that optimizes memory usage and computational efficiency.
 import asyncio
 from functools import wraps
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, Optional, Union, Callable
 import hashlib
 import logging
 import time
 import gzip
-
 import gc
 import numpy as np
 import pandas as pd
 import pickle
 
-logger, logging.getLogger(__name__)
+logger = logging.getLogger(__name__)
 
 class IntelligentFeatureCache:
+    """
+    Intelligent caching system for feature engineering with memory optimization.
+    """
+    
+    def __init__(
+        self, 
+        cache_dir: Union[str, Path] = "./cache", 
+        max_memory_mb: int = 1024, 
+        max_cache_size_mb: int = 2048, 
+        enable_compression: bool = True
+    ) -> None:
+        """Initialize the IntelligentFeatureCache.
+        
+        Args:
+            cache_dir: Directory to store cache files
+            max_memory_mb: Maximum memory usage in MB
+            max_cache_size_mb: Maximum disk cache size in MB
+            enable_compression: Whether to enable gzip compression
+        """
+        self.cache_dir = Path(cache_dir)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        
+        self.max_memory_mb = max_memory_mb
+        self.max_cache_size_mb = max_cache_size_mb
+        self.enable_compression = enable_compression
+        
+        # In-memory cache
+        self.memory_cache: Dict[str, Any] = {}
+        self.cache_metadata: Dict[str, Dict[str, Any]] = {}
+        
+        # Performance tracking
+        self.hit_count = 0
+        self.miss_count = 0
+        self.eviction_count = 0
+        
+        logger.info("🔧 Initialized IntelligentFeatureCache:")
+        logger.info(f"   Cache directory: {self.cache_dir}")
+        logger.info(f"   Max memory: {max_memory_mb} MB")
+        logger.info(f"   Max cache size: {max_cache_size_mb} MB")
+        logger.info(f"   Compression: {enable_compression}")
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="intelligentfeaturecache initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize IntelligentFeatureCache."""
+    def _generate_cache_key(self, function_name: str, args: tuple, kwargs: dict) -> str:
+        """Generate a unique cache key for function call.
+        
+        Args:
+            function_name: Name of the function
+            args: Function arguments
+            kwargs: Function keyword arguments
+            
+        Returns:
+            MD5 hash string as cache key
+        """
         try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
+            key_data = {
+                "function": function_name,
+                "args": self._make_pickle_safe(args),
+                "kwargs": self._make_pickle_safe(kwargs),
+            }
+            key_bytes = pickle.dumps(key_data)
+            return hashlib.md5(key_bytes).hexdigest()
+        except (pickle.PicklingError, TypeError) as e:
+            # Fallback to simple hash if pickling fails
+            logger.warning(f"⚠️ Pickling failed for cache key generation: {e}")
+            key_str = f"{function_name}_{hash(str(args))}_{hash(str(kwargs))}"
+            return hashlib.md5(key_str.encode()).hexdigest()
+
+    def _make_pickle_safe(self, obj: Any) -> Any:
+        """Make an object pickle-safe by replacing problematic types.
+        
+        Args:
+            obj: Object to make pickle-safe
+            
+        Returns:
+            Pickle-safe version of the object
+        """
+        if isinstance(obj, dict):
+            return {k: self._make_pickle_safe(v) for k, v in obj.items()}
+        elif isinstance(obj, (list, tuple)):
+            return type(obj)(self._make_pickle_safe(item) for item in obj)
+        elif hasattr(obj, "__await__") or asyncio.iscoroutine(obj):
+            # Replace coroutines with a placeholder
+            return f"<coroutine_{type(obj).__name__}>"
+        elif hasattr(obj, "__aiter__") or hasattr(obj, "__anext__"):
+            # Replace async iterators with a placeholder
+            return f"<async_iterator_{type(obj).__name__}>"
+        elif callable(obj) and asyncio.iscoroutinefunction(obj):
+            # Replace async functions with a placeholder
+            return f"<async_function_{getattr(obj, '__name__', 'unknown')}>"
+        return obj
+
+    def _get_cache_file_path(self, cache_key: str) -> Path:
+        """Get the file path for a cache key.
+        
+        Args:
+            cache_key: Cache key string
+            
+        Returns:
+            Path to cache file
+        """
+        suffix = ".pkl.gz" if self.enable_compression else ".pkl"
+        return self.cache_dir / f"{cache_key}{suffix}"
+
+    def _get_memory_usage_mb(self) -> float:
+        """Get current memory usage in MB.
+        
+        Returns:
+            Memory usage in MB
+        """
+        total_memory = 0
+        for value in self.memory_cache.values():
+            if isinstance(value, pd.DataFrame):
+                total_memory += int(value.memory_usage(deep=True).sum())
+            elif isinstance(value, np.ndarray):
+                total_memory += int(value.nbytes)
+            else:
+                total_memory += len(pickle.dumps(value))
+        return total_memory / (1024 * 1024)
+
+    def _evict_least_used(self, target_memory_mb: float) -> None:
+        """Evict least recently used items from memory cache.
+        
+        Args:
+            target_memory_mb: Target memory usage in MB
+        """
+        current_memory = self._get_memory_usage_mb()
+        if current_memory <= target_memory_mb:
+            return
+
+        # Sort by last access time (oldest first)
+        sorted_items = sorted(
+            self.cache_metadata.items(),
+            key=lambda x: x[1].get("last_access", 0),
+        )
+
+        for key, _metadata in sorted_items:
+            if key in self.memory_cache:
+                del self.memory_cache[key]
+                self.eviction_count += 1
+                current_memory = self._get_memory_usage_mb()
+                if current_memory <= target_memory_mb:
+                    break
+
+        # Force garbage collection
+        gc.collect()
+
+    def _save_to_disk(self, cache_key: str, data: Any, metadata: Dict[str, Any]) -> None:
+        """Save data to disk cache.
+        
+        Args:
+            cache_key: Cache key string
+            data: Data to cache
+            metadata: Metadata about the cached data
+        """
+        cache_file = self._get_cache_file_path(cache_key)
+        cache_data = {"data": data, "metadata": metadata, "timestamp": time.time()}
+        
+        try:
+            if self.enable_compression:
+                with gzip.open(cache_file, "wb") as f:
+                    pickle.dump(cache_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+            else:
+                with open(cache_file, "wb") as f:
+                    pickle.dump(cache_data, f, protocol=pickle.HIGHEST_PROTOCOL)
+            logger.debug(f"💾 Saved to disk cache: {cache_key}")
         except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-    passpassself.logger.info("Implementation placeholder - needs specific logic")
-class IntelligentFeatureCache:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class IntelligentFeatureCache:
-    pass"""
-Intelligent caching system for feature engineering with memory optimization.
-"""
+            logger.warning(f"Failed to save to disk cache {cache_key}: {e}")
 
-def __init__(...) -> ...:
-    passpass"""..."""
-    passself.cache_dir, Path(cache_dir)
-self.cache_dir.mkdir(parents = True, exist_ok = True)
+    def _load_from_disk(self, cache_key: str) -> Optional[tuple]:
+        """Load data from disk cache.
+        
+        Args:
+            cache_key: Cache key string
+            
+        Returns:
+            Tuple of (data, metadata) or None if not found
+        """
+        cache_file = self._get_cache_file_path(cache_key)
+        if not cache_file.exists():
+            return None
 
-self.max_memory_mb, max_memory_mb
-self.max_cache_size_mb, max_cache_size_mb
-self.enable_compression, enable_compression
+        try:
+            if self.enable_compression:
+                with gzip.open(cache_file, "rb") as f:
+                    cache_data = pickle.load(f)
+            else:
+                with open(cache_file, "rb") as f:
+                    cache_data = pickle.load(f)
+            
+            data = cache_data["data"]
+            metadata = cache_data["metadata"]
+            logger.debug(f"📂 Loaded from disk cache: {cache_key}")
+            return data, metadata
+        except Exception as e:
+            logger.warning(f"Failed to load from disk cache {cache_key}: {e}")
+            return None
 
-# In - memory cache
-self.memory_cache: dict[str, Any] = {}
-self.cache_metadata: dict[str, dict[str, Any]] = {}
+    def get(self, cache_key: str) -> Optional[Any]:
+        """Get data from cache.
+        
+        Args:
+            cache_key: Cache key string
+            
+        Returns:
+            Cached data or None if not found
+        """
+        # Check memory cache first
+        if cache_key in self.memory_cache:
+            self.hit_count += 1
+            self.cache_metadata[cache_key]["last_access"] = time.time()
+            self.cache_metadata[cache_key]["access_count"] += 1
+            return self.memory_cache[cache_key]
 
-# Performance tracking
-self.hit_count, 0
-self.miss_count, 0
-self.eviction_count, 0
+        # Check disk cache
+        disk_result = self._load_from_disk(cache_key)
+        if disk_result is not None:
+            data, metadata = disk_result
+            self.hit_count += 1
 
-logger.info("🔧 Initialized IntelligentFeatureCache:")
-logger.info(f"   Cache directory: {self.cache_dir}")
-logger.info(f"   Max memory: {max_memory_mb} MB")
-logger.info(f"   Max cache size: {max_cache_size_mb} MB")
-logger.info(f"   Compression: {enable_compression}")
+            # Load into memory cache if there's space
+            data_size_mb = self._estimate_data_size_mb(data)
+            if data_size_mb < self.max_memory_mb * 0.1:  # Only load if < 10% of max memory
+                self.memory_cache[cache_key] = data
+                self.cache_metadata[cache_key] = metadata
+                self.cache_metadata[cache_key]["last_access"] = time.time()
+                self.cache_metadata[cache_key]["access_count"] += 1
 
-def _generate_cache_key(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-key_data = {
-"function": function_name,
-"args": self._make_pickle_safe(args),
-"kwargs": self._make_pickle_safe(kwargs),
-}
-key_bytes, pickle.dumps(key_data)
-return hashlib.md5(key_bytes).hexdigest()
-except (pickle.PicklingError, TypeError) as e:
-    passpasspasspasspasspasspass# Fallback to simple hash if pickling fails
-logger.warning(f"⚠️ Pickling failed for cache key generation: {e}")
-key_str, f"{function_name}_{hash(str(args))}_{hash(str(kwargs))}"
-return hashlib.md5(key_str.encode()).hexdigest()
+            return data
 
-def _make_pickle_safe(...) -> ...:
-    """..."""
-    passif isinstance(obj, dict):
-    passreturn {k: self._make_pickle_safe(v) for k, v in obj.items()}
-if isinstance(obj, (list, tuple)):
-    passpassreturn type(obj)(self._make_pickle_safe(item) for item in obj)
-if hasattr(obj, "__await__") or asyncio.iscoroutine(obj):
-    passpass# Replace coroutines with a placeholder
-return f"<coroutine_{type(obj).__name__}>"
-if hasattr(obj, "__aiter__") or hasattr(obj, "__anext__"):
-    passpass# Replace async iterators with a placeholder
-return f"<async_iterator_{type(obj).__name__}>"
-if callable(obj) and asyncio.iscoroutinefunction(obj):
-    passpass# Replace async functions with a placeholder
-return f"<async_function_{getattr(obj, '__name__', 'unknown')}>"
-return obj
+        self.miss_count += 1
+        return None
 
-def _get_cache_file_path(...) -> ...:
-    pass"""..."""
-    passsuffix = ".pkl.gz" if self.enable_compression else ".pkl"
-return self.cache_dir / f"{cache_key}{suffix}"
+    def set(self, cache_key: str, data: Any, metadata: Optional[Dict[str, Any]] = None) -> None:
+        """Set data in cache.
+        
+        Args:
+            cache_key: Cache key string
+            data: Data to cache
+            metadata: Optional metadata about the data
+        """
+        if metadata is None:
+            metadata = {}
 
-def _get_memory_usage_mb(...) -> ...:
-    pass"""..."""
-    passtotal_memory, 0
-for value in self.memory_cache.values():
-    passif isinstance(value, pd.DataFrame):
-    passtotal_memory += int(value.memory_usage(deep = True).sum())
-elif isinstance(value, np.ndarray):
-    passpasstotal_memory += int(value.nbytes)
-else:
-    passtotal_memory += len(pickle.dumps(value))
-return total_memory / (1024 * 1024)
+        # Add metadata
+        metadata.update({
+            "created": time.time(),
+            "last_access": time.time(),
+            "access_count": 1,
+            "size_mb": self._estimate_data_size_mb(data),
+        })
 
-def _evict_least_used(...) -> ...:
-    """..."""
-    passcurrent_memory, self._get_memory_usage_mb()
-if current_memory <= target_memory_mb:
-    passreturn
+        # Check memory usage and evict if necessary
+        data_size_mb = float(metadata["size_mb"])
+        current_memory = self._get_memory_usage_mb()
+        if current_memory + data_size_mb > self.max_memory_mb:
+            # Evict to 80% of max
+            self._evict_least_used(self.max_memory_mb * 0.8)
 
-# Sort by last access time (oldest first)
-sorted_items, sorted(
-self.cache_metadata.items(),
-key = lambda x: x[1].get("last_access", 0),
-)
+        # Store in memory if there's space
+        if self._get_memory_usage_mb() + data_size_mb <= self.max_memory_mb:
+            self.memory_cache[cache_key] = data
+            self.cache_metadata[cache_key] = metadata
 
-for key, _metadata in sorted_items:
-    passif key in self.memory_cache:
-    passdel self.memory_cache[key]
-self.eviction_count += 1
-current_memory, self._get_memory_usage_mb()
-if current_memory <= target_memory_mb:
-    passbreak
+        # Always save to disk
+        self._save_to_disk(cache_key, data, metadata)
 
-# Force garbage collection
-gc.collect()
+    def _estimate_data_size_mb(self, data: Any) -> float:
+        """Estimate data size in MB.
+        
+        Args:
+            data: Data to estimate size for
+            
+        Returns:
+            Estimated size in MB
+        """
+        if isinstance(data, pd.DataFrame):
+            return float(data.memory_usage(deep=True).sum()) / (1024 * 1024)
+        elif isinstance(data, np.ndarray):
+            return float(data.nbytes) / (1024 * 1024)
+        return float(len(pickle.dumps(data))) / (1024 * 1024)
 
-def _save_to_disk(...) -> ...:
-    """..."""
-    passcache_file, self._get_cache_file_path(cache_key)
-cache_data = {"data": data, "metadata": metadata, "timestamp": time.time()}
-try:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-if self.enable_compression:
-    passwith gzip.open(cache_file, "wb") as f:
-    passpickle.dump(cache_data, f, protocol = pickle.HIGHEST_PROTOCOL)
-else:
-    passwith open(cache_file, "wb") as f:
-    passpickle.dump(cache_data, f, protocol = pickle.HIGHEST_PROTOCOL)
-logger.debug(f"💾 Saved to disk cache: {cache_key}")
-except Exception as e:
-    passpasspasspasspasspasspasslogger.warning(f"Failed to save to disk cache {cache_key}: {e}")
+    def clear(self) -> None:
+        """Clear all caches."""
+        self.memory_cache.clear()
+        self.cache_metadata.clear()
 
-def _load_from_disk(...) -> ...:
-    """..."""
-    passcache_file, self._get_cache_file_path(cache_key)
-if not cache_file.exists():
-    passreturn None
+        # Clear disk cache
+        for cache_file in self.cache_dir.glob("*.pkl*"):
+            try:
+                cache_file.unlink()
+            except Exception as e:
+                logger.warning(f"Failed to delete cache file {cache_file}: {e}")
 
-try:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-if self.enable_compression:
-    passwith gzip.open(cache_file, "rb") as f:
-    passcache_data, pickle.load(f)
-else:
-    passwith open(cache_file, "rb") as f:
-    passcache_data, pickle.load(f)
-data, cache_data["data"]
-metadata, cache_data["metadata"]
-logger.debug(f"📂 Loaded from disk cache: {cache_key}")
-return data, metadata
-except Exception as e:
-    passpasspasspasspasspasspasslogger.warning(f"Failed to load from disk cache {cache_key}: {e}")
-return None
+        logger.info("🧹 Cleared all caches")
 
-def get(...) -> ...:
-    """..."""
-    pass# Check memory cache first
-if cache_key in self.memory_cache:
-    passself.hit_count += 1
-self.cache_metadata[cache_key]["last_access"] = time.time()
-self.cache_metadata[cache_key]["access_count"] += 1
-return self.memory_cache[cache_key]
+    def get_stats(self) -> Dict[str, Any]:
+        """Get cache statistics.
+        
+        Returns:
+            Dictionary with cache statistics
+        """
+        memory_usage = self._get_memory_usage_mb()
+        disk_usage = sum(
+            f.stat().st_size for f in self.cache_dir.glob("*.pkl*")
+        ) / (1024 * 1024)
 
-# Check disk cache
-disk_result, self._load_from_disk(cache_key)
-if disk_result is not None:
-    passdata, metadata, disk_result
-self.hit_count += 1
+        total_requests = self.hit_count + self.miss_count
+        hit_rate = self.hit_count / total_requests if total_requests > 0 else 0.0
 
-# Load into memory cache if there's space
-data_size_mb, self._estimate_data_size_mb(data)
-if data_size_mb < self.max_memory_mb * 0.1:  # Only load if < 10% of max memory
-self.memory_cache[cache_key] = data
-self.cache_metadata[cache_key] = metadata
-self.cache_metadata[cache_key]["last_access"] = time.time()
-self.cache_metadata[cache_key]["access_count"] += 1
+        return {
+            "memory_usage_mb": memory_usage,
+            "disk_usage_mb": disk_usage,
+            "memory_cache_size": len(self.memory_cache),
+            "hit_count": self.hit_count,
+            "miss_count": self.miss_count,
+            "hit_rate": hit_rate,
+            "eviction_count": self.eviction_count,
+            "total_requests": total_requests,
+        }
 
-return data
+    def log_stats(self) -> None:
+        """Log cache statistics."""
+        stats = self.get_stats()
+        logger.info("📊 Cache Statistics:")
+        logger.info(f"   Memory usage: {stats['memory_usage_mb']:.2f} MB")
+        logger.info(f"   Disk usage: {stats['disk_usage_mb']:.2f} MB")
+        logger.info(f"   Memory cache size: {stats['memory_cache_size']}")
+        logger.info(f"   Hit rate: {stats['hit_rate']:.1%}")
+        logger.info(f"   Total requests: {stats['total_requests']}")
+        logger.info(f"   Evictions: {stats['eviction_count']}")
 
-self.miss_count += 1
-return None
-
-def set(...) -> ...:
-    pass"""..."""
-    passif metadata is None:
-    pass# Fallback implementation for metadata
-metadata = {}
-
-# Add metadata
-metadata.update(
-{
-"created": time.time(),
-"last_access": time.time(),
-"access_count": 1,
-"size_mb": self._estimate_data_size_mb(data),
-},
-)
-
-# Check memory usage and evict if necessary
-data_size_mb, float(metadata["size_mb"])
-current_memory, self._get_memory_usage_mb()
-if current_memory + data_size_mb > self.max_memory_mb:
-    pass# Evict to 80% of max
-self._evict_least_used(self.max_memory_mb * 0.8)
-
-# Store in memory if there's space
-if self._get_memory_usage_mb() + data_size_mb <= self.max_memory_mb:
-    passself.memory_cache[cache_key] = data
-self.cache_metadata[cache_key] = metadata
-
-# Always save to disk
-self._save_to_disk(cache_key, data, metadata)
-
-def _estimate_data_size_mb(...) -> ...:
-    """..."""
-    passif isinstance(data, pd.DataFrame):
-    passreturn float(data.memory_usage(deep = True).sum()) / (1024 * 1024)
-if isinstance(data, np.ndarray):
-    passreturn float(data.nbytes) / (1024 * 1024)
-return float(len(pickle.dumps(data))) / (1024 * 1024)
-
-def clear(...) -> ...:
-    """..."""
-    passself.memory_cache.clear()
-self.cache_metadata.clear()
-
-# Clear disk cache
-for cache_file in self.cache_dir.glob("*.pkl*"):
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-cache_file.unlink()
-except Exception as e:
-    passpasspasspasspasspasspasslogger.warning(f"Failed to delete cache file {cache_file}: {e}")
-
-logger.info("🧹 Cleared all caches")
-
-def get_stats(...) -> ...:
-    """..."""
-    passmemory_usage, self._get_memory_usage_mb()
-disk_usage, sum(
-f.stat().st_size for f in self.cache_dir.glob("*.pkl*")
-) / (1024 * 1024)
-
-total_requests, self.hit_count + self.miss_count
-hit_rate, self.hit_count / total_requests if total_requests > 0 else 0.0
-
-return {
-"memory_usage_mb": memory_usage,
-"disk_usage_mb": disk_usage,
-"memory_cache_size": len(self.memory_cache),
-"hit_count": self.hit_count,
-"miss_count": self.miss_count,
-"hit_rate": hit_rate,
-"eviction_count": self.eviction_count,
-"total_requests": total_requests,
-}
-
-def log_stats(...) -> ...:
-    """..."""
-    passstats, self.get_stats()
-logger.info("📊 Cache Statistics:")
-logger.info(f"   Memory usage: {stats['memory_usage_mb']:.2f} MB")
-logger.info(f"   Disk usage: {stats['disk_usage_mb']:.2f} MB")
-logger.info(f"   Memory cache size: {stats['memory_cache_size']}")
-logger.info(f"   Hit rate: {stats['hit_rate']:.1%}")
-logger.info(f"   Total requests: {stats['total_requests']}")
-logger.info(f"   Evictions: {stats['eviction_count']}")
 
 # Global cache instance
-_feature_cache: IntelligentFeatureCache | None, None
+_feature_cache: Optional[IntelligentFeatureCache] = None
 
-def get_feature_cache(...) -> ...:
-    """..."""
-    passglobal _feature_cache
-if _feature_cache is None:
-    pass# Fallback implementation for _feature_cache
-_feature_cache, IntelligentFeatureCache()
-return _feature_cache
 
-def cache_feature_engineering(...):
-    passpassdef cache_feature_engineering(...):
-    passdef cache_feature_engineering(...):
-    passdef cache_feature_engineering(...):
-    pass"""
-Decorator for caching feature engineering functions.
-Supports both sync and async functions.
+def get_feature_cache() -> IntelligentFeatureCache:
+    """Get the global feature cache instance.
+    
+    Returns:
+        Global IntelligentFeatureCache instance
+    """
+    global _feature_cache
+    if _feature_cache is None:
+        _feature_cache = IntelligentFeatureCache()
+    return _feature_cache
 
-Args:
-    passmax_memory_mb: Maximum memory usage for cache
 
-Returns:
-    passDecorator function
-"""
+def cache_feature_engineering(max_memory_mb: int = 1024):
+    """
+    Decorator for caching feature engineering functions.
+    Supports both sync and async functions.
 
-def decorator(...):
-    passdef decorator(...):
-    passdef decorator(...):
-    passdef decorator(...):
-    pass# Check if function is async
-is_async, asyncio.iscoroutinefunction(func)
+    Args:
+        max_memory_mb: Maximum memory usage for cache
 
-if is_async:
-    pass@wraps(func)
-async def async_wrapper(...):
-    passself.logger.info("Implementation placeholder - needs specific logic")
-async def async_wrapper(...):
-    passself.logger.info("Implementation placeholder - needs specific logic")
-async def async_wrapper(...):
-    passcache, get_feature_cache()
-cache.max_memory_mb, max_memory_mb
+    Returns:
+        Decorator function
+    """
+    def decorator(func: Callable):
+        # Check if function is async
+        is_async = asyncio.iscoroutinefunction(func)
 
-# Generate cache key
-cache_key, cache._generate_cache_key(func.__name__, args, kwargs)
+        if is_async:
+            @wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                cache = get_feature_cache()
+                cache.max_memory_mb = max_memory_mb
 
-# Try to get from cache
-cached_result, cache.get(cache_key)
-if cached_result is not None:
-    passlogger.info(f"⚡ Cache HIT for {func.__name__}")
-return cached_result
+                # Generate cache key
+                cache_key = cache._generate_cache_key(func.__name__, args, kwargs)
 
-# Compute result
-logger.info(f"🔄 Computing {func.__name__} (cache miss)")
-result, await func(*args, **kwargs)
+                # Try to get from cache
+                cached_result = cache.get(cache_key)
+                if cached_result is not None:
+                    logger.info(f"⚡ Cache HIT for {func.__name__}")
+                    return cached_result
 
-# Cache the result
-metadata = {
-"function": func.__name__,
-"args_count": len(args),
-"kwargs_count": len(kwargs),
-}
-cache.set(cache_key, result, metadata)
+                # Compute result
+                logger.info(f"🔄 Computing {func.__name__} (cache miss)")
+                result = await func(*args, **kwargs)
 
-return result
+                # Cache the result
+                metadata = {
+                    "function": func.__name__,
+                    "args_count": len(args),
+                    "kwargs_count": len(kwargs),
+                }
+                cache.set(cache_key, result, metadata)
 
-return async_wrapper
+                return result
 
-@wraps(func)
-def sync_wrapper(...):
-    passdef sync_wrapper(...):
-    passdef sync_wrapper(...):
-    passdef sync_wrapper(...):
-    passcache, get_feature_cache()
-cache.max_memory_mb, max_memory_mb
+            return async_wrapper
 
-# Generate cache key
-cache_key, cache._generate_cache_key(func.__name__, args, kwargs)
+        @wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            cache = get_feature_cache()
+            cache.max_memory_mb = max_memory_mb
 
-# Try to get from cache
-cached_result, cache.get(cache_key)
-if cached_result is not None:
-    passlogger.info(f"⚡ Cache HIT for {func.__name__}")
-return cached_result
+            # Generate cache key
+            cache_key = cache._generate_cache_key(func.__name__, args, kwargs)
 
-# Compute result
-logger.info(f"🔄 Computing {func.__name__} (cache miss)")
-result, func(*args, **kwargs)
+            # Try to get from cache
+            cached_result = cache.get(cache_key)
+            if cached_result is not None:
+                logger.info(f"⚡ Cache HIT for {func.__name__}")
+                return cached_result
 
-# Cache the result
-metadata = {
-"function": func.__name__,
-"args_count": len(args),
-"kwargs_count": len(kwargs),
-}
-cache.set(cache_key, result, metadata)
+            # Compute result
+            logger.info(f"🔄 Computing {func.__name__} (cache miss)")
+            result = func(*args, **kwargs)
 
-return result
+            # Cache the result
+            metadata = {
+                "function": func.__name__,
+                "args_count": len(args),
+                "kwargs_count": len(kwargs),
+            }
+            cache.set(cache_key, result, metadata)
 
-return sync_wrapper
+            return result
 
-return decorator
+        return sync_wrapper
 
-def clear_feature_cache(...) -> ...:
-    """..."""
-    passcache, get_feature_cache()
-cache.clear()
+    return decorator
 
-def log_feature_cache_stats(...) -> ...:
-    """..."""
-    passcache, get_feature_cache()
-cache.log_stats()
+
+def clear_feature_cache() -> None:
+    """Clear the global feature cache."""
+    cache = get_feature_cache()
+    cache.clear()
+
+
+def log_feature_cache_stats() -> None:
+    """Log statistics for the global feature cache."""
+    cache = get_feature_cache()
+    cache.log_stats()

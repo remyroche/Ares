@@ -1,0 +1,29 @@
+2025-09-02 08:36:41,762 - INFO - Processing file: src/validation/critical_path_validators.py
+2025-09-02 08:36:41,762 - INFO - Performing semantic analysis...
+2025-09-02 08:36:41,763 - INFO - Code quality score: 0.00
+2025-09-02 08:36:41,763 - WARNING - Syntax errors found: 1
+2025-09-02 08:36:41,763 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:36:41,764 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:41,765 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:41,765 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:41,766 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:41,767 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:41,768 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:41,768 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:41,769 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:41,770 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:41,770 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:41,771 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:41,772 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:41,773 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:41,774 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:41,775 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:41,776 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:41,777 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:36:41,778 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:36:41,778 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:41,780 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:41,781 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:36:41,782 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:36:41,784 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:41,786 - INFO - No fixes needed for: src/validation/critical_path_validators.py

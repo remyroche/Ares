@@ -1,0 +1,31 @@
+2025-09-02 08:20:46,362 - INFO - Processing file: src/utils/decorators.py
+2025-09-02 08:20:46,362 - INFO - Performing semantic analysis...
+2025-09-02 08:20:46,363 - INFO - Code quality score: 0.00
+2025-09-02 08:20:46,363 - WARNING - Syntax errors found: 1
+2025-09-02 08:20:46,363 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:20:46,365 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,366 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,367 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,369 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,370 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,372 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,373 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,374 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,376 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,377 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,378 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,379 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,381 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,382 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,384 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,386 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,387 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,389 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,392 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:20:46,393 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:20:46,394 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,400 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:20:46,400 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:20:46,400 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:20:46,405 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:46,411 - INFO - No fixes needed for: src/utils/decorators.py

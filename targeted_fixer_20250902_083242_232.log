@@ -1,0 +1,11 @@
+2025-09-02 08:32:42,235 - INFO - Processing file: src/utils/data_preprocessing.py
+2025-09-02 08:32:42,235 - INFO - Performing semantic analysis...
+2025-09-02 08:32:42,248 - INFO - Code quality score: 0.50
+2025-09-02 08:32:42,248 - WARNING - Semantic issues found: 40
+2025-09-02 08:32:42,248 - WARNING - Structure issues found: 37
+2025-09-02 08:32:42,253 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:32:42,256 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:32:42,256 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:32:42,256 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:32:42,260 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:32:42,262 - INFO - No fixes needed for: src/utils/data_preprocessing.py

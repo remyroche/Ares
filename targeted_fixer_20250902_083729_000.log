@@ -1,0 +1,24 @@
+2025-09-02 08:37:29,004 - INFO - Processing file: src/components/modular_analyst.py
+2025-09-02 08:37:29,004 - INFO - Performing semantic analysis...
+2025-09-02 08:37:29,005 - INFO - Code quality score: 0.00
+2025-09-02 08:37:29,005 - WARNING - Syntax errors found: 1
+2025-09-02 08:37:29,005 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:37:29,009 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:29,012 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:29,015 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:29,018 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:29,022 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:29,025 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:29,028 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:29,031 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:29,035 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:29,039 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:29,042 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:29,046 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:29,049 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:29,053 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:29,061 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:29,062 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:37:29,062 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:37:29,069 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:29,074 - INFO - No fixes needed for: src/components/modular_analyst.py

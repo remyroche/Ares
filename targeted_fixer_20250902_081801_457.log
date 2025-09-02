@@ -1,0 +1,16 @@
+2025-09-02 08:18:01,460 - INFO - Processing file: src/utils/observability.py
+2025-09-02 08:18:01,460 - INFO - Performing semantic analysis...
+2025-09-02 08:18:01,460 - INFO - Code quality score: 0.00
+2025-09-02 08:18:01,460 - WARNING - Syntax errors found: 1
+2025-09-02 08:18:01,460 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:18:01,461 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:01,461 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:01,461 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:01,462 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:01,462 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:01,462 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:01,463 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:01,465 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:01,466 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:01,467 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:01,467 - INFO - No fixes needed for: src/utils/observability.py

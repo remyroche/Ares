@@ -1,0 +1,19 @@
+2025-09-02 08:18:36,182 - INFO - Processing file: src/utils/purged_kfold.py
+2025-09-02 08:18:36,182 - INFO - Performing semantic analysis...
+2025-09-02 08:18:36,182 - INFO - Code quality score: 0.00
+2025-09-02 08:18:36,182 - WARNING - Syntax errors found: 1
+2025-09-02 08:18:36,182 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:18:36,184 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:36,185 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:36,185 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:36,186 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:36,188 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:36,189 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:36,191 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:36,192 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:36,193 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:36,195 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:36,195 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:18:36,196 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:36,198 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:36,199 - INFO - No fixes needed for: src/utils/purged_kfold.py

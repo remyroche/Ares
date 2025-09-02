@@ -1,5 +1,5 @@
 """
-Comprehensive File Format Validation Module
+Comprehensive File Validation Module
 
 This module provides comprehensive file format validation for steps 1, 1.5, 2, and 4.
 It includes validation for:
@@ -10,6 +10,7 @@ It includes validation for:
 - Column completeness (no empty values)
 - Index validation
 - Data quality metrics
+
 """
 
 import os
@@ -23,6 +24,7 @@ import logging
 import pandas as pd
 import numpy as np
 from dataclasses import dataclass, field
+
 from enum import Enum
 
 # Add project root to path
@@ -35,6 +37,7 @@ from src.utils.logger import system_logger
 
 class ValidationSeverity(Enum):
     """Severity levels for validation issues."""
+
     INFO = "info"
     WARNING = "warning"
     ERROR = "error"
@@ -50,7 +53,6 @@ class ValidationIssue:
     details: Optional[Dict[str, Any]] = None
     affected_columns: Optional[List[str]] = None
     affected_rows: Optional[List[int]] = None
-
 
 @dataclass
 class FileValidationResult:
@@ -720,3 +722,4 @@ def validate_file_format(expected_schema: Optional[str] = None, step_name: str =
             return result
         return wrapper
     return decorator
+

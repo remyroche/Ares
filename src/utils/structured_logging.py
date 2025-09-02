@@ -5,7 +5,7 @@ This module provides structured logging capabilities including:
 - Correlation ID management for request tracing
 - JSON formatting for log output
 - Context management for correlation IDs
-"""
+
 
 import contextvars
 import logging
@@ -21,6 +21,7 @@ try:
     from pythonjsonlogger import jsonlogger  # type: ignore
 except ImportError:  # pragma: no cover - optional dependency
     jsonlogger = None  # type: ignore
+
 
 # Context variables for correlation across logs
 correlation_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
@@ -261,3 +262,4 @@ def log_external_api_call(
     """Log external API calls with correlation ID."""
     message = f"External API call: {method} {url}"
     log_info_with_correlation(logger, message, correlation_id, extra=kwargs)
+

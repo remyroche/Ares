@@ -1,0 +1,454 @@
+{
+  "total_files": 100,
+  "total_issues": 197,
+  "issues_by_file": {
+    "/workspace/src/tasks.py": [
+      "Line 65: run_training() needs await"
+    ],
+    "/workspace/src/ares_pipeline.py": [
+      "Line 1158: main() needs await"
+    ],
+    "/workspace/src/trading/live_wavelet_demo.py": [
+      "Line 304: main() needs await"
+    ],
+    "/workspace/src/integration/paper_trading_integration.py": [
+      "Line 90: setup_paper_trader() needs await"
+    ],
+    "/workspace/src/tactician/async_order_executor.py": [
+      "Line 151: setup_performance_reporter() needs await"
+    ],
+    "/workspace/src/training/wavelet_integration_demo.py": [
+      "Line 521: main() needs await"
+    ],
+    "/workspace/src/training/probabilistic_model_integration.py": [
+      "Line 560: main() needs await"
+    ],
+    "/workspace/src/training/step_orchestrator.py": [
+      "Line 84: setup_enhanced_training_manager() needs await"
+    ],
+    "/workspace/src/training/integration_guide.py": [
+      "Line 269: run_integration_example() needs await"
+    ],
+    "/workspace/src/training/steps_1_7_comprehensive_executor.py": [
+      "Line 645: main() needs await"
+    ],
+    "/workspace/src/training/demo_pipeline_execution.py": [
+      "Line 423: main() needs await"
+    ],
+    "/workspace/src/training/comprehensive_pipeline_executor.py": [
+      "Line 494: main() needs await"
+    ],
+    "/workspace/src/training/wavelet_feature_selection_demo.py": [
+      "Line 430: main() needs await"
+    ],
+    "/workspace/src/training/enhanced_matrix_gpu_integration.py": [
+      "Line 548: demonstrate_gpu_integration() needs await"
+    ],
+    "/workspace/src/training/data_quality_monitor.py": [
+      "Line 1083: main() needs await"
+    ],
+    "/workspace/src/training/wavelet_caching_workflow.py": [
+      "Line 96: create_sample_data() needs await",
+      "Line 291: load_config() needs await",
+      "Line 294: step1_precompute_features() needs await",
+      "Line 300: step2_run_backtests() needs await",
+      "Line 306: step3_performance_comparison() needs await",
+      "Line 312: step4_cache_management() needs await",
+      "Line 325: main() needs await"
+    ],
+    "/workspace/src/training/steps/update_steps_for_unified_data.py": [
+      "Line 249: main() needs await"
+    ],
+    "/workspace/src/training/steps/step9_5_hmm_lm_generalist_training.py": [
+      "Line 1365: run_step() needs await",
+      "Line 1367: test() needs await"
+    ],
+    "/workspace/src/training/steps/step2_5_sr_optimization.py": [
+      "Line 90: create_sr_levels_manager() needs await",
+      "Line 1542: run_step() needs await"
+    ],
+    "/workspace/src/training/steps/step14_tactician_labeling_validator.py": [
+      "Line 692: run_validator() needs await",
+      "Line 694: test_validator() needs await"
+    ],
+    "/workspace/src/training/steps/step5_hmm_based_training_validator.py": [
+      "Line 723: run_validator() needs await",
+      "Line 725: test_validator() needs await"
+    ],
+    "/workspace/src/training/steps/step18_walk_forward_validation_validator.py": [
+      "Line 443: run_validator() needs await",
+      "Line 445: test_validator() needs await"
+    ],
+    "/workspace/src/training/steps/step14_tactician_labeling.py": [
+      "Line 1060: run_step() needs await",
+      "Line 1062: test() needs await"
+    ],
+    "/workspace/src/training/steps/step4_triple_barrier_method.py": [
+      "Line 554: run_step() needs await",
+      "Line 562: test() needs await"
+    ],
+    "/workspace/src/training/steps/step5_labeling.py": [
+      "Line 704: run_step() needs await",
+      "Line 712: test() needs await"
+    ],
+    "/workspace/src/training/steps/step1_5_data_converter.py": [
+      "Line 1888: run_step() needs await",
+      "Line 1900: _main() needs await"
+    ],
+    "/workspace/src/training/steps/step4_regime_data_splitting_validator.py": [
+      "Line 377: run_validator() needs await"
+    ],
+    "/workspace/src/training/steps/step2_5_sr_optimization_validator.py": [
+      "Line 399: run_validation() needs await"
+    ],
+    "/workspace/src/training/steps/step2_data_reading.py": [
+      "Line 550: run_step_enhanced() needs await",
+      "Line 563: run_step_enhanced() needs await",
+      "Line 571: test() needs await"
+    ],
+    "/workspace/src/training/steps/step9_hmm_based_training_validator.py": [
+      "Line 243: run_validator() needs await",
+      "Line 246: test() needs await"
+    ],
+    "/workspace/src/training/steps/step20_ab_testing.py": [
+      "Line 77: run_step() needs await",
+      "Line 79: _test() needs await"
+    ],
+    "/workspace/src/training/steps/enhanced_step1_data_collection.py": [
+      "Line 453: main() needs await"
+    ],
+    "/workspace/src/training/steps/step19_monte_carlo_validation_validator.py": [
+      "Line 512: run_validator() needs await",
+      "Line 514: test_validator() needs await"
+    ],
+    "/workspace/src/training/steps/step3_parameter_optimization.py": [
+      "Line 692: run_step() needs await"
+    ],
+    "/workspace/src/training/steps/step16_confidence_calibration.py": [
+      "Line 1147: run_step() needs await",
+      "Line 1149: test() needs await"
+    ],
+    "/workspace/src/training/steps/step21_saving.py": [
+      "Line 553: run_step() needs await",
+      "Line 555: test() needs await"
+    ],
+    "/workspace/src/training/steps/step3_parameter_optimization_validator.py": [
+      "Line 549: run_validator() needs await"
+    ],
+    "/workspace/src/training/steps/step1_5_data_converter_validator.py": [
+      "Line 429: run_validator() needs await",
+      "Line 431: test_validator() needs await"
+    ],
+    "/workspace/src/training/steps/step3_5_final_regime_clustering.py": [
+      "Line 892: run_step() needs await"
+    ],
+    "/workspace/src/training/steps/step4_triple_barrier_method_validator.py": [
+      "Line 162: run_validator() needs await",
+      "Line 165: test() needs await"
+    ],
+    "/workspace/src/training/steps/step5_labeling_validator.py": [
+      "Line 381: run_validator() needs await"
+    ],
+    "/workspace/src/training/steps/step3_hmm_regime_discovery.py": [
+      "Line 3352: run_step() needs await",
+      "Line 3374: main() needs await"
+    ],
+    "/workspace/src/training/steps/precompute_wavelet_features.py": [
+      "Line 502: main() needs await"
+    ],
+    "/workspace/src/training/steps/step6_feature_engineering.py": [
+      "Line 538: _create_basic_features() needs await",
+      "Line 1051: setup_sr_detection_optimizer() needs await"
+    ],
+    "/workspace/src/training/steps/step1_data_collection_validator.py": [
+      "Line 432: run_validator() needs await",
+      "Line 434: test_validator() needs await"
+    ],
+    "/workspace/src/training/steps/step21_saving_validator.py": [
+      "Line 528: run_validator() needs await",
+      "Line 530: test_validator() needs await"
+    ],
+    "/workspace/src/training/steps/step6_feature_engineering_validator.py": [
+      "Line 333: run_validator() needs await"
+    ],
+    "/workspace/src/training/steps/step8_regime_data_splitting_validator.py": [
+      "Line 235: run_validator() needs await",
+      "Line 238: test() needs await"
+    ],
+    "/workspace/src/training/steps/step2_data_reading_validator.py": [
+      "Line 253: run_validator() needs await",
+      "Line 256: test() needs await"
+    ],
+    "/workspace/src/training/steps/step2_feature_engineering_validator.py": [
+      "Line 679: run_validator() needs await",
+      "Line 681: test_validator() needs await"
+    ],
+    "/workspace/src/training/steps/step19_monte_carlo_validation.py": [
+      "Line 329: run_step() needs await",
+      "Line 331: test() needs await"
+    ],
+    "/workspace/src/training/steps/unified_data_loader.py": [
+      "Line 484: load_unified_data() needs await"
+    ],
+    "/workspace/src/training/steps/step12_analyst_enhancement_validator.py": [
+      "Line 539: run_validator() needs await",
+      "Line 541: test_validator() needs await"
+    ],
+    "/workspace/src/training/steps/integrated_data_quality_pipeline.py": [
+      "Line 464: run_integrated_pipeline() needs await",
+      "Line 484: main() needs await"
+    ],
+    "/workspace/src/training/steps/enhanced_step1_5_data_converter.py": [
+      "Line 546: main() needs await"
+    ],
+    "/workspace/src/training/steps/step17_final_parameters_optimization.py": [
+      "Line 181: _save_optimization_results() needs await",
+      "Line 196: _generate_optimization_report() needs await",
+      "Line 1810: run_step() needs await",
+      "Line 1812: test() needs await"
+    ],
+    "/workspace/src/training/steps/step1_data_collection.py": [
+      "Line 381: download_all_data_with_consolidation() needs await",
+      "Line 996: run_step() needs await",
+      "Line 1015: main() needs await"
+    ],
+    "/workspace/src/training/steps/step3_hmm_regime_discovery_validator.py": [
+      "Line 190: run_validator() needs await"
+    ],
+    "/workspace/src/training/steps/step12_analyst_enhancement.py": [
+      "Line 389: _load_regime_data() needs await",
+      "Line 628: load_unified_data() needs await"
+    ],
+    "/workspace/src/training/steps/raw_data_quality_checker.py": [
+      "Line 632: download_all_data_with_consolidation() needs await",
+      "Line 1741: download_all_data_with_consolidation() needs await"
+    ],
+    "/workspace/src/training/steps/step17_final_parameters_optimization_validator.py": [
+      "Line 416: run_validator() needs await",
+      "Line 418: test_validator() needs await"
+    ],
+    "/workspace/src/training/steps/step3_5_final_regime_clustering_validator.py": [
+      "Line 457: run_validator() needs await"
+    ],
+    "/workspace/src/training/steps/step18_walk_forward_validation.py": [
+      "Line 281: run_step() needs await",
+      "Line 283: test() needs await"
+    ],
+    "/workspace/src/training/steps/step15_tactician_specialist_training.py": [
+      "Line 1454: run_step() needs await",
+      "Line 1456: test() needs await"
+    ],
+    "/workspace/src/training/steps/step15_tactician_specialist_training_validator.py": [
+      "Line 542: run_validator() needs await",
+      "Line 544: test_validator() needs await"
+    ],
+    "/workspace/src/training/steps/step5_regime_data_splitting_validator.py": [
+      "Line 84: run_validator() needs await",
+      "Line 86: test_validator() needs await"
+    ],
+    "/workspace/src/training/steps/step4_regime_data_splitting.py": [
+      "Line 157: _load_regime_data() needs await",
+      "Line 488: run_step() needs await",
+      "Line 499: test() needs await"
+    ],
+    "/workspace/src/training/steps/step8_regime_data_splitting.py": [
+      "Line 156: load_unified_data() needs await",
+      "Line 576: run_step() needs await",
+      "Line 578: _test() needs await"
+    ],
+    "/workspace/src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization_enhanced.py": [
+      "Line 1032: main() needs await"
+    ],
+    "/workspace/src/training/steps/step17_final_parameters_optimization/sr_optuna_optimization.py": [
+      "Line 783: setup_sr_optuna_optimizer() needs await",
+      "Line 814: main() needs await"
+    ],
+    "/workspace/src/training/steps/step17_final_parameters_optimization/efficiency_optimizer.py": [
+      "Line 785: test() needs await"
+    ],
+    "/workspace/src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py": [
+      "Line 715: _generate_optimization_report() needs await",
+      "Line 1003: setup_regime_specific_optimizer() needs await"
+    ],
+    "/workspace/src/training/steps/step1/data_quality_dashboard.py": [
+      "Line 844: start_data_quality_dashboard() needs await",
+      "Line 852: main() needs await"
+    ],
+    "/workspace/src/training/steps/step1/comprehensive_gap_filler.py": [
+      "Line 1107: run_comprehensive_gap_filling_pipeline() needs await"
+    ],
+    "/workspace/src/training/steps/step1/run_step1.py": [
+      "Line 201: main() needs await"
+    ],
+    "/workspace/src/training/steps/step1/gap_filler_pipeline.py": [
+      "Line 369: run_gap_filling_pipeline() needs await"
+    ],
+    "/workspace/src/training/steps/analyst_training_components/regime_specific_tpsl_optimizer.py": [
+      "Line 439: _save_optimization_results() needs await"
+    ],
+    "/workspace/src/core/di_launcher.py": [
+      "Line 202: stop() needs await"
+    ],
+    "/workspace/src/core/generic_base.py": [
+      "Line 153: stop() needs await"
+    ],
+    "/workspace/src/core/config_service.py": [
+      "Line 579: stop() needs await"
+    ],
+    "/workspace/src/config/typed_config.py": [
+      "Line 260: load_config() needs await"
+    ],
+    "/workspace/src/utils/enhanced_config_management.py": [
+      "Line 324: load_config() needs await"
+    ],
+    "/workspace/src/utils/training_pipeline_decorators.py": [
+      "Line 1173: _execute_pipeline_function() needs await",
+      "Line 1296: _execute_pipeline_function() needs await"
+    ],
+    "/workspace/src/utils/standardized_config_manager.py": [
+      "Line 237: load_config() needs await"
+    ],
+    "/workspace/src/utils/enhanced_pipeline_decorators.py": [
+      "Line 561: get_step_reports() needs await"
+    ],
+    "/workspace/src/utils/data_optimizer.py": [
+      "Line 307: _optimize_data_types() needs await",
+      "Line 310: _remove_unnecessary_columns() needs await",
+      "Line 313: _optimize_index() needs await",
+      "Line 372: _optimize_memory_usage() needs await",
+      "Line 390: optimize_dataframe() needs await",
+      "Line 467: initialize() needs await"
+    ],
+    "/workspace/src/utils/model_manager.py": [
+      "Line 625: initialize() needs await"
+    ],
+    "/workspace/src/utils/logger.py": [
+      "Line 561: initialize() needs await",
+      "Line 568: initialize() needs await"
+    ],
+    "/workspace/src/analyst/advanced_feature_engineering.py": [
+      "Line 1254: initialize() needs await",
+      "Line 1259: initialize() needs await",
+      "Line 1264: initialize() needs await",
+      "Line 1269: initialize() needs await",
+      "Line 1274: initialize() needs await",
+      "Line 1277: initialize() needs await",
+      "Line 1284: initialize() needs await"
+    ],
+    "/workspace/src/analyst/feature_engineering_orchestrator.py": [
+      "Line 266: initialize() needs await",
+      "Line 301: initialize() needs await"
+    ],
+    "/workspace/src/analyst/predictive_ensembles.py": [
+      "Line 1204: initialize() needs await"
+    ],
+    "/workspace/src/analyst/dynamic_regime_mapper.py": [
+      "Line 360: initialize() needs await"
+    ],
+    "/workspace/src/analyst/data_utils.py": [
+      "Line 1064: initialize() needs await"
+    ],
+    "/workspace/src/analyst/regime_expert_orchestrator.py": [
+      "Line 561: initialize() needs await"
+    ],
+    "/workspace/src/analyst/ml_confidence_predictor.py": [
+      "Line 775: initialize() needs await",
+      "Line 867: initialize() needs await",
+      "Line 920: initialize() needs await",
+      "Line 2946: initialize() needs await"
+    ],
+    "/workspace/src/analyst/di_analyst.py": [
+      "Line 76: initialize() needs await",
+      "Line 100: initialize() needs await",
+      "Line 107: initialize() needs await",
+      "Line 114: initialize() needs await",
+      "Line 121: initialize() needs await"
+    ],
+    "/workspace/src/analyst/unified_regime_classifier.py": [
+      "Line 240: initialize() needs await"
+    ],
+    "/workspace/src/analyst/analyst.py": [
+      "Line 260: setup_dual_model_system() needs await",
+      "Line 976: stop() needs await",
+      "Line 979: stop() needs await",
+      "Line 982: stop() needs await",
+      "Line 1013: initialize() needs await"
+    ],
+    "/workspace/src/database/migration_utils.py": [
+      "Line 58: initialize() needs await",
+      "Line 373: initialize() needs await",
+      "Line 388: initialize() needs await",
+      "Line 400: initialize() needs await",
+      "Line 403: validate_migration_file() needs await",
+      "Line 424: export_database_for_trading() needs await",
+      "Line 436: import_database_for_trading() needs await",
+      "Line 447: validate_migration_file() needs await",
+      "Line 454: main() needs await"
+    ],
+    "/workspace/src/database/sqlite_manager.py": [
+      "Line 341: initialize() needs await",
+      "Line 571: _attempt_recovery() needs await",
+      "Line 648: _attempt_recovery() needs await",
+      "Line 708: _attempt_recovery() needs await",
+      "Line 751: _attempt_recovery() needs await",
+      "Line 804: _attempt_recovery() needs await",
+      "Line 872: _attempt_recovery() needs await",
+      "Line 919: _attempt_recovery() needs await",
+      "Line 972: _attempt_recovery() needs await",
+      "Line 1031: _attempt_recovery() needs await",
+      "Line 1055: initialize() needs await",
+      "Line 1232: initialize() needs await"
+    ]
+  },
+  "functions_needing_await": [
+    "_attempt_recovery",
+    "setup_dual_model_system",
+    "test_validator",
+    "_execute_pipeline_function",
+    "setup_paper_trader",
+    "download_all_data_with_consolidation",
+    "step3_performance_comparison",
+    "import_database_for_trading",
+    "create_sr_levels_manager",
+    "run_integrated_pipeline",
+    "_test",
+    "optimize_dataframe",
+    "setup_regime_specific_optimizer",
+    "run_validator",
+    "setup_enhanced_training_manager",
+    "setup_sr_optuna_optimizer",
+    "run_comprehensive_gap_filling_pipeline",
+    "create_sample_data",
+    "run_step",
+    "step2_run_backtests",
+    "_main",
+    "run_training",
+    "_create_basic_features",
+    "step4_cache_management",
+    "_save_optimization_results",
+    "stop",
+    "run_gap_filling_pipeline",
+    "initialize",
+    "load_config",
+    "_remove_unnecessary_columns",
+    "_generate_optimization_report",
+    "test",
+    "run_step_enhanced",
+    "get_step_reports",
+    "_optimize_data_types",
+    "step1_precompute_features",
+    "load_unified_data",
+    "run_integration_example",
+    "setup_sr_detection_optimizer",
+    "start_data_quality_dashboard",
+    "setup_performance_reporter",
+    "run_validation",
+    "validate_migration_file",
+    "main",
+    "_load_regime_data",
+    "export_database_for_trading",
+    "_optimize_index",
+    "_optimize_memory_usage",
+    "demonstrate_gpu_integration"
+  ]
+}

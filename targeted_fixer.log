@@ -27356,3 +27356,26 @@
 2025-09-02 07:13:38,083 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
 2025-09-02 07:13:38,083 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
 2025-09-02 07:13:38,083 - INFO - No fixes needed for: src/monitoring/performance_monitor.py
+2025-09-02 07:35:18,278 - INFO - Processing file: src/core/injectable_base.py
+2025-09-02 07:35:18,279 - INFO - Performing semantic analysis...
+2025-09-02 07:35:18,279 - INFO - Code quality score: 0.00
+2025-09-02 07:35:18,279 - WARNING - Syntax errors found: 1
+2025-09-02 07:35:18,279 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 07:35:18,280 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:18,280 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:18,281 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:18,281 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:18,282 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:18,282 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:18,282 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:18,283 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:18,284 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:18,284 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:18,286 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 07:35:18,286 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 07:35:18,287 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:18,287 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:18,288 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:18,289 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 07:35:18,289 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 07:35:18,290 - INFO - No fixes needed for: src/core/injectable_base.py

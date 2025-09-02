@@ -1,0 +1,12 @@
+2025-09-02 08:41:40,784 - INFO - Processing file: src/utils/comprehensive_logger.py
+2025-09-02 08:41:40,784 - INFO - Performing semantic analysis...
+2025-09-02 08:41:40,796 - INFO - Code quality score: 0.50
+2025-09-02 08:41:40,796 - WARNING - Semantic issues found: 41
+2025-09-02 08:41:40,796 - WARNING - Structure issues found: 33
+2025-09-02 08:41:40,800 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:41:40,804 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:41:40,809 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:41:40,809 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:41:40,810 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:41:40,817 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:41:40,819 - INFO - No fixes needed for: src/utils/comprehensive_logger.py

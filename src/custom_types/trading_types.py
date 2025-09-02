@@ -1,33 +1,21 @@
 # src/types/trading_types.py
 
-"""Trading-specific type definitions for orders = positions, and trade decisions."""
+"""Trading-specific type definitions for orders, positions, and trade decisions."""
 
-from typing import Literal, TypedDict
-
-from .base_types import (
-ConfidenceLevel,
-LeverageMultiplier,
-Percentage,
-PositionId,
-Price,
-RiskScore,
-Score,
-Symbol,
-Timestamp,
-Volume,
-)
+from typing import Literal, TypedDict, Any, Dict, List, Optional
+from datetime import datetime
 
 # Trading action enums
-OrderType , Literal["market", "limit", "stop", "stop_limit", "trailing_stop"]
+OrderType = Literal["market", "limit", "stop", "stop_limit", "trailing_stop"]
 OrderSide = Literal["buy", "sell"]
 OrderStatus = Literal[
-"pending",
-"open",
-"filled",
-"partially_filled",
-"cancelled",
-"rejected",
-"expired",
+    "pending",
+    "open",
+    "filled",
+    "partially_filled",
+    "cancelled",
+    "rejected",
+    "expired",
 ]
 PositionSide = Literal["long", "short", "neutral"]
 TradeAction = Literal["open_long", "open_short", "close_long", "close_short", "hold"]
@@ -35,426 +23,150 @@ RiskLevel = Literal["very_low", "low", "medium", "high", "very_high"]
 
 
 class OrderRequest(TypedDict):
+    """Order request data structure."""
+    symbol: str
+    side: OrderSide
+    quantity: float
+    order_type: OrderType
+    price: Optional[float]  # Required for limit orders
+    stop_price: Optional[float]  # Required for stop orders
+    time_in_force: Optional[str]
+    client_order_id: Optional[str]
 
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="orderrequest initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize OrderRequest."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
- 
-    def __init__(self, config: dict[str, Any] | None = None) 
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
-        """Initialize OrderRequest."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("OrderRequest")
-        self.is_initialized = False
--> None:
-        """Initialize Orde
-    def __init__(self, config: dict[str, Any] | None = None) -> None
-    def __init__(self, config: dict[str, Any] | None = None) -
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
-        """Initialize TradeDecision."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("TradeDecision")
-        self.is_initialized = False
-> None:
-        """Initialize TradeDecision."""
-       
-    def __init__(self, config: dict[str, Any] | None = None) -> Non
-    def __init__(self, config: dict[str, Any] | None = None) 
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
-        """Initialize PositionRisk."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("PositionRisk")
-        self.is_initialized = False
--> None:
-        """Initi
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
-    def __init__(self, config: dict[str, Any] | None = None) ->
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
-        """Initialize RiskParameters."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("RiskParameters")
-        self.is_initialized = False
- None:
-        """Initialize RiskParameters."""
-    
-    def __init__(self, config: dict[str, Any] | None = None) -> None
-    def __init__(self, config: dict[str, Any] | None = None) -
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
-        """Initialize TradingSignal."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("TradingSignal")
-        self.is_initialized = False
-> None:
-        """Initialize TradingSignal."""
-        self.config = config or {}
-        self.logger = system_logger.getChild
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
-   
-    def __init__(self, config: dict[str, Any] | None = None) -> Non
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
-        """Initialize PerformanceMetrics."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("PerformanceMetrics")
-        self.is_initialized = False
-e:
-        """Initialize Perform
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
-    def __init__(self, config: dict[str, Any] | None = None) ->
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
-        """Initialize PortfolioState."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("PortfolioState")
-        self.is_initialized = False
- None:
-        """Initialize
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
-    def __init__(self, config: dict[str, Any] | None = None) ->
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
-        """Initialize BacktestResult."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("BacktestResult")
-        self.is_initialized = False
- None:
-        """Initialize BacktestResult."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("BacktestResult")
-        self.is_initialized = False
-
-        """Initialize BacktestResult."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("BacktestResult")
-        self.is_initialized = False
- PortfolioState."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("PortfolioState")
-        self.is_initialized = False
-
-        """Initialize PortfolioState."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("PortfolioState")
-        self.is_initialized = False
-anceMetrics."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("PerformanceMetrics")
-        self.is_initialized = False
-     """Initialize PerformanceMetrics."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("PerformanceMetrics")
-        self.is_initialized = False
-("TradingSignal")
-        self.is_initialized = False
-:
-        """Initialize TradingSignal."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("TradingSignal")
-        self.is_initialized = False
-    self.config = config or {}
-        self.logger = system_logger.getChild("RiskParameters")
-        self.is_initialized = False
-
-        """Initialize RiskParameters."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("RiskParameters")
-        self.is_initialized = False
-alize PositionRisk."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("PositionRisk")
-        self.is_initialized = False
-e:
-        """Initialize PositionRisk."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("PositionRisk")
-        self.is_initialized = False
- self.config = config or {}
-        self.logger = system_logger.getChild("TradeDecision")
-        self.is_initialized = False
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="orderrequest initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize OrderRequest."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-       
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="tradedecision initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize TradeDecision."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="positionrisk initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize PositionRisk."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized success
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="riskparameters initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize RiskParameters."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="tradingsignal initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize TradingSignal."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Err
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="performancemetrics initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize PerformanceMetrics."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-           
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="portfoliostate initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize PortfolioState."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="backtestresult initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize BacktestResult."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
- return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-or initializing {class_name}: {e}")
-            return False
-
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-fully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-     self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-:
-        """Initialize TradeDecision."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("TradeDecision")
-        self.is_initialized = False
-rRequest."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("OrderRequest")
-        self.is_initialized = False
-       """Initialize OrderRequest."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("OrderRequest")
-        self.is_initialized = False
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class OrderRequest(TypedDict):
-    self.logger.info("Implementation placeholder - needs specific logic")
-class OrderRequest(...):
-    """..."""
-    passsymbol: Symbol
-side: OrderSide
-type: OrderType
-quantity: Volume
-price: Price | None
-stop_price: Price | None
-time_in_force: Literal["GTC", "IOC", "FOK"] | None
-reduce_only: bool | None
-leverage: LeverageMultiplier | None
+class PositionInfo(TypedDict):
+    """Position information data structure."""
+    symbol: str
+    side: PositionSide
+    size: float
+    entry_price: float
+    current_price: float
+    unrealized_pnl: float
+    realized_pnl: float
+    leverage: float
+    margin_used: float
+    timestamp: datetime
 
 
 class TradeDecision(TypedDict):
-    self.logger.info("Implementation placeholder - needs specific logic")
-class TradeDecision(TypedDict):
-    self.logger.info("Implementation placeholder - needs specific logic")
-class TradeDecision(...):
-    """..."""
-    passtimestamp: Timestamp
-symbol: Symbol
-action: TradeAction
-quantity: Volume
-price: Price | None
-leverage: LeverageMultiplier | None
-stop_loss: Price | None
-take_profit: Price | None
-confidence: ConfidenceLevel
-risk_score: RiskScore
-reasoning: str
-
-
-class PositionRisk(TypedDict):
-    self.logger.info("Implementation placeholder - needs specific logic")
-class PositionRisk(TypedDict):
-    self.logger.info("Implementation placeholder - needs specific logic")
-class PositionRisk(...):
-    """..."""
-    passposition_id: PositionId
-symbol: Symbol
-current_risk: RiskScore
-max_loss_usd: float
-liquidation_price: Price | None
-margin_ratio: float
-unrealized_pnl_percentage: Percentage
-days_held: int
-risk_level: RiskLevel
-
-
-class RiskParameters(TypedDict):
-    self.logger.info("Implementation placeholder - needs specific logic")
-class RiskParameters(TypedDict):
-    self.logger.info("Implementation placeholder - needs specific logic")
-class RiskParameters(...):
-    """..."""
-    passmax_position_size: Volume
-max_leverage: LeverageMultiplier
-stop_loss_percentage: Percentage
-take_profit_percentage: Percentage
-max_drawdown: Percentage
-max_daily_loss: float
-position_correlation_limit: float
-var_limit: float  # Value at Risk
+    """Trade decision data structure."""
+    action: TradeAction
+    symbol: str
+    quantity: float
+    price: Optional[float]
+    stop_loss: Optional[float]
+    take_profit: Optional[float]
+    risk_score: float
+    confidence: float
+    reasoning: List[str]
+    timestamp: datetime
 
 
 class TradingSignal(TypedDict):
-    self.logger.info("Implementation placeholder - needs specific logic")
-class TradingSignal(TypedDict):
-    self.logger.info("Implementation placeholder - needs specific logic")
-class TradingSignal(...):
-    """..."""
-    passtimestamp: Timestamp
-symbol: Symbol
-signal_type: Literal["entry", "exit", "hold"]
-direction: PositionSide | None
-strength: Score  # 0.0 to 1.0
-confidence: ConfidenceLevel
-time_horizon: Literal["scalp", "short_term", "medium_term", "long_term"]
-source: str  # e.g., "analyst", "ml_model", "technical_indicator"
+    """Trading signal data structure."""
+    symbol: str
+    signal: TradeAction
+    strength: float  # 0.0 to 1.0
+    confidence: float  # 0.0 to 1.0
+    price_target: Optional[float]
+    stop_loss: Optional[float]
+    take_profit: Optional[float]
+    reasoning: List[str]
+    timestamp: datetime
+    model_source: str
+    model_version: str
 
 
-class PerformanceMetrics(TypedDict):
-    self.logger.info("Implementation placeholder - needs specific logic")
-class PerformanceMetrics(TypedDict):
-    self.logger.info("Implementation placeholder - needs specific logic")
-class PerformanceMetrics(...):
-    """..."""
-    passtotal_return: Percentage
-sharpe_ratio: float
-sortino_ratio: float
-max_drawdown: Percentage
-win_rate: Percentage
-profit_factor: float
-average_win: float
-average_loss: float
-total_trades: int
-winning_trades: int
-losing_trades: int
+class PositionRisk(TypedDict):
+    """Position risk metrics."""
+    var_95: float  # 95% Value at Risk
+    var_99: float  # 99% Value at Risk
+    max_drawdown: float
+    sharpe_ratio: float
+    sortino_ratio: float
+    beta: float
+    correlation: float
 
 
-class PortfolioState(TypedDict):
-    self.logger.info("Implementation placeholder - needs specific logic")
-class PortfolioState(TypedDict):
-    self.logger.info("Implementation placeholder - needs specific logic")
-class PortfolioState(...):
-    """..."""
-    passtimestamp: Timestamp
-total_value: float
-available_balance: float
-unrealized_pnl: float
-margin_used: float
-positions: list[PositionRisk]
-open_orders: list[OrderRequest]
-daily_pnl: float
-performance: PerformanceMetrics
+class RiskParameters(TypedDict):
+    """Risk management parameters."""
+    max_position_size: float
+    max_leverage: float
+    max_drawdown: float
+    stop_loss_pct: float
+    take_profit_pct: float
+    trailing_stop_pct: float
+    position_sizing_method: str
+    risk_per_trade: float
 
 
-class BacktestResult(TypedDict):
-    self.logger.info("Implementation placeholder - needs specific logic")
-class BacktestResult(TypedDict):
-    self.logger.info("Implementation placeholder - needs specific logic")
-class BacktestResult(...):
-    """..."""
-    passstart_date: Timestamp
-end_date: Timestamp
-initial_capital: float
-final_value: float
-performance: PerformanceMetrics
-trades: list[TradeDecision]
-daily_returns: list[float]
-drawdown_periods: list[dict[str, Timestamp]]
-config_used: dict[str, str]
+class MarketData(TypedDict):
+    """Market data structure."""
+    symbol: str
+    price: float
+    volume: float
+    timestamp: datetime
+    bid: Optional[float]
+    ask: Optional[float]
+    spread: Optional[float]
+    high_24h: Optional[float]
+    low_24h: Optional[float]
+    change_24h: Optional[float]
+    change_pct_24h: Optional[float]
+
+
+class OrderExecution(TypedDict):
+    """Order execution details."""
+    order_id: str
+    symbol: str
+    side: OrderSide
+    quantity: float
+    executed_quantity: float
+    price: float
+    commission: float
+    timestamp: datetime
+    status: OrderStatus
+    fills: List[Dict[str, Any]]
+
+
+class PortfolioSummary(TypedDict):
+    """Portfolio summary information."""
+    total_value: float
+    cash: float
+    positions_value: float
+    unrealized_pnl: float
+    realized_pnl: float
+    total_pnl: float
+    margin_used: float
+    margin_available: float
+    leverage: float
+    risk_metrics: PositionRisk
+    timestamp: datetime
+
+
+class TradeHistory(TypedDict):
+    """Trade history entry."""
+    trade_id: str
+    symbol: str
+    side: OrderSide
+    quantity: float
+    price: float
+    commission: float
+    timestamp: datetime
+    order_id: str
+    execution_quality: Optional[str]
+    slippage: Optional[float]
+    market_impact: Optional[float]
+
+
+class RiskMetrics(TypedDict):
+    """Comprehensive risk metrics."""
+    portfolio_var: float
+    position_var: Dict[str, float]
+    correlation_matrix: Dict[str, Dict[str, float]]
+    beta_exposure: Dict[str, float]
+    sector_exposure: Dict[str, float]
+    currency_exposure: Dict[str, float]
+    liquidity_metrics: Dict[str, float]
+    stress_test_results: Dict[str, float]
+    scenario_analysis: Dict[str, float]

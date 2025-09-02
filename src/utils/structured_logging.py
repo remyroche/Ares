@@ -1,170 +1,81 @@
+"""
+Structured logging utilities for correlation tracking.
+"""
 
 import contextvars
 import logging
 import uuid
 from contextlib import contextmanager
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    passfrom fastapi import Request
-
-try:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Optional: only needed when JSON format is enabled
-from pythonjsonlogger import jsonlogger  # type: ignore
-except Exception:  # pragma: no cover - optional dependency
-jsonlogger, None  # type: ignore
+from typing import Optional
 
 # Context variables for correlation across logs
 correlation_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
-"correlation_id",
-default="-",
+    "correlation_id",
+    default="-",
 )
 
 session_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
-"session_id",
-default="-",
+    "session_id",
+    default="-",
 )
 
-def get_correlation_id(...) -> ...:
-    """..."""
-    passreturn correlation_id_var.get()
+
+def get_correlation_id() -> str:
+    """Get the current correlation ID."""
+    return correlation_id_var.get()
+
 
 def set_correlation_id(correlation_id: str) -> None:
+    """Set the current correlation ID."""
     correlation_id_var.set(correlation_id)
 
-def ensure_correlation_id(...) -> ...:
-    """..."""
-    passcurrent, correlation_id_var.get()
-if not current or current == "-":
-    passnew_id, generate_correlation_id()
-correlation_id_var.set(new_id)
-return new_id
-return current
+
+def ensure_correlation_id() -> str:
+    """Ensure a correlation ID exists, generating one if needed."""
+    current = correlation_id_var.get()
+    if not current or current == "-":
+        new_id = generate_correlation_id()
+        correlation_id_var.set(new_id)
+        return new_id
+    return current
+
 
 def generate_correlation_id() -> str:
+    """Generate a new correlation ID."""
     return uuid.uuid4().hex
 
+
 @contextmanager
-def correlation_context(...):
-    passdef correlation_context(...):
-    passdef correlation_context(...):
-    passdef correlation_context(...):
-    pass"""Context manager that sets a correlation ID for the duration of the block."""
-token, None
-cid, correlation_id or generate_correlation_id()
-try:
-    passpassself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-token, correlation_id_var.set(cid)
-yield cid
-finally:
-    passif token is not None:
-    passcorrelation_id_var.reset(token)
+def correlation_context(correlation_id: Optional[str] = None):
+    """Context manager that sets a correlation ID for the duration of the block."""
+    token = None
+    cid = correlation_id or generate_correlation_id()
+    try:
+        token = correlation_id_var.set(cid)
+        yield cid
+    finally:
+        if token is not None:
+            correlation_id_var.reset(token)
+
 
 class CorrelationIdFilter(logging.Filter):
+    """Logging filter that adds correlation ID to log records."""
+    
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Add correlation ID to the log record."""
+        record.correlation_id = get_correlation_id()
+        return True
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="correlationidfilter initialization",
+
+def setup_correlation_logging(logger: logging.Logger) -> None:
+    """Set up correlation ID logging for a logger."""
+    correlation_filter = CorrelationIdFilter()
+    logger.addFilter(correlation_filter)
+    
+    # Add correlation ID to log format
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - [%(correlation_id)s] - %(message)s'
     )
-    a
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="correlationidfilter initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize CorrelationIdFilter."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-sync def initialize(self) -> bool:
-        """Initialize CorrelationIdFilter."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-    self.logger.info("Implementation placeholder - needs specific logic")
-class CorrelationIdFilter(logging.Filter):
-    self.logger.info("Implementation placeholder - needs specific logic")
-class CorrelationIdFilter(...):
-    """..."""
-    passdef filter(self, record: logging.LogRecord) -> bool:  # noqa: A003 - filter is required API
-try:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-record.correlation_id, get_correlation_id()
-record.session_id, session_id_var.get()
-except Exception:
-    passpass# Best - effort enrichment should not break logging
-pass
-return True
-
-def get_json_formatter(...) -> ...:
-    """..."""
-    passfmt = (
-"%(asctime)s %(levelname)s %(name)s %(message)s "
-"%(correlation_id)s %(session_id)s"
-)
-if jsonlogger is None:
-    pass# Fallback implementation for jsonlogger
-return logging.Formatter(fmt = fmt, datefmt = datefmt)
-
-return jsonlogger.JsonFormatter(
-fmt = fmt,
-timestamp = True,
-json_ensure_ascii = False,
-json_indent = None,
-datefmt = datefmt,
-)
-
-# FastAPI middleware utilities (optional import to avoid hard dependency)
-try:
-    passpassself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-from starlette.middleware.base import BaseHTTPMiddleware
-
-class CorrelationIdMiddleware(BaseHTTPMiddleware):  # type: ignore[misc]
-"""Middleware that extracts or generates X - Request - ID and sets it in context."""
-
-def __init__(...):
-    passdef __init__(...):
-    passdef __init__(...):
-    passdef __init__(...):
-    passsuper().__init__(app)
-self.header_name, header_name
-
-async def dispatch(self, request: Request, call_next):  # type: ignore[override]
-incoming_id, request.headers.get(self.header_name)
-cid, incoming_id or generate_correlation_id()
-# Bind to context for downstream code
-token, correlation_id_var.set(cid)
-try:
-    passpassself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-response, await call_next(request)
-response.headers[self.header_name] = cid
-return response
-finally:
-    passcorrelation_id_var.reset(token)
-
-except Exception:
-    passpass# FastAPI is optional; if not present, users can still use logging utils
-pass
+    
+    for handler in logger.handlers:
+        handler.setFormatter(formatter)

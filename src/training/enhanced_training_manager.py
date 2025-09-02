@@ -2361,23 +2361,50 @@ class EnhancedTrainingManager:
                     try:
                         from src.training.steps import step9_5_multi_timeframe_hmm_ensemble
 
-                        # Use regime-specific ensemble creation
-                        step09_5_success = await step09_5_multi_timeframe_hmm_ensemble.run_regime_specific_ensemble_step(
+
+                        # Derive available regimes from regime forecasting artifacts (if present)
+                        regimes: list[str] = []
+                        try:
+                            rf_dir = os.path.join(data_dir, "regime_forecasting")
+                            if os.path.isdir(rf_dir):
+                                for fname in os.listdir(rf_dir):
+                                    if fname.startswith(f"{exchange}_{symbol}_") and fname.endswith("_regime_forecasting.json"):
+                                        rf_path = os.path.join(rf_dir, fname)
+                                        with open(rf_path, "r") as f:
+                                            rf = json.load(f)
+                                        current_regime = rf.get("current_regime")
+                                        if isinstance(current_regime, (int, str)):
+                                            regimes.append(str(current_regime))
+                                        probs = rf.get("next_regime_probabilities", {})
+                                        if isinstance(probs, dict):
+                                            regimes.extend(str(k) for k in probs.keys())
+                                # Unique and sorted regimes
+                                regimes = sorted({r for r in regimes if r})
+                        except Exception:
+                            regimes = []
+
+                        step9_5_result = await step9_5_multi_timeframe_hmm_ensemble.run_step(
+
                             symbol=symbol,
                             exchange=exchange,
                             data_dir=data_dir,
                             timeframe=timeframe,
                             lookback_days=self.lookback_days,
+                            regimes=regimes if regimes else None,
                         )
+                        step9_5_success = bool(step9_5_result and step9_5_result.get("success", False))
                     except Exception as e:
                         self.logger.exception(f"❌ Error in Step 9.5: {e}")
                         step9_5_success = False
+                        step9_5_result = None
 
                     pipeline_state["multi_timeframe_hmm_ensemble"] = {
                         "status": "SUCCESS" if step9_5_success else "FAILED",
                         "success": bool(step9_5_success),
                         "completed": bool(step9_5_success),
                     }
+                    if step9_5_result and isinstance(step9_5_result, dict) and "per_regime" in step9_5_result:
+                        pipeline_state["multi_timeframe_hmm_ensemble"]["per_regime"] = step9_5_result["per_regime"]
                     self._save_checkpoint("step9_5_multi_timeframe_hmm_ensemble", pipeline_state)
                     self._log_step_completion(
                         "Step 9.5: Multi-Timeframe HMM Ensemble Training",

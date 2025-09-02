@@ -39,7 +39,12 @@ try:
     from code_quality.analyzers.import_analyzer import ImportAnalyzer
     from code_quality.analyzers.call_graph_analyzer import CallGraphAnalyzer
     from code_quality.analyzers.signature_analyzer import SignatureAnalyzer
-    from code_quality.analyzers.linter_analyzer import LinterAnalyzer
+    from code_quality.analyzers.type_checker import TypeChecker
+    from code_quality.analyzers.advanced_ast_analyzer import AdvancedASTAnalyzer
+    from code_quality.analyzers.architecture_analyzer import ArchitectureAnalyzer
+    from code_quality.analyzers.code_duplication_analyzer import CodeDuplicationAnalyzer
+    from code_quality.analyzers.error_handling_analyzer import ErrorHandlingAnalyzer
+    from code_quality.analyzers.concurrency_analyzer import ConcurrencyAnalyzer
     from code_quality.fixers.auto_fixer import AutoFixer
     from code_quality.fixers.sequential_fixer import SequentialFixer
     CODE_QUALITY_AVAILABLE = True
@@ -122,7 +127,7 @@ class ComprehensiveProfessionalAnalyzer:
         self.fixers = {}
         self._initialize_tools()
         
-        # Analysis categories - focusing on actionable, fixable issues
+        # Analysis categories - comprehensive code quality analysis
         self.categories = {
             "syntax": "Syntax and AST Analysis",
             "complexity": "Code Complexity Metrics",
@@ -130,6 +135,12 @@ class ComprehensiveProfessionalAnalyzer:
             "dependencies": "Import and Dependency Analysis",
             "call_graph": "Function Call Graph Analysis",
             "signatures": "Function Signature Analysis",
+            "type_checking": "Type Checking and Validation",
+            "advanced_ast": "Advanced AST Analysis",
+            "architecture": "Code Architecture Analysis",
+            "code_duplication": "Code Duplication Detection",
+            "error_handling": "Error Handling Analysis",
+            "concurrency": "Concurrency Analysis",
             "auto_fixing": "Automatic Code Fixing"
         }
     
@@ -139,7 +150,7 @@ class ComprehensiveProfessionalAnalyzer:
             return
         
         try:
-            # Initialize analyzers - focusing on actionable, fixable issues
+            # Initialize analyzers - comprehensive code quality analysis
             self.analyzers = {
                 "syntax": SyntaxValidator(self.config),
                 "complexity": ComplexityAnalyzer(self.config),
@@ -147,7 +158,13 @@ class ComprehensiveProfessionalAnalyzer:
                 "dependencies": DependencyAnalyzer(self.config),
                 "imports": ImportAnalyzer(self.config),
                 "call_graph": CallGraphAnalyzer(self.config),
-                "signatures": SignatureAnalyzer(self.config)
+                "signatures": SignatureAnalyzer(self.config),
+                "type_checking": TypeChecker(self.config),
+                "advanced_ast": AdvancedASTAnalyzer(self.config),
+                "architecture": ArchitectureAnalyzer(self.config),
+                "code_duplication": CodeDuplicationAnalyzer(self.config),
+                "error_handling": ErrorHandlingAnalyzer(self.config),
+                "concurrency": ConcurrencyAnalyzer(self.config)
             }
             
             # Initialize fixers
@@ -410,7 +427,13 @@ class ComprehensiveProfessionalAnalyzer:
             "dependencies": "dependencies",
             "imports": "dependencies",
             "call_graph": "call_graph",
-            "signatures": "signatures"
+            "signatures": "signatures",
+            "type_checking": "type_checking",
+            "advanced_ast": "advanced_ast",
+            "architecture": "architecture",
+            "code_duplication": "code_duplication",
+            "error_handling": "error_handling",
+            "concurrency": "concurrency"
         }
         return category_mapping.get(analyzer_name, "other")
     

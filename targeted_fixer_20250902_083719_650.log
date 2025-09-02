@@ -1,0 +1,28 @@
+2025-09-02 08:37:19,655 - INFO - Processing file: src/launcher/enhanced_trading_launcher.py
+2025-09-02 08:37:19,655 - INFO - Performing semantic analysis...
+2025-09-02 08:37:19,656 - INFO - Code quality score: 0.00
+2025-09-02 08:37:19,656 - WARNING - Syntax errors found: 1
+2025-09-02 08:37:19,656 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:37:19,658 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:19,659 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:19,660 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:19,661 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:19,663 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:19,664 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:19,665 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:19,666 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:19,667 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:19,668 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:19,670 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:19,671 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:19,673 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:19,674 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:19,675 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:19,676 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:37:19,677 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:37:19,678 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:19,683 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:19,683 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:37:19,684 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:37:19,687 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:19,690 - INFO - No fixes needed for: src/launcher/enhanced_trading_launcher.py

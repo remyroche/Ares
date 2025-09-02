@@ -96,40 +96,40 @@ class Supervisor:
                 hasattr(self.analyst, "state_manager")
                 and self.analyst.state_manager is None
             ):
-                self.analyst.state_manager = self.state_manager
+                self.analyst.state_manager = self.trader
 
-if (
-hasattr(self.strategist, "exchange")
-and self.strategist.exchange is None
-):
+            if (
+                hasattr(self.strategist, "exchange")
+                and self.strategist.exchange is None
+            ):
                 self.strategist.exchange = self.trader
-if (
-hasattr(self.strategist, "state_manager")
-and self.strategist.state_manager is None
-):
+            if (
+                hasattr(self.strategist, "state_manager")
+                and self.strategist.state_manager is None
+            ):
                 self.strategist.state_manager = self.state_manager
 
-if hasattr(self.tactician, "exchange") and self.tactician.exchange is None:
+            if hasattr(self.tactician, "exchange") and self.tactician.exchange is None:
                 self.tactician.exchange = self.trader
-if (
-hasattr(self.tactician, "state_manager")
-and self.tactician.state_manager is None
-):
+            if (
+                hasattr(self.tactician, "state_manager")
+                and self.tactician.state_manager is None
+            ):
                 self.tactician.state_manager = self.state_manager
 
-else:
+        else:
             self.sentinel = None
-self.analyst = None
-self.strategist = None
-self.tactician = None
-self.logger.critical(
-"Core trading components not initialized due to invalid trading environment.")
+            self.analyst = None
+            self.strategist = None
+            self.tactician = None
+            self.logger.critical(
+                "Core trading components not initialized due to invalid trading environment.")
 
-self.running = False
+            self.running = False
 
-self.market_data_queue = asyncio.Queue(maxsize=100)
-self.analysis_queue = asyncio.Queue(maxsize=100)
-self.signal_queue = asyncio.Queue(maxsize=50)
+        self.market_data_queue = asyncio.Queue(maxsize=100)
+        self.analysis_queue = asyncio.Queue(maxsize=100)
+        self.signal_queue = asyncio.Queue(maxsize=50)
 
     @handle_errors(
 exceptions=(Exception, asyncio.CancelledError),
@@ -137,262 +137,261 @@ default_return=None,
 context="supervisor start")
     async def start(self):
         """
-Starts all bot components and the main processing loop.
+        Starts all bot components and the main processing loop.
         """
-self.logger.info("Supervisor starting all components...")
-self.running = True
+        self.logger.info("Supervisor starting all components...")
+        self.running = True
 
-if hasattr(self.db_manager, "initialize") and asyncio.iscoroutinefunction(
-self.db_manager.initialize
-):
+        if hasattr(self.db_manager, "initialize") and asyncio.iscoroutinefunction(
+            self.db_manager.initialize
+        ):
             await self.db_manager.initialize()
 
-tasks = []
-if (
-self.trader
-and self.sentinel
-and self.analyst
-and self.strategist
-and self.tactician
-):
-            tasks.extend(
-[
-asyncio.create_task(self.sentinel.start(), name="Sentinel_Task"),
-asyncio.create_task(self.analyst.start(), name="Analyst_Task"),
-asyncio.create_task(
-self.strategist.start(),
-name="Strategist_Task"),
-asyncio.create_task(self.tactician.start(), name="Tactician_Task"),
-])
-if isinstance(self.trader, PaperTrader):
+        tasks = []
+        if (
+            self.trader
+            and self.sentinel
+            and self.analyst
+            and self.strategist
+            and self.tactician
+        ):
+            tasks.extend([
+                asyncio.create_task(self.sentinel.start(), name="Sentinel_Task"),
+                asyncio.create_task(self.analyst.start(), name="Analyst_Task"),
+                asyncio.create_task(
+                    self.strategist.start(),
+                    name="Strategist_Task"),
+                asyncio.create_task(self.tactician.start(), name="Tactician_Task"),
+            ])
+            if isinstance(self.trader, PaperTrader):
                 tasks.append(
-asyncio.create_task(
-self.trader.run_simulation(),
-name="PaperTrader_Simulation_Task"))
-else:
+                    asyncio.create_task(
+                        self.trader.run_simulation(),
+                        name="PaperTrader_Simulation_Task"))
+        else:
             self.logger.error(
-"Cannot start supervisor: Core trading components are not initialized.")
-self.running = False
-return
+                "Cannot start supervisor: Core trading components are not initialized.")
+            self.running = False
+            return
 
         try:
-await asyncio.gather(*tasks)
-except asyncio.CancelledError:
+            await asyncio.gather(*tasks)
+        except asyncio.CancelledError:
             self.logger.info(
-"Supervisor tasks cancelled. Beginning graceful shutdown...")
-finally:
+                "Supervisor tasks cancelled. Beginning graceful shutdown...")
+        finally:
             self.running = False
-for task in tasks:
+            for task in tasks:
                 if not task.done():
                     task.cancel()
-await asyncio.gather(*tasks, return_exceptions=True)
+            await asyncio.gather(*tasks, return_exceptions=True)
 
-if self.trader and hasattr(self.trader, "close"):
-                await self.trader.close()
-self.state_manager._save_state_to_file()  # Call internal save method
-self.logger.info(
-"All components have been shut down and state has been saved.")
+        if self.trader and hasattr(self.trader, "close"):
+            await self.trader.close()
+        self.state_manager._save_state_to_file()  # Call internal save method
+        self.logger.info(
+            "All components have been shut down and state has been saved.")
 
     @handle_errors(
-exceptions=(ValueError, AttributeError, KeyError),
-default_return=None,
-context="exchange state synchronization")
+        exceptions=(ValueError, AttributeError, KeyError),
+        default_return=None,
+        context="exchange state synchronization")
     async def _synchronize_exchange_state(self):
         """
-Fetches the current account equity and open positions from the exchange
-and updates the persistent state. This is key for crash recovery.
+        Fetches the current account equity and open positions from the exchange
+        and updates the persistent state. This is key for crash recovery.
         """
         try:
-# 1. Update account equity and peak equity
-account_info = await self.trader.get_account_info()  # Use self.trader
-current_equity = float(account_info.get("totalWalletBalance", 0))
+            # 1. Update account equity and peak equity
+            account_info = await self.trader.get_account_info()  # Use self.trader
+            current_equity = float(account_info.get("totalWalletBalance", 0))
 
-if current_equity > 0:
+            if current_equity > 0:
                 self.state_manager.set_state("account_equity", current_equity)
-self.logger.debug(f"Updated account equity: ${current_equity:,.2f}")
+                self.logger.debug(f"Updated account equity: ${current_equity:,.2f}")
 
-peak_equity = self.state_manager.get_state(
-"global_peak_equity")  # Use global_peak_equity from state
-if current_equity > peak_equity:
+                peak_equity = self.state_manager.get_state(
+                    "global_peak_equity")  # Use global_peak_equity from state
+                if current_equity > peak_equity:
                     self.state_manager.set_state("global_peak_equity", current_equity)
-self.logger.info(f"New peak equity reached: ${current_equity:,.2f}")
-else:
+                    self.logger.info(f"New peak equity reached: ${current_equity:,.2f}")
+            else:
                 self.logger.warning("Could not retrieve a valid account balance.")
 
-# 2. Update open positions state for crash recovery
-open_positions = await self.trader.get_open_positions()  # Use self.trader
-symbol = self.symbol
-active_position_on_exchange = None
+            # 2. Update open positions state for crash recovery
+            open_positions = await self.trader.get_open_positions()  # Use self.trader
+            symbol = self.symbol
+            active_position_on_exchange = None
 
-for position in open_positions:
+            for position in open_positions:
                 if (
-position.get("symbol") == symbol
-and float(position.get("positionAmt", 0)) != 0
-):
+                    position.get("symbol") == symbol
+                    and float(position.get("positionAmt", 0)) != 0
+                ):
                     # Capture more details for active_position
-active_position_on_exchange = {
-"symbol": position["symbol"],
-"amount": float(position["positionAmt"]),
-"entry_price": float(position["entryPrice"]),
-"leverage": int(position.get("leverage", 1)),
-"direction": "LONG"
-if float(position["positionAmt"]) > 0
-else "SHORT",
-"trade_id": self.state_manager.get_state(
-"current_position",
-{}).get("trade_id"),  # Attempt to recover trade_id
-"entry_timestamp": self.state_manager.get_state(
-"current_position",
-{}).get("entry_timestamp"),  # Attempt to recover timestamp
-"stop_loss": self.state_manager.get_state(
-"current_position",
-{}).get("stop_loss"),
-"take_profit": self.state_manager.get_state(
-"current_position",
-{}).get("take_profit"),
-"entry_fees_usd": self.state_manager.get_state(
-"current_position",
-{}).get("entry_fees_usd", 0.0),
-"entry_context": self.state_manager.get_state(
-"current_position",
-{}).get("entry_context", {}),
-}
-self.logger.debug(
-f"Found active position on exchange for {symbol}.")
-break
+                    active_position_on_exchange = {
+                        "symbol": position["symbol"],
+                        "amount": float(position["positionAmt"]),
+                        "entry_price": float(position["entryPrice"]),
+                        "leverage": int(position.get("leverage", 1)),
+                        "direction": "LONG"
+                        if float(position["positionAmt"]) > 0
+                        else "SHORT",
+                        "trade_id": self.state_manager.get_state(
+                            "current_position",
+                            {}).get("trade_id"),  # Attempt to recover trade_id
+                        "entry_timestamp": self.state_manager.get_state(
+                            "current_position",
+                            {}).get("entry_timestamp"),  # Attempt to recover timestamp
+                        "stop_loss": self.state_manager.get_state(
+                            "current_position",
+                            {}).get("stop_loss"),
+                        "take_profit": self.state_manager.get_state(
+                            "current_position",
+                            {}).get("take_profit"),
+                        "entry_fees_usd": self.state_manager.get_state(
+                            "current_position",
+                            {}).get("entry_fees_usd", 0.0),
+                        "entry_context": self.state_manager.get_state(
+                            "current_position",
+                            {}).get("entry_context", {}),
+                    }
+                    self.logger.debug(
+                        f"Found active position on exchange for {symbol}.")
+                    break
 
-# Synchronize the state file with what's on the exchange
-current_state_position = self.state_manager.get_state(
-"current_position")  # Use 'current_position'
+            # Synchronize the state file with what's on the exchange
+            current_state_position = self.state_manager.get_state(
+                "current_position")  # Use 'current_position'
 
-# Only update if there's a meaningful change or new position found
-if active_position_on_exchange != current_state_position:
+            # Only update if there's a meaningful change or new position found
+            if active_position_on_exchange != current_state_position:
                 self.logger.info(
-f"State mismatch or update: Synchronizing position state with exchange. New state: {active_position_on_exchange}")
-self.state_manager.set_state(
-"current_position",
-active_position_on_exchange
-)  # Update 'current_position'
+                    f"State mismatch or update: Synchronizing position state with exchange. New state: {active_position_on_exchange}")
+                self.state_manager.set_state(
+                    "current_position",
+                    active_position_on_exchange
+                )  # Update 'current_position'
 
-except Exception as e:
+        except Exception as e:
             self.logger.error(
-f"Failed to synchronize state with exchange: {e}",
-exc_info=True
-)
+                f"Failed to synchronize state with exchange: {e}",
+                exc_info=True
+            )
 
 class MainSupervisor:
-        """
-Main Supervisor Entrypoint with DI, type hints, and robust error handling.
-        """
+    """
+    Main Supervisor Entrypoint with DI, type hints, and robust error handling.
+    """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.        self.config:: dict[str, Any] = config
-self.logger = system_logger.getChild("MainSupervisor")
-        self.        self.is_running:: bool = False
-        self.        self.status:: dict[str, Any] = {}
-        self.        self.history:: list[dict[str, Any]] = []
-        self.        self.supervisor_config:: dict[str, Any] = self.config.get("main_supervisor", {})
-        self.        self.run_interval:: int = self.supervisor_config.get("run_interval", 60)
-        self.        self.max_history:: int = self.supervisor_config.get("max_history", 100)
+        self.config: dict[str, Any] = config
+        self.logger = system_logger.getChild("MainSupervisor")
+        self.is_running: bool = False
+        self.status: dict[str, Any] = {}
+        self.history: list[dict[str, Any]] = []
+        self.supervisor_config: dict[str, Any] = self.config.get("main_supervisor", {})
+        self.run_interval: int = self.supervisor_config.get("run_interval", 60)
+        self.max_history: int = self.supervisor_config.get("max_history", 100)
 
     @handle_specific_errors(
-error_handlers={
-ValueError: (False, "Invalid main supervisor configuration"),
-AttributeError: (False, "Missing required main supervisor parameters"),
-KeyError: (False, "Missing configuration keys"),
-},
-default_return=False,
-context="main supervisor initialization")
+        error_handlers={
+            ValueError: (False, "Invalid main supervisor configuration"),
+            AttributeError: (False, "Missing required main supervisor parameters"),
+            KeyError: (False, "Missing configuration keys"),
+        },
+        default_return=False,
+        context="main supervisor initialization")
     async def initialize(self) -> bool:
         try:
-self.logger.info("Initializing Main Supervisor...")
-await self._load_supervisor_configuration()
-if not self._validate_configuration():
+            self.logger.info("Initializing Main Supervisor...")
+            await self._load_supervisor_configuration()
+            if not self._validate_configuration():
                 self.logger.error("Invalid configuration for main supervisor")
-return False
-self.logger.info("✅ Main Supervisor initialization completed successfully")
-return True
-except Exception as e:
+                return False
+            self.logger.info("✅ Main Supervisor initialization completed successfully")
+            return True
+        except Exception as e:
             self.logger.error(f"❌ Main Supervisor initialization failed: {e}")
-return False
+            return False
 
     @handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=None,
-context="supervisor configuration loading")
+        exceptions=(ValueError, AttributeError),
+        default_return=None,
+        context="supervisor configuration loading")
     async def _load_supervisor_configuration(self) -> None:
         try:
-self.supervisor_config.setdefault("run_interval", 60)
-self.supervisor_config.setdefault("max_history", 100)
-self.run_interval = self.supervisor_config["run_interval"]
-self.max_history = self.supervisor_config["max_history"]
-self.logger.info("Main supervisor configuration loaded successfully")
-except Exception as e:
+            self.supervisor_config.setdefault("run_interval", 60)
+            self.supervisor_config.setdefault("max_history", 100)
+            self.run_interval = self.supervisor_config["run_interval"]
+            self.max_history = self.supervisor_config["max_history"]
+            self.logger.info("Main supervisor configuration loaded successfully")
+        except Exception as e:
             self.logger.error(f"Error loading supervisor configuration: {e}")
 
     @handle_errors(
-exceptions=(ValueError, AttributeError),
-default_return=False,
-context="configuration validation")
+        exceptions=(ValueError, AttributeError),
+        default_return=False,
+        context="configuration validation")
     def _validate_configuration(self) -> bool:
         try:
-if self.run_interval <= 0:
+            if self.run_interval <= 0:
                 self.logger.error("Invalid run interval")
-return False
-if self.max_history <= 0:
+                return False
+            if self.max_history <= 0:
                 self.logger.error("Invalid max history")
-return False
-self.logger.info("Configuration validation successful")
-return True
-except Exception as e:
+                return False
+            self.logger.info("Configuration validation successful")
+            return True
+        except Exception as e:
             self.logger.error(f"Error validating configuration: {e}")
-return False
+            return False
 
     @handle_specific_errors(
-error_handlers={
-Exception: (False, "Supervisor run failed"),
-},
-default_return=False,
-context="main supervisor run")
+        error_handlers={
+            Exception: (False, "Supervisor run failed"),
+        },
+        default_return=False,
+        context="main supervisor run")
     async def run(self) -> bool:
         try:
-self.is_running = True
-self.logger.info("🚦 Main Supervisor started.")
-while self.is_running:
+            self.is_running = True
+            self.logger.info("🚦 Main Supervisor started.")
+            while self.is_running:
                 await self._supervise()
-await asyncio.sleep(self.run_interval)
-return True
-except Exception as e:
+                await asyncio.sleep(self.run_interval)
+            return True
+        except Exception as e:
             self.logger.error(f"Error in main supervisor run: {e}")
-self.is_running = False
-return False
+            self.is_running = False
+            return False
 
     @handle_errors(
-exceptions=(Exception),
-default_return=None,
-context="supervise step")
+        exceptions=(Exception),
+        default_return=None,
+        context="supervise step")
     async def _supervise(self) -> None:
         try:
-now = datetime.now().isoformat()
-self.status = {"timestamp": now, "status": "running"}
-self.history.append(self.status.copy())
-if len(self.history) > self.max_history:
+            now = datetime.now().isoformat()
+            self.status = {"timestamp": now, "status": "running"}
+            self.history.append(self.status.copy())
+            if len(self.history) > self.max_history:
                 self.history.pop(0)
-self.logger.info(f"Main Supervisor tick at {now}")
-except Exception as e:
+            self.logger.info(f"Main Supervisor tick at {now}")
+        except Exception as e:
             self.logger.error(f"Error in supervise step: {e}")
 
     @handle_errors(
-exceptions=(Exception),
-default_return=None,
-context="main supervisor stop")
+        exceptions=(Exception),
+        default_return=None,
+        context="main supervisor stop")
     async def stop(self) -> None:
         self.logger.info("🛑 Stopping Main Supervisor...")
         try:
-self.is_running = False
-self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
-self.logger.info("✅ Main Supervisor stopped successfully")
-except Exception as e:
+            self.is_running = False
+            self.status = {"timestamp": datetime.now().isoformat(), "status": "stopped"}
+            self.logger.info("✅ Main Supervisor stopped successfully")
+        except Exception as e:
             self.logger.error(f"Error stopping main supervisor: {e}")
 
     def get_status(self) -> dict[str, Any]:
@@ -400,27 +399,29 @@ except Exception as e:
 
     def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         history = self.history.copy()
-if limit:
+        if limit:
             history = history[-limit:]
-return history
+        return history
+
 
 main_supervisor: MainSupervisor | None = None
 
-    @handle_errors(
-exceptions=(Exception),
-default_return=None,
-context="main supervisor setup")
-    async def setup_main_supervisor(
-config: dict[str, Any] | None = None) -> MainSupervisor | None:
+
+@handle_errors(
+    exceptions=(Exception),
+    default_return=None,
+    context="main supervisor setup")
+async def setup_main_supervisor(
+    config: dict[str, Any] | None = None) -> MainSupervisor | None:
     try:
-global main_supervisor
-if config is None:
+        global main_supervisor
+        if config is None:
             config = {"main_supervisor": {"run_interval": 60, "max_history": 100}}
-main_supervisor = MainSupervisor(config)
-success = await main_supervisor.initialize()
-if success:
+        main_supervisor = MainSupervisor(config)
+        success = await main_supervisor.initialize()
+        if success:
             return main_supervisor
-return None
-except Exception as e:
+        return None
+    except Exception as e:
         print(f"Error setting up main supervisor: {e}")
-return None
+        return None

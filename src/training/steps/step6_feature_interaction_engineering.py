@@ -63,6 +63,22 @@ class FeatureInteractionEngine:
             self.use_dynamic_periods = False
             self.logger.warning("⚠️ DiverseLookbackOptimizer not available, using fallback periods")
         
+        # Optionally initialize MatrixDiverseLookbackOptimizer (vectorized) when enabled
+        self.matrix_optimizer = None
+        self.use_matrix_optimizer = bool(step6_config.get("use_matrix_optimizer", False))
+        if self.use_matrix_optimizer:
+            try:
+                from src.training.matrix_diverse_lookback_optimizer import MatrixDiverseLookbackOptimizer
+                self.matrix_optimizer = MatrixDiverseLookbackOptimizer(config)
+                # Even if classic optimizer import failed, matrix optimizer enables dynamic periods
+                self.use_dynamic_periods = True
+                self.logger.info("✅ Integrated with MatrixDiverseLookbackOptimizer for vectorized period selection")
+            except Exception as e:
+                # Disable matrix path if import or construction fails
+                self.matrix_optimizer = None
+                self.use_matrix_optimizer = False
+                self.logger.warning(f"⚠️ MatrixDiverseLookbackOptimizer unavailable ({e}), falling back to classic optimization")
+        
         # Fallback optimal lookback periods (used if dynamic optimization fails)
         self.fallback_lookback_periods = {
             "RSI": {
@@ -222,10 +238,17 @@ class FeatureInteractionEngine:
         try:
             self.logger.info("🎯 Starting dynamic lookback period optimization...")
             
-            # Run diverse lookback optimization
-            optimization_results = await self.diverse_optimizer.find_diverse_lookback_periods(
-                market_data, target, regimes
-            )
+            # Choose optimizer path based on configuration and availability
+            if self.use_matrix_optimizer and self.matrix_optimizer is not None:
+                self.logger.info("🧮 Using MatrixDiverseLookbackOptimizer (vectorized)")
+                optimization_results = await self.matrix_optimizer.find_diverse_lookback_periods_matrix(
+                    market_data, target, regimes
+                )
+            else:
+                self.logger.info("📈 Using DiverseLookbackOptimizer (classic)")
+                optimization_results = await self.diverse_optimizer.find_diverse_lookback_periods(
+                    market_data, target, regimes
+                )
             
             # Extract optimized periods
             self.dynamic_lookback_periods = self._extract_optimized_periods(optimization_results)

@@ -1,3 +1,10 @@
+"""Global Portfolio Manager Module.
+
+This module manages portfolio allocation, position sizing, and risk management
+across multiple trading strategies and models. It provides comprehensive
+portfolio optimization, dynamic rebalancing, and risk-adjusted position sizing.
+"""
+
 # src/supervisor/global_portfolio_manager.py
 
 from datetime import datetime

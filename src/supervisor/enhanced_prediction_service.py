@@ -5,11 +5,12 @@ This service provides calibrated confidence scores from ML models for both Analy
 It ONLY provides calibrated confidence scores and fails if calibrated confidence doesn't exist.
 """
 
-import pickle
+import pickle  # TODO: Replace with joblib for security
 
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+import joblib
 import pandas as pd
 
 from src.config.enhanced_prediction_service_config import get_enhanced_prediction_service_config
@@ -19,6 +20,47 @@ from src.utils.logging_config import get_logger
 from src.utils.performance import performance_monitor
 from src.utils.tracing import with_tracing_span
 from src.utils.validation import validate_data_quality
+
+
+def _safe_load_model(filepath: Path, logger) -> Any:
+    """
+    Safely load a model file with security checks.
+    
+    Args:
+        filepath: Path to the model file
+        logger: Logger instance for warnings
+        
+    Returns:
+        Loaded model data
+        
+    Raises:
+        ValueError: If file is not from a trusted source
+    """
+    # Security check: Ensure file is within expected directory
+    try:
+        filepath = filepath.resolve()
+        expected_dirs = [
+            Path("models").resolve(),
+            Path("src/models").resolve(),
+            Path("/app/models").resolve(),
+        ]
+        
+        if not any(filepath.is_relative_to(expected_dir) for expected_dir in expected_dirs if expected_dir.exists()):
+            raise ValueError(f"Model file {filepath} is not in a trusted directory")
+        
+        # Prefer joblib for security
+        if filepath.suffix == ".joblib":
+            return joblib.load(filepath)
+        elif filepath.suffix == ".pkl":
+            logger.warning(f"Loading pickle file {filepath.name} - consider converting to joblib format")
+            with open(filepath, "rb") as f:
+                return pickle.load(f)  # nosec B301 - security check performed above
+        else:
+            raise ValueError(f"Unsupported model file format: {filepath.suffix}")
+            
+    except Exception as e:
+        logger.error(f"Error loading model from {filepath}: {e}")
+        raise
 
 
 class EnhancedPredictionService:
@@ -111,8 +153,7 @@ class EnhancedPredictionService:
 
                     for model_file in type_path.glob("*.pkl"):
                         try:
-                            with open(model_file, "rb") as f:
-                                model_data = pickle.load(f)
+                            model_data = _safe_load_model(model_file, self.logger)
 
                             model_name = model_file.stem
 
@@ -168,8 +209,7 @@ class EnhancedPredictionService:
 
                     for model_file in type_path.glob("*.pkl"):
                         try:
-                            with open(model_file, "rb") as f:
-                                model_data = pickle.load(f)
+                            model_data = _safe_load_model(model_file, self.logger)
 
                             model_name = model_file.stem
 

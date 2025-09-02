@@ -1,3 +1,11 @@
+"""Performance Monitor Module.
+
+This module provides comprehensive performance monitoring for trading models,
+including real-time tracking, drift detection, statistical analysis, and
+performance metrics calculation. It integrates with the model behavior tracker
+to provide holistic performance insights.
+"""
+
 import asyncio
 from datetime import datetime
 from typing import Any
@@ -65,6 +73,7 @@ class PerformanceMonitor:
         context="performance monitor initialization",
     )
     async def initialize(self) -> bool:
+        """Initialize the performance monitor with configuration validation."""
         try:
             self.logger.info("Initializing Performance Monitor...")
             await self._load_monitor_configuration()

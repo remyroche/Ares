@@ -1,0 +1,4556 @@
+{
+  "summary": {
+    "total_files": 497,
+    "files_with_errors": 454,
+    "total_errors": 454,
+    "error_rate_percentage": 91.34808853118712
+  },
+  "error_types": {
+    "SyntaxError": 403,
+    "IndentationError": 51
+  },
+  "files_with_errors": {
+    "../src/tasks.py": [
+      "invalid syntax (<unknown>, line 16)"
+    ],
+    "../src/ares_pipeline.py": [
+      "unindent does not match any outer indentation level (<unknown>, line 70)"
+    ],
+    "../src/config.py": [
+      "invalid syntax (<unknown>, line 54)"
+    ],
+    "../src/config_optuna.py": [
+      "invalid syntax (<unknown>, line 41)"
+    ],
+    "../src/paper_trader.py": [
+      "invalid syntax (<unknown>, line 41)"
+    ],
+    "../src/monitoring/error_detection_system.py": [
+      "unterminated string literal (detected at line 69) (<unknown>, line 69)"
+    ],
+    "../src/monitoring/correlation_manager.py": [
+      "invalid syntax (<unknown>, line 39)"
+    ],
+    "../src/monitoring/report_scheduler.py": [
+      "invalid syntax (<unknown>, line 57)"
+    ],
+    "../src/monitoring/fractional_system_monitor.py": [
+      "invalid syntax (<unknown>, line 38)"
+    ],
+    "../src/monitoring/enhanced_ml_tracker.py": [
+      "invalid syntax (<unknown>, line 40)"
+    ],
+    "../src/monitoring/performance_dashboard.py": [
+      "unmatched ')' (<unknown>, line 17)"
+    ],
+    "../src/monitoring/integration_manager.py": [
+      "unmatched ')' (<unknown>, line 14)"
+    ],
+    "../src/monitoring/performance_monitor.py": [
+      "invalid syntax (<unknown>, line 21)"
+    ],
+    "../src/monitoring/surrogate_optimization_monitor.py": [
+      "invalid syntax (<unknown>, line 44)"
+    ],
+    "../src/monitoring/metrics_dashboard.py": [
+      "invalid syntax (<unknown>, line 37)"
+    ],
+    "../src/monitoring/fractional_performance_tracker.py": [
+      "invalid syntax (<unknown>, line 22)"
+    ],
+    "../src/monitoring/csv_exporter.py": [
+      "unmatched ')' (<unknown>, line 13)"
+    ],
+    "../src/monitoring/advanced_tracer.py": [
+      "unterminated string literal (detected at line 95) (<unknown>, line 95)"
+    ],
+    "../src/monitoring/ml_monitor.py": [
+      "unmatched ')' (<unknown>, line 16)"
+    ],
+    "../src/backtesting/enhanced_backtester.py": [
+      "invalid syntax (<unknown>, line 39)"
+    ],
+    "../src/launcher/enhanced_trading_launcher.py": [
+      "invalid syntax (<unknown>, line 19)"
+    ],
+    "../src/components/modular_analyst.py": [
+      "invalid syntax (<unknown>, line 14)"
+    ],
+    "../src/components/modular_tactician.py": [
+      "invalid syntax (<unknown>, line 14)"
+    ],
+    "../src/components/modular_supervisor.py": [
+      "invalid syntax (<unknown>, line 14)"
+    ],
+    "../src/components/modular_strategist.py": [
+      "invalid syntax (<unknown>, line 15)"
+    ],
+    "../src/interfaces/event_bus.py": [
+      "invalid syntax (<unknown>, line 44)"
+    ],
+    "../src/interfaces/base_interfaces.py": [
+      "unterminated string literal (detected at line 35) (<unknown>, line 35)"
+    ],
+    "../src/interfaces/enhanced_event_bus.py": [
+      "invalid syntax (<unknown>, line 62)"
+    ],
+    "../src/trading/live_wavelet_analyzer.py": [
+      "invalid syntax (<unknown>, line 29)"
+    ],
+    "../src/trading/live_wavelet_demo.py": [
+      "invalid syntax (<unknown>, line 22)"
+    ],
+    "../src/trading/live_wavelet_integration.py": [
+      "invalid syntax (<unknown>, line 22)"
+    ],
+    "../src/trading/sr_trading_intelligence.py": [
+      "invalid syntax (<unknown>, line 29)"
+    ],
+    "../src/supervisor/enhanced_prediction_service.py": [
+      "unexpected indent (<unknown>, line 1)"
+    ],
+    "../src/supervisor/performance_monitor.py": [
+      "unindent does not match any outer indentation level (<unknown>, line 32)"
+    ],
+    "../src/supervisor/global_portfolio_manager.py": [
+      "expected an indented block after 'try' statement on line 168 (<unknown>, line 170)"
+    ],
+    "../src/supervisor/performance_reporter.py": [
+      "unindent does not match any outer indentation level (<unknown>, line 16)"
+    ],
+    "../src/supervisor/exchange_ab_tester.py": [
+      "unexpected indent (<unknown>, line 13)"
+    ],
+    "../src/supervisor/multi_exchange_ab_tester.py": [
+      "unexpected indent (<unknown>, line 16)"
+    ],
+    "../src/supervisor/dynamic_weighter.py": [
+      "unindent does not match any outer indentation level (<unknown>, line 13)"
+    ],
+    "../src/supervisor/enhanced_model_monitor.py": [
+      "unterminated triple-quoted string literal (detected at line 245) (<unknown>, line 239)"
+    ],
+    "../src/supervisor/exchange_volume_adapter.py": [
+      "expected an indented block after 'try' statement on line 89 (<unknown>, line 90)"
+    ],
+    "../src/supervisor/main.py": [
+      "unexpected indent (<unknown>, line 134)"
+    ],
+    "../src/supervisor/risk_allocator.py": [
+      "unindent does not match any outer indentation level (<unknown>, line 24)"
+    ],
+    "../src/supervisor/pnl_loss_functions.py": [
+      "unexpected indent (<unknown>, line 9)"
+    ],
+    "../src/supervisor/supervisor.py": [
+      "unindent does not match any outer indentation level (<unknown>, line 21)"
+    ],
+    "../src/supervisor/model_behavior_tracker.py": [
+      "unexpected indent (<unknown>, line 17)"
+    ],
+    "../src/supervisor/optimizer.py": [
+      "unindent does not match any outer indentation level (<unknown>, line 17)"
+    ],
+    "../src/pipelines/live_trading_pipeline.py": [
+      "unmatched ')' (<unknown>, line 9)"
+    ],
+    "../src/pipelines/improved_pipeline_executor.py": [
+      "invalid syntax (<unknown>, line 25)"
+    ],
+    "../src/pipelines/base_pipeline.py": [
+      "unmatched ')' (<unknown>, line 17)"
+    ],
+    "../src/pipelines/__init__.py": [
+      "invalid syntax (<unknown>, line 15)"
+    ],
+    "../src/pipelines/components/monitoring_manager.py": [
+      "unmatched ')' (<unknown>, line 9)"
+    ],
+    "../src/pipelines/components/lifecycle_manager.py": [
+      "unmatched ')' (<unknown>, line 9)"
+    ],
+    "../src/pipelines/components/data_manager.py": [
+      "unmatched ')' (<unknown>, line 14)"
+    ],
+    "../src/sentinel/sentinel.py": [
+      "invalid syntax (<unknown>, line 24)"
+    ],
+    "../src/transition/seq2seq_trainer.py": [
+      "invalid syntax (<unknown>, line 20)"
+    ],
+    "../src/transition/combined_features_builder.py": [
+      "invalid syntax (<unknown>, line 23)"
+    ],
+    "../src/transition/baseline_rf.py": [
+      "invalid syntax (<unknown>, line 16)"
+    ],
+    "../src/transition/inference_combiner.py": [
+      "expected an indented block after function definition on line 18 (<unknown>, line 20)"
+    ],
+    "../src/transition/rolling_inference.py": [
+      "invalid syntax (<unknown>, line 34)"
+    ],
+    "../src/transition/event_trigger_indexer.py": [
+      "unindent does not match any outer indentation level (<unknown>, line 18)"
+    ],
+    "../src/transition/multitask_rf.py": [
+      "expected ':' (<unknown>, line 22)"
+    ],
+    "../src/transition/rolling_window_dataset.py": [
+      "invalid syntax (<unknown>, line 23)"
+    ],
+    "../src/transition/path_targets.py": [
+      "invalid syntax (<unknown>, line 9)"
+    ],
+    "../src/transition/state_sequence_builder.py": [
+      "invalid syntax (<unknown>, line 29)"
+    ],
+    "../src/transition/event_window_dataset.py": [
+      "invalid syntax (<unknown>, line 33)"
+    ],
+    "../src/custom_types/config_types.py": [
+      "invalid syntax (<unknown>, line 34)"
+    ],
+    "../src/custom_types/trading_types.py": [
+      "expected an indented block after function definition on line 55 (<unknown>, line 57)"
+    ],
+    "../src/custom_types/ml_types.py": [
+      "invalid syntax (<unknown>, line 41)"
+    ],
+    "../src/custom_types/validation.py": [
+      "unexpected indent (<unknown>, line 54)"
+    ],
+    "../src/custom_types/protocol_types.py": [
+      "expected an indented block after function definition on line 41 (<unknown>, line 43)"
+    ],
+    "../src/custom_types/data_types.py": [
+      "unterminated string literal (detected at line 164) (<unknown>, line 164)"
+    ],
+    "../src/optimization/parameter_optimizer.py": [
+      "invalid syntax (<unknown>, line 39)"
+    ],
+    "../src/optimization/backtesting_evaluator.py": [
+      "invalid syntax (<unknown>, line 35)"
+    ],
+    "../src/protocols/trading_protocols.py": [
+      "expected an indented block after function definition on line 43 (<unknown>, line 45)"
+    ],
+    "../src/integration/paper_trading_integration.py": [
+      "expected an indented block after 'if' statement on line 32 (<unknown>, line 33)"
+    ],
+    "../src/tactician/position_sizer.py": [
+      "invalid syntax (<unknown>, line 21)"
+    ],
+    "../src/tactician/sr_weight_optimizer.py": [
+      "invalid syntax (<unknown>, line 26)"
+    ],
+    "../src/tactician/position_closing.py": [
+      "invalid syntax (<unknown>, line 20)"
+    ],
+    "../src/tactician/sr_backtesting_validator.py": [
+      "invalid syntax (<unknown>, line 25)"
+    ],
+    "../src/tactician/ml_target_updater.py": [
+      "invalid syntax (<unknown>, line 26)"
+    ],
+    "../src/tactician/position_division_strategy.py": [
+      "invalid syntax (<unknown>, line 22)"
+    ],
+    "../src/tactician/enhanced_prediction_integrator.py": [
+      "invalid syntax (<unknown>, line 36)"
+    ],
+    "../src/tactician/tactician.py": [
+      "invalid syntax (<unknown>, line 13)"
+    ],
+    "../src/tactician/comprehensive_enhanced_scenario_predictor.py": [
+      "invalid syntax (<unknown>, line 24)"
+    ],
+    "../src/tactician/enhanced_execution_manager.py": [
+      "invalid syntax (<unknown>, line 36)"
+    ],
+    "../src/tactician/tactics_orchestrator.py": [
+      "invalid syntax (<unknown>, line 41)"
+    ],
+    "../src/tactician/position_monitor.py": [
+      "invalid syntax (<unknown>, line 31)"
+    ],
+    "../src/tactician/enhanced_order_manager.py": [
+      "invalid syntax (<unknown>, line 24)"
+    ],
+    "../src/tactician/sr_data_integration.py": [
+      "invalid syntax (<unknown>, line 47)"
+    ],
+    "../src/tactician/dynamic_barrier_calculator.py": [
+      "invalid syntax (<unknown>, line 31)"
+    ],
+    "../src/tactician/scenario_based_predictor.py": [
+      "invalid syntax (<unknown>, line 21)"
+    ],
+    "../src/tactician/leverage_sizer.py": [
+      "invalid syntax (<unknown>, line 17)"
+    ],
+    "../src/tactician/sr_levels_manager.py": [
+      "invalid syntax (<unknown>, line 32)"
+    ],
+    "../src/tactician/step17_optimized_tactician.py": [
+      "invalid syntax (<unknown>, line 19)"
+    ],
+    "../src/tactician/sr_data_integration_simple.py": [
+      "invalid syntax (<unknown>, line 25)"
+    ],
+    "../src/tactician/sr_breakout_predictor.py": [
+      "invalid syntax (<unknown>, line 16)"
+    ],
+    "../src/tactician/enhanced_scenario_based_predictor.py": [
+      "invalid syntax (<unknown>, line 31)"
+    ],
+    "../src/tactician/sr_detection_optimization.py": [
+      "invalid syntax (<unknown>, line 29)"
+    ],
+    "../src/tactician/ml_target_validator.py": [
+      "invalid syntax (<unknown>, line 21)"
+    ],
+    "../src/tactician/async_order_executor.py": [
+      "invalid syntax (<unknown>, line 35)"
+    ],
+    "../src/tracking/trade_tracker.py": [
+      "invalid syntax (<unknown>, line 31)"
+    ],
+    "../src/training/model_trainer.py": [
+      "invalid syntax (<unknown>, line 17)"
+    ],
+    "../src/training/enhanced_lm_config.py": [
+      "invalid syntax (<unknown>, line 11)"
+    ],
+    "../src/training/enhanced_training_manager.py": [
+      "invalid syntax (<unknown>, line 21)"
+    ],
+    "../src/training/data_cleaning.py": [
+      "invalid syntax (<unknown>, line 7)"
+    ],
+    "../src/training/enhanced_training_manager_enhanced.py": [
+      "invalid syntax (<unknown>, line 16)"
+    ],
+    "../src/training/enhanced_dynamic_feature_selection.py": [
+      "invalid syntax (<unknown>, line 32)"
+    ],
+    "../src/training/multi_output_probability_trainer.py": [
+      "unmatched ')' (<unknown>, line 25)"
+    ],
+    "../src/training/data_access_utils.py": [
+      "invalid syntax (<unknown>, line 15)"
+    ],
+    "../src/training/gpu_acceleration_m1.py": [
+      "invalid syntax (<unknown>, line 17)"
+    ],
+    "../src/training/regularization.py": [
+      "invalid syntax (<unknown>, line 39)"
+    ],
+    "../src/training/feature_engineering_optimizer.py": [
+      "invalid syntax (<unknown>, line 23)"
+    ],
+    "../src/training/feature_integration.py": [
+      "invalid syntax (<unknown>, line 18)"
+    ],
+    "../src/training/feature_engineering.py": [
+      "unexpected indent (<unknown>, line 3)"
+    ],
+    "../src/training/wavelet_integration_demo.py": [
+      "invalid syntax (<unknown>, line 23)"
+    ],
+    "../src/training/enhanced_feature_engineering_optimizer.py": [
+      "invalid syntax (<unknown>, line 46)"
+    ],
+    "../src/training/enhanced_matrix_operations.py": [
+      "invalid syntax (<unknown>, line 15)"
+    ],
+    "../src/training/model_saving_utils.py": [
+      "invalid syntax (<unknown>, line 21)"
+    ],
+    "../src/training/probabilistic_model_integration.py": [
+      "invalid syntax (<unknown>, line 18)"
+    ],
+    "../src/training/enhanced_lm_optimizer.py": [
+      "invalid syntax (<unknown>, line 29)"
+    ],
+    "../src/training/step_orchestrator.py": [
+      "invalid syntax (<unknown>, line 16)"
+    ],
+    "../src/training/enhanced_training_manager_optimized.py": [
+      "invalid syntax (<unknown>, line 10)"
+    ],
+    "../src/training/early_stage_optimization.py": [
+      "unmatched ')' (<unknown>, line 49)"
+    ],
+    "../src/training/multi_objective_optimizer.py": [
+      "invalid syntax (<unknown>, line 10)"
+    ],
+    "../src/training/data_sharing_manager.py": [
+      "invalid syntax (<unknown>, line 16)"
+    ],
+    "../src/training/memory_profiler.py": [
+      "invalid syntax (<unknown>, line 8)"
+    ],
+    "../src/training/integration_guide.py": [
+      "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 14)"
+    ],
+    "../src/training/matrix_diverse_lookback_optimizer.py": [
+      "invalid syntax (<unknown>, line 43)"
+    ],
+    "../src/training/unified_data_orchestrator.py": [
+      "invalid syntax (<unknown>, line 40)"
+    ],
+    "../src/training/comprehensive_sr_training_pipeline.py": [
+      "unexpected indent (<unknown>, line 22)"
+    ],
+    "../src/training/dual_model_system.py": [
+      "invalid syntax (<unknown>, line 14)"
+    ],
+    "../src/training/performance_comparison.py": [
+      "invalid syntax (<unknown>, line 18)"
+    ],
+    "../src/training/steps_1_7_comprehensive_executor.py": [
+      "unmatched ')' (<unknown>, line 24)"
+    ],
+    "../src/training/adaptive_optimizer.py": [
+      "invalid syntax (<unknown>, line 25)"
+    ],
+    "../src/training/demo_pipeline_execution.py": [
+      "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 17)"
+    ],
+    "../src/training/launcher_integration_patch.py": [
+      "invalid syntax (<unknown>, line 10)"
+    ],
+    "../src/training/optimized_feature_selection_manager.py": [
+      "invalid syntax (<unknown>, line 18)"
+    ],
+    "../src/training/feature_selection_manager.py": [
+      "invalid syntax (<unknown>, line 10)"
+    ],
+    "../src/training/progress_manager.py": [
+      "invalid syntax (<unknown>, line 15)"
+    ],
+    "../src/training/comprehensive_pipeline_executor.py": [
+      "invalid syntax (<unknown>, line 48)"
+    ],
+    "../src/training/wavelet_feature_selection_demo.py": [
+      "invalid syntax (<unknown>, line 23)"
+    ],
+    "../src/training/multi_output_model_trainer.py": [
+      "unmatched ')' (<unknown>, line 53)"
+    ],
+    "../src/training/calibration_manager.py": [
+      "invalid syntax (<unknown>, line 17)"
+    ],
+    "../src/training/model_probability_generator.py": [
+      "invalid syntax (<unknown>, line 15)"
+    ],
+    "../src/training/training_orchestrator.py": [
+      "invalid syntax (<unknown>, line 7)"
+    ],
+    "../src/training/advanced_neural_models.py": [
+      "invalid syntax (<unknown>, line 37)"
+    ],
+    "../src/training/comprehensive_feature_optimizer.py": [
+      "invalid syntax (<unknown>, line 48)"
+    ],
+    "../src/training/model_specific_pruning.py": [
+      "invalid syntax (<unknown>, line 9)"
+    ],
+    "../src/training/matrix_enhancement_manager.py": [
+      "invalid syntax (<unknown>, line 44)"
+    ],
+    "../src/training/factory.py": [
+      "invalid syntax (<unknown>, line 34)"
+    ],
+    "../src/training/training_manager.py": [
+      "invalid syntax (<unknown>, line 5)"
+    ],
+    "../src/training/enhanced_matrix_gpu_integration.py": [
+      "invalid syntax (<unknown>, line 18)"
+    ],
+    "../src/training/enhanced_coarse_optimizer.py": [
+      "invalid syntax (<unknown>, line 16)"
+    ],
+    "../src/training/hmm_regime_barrier_optimizer.py": [
+      "invalid syntax (<unknown>, line 21)"
+    ],
+    "../src/training/ensemble_manager.py": [
+      "invalid syntax (<unknown>, line 7)"
+    ],
+    "../src/training/data_quality_monitor.py": [
+      "unmatched ')' (<unknown>, line 25)"
+    ],
+    "../src/training/model_training_integrator.py": [
+      "invalid syntax (<unknown>, line 19)"
+    ],
+    "../src/training/di_training_manager.py": [
+      "invalid syntax (<unknown>, line 22)"
+    ],
+    "../src/training/probability_calculators.py": [
+      "invalid syntax (<unknown>, line 33)"
+    ],
+    "../src/training/wavelet_feature_selection_workflow.py": [
+      "invalid syntax (<unknown>, line 28)"
+    ],
+    "../src/training/data_efficiency_optimizer.py": [
+      "invalid syntax (<unknown>, line 8)"
+    ],
+    "../src/training/optimization_manager.py": [
+      "invalid syntax (<unknown>, line 7)"
+    ],
+    "../src/training/validator.py": [
+      "unexpected indent (<unknown>, line 4)"
+    ],
+    "../src/training/tpsl_optimizer.py": [
+      "expected argument value expression (<unknown>, line 19)"
+    ],
+    "../src/training/vectorized_training_pipeline.py": [
+      "invalid syntax (<unknown>, line 27)"
+    ],
+    "../src/training/enhanced_optimization_orchestrator.py": [
+      "invalid syntax (<unknown>, line 15)"
+    ],
+    "../src/training/enhanced_multi_timeframe_optimizer.py": [
+      "invalid syntax (<unknown>, line 12)"
+    ],
+    "../src/training/data_manager.py": [
+      "invalid syntax (<unknown>, line 5)"
+    ],
+    "../src/training/probabilistic_bayesian_optimizer.py": [
+      "invalid syntax (<unknown>, line 13)"
+    ],
+    "../src/training/diverse_lookback_optimizer.py": [
+      "invalid syntax (<unknown>, line 45)"
+    ],
+    "../src/training/wavelet_caching_workflow.py": [
+      "invalid syntax (<unknown>, line 16)"
+    ],
+    "../src/training/optimized_backtester.py": [
+      "invalid syntax (<unknown>, line 36)"
+    ],
+    "../src/training/optimization/transfer_learning_system.py": [
+      "unterminated f-string literal (detected at line 62) (<unknown>, line 62)"
+    ],
+    "../src/training/tests/test_regime_change_prediction.py": [
+      "invalid syntax (<unknown>, line 12)"
+    ],
+    "../src/training/steps/step04_triple_barrier_method_validator.py": [
+      "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 13)"
+    ],
+    "../src/training/steps/multi_timeframe_hmm_ensemble.py": [
+      "invalid syntax (<unknown>, line 25)"
+    ],
+    "../src/training/steps/update_steps_for_unified_data.py": [
+      "unterminated triple-quoted string literal (detected at line 201) (<unknown>, line 173)"
+    ],
+    "../src/training/steps/fractional_feature_selector.py": [
+      "invalid syntax (<unknown>, line 9)"
+    ],
+    "../src/training/steps/step06_feature_interaction_engineering.py": [
+      "unterminated triple-quoted string literal (detected at line 916) (<unknown>, line 894)"
+    ],
+    "../src/training/steps/step13_analyst_ensemble_creation_validator.py": [
+      "invalid syntax (<unknown>, line 9)"
+    ],
+    "../src/training/steps/step20_ab_testing_validator.py": [
+      "invalid syntax (<unknown>, line 10)"
+    ],
+    "../src/training/steps/step14_tactician_labeling_validator.py": [
+      "invalid syntax (<unknown>, line 15)"
+    ],
+    "../src/training/steps/step10_unified_regime_intelligence.py": [
+      "invalid decimal literal (<unknown>, line 1799)"
+    ],
+    "../src/training/steps/step18_walk_forward_validation_validator.py": [
+      "invalid syntax (<unknown>, line 12)"
+    ],
+    "../src/training/steps/step14_tactician_labeling.py": [
+      "invalid syntax (<unknown>, line 21)"
+    ],
+    "../src/training/steps/hmm_feature_enhancer.py": [
+      "invalid syntax (<unknown>, line 6)"
+    ],
+    "../src/training/steps/step09_5_multi_timeframe_hmm_ensemble.py": [
+      "invalid syntax (<unknown>, line 22)"
+    ],
+    "../src/training/steps/step11_analyst_creation_validator.py": [
+      "invalid syntax (<unknown>, line 6)"
+    ],
+    "../src/training/steps/step09_hmm_based_training_enhanced.py": [
+      "invalid syntax (<unknown>, line 15)"
+    ],
+    "../src/training/steps/step09_hmm_based_training_validator.py": [
+      "invalid syntax (<unknown>, line 10)"
+    ],
+    "../src/training/steps/step01_5_data_converter.py": [
+      "invalid syntax (<unknown>, line 10)"
+    ],
+    "../src/training/steps/step20_ab_testing.py": [
+      "invalid syntax (<unknown>, line 8)"
+    ],
+    "../src/training/steps/step03_parameter_optimization_validator.py": [
+      "invalid syntax (<unknown>, line 11)"
+    ],
+    "../src/training/steps/step17_final_parameters_optimization_new.py": [
+      "invalid syntax (<unknown>, line 9)"
+    ],
+    "../src/training/steps/enhanced_step1_data_collection.py": [
+      "invalid syntax (<unknown>, line 15)"
+    ],
+    "../src/training/steps/step19_monte_carlo_validation_validator.py": [
+      "invalid syntax (<unknown>, line 7)"
+    ],
+    "../src/training/steps/step02_5_sr_optimization_validator.py": [
+      "invalid syntax (<unknown>, line 15)"
+    ],
+    "../src/training/steps/data_downloader.py": [
+      "invalid syntax (<unknown>, line 16)"
+    ],
+    "../src/training/steps/step03_hmm_regime_discovery_validator.py": [
+      "invalid syntax (<unknown>, line 12)"
+    ],
+    "../src/training/steps/step16_confidence_calibration.py": [
+      "invalid syntax (<unknown>, line 13)"
+    ],
+    "../src/training/steps/step04_regime_data_splitting_validator.py": [
+      "invalid syntax (<unknown>, line 10)"
+    ],
+    "../src/training/steps/step21_saving.py": [
+      "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 20)"
+    ],
+    "../src/training/steps/step05_labeling.py": [
+      "invalid syntax (<unknown>, line 11)"
+    ],
+    "../src/training/steps/combined_fractional_system.py": [
+      "invalid syntax (<unknown>, line 10)"
+    ],
+    "../src/training/steps/step10_unified_regime_intelligence_validator.py": [
+      "invalid syntax (<unknown>, line 13)"
+    ],
+    "../src/training/steps/step03_5_final_regime_clustering_validator.py": [
+      "invalid syntax (<unknown>, line 11)"
+    ],
+    "../src/training/steps/vectorized_advanced_feature_engineering.py": [
+      "invalid decimal literal (<unknown>, line 55)"
+    ],
+    "../src/training/steps/precompute_wavelet_features.py": [
+      "invalid syntax (<unknown>, line 17)"
+    ],
+    "../src/training/steps/step02_feature_engineering_validator.py": [
+      "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 17)"
+    ],
+    "../src/training/steps/step02_5_sr_optimization.py": [
+      "invalid syntax (<unknown>, line 12)"
+    ],
+    "../src/training/steps/step08_regime_data_splitting.py": [
+      "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 13)"
+    ],
+    "../src/training/steps/step21_saving_validator.py": [
+      "invalid syntax (<unknown>, line 8)"
+    ],
+    "../src/training/steps/step02_data_reading_validator.py": [
+      "invalid syntax (<unknown>, line 10)"
+    ],
+    "../src/training/steps/step07_enhanced_matrix_operations.py": [
+      "invalid syntax (<unknown>, line 12)"
+    ],
+    "../src/training/steps/step19_monte_carlo_validation.py": [
+      "invalid syntax (<unknown>, line 8)"
+    ],
+    "../src/training/steps/step03_hmm_regime_discovery.py": [
+      "invalid syntax (<unknown>, line 11)"
+    ],
+    "../src/training/steps/step01_data_collection.py": [
+      "invalid syntax (<unknown>, line 10)"
+    ],
+    "../src/training/steps/unified_data_loader.py": [
+      "invalid syntax (<unknown>, line 10)"
+    ],
+    "../src/training/steps/step02_data_reading.py": [
+      "invalid syntax (<unknown>, line 12)"
+    ],
+    "../src/training/steps/step03_parameter_optimization.py": [
+      "invalid syntax (<unknown>, line 11)"
+    ],
+    "../src/training/steps/step11_analyst_creation.py": [
+      "invalid syntax (<unknown>, line 9)"
+    ],
+    "../src/training/steps/step12_analyst_enhancement_validator.py": [
+      "invalid syntax (<unknown>, line 15)"
+    ],
+    "../src/training/steps/step09_hmm_based_training.py": [
+      "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 20)"
+    ],
+    "../src/training/steps/step01_5_data_converter_validator.py": [
+      "invalid syntax (<unknown>, line 11)"
+    ],
+    "../src/training/steps/step01_data_collection_validator.py": [
+      "invalid syntax (<unknown>, line 7)"
+    ],
+    "../src/training/steps/vectorized_labelling_orchestrator.py": [
+      "invalid syntax (<unknown>, line 19)"
+    ],
+    "../src/training/steps/step06_feature_engineering_validator.py": [
+      "invalid syntax (<unknown>, line 6)"
+    ],
+    "../src/training/steps/step04_regime_data_splitting.py": [
+      "invalid syntax (<unknown>, line 14)"
+    ],
+    "../src/training/steps/backtesting_with_cached_features.py": [
+      "invalid syntax (<unknown>, line 18)"
+    ],
+    "../src/training/steps/integrated_data_quality_pipeline.py": [
+      "invalid syntax (<unknown>, line 11)"
+    ],
+    "../src/training/steps/enhanced_step1_5_data_converter.py": [
+      "invalid syntax (<unknown>, line 15)"
+    ],
+    "../src/training/steps/step17_final_parameters_optimization.py": [
+      "invalid syntax (<unknown>, line 15)"
+    ],
+    "../src/training/steps/step03_5_final_regime_clustering.py": [
+      "invalid syntax (<unknown>, line 10)"
+    ],
+    "../src/training/steps/sr_outcome_model_trainer.py": [
+      "invalid syntax (<unknown>, line 22)"
+    ],
+    "../src/training/steps/step06_feature_engineering.py": [
+      "invalid syntax (<unknown>, line 11)"
+    ],
+    "../src/training/steps/step16_confidence_calibration_validator.py": [
+      "invalid syntax (<unknown>, line 10)"
+    ],
+    "../src/training/steps/step12_analyst_enhancement.py": [
+      "invalid syntax (<unknown>, line 9)"
+    ],
+    "../src/training/steps/raw_data_quality_checker.py": [
+      "invalid syntax (<unknown>, line 12)"
+    ],
+    "../src/training/steps/step17_final_parameters_optimization_validator.py": [
+      "invalid syntax (<unknown>, line 9)"
+    ],
+    "../src/training/steps/step18_walk_forward_validation.py": [
+      "invalid syntax (<unknown>, line 8)"
+    ],
+    "../src/training/steps/step15_tactician_specialist_training.py": [
+      "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 21)"
+    ],
+    "../src/training/steps/__init__.py": [
+      "expected an indented block after 'try' statement on line 8 (<unknown>, line 9)"
+    ],
+    "../src/training/steps/step08_regime_data_splitting_validator.py": [
+      "invalid syntax (<unknown>, line 10)"
+    ],
+    "../src/training/steps/step15_tactician_specialist_training_validator.py": [
+      "invalid syntax (<unknown>, line 13)"
+    ],
+    "../src/training/steps/step05_labeling_validator.py": [
+      "invalid syntax (<unknown>, line 10)"
+    ],
+    "../src/training/steps/fractional_differentiation.py": [
+      "invalid decimal literal (<unknown>, line 44)"
+    ],
+    "../src/training/steps/step13_analyst_ensemble_creation.py": [
+      "invalid syntax (<unknown>, line 5)"
+    ],
+    "../src/training/steps/step07_enhanced_matrix_operations_validator.py": [
+      "invalid syntax (<unknown>, line 8)"
+    ],
+    "../src/training/steps/step05_regime_data_splitting_validator.py": [
+      "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 13)"
+    ],
+    "../src/training/steps/step04_triple_barrier_method.py": [
+      "invalid syntax (<unknown>, line 11)"
+    ],
+    "../src/training/steps/step17_final_parameters_optimization/evaluation_engine.py": [
+      "unmatched ')' (<unknown>, line 17)"
+    ],
+    "../src/training/steps/step17_final_parameters_optimization/advanced_optimization_engine.py": [
+      "invalid syntax (<unknown>, line 21)"
+    ],
+    "../src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization_enhanced.py": [
+      "unterminated triple-quoted string literal (detected at line 821) (<unknown>, line 744)"
+    ],
+    "../src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization.py": [
+      "closing parenthesis '}' does not match opening parenthesis '(' on line 54 (<unknown>, line 64)"
+    ],
+    "../src/training/steps/step17_final_parameters_optimization/optimized_step17_implementation.py": [
+      "invalid syntax (<unknown>, line 21)"
+    ],
+    "../src/training/steps/step17_final_parameters_optimization/hyperparameter_optimization_config.py": [
+      "invalid syntax (<unknown>, line 12)"
+    ],
+    "../src/training/steps/step17_final_parameters_optimization/comprehensive_parameter_integration.py": [
+      "invalid syntax (<unknown>, line 21)"
+    ],
+    "../src/training/steps/step17_final_parameters_optimization/sr_optuna_optimization.py": [
+      "invalid character '\ud83c\udfaf' (U+1F3AF) (<unknown>, line 608)"
+    ],
+    "../src/training/steps/step17_final_parameters_optimization/efficiency_optimizer.py": [
+      "invalid syntax (<unknown>, line 14)"
+    ],
+    "../src/training/steps/step17_final_parameters_optimization/step17_probabilistic_bayesian_optimization.py": [
+      "invalid syntax (<unknown>, line 22)"
+    ],
+    "../src/training/steps/step17_final_parameters_optimization/__init__.py": [
+      "unexpected indent (<unknown>, line 9)"
+    ],
+    "../src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py": [
+      "unterminated triple-quoted string literal (detected at line 838) (<unknown>, line 737)"
+    ],
+    "../src/training/steps/step1/missing_data_downloader_and_gap_filler.py": [
+      "invalid syntax (<unknown>, line 9)"
+    ],
+    "../src/training/steps/step1/data_quality_dashboard.py": [
+      "invalid syntax (<unknown>, line 11)"
+    ],
+    "../src/training/steps/step1/test_missing_data_downloader.py": [
+      "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 18)"
+    ],
+    "../src/training/steps/step1/validate_and_fix_aggtrades_format.py": [
+      "invalid syntax (<unknown>, line 10)"
+    ],
+    "../src/training/steps/step1/comprehensive_gap_filler.py": [
+      "invalid syntax (<unknown>, line 13)"
+    ],
+    "../src/training/steps/step1/aggtrades_validator.py": [
+      "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 17)"
+    ],
+    "../src/training/steps/step1/step1_orchestrator.py": [
+      "invalid character '\ud83c\udfaf' (U+1F3AF) (<unknown>, line 372)"
+    ],
+    "../src/training/steps/step1/data_resampler.py": [
+      "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 22)"
+    ],
+    "../src/training/steps/step1/run_step1.py": [
+      "invalid syntax (<unknown>, line 19)"
+    ],
+    "../src/training/steps/step1/test_enhanced_data_quality_system.py": [
+      "invalid syntax (<unknown>, line 14)"
+    ],
+    "../src/training/steps/step1/gap_filler_pipeline.py": [
+      "invalid syntax (<unknown>, line 12)"
+    ],
+    "../src/training/steps/step1/data_gap_detector.py": [
+      "invalid syntax (<unknown>, line 8)"
+    ],
+    "../src/training/steps/step1/data_quality_monitor.py": [
+      "closing parenthesis '}' does not match opening parenthesis '(' on line 29 (<unknown>, line 34)"
+    ],
+    "../src/training/steps/step1/enhanced_data_quality_manager.py": [
+      "invalid syntax (<unknown>, line 10)"
+    ],
+    "../src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py": [
+      "invalid syntax (<unknown>, line 10)"
+    ],
+    "../src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_specific_triple_barrier_optimizer.py": [
+      "invalid syntax (<unknown>, line 23)"
+    ],
+    "../src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_aware_triple_barrier_labeling.py": [
+      "closing parenthesis '}' does not match opening parenthesis '(' on line 198 (<unknown>, line 211)"
+    ],
+    "../src/training/steps/step4_analyst_labeling_feature_engineering_components/fractional_triple_barrier_labeling.py": [
+      "unmatched ')' (<unknown>, line 42)"
+    ],
+    "../src/training/steps/step4_analyst_labeling_feature_engineering_components/profit_based_feature_engineering.py": [
+      "invalid syntax (<unknown>, line 10)"
+    ],
+    "../src/training/steps/step4_analyst_labeling_feature_engineering_components/__init__.py": [
+      "invalid syntax (<unknown>, line 14)"
+    ],
+    "../src/training/steps/multi_timeframe_training/multi_timeframe_training_manager.py": [
+      "invalid syntax (<unknown>, line 13)"
+    ],
+    "../src/training/steps/multi_timeframe_training/__init__.py": [
+      "unexpected indent (<unknown>, line 8)"
+    ],
+    "../src/training/steps/analyst_training_components/regime_specific_tpsl_optimizer.py": [
+      "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 24)"
+    ],
+    "../src/training/steps/analyst_training_components/__init__.py": [
+      "unexpected indent (<unknown>, line 8)"
+    ],
+    "../src/training/steps/data_preparation_components/aggtrades_data_formatting.py": [
+      "invalid syntax (<unknown>, line 9)"
+    ],
+    "../src/training/steps/data_preparation_components/training_validation_config.py": [
+      "invalid syntax (<unknown>, line 45)"
+    ],
+    "../src/training/steps/data_preparation_components/__init__.py": [
+      "unexpected indent (<unknown>, line 8)"
+    ],
+    "../src/training/examples/optimized_training_example.py": [
+      "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 14)"
+    ],
+    "../src/training/core/stage_registry.py": [
+      "invalid syntax (<unknown>, line 3)"
+    ],
+    "../src/training/core/checkpoint_manager.py": [
+      "invalid syntax (<unknown>, line 21)"
+    ],
+    "../src/training/core/stage_context.py": [
+      "unmatched ')' (<unknown>, line 9)"
+    ],
+    "../src/training/core/pipeline_base.py": [
+      "invalid syntax (<unknown>, line 25)"
+    ],
+    "../src/training/core/pipeline_orchestrator.py": [
+      "unexpected indent (<unknown>, line 14)"
+    ],
+    "../src/training/core/__init__.py": [
+      "unexpected indent (<unknown>, line 7)"
+    ],
+    "../src/exchange/binance.py": [
+      "invalid syntax (<unknown>, line 30)"
+    ],
+    "../src/core/di_integration.py": [
+      "invalid syntax (<unknown>, line 48)"
+    ],
+    "../src/core/injectable_base.py": [
+      "expected an indented block after 'if' statement on line 16 (<unknown>, line 17)"
+    ],
+    "../src/core/di_launcher.py": [
+      "invalid syntax (<unknown>, line 39)"
+    ],
+    "../src/core/enhanced_factories.py": [
+      "invalid syntax (<unknown>, line 51)"
+    ],
+    "../src/core/generic_base.py": [
+      "expected 'except' or 'finally' block (<unknown>, line 45)"
+    ],
+    "../src/core/service_registry.py": [
+      "unmatched ')' (<unknown>, line 14)"
+    ],
+    "../src/core/dependency_injection.py": [
+      "invalid syntax (<unknown>, line 23)"
+    ],
+    "../src/core/config_service.py": [
+      "invalid syntax (<unknown>, line 12)"
+    ],
+    "../src/config/sr_optimization_config.py": [
+      "expected an indented block after function definition on line 33 (<unknown>, line 35)"
+    ],
+    "../src/config/training_modes.py": [
+      "expected an indented block after function definition on line 32 (<unknown>, line 34)"
+    ],
+    "../src/config/system.py": [
+      "invalid syntax (<unknown>, line 9)"
+    ],
+    "../src/config/fractional_implementations_config.py": [
+      "expected an indented block after function definition on line 28 (<unknown>, line 30)"
+    ],
+    "../src/config/computational_optimization_config.py": [
+      "invalid syntax (<unknown>, line 113)"
+    ],
+    "../src/config/environment.py": [
+      "invalid syntax (<unknown>, line 11)"
+    ],
+    "../src/config/label_model_mapping.py": [
+      "invalid syntax (<unknown>, line 201)"
+    ],
+    "../src/config/config_confidence.py": [
+      "expected an indented block after function definition on line 31 (<unknown>, line 33)"
+    ],
+    "../src/config/multi_timeframe_hmm_ensemble_config.py": [
+      "expected ':' (<unknown>, line 33)"
+    ],
+    "../src/config/enhanced_feature_selection_config.py": [
+      "expected an indented block after function definition on line 26 (<unknown>, line 28)"
+    ],
+    "../src/config/config.py": [
+      "unterminated string literal (detected at line 45) (<unknown>, line 45)"
+    ],
+    "../src/config/m1_gpu_config.py": [
+      "expected ':' (<unknown>, line 31)"
+    ],
+    "../src/config/config_tpsl.py": [
+      "expected ':' (<unknown>, line 31)"
+    ],
+    "../src/config/config_regime_transitions.py": [
+      "expected an indented block after function definition on line 31 (<unknown>, line 33)"
+    ],
+    "../src/config/config_position_sizing.py": [
+      "expected an indented block after function definition on line 31 (<unknown>, line 33)"
+    ],
+    "../src/config/enhanced_multi_timeframe_config.py": [
+      "invalid syntax (<unknown>, line 10)"
+    ],
+    "../src/config/config_manager.py": [
+      "invalid syntax (<unknown>, line 46)"
+    ],
+    "../src/config/typed_config.py": [
+      "invalid syntax (<unknown>, line 49)"
+    ],
+    "../src/config/config_sr.py": [
+      "expected ':' (<unknown>, line 31)"
+    ],
+    "../src/config/matrix_diverse_lookback_config.py": [
+      "invalid syntax (<unknown>, line 11)"
+    ],
+    "../src/config/diverse_lookback_config.py": [
+      "invalid syntax (<unknown>, line 12)"
+    ],
+    "../src/config/computational_optimization.py": [
+      "invalid syntax (<unknown>, line 8)"
+    ],
+    "../src/config/multi_output_config.py": [
+      "invalid syntax (<unknown>, line 12)"
+    ],
+    "../src/config/config_two_tier.py": [
+      "expected ':' (<unknown>, line 31)"
+    ],
+    "../src/config/config_technical_indicators.py": [
+      "expected an indented block after function definition on line 31 (<unknown>, line 33)"
+    ],
+    "../src/config/enhanced_reporting_config.py": [
+      "invalid syntax (<unknown>, line 12)"
+    ],
+    "../src/config/config_system_monitoring.py": [
+      "expected an indented block after function definition on line 31 (<unknown>, line 33)"
+    ],
+    "../src/config/training.py": [
+      "invalid syntax (<unknown>, line 9)"
+    ],
+    "../src/config/enhanced_matrix_config.py": [
+      "invalid syntax (<unknown>, line 12)"
+    ],
+    "../src/config/validation.py": [
+      "expected an indented block after 'for' statement on line 13 (<unknown>, line 14)"
+    ],
+    "../src/config/enhanced_prediction_service_config.py": [
+      "invalid syntax (<unknown>, line 10)"
+    ],
+    "../src/config/config_training_optimization.py": [
+      "expected an indented block after function definition on line 31 (<unknown>, line 33)"
+    ],
+    "../src/config/__init__.py": [
+      "invalid syntax (<unknown>, line 15)"
+    ],
+    "../src/config/feature_engineering_optimization_config.py": [
+      "invalid syntax (<unknown>, line 12)"
+    ],
+    "../src/config/config_leverage.py": [
+      "unterminated triple-quoted string literal (detected at line 168) (<unknown>, line 151)"
+    ],
+    "../src/config/enhanced_feature_optimization_config.py": [
+      "invalid syntax (<unknown>, line 12)"
+    ],
+    "../src/config/regime_specific_optimization_config.py": [
+      "invalid syntax (<unknown>, line 44)"
+    ],
+    "../src/config/trading.py": [
+      "invalid syntax (<unknown>, line 8)"
+    ],
+    "../src/config/config_ensemble.py": [
+      "unterminated triple-quoted string literal (detected at line 145) (<unknown>, line 128)"
+    ],
+    "../src/utils/lookahead_bias_detector_example.py": [
+      "invalid syntax (<unknown>, line 16)"
+    ],
+    "../src/utils/supervisor_error_handler_example.py": [
+      "invalid syntax (<unknown>, line 30)"
+    ],
+    "../src/utils/observability.py": [
+      "invalid syntax (<unknown>, line 10)"
+    ],
+    "../src/utils/comprehensive_file_validation.py": [
+      "invalid syntax (<unknown>, line 44)"
+    ],
+    "../src/utils/step_dependency_validator.py": [
+      "invalid syntax (<unknown>, line 36)"
+    ],
+    "../src/utils/enhanced_validation_decorators.py": [
+      "invalid syntax (<unknown>, line 44)"
+    ],
+    "../src/utils/data_quality_framework.py": [
+      "expected ':' (<unknown>, line 25)"
+    ],
+    "../src/utils/vif_calculator.py": [
+      "invalid syntax (<unknown>, line 22)"
+    ],
+    "../src/utils/model_performance_monitor.py": [
+      "invalid syntax (<unknown>, line 21)"
+    ],
+    "../src/utils/data_quality_validator.py": [
+      "invalid decimal literal (<unknown>, line 111)"
+    ],
+    "../src/utils/state_manager.py": [
+      "invalid syntax (<unknown>, line 32)"
+    ],
+    "../src/utils/structured_logging.py": [
+      "invalid syntax (<unknown>, line 9)"
+    ],
+    "../src/utils/async_utils.py": [
+      "invalid syntax (<unknown>, line 28)"
+    ],
+    "../src/utils/vif_validation_decorators.py": [
+      "expected an indented block after function definition on line 36 (<unknown>, line 38)"
+    ],
+    "../src/utils/enhanced_data_quality_decorators.py": [
+      "invalid decimal literal (<unknown>, line 160)"
+    ],
+    "../src/utils/enhanced_config_management.py": [
+      "invalid syntax (<unknown>, line 20)"
+    ],
+    "../src/utils/supervisor_error_handler.py": [
+      "expected 'except' or 'finally' block (<unknown>, line 63)"
+    ],
+    "../src/utils/time_utils.py": [
+      "invalid syntax (<unknown>, line 10)"
+    ],
+    "../src/utils/data_preprocessing.py": [
+      "invalid syntax (<unknown>, line 17)"
+    ],
+    "../src/utils/feature_output_validator.py": [
+      "invalid decimal literal (<unknown>, line 1084)"
+    ],
+    "../src/utils/intelligent_feature_cache.py": [
+      "invalid syntax (<unknown>, line 45)"
+    ],
+    "../src/utils/parallel_processing_optimizer.py": [
+      "invalid syntax (<unknown>, line 48)"
+    ],
+    "../src/utils/decorators.py": [
+      "invalid syntax (<unknown>, line 29)"
+    ],
+    "../src/utils/data_loader.py": [
+      "invalid syntax (<unknown>, line 26)"
+    ],
+    "../src/utils/enhanced_memory_management.py": [
+      "invalid syntax (<unknown>, line 20)"
+    ],
+    "../src/utils/standardized_model_manager.py": [
+      "unterminated string literal (detected at line 57) (<unknown>, line 57)"
+    ],
+    "../src/utils/advanced_decorators.py": [
+      "invalid syntax (<unknown>, line 20)"
+    ],
+    "../src/utils/training_pipeline_decorators.py": [
+      "invalid syntax (<unknown>, line 21)"
+    ],
+    "../src/utils/decorator_config.py": [
+      "invalid syntax (<unknown>, line 28)"
+    ],
+    "../src/utils/enhanced_decorators.py": [
+      "expected 'except' or 'finally' block (<unknown>, line 33)"
+    ],
+    "../src/utils/standardized_config_manager.py": [
+      "invalid syntax (<unknown>, line 37)"
+    ],
+    "../src/utils/optimization_integration_test.py": [
+      "invalid syntax (<unknown>, line 61)"
+    ],
+    "../src/utils/enhanced_mlflow_integration.py": [
+      "invalid syntax (<unknown>, line 35)"
+    ],
+    "../src/utils/purged_kfold.py": [
+      "expected ':' (<unknown>, line 25)"
+    ],
+    "../src/utils/centralized_decorators.py": [
+      "invalid syntax (<unknown>, line 41)"
+    ],
+    "../src/utils/warning_symbols.py": [
+      "expected ':' (<unknown>, line 28)"
+    ],
+    "../src/utils/config_loader.py": [
+      "invalid syntax (<unknown>, line 31)"
+    ],
+    "../src/utils/centralized_decorators_v2.py": [
+      "invalid syntax (<unknown>, line 19)"
+    ],
+    "../src/utils/vif_validation_decorators_simple.py": [
+      "invalid syntax (<unknown>, line 23)"
+    ],
+    "../src/utils/decorator_compatibility.py": [
+      "invalid syntax (<unknown>, line 34)"
+    ],
+    "../src/utils/validation_decorators.py": [
+      "invalid syntax (<unknown>, line 28)"
+    ],
+    "../src/utils/enhanced_pipeline_decorators.py": [
+      "invalid syntax (<unknown>, line 24)"
+    ],
+    "../src/utils/error_handler.py": [
+      "invalid syntax (<unknown>, line 26)"
+    ],
+    "../src/utils/data_validation.py": [
+      "invalid decimal literal (<unknown>, line 138)"
+    ],
+    "../src/utils/parquet_utils.py": [
+      "invalid syntax (<unknown>, line 34)"
+    ],
+    "../src/utils/standardized_error_handler.py": [
+      "f-string: expecting '=', or '!', or ':', or '}' (<unknown>, line 34)"
+    ],
+    "../src/utils/comprehensive_logger.py": [
+      "invalid syntax (<unknown>, line 40)"
+    ],
+    "../src/utils/validator_orchestrator.py": [
+      "invalid syntax (<unknown>, line 47)"
+    ],
+    "../src/utils/hmm_composite_manager.py": [
+      "invalid syntax (<unknown>, line 50)"
+    ],
+    "../src/utils/signal_handler.py": [
+      "invalid syntax (<unknown>, line 29)"
+    ],
+    "../src/utils/data_optimizer.py": [
+      "invalid syntax (<unknown>, line 25)"
+    ],
+    "../src/utils/configuration_security.py": [
+      "invalid syntax (<unknown>, line 41)"
+    ],
+    "../src/utils/security_framework.py": [
+      "invalid syntax (<unknown>, line 47)"
+    ],
+    "../src/utils/centralized_decorators_simple.py": [
+      "invalid syntax (<unknown>, line 14)"
+    ],
+    "../src/utils/enhanced_missing_value_handler.py": [
+      "unterminated f-string literal (detected at line 29) (<unknown>, line 29)"
+    ],
+    "../src/utils/trading_decorators.py": [
+      "expected 'except' or 'finally' block (<unknown>, line 36)"
+    ],
+    "../src/utils/data_formatting_framework.py": [
+      "unterminated string literal (detected at line 26) (<unknown>, line 26)"
+    ],
+    "../src/utils/enhanced_data_quality_validator.py": [
+      "invalid syntax (<unknown>, line 21)"
+    ],
+    "../src/utils/data_quality_decorators.py": [
+      "invalid syntax (<unknown>, line 26)"
+    ],
+    "../src/utils/quality_alert_system.py": [
+      "invalid syntax (<unknown>, line 47)"
+    ],
+    "../src/utils/mlflow_utils.py": [
+      "invalid syntax (<unknown>, line 13)"
+    ],
+    "../src/utils/base_validator.py": [
+      "invalid syntax (<unknown>, line 36)"
+    ],
+    "../src/utils/confidence.py": [
+      "invalid syntax (<unknown>, line 9)"
+    ],
+    "../src/utils/pipeline_standards.py": [
+      "expected an indented block after function definition on line 29 (<unknown>, line 31)"
+    ],
+    "../src/utils/enhanced_error_handling.py": [
+      "invalid syntax (<unknown>, line 22)"
+    ],
+    "../src/utils/prometheus_metrics.py": [
+      "invalid syntax (<unknown>, line 20)"
+    ],
+    "../src/utils/decorator_registry.py": [
+      "unindent does not match any outer indentation level (<unknown>, line 44)"
+    ],
+    "../src/utils/steps_1_7_compatibility_framework.py": [
+      "expected ':' (<unknown>, line 35)"
+    ],
+    "../src/utils/advanced_ml_validation.py": [
+      "expected ':' (<unknown>, line 39)"
+    ],
+    "../src/utils/model_manager.py": [
+      "expected an indented block after function definition on line 39 (<unknown>, line 40)"
+    ],
+    "../src/utils/domain_errors.py": [
+      "invalid syntax (<unknown>, line 27)"
+    ],
+    "../src/utils/database_security.py": [
+      "invalid syntax (<unknown>, line 37)"
+    ],
+    "../src/utils/enhanced_outlier_handler.py": [
+      "unterminated string literal (detected at line 125) (<unknown>, line 125)"
+    ],
+    "../src/utils/enhanced_error_handler.py": [
+      "invalid syntax (<unknown>, line 40)"
+    ],
+    "../src/utils/logger.py": [
+      "invalid syntax (<unknown>, line 37)"
+    ],
+    "../src/utils/lookahead_bias_detector.py": [
+      "invalid syntax (<unknown>, line 37)"
+    ],
+    "../src/utils/comprehensive_data_quality_validator.py": [
+      "invalid syntax (<unknown>, line 29)"
+    ],
+    "../src/utils/data_type_optimizer.py": [
+      "invalid decimal literal (<unknown>, line 54)"
+    ],
+    "../src/validation/critical_path_validators.py": [
+      "invalid syntax (<unknown>, line 55)"
+    ],
+    "../src/analyst/order_book_analyzer.py": [
+      "unmatched ')' (<unknown>, line 8)"
+    ],
+    "../src/analyst/advanced_feature_engineering.py": [
+      "invalid syntax (<unknown>, line 145)"
+    ],
+    "../src/analyst/multi_timeframe_regime_integration.py": [
+      "invalid syntax (<unknown>, line 45)"
+    ],
+    "../src/analyst/meta_labeling_system.py": [
+      "unmatched ')' (<unknown>, line 14)"
+    ],
+    "../src/analyst/enhanced_prediction_integrator.py": [
+      "invalid syntax (<unknown>, line 36)"
+    ],
+    "../src/analyst/predictive_ensembles.py": [
+      "invalid syntax (<unknown>, line 29)"
+    ],
+    "../src/analyst/regime_runtime.py": [
+      "expected an indented block after 'try' statement on line 13 (<unknown>, line 14)"
+    ],
+    "../src/analyst/liquidation_risk_model.py": [
+      "invalid syntax (<unknown>, line 13)"
+    ],
+    "../src/analyst/multi_timeframe_feature_engineering.py": [
+      "invalid syntax (<unknown>, line 52)"
+    ],
+    "../src/analyst/dynamic_regime_mapper.py": [
+      "invalid syntax (<unknown>, line 13)"
+    ],
+    "../src/analyst/enhanced_regime_predictor.py": [
+      "invalid syntax (<unknown>, line 42)"
+    ],
+    "../src/analyst/decision_aggregator.py": [
+      "expected an indented block after 'try' statement on line 12 (<unknown>, line 13)"
+    ],
+    "../src/analyst/data_utils.py": [
+      "invalid syntax (<unknown>, line 33)"
+    ],
+    "../src/analyst/unified_regime_intelligence_runtime.py": [
+      "invalid syntax (<unknown>, line 27)"
+    ],
+    "../src/analyst/example_directional_analysis.py": [
+      "invalid syntax (<unknown>, line 19)"
+    ],
+    "../src/analyst/regime_expert_orchestrator.py": [
+      "invalid syntax (<unknown>, line 21)"
+    ],
+    "../src/analyst/meta_label_relevance.py": [
+      "invalid syntax (<unknown>, line 37)"
+    ],
+    "../src/analyst/ml_confidence_predictor.py": [
+      "invalid syntax (<unknown>, line 54)"
+    ],
+    "../src/analyst/di_analyst.py": [
+      "invalid syntax (<unknown>, line 37)"
+    ],
+    "../src/analyst/unified_regime_classifier.py": [
+      "invalid syntax (<unknown>, line 40)"
+    ],
+    "../src/analyst/predictive_ensembles/multi_timeframe_ensemble.py": [
+      "invalid syntax (<unknown>, line 49)"
+    ],
+    "../src/analyst/predictive_ensembles/enhanced_ensemble_orchestrator.py": [
+      "invalid syntax (<unknown>, line 43)"
+    ],
+    "../src/analyst/predictive_ensembles/ensemble_orchestrator.py": [
+      "invalid syntax (<unknown>, line 35)"
+    ],
+    "../src/analyst/predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py": [
+      "unmatched ')' (<unknown>, line 14)"
+    ],
+    "../src/analyst/predictive_ensembles/regime_ensembles/base_ensemble.py": [
+      "invalid syntax (<unknown>, line 21)"
+    ],
+    "../src/database/efficient_features_database.py": [
+      "unmatched ')' (<unknown>, line 25)"
+    ],
+    "../src/database/precomputed_features_manager.py": [
+      "invalid syntax (<unknown>, line 13)"
+    ],
+    "../src/database/migration_utils.py": [
+      "invalid syntax (<unknown>, line 29)"
+    ],
+    "../src/database/firestore_manager.py": [
+      "unindent does not match any outer indentation level (<unknown>, line 30)"
+    ],
+    "../src/database/sqlite_manager.py": [
+      "invalid syntax (<unknown>, line 33)"
+    ]
+  },
+  "files_with_most_errors": [
+    {
+      "file": "../src/tasks.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 16)"
+      ]
+    },
+    {
+      "file": "../src/ares_pipeline.py",
+      "error_count": 1,
+      "errors": [
+        "unindent does not match any outer indentation level (<unknown>, line 70)"
+      ]
+    },
+    {
+      "file": "../src/config.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 54)"
+      ]
+    },
+    {
+      "file": "../src/config_optuna.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 41)"
+      ]
+    },
+    {
+      "file": "../src/paper_trader.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 41)"
+      ]
+    },
+    {
+      "file": "../src/monitoring/error_detection_system.py",
+      "error_count": 1,
+      "errors": [
+        "unterminated string literal (detected at line 69) (<unknown>, line 69)"
+      ]
+    },
+    {
+      "file": "../src/monitoring/correlation_manager.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 39)"
+      ]
+    },
+    {
+      "file": "../src/monitoring/report_scheduler.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 57)"
+      ]
+    },
+    {
+      "file": "../src/monitoring/fractional_system_monitor.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 38)"
+      ]
+    },
+    {
+      "file": "../src/monitoring/enhanced_ml_tracker.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 40)"
+      ]
+    },
+    {
+      "file": "../src/monitoring/performance_dashboard.py",
+      "error_count": 1,
+      "errors": [
+        "unmatched ')' (<unknown>, line 17)"
+      ]
+    },
+    {
+      "file": "../src/monitoring/integration_manager.py",
+      "error_count": 1,
+      "errors": [
+        "unmatched ')' (<unknown>, line 14)"
+      ]
+    },
+    {
+      "file": "../src/monitoring/performance_monitor.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 21)"
+      ]
+    },
+    {
+      "file": "../src/monitoring/surrogate_optimization_monitor.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 44)"
+      ]
+    },
+    {
+      "file": "../src/monitoring/metrics_dashboard.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 37)"
+      ]
+    },
+    {
+      "file": "../src/monitoring/fractional_performance_tracker.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 22)"
+      ]
+    },
+    {
+      "file": "../src/monitoring/csv_exporter.py",
+      "error_count": 1,
+      "errors": [
+        "unmatched ')' (<unknown>, line 13)"
+      ]
+    },
+    {
+      "file": "../src/monitoring/advanced_tracer.py",
+      "error_count": 1,
+      "errors": [
+        "unterminated string literal (detected at line 95) (<unknown>, line 95)"
+      ]
+    },
+    {
+      "file": "../src/monitoring/ml_monitor.py",
+      "error_count": 1,
+      "errors": [
+        "unmatched ')' (<unknown>, line 16)"
+      ]
+    },
+    {
+      "file": "../src/backtesting/enhanced_backtester.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 39)"
+      ]
+    },
+    {
+      "file": "../src/launcher/enhanced_trading_launcher.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 19)"
+      ]
+    },
+    {
+      "file": "../src/components/modular_analyst.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 14)"
+      ]
+    },
+    {
+      "file": "../src/components/modular_tactician.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 14)"
+      ]
+    },
+    {
+      "file": "../src/components/modular_supervisor.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 14)"
+      ]
+    },
+    {
+      "file": "../src/components/modular_strategist.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 15)"
+      ]
+    },
+    {
+      "file": "../src/interfaces/event_bus.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 44)"
+      ]
+    },
+    {
+      "file": "../src/interfaces/base_interfaces.py",
+      "error_count": 1,
+      "errors": [
+        "unterminated string literal (detected at line 35) (<unknown>, line 35)"
+      ]
+    },
+    {
+      "file": "../src/interfaces/enhanced_event_bus.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 62)"
+      ]
+    },
+    {
+      "file": "../src/trading/live_wavelet_analyzer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 29)"
+      ]
+    },
+    {
+      "file": "../src/trading/live_wavelet_demo.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 22)"
+      ]
+    },
+    {
+      "file": "../src/trading/live_wavelet_integration.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 22)"
+      ]
+    },
+    {
+      "file": "../src/trading/sr_trading_intelligence.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 29)"
+      ]
+    },
+    {
+      "file": "../src/supervisor/enhanced_prediction_service.py",
+      "error_count": 1,
+      "errors": [
+        "unexpected indent (<unknown>, line 1)"
+      ]
+    },
+    {
+      "file": "../src/supervisor/performance_monitor.py",
+      "error_count": 1,
+      "errors": [
+        "unindent does not match any outer indentation level (<unknown>, line 32)"
+      ]
+    },
+    {
+      "file": "../src/supervisor/global_portfolio_manager.py",
+      "error_count": 1,
+      "errors": [
+        "expected an indented block after 'try' statement on line 168 (<unknown>, line 170)"
+      ]
+    },
+    {
+      "file": "../src/supervisor/performance_reporter.py",
+      "error_count": 1,
+      "errors": [
+        "unindent does not match any outer indentation level (<unknown>, line 16)"
+      ]
+    },
+    {
+      "file": "../src/supervisor/exchange_ab_tester.py",
+      "error_count": 1,
+      "errors": [
+        "unexpected indent (<unknown>, line 13)"
+      ]
+    },
+    {
+      "file": "../src/supervisor/multi_exchange_ab_tester.py",
+      "error_count": 1,
+      "errors": [
+        "unexpected indent (<unknown>, line 16)"
+      ]
+    },
+    {
+      "file": "../src/supervisor/dynamic_weighter.py",
+      "error_count": 1,
+      "errors": [
+        "unindent does not match any outer indentation level (<unknown>, line 13)"
+      ]
+    },
+    {
+      "file": "../src/supervisor/enhanced_model_monitor.py",
+      "error_count": 1,
+      "errors": [
+        "unterminated triple-quoted string literal (detected at line 245) (<unknown>, line 239)"
+      ]
+    },
+    {
+      "file": "../src/supervisor/exchange_volume_adapter.py",
+      "error_count": 1,
+      "errors": [
+        "expected an indented block after 'try' statement on line 89 (<unknown>, line 90)"
+      ]
+    },
+    {
+      "file": "../src/supervisor/main.py",
+      "error_count": 1,
+      "errors": [
+        "unexpected indent (<unknown>, line 134)"
+      ]
+    },
+    {
+      "file": "../src/supervisor/risk_allocator.py",
+      "error_count": 1,
+      "errors": [
+        "unindent does not match any outer indentation level (<unknown>, line 24)"
+      ]
+    },
+    {
+      "file": "../src/supervisor/pnl_loss_functions.py",
+      "error_count": 1,
+      "errors": [
+        "unexpected indent (<unknown>, line 9)"
+      ]
+    },
+    {
+      "file": "../src/supervisor/supervisor.py",
+      "error_count": 1,
+      "errors": [
+        "unindent does not match any outer indentation level (<unknown>, line 21)"
+      ]
+    },
+    {
+      "file": "../src/supervisor/model_behavior_tracker.py",
+      "error_count": 1,
+      "errors": [
+        "unexpected indent (<unknown>, line 17)"
+      ]
+    },
+    {
+      "file": "../src/supervisor/optimizer.py",
+      "error_count": 1,
+      "errors": [
+        "unindent does not match any outer indentation level (<unknown>, line 17)"
+      ]
+    },
+    {
+      "file": "../src/pipelines/live_trading_pipeline.py",
+      "error_count": 1,
+      "errors": [
+        "unmatched ')' (<unknown>, line 9)"
+      ]
+    },
+    {
+      "file": "../src/pipelines/improved_pipeline_executor.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 25)"
+      ]
+    },
+    {
+      "file": "../src/pipelines/base_pipeline.py",
+      "error_count": 1,
+      "errors": [
+        "unmatched ')' (<unknown>, line 17)"
+      ]
+    },
+    {
+      "file": "../src/pipelines/__init__.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 15)"
+      ]
+    },
+    {
+      "file": "../src/pipelines/components/monitoring_manager.py",
+      "error_count": 1,
+      "errors": [
+        "unmatched ')' (<unknown>, line 9)"
+      ]
+    },
+    {
+      "file": "../src/pipelines/components/lifecycle_manager.py",
+      "error_count": 1,
+      "errors": [
+        "unmatched ')' (<unknown>, line 9)"
+      ]
+    },
+    {
+      "file": "../src/pipelines/components/data_manager.py",
+      "error_count": 1,
+      "errors": [
+        "unmatched ')' (<unknown>, line 14)"
+      ]
+    },
+    {
+      "file": "../src/sentinel/sentinel.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 24)"
+      ]
+    },
+    {
+      "file": "../src/transition/seq2seq_trainer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 20)"
+      ]
+    },
+    {
+      "file": "../src/transition/combined_features_builder.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 23)"
+      ]
+    },
+    {
+      "file": "../src/transition/baseline_rf.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 16)"
+      ]
+    },
+    {
+      "file": "../src/transition/inference_combiner.py",
+      "error_count": 1,
+      "errors": [
+        "expected an indented block after function definition on line 18 (<unknown>, line 20)"
+      ]
+    },
+    {
+      "file": "../src/transition/rolling_inference.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 34)"
+      ]
+    },
+    {
+      "file": "../src/transition/event_trigger_indexer.py",
+      "error_count": 1,
+      "errors": [
+        "unindent does not match any outer indentation level (<unknown>, line 18)"
+      ]
+    },
+    {
+      "file": "../src/transition/multitask_rf.py",
+      "error_count": 1,
+      "errors": [
+        "expected ':' (<unknown>, line 22)"
+      ]
+    },
+    {
+      "file": "../src/transition/rolling_window_dataset.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 23)"
+      ]
+    },
+    {
+      "file": "../src/transition/path_targets.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 9)"
+      ]
+    },
+    {
+      "file": "../src/transition/state_sequence_builder.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 29)"
+      ]
+    },
+    {
+      "file": "../src/transition/event_window_dataset.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 33)"
+      ]
+    },
+    {
+      "file": "../src/custom_types/config_types.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 34)"
+      ]
+    },
+    {
+      "file": "../src/custom_types/trading_types.py",
+      "error_count": 1,
+      "errors": [
+        "expected an indented block after function definition on line 55 (<unknown>, line 57)"
+      ]
+    },
+    {
+      "file": "../src/custom_types/ml_types.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 41)"
+      ]
+    },
+    {
+      "file": "../src/custom_types/validation.py",
+      "error_count": 1,
+      "errors": [
+        "unexpected indent (<unknown>, line 54)"
+      ]
+    },
+    {
+      "file": "../src/custom_types/protocol_types.py",
+      "error_count": 1,
+      "errors": [
+        "expected an indented block after function definition on line 41 (<unknown>, line 43)"
+      ]
+    },
+    {
+      "file": "../src/custom_types/data_types.py",
+      "error_count": 1,
+      "errors": [
+        "unterminated string literal (detected at line 164) (<unknown>, line 164)"
+      ]
+    },
+    {
+      "file": "../src/optimization/parameter_optimizer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 39)"
+      ]
+    },
+    {
+      "file": "../src/optimization/backtesting_evaluator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 35)"
+      ]
+    },
+    {
+      "file": "../src/protocols/trading_protocols.py",
+      "error_count": 1,
+      "errors": [
+        "expected an indented block after function definition on line 43 (<unknown>, line 45)"
+      ]
+    },
+    {
+      "file": "../src/integration/paper_trading_integration.py",
+      "error_count": 1,
+      "errors": [
+        "expected an indented block after 'if' statement on line 32 (<unknown>, line 33)"
+      ]
+    },
+    {
+      "file": "../src/tactician/position_sizer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 21)"
+      ]
+    },
+    {
+      "file": "../src/tactician/sr_weight_optimizer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 26)"
+      ]
+    },
+    {
+      "file": "../src/tactician/position_closing.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 20)"
+      ]
+    },
+    {
+      "file": "../src/tactician/sr_backtesting_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 25)"
+      ]
+    },
+    {
+      "file": "../src/tactician/ml_target_updater.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 26)"
+      ]
+    },
+    {
+      "file": "../src/tactician/position_division_strategy.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 22)"
+      ]
+    },
+    {
+      "file": "../src/tactician/enhanced_prediction_integrator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 36)"
+      ]
+    },
+    {
+      "file": "../src/tactician/tactician.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 13)"
+      ]
+    },
+    {
+      "file": "../src/tactician/comprehensive_enhanced_scenario_predictor.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 24)"
+      ]
+    },
+    {
+      "file": "../src/tactician/enhanced_execution_manager.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 36)"
+      ]
+    },
+    {
+      "file": "../src/tactician/tactics_orchestrator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 41)"
+      ]
+    },
+    {
+      "file": "../src/tactician/position_monitor.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 31)"
+      ]
+    },
+    {
+      "file": "../src/tactician/enhanced_order_manager.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 24)"
+      ]
+    },
+    {
+      "file": "../src/tactician/sr_data_integration.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 47)"
+      ]
+    },
+    {
+      "file": "../src/tactician/dynamic_barrier_calculator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 31)"
+      ]
+    },
+    {
+      "file": "../src/tactician/scenario_based_predictor.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 21)"
+      ]
+    },
+    {
+      "file": "../src/tactician/leverage_sizer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 17)"
+      ]
+    },
+    {
+      "file": "../src/tactician/sr_levels_manager.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 32)"
+      ]
+    },
+    {
+      "file": "../src/tactician/step17_optimized_tactician.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 19)"
+      ]
+    },
+    {
+      "file": "../src/tactician/sr_data_integration_simple.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 25)"
+      ]
+    },
+    {
+      "file": "../src/tactician/sr_breakout_predictor.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 16)"
+      ]
+    },
+    {
+      "file": "../src/tactician/enhanced_scenario_based_predictor.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 31)"
+      ]
+    },
+    {
+      "file": "../src/tactician/sr_detection_optimization.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 29)"
+      ]
+    },
+    {
+      "file": "../src/tactician/ml_target_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 21)"
+      ]
+    },
+    {
+      "file": "../src/tactician/async_order_executor.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 35)"
+      ]
+    },
+    {
+      "file": "../src/tracking/trade_tracker.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 31)"
+      ]
+    },
+    {
+      "file": "../src/training/model_trainer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 17)"
+      ]
+    },
+    {
+      "file": "../src/training/enhanced_lm_config.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 11)"
+      ]
+    },
+    {
+      "file": "../src/training/enhanced_training_manager.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 21)"
+      ]
+    },
+    {
+      "file": "../src/training/data_cleaning.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 7)"
+      ]
+    },
+    {
+      "file": "../src/training/enhanced_training_manager_enhanced.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 16)"
+      ]
+    },
+    {
+      "file": "../src/training/enhanced_dynamic_feature_selection.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 32)"
+      ]
+    },
+    {
+      "file": "../src/training/multi_output_probability_trainer.py",
+      "error_count": 1,
+      "errors": [
+        "unmatched ')' (<unknown>, line 25)"
+      ]
+    },
+    {
+      "file": "../src/training/data_access_utils.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 15)"
+      ]
+    },
+    {
+      "file": "../src/training/gpu_acceleration_m1.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 17)"
+      ]
+    },
+    {
+      "file": "../src/training/regularization.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 39)"
+      ]
+    },
+    {
+      "file": "../src/training/feature_engineering_optimizer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 23)"
+      ]
+    },
+    {
+      "file": "../src/training/feature_integration.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 18)"
+      ]
+    },
+    {
+      "file": "../src/training/feature_engineering.py",
+      "error_count": 1,
+      "errors": [
+        "unexpected indent (<unknown>, line 3)"
+      ]
+    },
+    {
+      "file": "../src/training/wavelet_integration_demo.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 23)"
+      ]
+    },
+    {
+      "file": "../src/training/enhanced_feature_engineering_optimizer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 46)"
+      ]
+    },
+    {
+      "file": "../src/training/enhanced_matrix_operations.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 15)"
+      ]
+    },
+    {
+      "file": "../src/training/model_saving_utils.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 21)"
+      ]
+    },
+    {
+      "file": "../src/training/probabilistic_model_integration.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 18)"
+      ]
+    },
+    {
+      "file": "../src/training/enhanced_lm_optimizer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 29)"
+      ]
+    },
+    {
+      "file": "../src/training/step_orchestrator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 16)"
+      ]
+    },
+    {
+      "file": "../src/training/enhanced_training_manager_optimized.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 10)"
+      ]
+    },
+    {
+      "file": "../src/training/early_stage_optimization.py",
+      "error_count": 1,
+      "errors": [
+        "unmatched ')' (<unknown>, line 49)"
+      ]
+    },
+    {
+      "file": "../src/training/multi_objective_optimizer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 10)"
+      ]
+    },
+    {
+      "file": "../src/training/data_sharing_manager.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 16)"
+      ]
+    },
+    {
+      "file": "../src/training/memory_profiler.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 8)"
+      ]
+    },
+    {
+      "file": "../src/training/integration_guide.py",
+      "error_count": 1,
+      "errors": [
+        "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 14)"
+      ]
+    },
+    {
+      "file": "../src/training/matrix_diverse_lookback_optimizer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 43)"
+      ]
+    },
+    {
+      "file": "../src/training/unified_data_orchestrator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 40)"
+      ]
+    },
+    {
+      "file": "../src/training/comprehensive_sr_training_pipeline.py",
+      "error_count": 1,
+      "errors": [
+        "unexpected indent (<unknown>, line 22)"
+      ]
+    },
+    {
+      "file": "../src/training/dual_model_system.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 14)"
+      ]
+    },
+    {
+      "file": "../src/training/performance_comparison.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 18)"
+      ]
+    },
+    {
+      "file": "../src/training/steps_1_7_comprehensive_executor.py",
+      "error_count": 1,
+      "errors": [
+        "unmatched ')' (<unknown>, line 24)"
+      ]
+    },
+    {
+      "file": "../src/training/adaptive_optimizer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 25)"
+      ]
+    },
+    {
+      "file": "../src/training/demo_pipeline_execution.py",
+      "error_count": 1,
+      "errors": [
+        "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 17)"
+      ]
+    },
+    {
+      "file": "../src/training/launcher_integration_patch.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 10)"
+      ]
+    },
+    {
+      "file": "../src/training/optimized_feature_selection_manager.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 18)"
+      ]
+    },
+    {
+      "file": "../src/training/feature_selection_manager.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 10)"
+      ]
+    },
+    {
+      "file": "../src/training/progress_manager.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 15)"
+      ]
+    },
+    {
+      "file": "../src/training/comprehensive_pipeline_executor.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 48)"
+      ]
+    },
+    {
+      "file": "../src/training/wavelet_feature_selection_demo.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 23)"
+      ]
+    },
+    {
+      "file": "../src/training/multi_output_model_trainer.py",
+      "error_count": 1,
+      "errors": [
+        "unmatched ')' (<unknown>, line 53)"
+      ]
+    },
+    {
+      "file": "../src/training/calibration_manager.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 17)"
+      ]
+    },
+    {
+      "file": "../src/training/model_probability_generator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 15)"
+      ]
+    },
+    {
+      "file": "../src/training/training_orchestrator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 7)"
+      ]
+    },
+    {
+      "file": "../src/training/advanced_neural_models.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 37)"
+      ]
+    },
+    {
+      "file": "../src/training/comprehensive_feature_optimizer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 48)"
+      ]
+    },
+    {
+      "file": "../src/training/model_specific_pruning.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 9)"
+      ]
+    },
+    {
+      "file": "../src/training/matrix_enhancement_manager.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 44)"
+      ]
+    },
+    {
+      "file": "../src/training/factory.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 34)"
+      ]
+    },
+    {
+      "file": "../src/training/training_manager.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 5)"
+      ]
+    },
+    {
+      "file": "../src/training/enhanced_matrix_gpu_integration.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 18)"
+      ]
+    },
+    {
+      "file": "../src/training/enhanced_coarse_optimizer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 16)"
+      ]
+    },
+    {
+      "file": "../src/training/hmm_regime_barrier_optimizer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 21)"
+      ]
+    },
+    {
+      "file": "../src/training/ensemble_manager.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 7)"
+      ]
+    },
+    {
+      "file": "../src/training/data_quality_monitor.py",
+      "error_count": 1,
+      "errors": [
+        "unmatched ')' (<unknown>, line 25)"
+      ]
+    },
+    {
+      "file": "../src/training/model_training_integrator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 19)"
+      ]
+    },
+    {
+      "file": "../src/training/di_training_manager.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 22)"
+      ]
+    },
+    {
+      "file": "../src/training/probability_calculators.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 33)"
+      ]
+    },
+    {
+      "file": "../src/training/wavelet_feature_selection_workflow.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 28)"
+      ]
+    },
+    {
+      "file": "../src/training/data_efficiency_optimizer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 8)"
+      ]
+    },
+    {
+      "file": "../src/training/optimization_manager.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 7)"
+      ]
+    },
+    {
+      "file": "../src/training/validator.py",
+      "error_count": 1,
+      "errors": [
+        "unexpected indent (<unknown>, line 4)"
+      ]
+    },
+    {
+      "file": "../src/training/tpsl_optimizer.py",
+      "error_count": 1,
+      "errors": [
+        "expected argument value expression (<unknown>, line 19)"
+      ]
+    },
+    {
+      "file": "../src/training/vectorized_training_pipeline.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 27)"
+      ]
+    },
+    {
+      "file": "../src/training/enhanced_optimization_orchestrator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 15)"
+      ]
+    },
+    {
+      "file": "../src/training/enhanced_multi_timeframe_optimizer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 12)"
+      ]
+    },
+    {
+      "file": "../src/training/data_manager.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 5)"
+      ]
+    },
+    {
+      "file": "../src/training/probabilistic_bayesian_optimizer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 13)"
+      ]
+    },
+    {
+      "file": "../src/training/diverse_lookback_optimizer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 45)"
+      ]
+    },
+    {
+      "file": "../src/training/wavelet_caching_workflow.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 16)"
+      ]
+    },
+    {
+      "file": "../src/training/optimized_backtester.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 36)"
+      ]
+    },
+    {
+      "file": "../src/training/optimization/transfer_learning_system.py",
+      "error_count": 1,
+      "errors": [
+        "unterminated f-string literal (detected at line 62) (<unknown>, line 62)"
+      ]
+    },
+    {
+      "file": "../src/training/tests/test_regime_change_prediction.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 12)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step04_triple_barrier_method_validator.py",
+      "error_count": 1,
+      "errors": [
+        "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 13)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/multi_timeframe_hmm_ensemble.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 25)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/update_steps_for_unified_data.py",
+      "error_count": 1,
+      "errors": [
+        "unterminated triple-quoted string literal (detected at line 201) (<unknown>, line 173)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/fractional_feature_selector.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 9)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step06_feature_interaction_engineering.py",
+      "error_count": 1,
+      "errors": [
+        "unterminated triple-quoted string literal (detected at line 916) (<unknown>, line 894)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step13_analyst_ensemble_creation_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 9)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step20_ab_testing_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 10)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step14_tactician_labeling_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 15)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step10_unified_regime_intelligence.py",
+      "error_count": 1,
+      "errors": [
+        "invalid decimal literal (<unknown>, line 1799)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step18_walk_forward_validation_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 12)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step14_tactician_labeling.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 21)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/hmm_feature_enhancer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 6)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step09_5_multi_timeframe_hmm_ensemble.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 22)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step11_analyst_creation_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 6)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step09_hmm_based_training_enhanced.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 15)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step09_hmm_based_training_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 10)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step01_5_data_converter.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 10)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step20_ab_testing.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 8)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step03_parameter_optimization_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 11)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step17_final_parameters_optimization_new.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 9)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/enhanced_step1_data_collection.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 15)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step19_monte_carlo_validation_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 7)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step02_5_sr_optimization_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 15)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/data_downloader.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 16)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step03_hmm_regime_discovery_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 12)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step16_confidence_calibration.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 13)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step04_regime_data_splitting_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 10)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step21_saving.py",
+      "error_count": 1,
+      "errors": [
+        "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 20)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step05_labeling.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 11)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/combined_fractional_system.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 10)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step10_unified_regime_intelligence_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 13)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step03_5_final_regime_clustering_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 11)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/vectorized_advanced_feature_engineering.py",
+      "error_count": 1,
+      "errors": [
+        "invalid decimal literal (<unknown>, line 55)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/precompute_wavelet_features.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 17)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step02_feature_engineering_validator.py",
+      "error_count": 1,
+      "errors": [
+        "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 17)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step02_5_sr_optimization.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 12)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step08_regime_data_splitting.py",
+      "error_count": 1,
+      "errors": [
+        "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 13)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step21_saving_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 8)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step02_data_reading_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 10)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step07_enhanced_matrix_operations.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 12)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step19_monte_carlo_validation.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 8)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step03_hmm_regime_discovery.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 11)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step01_data_collection.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 10)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/unified_data_loader.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 10)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step02_data_reading.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 12)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step03_parameter_optimization.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 11)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step11_analyst_creation.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 9)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step12_analyst_enhancement_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 15)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step09_hmm_based_training.py",
+      "error_count": 1,
+      "errors": [
+        "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 20)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step01_5_data_converter_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 11)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step01_data_collection_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 7)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/vectorized_labelling_orchestrator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 19)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step06_feature_engineering_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 6)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step04_regime_data_splitting.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 14)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/backtesting_with_cached_features.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 18)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/integrated_data_quality_pipeline.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 11)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/enhanced_step1_5_data_converter.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 15)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step17_final_parameters_optimization.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 15)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step03_5_final_regime_clustering.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 10)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/sr_outcome_model_trainer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 22)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step06_feature_engineering.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 11)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step16_confidence_calibration_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 10)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step12_analyst_enhancement.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 9)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/raw_data_quality_checker.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 12)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step17_final_parameters_optimization_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 9)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step18_walk_forward_validation.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 8)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step15_tactician_specialist_training.py",
+      "error_count": 1,
+      "errors": [
+        "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 21)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/__init__.py",
+      "error_count": 1,
+      "errors": [
+        "expected an indented block after 'try' statement on line 8 (<unknown>, line 9)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step08_regime_data_splitting_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 10)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step15_tactician_specialist_training_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 13)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step05_labeling_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 10)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/fractional_differentiation.py",
+      "error_count": 1,
+      "errors": [
+        "invalid decimal literal (<unknown>, line 44)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step13_analyst_ensemble_creation.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 5)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step07_enhanced_matrix_operations_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 8)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step05_regime_data_splitting_validator.py",
+      "error_count": 1,
+      "errors": [
+        "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 13)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step04_triple_barrier_method.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 11)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step17_final_parameters_optimization/evaluation_engine.py",
+      "error_count": 1,
+      "errors": [
+        "unmatched ')' (<unknown>, line 17)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step17_final_parameters_optimization/advanced_optimization_engine.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 21)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization_enhanced.py",
+      "error_count": 1,
+      "errors": [
+        "unterminated triple-quoted string literal (detected at line 821) (<unknown>, line 744)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization.py",
+      "error_count": 1,
+      "errors": [
+        "closing parenthesis '}' does not match opening parenthesis '(' on line 54 (<unknown>, line 64)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step17_final_parameters_optimization/optimized_step17_implementation.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 21)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step17_final_parameters_optimization/hyperparameter_optimization_config.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 12)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step17_final_parameters_optimization/comprehensive_parameter_integration.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 21)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step17_final_parameters_optimization/sr_optuna_optimization.py",
+      "error_count": 1,
+      "errors": [
+        "invalid character '\ud83c\udfaf' (U+1F3AF) (<unknown>, line 608)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step17_final_parameters_optimization/efficiency_optimizer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 14)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step17_final_parameters_optimization/step17_probabilistic_bayesian_optimization.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 22)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step17_final_parameters_optimization/__init__.py",
+      "error_count": 1,
+      "errors": [
+        "unexpected indent (<unknown>, line 9)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py",
+      "error_count": 1,
+      "errors": [
+        "unterminated triple-quoted string literal (detected at line 838) (<unknown>, line 737)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step1/missing_data_downloader_and_gap_filler.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 9)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step1/data_quality_dashboard.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 11)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step1/test_missing_data_downloader.py",
+      "error_count": 1,
+      "errors": [
+        "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 18)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step1/validate_and_fix_aggtrades_format.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 10)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step1/comprehensive_gap_filler.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 13)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step1/aggtrades_validator.py",
+      "error_count": 1,
+      "errors": [
+        "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 17)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step1/step1_orchestrator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid character '\ud83c\udfaf' (U+1F3AF) (<unknown>, line 372)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step1/data_resampler.py",
+      "error_count": 1,
+      "errors": [
+        "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 22)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step1/run_step1.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 19)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step1/test_enhanced_data_quality_system.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 14)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step1/gap_filler_pipeline.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 12)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step1/data_gap_detector.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 8)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step1/data_quality_monitor.py",
+      "error_count": 1,
+      "errors": [
+        "closing parenthesis '}' does not match opening parenthesis '(' on line 29 (<unknown>, line 34)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step1/enhanced_data_quality_manager.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 10)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 10)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_specific_triple_barrier_optimizer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 23)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_aware_triple_barrier_labeling.py",
+      "error_count": 1,
+      "errors": [
+        "closing parenthesis '}' does not match opening parenthesis '(' on line 198 (<unknown>, line 211)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step4_analyst_labeling_feature_engineering_components/fractional_triple_barrier_labeling.py",
+      "error_count": 1,
+      "errors": [
+        "unmatched ')' (<unknown>, line 42)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step4_analyst_labeling_feature_engineering_components/profit_based_feature_engineering.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 10)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/step4_analyst_labeling_feature_engineering_components/__init__.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 14)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/multi_timeframe_training/multi_timeframe_training_manager.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 13)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/multi_timeframe_training/__init__.py",
+      "error_count": 1,
+      "errors": [
+        "unexpected indent (<unknown>, line 8)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/analyst_training_components/regime_specific_tpsl_optimizer.py",
+      "error_count": 1,
+      "errors": [
+        "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 24)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/analyst_training_components/__init__.py",
+      "error_count": 1,
+      "errors": [
+        "unexpected indent (<unknown>, line 8)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/data_preparation_components/aggtrades_data_formatting.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 9)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/data_preparation_components/training_validation_config.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 45)"
+      ]
+    },
+    {
+      "file": "../src/training/steps/data_preparation_components/__init__.py",
+      "error_count": 1,
+      "errors": [
+        "unexpected indent (<unknown>, line 8)"
+      ]
+    },
+    {
+      "file": "../src/training/examples/optimized_training_example.py",
+      "error_count": 1,
+      "errors": [
+        "expression cannot contain assignment, perhaps you meant \"==\"? (<unknown>, line 14)"
+      ]
+    },
+    {
+      "file": "../src/training/core/stage_registry.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 3)"
+      ]
+    },
+    {
+      "file": "../src/training/core/checkpoint_manager.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 21)"
+      ]
+    },
+    {
+      "file": "../src/training/core/stage_context.py",
+      "error_count": 1,
+      "errors": [
+        "unmatched ')' (<unknown>, line 9)"
+      ]
+    },
+    {
+      "file": "../src/training/core/pipeline_base.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 25)"
+      ]
+    },
+    {
+      "file": "../src/training/core/pipeline_orchestrator.py",
+      "error_count": 1,
+      "errors": [
+        "unexpected indent (<unknown>, line 14)"
+      ]
+    },
+    {
+      "file": "../src/training/core/__init__.py",
+      "error_count": 1,
+      "errors": [
+        "unexpected indent (<unknown>, line 7)"
+      ]
+    },
+    {
+      "file": "../src/exchange/binance.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 30)"
+      ]
+    },
+    {
+      "file": "../src/core/di_integration.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 48)"
+      ]
+    },
+    {
+      "file": "../src/core/injectable_base.py",
+      "error_count": 1,
+      "errors": [
+        "expected an indented block after 'if' statement on line 16 (<unknown>, line 17)"
+      ]
+    },
+    {
+      "file": "../src/core/di_launcher.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 39)"
+      ]
+    },
+    {
+      "file": "../src/core/enhanced_factories.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 51)"
+      ]
+    },
+    {
+      "file": "../src/core/generic_base.py",
+      "error_count": 1,
+      "errors": [
+        "expected 'except' or 'finally' block (<unknown>, line 45)"
+      ]
+    },
+    {
+      "file": "../src/core/service_registry.py",
+      "error_count": 1,
+      "errors": [
+        "unmatched ')' (<unknown>, line 14)"
+      ]
+    },
+    {
+      "file": "../src/core/dependency_injection.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 23)"
+      ]
+    },
+    {
+      "file": "../src/core/config_service.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 12)"
+      ]
+    },
+    {
+      "file": "../src/config/sr_optimization_config.py",
+      "error_count": 1,
+      "errors": [
+        "expected an indented block after function definition on line 33 (<unknown>, line 35)"
+      ]
+    },
+    {
+      "file": "../src/config/training_modes.py",
+      "error_count": 1,
+      "errors": [
+        "expected an indented block after function definition on line 32 (<unknown>, line 34)"
+      ]
+    },
+    {
+      "file": "../src/config/system.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 9)"
+      ]
+    },
+    {
+      "file": "../src/config/fractional_implementations_config.py",
+      "error_count": 1,
+      "errors": [
+        "expected an indented block after function definition on line 28 (<unknown>, line 30)"
+      ]
+    },
+    {
+      "file": "../src/config/computational_optimization_config.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 113)"
+      ]
+    },
+    {
+      "file": "../src/config/environment.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 11)"
+      ]
+    },
+    {
+      "file": "../src/config/label_model_mapping.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 201)"
+      ]
+    },
+    {
+      "file": "../src/config/config_confidence.py",
+      "error_count": 1,
+      "errors": [
+        "expected an indented block after function definition on line 31 (<unknown>, line 33)"
+      ]
+    },
+    {
+      "file": "../src/config/multi_timeframe_hmm_ensemble_config.py",
+      "error_count": 1,
+      "errors": [
+        "expected ':' (<unknown>, line 33)"
+      ]
+    },
+    {
+      "file": "../src/config/enhanced_feature_selection_config.py",
+      "error_count": 1,
+      "errors": [
+        "expected an indented block after function definition on line 26 (<unknown>, line 28)"
+      ]
+    },
+    {
+      "file": "../src/config/config.py",
+      "error_count": 1,
+      "errors": [
+        "unterminated string literal (detected at line 45) (<unknown>, line 45)"
+      ]
+    },
+    {
+      "file": "../src/config/m1_gpu_config.py",
+      "error_count": 1,
+      "errors": [
+        "expected ':' (<unknown>, line 31)"
+      ]
+    },
+    {
+      "file": "../src/config/config_tpsl.py",
+      "error_count": 1,
+      "errors": [
+        "expected ':' (<unknown>, line 31)"
+      ]
+    },
+    {
+      "file": "../src/config/config_regime_transitions.py",
+      "error_count": 1,
+      "errors": [
+        "expected an indented block after function definition on line 31 (<unknown>, line 33)"
+      ]
+    },
+    {
+      "file": "../src/config/config_position_sizing.py",
+      "error_count": 1,
+      "errors": [
+        "expected an indented block after function definition on line 31 (<unknown>, line 33)"
+      ]
+    },
+    {
+      "file": "../src/config/enhanced_multi_timeframe_config.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 10)"
+      ]
+    },
+    {
+      "file": "../src/config/config_manager.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 46)"
+      ]
+    },
+    {
+      "file": "../src/config/typed_config.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 49)"
+      ]
+    },
+    {
+      "file": "../src/config/config_sr.py",
+      "error_count": 1,
+      "errors": [
+        "expected ':' (<unknown>, line 31)"
+      ]
+    },
+    {
+      "file": "../src/config/matrix_diverse_lookback_config.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 11)"
+      ]
+    },
+    {
+      "file": "../src/config/diverse_lookback_config.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 12)"
+      ]
+    },
+    {
+      "file": "../src/config/computational_optimization.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 8)"
+      ]
+    },
+    {
+      "file": "../src/config/multi_output_config.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 12)"
+      ]
+    },
+    {
+      "file": "../src/config/config_two_tier.py",
+      "error_count": 1,
+      "errors": [
+        "expected ':' (<unknown>, line 31)"
+      ]
+    },
+    {
+      "file": "../src/config/config_technical_indicators.py",
+      "error_count": 1,
+      "errors": [
+        "expected an indented block after function definition on line 31 (<unknown>, line 33)"
+      ]
+    },
+    {
+      "file": "../src/config/enhanced_reporting_config.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 12)"
+      ]
+    },
+    {
+      "file": "../src/config/config_system_monitoring.py",
+      "error_count": 1,
+      "errors": [
+        "expected an indented block after function definition on line 31 (<unknown>, line 33)"
+      ]
+    },
+    {
+      "file": "../src/config/training.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 9)"
+      ]
+    },
+    {
+      "file": "../src/config/enhanced_matrix_config.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 12)"
+      ]
+    },
+    {
+      "file": "../src/config/validation.py",
+      "error_count": 1,
+      "errors": [
+        "expected an indented block after 'for' statement on line 13 (<unknown>, line 14)"
+      ]
+    },
+    {
+      "file": "../src/config/enhanced_prediction_service_config.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 10)"
+      ]
+    },
+    {
+      "file": "../src/config/config_training_optimization.py",
+      "error_count": 1,
+      "errors": [
+        "expected an indented block after function definition on line 31 (<unknown>, line 33)"
+      ]
+    },
+    {
+      "file": "../src/config/__init__.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 15)"
+      ]
+    },
+    {
+      "file": "../src/config/feature_engineering_optimization_config.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 12)"
+      ]
+    },
+    {
+      "file": "../src/config/config_leverage.py",
+      "error_count": 1,
+      "errors": [
+        "unterminated triple-quoted string literal (detected at line 168) (<unknown>, line 151)"
+      ]
+    },
+    {
+      "file": "../src/config/enhanced_feature_optimization_config.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 12)"
+      ]
+    },
+    {
+      "file": "../src/config/regime_specific_optimization_config.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 44)"
+      ]
+    },
+    {
+      "file": "../src/config/trading.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 8)"
+      ]
+    },
+    {
+      "file": "../src/config/config_ensemble.py",
+      "error_count": 1,
+      "errors": [
+        "unterminated triple-quoted string literal (detected at line 145) (<unknown>, line 128)"
+      ]
+    },
+    {
+      "file": "../src/utils/lookahead_bias_detector_example.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 16)"
+      ]
+    },
+    {
+      "file": "../src/utils/supervisor_error_handler_example.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 30)"
+      ]
+    },
+    {
+      "file": "../src/utils/observability.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 10)"
+      ]
+    },
+    {
+      "file": "../src/utils/comprehensive_file_validation.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 44)"
+      ]
+    },
+    {
+      "file": "../src/utils/step_dependency_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 36)"
+      ]
+    },
+    {
+      "file": "../src/utils/enhanced_validation_decorators.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 44)"
+      ]
+    },
+    {
+      "file": "../src/utils/data_quality_framework.py",
+      "error_count": 1,
+      "errors": [
+        "expected ':' (<unknown>, line 25)"
+      ]
+    },
+    {
+      "file": "../src/utils/vif_calculator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 22)"
+      ]
+    },
+    {
+      "file": "../src/utils/model_performance_monitor.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 21)"
+      ]
+    },
+    {
+      "file": "../src/utils/data_quality_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid decimal literal (<unknown>, line 111)"
+      ]
+    },
+    {
+      "file": "../src/utils/state_manager.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 32)"
+      ]
+    },
+    {
+      "file": "../src/utils/structured_logging.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 9)"
+      ]
+    },
+    {
+      "file": "../src/utils/async_utils.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 28)"
+      ]
+    },
+    {
+      "file": "../src/utils/vif_validation_decorators.py",
+      "error_count": 1,
+      "errors": [
+        "expected an indented block after function definition on line 36 (<unknown>, line 38)"
+      ]
+    },
+    {
+      "file": "../src/utils/enhanced_data_quality_decorators.py",
+      "error_count": 1,
+      "errors": [
+        "invalid decimal literal (<unknown>, line 160)"
+      ]
+    },
+    {
+      "file": "../src/utils/enhanced_config_management.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 20)"
+      ]
+    },
+    {
+      "file": "../src/utils/supervisor_error_handler.py",
+      "error_count": 1,
+      "errors": [
+        "expected 'except' or 'finally' block (<unknown>, line 63)"
+      ]
+    },
+    {
+      "file": "../src/utils/time_utils.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 10)"
+      ]
+    },
+    {
+      "file": "../src/utils/data_preprocessing.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 17)"
+      ]
+    },
+    {
+      "file": "../src/utils/feature_output_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid decimal literal (<unknown>, line 1084)"
+      ]
+    },
+    {
+      "file": "../src/utils/intelligent_feature_cache.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 45)"
+      ]
+    },
+    {
+      "file": "../src/utils/parallel_processing_optimizer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 48)"
+      ]
+    },
+    {
+      "file": "../src/utils/decorators.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 29)"
+      ]
+    },
+    {
+      "file": "../src/utils/data_loader.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 26)"
+      ]
+    },
+    {
+      "file": "../src/utils/enhanced_memory_management.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 20)"
+      ]
+    },
+    {
+      "file": "../src/utils/standardized_model_manager.py",
+      "error_count": 1,
+      "errors": [
+        "unterminated string literal (detected at line 57) (<unknown>, line 57)"
+      ]
+    },
+    {
+      "file": "../src/utils/advanced_decorators.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 20)"
+      ]
+    },
+    {
+      "file": "../src/utils/training_pipeline_decorators.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 21)"
+      ]
+    },
+    {
+      "file": "../src/utils/decorator_config.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 28)"
+      ]
+    },
+    {
+      "file": "../src/utils/enhanced_decorators.py",
+      "error_count": 1,
+      "errors": [
+        "expected 'except' or 'finally' block (<unknown>, line 33)"
+      ]
+    },
+    {
+      "file": "../src/utils/standardized_config_manager.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 37)"
+      ]
+    },
+    {
+      "file": "../src/utils/optimization_integration_test.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 61)"
+      ]
+    },
+    {
+      "file": "../src/utils/enhanced_mlflow_integration.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 35)"
+      ]
+    },
+    {
+      "file": "../src/utils/purged_kfold.py",
+      "error_count": 1,
+      "errors": [
+        "expected ':' (<unknown>, line 25)"
+      ]
+    },
+    {
+      "file": "../src/utils/centralized_decorators.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 41)"
+      ]
+    },
+    {
+      "file": "../src/utils/warning_symbols.py",
+      "error_count": 1,
+      "errors": [
+        "expected ':' (<unknown>, line 28)"
+      ]
+    },
+    {
+      "file": "../src/utils/config_loader.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 31)"
+      ]
+    },
+    {
+      "file": "../src/utils/centralized_decorators_v2.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 19)"
+      ]
+    },
+    {
+      "file": "../src/utils/vif_validation_decorators_simple.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 23)"
+      ]
+    },
+    {
+      "file": "../src/utils/decorator_compatibility.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 34)"
+      ]
+    },
+    {
+      "file": "../src/utils/validation_decorators.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 28)"
+      ]
+    },
+    {
+      "file": "../src/utils/enhanced_pipeline_decorators.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 24)"
+      ]
+    },
+    {
+      "file": "../src/utils/error_handler.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 26)"
+      ]
+    },
+    {
+      "file": "../src/utils/data_validation.py",
+      "error_count": 1,
+      "errors": [
+        "invalid decimal literal (<unknown>, line 138)"
+      ]
+    },
+    {
+      "file": "../src/utils/parquet_utils.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 34)"
+      ]
+    },
+    {
+      "file": "../src/utils/standardized_error_handler.py",
+      "error_count": 1,
+      "errors": [
+        "f-string: expecting '=', or '!', or ':', or '}' (<unknown>, line 34)"
+      ]
+    },
+    {
+      "file": "../src/utils/comprehensive_logger.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 40)"
+      ]
+    },
+    {
+      "file": "../src/utils/validator_orchestrator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 47)"
+      ]
+    },
+    {
+      "file": "../src/utils/hmm_composite_manager.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 50)"
+      ]
+    },
+    {
+      "file": "../src/utils/signal_handler.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 29)"
+      ]
+    },
+    {
+      "file": "../src/utils/data_optimizer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 25)"
+      ]
+    },
+    {
+      "file": "../src/utils/configuration_security.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 41)"
+      ]
+    },
+    {
+      "file": "../src/utils/security_framework.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 47)"
+      ]
+    },
+    {
+      "file": "../src/utils/centralized_decorators_simple.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 14)"
+      ]
+    },
+    {
+      "file": "../src/utils/enhanced_missing_value_handler.py",
+      "error_count": 1,
+      "errors": [
+        "unterminated f-string literal (detected at line 29) (<unknown>, line 29)"
+      ]
+    },
+    {
+      "file": "../src/utils/trading_decorators.py",
+      "error_count": 1,
+      "errors": [
+        "expected 'except' or 'finally' block (<unknown>, line 36)"
+      ]
+    },
+    {
+      "file": "../src/utils/data_formatting_framework.py",
+      "error_count": 1,
+      "errors": [
+        "unterminated string literal (detected at line 26) (<unknown>, line 26)"
+      ]
+    },
+    {
+      "file": "../src/utils/enhanced_data_quality_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 21)"
+      ]
+    },
+    {
+      "file": "../src/utils/data_quality_decorators.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 26)"
+      ]
+    },
+    {
+      "file": "../src/utils/quality_alert_system.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 47)"
+      ]
+    },
+    {
+      "file": "../src/utils/mlflow_utils.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 13)"
+      ]
+    },
+    {
+      "file": "../src/utils/base_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 36)"
+      ]
+    },
+    {
+      "file": "../src/utils/confidence.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 9)"
+      ]
+    },
+    {
+      "file": "../src/utils/pipeline_standards.py",
+      "error_count": 1,
+      "errors": [
+        "expected an indented block after function definition on line 29 (<unknown>, line 31)"
+      ]
+    },
+    {
+      "file": "../src/utils/enhanced_error_handling.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 22)"
+      ]
+    },
+    {
+      "file": "../src/utils/prometheus_metrics.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 20)"
+      ]
+    },
+    {
+      "file": "../src/utils/decorator_registry.py",
+      "error_count": 1,
+      "errors": [
+        "unindent does not match any outer indentation level (<unknown>, line 44)"
+      ]
+    },
+    {
+      "file": "../src/utils/steps_1_7_compatibility_framework.py",
+      "error_count": 1,
+      "errors": [
+        "expected ':' (<unknown>, line 35)"
+      ]
+    },
+    {
+      "file": "../src/utils/advanced_ml_validation.py",
+      "error_count": 1,
+      "errors": [
+        "expected ':' (<unknown>, line 39)"
+      ]
+    },
+    {
+      "file": "../src/utils/model_manager.py",
+      "error_count": 1,
+      "errors": [
+        "expected an indented block after function definition on line 39 (<unknown>, line 40)"
+      ]
+    },
+    {
+      "file": "../src/utils/domain_errors.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 27)"
+      ]
+    },
+    {
+      "file": "../src/utils/database_security.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 37)"
+      ]
+    },
+    {
+      "file": "../src/utils/enhanced_outlier_handler.py",
+      "error_count": 1,
+      "errors": [
+        "unterminated string literal (detected at line 125) (<unknown>, line 125)"
+      ]
+    },
+    {
+      "file": "../src/utils/enhanced_error_handler.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 40)"
+      ]
+    },
+    {
+      "file": "../src/utils/logger.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 37)"
+      ]
+    },
+    {
+      "file": "../src/utils/lookahead_bias_detector.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 37)"
+      ]
+    },
+    {
+      "file": "../src/utils/comprehensive_data_quality_validator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 29)"
+      ]
+    },
+    {
+      "file": "../src/utils/data_type_optimizer.py",
+      "error_count": 1,
+      "errors": [
+        "invalid decimal literal (<unknown>, line 54)"
+      ]
+    },
+    {
+      "file": "../src/validation/critical_path_validators.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 55)"
+      ]
+    },
+    {
+      "file": "../src/analyst/order_book_analyzer.py",
+      "error_count": 1,
+      "errors": [
+        "unmatched ')' (<unknown>, line 8)"
+      ]
+    },
+    {
+      "file": "../src/analyst/advanced_feature_engineering.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 145)"
+      ]
+    },
+    {
+      "file": "../src/analyst/multi_timeframe_regime_integration.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 45)"
+      ]
+    },
+    {
+      "file": "../src/analyst/meta_labeling_system.py",
+      "error_count": 1,
+      "errors": [
+        "unmatched ')' (<unknown>, line 14)"
+      ]
+    },
+    {
+      "file": "../src/analyst/enhanced_prediction_integrator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 36)"
+      ]
+    },
+    {
+      "file": "../src/analyst/predictive_ensembles.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 29)"
+      ]
+    },
+    {
+      "file": "../src/analyst/regime_runtime.py",
+      "error_count": 1,
+      "errors": [
+        "expected an indented block after 'try' statement on line 13 (<unknown>, line 14)"
+      ]
+    },
+    {
+      "file": "../src/analyst/liquidation_risk_model.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 13)"
+      ]
+    },
+    {
+      "file": "../src/analyst/multi_timeframe_feature_engineering.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 52)"
+      ]
+    },
+    {
+      "file": "../src/analyst/dynamic_regime_mapper.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 13)"
+      ]
+    },
+    {
+      "file": "../src/analyst/enhanced_regime_predictor.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 42)"
+      ]
+    },
+    {
+      "file": "../src/analyst/decision_aggregator.py",
+      "error_count": 1,
+      "errors": [
+        "expected an indented block after 'try' statement on line 12 (<unknown>, line 13)"
+      ]
+    },
+    {
+      "file": "../src/analyst/data_utils.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 33)"
+      ]
+    },
+    {
+      "file": "../src/analyst/unified_regime_intelligence_runtime.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 27)"
+      ]
+    },
+    {
+      "file": "../src/analyst/example_directional_analysis.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 19)"
+      ]
+    },
+    {
+      "file": "../src/analyst/regime_expert_orchestrator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 21)"
+      ]
+    },
+    {
+      "file": "../src/analyst/meta_label_relevance.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 37)"
+      ]
+    },
+    {
+      "file": "../src/analyst/ml_confidence_predictor.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 54)"
+      ]
+    },
+    {
+      "file": "../src/analyst/di_analyst.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 37)"
+      ]
+    },
+    {
+      "file": "../src/analyst/unified_regime_classifier.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 40)"
+      ]
+    },
+    {
+      "file": "../src/analyst/predictive_ensembles/multi_timeframe_ensemble.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 49)"
+      ]
+    },
+    {
+      "file": "../src/analyst/predictive_ensembles/enhanced_ensemble_orchestrator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 43)"
+      ]
+    },
+    {
+      "file": "../src/analyst/predictive_ensembles/ensemble_orchestrator.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 35)"
+      ]
+    },
+    {
+      "file": "../src/analyst/predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py",
+      "error_count": 1,
+      "errors": [
+        "unmatched ')' (<unknown>, line 14)"
+      ]
+    },
+    {
+      "file": "../src/analyst/predictive_ensembles/regime_ensembles/base_ensemble.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 21)"
+      ]
+    },
+    {
+      "file": "../src/database/efficient_features_database.py",
+      "error_count": 1,
+      "errors": [
+        "unmatched ')' (<unknown>, line 25)"
+      ]
+    },
+    {
+      "file": "../src/database/precomputed_features_manager.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 13)"
+      ]
+    },
+    {
+      "file": "../src/database/migration_utils.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 29)"
+      ]
+    },
+    {
+      "file": "../src/database/firestore_manager.py",
+      "error_count": 1,
+      "errors": [
+        "unindent does not match any outer indentation level (<unknown>, line 30)"
+      ]
+    },
+    {
+      "file": "../src/database/sqlite_manager.py",
+      "error_count": 1,
+      "errors": [
+        "invalid syntax (<unknown>, line 33)"
+      ]
+    }
+  ]
+}

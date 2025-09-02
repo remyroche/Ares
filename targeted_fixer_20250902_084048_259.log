@@ -1,0 +1,12 @@
+2025-09-02 08:40:48,262 - INFO - Processing file: src/utils/data_optimizer.py
+2025-09-02 08:40:48,263 - INFO - Performing semantic analysis...
+2025-09-02 08:40:48,279 - INFO - Code quality score: 0.57
+2025-09-02 08:40:48,279 - WARNING - Semantic issues found: 43
+2025-09-02 08:40:48,279 - WARNING - Structure issues found: 18
+2025-09-02 08:40:48,281 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:40:48,284 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:40:48,290 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:40:48,290 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:40:48,292 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:40:48,295 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:40:48,298 - INFO - No fixes needed for: src/utils/data_optimizer.py

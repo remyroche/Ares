@@ -2416,76 +2416,76 @@ class VectorizedAdvancedFeatureEngineering:
 
         # Log preprocessing results
         if price_validation.get("preprocessing_applied"):
-                preprocessing_info = price_validation["preprocessing_applied"]
-        self.logger.info("✅ Price data preprocessing completed:")
-        self.logger.info(f"   Method: {preprocessing_info['method']}")
-        self.logger.info(f"   Original shape: {preprocessing_info['original_shape']}")
-        self.logger.info(f"   Preprocessed shape: {preprocessing_info['preprocessed_shape']}")
-        self.logger.info(f"   Quality improvement: {preprocessing_info['improvement']:.3f}")
-                price_data = preprocessed_price_data
-            else:
-        self.logger.info("✅ No price data preprocessing needed")
+            preprocessing_info = price_validation["preprocessing_applied"]
+            self.logger.info("✅ Price data preprocessing completed:")
+            self.logger.info(f"   Method: {preprocessing_info['method']}")
+            self.logger.info(f"   Original shape: {preprocessing_info['original_shape']}")
+            self.logger.info(f"   Preprocessed shape: {preprocessing_info['preprocessed_shape']}")
+            self.logger.info(f"   Quality improvement: {preprocessing_info['improvement']:.3f}")
+            price_data = preprocessed_price_data
+        else:
+            self.logger.info("✅ No price data preprocessing needed")
 
         # Enhanced preprocessing for volume data if it has timestamps
         if hasattr(volume_data, "index") and isinstance(volume_data.index, pd.DatetimeIndex):
-        self.logger.info("🔧 Enhanced preprocessing for volume data...")
+            self.logger.info("🔧 Enhanced preprocessing for volume data...")
 
-                enhanced_volume_data = quality_checker.enhanced_preprocess_market_data(
-                    volume_data,
-                    symbol=symbol,
-                    exchange=exchange,
-                    expected_interval_seconds=60,  # 1-minute intervals
-                    max_forward_fill_seconds=10,  # Forward-fill gaps ≤10 seconds
-                    download_missing_data=True,    # Download data for gaps >10 seconds
-                )
+            enhanced_volume_data = quality_checker.enhanced_preprocess_market_data(
+                volume_data,
+                symbol=symbol,
+                exchange=exchange,
+                expected_interval_seconds=60,  # 1-minute intervals
+                max_forward_fill_seconds=10,  # Forward-fill gaps ≤10 seconds
+                download_missing_data=True,    # Download data for gaps >10 seconds
+            )
 
-        # Update volume_data with enhanced preprocessed data
-                volume_data = enhanced_volume_data
-        self.logger.info("✅ Volume data enhanced preprocessing completed")
-            else:
-                self.logger.info("🔧 Volume data doesn't have DatetimeIndex, attempting to fix...")
-        # Ensure volume_data has a proper DatetimeIndex
-        if not isinstance(volume_data.index, pd.DatetimeIndex):
-        if "timestamp" in volume_data.columns:
-        # Convert timestamp column to DatetimeIndex
-                        volume_data = volume_data.set_index("timestamp")
-        self.logger.info("✅ Set timestamp column as DatetimeIndex for volume data")
-                    elif volume_data.index.name == "timestamp":
-        # Convert index to DatetimeIndex
-                        volume_data.index, pd.to_datetime(volume_data.index)
-        self.logger.info("✅ Converted volume data index to DatetimeIndex")
-                    else:
-        # Try to convert the existing index to datetime if it looks like timestamps
-        try:
-        if volume_data.index.dtype == "object" or str(volume_data.index.dtype).startswith("datetime"):
-        # Try to parse the index as datetime
-                                volume_data.index, pd.to_datetime(volume_data.index)
-        self.logger.info("✅ Converted existing volume data index to DatetimeIndex")
-        # Try to align volume data with price data index
-                            elif hasattr(price_data, "index") and isinstance(price_data.index, pd.DatetimeIndex):
-                                volume_data, volume_data.reindex(price_data.index, method="ffill")
-        self.logger.info("✅ Aligned volume data with price data index")
-                            else:
-                                self.logger.warning("⚠️ Cannot determine timestamp column for volume data, skipping preprocessing")
-        except Exception as e:
-        self.logger.warning(f"⚠️ Failed to fix volume data DatetimeIndex: {e}, skipping preprocessing")
+            # Update volume_data with enhanced preprocessed data
+            volume_data = enhanced_volume_data
+            self.logger.info("✅ Volume data enhanced preprocessing completed")
+        else:
+            self.logger.info("🔧 Volume data doesn't have DatetimeIndex, attempting to fix...")
+            # Ensure volume_data has a proper DatetimeIndex
+            if not isinstance(volume_data.index, pd.DatetimeIndex):
+                if "timestamp" in volume_data.columns:
+                    # Convert timestamp column to DatetimeIndex
+                    volume_data = volume_data.set_index("timestamp")
+                    self.logger.info("✅ Set timestamp column as DatetimeIndex for volume data")
+                elif volume_data.index.name == "timestamp":
+                    # Convert index to DatetimeIndex
+                    volume_data.index = pd.to_datetime(volume_data.index)
+                    self.logger.info("✅ Converted volume data index to DatetimeIndex")
+                else:
+                    # Try to convert the existing index to datetime if it looks like timestamps
+                    try:
+                        if volume_data.index.dtype == "object" or str(volume_data.index.dtype).startswith("datetime"):
+                            # Try to parse the index as datetime
+                            volume_data.index = pd.to_datetime(volume_data.index)
+                            self.logger.info("✅ Converted existing volume data index to DatetimeIndex")
+                            # Try to align volume data with price data index
+                        elif hasattr(price_data, "index") and isinstance(price_data.index, pd.DatetimeIndex):
+                            volume_data = volume_data.reindex(price_data.index, method="ffill")
+                            self.logger.info("✅ Aligned volume data with price data index")
+                        else:
+                            self.logger.warning("⚠️ Cannot determine timestamp column for volume data, skipping preprocessing")
+                    except Exception as e:
+                        self.logger.warning(f"⚠️ Failed to fix volume data DatetimeIndex: {e}, skipping preprocessing")
 
         # Validate and transform data to ensure OHLCV structure
-            price_data, volume_data = self._validate_and_transform_data(
-                price_data, volume_data,
-            )
+        price_data, volume_data = self._validate_and_transform_data(
+            price_data, volume_data,
+        )
 
         # Track NaN origins in input data
         self._track_nan_origins(
-                "feature_engineering_input",
-                {
-                    "price_data": price_data,
-                    "volume_data": volume_data,
-                    "order_flow_data": order_flow_data,
-                },
-            )
+            "feature_engineering_input",
+            {
+                "price_data": price_data,
+                "volume_data": volume_data,
+                "order_flow_data": order_flow_data,
+            },
+        )
 
-            features = {}
+        features = {}
 
         # Debug: Log input data information before feature generation
         self.logger.info("🔍 Input data validation before feature generation:")
@@ -2494,16 +2494,16 @@ class VectorizedAdvancedFeatureEngineering:
         self.logger.info(f"   Order flow data shape: {order_flow_data.shape if order_flow_data is not None else 'None'}")
 
         if price_data is not None and not price_data.empty:
-        self.logger.info(f"   Price data index: {price_data.index.min()} to {price_data.index.max()}")
-        self.logger.info(f"   Price data columns: {list(price_data.columns)}")
-            else:
-        self.logger.error("❌ Price data is empty or None")
+            self.logger.info(f"   Price data index: {price_data.index.min()} to {price_data.index.max()}")
+            self.logger.info(f"   Price data columns: {list(price_data.columns)}")
+        else:
+            self.logger.error("❌ Price data is empty or None")
 
         if volume_data is not None and not volume_data.empty:
-        self.logger.info(f"   Volume data index: {volume_data.index.min()} to {volume_data.index.max()}")
-        self.logger.info(f"   Volume data columns: {list(volume_data.columns)}")
-            else:
-        self.logger.error("❌ Volume data is empty or None")
+            self.logger.info(f"   Volume data index: {volume_data.index.min()} to {volume_data.index.max()}")
+            self.logger.info(f"   Volume data columns: {list(volume_data.columns)}")
+        else:
+            self.logger.error("❌ Volume data is empty or None")
 
         # Validate input data before proceeding
         if price_data is None or price_data.empty:

@@ -1,11 +1,15 @@
+import logging
+
+logger = logging.getLogger(__name__)
+
 """
 Data Preprocessing Utilities for Ares Trading System
 Provides functions for regularizing timestamps, handling data quality issues,
 and preparing data for feature engineering.
 """
 
-from datetime import timedelta
 import warnings
+from datetime import timedelta
 from typing import Any
 
 import pandas as pd
@@ -41,17 +45,17 @@ def regularize_timestamps(
             return data
 
         # Make a copy to avoid modifying original data
-        processed_data, data.copy()
+        processed_data = data.copy()
 
         # Ensure timestamp is the index
         if "timestamp" in processed_data.columns:
-            processed_data, processed_data.set_index("timestamp")
+            processed_data = processed_data.set_index("timestamp")
         elif not isinstance(processed_data.index, pd.DatetimeIndex):
             logger.warning("⚠️ No timestamp column found, cannot regularize intervals")
         return data
 
         # Sort by timestamp
-        processed_data, processed_data.sort_index()
+        processed_data = processed_data.sort_index()
 
         # Check for irregular intervals
         time_diffs = processed_data.index.to_series().diff().dropna()
@@ -60,35 +64,27 @@ def regularize_timestamps(
 
         # Calculate expected interval if not provided
         if expected_interval is None:
-        # Fallback implementation for expected_interval
-            expected_interval, (
-                time_diffs.mode().iloc[0]
-        if len(time_diffs.mode()) > 0
-                else time_diffs.median()
-            )
+            # Fallback implementation for expected_interval
+            expected_interval = (time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median())
 
         # Identify irregular intervals
-        irregular_mask, abs(time_diffs - expected_interval) > timedelta(
-            seconds=tolerance_seconds
-        )
-        irregular_ratio, irregular_mask.sum() / len(time_diffs)
+        irregular_mask = abs(time_diffs - expected_interval) > timedelta(seconds=tolerance_seconds)
+        irregular_ratio = irregular_mask.sum() / len(time_diffs)
 
-        if (
-            irregular_ratio > 0.0001
-        ):  # If more than 0.01% irregular intervals (more sensitive)
+        if irregular_ratio > 0.0001:  # If more than 0.01% irregular intervals (more sensitive)
             logger.info(
                 f"🔄 Regularizing timestamps (irregular ratio: {irregular_ratio:.3f})",
             )
 
-        # Create a regular timestamp index
-            start_time, processed_data.index.min()
-            end_time, processed_data.index.max()
+            # Create a regular timestamp index
+            start_time = processed_data.index.min()
+            end_time = processed_data.index.max()
 
-        # Determine the frequency string based on expected interval
-            freq, _get_frequency_string(expected_interval)
+            # Determine the frequency string based on expected interval
+            freq = _get_frequency_string(expected_interval)
 
-        # Create regular timestamp index
-            regular_index, pd.date_range(start=start_time, end=end_time, freq=freq)
+            # Create regular timestamp index
+            regular_index = pd.date_range(start=start_time, end=end_time, freq=freq)
 
         # Reindex data to regular intervals
         if method == "forward_fill":
@@ -118,7 +114,7 @@ def regularize_timestamps(
 
 def _get_frequency_string(interval: timedelta) -> str:
     """Convert timedelta to pandas frequency string."""
-    total_seconds, interval.total_seconds()
+    total_seconds = interval.total_seconds()
 
     if total_seconds <= 60:
         return "1T"  # 1 minute
@@ -153,15 +149,9 @@ def preprocess_data_for_multi_timeframe(
 
     try:
         # Regularize timestamps for all data
-        processed_price, regularize_timestamps(price_data)
-        processed_volume = (
-            regularize_timestamps(volume_data) if volume_data is not None else None
-        )
-        processed_order_flow = (
-            regularize_timestamps(order_flow_data)
-        if order_flow_data is not None
-            else None
-        )
+        processed_price = regularize_timestamps(price_data)
+        processed_volume = regularize_timestamps(volume_data) if volume_data is not None else None
+        processed_order_flow = regularize_timestamps(order_flow_data) if order_flow_data is not None else None
 
         logger.info("✅ Data preprocessed for multi-timeframe feature engineering")
 
@@ -196,11 +186,11 @@ def validate_and_fix_data_quality(
     }
 
     try:
-        fixed_data, data.copy()
+        fixed_data = data.copy()
 
         # Fix common issues based on data type
         if data_type == "klines_ohlcv":
-            fixed_data, issues, _fix_ohlcv_issues(fixed_data)
+            fixed_data, issues = _fix_ohlcv_issues(fixed_data)
             validation_results["issues_fixed"].extend(issues)
 
         # Regularize timestamps
@@ -226,34 +216,30 @@ def _fix_ohlcv_issues(data: pd.DataFrame) -> tuple[pd.DataFrame, list]:
     # Fix negative prices
     for col in ["open", "high", "low", "close"]:
         if col in data.columns:
-            negative_mask, data[col] < 0
+            negative_mask = data[col] < 0
         if negative_mask.any():
-                data.loc[negative_mask, col] = data.loc[negative_mask, col].abs()
-                issues.append(f"Fixed {negative_mask.sum()} negative {col} values")
+            data.loc[negative_mask, col] = data.loc[negative_mask, col].abs()
+            issues.append(f"Fixed {negative_mask.sum()} negative {col} values")
 
     # Fix OHLC consistency
     if all(col in data.columns for col in ["open", "high", "low", "close"]):
         # High should be >= max of open, close
-        high_violations, data["high"] < data[["open", "close"]].max(axis=1)
+        high_violations = data["high"] < data[["open", "close"]].max(axis=1)
         if high_violations.any():
-            data.loc[high_violations, "high"] = data.loc[
-                high_violations, ["open", "close"]
-            ].max(axis=1)
+            data.loc[high_violations, "high"] = data.loc[high_violations, ["open", "close"]].max(axis=1)
             issues.append(f"Fixed {high_violations.sum()} high price violations")
 
         # Low should be <= min of open, close
-        low_violations, data["low"] > data[["open", "close"]].min(axis=1)
+        low_violations = data["low"] > data[["open", "close"]].min(axis=1)
         if low_violations.any():
-            data.loc[low_violations, "low"] = data.loc[
-                low_violations, ["open", "close"]
-            ].min(axis=1)
+            data.loc[low_violations, "low"] = data.loc[low_violations, ["open", "close"]].min(axis=1)
             issues.append(f"Fixed {low_violations.sum()} low price violations")
 
     # Fix zero volume
     if "volume" in data.columns:
-        zero_volume, data["volume"] == 0
+        zero_volume = data["volume"] == 0
         if zero_volume.any():
-        # Replace zero volume with small positive value
+            # Replace zero volume with small positive value
             data.loc[zero_volume, "volume"] = 0.001
             issues.append(f"Fixed {zero_volume.sum()} zero volume values")
 

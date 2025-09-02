@@ -7,7 +7,6 @@ parallel apply for DataFrame workloads and a convenience decorator.
 """
 
 from __future__ import annotations
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 import asyncio
 import logging
@@ -25,6 +24,7 @@ import numpy as np
 import pandas as pd
 import psutil
 
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 logger = logging.getLogger(__name__)
 
@@ -121,11 +121,11 @@ class MacM1ParallelOptimizer:
         if size == 0:
             return [df.copy()]
         if chunk_size is None:
-        # Fallback implementation for chunk_size
+            # Fallback implementation for chunk_size
             chunk_size = self._get_optimal_chunk_size(size)
         chunks: list[pd.DataFrame] = []
         for i in range(0, size, chunk_size):
-            chunks.append(df.iloc[i : i + chunk_size].copy())
+            chunks.append(df.iloc[i: i + chunk_size].copy())
         logger.debug(f"📦 Split DataFrame into {len(chunks)} chunks of ~{chunk_size} rows each")
         return chunks
 
@@ -314,8 +314,8 @@ def parallel_feature_engineering(max_workers: int = 4) -> Callable[[Callable[...
                     df_arg = arg
                     break
             if df_arg is None:
-        # Fallback implementation for df_arg
-        # Fallback implementation for df_arg
+                # Fallback implementation for df_arg
+                # Fallback implementation for df_arg
                 # Try kwargs
                 for _k, v in kwargs.items():
                     if isinstance(v, pd.DataFrame):
@@ -323,13 +323,14 @@ def parallel_feature_engineering(max_workers: int = 4) -> Callable[[Callable[...
                         break
 
             if df_arg is None:
-        # Fallback implementation for df_arg
-        # Fallback implementation for df_arg
+                # Fallback implementation for df_arg
+                # Fallback implementation for df_arg
                 return func(*args, **kwargs)
 
             # Run function in parallel by applying it to chunks and merging
             def apply_func(chunk: pd.DataFrame) -> pd.DataFrame:
-                return func(chunk, *[a for a in args if not isinstance(a, pd.DataFrame)], **kwargs)  # type: ignore[misc]
+                # type: ignore[misc]
+                return func(chunk, *[a for a in args if not isinstance(a, pd.DataFrame)], **kwargs)
 
             return optimizer.parallel_apply(df_arg, apply_func)
 

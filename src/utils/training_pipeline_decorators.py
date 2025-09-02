@@ -3,18 +3,19 @@ Training Pipeline Decorators
 Provides automatic pipeline monitoring, validation, and logging for training steps.
 """
 
+import asyncio
 import functools
-from functools import wraps
 import time
 import traceback
-from typing import Any, Dict, List, Optional, Callable, Union, Type
 from datetime import datetime, timedelta
-import asyncio
 from enum import Enum
+from functools import wraps
+from typing import Any, Callable, Dict, List, Optional, Type, Union
 
 # Handle optional dependencies
 try:
     import pandas as pd
+
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False
@@ -22,6 +23,7 @@ except ImportError:
 
 try:
     import numpy as np
+
     NUMPY_AVAILABLE = True
 except ImportError:
     NUMPY_AVAILABLE = False
@@ -29,6 +31,7 @@ except ImportError:
 
 try:
     import psutil
+
     PSUTIL_AVAILABLE = True
 except ImportError:
     PSUTIL_AVAILABLE = False
@@ -36,6 +39,7 @@ except ImportError:
 
 try:
     import gc
+
     GC_AVAILABLE = True
 except ImportError:
     GC_AVAILABLE = False
@@ -43,7 +47,8 @@ except ImportError:
 
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-from src.utils.warning_symbols import error, warning, critical, success
+from src.utils.warning_symbols import critical, error, success, warning
+
 # Temporarily disabled to avoid circular import
 # from src.utils.data_quality_decorators import validate_data_quality, ValidationLevel
 
@@ -323,7 +328,9 @@ def deterministic_seed(
         @wraps(func)
         async def async_wrapper(*args, **kwargs):
             try:
-                import random, os
+                import os
+                import random
+
                 random.seed(seed)
                 np.random.seed(seed)
                 try:
@@ -345,7 +352,9 @@ def deterministic_seed(
         @wraps(func)
         def sync_wrapper(*args, **kwargs):
             try:
-                import random, os
+                import os
+                import random
+
                 random.seed(seed)
                 np.random.seed(seed)
                 os.environ["PYTHONHASHSEED"] = str(seed)
@@ -366,8 +375,11 @@ def idempotent_step(checkpoint_dir_key: str = "checkpoints", step_key: str | Non
         async def async_wrapper(*args, **kwargs):
             try:
                 import os
+
                 step_name = step_key or func.__name__
-                data_dir = kwargs.get("data_dir") or (args[1].get("data_dir") if args and isinstance(args[1], dict) else None)
+                data_dir = kwargs.get("data_dir") or (
+                    args[1].get("data_dir") if args and isinstance(args[1], dict) else None
+                )
                 if isinstance(data_dir, str):
                     ckpt_path = os.path.join(checkpoint_dir_key, f"{step_name}.json")
                     if os.path.exists(ckpt_path):
@@ -394,7 +406,9 @@ def artifact_write_lock(lock_suffix: str = ".lock"):
         async def async_wrapper(*args, **kwargs):
             lock_file = None
             try:
-                import os, tempfile
+                import os
+                import tempfile
+
                 step_name = func.__name__
                 lock_file = os.path.join(tempfile.gettempdir(), f"{step_name}{lock_suffix}")
                 fd = os.open(lock_file, os.O_CREAT | os.O_RDWR)
@@ -431,6 +445,7 @@ def nan_inf_and_constant_guard(enable_vif_check: bool = False, vif_threshold: fl
             result = await func(*args, **kwargs)
             try:
                 import pandas as _pd
+
                 if isinstance(result, dict):
                     for key, val in result.items():
                         if isinstance(val, _pd.DataFrame) and not val.empty:
@@ -464,10 +479,12 @@ def artifact_versioning(schema_version: str = "1.0"):
             try:
                 if isinstance(result, dict):
                     result.setdefault("artifact_meta", {})
-                    result["artifact_meta"].update({
-                        "schema_version": schema_version,
-                        "emitted_at": datetime.utcnow().isoformat(),
-                    })
+                    result["artifact_meta"].update(
+                        {
+                            "schema_version": schema_version,
+                            "emitted_at": datetime.utcnow().isoformat(),
+                        }
+                    )
             except Exception:
                 pass
             return result
@@ -510,6 +527,7 @@ def time_budget_watchdog(soft_timeout_seconds: float = 1800.0):
         return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
 
     return decorator
+
 
 class PipelineStage(Enum):
     """Pipeline stages for monitoring."""
@@ -648,22 +666,16 @@ class PipelineMonitor:
             print(f"   {'✅ Success' if success else '❌ Failed'}")
 
             if result:
-                print(
-                    f"   📊 Result keys: {list(result.keys()) if isinstance(result, dict) else 'N/A'}"
-                )
+                print(f"   📊 Result keys: {list(result.keys()) if isinstance(result, dict) else 'N/A'}")
 
             # Performance warnings
             if duration > 300:  # 5 minutes
                 print(f"   ⚠️ Slow step detected (>5min)")
-                self.logger.warning(
-                    f"⚠️ [STEP] Slow step detected: {step_name} took {duration:.2f}s"
-                )
+                self.logger.warning(f"⚠️ [STEP] Slow step detected: {step_name} took {duration:.2f}s")
 
             if memory_delta > 20:  # 20% memory increase
                 print(f"   ⚠️ High memory usage detected (+{memory_delta:.1f}%)")
-                self.logger.warning(
-                    f"⚠️ [STEP] High memory usage: {step_name} increased memory by {memory_delta:.1f}%"
-                )
+                self.logger.warning(f"⚠️ [STEP] High memory usage: {step_name} increased memory by {memory_delta:.1f}%")
 
     def log_error(self, step_name: str, error: Exception):
         """Log a pipeline error."""
@@ -745,6 +757,7 @@ def monitor_pipeline_step(
                 # If we're in an event loop, we can't use asyncio.run()
                 # Instead, we need to schedule the coroutine
                 import concurrent.futures
+
                 with concurrent.futures.ThreadPoolExecutor() as executor:
                     future = executor.submit(
                         asyncio.run,
@@ -758,7 +771,7 @@ def monitor_pipeline_step(
                             enable_data_quality,
                             memory_threshold,
                             duration_threshold,
-                        )
+                        ),
                     )
                     return future.result()
             except RuntimeError:
@@ -822,9 +835,7 @@ async def _monitor_and_execute_pipeline_step(
         # Data quality validation if enabled
         if enable_data_quality:
             print(f"🔍 [PIPELINE STEP] Running data quality validation for {step_name}")
-            logger.info(
-                f"🔍 [PIPELINE STEP] Running data quality validation for {step_name}"
-            )
+            logger.info(f"🔍 [PIPELINE STEP] Running data quality validation for {step_name}")
 
             try:
                 # Apply data quality validation
@@ -834,23 +845,15 @@ async def _monitor_and_execute_pipeline_step(
                     PipelineValidationLevel.SILENT: ValidationLevel.SILENT,
                 }
 
-                data_quality_level = validation_level_map.get(
-                    validation_level, ValidationLevel.WARNING
-                )
+                data_quality_level = validation_level_map.get(validation_level, ValidationLevel.WARNING)
 
                 # Create a temporary wrapper with data quality validation
                 from src.utils.data_quality_decorators import _validate_and_execute
 
-                result = await _validate_and_execute(
-                    func, self, args, kwargs, data_quality_level, True, True
-                )
+                result = await _validate_and_execute(func, self, args, kwargs, data_quality_level, True, True)
 
-                print(
-                    f"✅ [PIPELINE STEP] Data quality validation completed for {step_name}"
-                )
-                logger.info(
-                    f"✅ [PIPELINE STEP] Data quality validation completed for {step_name}"
-                )
+                print(f"✅ [PIPELINE STEP] Data quality validation completed for {step_name}")
+                logger.info(f"✅ [PIPELINE STEP] Data quality validation completed for {step_name}")
 
             except Exception as e:
                 error_msg = f"Data quality validation failed: {str(e)}"
@@ -868,9 +871,7 @@ async def _monitor_and_execute_pipeline_step(
         else:
             # Execute without data quality validation
             print(f"⏭️ [PIPELINE STEP] Skipping data quality validation for {step_name}")
-            logger.info(
-                f"⏭️ [PIPELINE STEP] Skipping data quality validation for {step_name}"
-            )
+            logger.info(f"⏭️ [PIPELINE STEP] Skipping data quality validation for {step_name}")
 
             result = await _execute_pipeline_function(func, self, args, kwargs)
 
@@ -918,9 +919,7 @@ async def _monitor_and_execute_pipeline_step(
         raise
 
 
-async def _execute_pipeline_function(
-    func: Callable, self: Any, args: tuple, kwargs: dict
-) -> Any:
+async def _execute_pipeline_function(func: Callable, self: Any, args: tuple, kwargs: dict) -> Any:
     """Execute the original pipeline function."""
     if asyncio.iscoroutinefunction(func):
         return await func(self, *args, **kwargs)
@@ -1019,12 +1018,8 @@ async def _validate_pipeline_input_and_execute(
     try:
         # Validate required parameters
         if required_params:
-            print(
-                f"🔍 [PIPELINE INPUT] Checking required parameters: {required_params}"
-            )
-            logger.info(
-                f"🔍 [PIPELINE INPUT] Checking required parameters: {required_params}"
-            )
+            print(f"🔍 [PIPELINE INPUT] Checking required parameters: {required_params}")
+            logger.info(f"🔍 [PIPELINE INPUT] Checking required parameters: {required_params}")
 
             missing_params = []
             for param in required_params:
@@ -1044,15 +1039,15 @@ async def _validate_pipeline_input_and_execute(
         if memory_check:
             memory_usage = psutil.virtual_memory().percent
             available_memory_gb = psutil.virtual_memory().available / (1024**3)
-            print(
-                f"💾 [PIPELINE INPUT] Memory usage: {memory_usage:.1f}% (Available: {available_memory_gb:.1f}GB)"
-            )
+            print(f"💾 [PIPELINE INPUT] Memory usage: {memory_usage:.1f}% (Available: {available_memory_gb:.1f}GB)")
             logger.info(
                 f"💾 [PIPELINE INPUT] Memory usage: {memory_usage:.1f}% (Available: {available_memory_gb:.1f}GB)"
             )
 
             if available_memory_gb < min_memory_gb:
-                warning_msg = f"Insufficient memory: {available_memory_gb:.1f}GB available, {min_memory_gb:.1f}GB required"
+                warning_msg = (
+                    f"Insufficient memory: {available_memory_gb:.1f}GB available, {min_memory_gb:.1f}GB required"
+                )
                 print(f"⚠️ [PIPELINE INPUT] {warning_msg}")
                 logger.warning(f"⚠️ [PIPELINE INPUT] {warning_msg}")
 
@@ -1063,12 +1058,8 @@ async def _validate_pipeline_input_and_execute(
 
         # Validate required directories
         if required_directories:
-            print(
-                f"🔍 [PIPELINE INPUT] Checking required directories: {required_directories}"
-            )
-            logger.info(
-                f"🔍 [PIPELINE INPUT] Checking required directories: {required_directories}"
-            )
+            print(f"🔍 [PIPELINE INPUT] Checking required directories: {required_directories}")
+            logger.info(f"🔍 [PIPELINE INPUT] Checking required directories: {required_directories}")
 
             import os
 
@@ -1096,26 +1087,20 @@ async def _validate_pipeline_input_and_execute(
 
             disk_usage = shutil.disk_usage(".")
             available_disk_gb = disk_usage.free / (1024**3)
-            print(
-                f"💿 [PIPELINE INPUT] Available disk space: {available_disk_gb:.1f}GB"
-            )
-            logger.info(
-                f"💿 [PIPELINE INPUT] Available disk space: {available_disk_gb:.1f}GB"
-            )
+            print(f"💿 [PIPELINE INPUT] Available disk space: {available_disk_gb:.1f}GB")
+            logger.info(f"💿 [PIPELINE INPUT] Available disk space: {available_disk_gb:.1f}GB")
 
             if available_disk_gb < min_disk_gb:
-                warning_msg = f"Insufficient disk space: {available_disk_gb:.1f}GB available, {min_disk_gb:.1f}GB required"
+                warning_msg = (
+                    f"Insufficient disk space: {available_disk_gb:.1f}GB available, {min_disk_gb:.1f}GB required"
+                )
                 print(f"⚠️ [PIPELINE INPUT] {warning_msg}")
                 logger.warning(f"⚠️ [PIPELINE INPUT] {warning_msg}")
 
         # Package availability check
         if required_packages:
-            print(
-                f"🔍 [PIPELINE INPUT] Checking required packages: {required_packages}"
-            )
-            logger.info(
-                f"🔍 [PIPELINE INPUT] Checking required packages: {required_packages}"
-            )
+            print(f"🔍 [PIPELINE INPUT] Checking required packages: {required_packages}")
+            logger.info(f"🔍 [PIPELINE INPUT] Checking required packages: {required_packages}")
 
             missing_packages = []
             for package in required_packages:
@@ -1188,12 +1173,8 @@ async def _validate_pipeline_input_and_execute(
         return await _execute_pipeline_function(func, self, args, kwargs)
 
     except Exception as e:
-        print(
-            f"💥 [PIPELINE INPUT] Input validation failed for {method_name}: {str(e)}"
-        )
-        logger.error(
-            f"💥 [PIPELINE INPUT] Input validation failed for {method_name}: {str(e)}"
-        )
+        print(f"💥 [PIPELINE INPUT] Input validation failed for {method_name}: {str(e)}")
+        logger.error(f"💥 [PIPELINE INPUT] Input validation failed for {method_name}: {str(e)}")
         raise
 
 
@@ -1279,9 +1260,7 @@ async def _monitor_performance_and_execute(
     if enable_memory_tracking:
         pre_metrics["memory"] = psutil.virtual_memory().percent
         print(f"💾 [PERFORMANCE] Pre-execution memory: {pre_metrics['memory']:.1f}%")
-        logger.info(
-            f"💾 [PERFORMANCE] Pre-execution memory: {pre_metrics['memory']:.1f}%"
-        )
+        logger.info(f"💾 [PERFORMANCE] Pre-execution memory: {pre_metrics['memory']:.1f}%")
 
     if enable_cpu_tracking:
         pre_metrics["cpu"] = psutil.cpu_percent()
@@ -1291,15 +1270,15 @@ async def _monitor_performance_and_execute(
     if enable_gc_tracking:
         pre_metrics["gc_counts"] = gc.get_count()
         print(f"🗑️ [PERFORMANCE] Pre-execution GC counts: {pre_metrics['gc_counts']}")
-        logger.info(
-            f"🗑️ [PERFORMANCE] Pre-execution GC counts: {pre_metrics['gc_counts']}"
-        )
+        logger.info(f"🗑️ [PERFORMANCE] Pre-execution GC counts: {pre_metrics['gc_counts']}")
 
     # Check thresholds
     if enable_memory_tracking:
         available_memory_gb = psutil.virtual_memory().available / (1024**3)
         if available_memory_gb < memory_threshold_gb:
-            warning_msg = f"Available memory ({available_memory_gb:.1f}GB) below threshold ({memory_threshold_gb:.1f}GB)"
+            warning_msg = (
+                f"Available memory ({available_memory_gb:.1f}GB) below threshold ({memory_threshold_gb:.1f}GB)"
+            )
             print(f"⚠️ [PERFORMANCE] {warning_msg}")
             logger.warning(f"⚠️ [PERFORMANCE] {warning_msg}")
 
@@ -1321,9 +1300,7 @@ async def _monitor_performance_and_execute(
         duration = end_time - start_time
 
         print(f"📊 [PERFORMANCE] Performance monitoring completed for {method_name}")
-        logger.info(
-            f"📊 [PERFORMANCE] Performance monitoring completed for {method_name}"
-        )
+        logger.info(f"📊 [PERFORMANCE] Performance monitoring completed for {method_name}")
 
         print(f"⏱️ [PERFORMANCE] Execution time: {duration:.2f}s")
         logger.info(f"⏱️ [PERFORMANCE] Execution time: {duration:.2f}s")
@@ -1331,35 +1308,20 @@ async def _monitor_performance_and_execute(
         if enable_memory_tracking:
             post_memory = psutil.virtual_memory().percent
             memory_delta = post_memory - pre_metrics["memory"]
-            print(
-                f"💾 [PERFORMANCE] Post-execution memory: {post_memory:.1f}% (delta: {memory_delta:+.1f}%)"
-            )
-            logger.info(
-                f"💾 [PERFORMANCE] Post-execution memory: {post_memory:.1f}% (delta: {memory_delta:+.1f}%)"
-            )
+            print(f"💾 [PERFORMANCE] Post-execution memory: {post_memory:.1f}% (delta: {memory_delta:+.1f}%)")
+            logger.info(f"💾 [PERFORMANCE] Post-execution memory: {post_memory:.1f}% (delta: {memory_delta:+.1f}%)")
 
         if enable_cpu_tracking:
             post_cpu = psutil.cpu_percent()
             cpu_delta = post_cpu - pre_metrics["cpu"]
-            print(
-                f"🔥 [PERFORMANCE] Post-execution CPU: {post_cpu:.1f}% (delta: {cpu_delta:+.1f}%)"
-            )
-            logger.info(
-                f"🔥 [PERFORMANCE] Post-execution CPU: {post_cpu:.1f}% (delta: {cpu_delta:+.1f}%)"
-            )
+            print(f"🔥 [PERFORMANCE] Post-execution CPU: {post_cpu:.1f}% (delta: {cpu_delta:+.1f}%)")
+            logger.info(f"🔥 [PERFORMANCE] Post-execution CPU: {post_cpu:.1f}% (delta: {cpu_delta:+.1f}%)")
 
         if enable_gc_tracking:
             post_gc_counts = gc.get_count()
-            gc_delta = tuple(
-                post - pre
-                for post, pre in zip(post_gc_counts, pre_metrics["gc_counts"])
-            )
-            print(
-                f"🗑️ [PERFORMANCE] Post-execution GC counts: {post_gc_counts} (delta: {gc_delta})"
-            )
-            logger.info(
-                f"🗑️ [PERFORMANCE] Post-execution GC counts: {post_gc_counts} (delta: {gc_delta})"
-            )
+            gc_delta = tuple(post - pre for post, pre in zip(post_gc_counts, pre_metrics["gc_counts"]))
+            print(f"🗑️ [PERFORMANCE] Post-execution GC counts: {post_gc_counts} (delta: {gc_delta})")
+            logger.info(f"🗑️ [PERFORMANCE] Post-execution GC counts: {post_gc_counts} (delta: {gc_delta})")
 
         return result
 
@@ -1368,9 +1330,7 @@ async def _monitor_performance_and_execute(
         duration = end_time - start_time
 
         print(f"💥 [PERFORMANCE] Performance monitoring failed for {method_name}")
-        logger.error(
-            f"💥 [PERFORMANCE] Performance monitoring failed for {method_name}"
-        )
+        logger.error(f"💥 [PERFORMANCE] Performance monitoring failed for {method_name}")
         print(f"⏱️ [PERFORMANCE] Execution time before error: {duration:.2f}s")
         logger.error(f"⏱️ [PERFORMANCE] Execution time before error: {duration:.2f}s")
 
@@ -1392,9 +1352,7 @@ def get_pipeline_metrics() -> Dict[str, Any]:
     """Get current pipeline metrics."""
     return {
         "step_count": _pipeline_monitor.step_count,
-        "current_stage": _pipeline_monitor.current_stage.value
-        if _pipeline_monitor.current_stage
-        else None,
+        "current_stage": _pipeline_monitor.current_stage.value if _pipeline_monitor.current_stage else None,
         "errors": len(_pipeline_monitor.metrics.errors),
         "warnings": len(_pipeline_monitor.metrics.warnings),
         "step_durations": _pipeline_monitor.metrics.step_durations,

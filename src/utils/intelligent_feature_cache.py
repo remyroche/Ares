@@ -6,21 +6,23 @@ that optimizes memory usage and computational efficiency.
 """
 
 import asyncio
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+import gc
+import gzip
+import hashlib
+import logging
+import pickle
+import time
 from functools import wraps
 from pathlib import Path
 from typing import Any
-import hashlib
-import logging
-import time
-import gzip
 
-import gc
 import numpy as np
 import pandas as pd
-import pickle
+
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 logger = logging.getLogger(__name__)
+
 
 class IntelligentFeatureCache:
     """
@@ -276,7 +278,7 @@ class IntelligentFeatureCache:
             metadata: Optional metadata
         """
         if metadata is None:
-        # Fallback implementation for metadata
+            # Fallback implementation for metadata
             metadata = {}
 
         # Add metadata
@@ -342,9 +344,7 @@ class IntelligentFeatureCache:
             Dictionary with cache statistics
         """
         memory_usage = self._get_memory_usage_mb()
-        disk_usage = sum(
-            f.stat().st_size for f in self.cache_dir.glob("*.pkl*")
-        ) / (1024 * 1024)
+        disk_usage = sum(f.stat().st_size for f in self.cache_dir.glob("*.pkl*")) / (1024 * 1024)
 
         total_requests = self.hit_count + self.miss_count
         hit_rate = self.hit_count / total_requests if total_requests > 0 else 0.0
@@ -370,6 +370,7 @@ class IntelligentFeatureCache:
         logger.info(f"   Hit rate: {stats['hit_rate']:.1%}")
         logger.info(f"   Total requests: {stats['total_requests']}")
         logger.info(f"   Evictions: {stats['eviction_count']}")
+
 
 # Global cache instance
 _feature_cache: IntelligentFeatureCache | None = None
@@ -406,6 +407,7 @@ def cache_feature_engineering(max_memory_mb: int = 2048):
         is_async = asyncio.iscoroutinefunction(func)
 
         if is_async:
+
             @wraps(func)
             async def async_wrapper(*args: Any, **kwargs: Any):
                 cache = get_feature_cache()

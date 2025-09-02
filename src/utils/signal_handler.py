@@ -11,8 +11,8 @@ from collections.abc import Callable
 from typing import Any
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.logger import system_logger
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import (
     error,
     failed,
@@ -118,9 +118,7 @@ class SignalHandler:
             self.signal_config.setdefault("handle_sighup", False)
 
             # Update configuration
-            self.graceful_shutdown_timeout = self.signal_config[
-                "graceful_shutdown_timeout"
-            ]
+            self.graceful_shutdown_timeout = self.signal_config["graceful_shutdown_timeout"]
             self.enable_signal_handling = self.signal_config["enable_signal_handling"]
 
             self.logger.info("Signal configuration loaded successfully")
@@ -362,7 +360,7 @@ class SignalHandler:
                         )  # Changed to asyncio.run to handle coroutines
                     else:
                         callback()
-                    self.logger.info(f"✅ Shutdown callback {i+1} completed")
+                    self.logger.info(f"✅ Shutdown callback {i + 1} completed")
                 except Exception:
                     self.print(failed("❌ Shutdown callback {i+1} failed: {e}"))
 
@@ -479,7 +477,7 @@ async def setup_signal_handler(
     """
     try:
         if config is None:
-        # Fallback implementation for config
+            # Fallback implementation for config
             config = {}
 
         signal_handler = SignalHandler(config)

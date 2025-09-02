@@ -1,0 +1,8 @@
+2025-09-02 09:06:36,030 - INFO - Processing file: src/custom_types/__init__.py
+2025-09-02 09:06:36,030 - INFO - Performing semantic analysis...
+2025-09-02 09:06:36,030 - INFO - Code quality score: 0.77
+2025-09-02 09:06:36,030 - WARNING - Semantic issues found: 23
+2025-09-02 09:06:36,032 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 09:06:36,035 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:06:36,036 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 09:06:36,037 - INFO - No fixes needed for: src/custom_types/__init__.py

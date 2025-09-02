@@ -1,0 +1,12 @@
+{
+    "max_nan_ratio": 0.05,
+    "max_infinite_count": 10,
+    "min_unique_values": 5,
+    "max_constant_ratio": 0.9,
+    "max_gap_hours": 24,
+    "price_tolerance": 0.0001,
+    "volume_tolerance": 0.0001,
+    "max_correlation_threshold": 0.9,
+    "min_feature_count": 50,
+    "vif_threshold": 10.0
+}

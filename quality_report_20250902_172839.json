@@ -1,0 +1,27 @@
+{
+  "file_path": "requirements.txt",
+  "file_name": "requirements.txt",
+  "context": "Python Requirements File",
+  "analysis_timestamp": "2025-09-02T17:28:39.786716",
+  "file_info": {
+    "size_bytes": 2061,
+    "size_mb": 0.002,
+    "format": "TEXT"
+  },
+  "structure_analysis": {
+    "total_characters": 2061,
+    "total_lines": 124,
+    "non_empty_lines": 111,
+    "average_line_length": 16.62,
+    "longest_line": 38,
+    "shortest_line": 0,
+    "encoding_issues": []
+  },
+  "quality_assessment": {
+    "overall_quality": "excellent",
+    "quality_score": 100,
+    "issues": []
+  },
+  "issues": [],
+  "recommendations": []
+}

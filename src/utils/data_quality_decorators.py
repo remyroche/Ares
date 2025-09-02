@@ -5,7 +5,11 @@ This module provides decorators for automatic data quality validation
 at each pipeline step, with special attention to NaN, infinite, and constant values.
 
 ENHANCED FEATURES:
-    passpasspass - Integration with enhanced decorator system - Intelligent caching for validation results - Performance monitoring and metrics - Better error handling and recovery - Centralized configuration support
+    - Integration with enhanced decorator system
+    - Intelligent caching for validation results
+    - Performance monitoring and metrics
+    - Better error handling and recovery
+    - Centralized configuration support
 """
 
 import asyncio
@@ -18,724 +22,473 @@ import numpy as np
 import pandas as pd
 
 try:
-    passpasspassself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+    from src.utils.logger import system_logger
+    from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 except ImportError:
-    passpasssystem_logger, logging.getLogger("DataQualityDecorators")
+    system_logger = logging.getLogger("DataQualityDecorators")
 
 # Import enhanced system components (optional to avoid circular imports)
 try:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-from .decorator_config import global_config
-from .decorator_registry import decorator_registry, register_decorator
-ENHANCED_SYSTEM_AVAILABLE, True
+    from .decorator_config import global_config
+    from .decorator_registry import decorator_registry, register_decorator
+    ENHANCED_SYSTEM_AVAILABLE = True
 except ImportError:
-    passpassENHANCED_SYSTEM_AVAILABLE, False
-global_config, None
-decorator_registry, None
+    ENHANCED_SYSTEM_AVAILABLE = False
+    global_config = None
+    decorator_registry = None
 
 # --------------------------
 # Enhanced helper functions
 # --------------------------
 
-def _get_enhanced_config(...) -> ...:
-    """..."""
-    passif ENHANCED_SYSTEM_AVAILABLE and global_config:
-    passreturn getattr(global_config, key, default)
-return default
+def _get_enhanced_config(key: str, default: Any = None) -> Any:
+    """Get configuration value from enhanced system if available."""
+    if ENHANCED_SYSTEM_AVAILABLE and global_config:
+        return getattr(global_config, key, default)
+    return default
 
-def _should_enable_caching(...) -> ...:
-    """..."""
-    passreturn _get_enhanced_config('cache_enabled', False)
+def _should_enable_caching() -> bool:
+    """Check if caching should be enabled."""
+    return _get_enhanced_config('cache_enabled', False)
 
-def _should_enable_performance_monitoring(...) -> ...:
-    """..."""
-    passreturn _get_enhanced_config('enable_performance_monitoring', False)
+def _should_enable_performance_monitoring() -> bool:
+    """Check if performance monitoring should be enabled."""
+    return _get_enhanced_config('enable_performance_monitoring', False)
 
-def _get_cache_settings(...) -> ...:
-    """..."""
-    passcache_size, _get_enhanced_config('cache_size', 128)
-cache_ttl, _get_enhanced_config('cache_ttl', 3600)
-return cache_size, cache_ttl
+def _get_cache_settings() -> tuple:
+    """Get cache size and TTL settings."""
+    cache_size = _get_enhanced_config('cache_size', 128)
+    cache_ttl = _get_enhanced_config('cache_ttl', 3600)
+    return cache_size, cache_ttl
 
-def _register_decorator_if_available(...):
-    passdef _register_decorator_if_available(...):
-    passdef _register_decorator_if_available(...):
-    passdef _register_decorator_if_available(...):
-    pass"""Register decorator in enhanced system if available."""
-if ENHANCED_SYSTEM_AVAILABLE and decorator_registry:
-    passpasstry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-decorator_registry.register(name = name, decorator = decorator, **kwargs)
-except Exception as e:
-    passpasspasspasspasspasspasslogging.debug(f"Could not register decorator {name}: {e}")
+def _register_decorator_if_available(name: str, decorator: Callable, **kwargs):
+    """Register decorator in enhanced system if available."""
+    if ENHANCED_SYSTEM_AVAILABLE and decorator_registry:
+        try:
+            decorator_registry.register(name=name, decorator=decorator, **kwargs)
+        except Exception as e:
+            logging.debug(f"Could not register decorator {name}: {e}")
 
-def _create_cache_key(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Create a hash of function signature and arguments
-sig, inspect.signature(func)
-bound, sig.bind(*args, **kwargs)
-bound.apply_defaults()
-key_data, f"{func.__name__}:{sorted(bound.arguments.items())}"
-return hash(key_data)  # Use hash for faster key generation
-except Exception:
-    passpasspass# Fallback to simpler key generation
-key_data, f"{func.__name__}:{str(args)}:{str(sorted(kwargs.items()))}"
-return hash(key_data)
+def _create_cache_key(func: Callable, args: tuple, kwargs: dict) -> int:
+    """Create a cache key for function arguments."""
+    try:
+        # Create a hash of function signature and arguments
+        sig = inspect.signature(func)
+        bound = sig.bind(*args, **kwargs)
+        bound.apply_defaults()
+        key_data = f"{func.__name__}:{sorted(bound.arguments.items())}"
+        return hash(key_data)  # Use hash for faster key generation
+    except Exception:
+        # Fallback to simpler key generation
+        key_data = f"{func.__name__}:{str(args)}:{str(sorted(kwargs.items()))}"
+        return hash(key_data)
 
-def _apply_caching(...) -> ...:
-    """..."""
-    passif not _should_enable_caching():
-    passreturn wrapper_func
+def _apply_caching(wrapper_func: Callable, cache_size: int = 128, ttl_seconds: int = 3600) -> Callable:
+    """Apply caching to a wrapper function."""
+    if not _should_enable_caching():
+        return wrapper_func
 
-cache = {}
+    cache = {}
 
-@functools.wraps(wrapper_func)
-def cached_wrapper(...):
-    passdef cached_wrapper(...):
-    passdef cached_wrapper(...):
-    passdef cached_wrapper(...):
-    passcache_key, _create_cache_key(wrapper_func, args, kwargs)
-current_time, time.time()
+    @functools.wraps(wrapper_func)
+    def cached_wrapper(*args, **kwargs):
+        cache_key = _create_cache_key(wrapper_func, args, kwargs)
+        current_time = time.time()
 
-# Check cache
-if cache_key in cache:
-    passcache_entry, cache[cache_key]
-if current_time - cache_entry['timestamp'] < ttl_seconds:
-    passlogging.debug(f"Cache hit for {wrapper_func.__name__}")
-return cache_entry['result']
+        # Check cache
+        if cache_key in cache:
+            cache_entry = cache[cache_key]
+            if current_time - cache_entry['timestamp'] < ttl_seconds:
+                logging.debug(f"Cache hit for {wrapper_func.__name__}")
+                return cache_entry['result']
 
-# Execute and cache
-result, wrapper_func(*args, **kwargs)
-cache[cache_key] = {
-'result': result,
-'timestamp': current_time
-}
+        # Execute and cache
+        result = wrapper_func(*args, **kwargs)
+        
+        # Manage cache size
+        if len(cache) >= cache_size:
+            # Remove oldest entries
+            oldest_key = min(cache.keys(), key=lambda k: cache[k]['timestamp'])
+            del cache[oldest_key]
+        
+        cache[cache_key] = {
+            'result': result,
+            'timestamp': current_time
+        }
+        
+        return result
 
-# Maintain cache size
-if len(cache) > cache_size:
-    passoldest_key, min(cache.keys(), key = lambda k: cache[k]['timestamp'])
-del cache[oldest_key]
+    return cached_wrapper
 
-logging.debug(f"Cached result for {wrapper_func.__name__}")
-return result
+def _apply_performance_monitoring(wrapper_func: Callable) -> Callable:
+    """Apply performance monitoring to a wrapper function."""
+    if not _should_enable_performance_monitoring():
+        return wrapper_func
 
-return cached_wrapper
+    @functools.wraps(wrapper_func)
+    def monitored_wrapper(*args, **kwargs):
+        start_time = time.time()
+        start_memory = _get_memory_usage()
+        
+        try:
+            result = wrapper_func(*args, **kwargs)
+            execution_time = time.time() - start_time
+            end_memory = _get_memory_usage()
+            memory_delta = end_memory - start_memory
+            
+            logging.info(f"Performance: {wrapper_func.__name__} took {execution_time:.4f}s, memory: {memory_delta:+d} bytes")
+            return result
+        except Exception as e:
+            execution_time = time.time() - start_time
+            logging.error(f"Error in {wrapper_func.__name__} after {execution_time:.4f}s: {e}")
+            raise
 
-def _apply_performance_monitoring(...) -> ...:
-    pass"""..."""
-    passif not _should_enable_performance_monitoring():
-    passreturn wrapper_func
+    return monitored_wrapper
 
-@functools.wraps(wrapper_func)
-def monitored_wrapper(...):
-    passdef monitored_wrapper(...):
-    passdef monitored_wrapper(...):
-    passdef monitored_wrapper(...):
-    passstart_time, time.time()
-start_memory, _get_memory_usage() if level in ["detailed", "profiling"] else 0
-
-try:
-    passpassself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-result, wrapper_func(*args, **kwargs)
-return result
-finally:
-    passend_time, time.time()
-execution_time, end_time - start_time
-
-metrics = {
-'function': wrapper_func.__name__,
-'execution_time': execution_time,
-'timestamp': time.time()
-}
-
-if level in ["detailed", "profiling"]:
-    passend_memory, _get_memory_usage()
-metrics['memory_delta_mb'] = end_memory - start_memory
-metrics['peak_memory_mb'] = end_memory
-
-_log_performance_metrics(metrics, level)
-
-return monitored_wrapper
-
-def _get_memory_usage(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-import psutil
-process, psutil.Process()
-return process.memory_info().rss / 1024 / 1024
-except ImportError:
-    passpassreturn 0.0
-
-def _log_performance_metrics(...):
-    passdef _log_performance_metrics(...):
-    passdef _log_performance_metrics(...):
-    passdef _log_performance_metrics(...):
-    pass"""Log performance metrics based on level."""
-if level == "basic":
-    passlogging.info(f"Performance: {metrics['function']} took {metrics['execution_time']:.3f}s")
-elif level == "detailed":
-    passpasslogging.info(f"Performance details for {metrics['function']}: {metrics}")
-elif level == "profiling":
-    passpasslogging.debug(f"Performance profiling for {metrics['function']}: {metrics}")
+def _get_memory_usage() -> int:
+    """Get current memory usage in bytes."""
+    try:
+        import psutil
+        process = psutil.Process()
+        return process.memory_info().rss
+    except ImportError:
+        return 0
 
 # --------------------------
-# Enhanced Data Quality Decorators
+# Main decorators
 # --------------------------
 
-@_register_decorator_if_available(
-name="validate_data_quality",
-version="2.0",
-description="Enhanced data quality validation with caching and performance monitoring",
-tags=["validation", "data - quality", "enhanced"]
-)
-def validate_data_quality(...):
-    passpass"""
-Enhanced decorator to validate data quality with specific parameters.
-
-ENHANCED FEATURES:
-    pass- Intelligent caching for validation results - Performance monitoring and metrics - Better error handling and recovery - Integration with enhanced configuration system
-
-Args:
-    passpassrequired_columns: List of required columns (None for no validation)
-min_rows: Minimum number of rows required
-max_null_ratio: Maximum allowed ratio of null values
-check_duplicates: Whether to check for duplicates
-check_timestamps: Whether to check timestamp consistency
-context: Context for logging
-"""
-def decorator(func: Callable) -> Callable:
-        @functools.wraps(func)
-async def wrapper(...):
-    passself.logger.info("Implementation placeholder - needs specific logic")
-async def wrapper(...):
-    passself.logger.info("Implementation placeholder - needs specific logic")
-async def wrapper(...):
-    passlogger, system_logger.getChild(f"DataQuality.{context}")
-
-# Execute the function
-try:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-result, await func(*args, **kwargs)
-except Exception as e:
-    passpasspasspasspasspasspasslogger.error(f"❌ Function execution failed in {context}: {e}")
-raise
-
-return result
-
-# Apply enhanced features
-cache_size, ttl_seconds, _get_cache_settings()
-enhanced_wrapper, _apply_caching(wrapper, cache_size, ttl_seconds)
-enhanced_wrapper, _apply_performance_monitoring(enhanced_wrapper, "basic")
-
-return enhanced_wrapper
-return decorator
-
-async def _validate_and_execute(...) -> ...:
-    """..."""
-    passlogger, system_logger.getChild("ValidateAndExecute")
-
-# Execute the function
-try:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-if asyncio.iscoroutinefunction(func):
-    passresult, await func(self, *args, **kwargs)
-else:
-    passresult, func(self, *args, **kwargs)
-
-logger.info("✅ Function executed successfully")
-return result
-
-except Exception as e:
-    passpasspasspasspasspasspasslogger.error(f"❌ Function execution failed: {e}")
-raise
-
-@_register_decorator_if_available(
-name="validate_data_quality_at_step",
-version="2.0",
-description="Enhanced step - based data quality validation with intelligent caching",
-tags=["validation", "data - quality", "step - based", "enhanced"]
-)
-def validate_data_quality_at_step(
-step_name: str,
-validate_input: bool, True,
-validate_output: bool, True,
-check_nan: bool, True,
-check_infinite: bool, True,
-check_constant: bool, True,
-check_correlation: bool, True,
-max_nan_ratio: float, 0.0,    # 0% NaN (zero tolerance)
-max_infinite_count: int, 0,   # 0 infinite values (zero tolerance)
-min_unique_values: int, 2,
-max_correlation_threshold: float, 0.95,
-fail_on_issues: bool, False,
-log_issues: bool, True
+def validate_data_quality(
+    check_nan: bool = True,
+    check_infinite: bool = True,
+    check_constant: bool = True,
+    check_timestamps: bool = False,
+    context: str = "default"
 ):
     """
-Decorator to validate data quality at each pipeline step.
-
-Args:
-        step_name: Name of the step for logging
-validate_input: Whether to validate input data
-validate_output: Whether to validate output data
-check_nan: Whether to check for NaN values
-check_infinite: Whether to check for infinite values
-check_constant: Whether to check for constant features
-check_correlation: Whether to check for high correlations
-max_nan_ratio: Maximum allowed ratio of NaN values
-max_infinite_ratio: Maximum allowed ratio of infinite values
-min_unique_values: Minimum unique values for non - constant features
-max_correlation_threshold: Maximum correlation threshold
-fail_on_issues: Whether to fail the step on quality issues
-log_issues: Whether to log quality issues
-"""
-def decorator(func: Callable) -> Callable:
+    Enhanced decorator to validate data quality with specific parameters.
+    
+    Args:
+        check_nan: Whether to check for NaN values
+        check_infinite: Whether to check for infinite values
+        check_constant: Whether to check for constant columns
+        check_timestamps: Whether to check timestamp consistency
+        context: Context for logging
+    """
+    def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
-async def wrapper(...):
-    passself.logger.info("Implementation placeholder - needs specific logic")
-async def wrapper(...):
-    passself.logger.info("Implementation placeholder - needs specific logic")
-async def wrapper(...):
-    passlogger, system_logger.getChild(f"DataQuality.{step_name}")
+        async def wrapper(*args, **kwargs):
+            logger = system_logger.getChild(f"DataQuality.{context}")
+            
+            # Execute the function
+            result = await func(*args, **kwargs)
+            
+            # Validate result
+            if result is not None:
+                validation_result = await _validate_and_execute(
+                    result, check_nan, check_infinite, check_constant, check_timestamps, logger
+                )
+                if not validation_result['is_valid']:
+                    logger.warning(f"Data quality issues found: {validation_result['issues']}")
+            
+            return result
 
-# Validate input data if requested
-if validate_input:
-    passlogger.info(f"🔍 Validating input data quality for {step_name}...")
-input_issues, _validate_data_quality(
-args, kwargs, "input", logger,
-check_nan, check_infinite, check_constant, check_correlation,
-max_nan_ratio, max_infinite_count, min_unique_values, max_correlation_threshold
-)
+        # Apply enhancements
+        enhanced_wrapper = _apply_performance_monitoring(wrapper)
+        enhanced_wrapper = _apply_caching(enhanced_wrapper)
+        
+        # Register if available
+        _register_decorator_if_available(
+            "validate_data_quality",
+            enhanced_wrapper,
+            description="Enhanced data quality validation with caching and performance monitoring",
+            tags=["validation", "data-quality", "enhanced"]
+        )
+        
+        return enhanced_wrapper
+    return decorator
 
-if input_issues and log_issues:
-    passpasslogger.warning(f"⚠️ Input data quality issues found in {step_name}:")
-for issue in input_issues[:5]:  # Show first 5 issues
-logger.warning(f"   - {issue}")
-if len(input_issues) > 5:
-    passlogger.warning(f"   ... and {len(input_issues) - 5} more issues")
+async def _validate_and_execute(
+    data: Any,
+    check_nan: bool,
+    check_infinite: bool,
+    check_constant: bool,
+    check_timestamps: bool,
+    logger: logging.Logger
+) -> Dict[str, Any]:
+    """Validate data and return validation results."""
+    logger = system_logger.getChild("ValidateAndExecute")
+    
+    issues = []
+    
+    if isinstance(data, pd.DataFrame):
+        issues.extend(await _validate_dataframe_quality(
+            data, check_nan, check_infinite, check_constant, check_timestamps
+        ))
+    elif isinstance(data, pd.Series):
+        issues.extend(await _validate_series_quality(
+            data, check_nan, check_infinite, check_constant
+        ))
+    elif isinstance(data, np.ndarray):
+        issues.extend(await _validate_array_quality(
+            data, check_nan, check_infinite, check_constant
+        ))
+    
+    return {
+        'is_valid': len(issues) == 0,
+        'issues': issues,
+        'total_issues': len(issues)
+    }
 
-if input_issues and fail_on_issues:
-    passraise ValueError(f"Input data quality validation failed for {step_name}: {input_issues}")
+def validate_data_quality_at_step(
+    step_name: str,
+    validate_input: bool = True,
+    validate_output: bool = True,
+    check_nan: bool = True,
+    check_infinite: bool = True,
+    check_constant: bool = True,
+    check_timestamps: bool = False,
+    fail_on_issues: bool = False,
+    log_issues: bool = True
+):
+    """
+    Enhanced step-based data quality validation with intelligent caching.
+    
+    Args:
+        step_name: Name of the pipeline step
+        validate_input: Whether to validate input data
+        validate_output: Whether to validate output data
+        check_nan: Whether to check for NaN values
+        check_infinite: Whether to check for infinite values
+        check_constant: Whether to check for constant columns
+        check_timestamps: Whether to check timestamp consistency
+        fail_on_issues: Whether to fail the step on quality issues
+        log_issues: Whether to log quality issues
+    """
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs):
+            logger = system_logger.getChild(f"DataQuality.{step_name}")
+            
+            # Validate input data if requested
+            if validate_input and args:
+                input_data = args[0] if args else None
+                if input_data is not None:
+                    input_validation = await _validate_data_quality(
+                        input_data, check_nan, check_infinite, check_constant, check_timestamps, logger
+                    )
+                    if not input_validation['is_valid']:
+                        if log_issues:
+                            logger.warning(f"Input validation failed for {step_name}: {input_validation['issues']}")
+                        if fail_on_issues:
+                            raise ValueError(f"Input validation failed for {step_name}")
+            
+            # Execute the function
+            result = await func(*args, **kwargs)
+            
+            # Validate output data if requested
+            if validate_output and result is not None:
+                output_validation = await _validate_data_quality(
+                    result, check_nan, check_infinite, check_constant, check_timestamps, logger
+                )
+                if not output_validation['is_valid']:
+                    if log_issues:
+                        logger.warning(f"Output validation failed for {step_name}: {output_validation['issues']}")
+                    if fail_on_issues:
+                        raise ValueError(f"Output validation failed for {step_name}")
+            
+            return result
 
-# Execute the function
-try:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-result, await func(*args, **kwargs)
-except Exception as e:
-    passpasspasspasspasspasspasslogger.error(f"❌ {step_name} execution failed: {e}")
-raise
+        # Apply enhancements
+        enhanced_wrapper = _apply_performance_monitoring(wrapper)
+        enhanced_wrapper = _apply_caching(enhanced_wrapper)
+        
+        # Register if available
+        _register_decorator_if_available(
+            f"validate_data_quality_at_step_{step_name}",
+            enhanced_wrapper,
+            description=f"Step-based data quality validation for {step_name}",
+            tags=["validation", "data-quality", "step-based", "enhanced"]
+        )
+        
+        return enhanced_wrapper
+    return decorator
 
-# Validate output data if requested
-if validate_output and result is not None:
-    passlogger.info(f"🔍 Validating output data quality for {step_name}...")
-output_issues, _validate_data_quality(
-[result], {}, "output", logger,
-check_nan, check_infinite, check_constant, check_correlation,
-max_nan_ratio, max_infinite_count, min_unique_values, max_correlation_threshold
-)
+async def _validate_data_quality(
+    data: Any,
+    check_nan: bool,
+    check_infinite: bool,
+    check_constant: bool,
+    check_timestamps: bool,
+    logger: logging.Logger
+) -> list:
+    """Validate data and return list of issues."""
+    issues = []
+    
+    if isinstance(data, pd.DataFrame):
+        issues.extend(await _validate_dataframe_quality(
+            data, check_nan, check_infinite, check_constant, check_timestamps
+        ))
+    elif isinstance(data, pd.Series):
+        issues.extend(await _validate_series_quality(
+            data, check_nan, check_infinite, check_constant
+        ))
+    elif isinstance(data, np.ndarray):
+        issues.extend(await _validate_array_quality(
+            data, check_nan, check_infinite, check_constant
+        ))
+    
+    return issues
 
-if output_issues and log_issues:
-    passpasslogger.warning(f"⚠️ Output data quality issues found in {step_name}:")
-for issue in output_issues[:5]:  # Show first 5 issues
-logger.warning(f"   - {issue}")
-if len(output_issues) > 5:
-    passlogger.warning(f"   ... and {len(output_issues) - 5} more issues")
+async def _validate_dataframe_quality(
+    df: pd.DataFrame,
+    check_nan: bool,
+    check_infinite: bool,
+    check_constant: bool,
+    check_timestamps: bool
+) -> list:
+    """Validate DataFrame quality and return list of issues."""
+    issues = []
+    
+    if check_nan:
+        nan_counts = df.isna().sum()
+        nan_columns = nan_counts[nan_counts > 0]
+        for col, count in nan_columns.items():
+            issues.append(f"Column '{col}' has {count} NaN values")
+    
+    if check_infinite:
+        inf_counts = np.isinf(df.select_dtypes(include=[np.number])).sum()
+        inf_columns = inf_counts[inf_counts > 0]
+        for col, count in inf_columns.items():
+            issues.append(f"Column '{col}' has {count} infinite values")
+    
+    if check_constant:
+        constant_columns = []
+        for col in df.columns:
+            if df[col].nunique() <= 1:
+                constant_columns.append(col)
+        if constant_columns:
+            issues.append(f"Constant columns detected: {constant_columns}")
+    
+    if check_timestamps:
+        timestamp_columns = df.select_dtypes(include=['datetime64']).columns
+        for col in timestamp_columns:
+            if df[col].is_monotonic_increasing:
+                issues.append(f"Timestamp column '{col}' is not monotonically increasing")
+    
+    return issues
 
-if output_issues and fail_on_issues:
-    passraise ValueError(f"Output data quality validation failed for {step_name}: {output_issues}")
+async def _validate_series_quality(
+    series: pd.Series,
+    check_nan: bool,
+    check_infinite: bool,
+    check_constant: bool
+) -> list:
+    """Validate Series quality and return list of issues."""
+    issues = []
+    
+    if check_nan:
+        nan_count = series.isna().sum()
+        if nan_count > 0:
+            issues.append(f"Series has {nan_count} NaN values")
+    
+    if check_infinite and pd.api.types.is_numeric_dtype(series):
+        inf_count = np.isinf(series).sum()
+        if inf_count > 0:
+            issues.append(f"Series has {inf_count} infinite values")
+    
+    if check_constant:
+        if series.nunique() <= 1:
+            issues.append("Series is constant")
+    
+    return issues
 
-return result
+async def _validate_array_quality(
+    array: np.ndarray,
+    check_nan: bool,
+    check_infinite: bool,
+    check_constant: bool
+) -> list:
+    """Validate numpy array quality and return list of issues."""
+    issues = []
+    
+    if check_nan:
+        nan_count = np.isnan(array).sum()
+        if nan_count > 0:
+            issues.append(f"Array has {nan_count} NaN values")
+    
+    if check_infinite:
+        inf_count = np.isinf(array).sum()
+        if inf_count > 0:
+            issues.append(f"Array has {inf_count} infinite values")
+    
+    if check_constant:
+        if array.size > 0 and np.all(array == array.flat[0]):
+            issues.append("Array is constant")
+    
+    return issues
 
-return wrapper
-return decorator
+def _is_boolean_feature(series: pd.Series) -> bool:
+    """Check if a series represents a boolean feature."""
+    # Check if it's already boolean dtype
+    if pd.api.types.is_bool_dtype(series):
+        return True
+    
+    # Check if it has only 2 unique values
+    unique_values = series.dropna().unique()
+    if len(unique_values) == 2:
+        return True
+    
+    # Check if it's numeric with only 0 and 1
+    if pd.api.types.is_numeric_dtype(series):
+        unique_numeric = series.dropna().unique()
+        if len(unique_numeric) == 2 and 0 in unique_numeric and 1 in unique_numeric:
+            return True
+    
+    return False
 
-def _validate_data_quality(...) -> ...:
-    """..."""
-    passissues = []
+# --------------------------
+# Utility decorators
+# --------------------------
 
-# Check all arguments for DataFrames
-for i, arg in enumerate(args):
-    passif isinstance(arg, pd.DataFrame):
-    passdf_issues, _validate_dataframe_quality(
-arg, f"{data_type}_arg_{i}", logger,
-check_nan, check_infinite, check_constant, check_correlation,
-max_nan_ratio, max_infinite_count, min_unique_values, max_correlation_threshold
-)
-issues.extend(df_issues)
+def log_execution_time(func: Callable) -> Callable:
+    """Decorator to log function execution time."""
+    @functools.wraps(func)
+    async def wrapper(*args, **kwargs):
+        start_time = time.time()
+        logger = system_logger.getChild("ExecutionTime")
+        
+        try:
+            result = await func(*args, **kwargs)
+            execution_time = time.time() - start_time
+            logger.info(f"{func.__name__} executed in {execution_time:.4f} seconds")
+            return result
+        except Exception as e:
+            execution_time = time.time() - start_time
+            logger.error(f"{func.__name__} failed after {execution_time:.4f} seconds: {e}")
+            raise
+    
+    return wrapper
 
-# Check all keyword arguments for DataFrames
-for key, value in kwargs.items():
-    passif isinstance(value, pd.DataFrame):
-    passdf_issues, _validate_dataframe_quality(
-value, f"{data_type}_kwarg_{key}", logger,
-check_nan, check_infinite, check_constant, check_correlation,
-max_nan_ratio, max_infinite_count, min_unique_values, max_correlation_threshold
-)
-issues.extend(df_issues)
+def validate_input_types(*expected_types: type):
+    """Decorator to validate input parameter types."""
+    def decorator(func: Callable) -> Callable:
+        @functools.wraps(func)
+        async def wrapper(*args, **kwargs):
+            for i, (arg, expected_type) in enumerate(zip(args, expected_types)):
+                if not isinstance(arg, expected_type):
+                    raise TypeError(f"Argument {i} must be of type {expected_type}, got {type(arg)}")
+            return await func(*args, **kwargs)
+        return wrapper
+    return decorator
 
-return issues
+# --------------------------
+# Export main decorators
+# --------------------------
 
-def _validate_dataframe_quality(...) -> ...:
-    """..."""
-    passissues = []
-
-if df.empty:
-    passissues.append(f"{df_name}: DataFrame is empty")
-return issues
-
-# Check for NaN values (zero tolerance)
-if check_nan:
-    passpassnan_counts, df.isnull().sum()
-nan_features, nan_counts[nan_counts > 0].index.tolist()  # Any NaN values
-if nan_features:
-    passissues.append(f"{df_name}: Features with NaN values (zero tolerance): {nan_features}")
-
-# Check for infinite values (zero tolerance)
-if check_infinite:
-    passpassinfinite_features = []
-for col in df.select_dtypes(include=[np.number]).columns:
-    passinfinite_count, np.isinf(df[col]).sum()
-if infinite_count > 0:  # Any infinite values
-infinite_features.append(col)
-
-if infinite_features:
-    passissues.append(f"{df_name}: Features with infinite values (zero tolerance): {infinite_features}")
-
-# Check for constant features (2 + unique values, except boolean)
-if check_constant:
-    passpasspasspassconstant_features = []
-for col in df.columns:
-    passunique_count, df[col].nunique()
-# Allow boolean features (2 unique values) and binary features
-if unique_count < min_unique_values and not _is_boolean_feature(df[col]):
-    passconstant_features.append(col)
-
-if constant_features:
-    passissues.append(f"{df_name}: Constant features found: {constant_features}")
-
-# Check for high correlations
-if check_correlation:
-    passpassnumeric_cols, df.select_dtypes(include=[np.number]).columns
-if len(numeric_cols) > 1:
-    passcorr_matrix, df[numeric_cols].corr().abs()
-high_corr_pairs = []
-
-for i in range(len(corr_matrix.columns)):
-    passfor j in range(i + 1, len(corr_matrix.columns)):
-    passif corr_matrix.iloc[i, j] > max_correlation_threshold:
-    passhigh_corr_pairs.append((corr_matrix.columns[i], corr_matrix.columns[j]))
-
-if high_corr_pairs:
-    passissues.append(f"{df_name}: Highly correlated feature pairs: {high_corr_pairs}")
-
-return issues
-
-def _is_boolean_feature(...) -> ...:
-    """..."""
-    pass# Check if it's already boolean dtype
-if pd.api.types.is_bool_dtype(series):
-    passreturn True
-
-# Check if it has exactly 2 unique values that could be boolean
-unique_values, series.dropna().unique()
-if len(unique_values) == 2:
-    pass# Check if values are typical boolean patterns
-unique_set, set(unique_values)
-boolean_patterns = [
-{True, False},
-{1, 0},
-{1.0, 0.0},
-{'True', 'False'},
-{'true', 'false'},
-{'1', '0'},
-{'yes', 'no'},
-{'Y', 'N'},
-{'y', 'n'}
+__all__ = [
+    'validate_data_quality',
+    'validate_data_quality_at_step',
+    'log_execution_time',
+    'validate_input_types'
 ]
-
-for pattern in boolean_patterns:
-    passpassif unique_set == pattern:
-    passreturn True
-
-return False
-
-def validate_step1_quality(...) -> ...:
-    """..."""
-    passreturn validate_data_quality_at_step(
-"step01_data_collection",
-validate_input = True,
-validate_output = True,
-check_nan = True,
-check_infinite = True,
-check_constant = False,  # Raw data can be constant
-check_correlation = False,  # Raw data correlation is not relevant
-fail_on_issues = False,
-log_issues = True
-)(func)
-
-def validate_step1_5_quality(...) -> ...:
-    """..."""
-    passreturn validate_data_quality_at_step(
-"step01_5_data_converter",
-validate_input = True,
-validate_output = True,
-check_nan = True,
-check_infinite = True,
-check_constant = False,  # Unified data can be constant
-check_correlation = False,  # Unified data correlation is not relevant
-fail_on_issues = False,
-log_issues = True
-)(func)
-
-def validate_step2_quality(...) -> ...:
-    """..."""
-    passreturn validate_data_quality_at_step(
-"step02_feature_engineering",
-validate_input = True,
-validate_output = True,
-check_nan = True,
-check_infinite = True,
-check_constant = True,  # Features should not be constant
-check_correlation = True,  # Feature correlation is important
-max_nan_ratio = 0.0,  # 0% NaN (zero tolerance)
-max_infinite_count = 0,  # 0 infinite values (zero tolerance)
-min_unique_values = 2,  # 2 + unique values (except boolean)
-max_correlation_threshold = 0.95,
-fail_on_issues = False,
-log_issues = True
-)(func)
-
-def log_feature_quality_issues(...) -> ...:
-    passpass"""..."""
-    passif logger is None:
-    pass# Fallback implementation for logger
-logger, system_logger.getChild("FeatureQualityLogger")
-
-logger.info(f"🔍 Checking feature quality for {df_name}...")
-
-# Check for NaN values (zero tolerance) with detailed information
-nan_counts, df.isnull().sum()
-nan_features, nan_counts[nan_counts > 0].index.tolist()  # Any NaN values
-if nan_features:
-    passpasspasslogger.warning(f"⚠️ {df_name}: Features with NaN values (zero tolerance) ({len(nan_features)}):")
-logger.warning("📊 Detailed NaN Analysis:")
-for feature in nan_features[:10]:  # Show first 10
-nan_count, nan_counts[feature]
-nan_ratio, nan_count / len(df) * 100
-logger.warning(f"   • {feature}: {nan_count} NaN values ({nan_ratio:.3f}%)")
-# Log sample of problematic indices
-nan_indices, df[df[feature].isnull()].index[:5]  # First 5 NaN indices
-if len(nan_indices) > 0:
-    passlogger.warning(f"     Sample NaN indices: {list(nan_indices)}")
-if len(nan_features) > 10:
-    passlogger.warning(f"   ... and {len(nan_features) - 10} more features with NaN values")
-
-# Check for infinite values (zero tolerance) with detailed information
-infinite_features = []
-for col in df.select_dtypes(include=[np.number]).columns:
-    passpassinfinite_count, np.isinf(df[col]).sum()
-if infinite_count > 0:  # Any infinite values
-infinite_features.append((col, infinite_count))
-
-if infinite_features:
-    passlogger.warning(f"⚠️ {df_name}: Features with infinite values (zero tolerance) ({len(infinite_features)}):")
-logger.warning("📊 Detailed Infinite Value Analysis:")
-for feature, count in infinite_features[:10]:  # Show first 10
-infinite_ratio, count / len(df) * 100
-logger.warning(f"   • {feature}: {count} infinite values ({infinite_ratio:.3f}%)")
-# Log sample of problematic indices
-infinite_indices, df[np.isinf(df[feature])].index[:5]  # First 5 infinite indices
-if len(infinite_indices) > 0:
-    passlogger.warning(f"     Sample infinite indices: {list(infinite_indices)}")
-if len(infinite_features) > 10:
-    passlogger.warning(f"   ... and {len(infinite_features) - 10} more features with infinite values")
-
-# Check for constant features (2 + unique values, except boolean)
-constant_features = []
-for col in df.columns:
-    passpasspasspassunique_count, df[col].nunique()
-if unique_count < 2 and not _is_boolean_feature(df[col]):
-    passconstant_features.append((col, unique_count))
-
-if constant_features:
-    passlogger.warning(f"⚠️ {df_name}: Constant or near - constant features ({len(constant_features)}):")
-logger.warning("📊 Detailed Constant Feature Analysis:")
-for feature, unique_count in constant_features[:10]:  # Show first 10
-unique_values, df[feature].dropna().unique()
-logger.warning(f"   • {feature}: {unique_count} unique values: {unique_values}")
-# Log value distribution
-value_counts, df[feature].value_counts()
-logger.warning(f"     Value distribution: {dict(value_counts.head(3))}")
-if len(constant_features) > 10:
-    passlogger.warning(f"   ... and {len(constant_features) - 10} more constant features")
-
-# Check for high correlations
-numeric_cols, df.select_dtypes(include=[np.number]).columns
-if len(numeric_cols) > 1:
-    passpasscorr_matrix, df[numeric_cols].corr().abs()
-high_corr_pairs = []
-
-for i in range(len(corr_matrix.columns)):
-    passfor j in range(i + 1, len(corr_matrix.columns)):
-    passcorr_value, corr_matrix.iloc[i, j]
-if corr_value > 0.95:
-    passhigh_corr_pairs.append((corr_matrix.columns[i], corr_matrix.columns[j], corr_value))
-
-if high_corr_pairs:
-    passlogger.warning(f"⚠️ {df_name}: Highly correlated feature pairs ({len(high_corr_pairs)}):")
-logger.warning("📊 Detailed Correlation Analysis:")
-for feat1, feat2, corr_value in high_corr_pairs[:5]:  # Show first 5
-logger.warning(f"   • {feat1} ↔ {feat2}: correlation = {corr_value:.3f}")
-# Log sample of values to show the relationship
-sample_size, min(5, len(df))
-sample_df, df[[feat1, feat2]].head(sample_size)
-logger.warning(f"     Sample values: {feat1}={list(sample_df[feat1])}, {feat2}={list(sample_df[feat2])}")
-if len(high_corr_pairs) > 5:
-    passlogger.warning(f"   ... and {len(high_corr_pairs) - 5} more highly correlated pairs")
-
-# Summary with detailed breakdown
-total_issues, len(nan_features) + len(infinite_features) + len(constant_features) + len(high_corr_pairs)
-if total_issues == 0:
-    passpasslogger.info(f"✅ {df_name}: No feature quality issues detected")
-else:
-    passlogger.warning(f"⚠️ {df_name}: Total feature quality issues: {total_issues}")
-logger.warning("📋 Issue Breakdown:")
-logger.warning(f"   • NaN features: {len(nan_features)}")
-logger.warning(f"   • Infinite features: {len(infinite_features)}")
-logger.warning(f"   • Constant features: {len(constant_features)}")
-logger.warning(f"   • High correlation pairs: {len(high_corr_pairs)}")
-logger.warning("💡 For detailed information about each problematic value, check the validation results above")
-
-# Convenience function for quick validation
-def quick_validate_features(...) -> ...:
-    pass"""..."""
-    passresults = {
-"df_name": df_name,
-"shape": df.shape,
-"total_features": len(df.columns),
-"total_samples": len(df),
-"issues": {
-"nan_features": [],
-"infinite_features": [],
-"constant_features": [],
-"high_correlation_pairs": []
-},
-"summary": {
-"nan_count": 0,
-"infinite_count": 0,
-"constant_count": 0,
-"high_correlation_count": 0
-},
-"details": {
-"nan_details": {},
-"infinite_details": {},
-"constant_details": {},
-"correlation_details": {}
-}
-}
-
-# Check for NaN values (zero tolerance) with detailed information
-nan_counts, df.isnull().sum()
-nan_features, nan_counts[nan_counts > 0].index.tolist()  # Any NaN values
-results["issues"]["nan_features"] = nan_features
-results["summary"]["nan_count"] = len(nan_features)
-
-# Add detailed NaN information
-nan_details = {}
-for feature in nan_features:
-    passpassnan_count, nan_counts[feature]
-nan_ratio, nan_count / len(df) * 100
-nan_details[feature] = {
-"count": int(nan_count),
-"percentage": float(nan_ratio),
-"sample_indices": df[df[feature].isnull()].index[:10].tolist()  # First 10 NaN indices
-}
-results["details"]["nan_details"] = nan_details
-
-# Check for infinite values (zero tolerance) with detailed information
-infinite_features = []
-infinite_details = {}
-for col in df.select_dtypes(include=[np.number]).columns:
-    passpassinfinite_count, np.isinf(df[col]).sum()
-if infinite_count > 0:  # Any infinite values
-infinite_features.append(col)
-infinite_ratio, infinite_count / len(df) * 100
-infinite_details[col] = {
-"count": int(infinite_count),
-"percentage": float(infinite_ratio),
-"sample_indices": df[np.isinf(df[col])].index[:10].tolist()  # First 10 infinite indices
-}
-results["issues"]["infinite_features"] = infinite_features
-results["summary"]["infinite_count"] = len(infinite_features)
-results["details"]["infinite_details"] = infinite_details
-
-# Check for constant features (2 + unique values, except boolean) with detailed information
-constant_features = []
-constant_details = {}
-for col in df.columns:
-    passpasspasspassunique_count, df[col].nunique()
-if unique_count < 2 and not _is_boolean_feature(df[col]):
-    passconstant_features.append(col)
-unique_values, df[col].dropna().unique()
-value_counts, df[col].value_counts()
-constant_details[col] = {
-"unique_count": int(unique_count),
-"unique_values": unique_values.tolist(),
-"value_distribution": value_counts.to_dict(),
-"is_boolean": _is_boolean_feature(df[col])
-}
-results["issues"]["constant_features"] = constant_features
-results["summary"]["constant_count"] = len(constant_features)
-results["details"]["constant_details"] = constant_details
-
-# Check for high correlations with detailed information
-numeric_cols, df.select_dtypes(include=[np.number]).columns
-high_corr_pairs = []
-correlation_details = {}
-if len(numeric_cols) > 1:
-    passpasspasscorr_matrix, df[numeric_cols].corr().abs()
-for i in range(len(corr_matrix.columns)):
-    passfor j in range(i + 1, len(corr_matrix.columns)):
-    passcorr_value, corr_matrix.iloc[i, j]
-if corr_value > 0.95:
-    passfeat1, feat2, corr_matrix.columns[i], corr_matrix.columns[j]
-pair_key, f"{feat1}↔{feat2}"
-high_corr_pairs.append((feat1, feat2, corr_value))
-
-# Add detailed correlation information
-correlation_details[pair_key] = {
-"feature1": feat1,
-"feature2": feat2,
-"correlation": float(corr_value),
-"sample_values": {
-feat1: df[feat1].head(5).tolist(),
-feat2: df[feat2].head(5).tolist()
-}
-}
-results["issues"]["high_correlation_pairs"] = high_corr_pairs
-results["summary"]["high_correlation_count"] = len(high_corr_pairs)
-results["details"]["correlation_details"] = correlation_details
-
-return results

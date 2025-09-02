@@ -11,20 +11,15 @@ This module provides advanced surrogate models including:
 - Transfer learning capabilities
 """
 
-import numpy as np
-from abc import ABC, abstractmethod
-import joblib
 import time
+from abc import ABC, abstractmethod
 
+import joblib
+import numpy as np
 # Core ML libraries
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import (
-    RBF,
-    ConstantKernel,
-    WhiteKernel,
-    Matern,
-    RationalQuadratic,
-)
+from sklearn.gaussian_process.kernels import (RBF, ConstantKernel, Matern,
+                                              RationalQuadratic, WhiteKernel)
 from sklearn.model_selection import cross_val_score
 
 # Advanced ML libraries

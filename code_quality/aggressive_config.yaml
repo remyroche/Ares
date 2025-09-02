@@ -1,0 +1,32 @@
+code_quality:
+  auto_fix:
+    enabled: true
+    tools: ["black", "isort", "autopep8", "ruff", "mypy"]
+    max_line_length: 88
+    aggressive: true
+    skip_errors: []
+    force_fixes: true
+  
+  analysis:
+    linters: ["flake8", "pylint", "mypy", "ruff", "bandit"]
+    complexity_threshold: 8
+    security_checks: true
+    dead_code_detection: true
+    dependency_analysis: true
+    exclude_patterns: ["__pycache__", "*.pyc", ".git", "venv", "env", "node_modules", ".pytest_cache"]
+    strict_mode: true
+  
+  reporting:
+    output_format: ["terminal", "html", "json"]
+    include_metrics: true
+    save_reports: true
+    report_dir: "reports"
+    verbose: true
+    fail_on_errors: true
+  
+  sequential_fix:
+    max_iterations: 10
+    stop_on_major_errors: true
+    auto_resolve_conflicts: true
+    strict_syntax_checking: true
+    enforce_import_standards: true

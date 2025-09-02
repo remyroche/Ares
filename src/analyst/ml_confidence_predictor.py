@@ -2708,6 +2708,12 @@ class MLConfidencePredictor:
                     k: 1.0 / len(performance_history) for k in performance_history
                 }
         # Apply adaptive weighting based on recent performance
+        # TODO: Check and revise this adaptive weighting logic - current implementation
+        # may be too simplistic. Consider:
+        # - More sophisticated performance metrics (Sharpe ratio, win rate, etc.)
+        # - Different time windows for performance evaluation
+        # - Non-linear weight adjustments based on performance
+        # - Handling edge cases (new models, insufficient history)
         if performance_history:
             # Boost weights for models with consistent recent performance
             for model_name, weight in self.ensemble_weights.items():

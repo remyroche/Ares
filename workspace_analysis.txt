@@ -1,0 +1,308 @@
+================================================================================
+FINAL COMPREHENSIVE CODE QUALITY ANALYSIS REPORT
+================================================================================
+Generated: 2025-09-02 19:27:30
+Project: /workspace
+
+🌍 GLOBAL METRICS
+----------------------------------------
+Total Directories: 53
+Total Files: 739
+Analyzers Run: 6
+Total Issues Found: 0
+Total Issues Fixed: 0
+Success Rate: 94.2%
+Processing Time: 24.74s
+
+📊 ANALYSIS CATEGORIES
+----------------------------------------
+Type Checking and Validation:
+  Files: 739, Issues: 0, Fixed: 0
+  Success Rate: 94.2%
+
+Advanced AST Analysis:
+  Files: 739, Issues: 0, Fixed: 0
+  Success Rate: 94.2%
+
+Code Architecture Analysis:
+  Files: 739, Issues: 0, Fixed: 0
+  Success Rate: 94.2%
+
+Code Duplication Detection:
+  Files: 739, Issues: 0, Fixed: 0
+  Success Rate: 94.2%
+
+Error Handling Analysis:
+  Files: 739, Issues: 0, Fixed: 0
+  Success Rate: 94.2%
+
+Concurrency Analysis:
+  Files: 739, Issues: 0, Fixed: 0
+  Success Rate: 94.2%
+
+📁 DIRECTORY SUMMARIES
+----------------------------------------
+Directory: .
+  Files: 123, Analyzed: 123
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: scripts
+  Files: 61, Analyzed: 61
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: code_quality
+  Files: 10, Analyzed: 10
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: code_quality/reporters
+  Files: 4, Analyzed: 4
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: code_quality/plugins
+  Files: 10, Analyzed: 10
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: code_quality/fixers
+  Files: 2, Analyzed: 2
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: code_quality/analyzers
+  Files: 14, Analyzed: 14
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: code_quality/core
+  Files: 3, Analyzed: 3
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: code_quality/utils
+  Files: 3, Analyzed: 3
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src
+  Files: 6, Analyzed: 6
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/monitoring
+  Files: 18, Analyzed: 18
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/launcher
+  Files: 1, Analyzed: 1
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/components
+  Files: 5, Analyzed: 5
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/interfaces
+  Files: 4, Analyzed: 4
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/trading
+  Files: 4, Analyzed: 4
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/supervisor
+  Files: 15, Analyzed: 15
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/pipelines
+  Files: 4, Analyzed: 4
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/pipelines/components
+  Files: 4, Analyzed: 4
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/sentinel
+  Files: 2, Analyzed: 2
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/transition
+  Files: 11, Analyzed: 11
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/custom_types
+  Files: 8, Analyzed: 8
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/reports
+  Files: 1, Analyzed: 1
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/protocols
+  Files: 1, Analyzed: 1
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/integration
+  Files: 1, Analyzed: 1
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/tactician
+  Files: 26, Analyzed: 26
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/tracking
+  Files: 1, Analyzed: 1
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/training
+  Files: 74, Analyzed: 74
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/training/optimization
+  Files: 10, Analyzed: 10
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/training/steps
+  Files: 81, Analyzed: 81
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/training/steps/step17_final_parameters_optimization
+  Files: 12, Analyzed: 12
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/training/steps/step1
+  Files: 13, Analyzed: 13
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/training/steps/step4_analyst_labeling_feature_engineering_components
+  Files: 6, Analyzed: 6
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/training/steps/multi_timeframe_training
+  Files: 2, Analyzed: 2
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/training/steps/analyst_training_components
+  Files: 2, Analyzed: 2
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/training/steps/data_preparation_components
+  Files: 3, Analyzed: 3
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/training/core
+  Files: 6, Analyzed: 6
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/exchange
+  Files: 1, Analyzed: 1
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/core
+  Files: 10, Analyzed: 10
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/config
+  Files: 40, Analyzed: 40
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/utils
+  Files: 66, Analyzed: 66
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/strategist
+  Files: 2, Analyzed: 2
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/validation
+  Files: 1, Analyzed: 1
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/analyst
+  Files: 23, Analyzed: 23
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/analyst/predictive_ensembles
+  Files: 5, Analyzed: 5
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/analyst/predictive_ensembles/regime_ensembles
+  Files: 3, Analyzed: 3
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: src/database
+  Files: 6, Analyzed: 6
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: analysis
+  Files: 4, Analyzed: 4
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: GUI
+  Files: 1, Analyzed: 1
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: test_analysis_dir
+  Files: 3, Analyzed: 3
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: crypto_analysis
+  Files: 3, Analyzed: 3
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: data_quality
+  Files: 6, Analyzed: 6
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: data_quality/mapping
+  Files: 6, Analyzed: 6
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture
+
+Directory: exchange
+  Files: 8, Analyzed: 8
+  Issues: 0, Fixed: 0
+  Categories: advanced_ast, concurrency, code_duplication, type_checking, error_handling, architecture

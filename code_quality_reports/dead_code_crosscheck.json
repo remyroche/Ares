@@ -1,0 +1,8 @@
+{
+  "counts": {
+    "callgraph_potential_dead": 11681,
+    "vulture_high_conf_functions": 0,
+    "intersection": 0
+  },
+  "intersection": []
+}

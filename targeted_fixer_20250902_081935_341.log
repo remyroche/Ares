@@ -1,0 +1,26 @@
+2025-09-02 08:19:35,344 - INFO - Processing file: src/utils/structured_logging.py
+2025-09-02 08:19:35,344 - INFO - Performing semantic analysis...
+2025-09-02 08:19:35,344 - INFO - Code quality score: 0.00
+2025-09-02 08:19:35,344 - WARNING - Syntax errors found: 1
+2025-09-02 08:19:35,344 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:19:35,345 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:35,345 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:35,346 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:35,346 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:35,346 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:35,347 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:35,347 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:35,347 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:35,347 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:35,348 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:35,348 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:35,349 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:35,349 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:35,349 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:35,351 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:35,351 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:35,352 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:35,353 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:19:35,353 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:35,354 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:35,355 - INFO - No fixes needed for: src/utils/structured_logging.py

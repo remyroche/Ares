@@ -11,7 +11,9 @@ from typing import List, Dict, Any, Optional, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from ..core.config import CodeQualityConfig, get_default_config
+from ..core.plugins import PluginManager
 from ..utils.file_utils import find_python_files, backup_file, restore_file, is_valid_python_file
+from ..utils.progress import ProgressManager
 
 
 class AutoFixer:
@@ -23,8 +25,15 @@ class AutoFixer:
         self.config = config or get_default_config()
         self.fix_results = {}
         self.backup_files = {}
+        
+        # Initialize plugin manager and progress manager
+        self.plugin_manager = PluginManager(self.config.__dict__)
+        self.progress_manager = ProgressManager()
+        
+        # Register built-in plugins
+        self._register_builtin_plugins()
     
-    def fix_all(self, directory: str) -> Dict[str, Any]:
+    def fix_all(self, directory: str) -> Dict[str, Any]):
         """
         Fix all issues in a directory using configured tools.
         
@@ -45,20 +54,48 @@ class AutoFixer:
         self._create_backups(python_files)
         
         try:
-            # Run all configured fixers
-            for tool in self.config.auto_fix.tools:
-                if tool == "black":
-                    self._run_black(python_files)
-                elif tool == "isort":
-                    self._run_isort(python_files)
-                elif tool == "autopep8":
-                    self._run_autopep8(python_files)
-                elif tool == "yapf":
-                    self._run_yapf(python_files)
-                elif tool == "ruff":
-                    self._run_ruff(python_files)
-                else:
-                    print(f"Warning: Unknown tool '{tool}' configured.")
+            # Use progress manager to track the fixing operation
+            def fix_operation():
+                results = {}
+                
+                # Get available fixers for each file
+                for file_path in python_files:
+                    available_fixers = self.plugin_manager.get_available_fixers(file_path)
+                    
+                    if not available_fixers:
+                        results[file_path] = {
+                            'success': False,
+                            'message': 'No suitable fixers available',
+                            'fixers_used': []
+                        }
+                        continue
+                    
+                    file_results = []
+                    for fixer in available_fixers:
+                        try:
+                            result = fixer.fix(file_path)
+                            file_results.append(result)
+                        except Exception as e:
+                            file_results.append({
+                                'success': False,
+                                'tool': fixer.get_name(),
+                                'error': str(e)
+                            })
+                    
+                    results[file_path] = {
+                        'success': any(r.get('success', False) for r in file_results),
+                        'fixers_used': [f.get_name() for f in available_fixers],
+                        'results': file_results
+                    }
+                
+                return results
+            
+            # Run with progress tracking
+            self.fix_results = self.progress_manager.track_file_operation(
+                python_files, 
+                "Auto-fixing code", 
+                lambda f: self._fix_single_file(f)
+            )
             
             # Validate fixes
             self._validate_fixes(python_files)
@@ -69,6 +106,31 @@ class AutoFixer:
             raise
         
         return self.fix_results
+    
+    def _register_builtin_plugins(self):
+        """Register built-in code fixing plugins."""
+        try:
+            from ..plugins.black_fixer import BlackFixer
+            from ..plugins.isort_fixer import IsortFixer
+            
+            # Register plugins with configuration
+            black_config = {
+                'enabled': True,
+                'max_line_length': self.config.auto_fix.max_line_length,
+                'aggressive': self.config.auto_fix.aggressive
+            }
+            
+            isort_config = {
+                'enabled': True,
+                'max_line_length': self.config.auto_fix.max_line_length,
+                'aggressive': self.config.auto_fix.aggressive
+            }
+            
+            self.plugin_manager.register_plugin('black', BlackFixer(black_config))
+            self.plugin_manager.register_plugin('isort', IsortFixer(isort_config))
+            
+        except ImportError as e:
+            print(f"Warning: Could not import built-in plugins: {e}")
     
     def fix_file(self, file_path: str) -> Dict[str, Any]:
         """

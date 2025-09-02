@@ -1012,7 +1012,7 @@ if __name__ == "__main__":
 
     # Use a more robust approach to prevent segmentation fault
     try:
-        asyncio.run(await main())
+        asyncio.run( main())
     except KeyboardInterrupt:
         print("\n🛑 Interrupted by user")
     except Exception as e:
@@ -1022,4 +1022,4 @@ if __name__ == "__main__":
         import gc
 import os.path
 
-        gc.collect()
+gc.collect()

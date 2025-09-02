@@ -1029,4 +1029,4 @@ if __name__ == "__main__":
             print(f"   GPU operations: {metrics['gpu_operations']}")
             print(f"   JIT compilations: {metrics['jit_compilations']}")
 
-    asyncio.run(await main())
+    asyncio.run( main())

@@ -76,4 +76,4 @@ if __name__ == "__main__":
 	async def _test() -> None:
 		await run_step("ETHUSDT", "BINANCE", "data/training")
 
-	asyncio.run(await _test())
+	asyncio.run( _test())

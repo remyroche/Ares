@@ -849,4 +849,4 @@ if __name__ == "__main__":
         except KeyboardInterrupt:
             await dashboard.stop_dashboard()
 
-    asyncio.run(await main())
+    asyncio.run( main())

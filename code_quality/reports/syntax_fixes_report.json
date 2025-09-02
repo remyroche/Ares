@@ -1,0 +1,10 @@
+{
+  "fixed": 0,
+  "failed": 180,
+  "fixed_files": [],
+  "error_patterns": {
+    "invalid syntax": 105,
+    "expected 'except' or 'finally' block": 46,
+    "unexpected indent": 29
+  }
+}

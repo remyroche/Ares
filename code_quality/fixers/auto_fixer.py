@@ -112,6 +112,10 @@ class AutoFixer:
         try:
             from code_quality.plugins.black_fixer import BlackFixer
             from code_quality.plugins.isort_fixer import IsortFixer
+            from code_quality.plugins.autopep8_fixer import Autopep8Fixer
+            from code_quality.plugins.yapf_fixer import YapfFixer
+            from code_quality.plugins.docformatter_fixer import DocformatterFixer
+            from code_quality.plugins.unify_fixer import UnifyFixer
             
             # Register plugins with configuration
             black_config = {
@@ -125,9 +129,40 @@ class AutoFixer:
                 'max_line_length': self.config.auto_fix.max_line_length,
                 'aggressive': self.config.auto_fix.aggressive
             }
-            
-            self.plugin_manager.register_plugin('black', BlackFixer(black_config))
-            self.plugin_manager.register_plugin('isort', IsortFixer(isort_config))
+            autopep8_config = {
+                'enabled': True,
+                'max_line_length': self.config.auto_fix.max_line_length,
+                'aggressive': self.config.auto_fix.aggressive
+            }
+            yapf_config = {
+                'enabled': True,
+                'max_line_length': self.config.auto_fix.max_line_length
+            }
+            docformatter_config = {
+                'enabled': True,
+                'max_line_length': self.config.auto_fix.max_line_length
+            }
+            unify_config = {
+                'enabled': True
+            }
+
+            # Only register tools present in config.auto_fix.tools
+            tools = set(self.config.auto_fix.tools or [])
+            if not tools:
+                tools = {"black", "isort"}
+
+            if "black" in tools:
+                self.plugin_manager.register_plugin('black', BlackFixer(black_config))
+            if "isort" in tools:
+                self.plugin_manager.register_plugin('isort', IsortFixer(isort_config))
+            if "autopep8" in tools:
+                self.plugin_manager.register_plugin('autopep8', Autopep8Fixer(autopep8_config))
+            if "yapf" in tools:
+                self.plugin_manager.register_plugin('yapf', YapfFixer(yapf_config))
+            if "docformatter" in tools:
+                self.plugin_manager.register_plugin('docformatter', DocformatterFixer(docformatter_config))
+            if "unify" in tools:
+                self.plugin_manager.register_plugin('unify', UnifyFixer(unify_config))
             
         except ImportError as e:
             print(f"Warning: Could not import built-in plugins: {e}")

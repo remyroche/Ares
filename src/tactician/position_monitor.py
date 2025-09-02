@@ -28,7 +28,7 @@ from src.utils.warning_symbols import (
 
 @dataclass
 class PositionAssessment:
-    passpasspass"""Position assessment with simplified action logic."""
+    """Position assessment with simplified action logic."""
     
     position_id: str
     symbol: str
@@ -62,20 +62,20 @@ class PositionAssessment:
 
 
 class PositionMonitor:
-    pass"""
+    """
     Position Monitor with fixed 10-second monitoring interval and ML-based confidence.
     
     Features:
-    pass- Fixed 10-second monitoring interval for all positions
+    - Fixed 10-second monitoring interval for all positions
     - ML-based confidence assessment (tactician/analyst output)
     - Simplified action logic (mutually exclusive actions)
     - Immediate alert system
     - Fixed -5% PnL threshold
     """
 
-    def __init__(...) -> ...:
-    pass"""..."""
-    passself.config = config
+    def __init__(self, config: Dict[str, Any]) -> None:
+        """Initialize the position monitor."""
+        self.config = config
         self.logger = system_logger.getChild("PositionMonitor")
 
         # Configuration
@@ -102,12 +102,9 @@ class PositionMonitor:
         default_return=False,
         context="position monitor initialization"
     )
-    async def initialize(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def initialize(self) -> bool:
+        """Initialize the position monitor."""
+        try:
             self.logger.info("Initializing Position Monitor...")
 
             # Initialize order manager
@@ -120,57 +117,51 @@ except Exception as e:
 
             # Validate configuration
             if not self._validate_configuration():
-    passreturn False
+                return False
 
             self.logger.info("✅ Position Monitor initialized successfully")
             return True
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(failed(f"❌ Position Monitor initialization failed: {e}"))
+            self.logger.error(failed(f"❌ Position Monitor initialization failed: {e}"))
             return False
 
-    def _validate_configuration(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    def _validate_configuration(self) -> bool:
+        """Validate the configuration parameters."""
+        try:
             # Validate confidence thresholds
             if not 0 <= self.confidence_threshold <= 1:
-    passself.logger.error(invalid("Confidence threshold must be between 0 and 1"))
+                self.logger.error(invalid("Confidence threshold must be between 0 and 1"))
                 return False
 
             if not 0 <= self.high_confidence_threshold <= 1:
-    passself.logger.error(invalid("High confidence threshold must be between 0 and 1"))
+                self.logger.error(invalid("High confidence threshold must be between 0 and 1"))
                 return False
 
             if not 0 <= self.low_confidence_threshold <= 1:
-    passself.logger.error(invalid("Low confidence threshold must be between 0 and 1"))
+                self.logger.error(invalid("Low confidence threshold must be between 0 and 1"))
                 return False
 
             if not 0 <= self.very_low_confidence_threshold <= 1:
-    passself.logger.error(invalid("Very low confidence threshold must be between 0 and 1"))
+                self.logger.error(invalid("Very low confidence threshold must be between 0 and 1"))
                 return False
 
             # Validate PnL threshold
             if self.pnl_threshold >= 0:
-    passself.logger.error(invalid("PnL threshold should be negative"))
+                self.logger.error(invalid("PnL threshold should be negative"))
                 return False
 
             return True
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(failed(f"❌ Configuration validation failed: {e}"))
+            self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
-    async def start_monitoring(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def start_monitoring(self) -> bool:
+        """Start position monitoring."""
+        try:
             if self.is_monitoring:
-    passself.logger.warning(warning("Position monitoring already active"))
+                self.logger.warning(warning("Position monitoring already active"))
                 return True
 
             self.is_monitoring = True
@@ -180,64 +171,58 @@ except Exception as e:
             return True
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(failed(f"❌ Failed to start position monitoring: {e}"))
+            self.logger.error(failed(f"❌ Failed to start position monitoring: {e}"))
             return False
 
-    async def stop_monitoring(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def stop_monitoring(self) -> bool:
+        """Stop position monitoring."""
+        try:
             if not self.is_monitoring:
-    passself.logger.warning(warning("Position monitoring not active"))
+                self.logger.warning(warning("Position monitoring not active"))
                 return True
 
             self.is_monitoring = False
 
             if self.monitoring_task:
-    passself.monitoring_task.cancel()
+                self.monitoring_task.cancel()
                 try:
-    passawait self.monitoring_task
+                    await self.monitoring_task
                 except asyncio.CancelledError:
-    passpasspass
+                    pass
 
             self.logger.info("✅ Position monitoring stopped")
             return True
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(failed(f"❌ Failed to stop position monitoring: {e}"))
+            self.logger.error(failed(f"❌ Failed to stop position monitoring: {e}"))
             return False
 
-    async def _monitoring_loop(...) -> ...:
-    """..."""
-    passtry:
-    passwhile self.is_monitoring:
-    pass# Monitor all active positions
+    async def _monitoring_loop(self) -> None:
+        """Main monitoring loop."""
+        try:
+            while self.is_monitoring:
+                # Monitor all active positions
                 await self._monitor_positions()
 
                 # Wait for next monitoring cycle
                 await asyncio.sleep(self.monitoring_interval)
 
         except asyncio.CancelledError:
-    passpasspassself.logger.info("Position monitoring loop cancelled")
+            self.logger.info("Position monitoring loop cancelled")
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(failed(f"❌ Error in monitoring loop: {e}"))
+            self.logger.error(failed(f"❌ Error in monitoring loop: {e}"))
 
-    async def _monitor_positions(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def _monitor_positions(self) -> None:
+        """Monitor all active positions."""
+        try:
             if not self.active_positions:
-    passreturn
+                return
 
             for position_id, position_data in self.active_positions.items():
-    passassessment = await self._assess_position(position_id, position_data)
+                assessment = await self._assess_position(position_id, position_data)
                 
                 if assessment:
-    pass# Store assessment
+                    # Store assessment
                     self.assessment_history.append(assessment)
                     
                     # Take action based on assessment
@@ -245,21 +230,22 @@ except Exception as e:
                     
                     # Send immediate alert if needed
                     if assessment.alert_severity != "info":
-    passawait self._send_alert(assessment)
+                        await self._send_alert(assessment)
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(failed(f"❌ Error monitoring positions: {e}"))
+            self.logger.error(failed(f"❌ Error monitoring positions: {e}"))
 
-    async def _assess_position(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def _assess_position(
+        self, 
+        position_id: str, 
+        position_data: Dict[str, Any]
+    ) -> Optional[PositionAssessment]:
+        """Assess a single position and determine actions."""
+        try:
             # Get current market data
             current_price = await self._get_current_price(position_data["symbol"])
             if current_price is None:
-    passreturn None
+                return None
 
             # Calculate position metrics
             entry_price = position_data["entry_price"]
@@ -269,9 +255,9 @@ except Exception as e:
 
             # Calculate PnL
             if side == "long":
-    passunrealized_pnl = (current_price - entry_price) * current_quantity
+                unrealized_pnl = (current_price - entry_price) * current_quantity
             else:
-    passunrealized_pnl = (entry_price - current_price) * current_quantity
+                unrealized_pnl = (entry_price - current_price) * current_quantity
 
             pnl_percentage = (unrealized_pnl / (entry_price * current_quantity)) * 100
 
@@ -295,26 +281,26 @@ except Exception as e:
 
             # Check PnL threshold (fixed -5%)
             if pnl_percentage <= self.pnl_threshold * 100:
-    passshould_stop_loss = True
+                should_stop_loss = True
                 action_reason = f"PnL threshold reached: {pnl_percentage:.2f}%"
                 alert_severity = "critical"
                 alert_message = f"Stop loss triggered: {pnl_percentage:.2f}% loss"
 
             # Check confidence thresholds
             elif combined_confidence <= self.very_low_confidence_threshold:
-    passpassshould_exit = True
+                should_exit = True
                 action_reason = f"Very low confidence: {combined_confidence:.3f}"
                 alert_severity = "critical"
                 alert_message = f"Exit position due to very low confidence: {combined_confidence:.3f}"
 
             elif combined_confidence <= self.low_confidence_threshold:
-    passpassshould_scale_down = True
+                should_scale_down = True
                 action_reason = f"Low confidence: {combined_confidence:.3f}"
                 alert_severity = "warning"
                 alert_message = f"Scale down position due to low confidence: {combined_confidence:.3f}"
 
             elif combined_confidence >= self.high_confidence_threshold and pnl_percentage > 0:
-    passpassshould_take_profit = True
+                should_take_profit = True
                 action_reason = f"High confidence and positive PnL: {combined_confidence:.3f}, {pnl_percentage:.2f}%"
                 alert_severity = "info"
                 alert_message = f"Take profit opportunity: {pnl_percentage:.2f}% gain"
@@ -347,37 +333,31 @@ except Exception as e:
             return assessment
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(failed(f"❌ Error assessing position {position_id}: {e}"))
+            self.logger.error(failed(f"❌ Error assessing position {position_id}: {e}"))
             return None
 
-    async def _handle_position_action(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def _handle_position_action(self, assessment: PositionAssessment) -> None:
+        """Handle position action based on assessment."""
+        try:
             if not self.order_manager:
-    passreturn
+                return
 
             # Mutually exclusive actions (priority order)
             if assessment.should_stop_loss:
-    passawait self._execute_stop_loss(assessment)
+                await self._execute_stop_loss(assessment)
             elif assessment.should_exit:
-    passpassawait self._execute_exit(assessment)
+                await self._execute_exit(assessment)
             elif assessment.should_scale_down:
-    passpassawait self._execute_scale_down(assessment)
+                await self._execute_scale_down(assessment)
             elif assessment.should_take_profit:
-    passpassawait self._execute_take_profit(assessment)
+                await self._execute_take_profit(assessment)
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(failed(f"❌ Error handling position action: {e}"))
+            self.logger.error(failed(f"❌ Error handling position action: {e}"))
 
-    async def _execute_stop_loss(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def _execute_stop_loss(self, assessment: PositionAssessment) -> None:
+        """Execute stop loss for a position."""
+        try:
             self.logger.warning(f"🛑 Executing stop loss for position {assessment.position_id}")
             
             # Close entire position
@@ -388,21 +368,18 @@ except Exception as e:
             )
 
             if success:
-    passpassself.logger.info(f"✅ Stop loss executed for position {assessment.position_id}")
+                self.logger.info(f"✅ Stop loss executed for position {assessment.position_id}")
                 # Remove from active positions
                 self.active_positions.pop(assessment.position_id, None)
             else:
-    passpassself.logger.error(f"❌ Failed to execute stop loss for position {assessment.position_id}")
+                self.logger.error(f"❌ Failed to execute stop loss for position {assessment.position_id}")
 
         except Exception as e:
-    passpasspasspasspasspasspasspassself.logger.error(failed(f"❌ Error executing stop loss: {e}"))
+            self.logger.error(failed(f"❌ Error executing stop loss: {e}"))
 
-    async def _execute_exit(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def _execute_exit(self, assessment: PositionAssessment) -> None:
+        """Execute exit for a position."""
+        try:
             self.logger.warning(f"🚪 Executing exit for position {assessment.position_id}")
             
             # Close entire position
@@ -413,21 +390,18 @@ except Exception as e:
             )
 
             if success:
-    passpassself.logger.info(f"✅ Exit executed for position {assessment.position_id}")
+                self.logger.info(f"✅ Exit executed for position {assessment.position_id}")
                 # Remove from active positions
                 self.active_positions.pop(assessment.position_id, None)
             else:
-    passpassself.logger.error(f"❌ Failed to execute exit for position {assessment.position_id}")
+                self.logger.error(f"❌ Failed to execute exit for position {assessment.position_id}")
 
         except Exception as e:
-    passpasspasspasspasspasspasspassself.logger.error(failed(f"❌ Error executing exit: {e}"))
+            self.logger.error(failed(f"❌ Error executing exit: {e}"))
 
-    async def _execute_scale_down(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def _execute_scale_down(self, assessment: PositionAssessment) -> None:
+        """Execute scale down for a position."""
+        try:
             self.logger.warning(f"📉 Executing scale down for position {assessment.position_id}")
             
             # Scale down by 50%
@@ -440,21 +414,18 @@ except Exception as e:
             )
 
             if success:
-    passpassself.logger.info(f"✅ Scale down executed for position {assessment.position_id}")
+                self.logger.info(f"✅ Scale down executed for position {assessment.position_id}")
                 # Update position quantity
                 self.active_positions[assessment.position_id]["current_quantity"] -= scale_quantity
             else:
-    passpassself.logger.error(f"❌ Failed to execute scale down for position {assessment.position_id}")
+                self.logger.error(f"❌ Failed to execute scale down for position {assessment.position_id}")
 
         except Exception as e:
-    passpasspasspasspasspasspasspassself.logger.error(failed(f"❌ Error executing scale down: {e}"))
+            self.logger.error(failed(f"❌ Error executing scale down: {e}"))
 
-    async def _execute_take_profit(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def _execute_take_profit(self, assessment: PositionAssessment) -> None:
+        """Execute take profit for a position."""
+        try:
             self.logger.info(f"💰 Executing take profit for position {assessment.position_id}")
             
             # Take profit on 50% of position
@@ -467,21 +438,18 @@ except Exception as e:
             )
 
             if success:
-    passpassself.logger.info(f"✅ Take profit executed for position {assessment.position_id}")
+                self.logger.info(f"✅ Take profit executed for position {assessment.position_id}")
                 # Update position quantity
                 self.active_positions[assessment.position_id]["current_quantity"] -= profit_quantity
             else:
-    passpassself.logger.error(f"❌ Failed to execute take profit for position {assessment.position_id}")
+                self.logger.error(f"❌ Failed to execute take profit for position {assessment.position_id}")
 
         except Exception as e:
-    passpasspasspasspasspasspasspassself.logger.error(failed(f"❌ Error executing take profit: {e}"))
+            self.logger.error(failed(f"❌ Error executing take profit: {e}"))
 
-    async def _send_alert(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def _send_alert(self, assessment: PositionAssessment) -> None:
+        """Send alert for position assessment."""
+        try:
             # Immediate alert system
             alert_data = {
                 "position_id": assessment.position_id,
@@ -495,94 +463,91 @@ except Exception as e:
 
             # Log alert
             if assessment.alert_severity == "critical":
-    passself.logger.critical(f"🚨 CRITICAL ALERT: {assessment.alert_message}")
+                self.logger.critical(f"🚨 CRITICAL ALERT: {assessment.alert_message}")
             elif assessment.alert_severity == "warning":
-    passpassself.logger.warning(f"⚠️ WARNING: {assessment.alert_message}")
+                self.logger.warning(f"⚠️ WARNING: {assessment.alert_message}")
             else:
-    passself.logger.info(f"ℹ️ INFO: {assessment.alert_message}")
+                self.logger.info(f"ℹ️ INFO: {assessment.alert_message}")
 
             # Send to external alert system (email, Slack, etc.) - implementation will be added in future updates
             # await self._send_external_alert(alert_data)
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(failed(f"❌ Error sending alert: {e}"))
+            self.logger.error(failed(f"❌ Error sending alert: {e}"))
 
-    async def _get_current_price(...) -> ...:
-    """..."""
-    passtry:
-    pass# Implement actual price fetching - will be added in future updates
+    async def _get_current_price(self, symbol: str) -> Optional[float]:
+        """Get current price for a symbol."""
+        try:
+            # Implement actual price fetching - will be added in future updates
             # For now, return a placeholder
             return 50000.0  # Placeholder price
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(failed(f"❌ Error getting current price: {e}"))
+            self.logger.error(failed(f"❌ Error getting current price: {e}"))
             return None
 
-    def add_position(...) -> ...:
-    """..."""
-    passtry:
-    passposition_id = position_data["position_id"]
+    def add_position(self, position_data: Dict[str, Any]) -> None:
+        """Add a position to monitoring."""
+        try:
+            position_id = position_data["position_id"]
             self.active_positions[position_id] = position_data
             self.logger.info(f"✅ Added position {position_id} to monitoring")
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(failed(f"❌ Error adding position: {e}"))
+            self.logger.error(failed(f"❌ Error adding position: {e}"))
 
-    def remove_position(...) -> ...:
-    """..."""
-    passtry:
-    passif position_id in self.active_positions:
-    passself.active_positions.pop(position_id)
+    def remove_position(self, position_id: str) -> None:
+        """Remove a position from monitoring."""
+        try:
+            if position_id in self.active_positions:
+                self.active_positions.pop(position_id)
                 self.logger.info(f"✅ Removed position {position_id} from monitoring")
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(failed(f"❌ Error removing position: {e}"))
+            self.logger.error(failed(f"❌ Error removing position: {e}"))
 
-    def get_position_assessments(...) -> ...:
-    """..."""
-    passtry:
-    passif limit:
-    passreturn self.assessment_history[-limit:]
+    def get_position_assessments(self, limit: Optional[int] = None) -> List[PositionAssessment]:
+        """Get position assessments with optional limit."""
+        try:
+            if limit:
+                return self.assessment_history[-limit:]
             return self.assessment_history.copy()
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(failed(f"❌ Error getting position assessments: {e}"))
+            self.logger.error(failed(f"❌ Error getting position assessments: {e}"))
             return []
 
-    def get_active_positions(...) -> ...:
-    """..."""
-    passreturn self.active_positions.copy()
+    def get_active_positions(self) -> Dict[str, Dict[str, Any]]:
+        """Get all active positions."""
+        return self.active_positions.copy()
 
-    async def cleanup(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def cleanup(self) -> None:
+        """Clean up the position monitor."""
+        try:
             # Stop monitoring
             await self.stop_monitoring()
 
             # Cleanup component managers
             if self.order_manager:
-    passawait self.order_manager.cleanup()
+                await self.order_manager.cleanup()
 
             if self.position_strategy:
-    passawait self.position_strategy.cleanup()
+                await self.position_strategy.cleanup()
 
             self.logger.info("✅ Position Monitor cleanup completed")
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(failed(f"❌ Position Monitor cleanup failed: {e}"))
+            self.logger.error(failed(f"❌ Position Monitor cleanup failed: {e}"))
 
 
 # Setup function for easy integration
-async def setup_position_monitor(...) -> ...:
-    pass"""..."""
-    passtry:
-    passmonitor = PositionMonitor(config)
+async def setup_position_monitor(config: Dict[str, Any]) -> Optional[PositionMonitor]:
+    """Setup and return a configured position monitor."""
+    try:
+        monitor = PositionMonitor(config)
         if await monitor.initialize():
-    passreturn monitor
+            return monitor
         return None
     except Exception as e:
-    passpasspasspasspasspasspasssystem_logger.error(f"Failed to setup position monitor: {e}")
+        system_logger.error(f"Failed to setup position monitor: {e}")
         return None

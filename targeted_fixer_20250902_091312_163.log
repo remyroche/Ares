@@ -1,0 +1,17 @@
+2025-09-02 09:13:12,166 - INFO - Processing file: src/tactician/position_monitor.py
+2025-09-02 09:13:12,167 - INFO - Performing semantic analysis...
+2025-09-02 09:13:12,181 - INFO - Code quality score: 0.54
+2025-09-02 09:13:12,181 - WARNING - Semantic issues found: 40
+2025-09-02 09:13:12,181 - WARNING - Structure issues found: 21
+2025-09-02 09:13:12,184 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:13:12,187 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:13:12,189 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 09:13:12,190 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 09:13:12,192 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:13:12,194 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:13:12,195 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:13:12,200 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:13:12,200 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:13:12,200 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:13:12,204 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:13:12,207 - INFO - No fixes needed for: src/tactician/position_monitor.py

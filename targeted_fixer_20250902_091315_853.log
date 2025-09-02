@@ -1,0 +1,13 @@
+2025-09-02 09:13:15,857 - INFO - Processing file: src/tactician/position_sizer.py
+2025-09-02 09:13:15,857 - INFO - Performing semantic analysis...
+2025-09-02 09:13:15,874 - INFO - Code quality score: 0.51
+2025-09-02 09:13:15,874 - WARNING - Semantic issues found: 53
+2025-09-02 09:13:15,874 - WARNING - Structure issues found: 24
+2025-09-02 09:13:15,882 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:13:15,893 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:13:15,902 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:13:15,913 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:13:15,913 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:13:15,914 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:13:15,934 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:13:15,938 - INFO - No fixes needed for: src/tactician/position_sizer.py

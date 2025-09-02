@@ -26,7 +26,7 @@ from src.utils.base_validator import BaseValidator
 class Step21SavingValidator(BaseValidator):
 	"""Validator for Step 21: Extended Saving."""
 
-    def __init__(self = config: Dict[str = Any]) -> None:
+	def __init__(self, config: Dict[str, Any]) -> None:
 		super().__init__("step21_saving", config)
 
 	async def validate(
@@ -490,7 +490,7 @@ async def run_validator(
 	training_input: Dict[str, Any],
 	pipeline_state: Dict[str, Any],
 ) -> Dict[str, Any]:
-	"""Run the step16_saving validator.
+	"""Run the step21_saving validator.
 
 	Args:
 		training_input: Training input parameters
@@ -500,11 +500,11 @@ async def run_validator(
 		Dictionary containing validation results
 
 	"""
-	validator = Step16SavingValidator(CONFIG)
+	validator = Step21SavingValidator(CONFIG)
 	validation_passed = await validator.validate(training_input, pipeline_state)
 
 	return {
-		"step_name": "step16_saving",
+		"step_name": "step21_saving",
 		"validation_passed": validation_passed,
 		"validation_results": validator.validation_results,
 		"duration": 0,  # Could be enhanced to track actual duration

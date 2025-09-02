@@ -1,74 +1,161 @@
 #!/usr/bin/env python3
 """
-Simple syntax checker for Python files.
+Simple Python syntax checker that identifies syntax issues in Python files.
 """
 
-import os
-import sys
 import ast
+import tokenize
+import sys
+import os
 from pathlib import Path
+from typing import List, Dict, Any, Tuple
 
-def check_syntax(file_path):
-    """Check if a Python file has valid syntax."""
-    try:
-        with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+
+class SyntaxChecker:
+    """Check Python files for syntax errors."""
+    
+    def __init__(self):
+        self.syntax_errors = []
+        self.valid_files = []
+        self.invalid_files = []
         
-        # Try to compile the code
-        compile(content, file_path, 'exec')
+    def check_file(self, file_path: str) -> Tuple[bool, List[str]]:
+        """
+        Check a single Python file for syntax errors.
         
-        # Try to parse the AST
-        ast.parse(content, filename=file_path)
+        Args:
+            file_path: Path to the Python file
+            
+        Returns:
+            Tuple of (is_valid, list_of_errors)
+        """
+        errors = []
         
-        return True, None
-    except SyntaxError as e:
-        return False, f"SyntaxError: {e.msg} at line {e.lineno}"
-    except UnicodeDecodeError as e:
-        return False, f"UnicodeDecodeError: {e}"
-    except Exception as e:
-        return False, f"Error: {e}"
+        try:
+            # Try to parse with AST
+            with open(file_path, 'r', encoding='utf-8') as f:
+                source = f.read()
+                
+            # Check if file is empty
+            if not source.strip():
+                return True, ["File is empty"]
+                
+            # Parse with AST
+            ast.parse(source)
+            
+            # Try to tokenize
+            with open(file_path, 'rb') as f:
+                list(tokenize.tokenize(f.readline))
+                
+            return True, []
+            
+        except SyntaxError as e:
+            error_msg = f"SyntaxError: {e.msg} at line {e.lineno}, column {e.offset or 'unknown'}"
+            errors.append(error_msg)
+            return False, errors
+            
+        except UnicodeDecodeError as e:
+            error_msg = f"UnicodeDecodeError: {e}"
+            errors.append(error_msg)
+            return False, errors
+            
+        except Exception as e:
+            error_msg = f"Error: {e}"
+            errors.append(error_msg)
+            return False, errors
+    
+    def check_directory(self, directory: str) -> Dict[str, Any]:
+        """
+        Check all Python files in a directory.
+        
+        Args:
+            directory: Directory to check
+            
+        Returns:
+            Dictionary with results
+        """
+        directory_path = Path(directory)
+        python_files = list(directory_path.rglob("*.py"))
+        
+        print(f"Checking {len(python_files)} Python files for syntax issues...")
+        
+        for file_path in python_files:
+            try:
+                is_valid, errors = self.check_file(str(file_path))
+                
+                if is_valid:
+                    self.valid_files.append(str(file_path))
+                else:
+                    self.invalid_files.append(str(file_path))
+                    for error in errors:
+                        self.syntax_errors.append({
+                            'file': str(file_path),
+                            'error': error
+                        })
+                        
+            except Exception as e:
+                print(f"Error checking {file_path}: {e}")
+        
+        return self._generate_summary()
+    
+    def _generate_summary(self) -> Dict[str, Any]:
+        """Generate summary of results."""
+        return {
+            'total_files': len(self.valid_files) + len(self.invalid_files),
+            'valid_files': len(self.valid_files),
+            'invalid_files': len(self.invalid_files),
+            'total_errors': len(self.syntax_errors),
+            'syntax_errors': self.syntax_errors,
+            'valid_file_list': self.valid_files,
+            'invalid_file_list': self.invalid_files
+        }
+
 
 def main():
-    """Main function to check all Python files."""
-    workspace_path = Path(".")
-    python_files = list(workspace_path.rglob("*.py"))
+    """Main function."""
+    if len(sys.argv) != 2:
+        print("Usage: python3 syntax_checker.py <directory>")
+        sys.exit(1)
     
-    print(f"Checking {len(python_files)} Python files for syntax errors...\n")
+    directory = sys.argv[1]
     
-    files_with_issues = []
-    total_issues = 0
+    if not os.path.isdir(directory):
+        print(f"Error: {directory} is not a directory")
+        sys.exit(1)
     
-    for file_path in python_files:
-        # Skip the code_quality directory for now since it has dependency issues
-        if "code_quality" in str(file_path):
-            continue
-            
-        is_valid, error = check_syntax(file_path)
+    checker = SyntaxChecker()
+    results = checker.check_directory(directory)
+    
+    print("\n" + "="*60)
+    print("SYNTAX CHECK RESULTS")
+    print("="*60)
+    print(f"Total Python files: {results['total_files']}")
+    print(f"Valid files: {results['valid_files']}")
+    print(f"Files with syntax issues: {results['invalid_files']}")
+    print(f"Total syntax errors: {results['total_errors']}")
+    
+    if results['syntax_errors']:
+        print("\n" + "="*60)
+        print("FILES WITH SYNTAX ISSUES:")
+        print("="*60)
         
-        if not is_valid:
-            files_with_issues.append((file_path, error))
-            total_issues += 1
-            print(f"❌ {file_path}: {error}")
-        else:
-            print(f"✅ {file_path}")
-    
-    print(f"\n{'='*60}")
-    print(f"SUMMARY:")
-    print(f"Total Python files checked: {len(python_files)}")
-    print(f"Files with syntax issues: {len(files_with_issues)}")
-    print(f"Total syntax errors: {total_issues}")
-    
-    if files_with_issues:
-        print(f"\nFILES WITH SYNTAX ISSUES:")
-        print(f"{'='*60}")
-        for file_path, error in files_with_issues:
-            print(f"\n📁 {file_path}")
-            print(f"   Error: {error}")
+        # Group errors by file
+        errors_by_file = {}
+        for error in results['syntax_errors']:
+            file_path = error['file']
+            if file_path not in errors_by_file:
+                errors_by_file[file_path] = []
+            errors_by_file[file_path].append(error['error'])
+        
+        for file_path, errors in errors_by_file.items():
+            print(f"\n{file_path}:")
+            for error in errors:
+                print(f"  - {error}")
     else:
-        print(f"\n🎉 All Python files have valid syntax!")
+        print("\n✅ All Python files have valid syntax!")
     
-    return len(files_with_issues)
+    print("\n" + "="*60)
+
 
 if __name__ == "__main__":
-    exit_code = main()
-    sys.exit(exit_code)
+    main()

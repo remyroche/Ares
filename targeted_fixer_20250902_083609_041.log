@@ -1,0 +1,31 @@
+2025-09-02 08:36:09,045 - INFO - Processing file: src/utils/comprehensive_file_validation.py
+2025-09-02 08:36:09,045 - INFO - Performing semantic analysis...
+2025-09-02 08:36:09,046 - INFO - Code quality score: 0.00
+2025-09-02 08:36:09,046 - WARNING - Syntax errors found: 1
+2025-09-02 08:36:09,046 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:36:09,048 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:09,049 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:09,051 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:09,053 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:09,054 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:09,056 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:09,058 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:09,059 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:09,061 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:09,062 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:09,064 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:09,066 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:09,067 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:09,069 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:09,071 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:09,073 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:09,076 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:09,078 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:09,080 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:09,082 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:09,083 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:09,087 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:36:09,087 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:36:09,087 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:36:09,094 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:09,097 - INFO - No fixes needed for: src/utils/comprehensive_file_validation.py

@@ -1,0 +1,27 @@
+2025-09-02 08:17:58,069 - INFO - Processing file: src/utils/model_performance_monitor.py
+2025-09-02 08:17:58,069 - INFO - Performing semantic analysis...
+2025-09-02 08:17:58,070 - INFO - Code quality score: 0.00
+2025-09-02 08:17:58,070 - WARNING - Syntax errors found: 1
+2025-09-02 08:17:58,070 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:17:58,071 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:58,072 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:58,073 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:58,074 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:58,075 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:58,076 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:58,081 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:58,082 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:58,083 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:58,084 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:58,085 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:58,086 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:58,089 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:58,089 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:17:58,090 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:17:58,091 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:58,096 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:58,097 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:17:58,098 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:58,098 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:17:58,102 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:58,106 - INFO - No fixes needed for: src/utils/model_performance_monitor.py

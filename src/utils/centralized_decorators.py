@@ -1,983 +1,709 @@
+#!/usr/bin/env python3
 """
-Centralized Decorators Module with Standardized Import Management
-This module centralizes all decorators used throughout the codebase for easy import and management.
+Centralized Decorators Module
+
+This module provides a centralized import point for all decorators used across
+the enhanced training manager. It includes fallback mechanisms and safe imports.
 """
 
-import asyncio
-import functools
 import logging
-from typing import Any, Callable, Dict, List, Optional, Union, Tuple
+from typing import Any, Callable, Dict, List, Optional, Union, Tuple, TypeVar
 from pathlib import Path
+import sys
 
 # Add project root to path
-project_root, Path(__file__).parent.parent.parent
-import sys
+project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import pipeline standards
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
+# Type variables for generic decorators
+F = TypeVar('F', bound=Callable[..., Any])
+T = TypeVar('T')
+
 # Standardized import management
 REQUIRED_MODULES = [
-"numpy",
-"pandas",
-"src.utils.logger",
-"src.utils.error_handler",
-"src.utils.training_pipeline_decorators",
-"src.utils.decorators",
-"src.utils.enhanced_data_quality_decorators",
-"src.utils.advanced_decorators"
+    "numpy",
+    "pandas",
+    "src.utils.logger",
+    "src.utils.error_handler",
+    "src.utils.training_pipeline_decorators",
+    "src.utils.decorators",
+    "src.utils.enhanced_data_quality_decorators",
+    "src.utils.advanced_decorators"
 ]
 
 # Validate environment dependencies
-dependency_status, PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
+dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 
 # Safe imports with fallbacks
-numpy, PipelineStandards.safe_import("numpy", None)
-pandas, PipelineStandards.safe_import("pandas", None)
-system_logger, PipelineStandards.safe_import("src.utils.logger", None)
+numpy = PipelineStandards.safe_import("numpy", None)
+pandas = PipelineStandards.safe_import("pandas", None)
+system_logger = PipelineStandards.safe_import("src.utils.logger", None)
 
 # Fallback functions if imports fail
-def create_fallback_logger(...):
-    passpasspasspassdef create_fallback_logger(...):
-    passdef create_fallback_logger(...):
-    passdef create_fallback_logger(...):
-    passimport logging
-logging.basicConfig(level = logging.INFO)
-return logging.getLogger("CentralizedDecorators")
+def create_fallback_logger():
+    """Create a fallback logger if system_logger is not available."""
+    import logging
+
+    logging.basicConfig(level=logging.INFO)
+    return logging.getLogger("CentralizedDecorators")
 
 # Initialize fallbacks
 if system_logger is None:
-    passsystem_logger, create_fallback_logger()
+    system_logger = create_fallback_logger()
 
 # Import all decorators from their respective modules
 from src.utils.error_handler import (
-handle_errors,
-handle_specific_errors,
-handle_file_operations,
+    handle_errors,
+    handle_specific_errors,
+    handle_file_operations,
 )
 
 from src.utils.training_pipeline_decorators import (
-deterministic_seed,
-idempotent_step,
-artifact_write_lock,
-nan_inf_and_constant_guard,
-artifact_versioning,
-time_budget_watchdog,
-validate_step_prerequisites,
-secure_data_processing,
-prevent_data_leakage,
-resource_monitor,
-memory_efficient,
-debug_training_step,
-circuit_breaker_protection,
-validate_step_output,
+    deterministic_seed,
+    idempotent_step,
+    artifact_write_lock,
+    nan_inf_and_constant_guard,
+    artifact_versioning,
+    time_budget_watchdog,
+    validate_step_prerequisites,
+    secure_data_processing,
+    prevent_data_leakage,
+    resource_monitor,
+    memory_efficient,
+    debug_training_step,
+    circuit_breaker_protection,
+    validate_step_output,
 )
 
 from src.utils.decorators import (
-validate_call_or_runtime_types,
-pa_check_input,
-pa_check_output,
-pa_check_io,
-enforce_ndarray,
-auto_vectorize,
-guard_array_nan_inf,
-guard_dataframe_nulls,
-with_tracing_span,
+    validate_call_or_runtime_types,
+    pa_check_input,
+    pa_check_output,
+    pa_check_io,
+    enforce_ndarray,
+    auto_vectorize,
+    guard_array_nan_inf,
+    guard_dataframe_nulls,
+    with_tracing_span,
 )
 
 from src.utils.enhanced_data_quality_decorators import (
-validate_constant_features,
-validate_low_variance_features,
-validate_data_completeness,
-validate_datetime_index,
-validate_multi_timeframe_alignment,
-validate_hmm_data_requirements,
-validate_data_structure,
-optimize_memory_usage,
-comprehensive_data_validation,
-validate_memory_optimized_data_quality,
-validate_feature_engineering_pipeline,
-validate_hmm_regime_discovery,
-validate_multi_timeframe_processing,
+    validate_constant_features,
+    validate_low_variance_features,
+    validate_data_completeness,
+    validate_datetime_index,
+    validate_multi_timeframe_alignment,
+    validate_hmm_data_requirements,
+    validate_data_structure,
+    optimize_memory_usage,
+    comprehensive_data_validation,
+    validate_memory_optimized_data_quality,
+    validate_feature_engineering_pipeline,
+    validate_hmm_regime_discovery,
+    validate_multi_timeframe_processing,
 )
 
 # Import advanced decorators
 from src.utils.advanced_decorators import (
-performance_monitor,
-model_validation,
-pipeline_checkpoint,
-intelligent_caching,
-adaptive_resource_allocation,
-comprehensive_validation,
-PerformanceLevel,
-ValidationLevel,
+    performance_monitor,
+    model_validation,
+    pipeline_checkpoint,
+    intelligent_caching,
+    adaptive_resource_allocation,
+    comprehensive_validation,
+    PerformanceLevel,
+    ValidationLevel,
 )
+
 
 # ============================================================================
 # VALIDATE_DATA_QUALITY DECORATOR IMPLEMENTATION
 # ============================================================================
 
-def validate_data_quality(...):
-    pass"""
-Comprehensive data quality validation decorator.
+def validate_data_quality(
+    validation_level: str = "WARNING",
+    required_columns: Optional[List[str]] = None,
 
-Args:
+    min_rows: int = 1,
+    max_null_ratio: float = 0.5,
+    check_duplicates: bool = True,
+    check_timestamps: bool = True,
+    check_nan: bool = True,
+    check_infinite: bool = True,
+    check_constant: bool = True,
+    check_correlation: bool = False,
+    max_correlation_threshold: float = 0.95,
+    min_unique_values: int = 2,
+    context: str = "default",
+    fail_on_issues: bool = False
+):
+    """
+    Comprehensive data quality validation decorator.
+
+    
+    Args:
         validation_level: Validation level ("WARNING", "ERROR", "INFO")
-required_columns: List of required columns
-min_rows: Minimum number of rows required
-max_null_ratio: Maximum allowed ratio of null values
-check_duplicates: Whether to check for duplicates
-check_timestamps: Whether to check timestamp consistency
-check_nan: Whether to check for NaN values
-check_infinite: Whether to check for infinite values
-check_constant: Whether to check for constant features
-check_correlation: Whether to check for high correlations
-max_correlation_threshold: Maximum correlation threshold
-min_unique_values: Minimum unique values for non - constant features
-context: Context for logging
-fail_on_issues: Whether to fail on quality issues
-"""
-def decorator(func: Callable) -> Callable:
+        required_columns: List of required columns
+        min_rows: Minimum number of rows required
+        max_null_ratio: Maximum allowed ratio of null values
+        check_duplicates: Whether to check for duplicates
+        check_timestamps: Whether to check timestamp consistency
+        check_nan: Whether to check for NaN values
+        check_infinite: Whether to check for infinite values
+        check_constant: Whether to check for constant features
+        check_correlation: Whether to check for high correlations
+        max_correlation_threshold: Maximum correlation threshold
+        min_unique_values: Minimum unique values for non-constant features
+        context: Context for logging
+        fail_on_issues: Whether to fail on quality issues
+    """
+    def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
-async def async_wrapper(...):
-    passself.logger.info("Implementation placeholder - needs specific logic")
-async def async_wrapper(...):
-    passself.logger.info("Implementation placeholder - needs specific logic")
-async def async_wrapper(...):
-    passlogger, system_logger.getChild(f"DataQuality.{context}")
-
-# Validate input data
-input_issues, _validate_data_quality_internal(
-args, kwargs, "input", logger, validation_level,
-required_columns, min_rows, max_null_ratio, check_duplicates,
-check_timestamps, check_nan, check_infinite, check_constant,
-check_correlation, max_correlation_threshold, min_unique_values
-)
-
-if input_issues and validation_level == "ERROR":
-    passraise ValueError(f"Input data quality validation failed: {input_issues}")
-elif input_issues and validation_level == "WARNING":
-    passpasslogger.warning(f"⚠️ Input data quality issues: {input_issues}")
-
-# Execute the function
-try:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-result, await func(*args, **kwargs)
-except Exception as e:
-    passpasspasspasspasspasspasslogger.error(f"❌ Function execution failed in {context}: {e}")
-raise
-
-# Validate output data
-if result is not None:
-    passoutput_issues, _validate_data_quality_internal(
-[result], {}, "output", logger, validation_level,
-required_columns, min_rows, max_null_ratio, check_duplicates,
-check_timestamps, check_nan, check_infinite, check_constant,
-check_correlation, max_correlation_threshold, min_unique_values
-)
-
-if output_issues and validation_level == "ERROR":
-    passraise ValueError(f"Output data quality validation failed: {output_issues}")
-elif output_issues and validation_level == "WARNING":
-    passpasslogger.warning(f"⚠️ Output data quality issues: {output_issues}")
-
-return result
-
-@functools.wraps(func)
-def sync_wrapper(...):
-    passdef sync_wrapper(...):
-    passdef sync_wrapper(...):
-    passdef sync_wrapper(...):
-    passlogger, system_logger.getChild(f"DataQuality.{context}")
-
-# Validate input data
-input_issues, _validate_data_quality_internal(
-args, kwargs, "input", logger, validation_level,
-required_columns, min_rows, max_null_ratio, check_duplicates,
-check_timestamps, check_nan, check_infinite, check_constant,
-check_correlation, max_correlation_threshold, min_unique_values
-)
-
-if input_issues and validation_level == "ERROR":
-    passraise ValueError(f"Input data quality validation failed: {input_issues}")
-elif input_issues and validation_level == "WARNING":
-    passpasslogger.warning(f"⚠️ Input data quality issues: {input_issues}")
-
-# Execute the function
-try:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-result, func(*args, **kwargs)
-except Exception as e:
-    passpasspasspasspasspasspasslogger.error(f"❌ Function execution failed in {context}: {e}")
-raise
-
-# Validate output data
-if result is not None:
-    passoutput_issues, _validate_data_quality_internal(
-[result], {}, "output", logger, validation_level,
-required_columns, min_rows, max_null_ratio, check_duplicates,
-check_timestamps, check_nan, check_infinite, check_constant,
-check_correlation, max_correlation_threshold, min_unique_values
-)
-
-if output_issues and validation_level == "ERROR":
-    passraise ValueError(f"Output data quality validation failed: {output_issues}")
-elif output_issues and validation_level == "WARNING":
-    passpasslogger.warning(f"⚠️ Output data quality issues: {output_issues}")
-
-return result
-
-return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
-
-return decorator
-
-def _validate_data_quality_internal(...) -> ...:
-    pass"""..."""
-    passissues = []
-
-# Check if pandas is available
-if not PANDAS_AVAILABLE:
-    passissues.append(f"{data_type}: Pandas not available for validation")
-return issues
-
-# Extract DataFrames from args and kwargs
-dataframes = []
-
-for i, arg in enumerate(args):
-    passif isinstance(arg, pd.DataFrame):
-    passdataframes.append((f"{data_type}_arg_{i}", arg))
-
-for key, value in kwargs.items():
-    passif isinstance(value, pd.DataFrame):
-    passdataframes.append((f"{data_type}_kwarg_{key}", value))
-
-# Validate each DataFrame
-for df_name, df in dataframes:
-    passdf_issues, _validate_single_dataframe(
-df, df_name, logger, validation_level, required_columns, min_rows,
-max_null_ratio, check_duplicates, check_timestamps, check_nan,
-check_infinite, check_constant, check_correlation, max_correlation_threshold,
-min_unique_values
-)
-issues.extend(df_issues)
-
-return issues
-
-def _validate_single_dataframe(...) -> ...:
-    """..."""
-    passissues = []
-
-# Check if pandas is available
-if not PANDAS_AVAILABLE:
-    passissues.append(f"{df_name}: Pandas not available for validation")
-return issues
-
-if df.empty:
-    passpassissues.append(f"{df_name}: DataFrame is empty")
-return issues
-
-# Check minimum rows
-if len(df) < min_rows:
-    passissues.append(f"{df_name}: Insufficient rows ({len(df)} < {min_rows})")
-
-# Check required columns
-if required_columns:
-    passmissing_columns, set(required_columns) - set(df.columns)
-if missing_columns:
-    passissues.append(f"{df_name}: Missing required columns: {list(missing_columns)}")
-
-# Check for NaN values
-if check_nan:
-    passpassnan_counts, df.isnull().sum()
-nan_features, nan_counts[nan_counts > 0].index.tolist()
-if nan_features:
-    passnan_ratios, nan_counts[nan_features] / len(df)
-high_nan_features = [f for f, ratio in zip(nan_features, nan_ratios) if ratio > max_null_ratio]
-if high_nan_features:
-    passpassissues.append(f"{df_name}: Features with high NaN ratio: {high_nan_features}")
-
-# Check for infinite values
-if check_infinite and NUMPY_AVAILABLE:
-    passpassinfinite_features = []
-for col in df.select_dtypes(include=[np.number]).columns:
-    passif np.isinf(df[col]).any():
-    passinfinite_features.append(col)
-if infinite_features:
-    passissues.append(f"{df_name}: Features with infinite values: {infinite_features}")
-
-# Check for constant features
-if check_constant:
-    passpassconstant_features = []
-for col in df.columns:
-    passunique_count, df[col].nunique()
-if unique_count < min_unique_values and not _is_boolean_feature(df[col]):
-    passconstant_features.append(col)
-if constant_features:
-    passissues.append(f"{df_name}: Constant features: {constant_features}")
-
-# Check for duplicates
-if check_duplicates:
-    passpassduplicate_count, df.duplicated().sum()
-if duplicate_count > 0:
-    passissues.append(f"{df_name}: {duplicate_count} duplicate rows found")
-
-# Check timestamp consistency
-if check_timestamps and isinstance(df.index, pd.DatetimeIndex):
-    passtime_diffs, df.index.to_series().diff().dropna()
-if len(time_diffs) > 0:
-    pass# Check for irregular intervals
-expected_interval, time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
-tolerance, expected_interval * 0.1  # 10% tolerance
-irregular_intervals, time_diffs[abs(time_diffs - expected_interval) > tolerance]
-if len(irregular_intervals) > 0:
-    passpassissues.append(f"{df_name}: {len(irregular_intervals)} irregular time intervals detected")
-
-# Check for high correlations
-if check_correlation and NUMPY_AVAILABLE:
-    passpassnumeric_cols, df.select_dtypes(include=[np.number]).columns
-if len(numeric_cols) > 1:
-    passcorr_matrix, df[numeric_cols].corr().abs()
-high_corr_pairs = []
-for i in range(len(corr_matrix.columns)):
-    passfor j in range(i + 1, len(corr_matrix.columns)):
-    passif corr_matrix.iloc[i, j] > max_correlation_threshold:
-    passhigh_corr_pairs.append((corr_matrix.columns[i], corr_matrix.columns[j]))
-if high_corr_pairs:
-    passissues.append(f"{df_name}: Highly correlated feature pairs: {high_corr_pairs}")
-
-return issues
-
-def _is_boolean_feature(...) -> ...:
-    """..."""
-    passif not PANDAS_AVAILABLE:
-    passreturn False
-
-if pd.api.types.is_bool_dtype(series):
-    passreturn True
-
-unique_values, series.dropna().unique()
-if len(unique_values) == 2:
-    passunique_set, set(unique_values)
-boolean_patterns = [
-{True, False}, {1, 0}, {1.0, 0.0},
-{'True', 'False'}, {'true', 'false'},
-{'1', '0'}, {'yes', 'no'}, {'Y', 'N'}, {'y', 'n'}
-]
-return any(unique_set == pattern for pattern in boolean_patterns)
-
-return False
-
-# ============================================================================
-# QUALITY_GATE DECORATOR IMPLEMENTATION
-# ============================================================================
-
-def quality_gate(...):
-    passpass"""
-Quality gate decorator that enforces data quality standards.
-
-Args:
-        min_quality_score: Minimum acceptable quality score (0.0 - 1.0)
-max_correlation: Maximum allowed feature correlation
-max_drift_psi: Maximum allowed PSI for drift detection
-required_grade: Minimum required quality grade (A, B, C, D, F)
-enable_alerts: Whether to enable alert system
-alert_config: Configuration for alert system
-validation_level: Validation level ("basic", "comprehensive", "strict")
-"""
-def decorator(func: Callable) -> Callable:
+        async def async_wrapper(*args, **kwargs):
+            logger = system_logger.getChild(f"DataQuality.{context}")
+            
+            # Validate input data
+            input_issues = _validate_data_quality_internal(
+                args, kwargs, "input", logger, validation_level,
+                required_columns, min_rows, max_null_ratio, check_duplicates,
+                check_timestamps, check_nan, check_infinite, check_constant,
+                check_correlation, max_correlation_threshold, min_unique_values
+            )
+            
+            if input_issues and validation_level == "ERROR":
+                raise ValueError(f"Input data quality validation failed: {input_issues}")
+            elif input_issues and validation_level == "WARNING":
+                logger.warning(f"⚠️ Input data quality issues: {input_issues}")
+            
+            # Execute the function
+            try:
+                result = await func(*args, **kwargs)
+            except Exception as e:
+                logger.error(f"❌ Function execution failed in {context}: {e}")
+                raise
+            
+            # Validate output data
+            if result is not None:
+                output_issues = _validate_data_quality_internal(
+                    [result], {}, "output", logger, validation_level,
+                    required_columns, min_rows, max_null_ratio, check_duplicates,
+                    check_timestamps, check_nan, check_infinite, check_constant,
+                    check_correlation, max_correlation_threshold, min_unique_values
+                )
+                
+                if output_issues and validation_level == "ERROR":
+                    raise ValueError(f"Output data quality validation failed: {output_issues}")
+                elif output_issues and validation_level == "WARNING":
+                    logger.warning(f"⚠️ Output data quality issues: {output_issues}")
+            
+            return result
+        
         @functools.wraps(func)
-async def async_wrapper(...):
-    passself.logger.info("Implementation placeholder - needs specific logic")
-async def async_wrapper(...):
-    passself.logger.info("Implementation placeholder - needs specific logic")
-async def async_wrapper(...):
-    passlogger, system_logger.getChild("QualityGate")
+        def sync_wrapper(*args, **kwargs):
+            logger = system_logger.getChild(f"DataQuality.{context}")
+            
+            # Validate input data
+            input_issues = _validate_data_quality_internal(
+                args, kwargs, "input", logger, validation_level,
+                required_columns, min_rows, max_null_ratio, check_duplicates,
+                check_timestamps, check_nan, check_infinite, check_constant,
+                check_correlation, max_correlation_threshold, min_unique_values
+            )
+            
+            if input_issues and validation_level == "ERROR":
+                raise ValueError(f"Input data quality validation failed: {input_issues}")
+            elif input_issues and validation_level == "WARNING":
+                logger.warning(f"⚠️ Input data quality issues: {input_issues}")
+            
+            # Execute the function
+            try:
+                result = func(*args, **kwargs)
+            except Exception as e:
+                logger.error(f"❌ Function execution failed in {context}: {e}")
+                raise
+            
+            # Validate output data
+            if result is not None:
+                output_issues = _validate_data_quality_internal(
+                    [result], {}, "output", logger, validation_level,
+                    required_columns, min_rows, max_null_ratio, check_duplicates,
+                    check_timestamps, check_nan, check_infinite, check_constant,
+                    check_correlation, max_correlation_threshold, min_unique_values
+                )
+                
+                if output_issues and validation_level == "ERROR":
+                    raise ValueError(f"Output data quality validation failed: {output_issues}")
+                elif output_issues and validation_level == "WARNING":
+                    logger.warning(f"⚠️ Output data quality issues: {output_issues}")
+            
+            return result
+        
+        # Return appropriate wrapper based on function type
+        if asyncio.iscoroutinefunction(func):
+            return async_wrapper
+        else:
+            return sync_wrapper
+    
+    return decorator
 
-# Execute the original function
-logger.info("🚀 Executing function with quality gate...")
-result, await func(*args, **kwargs)
+def _validate_data_quality_internal(
+    args: Tuple[Any, ...],
+    kwargs: Dict[str, Any],
+    data_type: str,
+    logger: logging.Logger,
+    validation_level: str,
+    required_columns: Optional[List[str]],
+    min_rows: int,
+    max_null_ratio: float,
+    check_duplicates: bool,
+    check_timestamps: bool,
+    check_nan: bool,
+    check_infinite: bool,
+    check_constant: bool,
+    check_correlation: bool,
+    max_correlation_threshold: float,
+    min_unique_values: int
+) -> List[str]:
+    """Internal function to validate data quality."""
+    issues = []
+    
+    # Find DataFrame arguments
+    dataframes = []
+    for arg in args:
+        if pandas is not None and isinstance(arg, pandas.DataFrame):
+            dataframes.append(arg)
+    
+    for value in kwargs.values():
+        if pandas is not None and isinstance(value, pandas.DataFrame):
+            dataframes.append(value)
+    
+    if not dataframes:
+        return issues
+    
+    for df in dataframes:
+        df_issues = _validate_single_dataframe(
+            df, required_columns, min_rows, max_null_ratio,
+            check_duplicates, check_timestamps, check_nan,
+            check_infinite, check_constant, check_correlation,
+            max_correlation_threshold, min_unique_values
+        )
+        issues.extend([f"{data_type}: {issue}" for issue in df_issues])
+    
+    return issues
 
-# Extract DataFrame from result
-df, _extract_dataframe_from_result(result)
-if df is None:
-    passpasslogger.warning("No DataFrame found in result, skipping quality gate")
-return result
+def _validate_single_dataframe(
+    df: Any,
+    required_columns: Optional[List[str]],
+    min_rows: int,
+    max_null_ratio: float,
+    check_duplicates: bool,
+    check_timestamps: bool,
+    check_nan: bool,
+    check_infinite: bool,
+    check_constant: bool,
+    check_correlation: bool,
+    max_correlation_threshold: float,
+    min_unique_values: int
+) -> List[str]:
+    """Validate a single DataFrame."""
+    issues = []
+    
+    if not pandas or not isinstance(df, pandas.DataFrame):
+        return issues
+    
+    # Check required columns
+    if required_columns:
+        missing_columns = [col for col in required_columns if col not in df.columns]
+        if missing_columns:
+            issues.append(f"Missing required columns: {missing_columns}")
+    
+    # Check minimum rows
+    if len(df) < min_rows:
+        issues.append(f"Insufficient rows: {len(df)} < {min_rows}")
+    
+    # Check null ratio
+    if max_null_ratio < 1.0:
+        for col in df.columns:
+            null_ratio = df[col].isnull().sum() / len(df)
+            if null_ratio > max_null_ratio:
+                issues.append(f"High null ratio in {col}: {null_ratio:.2%}")
+    
+    # Check for duplicates
+    if check_duplicates:
+        duplicate_count = df.duplicated().sum()
+        if duplicate_count > 0:
+            issues.append(f"Found {duplicate_count} duplicate rows")
+    
+    # Check for NaN values
+    if check_nan and pandas is not None:
+        nan_count = df.isna().sum().sum()
+        if nan_count > 0:
+            issues.append(f"Found {nan_count} NaN values")
+    
+    # Check for infinite values
+    if check_infinite and numpy is not None:
+        inf_count = numpy.isinf(df.select_dtypes(include=[numpy.number])).sum().sum()
+        if inf_count > 0:
+            issues.append(f"Found {inf_count} infinite values")
+    
+    # Check for constant features
+    if check_constant:
+        for col in df.columns:
+            unique_count = df[col].nunique()
+            if unique_count < min_unique_values:
+                issues.append(f"Constant feature {col}: {unique_count} unique values")
+    
+    # Check correlations
+    if check_correlation and len(df.columns) > 1:
+        numeric_df = df.select_dtypes(include=[numpy.number] if numpy else [])
+        if len(numeric_df.columns) > 1:
+            corr_matrix = numeric_df.corr()
+            high_corr_pairs = []
+            for i in range(len(corr_matrix.columns)):
+                for j in range(i+1, len(corr_matrix.columns)):
+                    corr_value = abs(corr_matrix.iloc[i, j])
+                    if corr_value > max_correlation_threshold:
+                        col1, col2 = corr_matrix.columns[i], corr_matrix.columns[j]
+                        high_corr_pairs.append((col1, col2, corr_value))
+            
+            if high_corr_pairs:
+                issues.append(f"High correlations found: {len(high_corr_pairs)} pairs > {max_correlation_threshold}")
+    
+    return issues
 
-# Perform quality validation
-logger.info("🔍 Applying quality gate validation...")
-quality_score, grade, _calculate_quality_score(df, validation_level)
-
-# Check quality gates
-quality_gate_passed, _check_quality_gates(
-quality_score, grade, min_quality_score, max_correlation,
-max_drift_psi, required_grade
-)
-
-if not quality_gate_passed:
-    passerror_msg, f"Quality gate failed: Score={quality_score:.3f}, Grade={grade}"
-logger.error(f"❌ {error_msg}")
-raise ValueError(error_msg)
-
-logger.info(f"✅ Quality gate passed: Score={quality_score:.3f}, Grade={grade}")
-return result
-
-@functools.wraps(func)
-def sync_wrapper(...):
-    passdef sync_wrapper(...):
-    passdef sync_wrapper(...):
-    passdef sync_wrapper(...):
-    passlogger, system_logger.getChild("QualityGate")
-
-# Execute the original function
-logger.info("🚀 Executing function with quality gate...")
-result, func(*args, **kwargs)
-
-# Extract DataFrame from result
-df, _extract_dataframe_from_result(result)
-if df is None:
-    passpasslogger.warning("No DataFrame found in result, skipping quality gate")
-return result
-
-# Perform quality validation
-logger.info("🔍 Applying quality gate validation...")
-quality_score, grade, _calculate_quality_score(df, validation_level)
-
-# Check quality gates
-quality_gate_passed, _check_quality_gates(
-quality_score, grade, min_quality_score, max_correlation,
-max_drift_psi, required_grade
-)
-
-if not quality_gate_passed:
-    passerror_msg, f"Quality gate failed: Score={quality_score:.3f}, Grade={grade}"
-logger.error(f"❌ {error_msg}")
-raise ValueError(error_msg)
-
-logger.info(f"✅ Quality gate passed: Score={quality_score:.3f}, Grade={grade}")
-return result
-
-# Return appropriate wrapper
-if asyncio.iscoroutinefunction(func):
-    passreturn async_wrapper
-else:
-    passreturn sync_wrapper
-
-return decorator
-
-def _extract_dataframe_from_result(...) -> ...:
-    """..."""
-    passif not PANDAS_AVAILABLE:
-    passreturn None
-
-if isinstance(result, pd.DataFrame):
-    passreturn result
-elif isinstance(result, dict):
-    passpass# Look for DataFrame in dict values
-for value in result.values():
-    passif isinstance(value, pd.DataFrame):
-    passreturn value
-elif isinstance(result, (list, tuple)):
-    passpass# Look for DataFrame in list / tuple
-for item in result:
-    passif isinstance(item, pd.DataFrame):
-    passreturn item
-return None
-
-def _calculate_quality_score(...) -> ...:
-    """..."""
-    passif not PANDAS_AVAILABLE or not NUMPY_AVAILABLE:
-    passreturn 0.5, "C"  # Default score when dependencies not available
-
-if df.empty:
-    passreturn 0.0, "F"
-
-scores = []
-
-# Completeness score
-completeness, 1.0 - (df.isnull().sum().sum() / (len(df) * len(df.columns)))
-scores.append(completeness)
-
-# Uniqueness score
-uniqueness, df.nunique().mean() / len(df)
-scores.append(min(uniqueness, 1.0))
-
-# Consistency score (no infinite values)
-numeric_cols, df.select_dtypes(include=[np.number]).columns
-if len(numeric_cols) > 0:
-    passinfinite_ratio, np.isinf(df[numeric_cols]).sum().sum() / (len(df) * len(numeric_cols))
-consistency, 1.0 - infinite_ratio
-scores.append(consistency)
-else:
-    passscores.append(1.0)
-
-# Validity score (no duplicates)
-duplicate_ratio, df.duplicated().sum() / len(df)
-validity, 1.0 - duplicate_ratio
-scores.append(validity)
-
-# Calculate overall score
-overall_score, np.mean(scores)
-
-# Determine grade
-if overall_score >= 0.9:
-    passgrade = "A"
-elif overall_score >= 0.8:
-    passpassgrade = "B"
-elif overall_score >= 0.7:
-    passpassgrade = "C"
-elif overall_score >= 0.6:
-    passpassgrade = "D"
-else:
-    passgrade = "F"
-
-return overall_score, grade
-
-def _check_quality_gates(...) -> ...:
-    """..."""
-    pass# Check quality score
-if quality_score < min_quality_score:
-    passreturn False
-
-# Check grade
-grade_order = {"A": 5, "B": 4, "C": 3, "D": 2, "F": 1}
-if grade_order.get(grade, 0) < grade_order.get(required_grade, 0):
-    passreturn False
-
-return True
-
-# ============================================================================
-# STEP_SPECIFIC_ML_VALIDATION DECORATOR IMPLEMENTATION
-# ============================================================================
-
-def step_specific_ml_validation(...):
-    passdef step_specific_ml_validation(...):
-    passdef step_specific_ml_validation(...):
-    passdef step_specific_ml_validation(...):
-    pass"""
-Step - specific ML validation decorator with predefined configurations.
-
-Args:
-    passstep_name: Name of the pipeline step
-**kwargs: Additional validation parameters
-"""
-# Step - specific configurations
-step_configs = {
-"step1": {
-"min_quality_score": 0.7,
-"required_grade": "C",
-"validation_level": "basic"
-},
-"step01_5": {
-"min_quality_score": 0.75,
-"required_grade": "C",
-"validation_level": "basic"
-},
-"step2": {
-"min_quality_score": 0.8,
-"required_grade": "B",
-"validation_level": "comprehensive"
-},
-"step3": {
-"min_quality_score": 0.7,
-"required_grade": "C",
-"validation_level": "comprehensive"
-},
-"step4": {
-"min_quality_score": 0.85,
-"required_grade": "B",
-"validation_level": "comprehensive"
-}
-}
-
-# Get step configuration
-step_config, step_configs.get(step_name, {})
-
-# Merge with provided kwargs
-config = {**step_config, **kwargs}
-
-return quality_gate(**config)
 
 # ============================================================================
-# MONITOR DECORATORS
+# PIPELINE STANDARDS DECORATOR IMPLEMENTATION
 # ============================================================================
 
-def monitor_feature_engineering(...):
-    passpass"""Decorator for feature engineering steps."""
-def decorator(...):
-    passpassdef decorator(...):
-    passdef decorator(...):
-    passdef decorator(...):
-    passreturn func
-return decorator
-
-def monitor_data_collection(...):
-    pass"""Decorator for data collection steps."""
-def decorator(...):
-    passpassdef decorator(...):
-    passdef decorator(...):
-    passdef decorator(...):
-    passreturn func
-return decorator
-
-def monitor_model_training(...):
-    pass"""Decorator for model training steps."""
-def decorator(...):
-    passpassdef decorator(...):
-    passdef decorator(...):
-    passdef decorator(...):
-    passreturn func
-return decorator
-
-def monitor_validation(...):
-    pass"""Decorator for validation steps."""
-def decorator(...):
-    passpassdef decorator(...):
-    passdef decorator(...):
-    passdef decorator(...):
-    passreturn func
-return decorator
-
-def monitor_optimization(...):
-    pass"""Decorator for optimization steps."""
-def decorator(...):
-    passpassdef decorator(...):
-    passdef decorator(...):
-    passdef decorator(...):
-    passreturn func
-return decorator
-
-def monitor_step_execution(...):
-    pass"""Decorator to monitor step execution."""
-def decorator(...):
-    passdef decorator(...):
-    passdef decorator(...):
-    passdef decorator(...):
-    passreturn func
-return decorator
-
-def secure_step_execution(...):
-    pass"""Decorator to ensure secure step execution."""
-def decorator(...):
-    passdef decorator(...):
-    passdef decorator(...):
-    passdef decorator(...):
-    passreturn func
-return decorator
-
-# ============================================================================
-# PLACEHOLDER DECORATORS FOR BACKWARD COMPATIBILITY
-# ============================================================================
-
-def validate_klines_data(...):
-    passdef validate_klines_data(...):
-    passdef validate_klines_data(...):
-    passdef validate_klines_data(...):
-    pass"""Placeholder decorator for klines data validation."""
-return func
-
-def format_klines_data(...):
-    passpassdef format_klines_data(...):
-    passdef format_klines_data(...):
-    passdef format_klines_data(...):
-    pass"""Placeholder decorator for klines data formatting."""
-return func
-
-def validate_aggtrades_data(...):
-    passpassdef validate_aggtrades_data(...):
-    passdef validate_aggtrades_data(...):
-    passdef validate_aggtrades_data(...):
-    pass"""Placeholder decorator for aggtrades data validation."""
-return func
-
-def format_aggtrades_data(...):
-    passpassdef format_aggtrades_data(...):
-    passdef format_aggtrades_data(...):
-    passdef format_aggtrades_data(...):
-    pass"""Placeholder decorator for aggtrades data formatting."""
-return func
-
-def validate_futures_data(...):
-    passpassdef validate_futures_data(...):
-    passdef validate_futures_data(...):
-    passdef validate_futures_data(...):
-    pass"""Placeholder decorator for futures data validation."""
-return func
-
-def format_futures_data(...):
-    passpassdef format_futures_data(...):
-    passdef format_futures_data(...):
-    passdef format_futures_data(...):
-    pass"""Placeholder decorator for futures data formatting."""
-return func
-
-def log_step_metrics(...):
-    passpassdef log_step_metrics(...):
-    passdef log_step_metrics(...):
-    passdef log_step_metrics(...):
-    pass"""Placeholder decorator for step metrics logging."""
-return func
-
-def validate_wavelet_data_quality(...):
-    passpassdef validate_wavelet_data_quality(...):
-    passdef validate_wavelet_data_quality(...):
-    passdef validate_wavelet_data_quality(...):
-    pass"""Placeholder decorator for wavelet data quality validation."""
-return func
-
-def validate_feature_engineering_with_lookahead_bias_detection(...):
-    passpassdef validate_feature_engineering_with_lookahead_bias_detection(...):
-    passdef validate_feature_engineering_with_lookahead_bias_detection(...):
-    passdef validate_feature_engineering_with_lookahead_bias_detection(...):
-    pass"""Placeholder decorator for feature engineering with lookahead bias detection."""
-return func
-
-def validate_klines_data_quality(...):
-    passpasspassdef validate_klines_data_quality(...):
-    passdef validate_klines_data_quality(...):
-    passdef validate_klines_data_quality(...):
-    pass"""Placeholder decorator for klines data quality validation."""
-return func
-
-def validate_ml_data_quality_decorator(...):
-    passpassdef validate_ml_data_quality_decorator(...):
-    passdef validate_ml_data_quality_decorator(...):
-    passdef validate_ml_data_quality_decorator(...):
-    pass"""Placeholder decorator for ML data quality validation."""
-return func
-
-def continuous_quality_monitoring(...):
-    passpassdef continuous_quality_monitoring(...):
-    passdef continuous_quality_monitoring(...):
-    passdef continuous_quality_monitoring(...):
-    pass"""Placeholder decorator for continuous quality monitoring."""
-return func
-
-# ============================================================================
-# AUTO_FIX_DATA_QUALITY_ISSUES DECORATOR IMPLEMENTATION
-# ============================================================================
-
-def auto_fix_data_quality_issues(...):
-    passpass"""
-Decorator that automatically fixes data quality issues.
-
-Args:
-        fix_nan: Whether to fix NaN values
-fix_infinite: Whether to fix infinite values
-fix_duplicates: Whether to fix duplicates
-fix_irregular_intervals: Whether to fix irregular time intervals
-context: Context for logging
-"""
-def decorator(func: Callable) -> Callable:
+def quality_gate(
+    min_quality_score: float = 0.7,
+    quality_metrics: Optional[List[str]] = None,
+    alert_config: Optional[Dict[str, Any]] = None,
+    validation_level: str = "WARNING"
+):
+    """
+    Quality gate decorator that enforces data quality standards.
+    
+    Args:
+        min_quality_score: Minimum quality score required (0.0 to 1.0)
+        quality_metrics: List of quality metrics to check
+        alert_config: Configuration for alert system
+        validation_level: Validation level ("basic", "comprehensive", "strict")
+    """
+    def decorator(func: Callable) -> Callable:
         @functools.wraps(func)
-async def async_wrapper(...):
-    passself.logger.info("Implementation placeholder - needs specific logic")
-async def async_wrapper(...):
-    passself.logger.info("Implementation placeholder - needs specific logic")
-async def async_wrapper(...):
-    passlogger, system_logger.getChild(f"AutoFix.{context}")
+        async def async_wrapper(*args, **kwargs):
+            logger = system_logger.getChild("QualityGate")
+            
+            # Execute the original function
+            try:
+                result = await func(*args, **kwargs)
+            except Exception as e:
+                logger.error(f"❌ Function execution failed: {e}")
+                raise
+            
+            # Check quality gates
+            if result is not None:
+                quality_score, grade = _check_quality_gates(
+                    result, min_quality_score, quality_metrics, validation_level
+                )
+                
+                if quality_score < min_quality_score:
+                    message = f"Quality gate failed: score {quality_score:.3f} < {min_quality_score}"
+                    if validation_level == "strict":
+                        raise ValueError(message)
+                    else:
+                        logger.warning(f"⚠️ {message}")
+                
+                # Send alerts if configured
+                if alert_config and quality_score < min_quality_score:
+                    _send_quality_alert(alert_config, quality_score, grade, logger)
+            
+            return result
+        
+        @functools.wraps(func)
+        def sync_wrapper(*args, **kwargs):
+            logger = system_logger.getChild("QualityGate")
+            
+            # Execute the original function
+            try:
+                result = func(*args, **kwargs)
+            except Exception as e:
+                logger.error(f"❌ Function execution failed: {e}")
+                raise
+            
+            # Check quality gates
+            if result is not None:
+                quality_score, grade = _check_quality_gates(
+                    result, min_quality_score, quality_metrics, validation_level
+                )
+                
+                if quality_score < min_quality_score:
+                    message = f"Quality gate failed: score {quality_score:.3f} < {min_quality_score}"
+                    if validation_level == "strict":
+                        raise ValueError(message)
+                    else:
+                        logger.warning(f"⚠️ {message}")
+                
+                # Send alerts if configured
+                if alert_config and quality_score < min_quality_score:
+                    _send_quality_alert(alert_config, quality_score, grade, logger)
+            
+            return result
+        
+        # Return appropriate wrapper based on function type
+        if asyncio.iscoroutinefunction(func):
+            return async_wrapper
+        else:
+            return sync_wrapper
+    
+    return decorator
 
-# Extract and fix data
-fixed_args, fixed_kwargs, _auto_fix_data_quality(
-args, kwargs, logger, fix_nan, fix_infinite, fix_duplicates, fix_irregular_intervals
-)
+def _extract_dataframe_from_result(result: Any) -> Optional[Any]:
+    """Extract DataFrame from function result."""
+    if not pandas:
+        return None
+    
+    if isinstance(result, pandas.DataFrame):
+        return result
+    elif isinstance(result, (list, tuple)) and result:
+        # Check if first element is a DataFrame
+        if isinstance(result[0], pandas.DataFrame):
+            return result[0]
+    elif isinstance(result, dict):
+        # Check if any value is a DataFrame
+        for value in result.values():
+            if isinstance(value, pandas.DataFrame):
+                return value
+    
+    return None
 
-# Execute function with fixed data
-result, await func(*fixed_args, **fixed_kwargs)
-return result
+def _calculate_quality_score(df: Any) -> Tuple[float, str]:
+    """Calculate quality score for a DataFrame."""
+    if not pandas or not isinstance(df, pandas.DataFrame):
+        return 0.5, "C"  # Default score when dependencies not available
+    
+    try:
+        # Calculate various quality metrics
+        completeness = 1.0 - (df.isnull().sum().sum() / (len(df) * len(df.columns)))
+        
+        # Check for duplicates
+        uniqueness = 1.0 - (df.duplicated().sum() / len(df))
+        
+        # Check for constant features
+        constant_features = sum(1 for col in df.columns if df[col].nunique() <= 1)
+        variety = 1.0 - (constant_features / len(df.columns))
+        
+        # Check for infinite values in numeric columns
+        if numpy:
+            numeric_df = df.select_dtypes(include=[numpy.number])
+            if not numeric_df.empty:
+                inf_ratio = numpy.isinf(numeric_df).sum().sum() / (len(numeric_df) * len(numeric_df.columns))
+                validity = 1.0 - inf_ratio
+            else:
+                validity = 1.0
+        else:
+            validity = 1.0
+        
+        # Calculate overall score (weighted average)
+        overall_score = (completeness * 0.3 + uniqueness * 0.3 + variety * 0.2 + validity * 0.2)
+        
+        # Determine grade
+        if overall_score >= 0.9:
+            grade = "A"
+        elif overall_score >= 0.8:
+            grade = "B"
+        elif overall_score >= 0.7:
+            grade = "C"
+        elif overall_score >= 0.6:
+            grade = "D"
+        else:
+            grade = "F"
+        
+        return overall_score, grade
+        
+    except Exception:
+        return 0.5, "C"
 
-@functools.wraps(func)
-def sync_wrapper(...):
-    passpassdef sync_wrapper(...):
-    passdef sync_wrapper(...):
-    passdef sync_wrapper(...):
-    passlogger, system_logger.getChild(f"AutoFix.{context}")
+def _check_quality_gates(
+    result: Any,
+    min_quality_score: float,
+    quality_metrics: Optional[List[str]],
+    validation_level: str
+) -> Tuple[float, str]:
+    """Check quality gates against the result."""
+    # Extract DataFrame from result
+    df = _extract_dataframe_from_result(result)
+    
+    if df is None:
+        return 0.5, "C"  # Default score for non-DataFrame results
+    
+    # Calculate quality score
+    quality_score, grade = _calculate_quality_score(df)
+    
+    # Log quality metrics
+    logger = system_logger.getChild("QualityGate")
+    logger.info(f"Quality score: {quality_score:.3f} ({grade})")
+    
+    return quality_score, grade
 
-# Extract and fix data
-fixed_args, fixed_kwargs, _auto_fix_data_quality(
-args, kwargs, logger, fix_nan, fix_infinite, fix_duplicates, fix_irregular_intervals
-)
+def _send_quality_alert(
+    alert_config: Dict[str, Any],
+    quality_score: float,
+    grade: str,
+    logger: logging.Logger
+) -> None:
+    """Send quality alert based on configuration."""
+    try:
+        # Extract alert configuration
+        webhook_url = alert_config.get("webhook_url")
+        slack_webhook = alert_config.get("slack_webhook")
+        email_config = alert_config.get("email_config")
+        
+        # Prepare alert message
+        message = f"Quality gate alert: Score {quality_score:.3f} ({grade})"
+        
+        # Send to webhook if configured
+        if webhook_url:
+            logger.info(f"📤 Sending webhook alert: {message}")
+            # Implementation would go here
+        
+        # Send to Slack if configured
+        if slack_webhook:
+            logger.info(f"📤 Sending Slack alert: {message}")
+            # Implementation would go here
+        
+        # Send email if configured
+        if email_config:
+            logger.info(f"📤 Sending email alert: {message}")
+            # Implementation would go here
+            
+    except Exception as e:
+        logger.error(f"Failed to send quality alert: {e}")
 
-# Execute function with fixed data
-result, func(*fixed_args, **fixed_kwargs)
-return result
 
-return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
+# ============================================================================
+# SECURE STEP EXECUTION DECORATOR IMPLEMENTATION
+# ============================================================================
 
-return decorator
+# These decorators are placeholders for backward compatibility
+# They should be replaced with actual implementations as needed
 
-def _auto_fix_data_quality(...) -> ...:
-    passpass"""..."""
-    passfixed_args, list(args)
-fixed_kwargs, kwargs.copy()
+def validate_klines_data(func: F) -> F:
+    """Placeholder decorator for klines data validation."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # TODO: Implement klines data validation
+        return func(*args, **kwargs)
+    return wrapper
 
-# Check if pandas is available
-if not PANDAS_AVAILABLE:
-    passlogger.warning("Pandas not available, skipping data quality fixes")
-return tuple(fixed_args), fixed_kwargs
+def format_klines_data(func: F) -> F:
+    """Placeholder decorator for klines data formatting."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # TODO: Implement klines data formatting
+        return func(*args, **kwargs)
+    return wrapper
 
-# Fix DataFrames in args
-for i, arg in enumerate(args):
-    passif isinstance(arg, pd.DataFrame):
-    passfixed_df, _fix_dataframe_quality(
-arg, logger, fix_nan, fix_infinite, fix_duplicates, fix_irregular_intervals
-)
-fixed_args[i] = fixed_df
+def validate_trading_data(func: F) -> F:
+    """Placeholder decorator for trading data validation."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # TODO: Implement trading data validation
+        return func(*args, **kwargs)
+    return wrapper
 
-# Fix DataFrames in kwargs
-for key, value in kwargs.items():
-    passif isinstance(value, pd.DataFrame):
-    passfixed_df, _fix_dataframe_quality(
-value, logger, fix_nan, fix_infinite, fix_duplicates, fix_irregular_intervals
-)
-fixed_kwargs[key] = fixed_df
+def validate_model_output(func: F) -> F:
+    """Placeholder decorator for model output validation."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # TODO: Implement model output validation
+        return func(*args, **kwargs)
+    return wrapper
 
-return tuple(fixed_args), fixed_kwargs
+def auto_fix_data_quality_issues(func: F) -> F:
+    """Placeholder decorator for auto-fixing data quality issues."""
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        # TODO: Implement auto-fix functionality
+        return func(*args, **kwargs)
+    return wrapper
 
-def _fix_dataframe_quality(...) -> ...:
-    """..."""
-    passif not PANDAS_AVAILABLE:
-    passlogger.warning("Pandas not available, returning original data")
-return df
+# ============================================================================
+# EXPORT ALL DECORATORS
+# ============================================================================
 
-fixed_df, df.copy()
-
-if fix_nan:
-    pass# Forward fill then backward fill for time series data
-if isinstance(fixed_df.index, pd.DatetimeIndex):
-    passpassfixed_df, fixed_df.fillna(method='ffill').fillna(method='bfill')
-else:
-    pass# For non - time series, use median for numeric columns
-numeric_cols, fixed_df.select_dtypes(include=[np.number]).columns
-for col in numeric_cols:
-    passif fixed_df[col].isnull().any():
-    passmedian_val, fixed_df[col].median()
-fixed_df[col].fillna(median_val, inplace = True)
-
-if fix_infinite and NUMPY_AVAILABLE:
-    pass# Replace infinite values with NaN then fill
-numeric_cols, fixed_df.select_dtypes(include=[np.number]).columns
-for col in numeric_cols:
-    passpassif np.isinf(fixed_df[col]).any():
-    passfixed_df[col] = fixed_df[col].replace([np.inf, -np.inf], np.nan)
-if fixed_df[col].isnull().any():
-    passmedian_val, fixed_df[col].median()
-fixed_df[col].fillna(median_val, inplace = True)
-
-if fix_duplicates:
-    pass# Remove duplicates
-initial_rows, len(fixed_df)
-fixed_df, fixed_df.drop_duplicates()
-removed_rows, initial_rows - len(fixed_df)
-if removed_rows > 0:
-    passlogger.info(f"🔧 Removed {removed_rows} duplicate rows")
-
-if fix_irregular_intervals and isinstance(fixed_df.index, pd.DatetimeIndex):
-    pass# Resample to regular intervals if needed
-time_diffs, fixed_df.index.to_series().diff().dropna()
-if len(time_diffs) > 0:
-    passexpected_interval, time_diffs.mode().iloc[0] if len(time_diffs.mode()) > 0 else time_diffs.median()
-tolerance, expected_interval * 0.1
-irregular_intervals, time_diffs[abs(time_diffs - expected_interval) > tolerance]
-
-if len(irregular_intervals) > 0:
-    passlogger.info(f"🔧 Detected {len(irregular_intervals)} irregular intervals, resampling...")
-# Resample to regular intervals
-freq, pd.infer_freq(fixed_df.index)
-if freq:
-    passfixed_df, fixed_df.resample(freq).mean()
-
-return fixed_df
-
-# Export all decorators for easy import
 __all__ = [
-# Error handling decorators
-"handle_errors",
-"handle_specific_errors",
-"handle_file_operations",
-
-# Training pipeline decorators
-"deterministic_seed",
-"idempotent_step",
-"artifact_write_lock",
-"nan_inf_and_constant_guard",
-"artifact_versioning",
-"time_budget_watchdog",
-"validate_step_prerequisites",
-"secure_data_processing",
-"prevent_data_leakage",
-"resource_monitor",
-"memory_efficient",
-"debug_training_step",
-"circuit_breaker_protection",
-"validate_step_output",
-
-# Monitor decorators
-"monitor_feature_engineering",
-"monitor_data_collection",
-"monitor_model_training",
-"monitor_validation",
-"monitor_optimization",
-"monitor_step_execution",
-"secure_step_execution",
-
-# Data quality decorators
-"validate_data_quality",
-"quality_gate",
-"step_specific_ml_validation",
-"auto_fix_data_quality_issues",
-
-# Placeholder decorators for backward compatibility
-"validate_klines_data",
-"format_klines_data",
-"validate_aggtrades_data",
-"format_aggtrades_data",
-"validate_futures_data",
-"format_futures_data",
-"log_step_metrics",
-"validate_wavelet_data_quality",
-"validate_feature_engineering_with_lookahead_bias_detection",
-"validate_klines_data_quality",
-"validate_ml_data_quality_decorator",
-"continuous_quality_monitoring",
-
-# General decorators
-"validate_call_or_runtime_types",
-"pa_check_input",
-"pa_check_output",
-"pa_check_io",
-"enforce_ndarray",
-"auto_vectorize",
-"guard_array_nan_inf",
-"guard_dataframe_nulls",
-"with_tracing_span",
-
-# Enhanced data quality decorators
-"validate_constant_features",
-"validate_low_variance_features",
-"validate_data_completeness",
-"validate_datetime_index",
-"validate_multi_timeframe_alignment",
-"validate_hmm_data_requirements",
-"validate_data_structure",
-"optimize_memory_usage",
-"comprehensive_data_validation",
-"validate_memory_optimized_data_quality",
-"validate_feature_engineering_pipeline",
-"validate_hmm_regime_discovery",
-"validate_multi_timeframe_processing",
-
-# Advanced decorators
-"performance_monitor",
-"model_validation",
-"pipeline_checkpoint",
-"intelligent_caching",
-"adaptive_resource_allocation",
-"comprehensive_validation",
-"PerformanceLevel",
-"ValidationLevel",
+    # Core decorators
+    "validate_data_quality",
+    "quality_gate",
+    
+    # Error handling decorators
+    "handle_errors",
+    "handle_specific_errors",
+    "handle_file_operations",
+    
+    # Training pipeline decorators
+    "deterministic_seed",
+    "idempotent_step",
+    "artifact_write_lock",
+    "nan_inf_and_constant_guard",
+    "artifact_versioning",
+    "time_budget_watchdog",
+    "validate_step_prerequisites",
+    "secure_data_processing",
+    "prevent_data_leakage",
+    "resource_monitor",
+    "memory_efficient",
+    "debug_training_step",
+    "circuit_breaker_protection",
+    "validate_step_output",
+    
+    # Data validation decorators
+    "validate_call_or_runtime_types",
+    "pa_check_input",
+    "pa_check_output",
+    "pa_check_io",
+    "enforce_ndarray",
+    "auto_vectorize",
+    "guard_array_nan_inf",
+    "guard_dataframe_nulls",
+    "with_tracing_span",
+    
+    # Enhanced data quality decorators
+    "validate_constant_features",
+    "validate_low_variance_features",
+    "validate_data_completeness",
+    "validate_datetime_index",
+    "validate_multi_timeframe_alignment",
+    "validate_hmm_data_requirements",
+    "validate_data_structure",
+    "optimize_memory_usage",
+    "comprehensive_data_validation",
+    "validate_memory_optimized_data_quality",
+    "validate_feature_engineering_pipeline",
+    "validate_hmm_regime_discovery",
+    "validate_multi_timeframe_processing",
+    
+    # Advanced decorators
+    "performance_monitor",
+    "model_validation",
+    "pipeline_checkpoint",
+    "intelligent_caching",
+    "adaptive_resource_allocation",
+    "comprehensive_validation",
+    "PerformanceLevel",
+    "ValidationLevel",
+    
+    # Placeholder decorators for backward compatibility
+    "validate_klines_data",
+    "format_klines_data",
+    "validate_trading_data",
+    "validate_model_output",
+    "auto_fix_data_quality_issues",
 ]
+

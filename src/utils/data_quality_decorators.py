@@ -70,7 +70,8 @@ def _register_decorator_if_available(name: str, decorator: Callable, **kwargs):
             logging.debug(f"Could not register decorator {name}: {e}")
 
 def _create_cache_key(func: Callable, args: tuple, kwargs: dict) -> int:
-    """Create a cache key for function call."""
+    """Create a cache key for function arguments."""
+
     try:
         # Create a hash of function signature and arguments
         sig = inspect.signature(func)
@@ -104,22 +105,25 @@ def _apply_caching(wrapper_func: Callable, cache_size: int = 128, ttl_seconds: i
 
         # Execute and cache
         result = wrapper_func(*args, **kwargs)
+        
+        # Manage cache size
+        if len(cache) >= cache_size:
+            # Remove oldest entries
+            oldest_key = min(cache.keys(), key=lambda k: cache[k]['timestamp'])
+            del cache[oldest_key]
+        
+
         cache[cache_key] = {
             'result': result,
             'timestamp': current_time
         }
 
-        # Maintain cache size
-        if len(cache) > cache_size:
-            oldest_key = min(cache.keys(), key=lambda k: cache[k]['timestamp'])
-            del cache[oldest_key]
-
-        logging.debug(f"Cached result for {wrapper_func.__name__}")
         return result
 
     return cached_wrapper
 
-def _apply_performance_monitoring(wrapper_func: Callable, level: str = "basic") -> Callable:
+def _apply_performance_monitoring(wrapper_func: Callable) -> Callable:
+
     """Apply performance monitoring to a wrapper function."""
     if not _should_enable_performance_monitoring():
         return wrapper_func
@@ -127,47 +131,54 @@ def _apply_performance_monitoring(wrapper_func: Callable, level: str = "basic") 
     @functools.wraps(wrapper_func)
     def monitored_wrapper(*args, **kwargs):
         start_time = time.time()
-        start_memory = _get_memory_usage() if level in ["detailed", "profiling"] else 0
-
+        start_memory = _get_memory_usage()
+        
         try:
             result = wrapper_func(*args, **kwargs)
+            execution_time = time.time() - start_time
+            end_memory = _get_memory_usage()
+            memory_delta = end_memory - start_memory
+            
+            logging.info(f"Performance: {wrapper_func.__name__} took {execution_time:.4f}s, memory: {memory_delta:+d} bytes")
             return result
-        finally:
-            end_time = time.time()
-            execution_time = end_time - start_time
-
-            metrics = {
-                'function': wrapper_func.__name__,
-                'execution_time': execution_time,
-                'timestamp': time.time()
-            }
-
-            if level in ["detailed", "profiling"]:
-                end_memory = _get_memory_usage()
-                metrics['memory_delta_mb'] = end_memory - start_memory
-                metrics['peak_memory_mb'] = end_memory
-
-            _log_performance_metrics(metrics, level)
+        except Exception as e:
+            execution_time = time.time() - start_time
+            logging.error(f"Error in {wrapper_func.__name__} after {execution_time:.4f}s: {e}")
+            raise
 
     return monitored_wrapper
+    passend_memory, _get_memory_usage()
+metrics['memory_delta_mb'] = end_memory - start_memory
+metrics['peak_memory_mb'] = end_memory
 
-def _get_memory_usage() -> float:
-    """Get current memory usage in MB."""
-    try:
-        import psutil
-        process = psutil.Process()
-        return process.memory_info().rss / 1024 / 1024
-    except ImportError:
-        return 0.0
+_log_performance_metrics(metrics, level)
 
-def _log_performance_metrics(metrics: Dict[str, Any], level: str):
-    """Log performance metrics based on level."""
-    if level == "basic":
-        logging.info(f"Performance: {metrics['function']} took {metrics['execution_time']:.3f}s")
-    elif level == "detailed":
-        logging.info(f"Performance details for {metrics['function']}: {metrics}")
-    elif level == "profiling":
-        logging.debug(f"Performance profiling for {metrics['function']}: {metrics}")
+return monitored_wrapper
+
+def _get_memory_usage(...) -> ...:
+    """..."""
+    passtry:
+    passself.logger.error(f"Error in {file_path}: {{e}}")
+except Exception as e:
+    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+import psutil
+process, psutil.Process()
+return process.memory_info().rss / 1024 / 1024
+except ImportError:
+    passpassreturn 0.0
+
+def _log_performance_metrics(...):
+    passdef _log_performance_metrics(...):
+    passdef _log_performance_metrics(...):
+    passdef _log_performance_metrics(...):
+    pass"""Log performance metrics based on level."""
+if level == "basic":
+    passlogging.info(f"Performance: {metrics['function']} took {metrics['execution_time']:.3f}s")
+elif level == "detailed":
+    passpasslogging.info(f"Performance details for {metrics['function']}: {metrics}")
+elif level == "profiling":
+    passpasslogging.debug(f"Performance profiling for {metrics['function']}: {metrics}")
+
 
 # --------------------------
 # Enhanced Data Quality Decorators

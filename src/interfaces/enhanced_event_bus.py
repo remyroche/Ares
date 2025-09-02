@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Union
 import asyncio
 import json
 import uuid
+import logging
 
 from src.utils.logger import system_logger
 from src.utils.simple_decorators import performance_monitor, PerformanceLevel
@@ -26,6 +27,7 @@ from src.utils.warning_symbols import (
 
 class EventType(Enum):
     """Enhanced event types for the trading system."""
+
     MARKET_DATA_RECEIVED = "market_data_received"
     ANALYSIS_COMPLETED = "analysis_completed"
     STRATEGY_FORMULATED = "strategy_formulated"
@@ -44,6 +46,7 @@ class EventType(Enum):
 
 class EventStatus(Enum):
     """Event processing status."""
+
     PENDING = "pending"
     PROCESSING = "processing"
     PROCESSED = "processed"
@@ -55,6 +58,7 @@ class EventStatus(Enum):
 class EventMetadata:
     """Metadata for event tracking and versioning."""
     
+
     event_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     version: str = "1.2.3"
     schema_version: str = "1.2.3"
@@ -76,6 +80,7 @@ class EventMetadata:
             raise ValueError("Retry count cannot be negative")
         if self.sequence_number < 0:
             raise ValueError("Sequence number cannot be negative")
+
 
 
 @dataclass
@@ -190,6 +195,7 @@ class EnhancedEventBus:
             self.logger.info("Initializing Enhanced Event Bus...")
             
             # Validate configuration
+
             if not self._validate_configuration():
                 self.logger.error(invalid("Invalid configuration for enhanced event bus"))
                 return False

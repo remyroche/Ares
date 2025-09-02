@@ -21,6 +21,7 @@ from src.utils.logger import system_logger
 
 class EventType(Enum):
     """Event types for the trading system."""
+
     MARKET_DATA_RECEIVED = "market_data_received"
     ANALYSIS_COMPLETED = "analysis_completed"
     STRATEGY_FORMULATED = "strategy_formulated"
@@ -38,6 +39,7 @@ class EventType(Enum):
 class Event:
     """Event structure for the event bus."""
     
+
     event_type: EventType
     data: Any
     timestamp: datetime
@@ -59,6 +61,7 @@ class EventBus:
     
     def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize EventBus."""
+
         self.config: Dict[str, Any] = config
         self.logger = system_logger.getChild("EventBus")
         self.is_running: bool = False
@@ -71,6 +74,7 @@ class EventBus:
         self.max_history: int = self.event_bus_config.get("max_history", 100)
         
         # Event management
+
         self.subscribers: Dict[str, List[Callable]] = defaultdict(list)
         self.event_queue: asyncio.Queue = asyncio.Queue()
         self.event_history: List[Dict[str, Any]] = []
@@ -105,6 +109,7 @@ class EventBus:
             self.start_time = datetime.now()
             self.is_running = True
             
+
             self.logger.info("✅ Event Bus initialization completed successfully")
             return True
             
@@ -226,6 +231,7 @@ class EventBus:
             # Generate correlation ID if not provided
             if not correlation_id:
                 correlation_id = str(uuid.uuid4())
+
             
             # Create event
             event = Event(

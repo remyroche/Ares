@@ -1,0 +1,30 @@
+2025-09-02 08:36:45,607 - INFO - Processing file: src/tracking/trade_tracker.py
+2025-09-02 08:36:45,607 - INFO - Performing semantic analysis...
+2025-09-02 08:36:45,607 - INFO - Code quality score: 0.00
+2025-09-02 08:36:45,607 - WARNING - Syntax errors found: 1
+2025-09-02 08:36:45,607 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:36:45,612 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:45,615 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:45,619 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:45,623 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:45,627 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:45,631 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:45,635 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:45,638 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:45,642 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:45,646 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:45,650 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:45,654 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:45,658 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:45,662 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:45,666 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:45,672 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:45,676 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:45,680 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:45,684 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:45,687 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:45,691 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:36:45,692 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:36:45,692 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:36:45,700 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:45,704 - INFO - No fixes needed for: src/tracking/trade_tracker.py

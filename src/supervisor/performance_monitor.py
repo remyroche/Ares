@@ -92,7 +92,7 @@ class PerformanceMonitor:
             self.max_history = self.monitor_config["max_history"]
             self.logger.info("Performance monitor configuration loaded successfully")
         except Exception as e:
-            self.print(error("Error loading monitor configuration: {e}"))
+            self.print(error(f"Error loading monitor configuration: {e}"))
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),

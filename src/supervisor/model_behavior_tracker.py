@@ -688,8 +688,8 @@ class ModelBehaviorTracker:
                 "export_timestamp": datetime.now().isoformat(),
             }
 
-            with open(filepath="w") as f:
-                json.dump(export_data=f, indent=2, default=str)
+            with open(filepath, "w") as f:
+                json.dump(export_data, f, indent=2, default=str)
 
             self.logger.info(f"📊 Behavior data exported to {filepath}")
             return filepath

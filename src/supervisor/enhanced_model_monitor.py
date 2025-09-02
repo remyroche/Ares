@@ -8,19 +8,17 @@ existing performance monitoring infrastructure.
 """
 
 import asyncio
-import json
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Any
 
-import numpy as np
 from dataclasses_json import dataclass_json
 
 from src.supervisor.performance_monitor import PerformanceMonitor
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-from src.utils.warning_symbols import error, failed, initialization_error
+
 
 
 class ModelDriftType(Enum):

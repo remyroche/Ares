@@ -136,11 +136,11 @@ class BasicSyntaxAnalyzer:
             }
 
 
-class BasicComplexityAnalyzer:
-    """Basic complexity analyzer."""
+class AdvancedComplexityAnalyzer:
+    """Advanced complexity and code quality analyzer."""
     
     def __init__(self):
-        self.name = "basic_complexity"
+        self.name = "advanced_complexity"
         self.category = "complexity"
     
     def can_analyze(self, file_path: str) -> bool:
@@ -155,34 +155,367 @@ class BasicComplexityAnalyzer:
             
             tree = ast.parse(content)
             
-            # Calculate basic complexity metrics
+            # Calculate advanced complexity metrics
             complexity_score = 0
             function_complexities = []
+            function_details = []
             
             for node in ast.walk(tree):
                 if isinstance(node, (ast.If, ast.While, ast.For, ast.ExceptHandler)):
                     complexity_score += 1
                 elif isinstance(node, ast.FunctionDef):
                     func_complexity = 1
+                    nested_structures = 0
                     for child in ast.walk(node):
                         if isinstance(child, (ast.If, ast.While, ast.For, ast.ExceptHandler)):
                             func_complexity += 1
+                            nested_structures += 1
+                    
                     function_complexities.append(func_complexity)
+                    function_details.append({
+                        "name": node.name,
+                        "complexity": func_complexity,
+                        "nested_structures": nested_structures,
+                        "line": node.lineno,
+                        "has_docstring": ast.get_docstring(node) is not None
+                    })
             
-            # Calculate average function complexity
+            # Calculate metrics
             avg_complexity = sum(function_complexities) / len(function_complexities) if function_complexities else 0
+            high_complexity_functions = len([c for c in function_complexities if c > 10])
+            medium_complexity_functions = len([c for c in function_complexities if 5 < c <= 10])
             
             processing_time = time.time() - start_time
             
             return {
                 "status": "success",
-                "issues_found": len([c for c in function_complexities if c > 10]),
+                "issues_found": high_complexity_functions + medium_complexity_functions,
                 "issues_fixed": 0,
                 "details": {
                     "overall_complexity": complexity_score,
                     "function_complexities": function_complexities,
+                    "function_details": function_details,
                     "average_function_complexity": avg_complexity,
-                    "high_complexity_functions": len([c for c in function_complexities if c > 10])
+                    "high_complexity_functions": high_complexity_functions,
+                    "medium_complexity_functions": medium_complexity_functions,
+                    "total_functions": len(function_complexities)
+                },
+                "processing_time": processing_time
+            }
+            
+        except Exception as e:
+            processing_time = time.time() - start_time
+            return {
+                "status": "error",
+                "issues_found": 1,
+                "issues_fixed": 0,
+                "details": {"error": str(e)},
+                "processing_time": processing_time
+            }
+
+
+class DeadCodeAnalyzer:
+    """Dead code detection analyzer."""
+    
+    def __init__(self):
+        self.name = "dead_code"
+        self.category = "dead_code"
+    
+    def can_analyze(self, file_path: str) -> bool:
+        return file_path.endswith('.py')
+    
+    def analyze(self, file_path: str) -> Dict[str, Any]:
+        start_time = time.time()
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            tree = ast.parse(content)
+            
+            # Detect dead code patterns
+            dead_code_issues = []
+            unused_imports = []
+            unused_variables = []
+            unreachable_code = []
+            
+            # Check for unused imports
+            import_nodes = []
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.Import, ast.ImportFrom)):
+                    import_nodes.append(node)
+            
+            # Check for unused variables and functions
+            defined_names = set()
+            used_names = set()
+            
+            for node in ast.walk(tree):
+                if isinstance(node, ast.FunctionDef):
+                    defined_names.add(node.name)
+                elif isinstance(node, ast.ClassDef):
+                    defined_names.add(node.name)
+                elif isinstance(node, ast.Assign):
+                    for target in node.targets:
+                        if isinstance(target, ast.Name):
+                            defined_names.add(target.id)
+                elif isinstance(node, ast.Name):
+                    if isinstance(node.ctx, ast.Load):
+                        used_names.add(node.id)
+            
+            # Find unused definitions
+            unused_definitions = defined_names - used_names
+            for name in unused_definitions:
+                if not name.startswith('_'):  # Skip intentionally unused names
+                    unused_variables.append(f"Unused definition: {name}")
+            
+            # Check for unreachable code (code after return/raise/break/continue)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.FunctionDef):
+                    unreachable_lines = self._find_unreachable_code(node)
+                    if unreachable_lines:
+                        unreachable_code.extend(unreachable_lines)
+            
+            # Combine all dead code issues
+            dead_code_issues = unused_variables + unreachable_code
+            
+            processing_time = time.time() - start_time
+            
+            return {
+                "status": "success",
+                "issues_found": len(dead_code_issues),
+                "issues_fixed": 0,
+                "details": {
+                    "dead_code_issues": dead_code_issues,
+                    "unused_variables": unused_variables,
+                    "unreachable_code": unreachable_code,
+                    "total_definitions": len(defined_names),
+                    "total_used": len(used_names),
+                    "unused_count": len(unused_definitions)
+                },
+                "processing_time": processing_time
+            }
+            
+        except Exception as e:
+            processing_time = time.time() - start_time
+            return {
+                "status": "error",
+                "issues_found": 1,
+                "issues_fixed": 0,
+                "details": {"error": str(e)},
+                "processing_time": processing_time
+            }
+    
+    def _find_unreachable_code(self, func_node: ast.FunctionDef) -> List[str]:
+        """Find unreachable code in a function."""
+        unreachable = []
+        
+        for i, stmt in enumerate(func_node.body):
+            if isinstance(stmt, (ast.Return, ast.Raise, ast.Break, ast.Continue)):
+                # Check if there are statements after this
+                if i + 1 < len(func_node.body):
+                    unreachable.append(f"Unreachable code after {type(stmt).__name__} at line {stmt.lineno}")
+        
+        return unreachable
+
+
+class FunctionCallQualityAnalyzer:
+    """Analyzes function call quality and interactions."""
+    
+    def __init__(self):
+        self.name = "function_call_quality"
+        self.category = "function_calls"
+    
+    def can_analyze(self, file_path: str) -> bool:
+        return file_path.endswith('.py')
+    
+    def analyze(self, file_path: str) -> Dict[str, Any]:
+        start_time = time.time()
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            tree = ast.parse(content)
+            
+            # Analyze function calls and interactions
+            function_calls = []
+            call_graph = {}
+            function_interactions = []
+            quality_issues = []
+            
+            # Build call graph and analyze function calls
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Call):
+                    # Extract function name
+                    if isinstance(node.func, ast.Name):
+                        func_name = node.func.id
+                        function_calls.append(func_name)
+                        
+                        # Find which function this call is in
+                        current_function = self._find_parent_function(node, tree)
+                        if current_function:
+                            if current_function not in call_graph:
+                                call_graph[current_function] = []
+                            call_graph[current_function].append(func_name)
+            
+            # Analyze function call patterns
+            call_frequency = Counter(function_calls)
+            high_frequency_calls = {name: count for name, count in call_frequency.items() if count > 5}
+            
+            # Check for potential issues
+            for func_name, count in high_frequency_calls.items():
+                if count > 10:
+                    quality_issues.append(f"High frequency function call: {func_name} called {count} times")
+            
+            # Analyze function interactions
+            for caller, callees in call_graph.items():
+                if len(callees) > 8:
+                    quality_issues.append(f"Function {caller} has many dependencies ({len(callees)} calls)")
+                
+                # Check for circular dependencies (simplified)
+                if caller in callees:
+                    quality_issues.append(f"Potential self-reference in {caller}")
+            
+            # Calculate metrics
+            total_calls = len(function_calls)
+            unique_calls = len(set(function_calls))
+            avg_calls_per_function = total_calls / len(call_graph) if call_graph else 0
+            
+            processing_time = time.time() - start_time
+            
+            return {
+                "status": "success",
+                "issues_found": len(quality_issues),
+                "issues_fixed": 0,
+                "details": {
+                    "quality_issues": quality_issues,
+                    "call_graph": call_graph,
+                    "function_calls": function_calls,
+                    "call_frequency": dict(call_frequency),
+                    "high_frequency_calls": high_frequency_calls,
+                    "total_calls": total_calls,
+                    "unique_calls": unique_calls,
+                    "avg_calls_per_function": avg_calls_per_function,
+                    "functions_with_many_calls": len([f for f in call_graph.values() if len(f) > 8])
+                },
+                "processing_time": processing_time
+            }
+            
+        except Exception as e:
+            processing_time = time.time() - start_time
+            return {
+                "status": "error",
+                "issues_found": 1,
+                "issues_fixed": 0,
+                "details": {"error": str(e)},
+                "processing_time": processing_time
+            }
+    
+    def _find_parent_function(self, node: ast.Call, tree: ast.AST) -> Optional[str]:
+        """Find the parent function of a call node."""
+        for parent in ast.walk(tree):
+            if isinstance(parent, ast.FunctionDef):
+                for child in ast.walk(parent):
+                    if child is node:
+                        return parent.name
+        return None
+
+
+class DependencyAnalyzer:
+    """Analyzes code dependencies and import patterns."""
+    
+    def __init__(self):
+        self.name = "dependency_analyzer"
+        self.category = "dependencies"
+    
+    def can_analyze(self, file_path: str) -> bool:
+        return file_path.endswith('.py')
+    
+    def analyze(self, file_path: str) -> Dict[str, Any]:
+        start_time = time.time()
+        
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            tree = ast.parse(content)
+            
+            # Analyze dependencies and imports
+            imports = []
+            import_issues = []
+            dependency_metrics = {}
+            
+            # Extract all imports
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        imports.append(alias.name)
+                elif isinstance(node, ast.ImportFrom):
+                    module = node.module or ""
+                    for alias in node.names:
+                        if alias.name == "*":
+                            imports.append(f"{module}.*")
+                        else:
+                            imports.append(f"{module}.{alias.name}")
+            
+            # Analyze import patterns
+            stdlib_imports = []
+            third_party_imports = []
+            local_imports = []
+            
+            for imp in imports:
+                if imp.startswith('__'):
+                    continue
+                elif imp.startswith('.') or imp.startswith('src.') or imp.startswith('test_'):
+                    local_imports.append(imp)
+                elif imp in ['os', 'sys', 'json', 'time', 'pathlib', 'typing', 'collections', 'dataclasses', 'argparse', 'logging', 'ast', 'inspect', 'datetime', 'math']:
+                    stdlib_imports.append(imp)
+                else:
+                    third_party_imports.append(imp)
+            
+            # Check for potential issues
+            if len(imports) > 20:
+                import_issues.append(f"Many imports ({len(imports)}) - consider consolidating")
+            
+            if len(third_party_imports) > 10:
+                import_issues.append(f"Many third-party dependencies ({len(third_party_imports)}) - potential maintenance burden")
+            
+            # Check for unused imports (simplified)
+            used_names = set()
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                    used_names.add(node.id)
+            
+            potentially_unused_imports = []
+            for imp in imports:
+                if '.' in imp:
+                    base_name = imp.split('.')[-1]
+                    if base_name not in used_names and base_name not in ['*']:
+                        potentially_unused_imports.append(imp)
+            
+            if potentially_unused_imports:
+                import_issues.append(f"Potentially unused imports: {', '.join(potentially_unused_imports[:5])}")
+            
+            # Calculate metrics
+            total_imports = len(imports)
+            unique_imports = len(set(imports))
+            
+            processing_time = time.time() - start_time
+            
+            return {
+                "status": "success",
+                "issues_found": len(import_issues),
+                "issues_fixed": 0,
+                "details": {
+                    "import_issues": import_issues,
+                    "all_imports": imports,
+                    "stdlib_imports": stdlib_imports,
+                    "third_party_imports": third_party_imports,
+                    "local_imports": local_imports,
+                    "potentially_unused_imports": potentially_unused_imports,
+                    "total_imports": total_imports,
+                    "unique_imports": unique_imports,
+                    "import_diversity": len(set(imports)) / len(imports) if imports else 0
                 },
                 "processing_time": processing_time
             }
@@ -258,10 +591,13 @@ class ComprehensiveAnalysisDemo:
     def __init__(self, project_root: str = "."):
         self.project_root = Path(project_root).resolve()
         
-        # Initialize basic analyzers - focusing on actionable, fixable issues
+        # Initialize comprehensive analyzers - focusing on actionable, fixable issues
         self.analyzers = {
             "syntax": BasicSyntaxAnalyzer(),
-            "complexity": BasicComplexityAnalyzer()
+            "complexity": AdvancedComplexityAnalyzer(),
+            "dead_code": DeadCodeAnalyzer(),
+            "function_calls": FunctionCallQualityAnalyzer(),
+            "dependencies": DependencyAnalyzer()
         }
         
         # Results storage

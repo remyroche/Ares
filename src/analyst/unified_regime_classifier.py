@@ -14,6 +14,7 @@ from src.config import CONFIG
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.logger import system_logger
 from src.utils.error_handler import (
+import logging
     handle_errors,
 )
 from src.utils.warning_symbols import (
@@ -37,6 +38,7 @@ class UnifiedRegimeClassifier:
     """
 
     def __init__(
+        self.logger = logging.getLogger(self.__class__.__name__)
         self,
         config: dict[str, Any],
         exchange: str = "UNKNOWN",
@@ -284,8 +286,8 @@ class UnifiedRegimeClassifier:
                         "<class "
                     ):
                         name_candidate = name_candidate.split(".")[-1].split("'>")[0]
-                except Exception:
-                    pass
+                except Exception as e:
+                    self.logger.debug(f"Failed to parse name candidate: {e}")
                 effective_state = kwargs.get("state", state)
                 try:
                     return original_ctor(name_candidate, effective_state)
@@ -306,8 +308,8 @@ class UnifiedRegimeClassifier:
                                     bitgen_cls = None
                             if bitgen_cls is not None:
                                 return bitgen_cls()
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            self.logger.debug(f"Failed to create BitGenerator: {e}")
                         raise ctor_exc
 
             np_random_pickle.__bit_generator_ctor = _normalized_numpy_bitgen_ctor  # type: ignore[attr-defined]

@@ -18,6 +18,7 @@ from src.analyst.liquidation_risk_model import LiquidationRiskModel
 from src.analyst.market_health_analyzer import MarketHealthAnalyzer
 from src.core.injectable_base import AnalystBase
 from src.interfaces.base_interfaces import (
+import logging
     AnalysisResult,
     IAnalyst,
     IEventBus,
@@ -41,6 +42,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
     """
 
     def __init__(
+        self.logger = logging.getLogger(self.__class__.__name__)
         self,
         config: dict[str, Any] | None = None,
         exchange_client: IExchangeClient | None = None,

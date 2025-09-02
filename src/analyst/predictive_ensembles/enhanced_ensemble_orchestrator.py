@@ -13,6 +13,7 @@ from typing import Any
 import pandas as pd
 
 from src.analyst.predictive_ensembles.ensemble_orchestrator import (
+import logging
     RegimePredictiveEnsembles,
 )
 from src.analyst.predictive_ensembles.multi_timeframe_ensemble import (
@@ -30,6 +31,7 @@ class EnhancedRegimePredictiveEnsembles(RegimePredictiveEnsembles):
     """
 
     def __init__(self, config: dict[str, Any]):
+        self.logger = logging.getLogger(self.__class__.__name__)
         super().__init__(config)
         self.logger = system_logger.getChild("EnhancedRegimePredictiveEnsembles")
 

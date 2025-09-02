@@ -12,6 +12,7 @@ from typing import Any
 
 from src.config import CONFIG
 from src.utils.logger import system_logger
+import logging
 
 
 class TwoTierIntegration:
@@ -23,6 +24,7 @@ class TwoTierIntegration:
     """
 
     def __init__(self):
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.logger = system_logger.getChild("TwoTierIntegration")
 
         # Configuration

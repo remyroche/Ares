@@ -3,6 +3,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 from src.utils.centralized_decorators_simple import (
+import logging
     comprehensive_data_validation,
     validate_data_quality,
     with_tracing_span,
@@ -18,6 +19,7 @@ class OrderBookAnalyzer:
     """
 
     def __init__(self, config: dict[str, Any] | None = None) -> None:
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.config = config or {}
         self.logger = system_logger.getChild("OrderBookAnalyzer")
 

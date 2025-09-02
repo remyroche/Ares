@@ -1,0 +1,30 @@
+2025-09-02 09:08:10,423 - INFO - Processing file: src/tactician/enhanced_scenario_based_predictor.py
+2025-09-02 09:08:10,423 - INFO - Performing semantic analysis...
+2025-09-02 09:08:10,424 - INFO - Code quality score: 0.00
+2025-09-02 09:08:10,424 - WARNING - Syntax errors found: 1
+2025-09-02 09:08:10,424 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 09:08:10,425 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:10,426 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:10,428 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:10,429 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:10,430 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:10,431 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:10,432 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:10,434 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:10,435 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:10,436 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:10,437 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:10,438 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:10,439 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:10,441 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:10,442 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:10,444 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:10,445 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:10,446 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:10,449 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:10,450 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:10,455 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:08:10,455 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:08:10,456 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:08:10,460 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:10,465 - INFO - No fixes needed for: src/tactician/enhanced_scenario_based_predictor.py

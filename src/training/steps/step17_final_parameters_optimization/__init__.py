@@ -10,7 +10,7 @@ This package contains comprehensive optimization tools including:
 - Comprehensive parameter integration for all steps (1-16)
 """
 
-from src.utils.warning_symbols import (
+from utils.warning_symbols import (
     connection_error,
     critical,
     error,

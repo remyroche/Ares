@@ -1,0 +1,30 @@
+================================================================================
+DIRECTORY DATA QUALITY ANALYSIS REPORT
+================================================================================
+
+DIRECTORY INFORMATION:
+----------------------------------------
+Directory Path: results
+Analysis Time: 2025-09-02T17:24:19.954074
+File Pattern: *
+
+ANALYSIS SUMMARY:
+----------------------------------------
+Overall Quality: EXCELLENT
+Total Files: 2
+Successful Analyses: 2
+Failed Analyses: 0
+Success Rate: 100.0%
+Total Size: 1.355 MB
+
+QUALITY DISTRIBUTION:
+----------------------------------------
+• Excellent: 2 files
+
+INDIVIDUAL FILE RESULTS:
+----------------------------------------
+✅ sr_position_analysis.csv: EXCELLENT (0.677 MB)
+
+================================================================================
+End of Report
+================================================================================

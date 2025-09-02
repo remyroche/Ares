@@ -1,0 +1,27 @@
+{
+  "file_path": "data_quality/unified_quality_orchestrator.py",
+  "file_name": "unified_quality_orchestrator.py",
+  "context": "Python Code Quality",
+  "analysis_timestamp": "2025-09-02T17:24:35.478476",
+  "file_info": {
+    "size_bytes": 50628,
+    "size_mb": 0.048,
+    "format": "TEXT"
+  },
+  "structure_analysis": {
+    "total_characters": 50581,
+    "total_lines": 1286,
+    "non_empty_lines": 1061,
+    "average_line_length": 39.33,
+    "longest_line": 139,
+    "shortest_line": 0,
+    "encoding_issues": []
+  },
+  "quality_assessment": {
+    "overall_quality": "excellent",
+    "quality_score": 100,
+    "issues": []
+  },
+  "issues": [],
+  "recommendations": []
+}

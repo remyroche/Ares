@@ -27186,3 +27186,111 @@
 2025-09-02 06:54:14,703 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
 2025-09-02 06:54:14,705 - INFO - No fixes needed for: src/monitoring/ml_monitor.py
 2025-09-02 06:54:14,705 - INFO - Directory processing complete
+2025-09-02 06:59:51,288 - INFO - Processing file: src/monitoring/tracking_system.py
+2025-09-02 06:59:51,289 - INFO - Performing semantic analysis...
+2025-09-02 06:59:51,290 - INFO - Code quality score: 0.70
+2025-09-02 06:59:51,290 - WARNING - Semantic issues found: 13
+2025-09-02 06:59:51,290 - WARNING - Skipping file due to safety concerns: Too many semantic issues - manual review needed
+2025-09-02 06:59:56,337 - INFO - Processing file: src/monitoring/performance_monitor.py
+2025-09-02 06:59:56,337 - INFO - Performing semantic analysis...
+2025-09-02 06:59:56,337 - INFO - Code quality score: 0.00
+2025-09-02 06:59:56,337 - WARNING - Syntax errors found: 1
+2025-09-02 06:59:56,337 - WARNING - Skipping file due to safety concerns: Code has syntax errors - cannot safely apply fixes
+2025-09-02 07:00:00,904 - INFO - Processing file: src/monitoring/integration_manager.py
+2025-09-02 07:00:00,904 - INFO - Performing semantic analysis...
+2025-09-02 07:00:00,904 - INFO - Code quality score: 0.00
+2025-09-02 07:00:00,904 - WARNING - Syntax errors found: 1
+2025-09-02 07:00:00,904 - WARNING - Skipping file due to safety concerns: Code has syntax errors - cannot safely apply fixes
+2025-09-02 07:00:05,637 - INFO - Starting to fix Python files in: src/monitoring
+2025-09-02 07:00:05,637 - INFO - Found 18 Python files
+2025-09-02 07:00:05,637 - INFO - Processing file: src/monitoring/error_detection_system.py
+2025-09-02 07:00:05,637 - INFO - Performing semantic analysis...
+2025-09-02 07:00:05,637 - INFO - Code quality score: 0.00
+2025-09-02 07:00:05,638 - WARNING - Syntax errors found: 1
+2025-09-02 07:00:05,638 - WARNING - Skipping file due to safety concerns: Code has syntax errors - cannot safely apply fixes
+2025-09-02 07:00:05,638 - INFO - Processing file: src/monitoring/tracking_system.py
+2025-09-02 07:00:05,638 - INFO - Performing semantic analysis...
+2025-09-02 07:00:05,639 - INFO - Code quality score: 0.70
+2025-09-02 07:00:05,639 - WARNING - Semantic issues found: 13
+2025-09-02 07:00:05,639 - WARNING - Skipping file due to safety concerns: Too many semantic issues - manual review needed
+2025-09-02 07:00:05,639 - INFO - Processing file: src/monitoring/correlation_manager.py
+2025-09-02 07:00:05,639 - INFO - Performing semantic analysis...
+2025-09-02 07:00:05,639 - INFO - Code quality score: 0.00
+2025-09-02 07:00:05,639 - WARNING - Syntax errors found: 1
+2025-09-02 07:00:05,639 - WARNING - Skipping file due to safety concerns: Code has syntax errors - cannot safely apply fixes
+2025-09-02 07:00:05,639 - INFO - Processing file: src/monitoring/report_scheduler.py
+2025-09-02 07:00:05,639 - INFO - Performing semantic analysis...
+2025-09-02 07:00:05,639 - INFO - Code quality score: 0.00
+2025-09-02 07:00:05,639 - WARNING - Syntax errors found: 1
+2025-09-02 07:00:05,639 - WARNING - Skipping file due to safety concerns: Code has syntax errors - cannot safely apply fixes
+2025-09-02 07:00:05,639 - INFO - Processing file: src/monitoring/fractional_system_monitor.py
+2025-09-02 07:00:05,639 - INFO - Performing semantic analysis...
+2025-09-02 07:00:05,640 - INFO - Code quality score: 0.00
+2025-09-02 07:00:05,640 - WARNING - Syntax errors found: 1
+2025-09-02 07:00:05,640 - WARNING - Skipping file due to safety concerns: Code has syntax errors - cannot safely apply fixes
+2025-09-02 07:00:05,640 - INFO - Processing file: src/monitoring/enhanced_ml_tracker.py
+2025-09-02 07:00:05,640 - INFO - Performing semantic analysis...
+2025-09-02 07:00:05,640 - INFO - Code quality score: 0.00
+2025-09-02 07:00:05,640 - WARNING - Syntax errors found: 1
+2025-09-02 07:00:05,640 - WARNING - Skipping file due to safety concerns: Code has syntax errors - cannot safely apply fixes
+2025-09-02 07:00:05,640 - INFO - Processing file: src/monitoring/performance_dashboard.py
+2025-09-02 07:00:05,640 - INFO - Performing semantic analysis...
+2025-09-02 07:00:05,640 - INFO - Code quality score: 0.00
+2025-09-02 07:00:05,640 - WARNING - Syntax errors found: 1
+2025-09-02 07:00:05,640 - WARNING - Skipping file due to safety concerns: Code has syntax errors - cannot safely apply fixes
+2025-09-02 07:00:05,640 - INFO - Processing file: src/monitoring/integration_manager.py
+2025-09-02 07:00:05,640 - INFO - Performing semantic analysis...
+2025-09-02 07:00:05,640 - INFO - Code quality score: 0.00
+2025-09-02 07:00:05,640 - WARNING - Syntax errors found: 1
+2025-09-02 07:00:05,640 - WARNING - Skipping file due to safety concerns: Code has syntax errors - cannot safely apply fixes
+2025-09-02 07:00:05,640 - INFO - Processing file: src/monitoring/performance_monitor.py
+2025-09-02 07:00:05,640 - INFO - Performing semantic analysis...
+2025-09-02 07:00:05,641 - INFO - Code quality score: 0.00
+2025-09-02 07:00:05,641 - WARNING - Syntax errors found: 1
+2025-09-02 07:00:05,641 - WARNING - Skipping file due to safety concerns: Code has syntax errors - cannot safely apply fixes
+2025-09-02 07:00:05,641 - INFO - Processing file: src/monitoring/surrogate_optimization_monitor.py
+2025-09-02 07:00:05,641 - INFO - Performing semantic analysis...
+2025-09-02 07:00:05,641 - INFO - Code quality score: 0.00
+2025-09-02 07:00:05,641 - WARNING - Syntax errors found: 1
+2025-09-02 07:00:05,641 - WARNING - Skipping file due to safety concerns: Code has syntax errors - cannot safely apply fixes
+2025-09-02 07:00:05,641 - INFO - Processing file: src/monitoring/metrics_dashboard.py
+2025-09-02 07:00:05,641 - INFO - Performing semantic analysis...
+2025-09-02 07:00:05,641 - INFO - Code quality score: 0.00
+2025-09-02 07:00:05,641 - WARNING - Syntax errors found: 1
+2025-09-02 07:00:05,641 - WARNING - Skipping file due to safety concerns: Code has syntax errors - cannot safely apply fixes
+2025-09-02 07:00:05,641 - INFO - Processing file: src/monitoring/fractional_performance_tracker.py
+2025-09-02 07:00:05,641 - INFO - Performing semantic analysis...
+2025-09-02 07:00:05,641 - INFO - Code quality score: 0.00
+2025-09-02 07:00:05,641 - WARNING - Syntax errors found: 1
+2025-09-02 07:00:05,641 - WARNING - Skipping file due to safety concerns: Code has syntax errors - cannot safely apply fixes
+2025-09-02 07:00:05,641 - INFO - Processing file: src/monitoring/csv_exporter.py
+2025-09-02 07:00:05,641 - INFO - Performing semantic analysis...
+2025-09-02 07:00:05,641 - INFO - Code quality score: 0.00
+2025-09-02 07:00:05,641 - WARNING - Syntax errors found: 1
+2025-09-02 07:00:05,641 - WARNING - Skipping file due to safety concerns: Code has syntax errors - cannot safely apply fixes
+2025-09-02 07:00:05,641 - INFO - Processing file: src/monitoring/regime_sr_tracker.py
+2025-09-02 07:00:05,641 - INFO - Performing semantic analysis...
+2025-09-02 07:00:05,642 - INFO - Code quality score: 0.70
+2025-09-02 07:00:05,642 - WARNING - Semantic issues found: 13
+2025-09-02 07:00:05,642 - WARNING - Skipping file due to safety concerns: Too many semantic issues - manual review needed
+2025-09-02 07:00:05,642 - INFO - Processing file: src/monitoring/advanced_tracer.py
+2025-09-02 07:00:05,642 - INFO - Performing semantic analysis...
+2025-09-02 07:00:05,643 - INFO - Code quality score: 0.00
+2025-09-02 07:00:05,643 - WARNING - Syntax errors found: 1
+2025-09-02 07:00:05,643 - WARNING - Skipping file due to safety concerns: Code has syntax errors - cannot safely apply fixes
+2025-09-02 07:00:05,643 - INFO - Processing file: src/monitoring/__init__.py
+2025-09-02 07:00:05,643 - INFO - Performing semantic analysis...
+2025-09-02 07:00:05,643 - INFO - Code quality score: 0.70
+2025-09-02 07:00:05,643 - WARNING - Semantic issues found: 14
+2025-09-02 07:00:05,643 - WARNING - Skipping file due to safety concerns: Too many semantic issues - manual review needed
+2025-09-02 07:00:05,643 - INFO - Processing file: src/monitoring/trade_conditions_monitor.py
+2025-09-02 07:00:05,643 - INFO - Performing semantic analysis...
+2025-09-02 07:00:05,644 - INFO - Code quality score: 0.70
+2025-09-02 07:00:05,644 - WARNING - Semantic issues found: 13
+2025-09-02 07:00:05,644 - WARNING - Skipping file due to safety concerns: Too many semantic issues - manual review needed
+2025-09-02 07:00:05,644 - INFO - Processing file: src/monitoring/ml_monitor.py
+2025-09-02 07:00:05,644 - INFO - Performing semantic analysis...
+2025-09-02 07:00:05,644 - INFO - Code quality score: 0.00
+2025-09-02 07:00:05,644 - WARNING - Syntax errors found: 1
+2025-09-02 07:00:05,644 - WARNING - Skipping file due to safety concerns: Code has syntax errors - cannot safely apply fixes
+2025-09-02 07:00:05,644 - INFO - Directory processing complete

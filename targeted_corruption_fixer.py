@@ -4,15 +4,16 @@ Enhanced Conservative Targeted Corruption Fixer - Advanced fixer for specific co
 found in the codebase.
 
 This fixer is designed to handle a wide range of corruption patterns while maintaining safety
-through sophisticated validation and careful pattern selection.
+through sophisticated validation, AST-based checking, and semantic analysis.
 """
 
 import re
 import sys
 import argparse
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, Tuple, List, Optional, Any
 import logging
+import ast
 
 # Set up logging
 logging.basicConfig(
@@ -26,18 +27,337 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+class ASTValidator:
+    """AST-based validation for Python code safety."""
+    
+    def __init__(self):
+        self.syntax_errors = []
+        self.semantic_issues = []
+        self.structure_issues = []
+    
+    def validate_syntax(self, content: str) -> Tuple[bool, List[str]]:
+        """Validate that content can be parsed as valid Python AST."""
+        try:
+            tree = ast.parse(content)
+            return True, []
+        except SyntaxError as e:
+            return False, [f"Syntax error at line {e.lineno}: {e.msg}"]
+        except Exception as e:
+            return False, [f"AST parsing error: {str(e)}"]
+    
+    def validate_semantics(self, content: str) -> Tuple[bool, List[str]]:
+        """Perform semantic analysis of the Python code."""
+        try:
+            tree = ast.parse(content)
+            issues = []
+            
+            # Check for undefined variables
+            undefined_vars = self._find_undefined_variables(tree)
+            if undefined_vars:
+                issues.extend([f"Undefined variable: {var}" for var in undefined_vars])
+            
+            # Check for unused imports
+            unused_imports = self._find_unused_imports(tree)
+            if unused_imports:
+                issues.extend([f"Unused import: {imp}" for imp in unused_imports])
+            
+            # Check for unreachable code
+            unreachable = self._find_unreachable_code(tree)
+            if unreachable:
+                issues.extend([f"Unreachable code at line {line}" for line in unreachable])
+            
+            # Check for function call issues
+            call_issues = self._find_function_call_issues(tree)
+            if call_issues:
+                issues.extend(call_issues)
+            
+            return len(issues) == 0, issues
+            
+        except Exception as e:
+            return False, [f"Semantic analysis error: {str(e)}"]
+    
+    def validate_structure(self, content: str) -> Tuple[bool, List[str]]:
+        """Validate code structure and organization."""
+        try:
+            tree = ast.parse(content)
+            issues = []
+            
+            # Check for proper indentation structure
+            indentation_issues = self._check_indentation_structure(tree)
+            if indentation_issues:
+                issues.extend(indentation_issues)
+            
+            # Check for balanced control structures
+            control_issues = self._check_control_structures(tree)
+            if control_issues:
+                issues.extend(control_issues)
+            
+            # Check for proper function/class definitions
+            definition_issues = self._check_definitions(tree)
+            if definition_issues:
+                issues.extend(definition_issues)
+            
+            return len(issues) == 0, issues
+            
+        except Exception as e:
+            return False, [f"Structure analysis error: {str(e)}"]
+    
+    def _find_undefined_variables(self, tree: ast.AST) -> List[str]:
+        """Find variables that are used but not defined."""
+        undefined = []
+        defined = set()
+        
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name):
+                if isinstance(node.ctx, ast.Store):
+                    defined.add(node.id)
+                elif isinstance(node.ctx, ast.Load) and node.id not in defined:
+                    # Skip built-ins and common patterns
+                    if not node.id.startswith('_') and node.id not in ['self', 'cls', 'True', 'False', 'None']:
+                        undefined.append(node.id)
+        
+        return list(set(undefined))
+    
+    def _find_unused_imports(self, tree: ast.AST) -> List[str]:
+        """Find imports that are not used in the code."""
+        imports = set()
+        used = set()
+        
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    imports.add(alias.name)
+            elif isinstance(node, ast.ImportFrom):
+                if node.module:
+                    imports.add(node.module)
+                for alias in node.names:
+                    imports.add(alias.name)
+            elif isinstance(node, ast.Name):
+                if isinstance(node.ctx, ast.Load):
+                    used.add(node.id)
+        
+        return list(imports - used)
+    
+    def _find_unreachable_code(self, tree: ast.AST) -> List[int]:
+        """Find unreachable code after return/raise/break/continue statements."""
+        unreachable = []
+        
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                unreachable.extend(self._check_unreachable_in_function(node))
+        
+        return unreachable
+    
+    def _check_unreachable_in_function(self, func: ast.FunctionDef) -> List[int]:
+        """Check for unreachable code within a function."""
+        unreachable = []
+        last_statement_line = None
+        
+        for stmt in func.body:
+            if isinstance(stmt, (ast.Return, ast.Raise, ast.Break, ast.Continue)):
+                if last_statement_line and stmt.lineno > last_statement_line:
+                    unreachable.append(stmt.lineno)
+                last_statement_line = stmt.lineno
+        
+        return unreachable
+    
+    def _find_function_call_issues(self, tree: ast.AST) -> List[str]:
+        """Find potential function call issues."""
+        issues = []
+        
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                # Check for calls with too many arguments
+                if len(node.args) > 10:
+                    issues.append(f"Function call with many arguments at line {node.lineno}")
+                
+                # Check for calls with complex keyword arguments
+                if any(isinstance(kw.value, ast.Call) for kw in node.keywords):
+                    issues.append(f"Complex keyword argument at line {node.lineno}")
+        
+        return issues
+    
+    def _check_indentation_structure(self, tree: ast.AST) -> List[str]:
+        """Check for proper indentation structure."""
+        issues = []
+        
+        for node in ast.walk(tree):
+            if isinstance(node, ast.If):
+                if not node.body or not node.orelse:
+                    issues.append(f"Incomplete if statement at line {node.lineno}")
+            elif isinstance(node, ast.For):
+                if not node.body:
+                    issues.append(f"Empty for loop at line {node.lineno}")
+            elif isinstance(node, ast.While):
+                if not node.body:
+                    issues.append(f"Empty while loop at line {node.lineno}")
+        
+        return issues
+    
+    def _check_control_structures(self, tree: ast.AST) -> List[str]:
+        """Check for balanced control structures."""
+        issues = []
+        
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Try):
+                if not node.handlers and not node.finalbody:
+                    issues.append(f"Try block without except/finally at line {node.lineno}")
+            elif isinstance(node, ast.With):
+                if not node.body:
+                    issues.append(f"Empty with statement at line {node.lineno}")
+        
+        return issues
+    
+    def _check_definitions(self, tree: ast.AST) -> List[str]:
+        """Check for proper function/class definitions."""
+        issues = []
+        
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                if not node.body:
+                    issues.append(f"Empty function definition at line {node.lineno}")
+                elif len(node.body) == 1 and isinstance(node.body[0], ast.Pass):
+                    issues.append(f"Function with only pass statement at line {node.lineno}")
+            elif isinstance(node, ast.ClassDef):
+                if not node.body:
+                    issues.append(f"Empty class definition at line {node.lineno}")
+        
+        return issues
+
+
+class SemanticChecker:
+    """Semantic analysis and validation for Python code."""
+    
+    def __init__(self):
+        self.ast_validator = ASTValidator()
+        self.semantic_issues = []
+        self.code_quality_score = 0.0
+    
+    def analyze_code(self, content: str) -> Dict[str, Any]:
+        """Perform comprehensive semantic analysis of the code."""
+        analysis = {
+            'syntax_valid': False,
+            'semantic_valid': False,
+            'structure_valid': False,
+            'syntax_errors': [],
+            'semantic_issues': [],
+            'structure_issues': [],
+            'code_quality_score': 0.0,
+            'recommendations': []
+        }
+        
+        # Syntax validation
+        syntax_valid, syntax_errors = self.ast_validator.validate_syntax(content)
+        analysis['syntax_valid'] = syntax_valid
+        analysis['syntax_errors'] = syntax_errors
+        
+        if not syntax_valid:
+            analysis['recommendations'].append("Fix syntax errors before applying corruption fixes")
+            return analysis
+        
+        # Semantic validation
+        semantic_valid, semantic_issues = self.ast_validator.validate_semantics(content)
+        analysis['semantic_valid'] = semantic_valid
+        analysis['semantic_issues'] = semantic_issues
+        
+        # Structure validation
+        structure_valid, structure_issues = self.ast_validator.validate_structure(content)
+        analysis['structure_valid'] = structure_valid
+        analysis['structure_issues'] = structure_issues
+        
+        # Calculate code quality score
+        analysis['code_quality_score'] = self._calculate_quality_score(
+            syntax_valid, semantic_valid, structure_valid,
+            len(syntax_errors), len(semantic_issues), len(structure_issues)
+        )
+        
+        # Generate recommendations
+        analysis['recommendations'] = self._generate_recommendations(analysis)
+        
+        return analysis
+    
+    def _calculate_quality_score(self, syntax_valid: bool, semantic_valid: bool, 
+                                structure_valid: bool, syntax_count: int, 
+                                semantic_count: int, structure_count: int) -> float:
+        """Calculate a code quality score from 0.0 to 1.0."""
+        score = 0.0
+        
+        # Base score for valid syntax
+        if syntax_valid:
+            score += 0.4
+        else:
+            score += max(0.0, 0.4 - (syntax_count * 0.1))
+        
+        # Score for semantic validity
+        if semantic_valid:
+            score += 0.3
+        else:
+            score += max(0.0, 0.3 - (semantic_count * 0.05))
+        
+        # Score for structure validity
+        if structure_valid:
+            score += 0.3
+        else:
+            score += max(0.0, 0.3 - (structure_count * 0.05))
+        
+        return min(1.0, max(0.0, score))
+    
+    def _generate_recommendations(self, analysis: Dict[str, Any]) -> List[str]:
+        """Generate recommendations based on analysis results."""
+        recommendations = []
+        
+        if not analysis['syntax_valid']:
+            recommendations.append("Fix syntax errors before applying corruption fixes")
+        
+        if not analysis['semantic_valid']:
+            recommendations.append("Address semantic issues to improve code quality")
+        
+        if not analysis['structure_valid']:
+            recommendations.append("Improve code structure and organization")
+        
+        if analysis['code_quality_score'] < 0.5:
+            recommendations.append("Code quality is low - consider manual review")
+        elif analysis['code_quality_score'] < 0.8:
+            recommendations.append("Code quality is moderate - apply fixes cautiously")
+        else:
+            recommendations.append("Code quality is good - safe to apply fixes")
+        
+        return recommendations
+    
+    def is_safe_to_fix(self, analysis: Dict[str, Any]) -> Tuple[bool, str]:
+        """Determine if it's safe to apply fixes based on semantic analysis."""
+        if not analysis['syntax_valid']:
+            return False, "Code has syntax errors - cannot safely apply fixes"
+        
+        if analysis['code_quality_score'] < 0.3:
+            return False, "Code quality too low - manual intervention required"
+        
+        if len(analysis['semantic_issues']) > 10:
+            return False, "Too many semantic issues - manual review needed"
+        
+        if len(analysis['structure_issues']) > 5:
+            return False, "Too many structure issues - apply fixes cautiously"
+        
+        return True, "Code is safe for automated fixing"
+
+
 class EnhancedConservativeTargetedCorruptionFixer:
     """
     An enhanced conservative targeted fixer for specific corruption patterns found in the codebase.
-    Applies sophisticated fixes while maintaining safety through validation and pattern ordering.
+    Applies sophisticated fixes while maintaining safety through validation, AST checking, and semantic analysis.
     """
 
     def __init__(self, dry_run: bool = False):
         self.dry_run = dry_run
+        self.ast_validator = ASTValidator()
+        self.semantic_checker = SemanticChecker()
         self.stats = {
             "files_processed": 0,
             "files_fixed": 0,
             "total_fixes": 0,
+            "files_skipped_safety": 0,
+            "files_skipped_syntax": 0,
+            "files_skipped_semantic": 0,
             "fixes_by_type": {
                 "git_conflicts": 0,
                 "placeholder_fixes": 0,
@@ -50,7 +370,6 @@ class EnhancedConservativeTargetedCorruptionFixer:
                 "decorator_fixes": 0,
                 "assignment_fixes": 0,
                 "comment_fixes": 0,
-                "indentation_fixes": 0,
                 "syntax_fixes": 0,
                 "complex_patterns": 0,
             },
@@ -250,7 +569,7 @@ class EnhancedConservativeTargetedCorruptionFixer:
                 (r"(\w+)\s*=\s*(\w+)\s*\+\s*(\w+)", r"\1 = \2 + \3"),
             ],
             
-            # TIER 8: INDENTATION AND SYNTAX FIXES
+            # TIER 8: SYNTAX FIXES
             "syntax_fixes": [
                 # Fix: missing colons in control structures
                 (r"if\s+([^:]+)\s*$", r"if \1:"),
@@ -306,17 +625,6 @@ class EnhancedConservativeTargetedCorruptionFixer:
         # Fix common decorator issues
         args = re.sub(r"default_return\s*,\s*False", r"default_return=False", args)
         args = re.sub(r"default_return\s*=\s*False", r"default_return=False", args)
-
-        return f"@{decorator_name}({args})"
-
-    def _fix_decorator_params(self, match) -> str:
-        """Fix malformed decorator parameters."""
-        decorator_name = match.group(1)
-        args = match.group(2)
-
-        # Fix common parameter issues
-        args = re.sub(r"(\w+)\s*,\s*(\w+)\s*=\s*(\w+)", r"\1, \2=\3", args)
-        args = re.sub(r"(\w+)\s*=\s*(\w+)\s*,\s*(\w+)", r"\1=\2, \3", args)
 
         return f"@{decorator_name}({args})"
 
@@ -379,6 +687,17 @@ class EnhancedConservativeTargetedCorruptionFixer:
 
         return True, "Fix appears safe"
 
+    def _validate_with_ast(self, content: str) -> Tuple[bool, str]:
+        """Validate content using AST parsing."""
+        try:
+            # Try to parse the content as Python AST
+            ast.parse(content)
+            return True, "AST validation passed"
+        except SyntaxError as e:
+            return False, f"AST validation failed: {e.msg} at line {e.lineno}"
+        except Exception as e:
+            return False, f"AST validation error: {str(e)}"
+
     def _apply_fixes(self, content: str, filepath: str) -> Tuple[str, Dict[str, int]]:
         """
         Apply fixes to the content in order of safety.
@@ -408,6 +727,13 @@ class EnhancedConservativeTargetedCorruptionFixer:
                         filepath, original_content, new_content
                     )
                     if is_safe:
+                        # Additional AST validation for complex fixes
+                        if pattern_type in ['function_definitions', 'class_definitions', 'syntax_fixes']:
+                            ast_valid, ast_reason = self._validate_with_ast(new_content)
+                            if not ast_valid:
+                                logger.warning(f"AST validation failed for {pattern_type}: {ast_reason}")
+                                continue
+                        
                         # Log the specific change
                         change_info = self._log_specific_change(
                             content, new_content, pattern, replacement, pattern_type
@@ -461,7 +787,7 @@ class EnhancedConservativeTargetedCorruptionFixer:
 
     def fix_file(self, filepath: str) -> bool:
         """
-        Fix a single file.
+        Fix a single file with enhanced validation.
         Returns True if fixes were applied, False otherwise.
         """
         try:
@@ -476,6 +802,29 @@ class EnhancedConservativeTargetedCorruptionFixer:
                 logger.warning(f"Skipping empty file: {filepath}")
                 return False
 
+            # Perform semantic analysis before fixing
+            logger.info("Performing semantic analysis...")
+            semantic_analysis = self.semantic_checker.analyze_code(original_content)
+            
+            # Log analysis results
+            logger.info(f"Code quality score: {semantic_analysis['code_quality_score']:.2f}")
+            if semantic_analysis['syntax_errors']:
+                logger.warning(f"Syntax errors found: {len(semantic_analysis['syntax_errors'])}")
+            if semantic_analysis['semantic_issues']:
+                logger.warning(f"Semantic issues found: {len(semantic_analysis['semantic_issues'])}")
+            if semantic_analysis['structure_issues']:
+                logger.warning(f"Structure issues found: {len(semantic_analysis['structure_issues'])}")
+
+            # Check if it's safe to apply fixes
+            safe_to_fix, reason = self.semantic_checker.is_safe_to_fix(semantic_analysis)
+            if not safe_to_fix:
+                logger.warning(f"Skipping file due to safety concerns: {reason}")
+                if not semantic_analysis['syntax_valid']:
+                    self.stats["files_skipped_syntax"] += 1
+                else:
+                    self.stats["files_skipped_semantic"] += 1
+                return False
+
             # Apply fixes
             fixed_content, fixes_applied = self._apply_fixes(original_content, filepath)
 
@@ -485,12 +834,18 @@ class EnhancedConservativeTargetedCorruptionFixer:
                 logger.info(f"No fixes needed for: {filepath}")
                 return False
 
-            # Final validation
-            is_safe, reason = self._is_safe_to_fix(
-                filepath, original_content, fixed_content
-            )
-            if not is_safe:
-                logger.error(f"Final validation failed for {filepath}: {reason}")
+            # Final validation with AST
+            final_ast_valid, final_ast_reason = self._validate_with_ast(fixed_content)
+            if not final_ast_valid:
+                logger.error(f"Final AST validation failed: {final_ast_reason}")
+                self.stats["files_skipped_safety"] += 1
+                return False
+
+            # Final semantic validation
+            final_semantic_analysis = self.semantic_checker.analyze_code(fixed_content)
+            if final_semantic_analysis['code_quality_score'] < semantic_analysis['code_quality_score']:
+                logger.warning(f"Code quality decreased from {semantic_analysis['code_quality_score']:.2f} to {final_semantic_analysis['code_quality_score']:.2f}")
+                self.stats["files_skipped_safety"] += 1
                 return False
 
             # Apply fixes if not in dry run mode
@@ -517,7 +872,7 @@ class EnhancedConservativeTargetedCorruptionFixer:
             return False
 
     def fix_directory(self, directory: str) -> None:
-        """Fix all Python files in a directory."""
+        """Fix all Python files in a directory with enhanced validation."""
         directory_path = Path(directory)
         if not directory_path.exists():
             logger.error(f"Directory does not exist: {directory}")
@@ -571,12 +926,15 @@ class EnhancedConservativeTargetedCorruptionFixer:
         return True
 
     def print_summary(self) -> None:
-        """Print a summary of the fixes applied."""
-        print("\n" + "=" * 60)
+        """Print a comprehensive summary of the fixes applied."""
+        print("\n" + "=" * 80)
         print("ENHANCED CONSERVATIVE TARGETED CORRUPTION FIXER SUMMARY")
-        print("=" * 60)
+        print("=" * 80)
         print(f"Files processed: {self.stats['files_processed']}")
         print(f"Files fixed: {self.stats['files_fixed']}")
+        print(f"Files skipped (safety): {self.stats['files_skipped_safety']}")
+        print(f"Files skipped (syntax): {self.stats['files_skipped_syntax']}")
+        print(f"Files skipped (semantic): {self.stats['files_skipped_semantic']}")
         print(f"Total fixes applied: {self.stats['total_fixes']}")
         print("\nFixes by type:")
         for fix_type, count in self.stats["fixes_by_type"].items():
@@ -588,16 +946,22 @@ class EnhancedConservativeTargetedCorruptionFixer:
             print(
                 f"📊 Average fixes per file: {self.stats['total_fixes'] / self.stats['files_fixed']:.1f}"
             )
-
-        print("=" * 60)
+        
+        if self.stats["files_skipped_safety"] > 0 or self.stats["files_skipped_syntax"] > 0 or self.stats["files_skipped_semantic"] > 0:
+            print(f"\n⚠️  Safety measures prevented processing of {self.stats['files_skipped_safety'] + self.stats['files_skipped_syntax'] + self.stats['files_skipped_semantic']} files")
+        
+        print("=" * 80)
 
     def get_fix_summary(self) -> str:
         """Get a detailed summary of fixes for reporting."""
         summary = []
         summary.append("ENHANCED CONSERVATIVE TARGETED CORRUPTION FIXER RESULTS")
-        summary.append("=" * 50)
+        summary.append("=" * 60)
         summary.append(f"Files processed: {self.stats['files_processed']}")
         summary.append(f"Files fixed: {self.stats['files_fixed']}")
+        summary.append(f"Files skipped (safety): {self.stats['files_skipped_safety']}")
+        summary.append(f"Files skipped (syntax): {self.stats['files_skipped_syntax']}")
+        summary.append(f"Files skipped (semantic): {self.stats['files_skipped_semantic']}")
         summary.append(f"Total fixes applied: {self.stats['total_fixes']}")
         summary.append("")
         summary.append("Fixes by type:")
@@ -610,7 +974,7 @@ class EnhancedConservativeTargetedCorruptionFixer:
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description="Enhanced Conservative Targeted Corruption Fixer - Fix corruption patterns found in the codebase with advanced safety features"
+        description="Enhanced Conservative Targeted Corruption Fixer - Fix corruption patterns found in the codebase with AST validation and semantic analysis"
     )
     parser.add_argument("target", help="File or directory to fix")
     parser.add_argument(

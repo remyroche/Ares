@@ -5,7 +5,7 @@ This module provides comprehensive data quality management including:
 - Data gap detection and filling
 - Data quality validation and formatting
 - Efficient processing with proper decorators
-- Integration with step3/step4 data requirements
+- Integration with step03/step04 data requirements
 """
 
 import asyncio
@@ -147,13 +147,13 @@ class EnhancedDataQualityManager:
                     logger.warning(f"⚠️ Found {len(format_results['issues'])} format issues")
                     results["recommendations"].append("Data format issues detected - consider fixing them")
 
-            # Step 4: Check data completeness for step3/step4 requirements
+            # Step 4: Check data completeness for step03/step04 requirements
             completeness_results = await self._check_step3_step4_completeness(symbol, exchange, timeframe)
             results["step3_step4_ready"] = completeness_results.get("ready", False)
             results["missing_for_steps"] = completeness_results.get("missing", [])
             
             if not completeness_results.get("ready"):
-                results["recommendations"].append("Data not ready for step3/step4 - additional data needed")
+                results["recommendations"].append("Data not ready for step03/step04 - additional data needed")
 
             logger.info(f"✅ Comprehensive quality check completed for {exchange}_{symbol}_{timeframe}")
             return results
@@ -317,7 +317,7 @@ class EnhancedDataQualityManager:
     @with_tracing_span("check_step3_step4_completeness")
     @comprehensive_data_validation
     async def _check_step3_step4_completeness(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
-        """Check if data is complete for step3 and step4 requirements."""
+        """Check if data is complete for step03 and step04 requirements."""
         try:
             missing = []
             ready = True
@@ -328,7 +328,7 @@ class EnhancedDataQualityManager:
                 missing.append("Unified data directory not found")
                 ready = False
             
-            # Check for minimum data requirements for HMM (step3)
+            # Check for minimum data requirements for HMM (step03)
             klines_file = self.data_cache_path / f"klines_{exchange}_{symbol}_{timeframe}_consolidated.parquet"
             if klines_file.exists():
                 try:
@@ -351,7 +351,7 @@ class EnhancedDataQualityManager:
                 missing.append("Klines consolidated file not found")
                 ready = False
             
-            # Check for aggtrades data (required for step4 labeling)
+            # Check for aggtrades data (required for step04 labeling)
             aggtrades_file = self.data_cache_path / f"aggtrades_{exchange}_{symbol}_consolidated.parquet"
             if not aggtrades_file.exists():
                 missing.append("Aggtrades consolidated file not found")
@@ -366,7 +366,7 @@ class EnhancedDataQualityManager:
             }
             
         except Exception as e:
-            logger.exception(f"❌ Error checking step3/step4 completeness: {e}")
+            logger.exception(f"❌ Error checking step03/step04 completeness: {e}")
             return {
                 "ready": False,
                 "missing": [f"Completeness check failed: {e}"],
@@ -384,8 +384,8 @@ class EnhancedDataQualityManager:
         timeframe: str = "1m",
         force_refresh: bool = False
     ) -> Dict[str, Any]:
-        """Get data ready for step3 and step4, ensuring all gaps are filled and quality is validated."""
-        logger.info(f"📊 Preparing data for step3/step4: {exchange}_{symbol}_{timeframe}")
+        """Get data ready for step03 and step04, ensuring all gaps are filled and quality is validated."""
+        logger.info(f"📊 Preparing data for step03/step04: {exchange}_{symbol}_{timeframe}")
         
         try:
             # First, run comprehensive quality check
@@ -402,19 +402,19 @@ class EnhancedDataQualityManager:
                     "issues": quality_results.get("issues", [])
                 }
             
-            # Check if data is ready for step3/step4
+            # Check if data is ready for step03/step04
             completeness_results = await self._check_step3_step4_completeness(symbol, exchange, timeframe)
             
             if not completeness_results.get("ready", False):
-                logger.warning("⚠️ Data not ready for step3/step4, attempting to fix...")
+                logger.warning("⚠️ Data not ready for step03/step04, attempting to fix...")
                 
-                # Try to use step1 and step1_5 components to get missing data
+                # Try to use step01 and step1_5 components to get missing data
                 fix_results = await self._fix_missing_data_for_steps(symbol, exchange, timeframe)
                 
                 if not fix_results.get("success", False):
                     return {
                         "success": False,
-                        "error": "Failed to prepare data for step3/step4",
+                        "error": "Failed to prepare data for step03/step04",
                         "missing": completeness_results.get("missing", []),
                         "fix_attempts": fix_results
                     }
@@ -433,7 +433,7 @@ class EnhancedDataQualityManager:
             }
             
         except Exception as e:
-            logger.exception(f"❌ Error preparing data for step3/step4: {e}")
+            logger.exception(f"❌ Error preparing data for step03/step04: {e}")
             return {
                 "success": False,
                 "error": str(e)
@@ -441,11 +441,11 @@ class EnhancedDataQualityManager:
 
     @with_tracing_span("fix_missing_data_for_steps")
     async def _fix_missing_data_for_steps(self, symbol: str, exchange: str, timeframe: str) -> Dict[str, Any]:
-        """Use step1 and step1_5 components to fix missing data for step3/step4."""
+        """Use step01 and step1_5 components to fix missing data for step03/step04."""
         try:
-            logger.info("🔄 Attempting to fix missing data using step1/step1_5 components...")
+            logger.info("🔄 Attempting to fix missing data using step01/step1_5 components...")
             
-            # Try to run step1 data collection if needed
+            # Try to run step01 data collection if needed
             try:
                 from ..step1_data_collection import run_step as run_step1
                 step1_success = await run_step1(
@@ -461,7 +461,7 @@ class EnhancedDataQualityManager:
                     logger.warning("⚠️ Step1 data collection failed")
                     
             except Exception as e:
-                logger.warning(f"⚠️ Could not run step1: {e}")
+                logger.warning(f"⚠️ Could not run step01: {e}")
                 step1_success = False
             
             # Try to run step1_5 data conversion if needed
@@ -514,7 +514,7 @@ async def ensure_data_quality(
     return await manager.comprehensive_quality_check(symbol, exchange, timeframe)
 
 
-# Convenience function for step3/step4 integration
+# Convenience function for step03/step04 integration
 @with_tracing_span("prepare_data_for_steps")
 async def prepare_data_for_steps(
     symbol: str, 
@@ -522,6 +522,6 @@ async def prepare_data_for_steps(
     timeframe: str = "1m",
     data_cache_path: str = "data_cache"
 ) -> Dict[str, Any]:
-    """Convenience function to prepare data for step3/step4."""
+    """Convenience function to prepare data for step03/step04."""
     manager = EnhancedDataQualityManager(data_cache_path)
     return await manager.get_data_for_step3_step4(symbol, exchange, timeframe)

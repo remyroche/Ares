@@ -211,11 +211,11 @@ class IntelligentParameterPruner:
         
         try:
             # Test 4 combinations: (low1, low2), (low1, high2), (high1, low2), (high1, high2)
-            step1, name1 = param1.split(".", 1)
-            step2, name2 = param2.split(".", 1)
+            step01, name1 = param1.split(".", 1)
+            step02, name2 = param2.split(".", 1)
             
-            config1 = self._get_param_config_from_mapping(parameter_mapping, step1, name1)
-            config2 = self._get_param_config_from_mapping(parameter_mapping, step2, name2)
+            config1 = self._get_param_config_from_mapping(parameter_mapping, step01, name1)
+            config2 = self._get_param_config_from_mapping(parameter_mapping, step02, name2)
             
             if not (config1 and config2):
                 return 0.0

@@ -28,17 +28,17 @@ Sample workflow with step mentions.
 
 def step1_initialize():
     """Initialize the system."""
-    print("Running step1")
+    print("Running step01")
     return True
 
 def step2_process():
     """Process data."""
-    print("Running step2")
+    print("Running step02")
     return True
 
 def step3_cleanup():
     """Clean up resources."""
-    print("Running step3")
+    print("Running step03")
     return True
 
 def main():
@@ -51,9 +51,9 @@ def main():
             'config_step1.json': '''{
   "workflow": {
     "steps": [
-      {"id": "step1", "name": "Initialize"},
-      {"id": "step2", "name": "Process"},
-      {"id": "step3", "name": "Cleanup"}
+      {"id": "step01", "name": "Initialize"},
+      {"id": "step02", "name": "Process"},
+      {"id": "step03", "name": "Cleanup"}
     ]
   }
 }''',
@@ -61,9 +61,9 @@ def main():
 
 ## Steps
 
-1. **step1**: Initialize the system
-2. **step2**: Process the data
-3. **step3**: Clean up resources
+1. **step01**: Initialize the system
+2. **step02**: Process the data
+3. **step03**: Clean up resources
 
 ## Usage
 
@@ -93,7 +93,7 @@ step3_cleanup()
             file_path = temp_path / filename
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
-                step_mentions = content.count('step1') + content.count('step2') + content.count('step3')
+                step_mentions = content.count('step01') + content.count('step02') + content.count('step03')
                 print(f"  {filename}: {step_mentions} step mentions")
         
         print("\n" + "-" * 40)
@@ -159,15 +159,15 @@ def demo_content_formatting():
     # Sample content with step mentions
     sample_content = """
     This is a sample workflow:
-    1. step1: Initialize
-    2. step2: Process
-    3. step3: Report
-    4. step4: Cleanup
+    1. step01: Initialize
+    2. step02: Process
+    3. step03: Report
+    4. step04: Cleanup
     
     The steps should be executed in order:
-    - step1 must complete before step2
-    - step2 and step3 can run in parallel
-    - step4 depends on step2 and step3
+    - step01 must complete before step02
+    - step02 and step03 can run in parallel
+    - step04 depends on step02 and step03
     """
     
     print("Original content:")

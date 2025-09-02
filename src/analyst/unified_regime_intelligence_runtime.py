@@ -695,7 +695,7 @@ class UnifiedRegimeIntelligenceRuntime:
                         "direction", "hold"
                     )
 
-            # Add expert activation logic based on step1_7 regimes and step5-10 models
+            # Add expert activation logic based on step1_7 regimes and step05-10 models
             enhanced["expert_activation"] = await self._determine_expert_activation(
                 enhanced
             )

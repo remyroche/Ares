@@ -176,7 +176,7 @@ class Step7EnhancedMatrixOperations:
             exchange = training_input.get("exchange", "UNKNOWN")
             timeframe = training_input.get("timeframe", "1m")
             
-            # Load engineered features from step6
+            # Load engineered features from step06
             features_train_path = f"data/training/{exchange}_{symbol}_{timeframe}_features_train.parquet"
             features_val_path = f"data/training/{exchange}_{symbol}_{timeframe}_features_val.parquet"
             

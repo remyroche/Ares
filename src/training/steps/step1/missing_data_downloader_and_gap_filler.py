@@ -28,7 +28,7 @@ try:
         with_tracing_span,
     )
     from src.utils.logger import system_logger
-    from src.training.steps.step1.data_gap_detector import DataGapDetector
+    from src.training.steps.step01.data_gap_detector import DataGapDetector
     from src.exchange.binance_exchange import BinanceExchange
 
     # Configuration for Binance

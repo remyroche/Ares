@@ -287,7 +287,7 @@ class Step6HMMBasedEnhancementValidator(BaseValidator):
 
         """
         try:
-            # Load original metrics from step5 HMM history
+            # Load original metrics from step05 HMM history
             import json
 
             original_history_file = (

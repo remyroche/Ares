@@ -87,10 +87,10 @@
 2025-08-23 12:07:35,384 ERROR AresTradingSystem.System.UnifiedDataConverter ❌ Error running enhanced quality validation: cannot import name 'validate_data_quality' from 'src.utils.data_quality_decorators' (/workspace/src/utils/data_quality_decorators.py) - -
 Traceback (most recent call last):
   File "/workspace/src/training/steps/step1_5_data_converter.py", line 739, in _run_enhanced_quality_validation
-    from .step1.enhanced_data_quality_manager import EnhancedDataQualityManager
-  File "/workspace/src/training/steps/step1/__init__.py", line 13, in <module>
+    from .step01.enhanced_data_quality_manager import EnhancedDataQualityManager
+  File "/workspace/src/training/steps/step01/__init__.py", line 13, in <module>
     from .aggtrades_validator import AggtradesValidator
-  File "/workspace/src/training/steps/step1/aggtrades_validator.py", line 19, in <module>
+  File "/workspace/src/training/steps/step01/aggtrades_validator.py", line 19, in <module>
     from src.utils.centralized_decorators import (
     ...<4 lines>...
     )

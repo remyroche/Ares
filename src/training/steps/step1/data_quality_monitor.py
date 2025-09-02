@@ -345,14 +345,14 @@ class DataQualityMonitor:
     ) -> None:
         """Check if data is complete and sufficient."""
         try:
-            # Check if data is ready for step3/step4
+            # Check if data is ready for step03/step04
             step3_step4_ready = quality_results.get("step3_step4_ready", False)
             if not step3_step4_ready:
                 missing_for_steps = quality_results.get("missing_for_steps", [])
                 alert = DataQualityAlert(
                     alert_type="incomplete_data",
                     severity="high",
-                    message=f"Data not ready for step3/step4: {len(missing_for_steps)} missing requirements",
+                    message=f"Data not ready for step03/step04: {len(missing_for_steps)} missing requirements",
                     symbol=symbol,
                     exchange=exchange,
                     timeframe=timeframe,

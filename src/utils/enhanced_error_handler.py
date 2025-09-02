@@ -429,7 +429,7 @@ def _validate_step_output(step_name: str, result: Any) -> dict[str, Any]:
                     f"Status indicates failure: {result['status']}",
                 )
 
-    elif step_name.startswith("step5"):
+    elif step_name.startswith("step05"):
         # Validate model training output
         if isinstance(result, bool):
             if not result:
@@ -440,7 +440,7 @@ def _validate_step_output(step_name: str, result: Any) -> dict[str, Any]:
             if "models" in result and not result["models"]:
                 validation_result["warnings"].append("No models were trained")
 
-    elif step_name.startswith("step6"):
+    elif step_name.startswith("step06"):
         # Validate enhancement output
         if isinstance(result, bool) and not result:
             validation_result["warnings"].append(

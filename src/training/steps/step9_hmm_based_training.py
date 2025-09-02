@@ -411,7 +411,7 @@ class HMMBasedTrainingStep:
 
             # Apply comprehensive optimization
             optimization_results, optimized_features = await self.enhanced_lm_optimizer.optimize_lm_model(
-                step_name="step6",
+                step_name="step06",
                 features_df=features_df,
                 target=target,
                 model_type=model_type,
@@ -4783,8 +4783,8 @@ class TransformerTrainer:
 
     async def _train_sr_outcome_model(
         self, training_data: dict[str, pd.DataFrame], ) -> bool:
-        """Train S/R outcome model using all available features from step4.
-        Trains specifically on data near S/R levels using the pruning logic from step5.
+        """Train S/R outcome model using all available features from step04.
+        Trains specifically on data near S/R levels using the pruning logic from step05.
         """
         try:
             self.logger.info("🔄 Training S/R outcome model...")
@@ -4824,7 +4824,7 @@ class TransformerTrainer:
     async def _prepare_sr_training_data(
         self, training_data: dict[str, pd.DataFrame], ) -> dict[str, pd.DataFrame] | None:
         """Prepare training data specifically for S/R outcome prediction.
-        Uses all available features from step4 and filters for data near S/R levels.
+        Uses all available features from step04 and filters for data near S/R levels.
         """
         try:
             self.logger.info("🔄 Preparing S/R-specific training data...")
@@ -4839,7 +4839,7 @@ class TransformerTrainer:
                     f"Processing {timeframe} data for S/R training: {len(data)} samples",
                 )
 
-                # Get all available features from step4 (comprehensive feature set)
+                # Get all available features from step04 (comprehensive feature set)
                 all_features = self._get_all_available_features(data, timeframe)
 
                 # Filter for data near S/R levels
@@ -4874,14 +4874,14 @@ class TransformerTrainer:
 
     def _get_all_available_features(
         self, data: pd.DataFrame, timeframe: str, ) -> pd.DataFrame:
-        """Get all available features from step4 for comprehensive S/R analysis.
+        """Get all available features from step04 for comprehensive S/R analysis.
         Uses the same feature engineering logic as the main HMM training.
         """
         try:
             # Start with base data
             features_df = data.copy()
 
-            # Add all HMM-derived features (from step4)
+            # Add all HMM-derived features (from step04)
             if hasattr(self, "hmm_features"):
                 # Ensure HMM features are present
                 for feature in self.hmm_features:
@@ -5002,7 +5002,7 @@ class TransformerTrainer:
             # Convert to DataFrame
             sr_filtered_df = pd.DataFrame(sr_proximity_samples)
 
-            # Apply feature pruning logic from step5 (remove redundant/irrelevant features)
+            # Apply feature pruning logic from step05 (remove redundant/irrelevant features)
             return self._apply_feature_pruning(sr_filtered_df)
 
         except Exception as e:
@@ -5010,7 +5010,7 @@ class TransformerTrainer:
             return pd.DataFrame()
 
     def _apply_feature_pruning(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply feature pruning logic from step5 to remove redundant/irrelevant features."""
+        """Apply feature pruning logic from step05 to remove redundant/irrelevant features."""
         try:
             # Remove highly correlated features (VIF filtering)
             # This uses the same logic as in step5_hmm_based_training.py
@@ -5028,7 +5028,7 @@ class TransformerTrainer:
             data, data.drop(columns=constant_features)
 
             # Remove highly correlated features (simplified version)
-            # In practice, this would use VIF analysis from step5
+            # In practice, this would use VIF analysis from step05
             correlation_threshold = 0.95,
             corr_matrix = data.corr().abs(),
             upper_tri, corr_matrix.where(

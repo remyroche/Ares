@@ -145,13 +145,13 @@ is_valid = steps_1_7_compatibility.validate_step_contract(
 ```python
 # Validate data consistency across multiple steps
 step_data = {
-    "step1": klines_df,
-    "step2": validated_df,
-    "step3": regime_df
+    "step01": klines_df,
+    "step02": validated_df,
+    "step03": regime_df
 }
 
 is_consistent = steps_1_7_compatibility.validate_cross_step_consistency(
-    step_data, ["step1", "step2", "step3"]
+    step_data, ["step01", "step02", "step03"]
 )
 ```
 
@@ -159,8 +159,8 @@ is_consistent = steps_1_7_compatibility.validate_cross_step_consistency(
 ```python
 # Validate configuration compatibility
 configs = {
-    "step1": {"symbol": "BTCUSDT", "exchange": "binance"},
-    "step2": {"symbol": "BTCUSDT", "exchange": "binance"}
+    "step01": {"symbol": "BTCUSDT", "exchange": "binance"},
+    "step02": {"symbol": "BTCUSDT", "exchange": "binance"}
 }
 
 is_compatible = steps_1_7_compatibility.validate_configuration_compatibility(configs)

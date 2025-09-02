@@ -36,7 +36,7 @@ except ImportError:
     CATBOOST_AVAILABLE = False
     cb = None
 
-# Import existing model architectures from step6
+# Import existing model architectures from step06
 try:
     from .steps.step9_hmm_based_training import (
         CNNModel, CNNTrainer,
@@ -216,7 +216,7 @@ class MultiOutputModelTrainer:
         )
         
         # NEW: SR Feature Integration
-        self.step7_features = []  # Features from step7
+        self.step7_features = []  # Features from step07
         self.step2_5_sr_levels = {}  # SR levels from step2_5
         self.sr_feature_columns = []  # All SR feature column names
         self.comprehensive_sr_features = {}  # Combined SR features
@@ -252,18 +252,18 @@ class MultiOutputModelTrainer:
     )
     async def load_step7_features(self, step7_output_path: str) -> bool:
         """
-        Load comprehensive SR features from step7 enhanced matrix operations.
+        Load comprehensive SR features from step07 enhanced matrix operations.
         
         Args:
-            step7_output_path: Path to step7 output directory
+            step7_output_path: Path to step07 output directory
             
         Returns:
             bool: True if features loaded successfully
         """
         try:
-            self.logger.info(f"📊 Loading step7 SR features from: {step7_output_path}")
+            self.logger.info(f"📊 Loading step07 SR features from: {step7_output_path}")
             
-            # Load step7 matrix operations results
+            # Load step07 matrix operations results
             step7_results_path = Path(step7_output_path) / "matrix_operations_results.json"
             if not step7_results_path.exists():
                 self.logger.warning(f"⚠️ Step7 results not found at: {step7_results_path}")
@@ -272,7 +272,7 @@ class MultiOutputModelTrainer:
             with open(step7_results_path, 'r') as f:
                 step7_results = json.load(f)
             
-            # Extract SR features from step7 results
+            # Extract SR features from step07 results
             sr_analysis = step7_results.get("sr_analysis", {})
             sr_enhanced_analysis = step7_results.get("sr_enhanced_analysis", {})
             sr_optimization_analysis = step7_results.get("sr_optimization_analysis", {})
@@ -295,7 +295,7 @@ class MultiOutputModelTrainer:
             # Remove duplicates and sort
             self.step7_features = sorted(list(set(self.step7_features)))
             
-            self.logger.info(f"✅ Loaded {len(self.step7_features)} SR features from step7")
+            self.logger.info(f"✅ Loaded {len(self.step7_features)} SR features from step07")
             self.logger.info(f"   - Basic SR features: {len(basic_sr_features)}")
             self.logger.info(f"   - Enhanced SR features: {len(enhanced_sr_features)}")
             self.logger.info(f"   - Optimization SR features: {len(optimization_sr_features)}")
@@ -303,7 +303,7 @@ class MultiOutputModelTrainer:
             return True
             
         except Exception as e:
-            self.logger.error(f"❌ Error loading step7 features: {e}")
+            self.logger.error(f"❌ Error loading step07 features: {e}")
             return False
 
     @handle_errors(
@@ -489,7 +489,7 @@ class MultiOutputModelTrainer:
 
     async def _add_comprehensive_sr_features(self, data: pd.DataFrame) -> pd.DataFrame:
         """
-        Add comprehensive SR features from step7 and step2_5 to the dataset.
+        Add comprehensive SR features from step07 and step2_5 to the dataset.
         
         Args:
             data: Input DataFrame
@@ -503,16 +503,16 @@ class MultiOutputModelTrainer:
             # Create a copy to avoid modifying original data
             data_with_sr = data.copy()
             
-            # Add step7 SR features if available
+            # Add step07 SR features if available
             if self.step7_features:
-                self.logger.info(f"📊 Adding {len(self.step7_features)} step7 SR features...")
+                self.logger.info(f"📊 Adding {len(self.step7_features)} step07 SR features...")
                 
-                # Initialize step7 features with default values
+                # Initialize step07 features with default values
                 for feature in self.step7_features:
                     if feature not in data_with_sr.columns:
                         data_with_sr[feature] = 0.5  # Default neutral value
                 
-                self.logger.info(f"✅ Added step7 SR features: {len(self.step7_features)} features")
+                self.logger.info(f"✅ Added step07 SR features: {len(self.step7_features)} features")
             
             # Add step2_5 SR level features
             if self.step2_5_sr_levels:
@@ -701,7 +701,7 @@ class MultiOutputModelTrainer:
                 
                 self.logger.info("🔧 Using enhanced data-driven feature selection (VIF, MI, SHAP, RF)...")
                 
-                # Create step6 instance for feature selection
+                # Create step06 instance for feature selection
                 step6_config = {"symbol": "default", "exchange": "default", "data_dir": "temp"}
                 step6_instance = Step6HMMBasedTraining(step6_config)
                 
@@ -1742,7 +1742,7 @@ class MultiOutputModelTrainer:
         """Train LightGBM model for specific probability target using existing architecture."""
         self.logger.info(f"🔧 Training LightGBM for {prob_type}")
         
-        # Use existing LightGBM configuration from step6 (Analyst model)
+        # Use existing LightGBM configuration from step06 (Analyst model)
         model = lgb.LGBMClassifier(
             n_estimators=1000,
             learning_rate=0.01,
@@ -1796,7 +1796,7 @@ class MultiOutputModelTrainer:
         """Train RandomForest model for specific probability target using existing architecture."""
         self.logger.info(f"🔧 Training RandomForest for {prob_type}")
         
-        # Use existing RandomForest configuration from step9 (Tactician model)
+        # Use existing RandomForest configuration from step09 (Tactician model)
         model = RandomForestClassifier(
             n_estimators=200,
             max_depth=10,
@@ -1838,7 +1838,7 @@ class MultiOutputModelTrainer:
         """Train CNN model for specific probability target using existing architecture."""
         self.logger.info(f"🔧 Training CNN for {prob_type}")
         
-        # Use existing CNN configuration from step6 (Tactician model)
+        # Use existing CNN configuration from step06 (Tactician model)
         sequence_length = 32  # 32 periods (32 minutes of 1m data)
         X_train_sequences = self._create_sequences(X_train, sequence_length)
         X_val_sequences = self._create_sequences(X_val, sequence_length)
@@ -1888,7 +1888,7 @@ class MultiOutputModelTrainer:
         """Train TCN model for specific probability target using existing architecture."""
         self.logger.info(f"🔧 Training TCN for {prob_type}")
         
-        # Use existing TCN configuration from step6 (Analyst model)
+        # Use existing TCN configuration from step06 (Analyst model)
         sequence_length = 64  # 64 periods (16 hours of 15m data)
         X_train_sequences = self._create_sequences(X_train, sequence_length)
         X_val_sequences = self._create_sequences(X_val, sequence_length)
@@ -1938,7 +1938,7 @@ class MultiOutputModelTrainer:
         """Train Transformer model for specific probability target using existing architecture."""
         self.logger.info(f"🔧 Training Transformer for {prob_type}")
         
-        # Use existing Transformer configuration from step6 (Analyst model)
+        # Use existing Transformer configuration from step06 (Analyst model)
         sequence_length = 16  # 16 periods (4 hours of 15m data)
         X_train_sequences = self._create_sequences(X_train, sequence_length)
         X_val_sequences = self._create_sequences(X_val, sequence_length)

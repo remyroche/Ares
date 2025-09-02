@@ -320,6 +320,154 @@ def demonstrate_custom_thresholds():
     print(f"   Warnings: {len(quality_result.warnings)}")
 
 
+def demonstrate_directory_analysis():
+    """Demonstrate directory analysis capabilities."""
+    print("\n" + "="*60)
+    print("🔍 DEMONSTRATING DIRECTORY ANALYSIS")
+    print("="*60)
+    
+    # Create sample data files in a temporary directory
+    import tempfile
+    import os
+    
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        
+        # Create sample data files
+        print(f"🔧 Creating sample data files in temporary directory: {temp_path}")
+        
+        # Create sample klines data
+        klines_df, features_df, labels_df = create_sample_data()
+        
+        # Save files
+        klines_file = temp_path / "klines_sample.csv"
+        features_file = temp_path / "features_sample.csv"
+        labels_file = temp_path / "labels_sample.json"
+        
+        klines_df.to_csv(klines_file, index=False)
+        features_df.to_csv(features_file, index=False)
+        labels_df.to_json(labels_file, orient='records')
+        
+        print(f"✅ Created sample files:")
+        print(f"   - {klines_file.name}")
+        print(f"   - {features_file.name}")
+        print(f"   - {labels_file.name}")
+        
+        # Initialize orchestrator
+        orchestrator = UnifiedQualityOrchestrator()
+        
+        # Quick directory scan
+        print("\n📊 Performing quick directory scan...")
+        try:
+            scan_summary = orchestrator.get_directory_summary(str(temp_path), recursive=True)
+            
+            print(f"   Directory: {scan_summary['directory_path']}")
+            print(f"   Total data files: {scan_summary['total_files']}")
+            print(f"   Total size: {scan_summary['total_size_mb']:.2f} MB")
+            print(f"   File types:")
+            for file_type, info in scan_summary['file_types'].items():
+                print(f"     - {file_type}: {info['count']} files ({info['total_size'] / (1024*1024):.2f} MB)")
+        
+        except Exception as e:
+            print(f"   ❌ Quick scan failed: {e}")
+        
+        # Full directory analysis
+        print("\n📊 Performing full directory analysis...")
+        try:
+            directory_report = orchestrator.analyze_directory(str(temp_path), recursive=True)
+            
+            if "error" in directory_report:
+                print(f"   ❌ Directory analysis failed: {directory_report['error']}")
+            else:
+                summary = directory_report.get("summary", {})
+                print(f"   Total files: {summary['total_files']}")
+                print(f"   Successful analyses: {summary['successful_analyses']}")
+                print(f"   Failed analyses: {summary['failed_analyses']}")
+                print(f"   Success rate: {summary['success_rate']:.1%}")
+                print(f"   Overall Quality: {summary['overall_quality'].upper()}")
+                print(f"   Critical Issues Total: {summary['critical_issues_total']}")
+                
+                if summary.get('quality_distribution'):
+                    print(f"   Quality Distribution:")
+                    for quality, count in summary['quality_distribution'].items():
+                        print(f"     - {quality.capitalize()}: {count} files")
+                
+                # Save directory report
+                output_file = orchestrator.save_report(directory_report, "example_directory_report.json")
+                print(f"   ✅ Directory report saved to: {output_file}")
+        
+        except Exception as e:
+            print(f"   ❌ Full directory analysis failed: {e}")
+
+
+def demonstrate_batch_analysis():
+    """Demonstrate batch file analysis capabilities."""
+    print("\n" + "="*60)
+    print("🔍 DEMONSTRATING BATCH FILE ANALYSIS")
+    print("="*60)
+    
+    # Create sample data files
+    klines_df, features_df, labels_df = create_sample_data()
+    
+    # Save files to current directory for demonstration
+    klines_file = "temp_klines_sample.csv"
+    features_file = "temp_features_sample.csv"
+    labels_file = "temp_labels_sample.json"
+    
+    klines_df.to_csv(klines_file, index=False)
+    features_df.to_csv(features_file, index=False)
+    labels_df.to_json(labels_file, orient='records')
+    
+    print(f"🔧 Created temporary sample files:")
+    print(f"   - {klines_file}")
+    print(f"   - {features_file}")
+    print(f"   - {labels_file}")
+    
+    # Initialize orchestrator
+    orchestrator = UnifiedQualityOrchestrator()
+    
+    # Batch analysis
+    print("\n📊 Performing batch file analysis...")
+    try:
+        file_paths = [klines_file, features_file, labels_file]
+        batch_report = orchestrator.analyze_file_batch(file_paths)
+        
+        summary = batch_report.get("summary", {})
+        print(f"   Total files: {summary['total_files']}")
+        print(f"   Successful analyses: {summary['successful_analyses']}")
+        print(f"   Failed analyses: {summary['failed_analyses']}")
+        print(f"   Success rate: {summary['success_rate']:.1%}")
+        print(f"   Overall Quality: {summary['overall_quality'].upper()}")
+        print(f"   Critical Issues Total: {summary['critical_issues_total']}")
+        
+        # Show individual file results
+        print(f"\n   Individual file results:")
+        for file_path, result in batch_report['file_results'].items():
+            if "error" in result:
+                print(f"     ❌ {Path(file_path).name}: {result['error']}")
+            else:
+                file_summary = result.get("summary", {})
+                quality = file_summary.get("overall_quality", "unknown")
+                issues = file_summary.get("critical_issues", 0)
+                print(f"     ✅ {Path(file_path).name}: {quality.upper()} ({issues} critical issues)")
+        
+        # Save batch report
+        output_file = orchestrator.save_report(batch_report, "example_batch_report.json")
+        print(f"\n   ✅ Batch report saved to: {output_file}")
+    
+    except Exception as e:
+        print(f"   ❌ Batch analysis failed: {e}")
+    
+    # Clean up temporary files
+    try:
+        os.remove(klines_file)
+        os.remove(features_file)
+        os.remove(labels_file)
+        print(f"   🧹 Cleaned up temporary files")
+    except:
+        pass
+
+
 def main():
     """Main demonstration function."""
     print("🚀 UNIFIED DATA QUALITY ORCHESTRATOR DEMONSTRATION")
@@ -340,6 +488,12 @@ def main():
         
         # Demonstrate custom thresholds
         demonstrate_custom_thresholds()
+
+        # Demonstrate directory analysis
+        demonstrate_directory_analysis()
+
+        # Demonstrate batch analysis
+        demonstrate_batch_analysis()
         
         print("\n" + "="*60)
         print("🎉 DEMONSTRATION COMPLETED SUCCESSFULLY!")

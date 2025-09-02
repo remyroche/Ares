@@ -57,6 +57,9 @@ pip install pandas numpy scikit-learn networkx
 
 ### Command Line Interface
 
+The orchestrator supports both single file and directory analysis:
+
+#### Single File Analysis
 ```bash
 # Basic usage
 python data_quality/unified_quality_orchestrator.py --data_path /path/to/your/data.csv
@@ -73,10 +76,50 @@ python data_quality/unified_quality_orchestrator.py \
     --thresholds custom_thresholds.json
 ```
 
+#### Directory Analysis
+```bash
+# Analyze all data files in a directory (auto-detect mode)
+python data_quality/unified_quality_orchestrator.py --data_path /path/to/data/directory
+
+# Force directory mode
+python data_quality/unified_quality_orchestrator.py \
+    --data_path /path/to/data/directory \
+    --mode directory
+
+# Quick directory scan (no full analysis)
+python data_quality/unified_quality_orchestrator.py \
+    --data_path /path/to/data/directory \
+    --mode directory \
+    --quick_scan
+
+# Analyze specific file types in directory
+python data_quality/unified_quality_orchestrator.py \
+    --data_path /path/to/data/directory \
+    --mode directory \
+    --file_pattern "*.csv"
+
+# Non-recursive directory analysis
+python data_quality/unified_quality_orchestrator.py \
+    --data_path /path/to/data/directory \
+    --mode directory \
+    --recursive false
+```
+
+#### Command Line Options
+- `--data_path`: Path to data file or directory (required)
+- `--context`: Context description for the data
+- `--output`: Output file for the report
+- `--thresholds`: JSON file with custom thresholds
+- `--mode`: Analysis mode: `file`, `directory`, or `auto` (default: `auto`)
+- `--recursive`: Search subdirectories recursively (default: `true`)
+- `--file_pattern`: File pattern for directory analysis (default: `*`)
+- `--quick_scan`: Quick directory scan without full analysis
+
 ### Python API
 
+#### Single File Analysis
 ```python
-from data_quality.unified_quality_orchestrator import UnifiedQualityOrchestrator, QualityThresholds
+from data_quality.unified_quality_orchestrator import UnifiedQualityOrchestrator
 import pandas as pd
 
 # Initialize orchestrator
@@ -102,6 +145,46 @@ summary = report["summary"]
 print(f"Overall Quality: {summary['overall_quality']}")
 print(f"Critical Issues: {summary['critical_issues']}")
 print(f"Recommendations: {summary['recommendations']}")
+```
+
+#### Directory Analysis
+```python
+# Analyze all data files in a directory
+directory_report = orchestrator.analyze_directory("/path/to/data/directory")
+
+# Quick directory scan
+scan_summary = orchestrator.get_directory_summary("/path/to/data/directory")
+
+# Analyze specific file types
+directory_report = orchestrator.analyze_directory(
+    "/path/to/data/directory", 
+    file_pattern="*.csv", 
+    recursive=True
+)
+
+# Access directory summary
+summary = directory_report["summary"]
+print(f"Total files: {summary['total_files']}")
+print(f"Success rate: {summary['success_rate']:.1%}")
+print(f"Overall Quality: {summary['overall_quality']}")
+
+# Access individual file results
+for file_path, result in directory_report["file_results"].items():
+    if "error" not in result:
+        file_summary = result["summary"]
+        print(f"{file_path}: {file_summary['overall_quality']}")
+```
+
+#### Batch File Analysis
+```python
+# Analyze multiple specific files
+file_paths = ["file1.csv", "file2.csv", "file3.parquet"]
+batch_report = orchestrator.analyze_file_batch(file_paths)
+
+# Access batch summary
+summary = batch_report["summary"]
+print(f"Batch success rate: {summary['success_rate']:.1%}")
+print(f"Total critical issues: {summary['critical_issues_total']}")
 ```
 
 ### Custom Thresholds

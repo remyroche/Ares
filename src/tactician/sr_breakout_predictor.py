@@ -795,10 +795,10 @@ class SRBreakoutPredictor:
         """Save metrics to CSV format."""
         try:
             import csv
-            
+
             # Flatten metrics for CSV
             csv_data = []
-            
+
             # Market metrics
             market_metrics = metrics.get("market_metrics", {})
             csv_data.append(["Category", "Metric", "Value"])
@@ -806,31 +806,32 @@ class SRBreakoutPredictor:
             csv_data.append(["Market", "Current Price", market_metrics.get("price_range", {}).get("current", 0)])
             csv_data.append(["Market", "Volatility", market_metrics.get("price_range", {}).get("volatility", 0)])
             csv_data.append(["Market", "Total Volume", market_metrics.get("volume_metrics", {}).get("total_volume", 0)])
-            
+
             # S/R metrics
             sr_metrics = metrics.get("sr_metrics", {})
             csv_data.append(["S/R", "Total Levels", sr_metrics.get("total_levels", 0)])
             csv_data.append(["S/R", "Support Levels", sr_metrics.get("support_levels", {}).get("count", 0)])
             csv_data.append(["S/R", "Resistance Levels", sr_metrics.get("resistance_levels", {}).get("count", 0)])
             csv_data.append(["S/R", "SR Zone Width", sr_metrics.get("proximity_metrics", {}).get("sr_zone_width", 0)])
-            
+
             # Clustering metrics
             clustering_metrics = metrics.get("clustering_metrics", {})
             csv_data.append(["Clustering", "Total Clusters", clustering_metrics.get("total_clusters", 0)])
             csv_data.append(["Clustering", "Noise Points", clustering_metrics.get("noise_points", 0)])
-            
+
             # Performance metrics
             performance_metrics = metrics.get("performance_metrics", {})
             csv_data.append(["Performance", "Data Quality Score", performance_metrics.get("data_quality_score", 0)])
             csv_data.append(["Performance", "SR Confidence Score", performance_metrics.get("sr_confidence_score", 0)])
             csv_data.append(["Performance", "Overall Quality Score", performance_metrics.get("overall_analysis_quality", 0)])
-            
+
             with open(file_path, 'w', newline='') as f:
                 writer = csv.writer(f)
                 writer.writerows(csv_data)
-                
+
         except Exception as e:
             self.logger.error(f"Error saving metrics to CSV: {e}")
+            raise
 
     def _save_html_report(self, report: dict[str, Any], file_path: Path) -> None:
         """Save HTML report."""
@@ -906,13 +907,12 @@ class SRBreakoutPredictor:
     </div>
 </body>
 </html>
-            """
-            
+"""
             with open(file_path, 'w') as f:
                 f.write(html_content)
-                
         except Exception as e:
             self.logger.error(f"Error saving HTML report: {e}")
+            raise
 
     async def get_latest_report(self) -> dict[str, Any]:
         """Get the latest generated report."""
@@ -930,13 +930,13 @@ class SRBreakoutPredictor:
             import os
             from pathlib import Path
             from datetime import datetime, timedelta
-            
+
             if not self.reporting_enabled:
                 return
-            
+
             report_path = Path(self.report_directory)
             cutoff_date = datetime.now() - timedelta(days=self.report_retention_days)
-            
+
             for subdir in ["json", "csv", "html"]:
                 subdir_path = report_path / subdir
                 if subdir_path.exists():
@@ -946,11 +946,12 @@ class SRBreakoutPredictor:
                             if file_time < cutoff_date:
                                 file_path.unlink()
                                 self.logger.info(f"Cleaned up old report: {file_path}")
-            
+
             self.logger.info("🧹 Old reports cleanup completed")
-            
+
         except Exception as e:
             self.logger.error(f"Error cleaning up old reports: {e}")
+            raise
 
     async def generate_manual_report(self, market_data: pd.DataFrame, sr_context: dict[str, Any] = None) -> dict[str, Any]:
         """Manually generate a detailed report."""
@@ -958,16 +959,16 @@ class SRBreakoutPredictor:
             if not self.reporting_enabled:
                 self.logger.warning("Reporting is disabled. Enable it in configuration to generate reports.")
                 return {}
-            
+
             if sr_context is None:
                 # Generate SR context if not provided
                 current_price = market_data["close"].iloc[-1]
                 sr_context = await self.get_sr_context(market_data, current_price)
-            
+
             report = await self._generate_detailed_report(market_data, sr_context)
             self.logger.info(f"📊 Manual report generated: {self.current_report_id}")
             return report
-            
+
         except Exception as e:
             self.logger.error(f"Error generating manual report: {e}")
             return {}
@@ -1051,7 +1052,7 @@ class SRBreakoutPredictor:
                 "current_price": current_price,
                 "timestamp": pd.Timestamp.now(),
             }
-            
+
             # Generate detailed report for predictions
             if self.reporting_enabled:
                 await self._generate_detailed_report(market_data, predictions)
@@ -1099,6 +1100,110 @@ class SRBreakoutPredictor:
 
         Returns:
             dict[str, Any]: S/R context information
+"""
+        if not self.is_initialized:
+            self.logger.error("SR breakout predictor not initialized")
+            return {}
+
+        try:
+            # Detect support and resistance levels
+            support_levels = await self._detect_support_levels(market_data)
+            resistance_levels = await self._detect_resistance_levels(market_data)
+
+            # Apply DBSCAN clustering to filter significant levels
+            all_levels = support_levels + resistance_levels
+            clustering_result = await self.cluster_sr_levels_dbscan(all_levels)
+            clustered_levels = clustering_result.get('clustered_levels', all_levels)
+
+            # Separate clustered levels back into support and resistance
+            clustered_support = [level for level in clustered_levels if level.get('type', 'support') == 'support']
+            clustered_resistance = [level for level in clustered_levels if level.get('type', 'resistance') == 'resistance']
+
+            # Calculate enhanced strength for all levels
+            enhanced_strength_support = await self.calculate_comprehensive_strength(market_data, clustered_support)
+            enhanced_strength_resistance = await self.calculate_comprehensive_strength(market_data, clustered_resistance)
+
+            # Update levels with enhanced strength
+            for level in clustered_support:
+                level_id = f"{level['price']:.4f}"
+                if level_id in enhanced_strength_support:
+                    level['enhanced_strength'] = enhanced_strength_support[level_id]['comprehensive_strength']
+                    level['strength_factors'] = enhanced_strength_support[level_id]['factors']
+                else:
+                    level['enhanced_strength'] = level.get('strength', 0.5)
+                    level['strength_factors'] = {}
+
+            for level in clustered_resistance:
+                level_id = f"{level['price']:.4f}"
+                if level_id in enhanced_strength_resistance:
+                    level['enhanced_strength'] = enhanced_strength_resistance[level_id]['comprehensive_strength']
+                    level['strength_factors'] = enhanced_strength_resistance[level_id]['factors']
+                else:
+                    level['enhanced_strength'] = level.get('strength', 0.5)
+                    level['strength_factors'] = {}
+
+            # Find nearest levels using enhanced strength
+            nearest_support = self._find_nearest_level(current_price, clustered_support, "support")
+            nearest_resistance = self._find_nearest_level(current_price, clustered_resistance, "resistance")
+
+            # Calculate proximity metrics
+            support_proximity = self._calculate_proximity(current_price, nearest_support)
+            resistance_proximity = self._calculate_proximity(current_price, nearest_resistance)
+
+            # Get pivot levels
+            pivot_levels = self._calculate_pivot_levels(market_data)
+
+            # Get advanced S/R analysis
+            fibonacci_levels = await self.calculate_fibonacci_levels(market_data)
+            elliott_wave_levels = await self.detect_elliott_wave_levels(market_data)
+            order_flow_analysis = await self.analyze_order_flow_levels(market_data)
+
+            # Create context
+            context = {
+"current_price": current_price,
+"nearest_support": nearest_support.get("price", current_price) if nearest_support else current_price,
+"nearest_resistance": nearest_resistance.get("price", current_price) if nearest_resistance else current_price,
+"support_strength": nearest_support.get("enhanced_strength", nearest_support.get("strength", 0.5)) if nearest_support else 0.5,
+"resistance_strength": nearest_resistance.get("enhanced_strength", nearest_resistance.get("strength", 0.5)) if nearest_resistance else 0.5,
+"support_proximity": support_proximity,
+"resistance_proximity": resistance_proximity,
+"pivot_levels": pivot_levels,
+
+# Support and resistance level collections
+"support_levels": clustered_support,
+"resistance_levels": clustered_resistance,
+
+# Advanced analysis
+"fibonacci_levels": fibonacci_levels,
+"elliott_wave_levels": elliott_wave_levels,
+"order_flow_analysis": order_flow_analysis,
+
+# Clustering results
+"clustering_result": clustering_result,
+
+# Comparison metrics between price and VWAP approaches
+"comparison_metrics": self._calculate_comparison_metrics(clustered_support, clustered_resistance, current_price),
+
+# Data source analysis
+"data_source_analysis": self._analyze_data_sources(clustered_support, clustered_resistance),
+
+"timestamp": pd.Timestamp.now(),
+}
+
+# Generate detailed report after context is fully defined
+            try:
+                context["report_id"] = await self._generate_detailed_report(market_data, context)
+            except Exception as e:
+                self.logger.warning(f"Error generating detailed report: {e}")
+                context["report_id"] = "report_generation_failed"
+
+            return context
+
+        except Exception as e:
+            self.logger.error(f"Error getting S/R context: {e}")
+            return {}
+
+async def extract_ml_features(self, market_data: pd.DataFrame, current_price: float) -> dict[str, float]:
         """
         if not self.is_initialized:
             self.logger.error("SR breakout predictor not initialized")
@@ -1205,27 +1310,27 @@ class SRBreakoutPredictor:
     async def extract_ml_features(self, market_data: pd.DataFrame, current_price: float) -> dict[str, float]:
         """
         Extract comprehensive SR features for ML model training.
-        
+
         This method provides a standardized interface for extracting all SR features
         that should be used in ML model training, ensuring consistency across
         all components (Analyst, Tactician, etc.).
-        
+
         Args:
             market_data: Market data DataFrame
             current_price: Current market price
-            
+
         Returns:
             dict[str, float]: Comprehensive SR features for ML training
         """
         try:
-            self.logger.info("🔧 Extracting comprehensive SR features for ML training...")
-            
+            self.logger.info("Extracting comprehensive SR features for ML training...")
+
             # Get comprehensive SR context
             sr_context = await self.get_sr_context(market_data, current_price)
-            
+
             # Extract features from SR context
             features = {}
-            
+
             # Basic proximity features
             features.update({
                 "sr_proximity": sr_context.get("support_proximity", 1.0),
@@ -1233,27 +1338,27 @@ class SRBreakoutPredictor:
                 "resistance_proximity": sr_context.get("resistance_proximity", 1.0),
                 "sr_nearest_support": sr_context.get("nearest_support", current_price),
                 "sr_nearest_resistance": sr_context.get("nearest_resistance", current_price),
-            })
-            
-            # Strength features
-            features.update({
-                "sr_strength": max(sr_context.get("support_strength", 0.5), sr_context.get("resistance_strength", 0.5)),
-                "support_strength": sr_context.get("support_strength", 0.5),
-                "resistance_strength": sr_context.get("resistance_strength", 0.5),
-                "sr_enhanced_strength": max(sr_context.get("support_strength", 0.5), sr_context.get("resistance_strength", 0.5)),
-            })
-            
-            # Level count features
-            support_levels = sr_context.get("support_levels", [])
-            resistance_levels = sr_context.get("resistance_levels", [])
-            features.update({
-                "sr_total_support_levels": len(support_levels),
-                "sr_total_resistance_levels": len(resistance_levels),
-                "sr_total_levels": len(support_levels) + len(resistance_levels),
-            })
-            
-            # Distance features
-            if support_levels:
+})
+
+# Strength features
+features.update({
+"sr_strength": max(sr_context.get("support_strength", 0.5), sr_context.get("resistance_strength", 0.5)),
+"support_strength": sr_context.get("support_strength", 0.5),
+"resistance_strength": sr_context.get("resistance_strength", 0.5),
+"sr_enhanced_strength": max(sr_context.get("support_strength", 0.5), sr_context.get("resistance_strength", 0.5)),
+})
+
+# Level count features
+support_levels = sr_context.get("support_levels", [])
+resistance_levels = sr_context.get("resistance_levels", [])
+features.update({
+"sr_total_support_levels": len(support_levels),
+"sr_total_resistance_levels": len(resistance_levels),
+"sr_total_levels": len(support_levels) + len(resistance_levels),
+})
+
+# Distance features
+if support_levels:
                 support_distances = [abs(level.get("price", current_price) - current_price) / current_price for level in support_levels]
                 features["sr_nearest_support_distance"] = min(support_distances) if support_distances else 1.0
             else:

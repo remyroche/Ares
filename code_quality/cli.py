@@ -16,6 +16,7 @@ from .analyzers.call_graph_analyzer import CallGraphAnalyzer
 from .analyzers.dependency_analyzer import DependencyAnalyzer
 from .analyzers.import_analyzer import ImportAnalyzer
 from .analyzers.signature_analyzer import SignatureAnalyzer
+from .analyzers.placeholder_detector import PlaceholderDetector
 from .reporters.quality_reporter import QualityReporter
 from .fixers.sequential_fixer import SequentialFixer
 from .merge_conflict_detector import MergeConflictDetector
@@ -295,6 +296,25 @@ def _run_quality_report(args, config):
     return 0
 
 
+def _run_placeholder_detection(args, config):
+    """Run placeholder detection."""
+    print("Running placeholder detection...")
+    
+    detector = PlaceholderDetector(config)
+    results = detector.analyze_directory(args.path)
+    
+    print(f"\nPlaceholder Detection Results:")
+    print(f"  Total files analyzed: {results['summary_stats']['total_files_analyzed']}")
+    print(f"  Files with placeholders: {results['summary_stats']['files_with_placeholders']}")
+    print(f"  Total placeholders: {results['summary_stats']['total_placeholders']}")
+    print(f"  Average placeholders per file: {results['summary_stats']['average_placeholders_per_file']:.2f}")
+    
+    if args.output:
+        detector.save_report(args.output, args.format)
+    
+    return 0
+
+
 def main():
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
@@ -339,6 +359,13 @@ def main():
     signature_parser = subparsers.add_parser('signatures', help='Run function signature analysis')
     signature_parser.add_argument('--path', required=True, help='Path to Python file or directory')
     signature_parser.add_argument('--output', help='Output directory for reports')
+    
+    # Placeholder detection command
+    placeholder_parser = subparsers.add_parser('placeholders', help='Detect placeholders, stubs, and incomplete code')
+    placeholder_parser.add_argument('--path', required=True, help='Path to Python file or directory')
+    placeholder_parser.add_argument('--output', help='Output file path for report')
+    placeholder_parser.add_argument('--format', choices=['terminal', 'json', 'html'], 
+                                  default='terminal', help='Output format')
     
     # Sequential fix command
     sequential_parser = subparsers.add_parser('sequential-fix', help='Run sequential auto-fix pipeline')
@@ -387,6 +414,8 @@ def main():
         return _run_import_analysis(args, config)
     elif args.command == 'signatures':
         return _run_signature_analysis(args, config)
+    elif args.command == 'placeholders':
+        return _run_placeholder_detection(args, config)
     elif args.command == 'sequential-fix':
         return _run_sequential_fix(args, config)
     elif args.command == 'merge-conflicts':

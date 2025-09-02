@@ -2413,6 +2413,9 @@ class VectorizedAdvancedFeatureEngineering:
                     "improvement": 0.0,
                 },
             }
+        except Exception as preprocessing_error:
+            self.logger.exception(f"❌ Error in preprocessing: {preprocessing_error}")
+            price_validation = {"preprocessing_applied": None}
 
         # Log preprocessing results
         if price_validation.get("preprocessing_applied"):
@@ -2597,44 +2600,44 @@ class VectorizedAdvancedFeatureEngineering:
                     [np.inf, -np.inf], np.nan,
                 ).fillna(0)
                 context_features_count += 3
-        # volume_ratio
-        if "volume_ratio" in price_data.columns:
-                    vr, pd.Series(price_data["volume_ratio"].values, index=idx)
-        # Use multi-period difference to reduce correlation with base feature
-                    features["volume_ratio_change"] = vr.diff(3).fillna(0)
-        with np.errstate(divide="ignore", invalid="ignore"):
-                        features["volume_ratio_returns"] = (
-                            (vr.pct_change())
-                            .replace([np.inf, -np.inf], np.nan)
-                            .fillna(0)
-                        )
-                        context_features_count += 2
-        # trade_count
-        if "trade_count" in price_data.columns:
-                    tc, pd.Series(price_data["trade_count"].values, index=idx)
-        # Use multi-period difference to reduce correlation with base feature
-                    features["trade_count_change"] = tc.diff(3).fillna(0)
-        with np.errstate(divide="ignore", invalid="ignore"):
-                        features["trade_count_returns"] = (
-                            (tc.pct_change())
-                            .replace([np.inf, -np.inf], np.nan)
-                            .fillna(0)
-                        )
-                        context_features_count += 2
-        # trade_volume
-        if "trade_volume" in price_data.columns:
-                    tv, pd.Series(price_data["trade_volume"].values, index=idx)
-        # Use multi-period difference to reduce correlation with base feature
-                    features["trade_volume_change"] = tv.diff(3).fillna(0)
-        with np.errstate(divide="ignore", invalid="ignore"):
-                        features["trade_volume_returns"] = (
-                            (tv.pct_change())
-                            .replace([np.inf, -np.inf], np.nan)
-                            .fillna(0)
-                        )
-                        context_features_count += 2
+            # volume_ratio
+            if "volume_ratio" in price_data.columns:
+                vr = pd.Series(price_data["volume_ratio"].values, index=idx)
+                # Use multi-period difference to reduce correlation with base feature
+                features["volume_ratio_change"] = vr.diff(3).fillna(0)
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    features["volume_ratio_returns"] = (
+                        (vr.pct_change())
+                        .replace([np.inf, -np.inf], np.nan)
+                        .fillna(0)
+                    )
+                    context_features_count += 2
+            # trade_count
+            if "trade_count" in price_data.columns:
+                tc = pd.Series(price_data["trade_count"].values, index=idx)
+                # Use multi-period difference to reduce correlation with base feature
+                features["trade_count_change"] = tc.diff(3).fillna(0)
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    features["trade_count_returns"] = (
+                        (tc.pct_change())
+                        .replace([np.inf, -np.inf], np.nan)
+                        .fillna(0)
+                    )
+                    context_features_count += 2
+            # trade_volume
+            if "trade_volume" in price_data.columns:
+                tv = pd.Series(price_data["trade_volume"].values, index=idx)
+                # Use multi-period difference to reduce correlation with base feature
+                features["trade_volume_change"] = tv.diff(3).fillna(0)
+                with np.errstate(divide="ignore", invalid="ignore"):
+                    features["trade_volume_returns"] = (
+                        (tv.pct_change())
+                        .replace([np.inf, -np.inf], np.nan)
+                        .fillna(0)
+                    )
+                    context_features_count += 2
         except Exception as _e:
-        self.logger.warning(f"⚠️ Context dynamics generation failed: {_e}")
+            self.logger.warning(f"⚠️ Context dynamics generation failed: {_e}")
 
         self.logger.info(f"🔍 Generated {context_features_count} context dynamics features")
         self.logger.info(f"🔍 Total features after context dynamics: {len(features)}")
@@ -2642,111 +2645,111 @@ class VectorizedAdvancedFeatureEngineering:
         # Volatility regime features
         self.logger.info("🔍 Generating volatility regime features...")
         if self.volatility_model:
-                volatility_features = (
-        await self.volatility_model.model_volatility_vectorized(
-                        price_data,
-                        volume_data,
-                    )
+            volatility_features = (
+                await self.volatility_model.model_volatility_vectorized(
+                    price_data,
+                    volume_data,
                 )
-        self.logger.info(f"🔍 Generated {len(volatility_features)} volatility features")
-        if volatility_features:
-        self.logger.info(f"🔍 Volatility feature names: {list(volatility_features.keys())}")
-        # Ensure consistent numeric typing for downstream validation
-        if "volatility_regime" in volatility_features:
+            )
+            self.logger.info(f"🔍 Generated {len(volatility_features)} volatility features")
+            if volatility_features:
+                self.logger.info(f"🔍 Volatility feature names: {list(volatility_features.keys())}")
+                # Ensure consistent numeric typing for downstream validation
+                if "volatility_regime" in volatility_features:
                     vr = volatility_features["volatility_regime"]
-        if isinstance(vr, str):
+                    if isinstance(vr, str):
                         mapping = {"low": 0, "medium": 1, "high": 2}
                         volatility_features["volatility_regime"] = mapping.get(vr, 1)
-        # Filter out any coroutine features before updating
-                filtered_volatility_features, filter_coroutines(volatility_features, "volatility")
+                # Filter out any coroutine features before updating
+                filtered_volatility_features = filter_coroutines(volatility_features, "volatility")
                 features.update(filtered_volatility_features)
-        self.logger.info(f"🔍 Total features after volatility: {len(features)}")
-            else:
-        self.logger.warning("⚠️ Volatility model not available")
+            self.logger.info(f"🔍 Total features after volatility: {len(features)}")
+        else:
+            self.logger.warning("⚠️ Volatility model not available")
 
         # Correlation analysis features
         self.logger.info("🔍 Generating correlation analysis features...")
         if self.correlation_analyzer:
-                correlation_features = (
-        await self.correlation_analyzer.analyze_correlations_vectorized(
-                        price_data,
-                    )
+            correlation_features = (
+                await self.correlation_analyzer.analyze_correlations_vectorized(
+                    price_data,
                 )
-        self.logger.info(f"🔍 Generated {len(correlation_features)} correlation features")
-        if correlation_features:
-        self.logger.info(f"🔍 Correlation feature names: {list(correlation_features.keys())}")
-        # Filter out any coroutine features before updating
-                filtered_correlation_features, filter_coroutines(correlation_features, "correlation")
+            )
+            self.logger.info(f"🔍 Generated {len(correlation_features)} correlation features")
+            if correlation_features:
+                self.logger.info(f"🔍 Correlation feature names: {list(correlation_features.keys())}")
+                # Filter out any coroutine features before updating
+                filtered_correlation_features = filter_coroutines(correlation_features, "correlation")
                 features.update(filtered_correlation_features)
-        self.logger.info(f"🔍 Total features after correlation: {len(features)}")
-            else:
-        self.logger.warning("⚠️ Correlation analyzer not available")
+            self.logger.info(f"🔍 Total features after correlation: {len(features)}")
+        else:
+            self.logger.warning("⚠️ Correlation analyzer not available")
 
         # Momentum analysis features
         self.logger.info("🔍 Generating momentum analysis features...")
         if self.momentum_analyzer:
-                momentum_features = (
-        await self.momentum_analyzer.analyze_momentum_vectorized(
-                        price_data,
-                        volume_data,
-                    )
+            momentum_features = (
+                await self.momentum_analyzer.analyze_momentum_vectorized(
+                    price_data,
+                    volume_data,
                 )
-        self.logger.info(f"🔍 Generated {len(momentum_features)} momentum features")
-        if momentum_features:
-        self.logger.info(f"🔍 Momentum feature names: {list(momentum_features.keys())}")
-        # Filter out any coroutine features before updating
-                filtered_momentum_features, filter_coroutines(momentum_features, "momentum")
+            )
+            self.logger.info(f"🔍 Generated {len(momentum_features)} momentum features")
+            if momentum_features:
+                self.logger.info(f"🔍 Momentum feature names: {list(momentum_features.keys())}")
+                # Filter out any coroutine features before updating
+                filtered_momentum_features = filter_coroutines(momentum_features, "momentum")
                 features.update(filtered_momentum_features)
-        self.logger.info(f"🔍 Total features after momentum: {len(features)}")
-            else:
-        self.logger.warning("⚠️ Momentum analyzer not available")
+            self.logger.info(f"🔍 Total features after momentum: {len(features)}")
+        else:
+            self.logger.warning("⚠️ Momentum analyzer not available")
 
         # Liquidity analysis features
         self.logger.info("🔍 Generating liquidity analysis features...")
         if self.liquidity_analyzer:
-                liquidity_features = (
-        await self.liquidity_analyzer.analyze_liquidity_vectorized(
-                        price_data,
-                        volume_data,
-                    )
+            liquidity_features = (
+                await self.liquidity_analyzer.analyze_liquidity_vectorized(
+                    price_data,
+                    volume_data,
                 )
-        self.logger.info(f"🔍 Generated {len(liquidity_features)} liquidity features")
-        if liquidity_features:
-        self.logger.info(f"🔍 Liquidity feature names: {list(liquidity_features.keys())}")
-        # Filter out any coroutine features before updating
-                filtered_liquidity_features, filter_coroutines(liquidity_features, "liquidity")
+            )
+            self.logger.info(f"🔍 Generated {len(liquidity_features)} liquidity features")
+            if liquidity_features:
+                self.logger.info(f"🔍 Liquidity feature names: {list(liquidity_features.keys())}")
+                # Filter out any coroutine features before updating
+                filtered_liquidity_features = filter_coroutines(liquidity_features, "liquidity")
                 features.update(filtered_liquidity_features)
-        self.logger.info(f"🔍 Total features after liquidity: {len(features)}")
-            else:
-        self.logger.warning("⚠️ Liquidity analyzer not available")
+            self.logger.info(f"🔍 Total features after liquidity: {len(features)}")
+        else:
+            self.logger.warning("⚠️ Liquidity analyzer not available")
 
         # Candlestick pattern features
         self.logger.info("🔍 Generating candlestick pattern features...")
         if self.candlestick_analyzer:
-                candlestick_features, await self.candlestick_analyzer.analyze_patterns(
-                    price_data,
-                )
-        self.logger.info(f"🔍 Generated {len(candlestick_features)} candlestick features")
-        if candlestick_features:
-        self.logger.info(f"🔍 Candlestick feature names: {list(candlestick_features.keys())}")
-        # Filter out any coroutine features before updating
-                filtered_candlestick_features, filter_coroutines(candlestick_features, "candlestick")
+            candlestick_features = await self.candlestick_analyzer.analyze_patterns(
+                price_data,
+            )
+            self.logger.info(f"🔍 Generated {len(candlestick_features)} candlestick features")
+            if candlestick_features:
+                self.logger.info(f"🔍 Candlestick feature names: {list(candlestick_features.keys())}")
+                # Filter out any coroutine features before updating
+                filtered_candlestick_features = filter_coroutines(candlestick_features, "candlestick")
                 features.update(filtered_candlestick_features)
-        self.logger.info(f"🔍 Total features after candlestick: {len(features)}")
-            else:
-        self.logger.warning("⚠️ Candlestick analyzer not available")
+            self.logger.info(f"🔍 Total features after candlestick: {len(features)}")
+        else:
+            self.logger.warning("⚠️ Candlestick analyzer not available")
 
         # Immediately alongside candlestick/pattern features (requires OHLCV):
         # Compute classic OHLCV-based indicators using actual prices
         self.logger.info("🔍 Generating OHLCV price features...")
-            ohlcv_price_features, self._engineer_ohlcv_price_features_vectorized(
-                price_data,
-            )
+        ohlcv_price_features = self._engineer_ohlcv_price_features_vectorized(
+            price_data,
+        )
         self.logger.info(f"🔍 Generated {len(ohlcv_price_features)} OHLCV price features")
         if ohlcv_price_features:
-        self.logger.info(f"🔍 OHLCV price feature names: {list(ohlcv_price_features.keys())}")
-        # Filter out any coroutine features before updating
-            filtered_ohlcv_price_features, filter_coroutines(ohlcv_price_features, "ohlcv_price")
+            self.logger.info(f"🔍 OHLCV price feature names: {list(ohlcv_price_features.keys())}")
+            # Filter out any coroutine features before updating
+            filtered_ohlcv_price_features = filter_coroutines(ohlcv_price_features, "ohlcv_price")
             features.update(filtered_ohlcv_price_features)
         self.logger.info(f"🔍 Total features after OHLCV price: {len(features)}")
 
@@ -2786,11 +2789,11 @@ class VectorizedAdvancedFeatureEngineering:
         # S/R distance features — generate sr_levels if not provided
         self.logger.info("🔍 Generating S/R distance features...")
         if self.sr_distance_calculator:
-        # Generate S/R levels if not provided
-        if not sr_levels:
-        self.logger.info("🔍 Generating S/R levels from price data...")
-                    sr_levels = self._generate_sr_levels(price_data)
-                else:
+            # Generate S/R levels if not provided
+            if not sr_levels:
+                self.logger.info("🔍 Generating S/R levels from price data...")
+                sr_levels = self._generate_sr_levels(price_data)
+            else:
         # Normalize incoming sr_levels to the format expected by the calculator
         try:
         if "support" not in sr_levels and "support_levels" in sr_levels:

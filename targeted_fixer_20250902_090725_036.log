@@ -1,0 +1,28 @@
+2025-09-02 09:07:25,039 - INFO - Processing file: src/tactician/sr_data_integration_simple.py
+2025-09-02 09:07:25,039 - INFO - Performing semantic analysis...
+2025-09-02 09:07:25,039 - INFO - Code quality score: 0.00
+2025-09-02 09:07:25,039 - WARNING - Syntax errors found: 1
+2025-09-02 09:07:25,039 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 09:07:25,040 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:25,041 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:25,042 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:25,043 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:25,044 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:25,045 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:25,045 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:25,046 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:25,047 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:25,048 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:25,049 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:25,050 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:25,051 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:25,052 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:25,053 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:25,054 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:25,055 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:25,057 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:25,060 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:25,061 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:07:25,062 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:25,064 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:25,066 - INFO - No fixes needed for: src/tactician/sr_data_integration_simple.py

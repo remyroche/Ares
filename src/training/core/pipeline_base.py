@@ -13,13 +13,36 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
-from src.utils.logger import system_logger
-from src.utils.warning_symbols import (
-    error,
-    execution_error, failed, initialization_error,
-    invalid, missing, validation_error,
-)
+from src.utils.simple_error_handler import handle_errors, handle_specific_errors, system_logger
+
+# Simple warning symbol functions
+def error(message: str) -> str:
+    """Format error message."""
+    return f"❌ ERROR: {message}"
+
+def execution_error(message: str) -> str:
+    """Format execution error message."""
+    return f"⚡ EXECUTION ERROR: {message}"
+
+def failed(message: str) -> str:
+    """Format failed message."""
+    return f"💥 FAILED: {message}"
+
+def initialization_error(message: str) -> str:
+    """Format initialization error message."""
+    return f"🔧 INITIALIZATION ERROR: {message}"
+
+def invalid(message: str) -> str:
+    """Format invalid message."""
+    return f"❌ INVALID: {message}"
+
+def missing(message: str) -> str:
+    """Format missing message."""
+    return f"🔍 MISSING: {message}"
+
+def validation_error(message: str) -> str:
+    """Format validation error message."""
+    return f"✅ VALIDATION ERROR: {message}"
 
 
 @dataclass

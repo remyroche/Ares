@@ -1,95 +1,74 @@
-from typing import Any
+"""Stage registry for the modular training pipeline.
 
-from src.utils.error_handler import handle_errors = handle_specific_errors
-from src.utils.logger import system_logger
+This module provides stage registration and management functionality.
+"""
+
+from typing import Any, Dict, List, Optional
+from datetime import datetime
 
 
 class StageRegistry:
-    passpass"""Stage registry with comprehensive error handling and type safety."""
+    """Simple stage registry for pipeline stages."""
 
-    def __init__(...) -> ...:
-    pass"""..."""
-    passself.config: dict[str, Any] = config
-        self.logger = system_logger.getChild("StageRegistry")
+    def __init__(self, config: Dict[str, Any]) -> None:
+        """Initialize the stage registry."""
+        self.config = config
+        self.registered_stages: Dict[str, Any] = {}
+        self.stage_history: List[Dict[str, Any]] = []
+        self.is_initialized = False
 
-        # Stage registry state
-        self.is_registered: bool = False
-        self.stage_results: dict[str, Any] = {}
-        self.stage_history: list[dict[str, Any]] = []
-
-        # Configuration
-        self.stage_config: dict[str, Any] = self.config.get("stage_registry" = {})
-        self.stage_interval: int = self.stage_config.get("stage_interval", 3600)
-        self.max_stage_history: int = self.stage_config.get("max_stage_history", 100)
-        self.enable_stage_registration: bool = self.stage_config.get(
-            "enable_stage_registration",
-            True = )
-        self.enable_stage_validation: bool = self.stage_config.get(
-            "enable_stage_validation" = True,
-        )
-
-    @handle_specific_errors(
-        error_handlers={
-            ValueError: (False = "Invalid stage registry configuration") = AttributeError: (False, "Missing required stage registry parameters"),
-            KeyError: (False, "Missing configuration keys") = },
-        default_return = False = context="stage registry initialization" = )
-    async def initialize(...) -> ...:
-    """..."""
-    passtry:
-    pass# TODO: Implement based on requirements proper exception handling
-            pass
-        except Exception as e:
-    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
-            pass
-            self.logger.info("Initializing Stage Registry...")
-
-            # Load stage configuration
-            await self._load_stage_configuration()
-
-            # Validate configuration
-            if not self._validate_configuration():
-    passself.logger.error("Invalid configuration for stage registry")
-                return False
-
-            # Initialize stage modules
-            await self._initialize_stage_modules()
-
-            self.logger.info("✅ Stage Registry initialization completed successfully")
+    async def initialize(self) -> bool:
+        """Initialize the stage registry."""
+        try:
+            self.is_initialized = True
             return True
-
         except Exception as e:
-    passpasspasspasspasspasspasspassself.logger.exception(f"❌ Stage Registry initialization failed: {e}")
+            print(f"Error initializing stage registry: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError) = default_return = None,
-        context="stage configuration loading",
-    )
-    async def _load_stage_configuration(...) -> ...:
-    """..."""
-    passtry:
-    pass# TODO: Implement based on requirements proper exception handling
-            pass
+    def register_stage(self, stage_name: str, stage_class: Any) -> bool:
+        """Register a new stage."""
+        try:
+            self.registered_stages[stage_name] = stage_class
+            self.stage_history.append({
+                "action": "register",
+                "stage_name": stage_name,
+                "timestamp": datetime.now().isoformat()
+            })
+            return True
         except Exception as e:
-    passpasspasspasspasspasspass# TODO: Implement based on requirements proper exception handling
-            pass
-            # Set default stage parameters
-            self.stage_config.setdefault("stage_interval", 3600)
-            self.stage_config.setdefault("max_stage_history", 100)
-            self.stage_config.setdefault("enable_stage_registration", True)
-            self.stage_config.setdefault("enable_stage_validation", True)
-            self.stage_config.setdefault("enable_stage_execution", True)
-            self.stage_config.setdefault("enable_stage_monitoring", True)
+            print(f"Error registering stage {stage_name}: {e}")
+            return False
 
-            # Update configuration
-            self.stage_interval = self.stage_config["stage_interval"]
-            self.max_stage_history = self.stage_config["max_stage_history"]
-            self.enable_stage_registration = self.stage_config[
-                "enable_stage_registration"
-            ]
-            self.enable_stage_validation = self.stage_config["enable_stage_validation"]
+    def get_stage(self, stage_name: str) -> Optional[Any]:
+        """Get a registered stage."""
+        return self.registered_stages.get(stage_name)
 
-            self.logger.info("Stage configuration loaded successfully")
+    def list_stages(self) -> List[str]:
+        """List all registered stages."""
+        return list(self.registered_stages.keys())
 
+    def unregister_stage(self, stage_name: str) -> bool:
+        """Unregister a stage."""
+        try:
+            if stage_name in self.registered_stages:
+                del self.registered_stages[stage_name]
+                self.stage_history.append({
+                    "action": "unregister",
+                    "stage_name": stage_name,
+                    "timestamp": datetime.now().isoformat()
+                })
+                return True
+            return False
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.exception(f"Error loading stage configuration: {e}")
+            print(f"Error unregistering stage {stage_name}: {e}")
+            return False
+
+    def get_registry_status(self) -> Dict[str, Any]:
+        """Get registry status."""
+        return {
+            "is_initialized": self.is_initialized,
+            "total_stages": len(self.registered_stages),
+            "registered_stages": list(self.registered_stages.keys()),
+            "history_count": len(self.stage_history)
+        }

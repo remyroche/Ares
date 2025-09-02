@@ -1,0 +1,18 @@
+2025-09-02 08:36:01,643 - INFO - Processing file: src/utils/centralized_decorators_simple.py
+2025-09-02 08:36:01,643 - INFO - Performing semantic analysis...
+2025-09-02 08:36:01,644 - INFO - Code quality score: 0.00
+2025-09-02 08:36:01,644 - WARNING - Syntax errors found: 1
+2025-09-02 08:36:01,644 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:36:01,645 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:01,647 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:01,648 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:01,649 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:01,651 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:01,652 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:01,653 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:01,655 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:01,656 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:01,660 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:36:01,660 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:36:01,662 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:01,663 - INFO - No fixes needed for: src/utils/centralized_decorators_simple.py

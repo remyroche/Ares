@@ -1,0 +1,32 @@
+2025-09-02 08:18:23,046 - INFO - Processing file: src/utils/pipeline_standards.py
+2025-09-02 08:18:23,047 - INFO - Performing semantic analysis...
+2025-09-02 08:18:23,047 - INFO - Code quality score: 0.00
+2025-09-02 08:18:23,047 - WARNING - Syntax errors found: 1
+2025-09-02 08:18:23,047 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:18:23,049 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:23,050 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:23,052 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:23,053 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:23,055 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:23,056 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:23,058 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:23,059 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:23,061 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:23,062 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:23,064 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:23,065 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:23,067 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:23,068 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:23,071 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:23,072 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:23,074 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:23,077 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:23,078 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:23,080 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:23,082 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:23,083 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:23,088 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:23,088 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:18:23,088 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:18:23,094 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:23,098 - INFO - No fixes needed for: src/utils/pipeline_standards.py

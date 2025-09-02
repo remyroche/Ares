@@ -1,0 +1,23 @@
+2025-09-02 08:18:17,783 - INFO - Processing file: src/utils/parquet_utils.py
+2025-09-02 08:18:17,783 - INFO - Performing semantic analysis...
+2025-09-02 08:18:17,783 - INFO - Code quality score: 0.00
+2025-09-02 08:18:17,783 - WARNING - Syntax errors found: 1
+2025-09-02 08:18:17,783 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:18:17,784 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:17,785 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:17,785 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:17,785 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:17,786 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:17,786 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:17,787 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:17,787 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:17,788 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:17,788 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:17,788 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:17,790 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:17,791 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:17,792 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:17,792 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:18:17,793 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:18:17,793 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:17,794 - INFO - No fixes needed for: src/utils/parquet_utils.py

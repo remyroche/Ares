@@ -1,0 +1,42 @@
+Dead/Unused code summary (from Vulture):
+Total findings: 2904
+By type:
+  - unused_import: 60
+  - unused_variable: 1113
+  - unused_function: 325
+  - unused_method: 1014
+  - unused_class: 103
+  - unused_attribute: 207
+  - other: 82
+High-confidence (>=90%): 177
+Top 30 high-confidence entries:
+ares_launcher.py:92: unused import 'SHORT_BLANK_LOOKBACK_DAYS' (90% confidence)
+ares_launcher.py:97: unused import 'validate_mode_parameters' (90% confidence)
+code_quality/analyzers/complexity_analyzer.py:12: unused import 'radon_complexity' (90% confidence)
+code_quality/analyzers/signature_analyzer.py:11: unused import 'difflib' (90% confidence)
+code_quality/comprehensive_code_review.py:17: unused import 'astroid' (90% confidence)
+code_quality/comprehensive_code_review.py:35: unused import 'astroid' (90% confidence)
+code_quality/comprehensive_code_review.py:41: unused import 'mypy' (90% confidence)
+code_quality/comprehensive_code_review.py:47: unused import 'bandit' (90% confidence)
+code_quality/utils/progress.py:21: unused import 'Text' (90% confidence)
+code_quality/utils/progress.py:24: unused import 'Columns' (90% confidence)
+example_enhanced_multi_timeframe_optimization.py:36: unused import 'get_cross_timeframe_period_pairs' (90% confidence)
+minimal_file_utils.py:7: unused import 'Pattern' (90% confidence)
+optimize_hmm_regime_parameters_advanced.py:39: unused import 'EllipticEnvelope' (90% confidence)
+optimize_hmm_regime_parameters_advanced.py:42: unused import 'pdist' (90% confidence)
+scripts/analyze_hmm_regimes.py:1387: unreachable code after 'continue' (100% confidence)
+scripts/analyze_timeframe_incremental.py:157: redundant if-condition (100% confidence)
+scripts/analyze_timeframe_incremental.py:160: redundant if-condition (100% confidence)
+scripts/analyze_timeframe_incremental.py:164: redundant if-condition (100% confidence)
+scripts/assess_data_quality.py:22: unused import 'VectorizedLabellingOrchestrator' (90% confidence)
+scripts/download_mexc_agg_trades.py:149: unreachable code after 'return' (100% confidence)
+scripts/unified_optuna_optimization_demo.py:314: unused variable 'X_df' (100% confidence)
+src/analyst/data_utils.py:1551: unused variable 'num_records' (100% confidence)
+src/analyst/decision_aggregator.py:32: unused variable 'specialized_candidates' (100% confidence)
+src/analyst/decision_aggregator.py:33: unused variable 'generalist_score' (100% confidence)
+src/analyst/meta_label_relevance.py:59: unused variable 'Xj' (100% confidence)
+src/analyst/predictive_ensembles/regime_ensembles/base_ensemble.py:1339: unused variable 'is_live' (100% confidence)
+src/config/constants.py:21: unused import 'LIGHT_TRAINING_LOOKBACK_DAYS' (90% confidence)
+src/config/constants.py:21: unused import 'SHORT_BLANK_LOOKBACK_DAYS' (90% confidence)
+src/custom_types/protocol_types.py:72: unused variable 'trade_decision' (100% confidence)
+src/interfaces/base_interfaces.py:272: unused variable 'model_version' (100% confidence)

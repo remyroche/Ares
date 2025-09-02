@@ -1,0 +1,27 @@
+2025-09-02 09:09:38,565 - INFO - Processing file: src/tactician/enhanced_execution_manager.py
+2025-09-02 09:09:38,565 - INFO - Performing semantic analysis...
+2025-09-02 09:09:38,565 - INFO - Code quality score: 0.00
+2025-09-02 09:09:38,565 - WARNING - Syntax errors found: 1
+2025-09-02 09:09:38,565 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 09:09:38,567 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:09:38,568 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:09:38,569 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:09:38,570 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:09:38,571 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:09:38,571 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:09:38,572 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:09:38,573 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:09:38,574 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:09:38,576 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:09:38,576 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:09:38,578 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:09:38,579 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:09:38,580 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:09:38,581 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 09:09:38,582 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 09:09:38,583 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:09:38,586 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:09:38,586 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:09:38,587 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:09:38,589 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:09:38,592 - INFO - No fixes needed for: src/tactician/enhanced_execution_manager.py

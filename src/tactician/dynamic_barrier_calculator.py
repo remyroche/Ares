@@ -2,7 +2,7 @@
 
 import yaml
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 
 from src.utils.centralized_decorators import (
     handle_errors,
@@ -12,6 +12,12 @@ from src.utils.logger import get_logger
 
 
 class DynamicBarrierCalculator:
+    """Dynamic barrier calculator for Tactician based on Analyst triple barrier values.
+
+    This calculator dynamically loads Analyst triple barrier configuration and
+    calculates Tactician barriers as fractions of those values. It supports
+    both 1m and 5m timeframes with appropriate adjustments.
+    """
 
     @handle_errors(
         exceptions=(Exception,),
@@ -19,26 +25,64 @@ class DynamicBarrierCalculator:
         context="dynamicbarriercalculator initialization",
     )
     async def initialize(self) -> bool:
-        """Initialize DynamicBarrierCalculator."""
+        """Initialize DynamicBarrierCalculator with async setup and validation.
+        
+        This method performs async initialization tasks including:
+        - Configuration validation
+        - Analyst configuration loading
+        - Dynamic barrier initialization
+        - Health checks
+        
+        Returns:
+            bool: True if initialization successful, False otherwise
+        """
         try:
+            class_name = self.__class__.__name__
             self.logger.info(f"🚀 Initializing {class_name}...")
+            
+            # Validate configuration
+            if not self.config:
+                self.logger.warning("⚠️ No configuration provided, using defaults")
+                self.config = {"tactician_triple_barrier": {}}
+            
+            # Ensure Analyst configuration is loaded
+            if not hasattr(self, 'analyst_config') or not self.analyst_config:
+                self.logger.info("📊 Loading Analyst configuration...")
+                self.analyst_config = self._load_analyst_config()
+            
+            # Ensure dynamic barriers are initialized
+            if not hasattr(self, 'upper_barrier_50_fraction'):
+                self.logger.info("🔧 Initializing dynamic barriers...")
+                self._initialize_dynamic_barriers()
+            
+            # Perform health check
+            health_check = self.validate_barrier_calculation()
+            if not health_check.get("overall_valid", False):
+                self.logger.warning("⚠️ Barrier validation failed during initialization")
+                # Continue anyway as we have fallback values
+            
+            # Mark as initialized
             self.is_initialized = True
             self.logger.info(f"✅ {class_name} initialized successfully")
+            self.logger.info(f"   Analyst barriers loaded: {len(self.analyst_config)} settings")
+            self.logger.info(f"   Dynamic barriers ready: {len(self.timeframes)} timeframes")
+            
             return True
+            
         except Exception as e:
             self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            self.is_initialized = False
             return False
-    pass"""Dynamic barrier calculator for Tactician based on Analyst triple barrier values.
 
-    This calculator dynamically loads Analyst triple barrier configuration and
-    calculates Tactician barriers as fractions of those values. It supports
-    both 1m and 5m timeframes with appropriate adjustments.
-    """
-
-    def __init__(...) -> ...:
-    passpass"""..."""
-    passself.config = config.get("tactician_triple_barrier", {})
+    def __init__(self, config: Dict[str, Any]) -> None:
+        """Initialize the DynamicBarrierCalculator with configuration.
+        
+        Args:
+            config: Configuration dictionary containing tactician_triple_barrier settings
+        """
+        self.config = config.get("tactician_triple_barrier", {})
         self.logger = get_logger("DynamicBarrierCalculator")
+        self.is_initialized = False
 
         # Load Analyst configuration
         self.analyst_config = self._load_analyst_config()
@@ -49,12 +93,13 @@ class DynamicBarrierCalculator:
         # Initialize dynamic barriers
         self._initialize_dynamic_barriers()
 
-    def _load_analyst_config(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    def _load_analyst_config(self) -> Dict[str, Any]:
+        """Load Analyst triple barrier configuration from various sources.
+        
+        Returns:
+            Dictionary containing Analyst configuration with fallback defaults
+        """
+        try:
             # Try to load from Analyst triple barrier labeling component
             analyst_config_path = Path("src/training/steps/step04_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py")
 
@@ -75,26 +120,23 @@ except Exception as e:
             ]
 
             for config_path in config_paths:
-    passif Path(config_path).exists():
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+                if Path(config_path).exists():
+                    try:
                         with open(config_path, 'r') as f:
-    passconfig_data = yaml.safe_load(f)
+                            config_data = yaml.safe_load(f)
 
                         # Extract Analyst triple barrier settings if available
                         if "analyst" in config_data:
-    passanalyst_section = config_data["analyst"]
+                            analyst_section = config_data["analyst"]
                             if "triple_barrier" in analyst_section:
-    passanalyst_config.update(analyst_section["triple_barrier"])
+                                analyst_config.update(analyst_section["triple_barrier"])
                             elif "profit_take_multiplier" in analyst_section:
-    passpassanalyst_config["profit_take_multiplier"] = analyst_section["profit_take_multiplier"]
+                                analyst_config["profit_take_multiplier"] = analyst_section["profit_take_multiplier"]
                             elif "stop_loss_multiplier" in analyst_section:
-    passpassanalyst_config["stop_loss_multiplier"] = analyst_section["stop_loss_multiplier"]
+                                analyst_config["stop_loss_multiplier"] = analyst_section["stop_loss_multiplier"]
 
                     except Exception as e:
-    passpasspasspasspasspasspassself.logger.warning(f"⚠️ Could not load Analyst config from {config_path}: {e}")
+                        self.logger.warning(f"⚠️ Could not load Analyst config from {config_path}: {e}")
                         continue
 
             self.logger.info(f"📊 Loaded Analyst Configuration:")
@@ -105,7 +147,7 @@ except Exception as e:
             return analyst_config
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"❌ Error loading Analyst configuration: {e}")
+            self.logger.error(f"❌ Error loading Analyst configuration: {e}")
             # Fallback to default values
             return {
                 "profit_take_multiplier": 0.002,
@@ -115,9 +157,9 @@ except Exception as e:
                 "binary_classification": True
             }
 
-    def _initialize_dynamic_barriers(...) -> ...:
-    """..."""
-    pass# Get fractions from configuration - 4 barrier combinations
+    def _initialize_dynamic_barriers(self) -> None:
+        """Initialize dynamic barrier fractions and timeframe settings."""
+        # Get fractions from configuration - 4 barrier combinations
         fractions = self.tactician_config.get("analyst_barrier_fractions", {})
         self.upper_barrier_50_fraction = fractions.get("upper_barrier_50_fraction", 0.5)
         self.lower_barrier_50_fraction = fractions.get("lower_barrier_50_fraction", 0.5)
@@ -148,20 +190,17 @@ except Exception as e:
         """Calculate 2 dynamic barrier combinations for Tactician.
 
         Args:
-    passtimeframe: The timeframe for calculation ("1m" or "5m")
+            timeframe: The timeframe for calculation ("1m" or "5m")
 
         Returns:
-    passDictionary with 2 barrier combinations:
-    pass- barrier_50_50: (50% upper, 50% lower)
+            Dictionary with 2 barrier combinations:
+            - barrier_50_50: (50% upper, 50% lower)
             - barrier_25_25: (25% upper, 25% lower)
         """
         try:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
             # Validate timeframe
             if timeframe not in self.timeframes:
-    passself.logger.warning(f"⚠️ Invalid timeframe {timeframe}, using primary timeframe {self.primary_timeframe}")
+                self.logger.warning(f"⚠️ Invalid timeframe {timeframe}, using primary timeframe {self.primary_timeframe}")
                 timeframe = self.primary_timeframe
 
             # Get Analyst base values
@@ -183,13 +222,13 @@ except Exception as e:
             self.logger.info(f"🎯 2 Dynamic Barrier Combinations Calculated for {timeframe}:")
             self.logger.info(f"   Analyst Base - Upper: {analyst_upper:.4f}, Lower: {analyst_lower:.4f}")
             for name, (upper, lower) in barriers.items():
-    passself.logger.info(f"   {name}: Upper={upper:.4f}, Lower={lower:.4f}")
+                self.logger.info(f"   {name}: Upper={upper:.4f}, Lower={lower:.4f}")
             self.logger.info(f"   Note: Both barrier combinations will be used - position only opens if confidence is high enough for both")
 
             return barriers
 
         except Exception as e:
-    passpasspasspasspasspasspasspasspassself.logger.error(f"❌ Error calculating dynamic barriers: {e}")
+            self.logger.error(f"❌ Error calculating dynamic barriers: {e}")
             # Return fallback values
             return {
                 "barrier_50_50": (0.001, 0.0005),
@@ -199,43 +238,52 @@ except Exception as e:
     # Removed volatility and market condition adjustment methods
     # Barriers are only fractions of Analyst barriers - no real-time adaptation
 
-    def get_timeframe_weights(...) -> ...:
-    """..."""
-    pass# Both timeframes are equal - let the ML model decide usage
+    def get_timeframe_weights(self) -> Tuple[float, float]:
+        """Get timeframe weights for barrier calculations.
+        
+        Returns:
+            Tuple of (1m_weight, 5m_weight) - both equal as ML model decides usage
+        """
+        # Both timeframes are equal - let the ML model decide usage
         return 0.5, 0.5
 
-    def calculate_multi_timeframe_barriers(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    def calculate_multi_timeframe_barriers(self) -> Dict[str, Dict[str, Tuple[float, float]]]:
+        """Calculate barriers for multiple timeframes.
+        
+        Returns:
+            Dictionary with timeframe keys containing barrier combinations
+        """
+        try:
             barriers = {}
 
             # Calculate 1m barriers (2 combinations)
             if "1m" in self.timeframes:
-    passbarriers["1m"] = self.calculate_dynamic_barriers(timeframe="1m")
+                barriers["1m"] = self.calculate_dynamic_barriers(timeframe="1m")
 
             # Calculate 5m barriers (2 combinations)
             if "5m" in self.timeframes:
-    passbarriers["5m"] = self.calculate_dynamic_barriers(timeframe="5m")
+                barriers["5m"] = self.calculate_dynamic_barriers(timeframe="5m")
 
             self.logger.info(f"📊 Multi-timeframe barriers calculated (2 combinations each):")
             for tf, combinations in barriers.items():
-    passself.logger.info(f"   {tf}:")
+                self.logger.info(f"   {tf}:")
                 for name, (upper, lower) in combinations.items():
-    passself.logger.info(f"     {name}: Upper={upper:.4f}, Lower={lower:.4f}")
+                    self.logger.info(f"     {name}: Upper={upper:.4f}, Lower={lower:.4f}")
             self.logger.info(f"   Note: Both barrier combinations will be used for each timeframe")
 
             return barriers
 
         except Exception as e:
-    passpasspasspasspasspasspasspassself.logger.error(f"❌ Error calculating multi-timeframe barriers: {e}")
+            self.logger.error(f"❌ Error calculating multi-timeframe barriers: {e}")
             return {}
 
-    def get_analyst_barrier_info(...) -> ...:
-    """..."""
-    passreturn {
+    def get_analyst_barrier_info(self) -> Dict[str, Any]:
+        """Get information about Analyst barriers and Tactician fractions.
+        
+        Returns:
+            Dictionary containing Analyst barrier values and Tactician fractions
+        """
+        return {
             "upper_barrier_multiplier": self.analyst_config["profit_take_multiplier"],
             "lower_barrier_multiplier": self.analyst_config["stop_loss_multiplier"],
             "fractions": {
@@ -246,12 +294,16 @@ except Exception as e:
             }
         }
 
-    def validate_barrier_calculation(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    def validate_barrier_calculation(self, timeframe: str = "1m") -> Dict[str, Any]:
+        """Validate that calculated barriers match expected fractions.
+        
+        Args:
+            timeframe: The timeframe to validate
+            
+        Returns:
+            Dictionary containing validation results for all barrier combinations
+        """
+        try:
             # Calculate 2 barrier combinations
             barriers = self.calculate_dynamic_barriers(timeframe)
 
@@ -262,16 +314,16 @@ except Exception as e:
             validation_results = {}
 
             for barrier_name, (upper, lower) in barriers.items():
-    pass# Calculate actual fractions
+                # Calculate actual fractions
                 actual_upper_fraction = upper / analyst_upper
                 actual_lower_fraction = lower / analyst_lower
 
                 # Get expected fractions based on barrier name
                 if "50" in barrier_name:
-    passexpected_upper_fraction = self.upper_barrier_50_fraction
+                    expected_upper_fraction = self.upper_barrier_50_fraction
                     expected_lower_fraction = self.lower_barrier_50_fraction
                 else:
-    passexpected_upper_fraction = self.upper_barrier_25_fraction
+                    expected_upper_fraction = self.upper_barrier_25_fraction
                     expected_lower_fraction = self.lower_barrier_25_fraction
 
                 # Validate against expected fractions
@@ -309,7 +361,7 @@ except Exception as e:
             }
 
         except Exception as e:
-    passpasspasspasspasspasspasspassself.logger.error(f"❌ Error validating barrier calculation: {e}")
+            self.logger.error(f"❌ Error validating barrier calculation: {e}")
             return {
                 "timeframe": timeframe,
                 "error": str(e),

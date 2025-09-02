@@ -1,0 +1,25 @@
+2025-09-02 09:07:48,956 - INFO - Processing file: src/tactician/dynamic_barrier_calculator.py
+2025-09-02 09:07:48,956 - INFO - Performing semantic analysis...
+2025-09-02 09:07:48,957 - INFO - Code quality score: 0.00
+2025-09-02 09:07:48,957 - WARNING - Syntax errors found: 1
+2025-09-02 09:07:48,957 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 09:07:48,960 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:48,963 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:48,966 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:48,969 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:48,972 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:48,975 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:48,978 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:48,981 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:48,984 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:48,987 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:48,990 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:48,993 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:48,996 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:48,998 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 09:07:49,001 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:49,004 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:07:49,004 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:07:49,004 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:07:49,009 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:07:49,011 - INFO - No fixes needed for: src/tactician/dynamic_barrier_calculator.py

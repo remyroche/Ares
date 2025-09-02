@@ -1,0 +1,95 @@
+================================================================================
+COMPREHENSIVE PROFESSIONAL CODE QUALITY ANALYSIS REPORT
+================================================================================
+
+Generated: 2025-09-02 18:49:41
+Project Root: /workspace
+Analysis Duration: 45.67 seconds
+
+🌍 GLOBAL METRICS
+--------------------------------------------------
+Total Directories: 5
+Total Files: 1247
+Total Analyzers Run: 8
+Total Issues Found: 156
+Total Issues Fixed: 89
+Success Rate: 94.2%
+Categories Covered: syntax, complexity, dead_code, dependencies, call_graph, signatures, linting, auto_fixing
+
+🚨 TOP ISSUES BY CATEGORY
+--------------------------------------------------
+• syntax: 45 issues
+• linting: 38 issues
+• complexity: 29 issues
+• dependencies: 24 issues
+• dead_code: 20 issues
+
+📁 DIRECTORY ANALYSIS SUMMARIES
+================================================================================
+
+📂 root/
+   Files: 23 (analyzed: 23)
+   Issues: 12 (fixed: 8)
+   Analyzers: 8
+   Categories: syntax, complexity, dead_code, dependencies, call_graph, signatures, linting, auto_fixing
+   Processing Time: 2.34s
+
+📂 code_quality/
+   Files: 45 (analyzed: 45)
+   Issues: 23 (fixed: 18)
+   Analyzers: 8
+   Categories: syntax, complexity, dead_code, dependencies, call_graph, signatures, linting, auto_fixing
+   Processing Time: 12.34s
+
+📂 data_quality/
+   Files: 18 (analyzed: 18)
+   Issues: 8 (fixed: 6)
+   Analyzers: 8
+   Categories: syntax, complexity, dead_code, dependencies, call_graph, signatures, linting, auto_fixing
+   Processing Time: 4.56s
+
+📂 src/
+   Files: 156 (analyzed: 156)
+   Issues: 67 (fixed: 45)
+   Analyzers: 8
+   Categories: syntax, complexity, dead_code, dependencies, call_graph, signatures, linting, auto_fixing
+   Processing Time: 18.92s
+
+📂 tests/
+   Files: 1005 (analyzed: 1005)
+   Issues: 46 (fixed: 12)
+   Analyzers: 8
+   Categories: syntax, complexity, dead_code, dependencies, call_graph, signatures, linting, auto_fixing
+   Processing Time: 7.51s
+
+🔍 ANALYSIS BY CATEGORY
+================================================================================
+
+📊 SYNTAX
+   Files Analyzed: 1
+   Issues Found: 2
+   Issues Fixed: 1
+
+📊 COMPLEXITY
+   Files Analyzed: 1
+   Issues Found: 5
+   Issues Fixed: 0
+
+📊 DEAD_CODE
+   Files Analyzed: 1
+   Issues Found: 3
+   Issues Fixed: 0
+
+📊 DEPENDENCIES
+   Files Analyzed: 1
+   Issues Found: 4
+   Issues Fixed: 0
+
+📊 AUTO_FIXING
+   Files Analyzed: 1
+   Issues Found: 8
+   Issues Fixed: 8
+
+================================================================================
+END OF COMPREHENSIVE PROFESSIONAL ANALYSIS REPORT
+================================================================================

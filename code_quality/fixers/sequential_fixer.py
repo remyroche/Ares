@@ -32,6 +32,7 @@ class SequentialFixer:
         self.results = {}
         self.start_time = None
         self.end_time = None
+        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
     def run_pipeline(self, target: Union[str, List[str]], 
                     output_dir: Optional[str] = None,
@@ -69,6 +70,7 @@ class SequentialFixer:
         print(f"Files to process: {len(target_files)}")
         print(f"Backups enabled: {create_backups}")
         print(f"Output directory: {output_dir or 'None'}")
+        print(f"Timestamp: {self.timestamp}")
         
         # Initialize results
         self.results = {
@@ -77,6 +79,7 @@ class SequentialFixer:
                 "target_type": target_type,
                 "total_files": len(target_files),
                 "start_time": datetime.now().isoformat(),
+                "timestamp": self.timestamp,
                 "config_used": {
                     "auto_fix_tools": self.config.auto_fix.tools,
                     "linters": self.config.analysis.linters,
@@ -397,17 +400,17 @@ class SequentialFixer:
         
         print(f"\nSaving pipeline reports to: {output_path}")
         
-        # Save main pipeline report
+        # Save main pipeline report with timestamp
         import json
-        pipeline_file = output_path / "sequential_fixer_pipeline_report.json"
+        pipeline_file = output_path / f"sequential_fixer_pipeline_report_{self.timestamp}.json"
         with open(pipeline_file, 'w') as f:
             json.dump(self.results, f, indent=2)
         print(f"Pipeline report saved: {pipeline_file}")
         
-        # Save individual step reports
+        # Save individual step reports with timestamps
         for step_name, step_results in self.results["step_results"].items():
             if step_results.get("status") == "success":
-                step_file = output_path / f"{step_name}_report.json"
+                step_file = output_path / f"{step_name}_report_{self.timestamp}.json"
                 with open(step_file, 'w') as f:
                     json.dump(step_results, f, indent=2)
                 print(f"{step_name} report saved: {step_file}")
@@ -420,6 +423,7 @@ class SequentialFixer:
         print("SEQUENTIAL AUTO-FIX PIPELINE COMPLETED")
         print("="*70)
         print(f"Overall Status: {summary['overall_status'].upper()}")
+        print(f"Timestamp: {self.timestamp}")
         
         print(f"\nStep Statuses:")
         for step, status in summary["step_statuses"].items():

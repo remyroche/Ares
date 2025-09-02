@@ -1,0 +1,22 @@
+2025-09-02 07:56:52,273 - INFO - Processing file: src/training/core/stage_registry.py
+2025-09-02 07:56:52,273 - INFO - Performing semantic analysis...
+2025-09-02 07:56:52,273 - INFO - Code quality score: 0.00
+2025-09-02 07:56:52,273 - WARNING - Syntax errors found: 1
+2025-09-02 07:56:52,273 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 07:56:52,274 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:52,274 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:52,275 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:52,275 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:52,275 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:52,275 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:52,276 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:52,276 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:52,277 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:52,277 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:52,278 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:52,278 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:52,279 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:52,281 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 07:56:52,281 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 07:56:52,282 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:52,283 - INFO - No fixes needed for: src/training/core/stage_registry.py

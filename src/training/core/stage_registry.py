@@ -1,7 +1,7 @@
 """Stage registry for the modular training pipeline.
-
 This module provides stage registration and management functionality.
 """
+
 
 from typing import Any, Dict, List, Optional
 from datetime import datetime
@@ -25,6 +25,7 @@ class StageRegistry:
         except Exception as e:
             print(f"Error initializing stage registry: {e}")
             return False
+
 
     def register_stage(self, stage_name: str, stage_class: Any) -> bool:
         """Register a new stage."""
@@ -72,3 +73,4 @@ class StageRegistry:
             "registered_stages": list(self.registered_stages.keys()),
             "history_count": len(self.stage_history)
         }
+

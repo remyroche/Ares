@@ -1,0 +1,820 @@
+{
+  "/workspace/src/training/optimization/computational_optimization_manager.py": {
+    "total_functions": 68,
+    "functions": {
+      "__post_init__": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_adaptive_sampling": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_analyze_convergence": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_analyze_cost_benefit": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_analyze_optimization_results": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_analyze_uncertainty": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_calculate_atr": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_calculate_macd": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_calculate_rsi": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_calculate_surrogate_accuracy": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_cleanup_cache": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_cleanup_memory": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_combine_multi_objective_result": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_create_gaussian_process_model": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_create_model": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_create_neural_network_model": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_create_random_forest_model": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_create_surrogate_model": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_create_xgboost_model": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_estimate_time_saved": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_evaluate_model_performance": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_evaluate_single_params": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_evaluate_subset": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_expected_improvement_acquisition": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_generate_acquisition_guided_sample": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_generate_cache_key": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_generate_candidates": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_generate_latin_hypercube_sample": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_generate_model_key": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_generate_random_sample": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_get_default_parameter_space": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_get_executor": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_optimize_dataframe": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_params_to_array": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_perform_initial_evaluations": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_perturb_parameters": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_precompute_all_features": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_precompute_indicators": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_predict_with_uncertainty": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_prepare_training_data": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_probability_improvement_acquisition": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_random_sampling": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_run_simplified_backtest": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_select_best_candidate": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_select_features": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_should_perform_expensive_evaluation": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_surrogate_guided_optimization": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_train_advanced_surrogate_model": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_train_ensemble_models": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_update_exploration_exploitation_balance": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_update_surrogate_model": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_upper_confidence_bound_acquisition": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_validate_constraints": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "check_memory_usage": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "cleanup": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "evaluate_batch": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "evaluate_progressively": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "get_adaptive_params": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "get_cached_selection": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "get_features": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "get_optimization_statistics": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "get_subset": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "get_surrogate_statistics": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "objective": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "optimize_with_surrogates": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "run_cached_backtest": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "suggest_parameters": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "train_incrementally": {
+        "call_count": 0,
+        "calling_files": []
+      }
+    }
+  },
+  "/workspace/src/training/optimization/advanced_surrogate_models.py": {
+    "total_functions": 19,
+    "functions": {
+      "_apply_task_relationships": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_bagging_ensemble": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_build_composite_kernel": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_build_kernel": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_build_network": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_get_activation": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_get_loss_function": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_learn_task_relationships": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_optimize_weights": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_stacking_ensemble": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_weighted_average_ensemble": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "add_model": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "add_task": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "fit": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "get_model_info": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "load_model": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "predict": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "save_model": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "set_task_relationship": {
+        "call_count": 0,
+        "calling_files": []
+      }
+    }
+  },
+  "/workspace/src/training/optimization/problem_specific_strategies.py": {
+    "total_functions": 17,
+    "functions": {
+      "_analyze_correlations": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_apply_secondary_strategies": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_calculate_complexity_score": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_calculate_sparsity": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_detect_constraints": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_detect_multi_modality": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_detect_multi_objective": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_detect_noise": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_determine_difficulty": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_determine_problem_type": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_extract_bounds": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_generate_sample_data": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_select_primary_strategy": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "adapt_optimization": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "analyze_problem": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "get_strategy_name": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "select_and_apply_strategy": {
+        "call_count": 0,
+        "calling_files": []
+      }
+    }
+  },
+  "/workspace/src/training/optimization/adaptive_trial_allocator.py": {
+    "total_functions": 14,
+    "functions": {
+      "__init__": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_get_base_importance": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_get_performance_importance": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_get_sensitivity_importance": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "allocate_trials_adaptively": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "calculate_optimal_allocation": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "calculate_parameter_importance": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "create_adaptive_trial_allocator": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "get_allocation_statistics": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "get_parameter_performance_summary": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "reset_allocation_history": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "should_reallocate_trials": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "track_parameter_performance": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "validate_trial_allocation": {
+        "call_count": 0,
+        "calling_files": []
+      }
+    }
+  },
+  "/workspace/scripts/merge_reports.py": {
+    "total_functions": 12,
+    "functions": {
+      "collect": {
+        "call_count": 1,
+        "calling_files": [
+          "/workspace/scripts/merge_reports.py"
+        ]
+      },
+      "load_json": {
+        "call_count": 4,
+        "calling_files": [
+          "/workspace/scripts/merge_reports.py",
+          "/workspace/scripts/merge_reports.py",
+          "/workspace/scripts/merge_reports.py",
+          "/workspace/scripts/merge_reports.py"
+        ]
+      },
+      "main": {
+        "call_count": 1,
+        "calling_files": [
+          "/workspace/scripts/merge_reports.py"
+        ]
+      },
+      "parse_bandit": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "parse_eslint": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "parse_line_kv": {
+        "call_count": 1,
+        "calling_files": [
+          "/workspace/scripts/merge_reports.py"
+        ]
+      },
+      "parse_markdownlint": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "parse_mypy": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "parse_ruff": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "parse_shellcheck": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "parse_yamllint": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "write_summary": {
+        "call_count": 1,
+        "calling_files": [
+          "/workspace/scripts/merge_reports.py"
+        ]
+      }
+    }
+  },
+  "/workspace/src/training/optimization/cached_optimizer.py": {
+    "total_functions": 12,
+    "functions": {
+      "_calculate_config_similarity": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_get_cache_file_path": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_load_cache_metadata": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_save_cache_metadata": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "cache_optimization_results": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "cleanup_expired_cache": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "create_cached_optimizer": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "get_cache_statistics": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "get_cached_optimization_results": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "get_warm_start_parameters": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "is_cache_valid": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "run_optimization_with_warm_start": {
+        "call_count": 0,
+        "calling_files": []
+      }
+    }
+  },
+  "/workspace/src/training/optimization/rollback_manager.py": {
+    "total_functions": 12,
+    "functions": {
+      "_cleanup_old_rollback_points": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_initialize_storage": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_remove_rollback_point": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_save_rollback_point": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "create_rollback_manager": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "create_rollback_point": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "execute_rollback": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "get_rollback_point": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "get_rollback_statistics": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "list_rollback_points": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "load_rollback_points": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "validate_rollback_point": {
+        "call_count": 0,
+        "calling_files": []
+      }
+    }
+  },
+  "/workspace/src/training/optimization/progressive_optimizer.py": {
+    "total_functions": 9,
+    "functions": {
+      "_evaluate_tier1_performance": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_evaluate_tier2_performance": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_evaluate_tier3_performance": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "create_progressive_optimizer": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "get_progressive_optimization_statistics": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "reset_optimization_history": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "tier1_objective": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "tier2_objective": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "tier3_objective": {
+        "call_count": 0,
+        "calling_files": []
+      }
+    }
+  },
+  "/workspace/src/training/optimization/parallel_optimizer.py": {
+    "total_functions": 8,
+    "functions": {
+      "_evaluate_confidence_parameters": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_evaluate_risk_parameters": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "_evaluate_sizing_parameters": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "confidence_objective": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "create_parallel_optimizer": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "group_parameters_by_optimization_type": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "risk_objective": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "sizing_objective": {
+        "call_count": 0,
+        "calling_files": []
+      }
+    }
+  },
+  "/workspace/src/supervisor/monitoring.py": {
+    "total_functions": 4,
+    "functions": {
+      "get_alerts": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "get_history": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "get_metrics": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "get_status": {
+        "call_count": 0,
+        "calling_files": []
+      }
+    }
+  },
+  "/workspace/src/supervisor/ab_tester.py": {
+    "total_functions": 4,
+    "functions": {
+      "_validate_challenger_params": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "get_ab_test_status": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "get_challenger_params": {
+        "call_count": 0,
+        "calling_files": []
+      },
+      "get_champion_params": {
+        "call_count": 0,
+        "calling_files": []
+      }
+    }
+  },
+  "/workspace/src/core/enhanced_dependency_injection.py": {
+    "total_functions": 2,
+    "functions": {
+      "get_container": {
+        "call_count": 2,
+        "calling_files": [
+          "/workspace/src/core/enhanced_dependency_injection.py",
+          "/workspace/src/core/enhanced_dependency_injection.py"
+        ]
+      },
+      "register_service": {
+        "call_count": 0,
+        "calling_files": []
+      }
+    }
+  },
+  "/workspace/src/analyst/analyst.py": {
+    "total_functions": 1,
+    "functions": {
+      "_validate_configuration": {
+        "call_count": 0,
+        "calling_files": []
+      }
+    }
+  },
+  "/workspace/src/analyst/autoencoder_feature_generator.py": {
+    "total_functions": 1,
+    "functions": {
+      "generate_features": {
+        "call_count": 0,
+        "calling_files": []
+      }
+    }
+  }
+}

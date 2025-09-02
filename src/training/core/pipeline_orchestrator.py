@@ -40,6 +40,7 @@ def validation_error(message: str) -> str:
     return f"✅ VALIDATION ERROR: {message}"
 
 
+
 class PipelineOrchestrator:
     """Pipeline orchestrator with comprehensive error handling and type safety."""
 
@@ -72,6 +73,7 @@ class PipelineOrchestrator:
         except Exception as e:
             self.logger.error(f"Failed to create pipeline directory: {e}")
             raise
+
 
     @handle_specific_errors(
         error_handlers={
@@ -149,6 +151,7 @@ class PipelineOrchestrator:
             self.pipeline_config.get("enable_pipeline_validation", True),
         ]):
             self.logger.error(error("At least one pipeline type must be enabled"))
+
             return False
 
         self.logger.info("Configuration validation successful")
@@ -171,6 +174,7 @@ class PipelineOrchestrator:
         # Initialize pipeline optimization module
         if self.pipeline_config.get("enable_pipeline_optimization", True):
             await self._initialize_pipeline_optimization()
+
 
         # Initialize pipeline validation module
         if self.pipeline_config.get("enable_pipeline_validation", True):
@@ -940,9 +944,21 @@ class PipelineOrchestrator:
         self.logger.info("✅ Pipeline Orchestrator stopped successfully")
 
 
-# Global pipeline orchestrator instance
-pipeline_orchestrator: PipelineOrchestrator | None = None
+    def _validate_new_configuration(self, new_config: Dict[str, Any]) -> bool:
+        """Validate new configuration parameters."""
+        try:
+            # Check for invalid keys
+            valid_keys = {
+                "pipeline_interval",
+                "max_pipeline_history",
+                "enable_pipeline_execution",
+                "enable_pipeline_monitoring",
+            }
 
+            for key in new_config:
+                if key not in valid_keys:
+                    self.logger.error(f"Invalid configuration key: {key}")
+                    return False
 
 @handle_errors(
     exceptions=(Exception, ), default_return=None,
@@ -968,8 +984,12 @@ async def setup_pipeline_orchestrator(config: Dict[str, Any] | None = None) -> P
                 },
             }
 
-        # Create pipeline orchestrator
-        pipeline_orchestrator = PipelineOrchestrator(config)
+
+            if "max_pipeline_history" in new_config:
+                max_history = new_config["max_pipeline_history"]
+                if not isinstance(max_history, int) or max_history <= 0:
+                    self.logger.error("Invalid max_pipeline_history value")
+                    return False
 
         # Initialize pipeline orchestrator
         success = await pipeline_orchestrator.initialize()
@@ -999,4 +1019,5 @@ def _validate_data_quality(data):
     except Exception as e:
         # Log error but don't fail validation
         return type('ValidationResult', (), {'is_valid': False, 'errors': [str(e)]})()
+
 

@@ -1,0 +1,1672 @@
+{
+  "summary": {
+    "total_modules": 48,
+    "total_imports": 251,
+    "circular_dependencies": [
+      "src.analyst.autoencoder_feature_generator",
+      "src.monitoring.trade_conditions_monitor",
+      "scripts.merge_reports",
+      "targeted_corruption_fixer",
+      "src.interfaces.__init__",
+      "src.monitoring.__init__",
+      "src.supervisor.__init__",
+      "src.custom_types.__init__",
+      "src.training.optimization.adaptive_trial_allocator",
+      "src.pipelines.components.__init__",
+      "code_quality.mappings.focused_usage_analyzer",
+      "code_quality.mappings.enhanced_dependency_analyzer",
+      "src.training.optimization.rollback_manager",
+      "src.analyst.feature_engineering_orchestrator",
+      "src.training.optimization.cached_optimizer",
+      "src.components.__init__",
+      "src.analyst.predictive_ensembles.regime_ensembles.__init__",
+      "src.training.optimization.problem_specific_strategies",
+      "code_quality.syntax_error_counter",
+      "src.config.constants",
+      "src.custom_types.base_types",
+      "code_quality.mappings.function_call_analyzer",
+      "code_quality.mappings.dependency_analyzer",
+      "src.monitoring.tracking_system",
+      "exchange.mexc",
+      "exchange.binance",
+      "src.analyst.predictive_ensembles.__init__",
+      "src.training.optimization.parallel_optimizer",
+      "src.core.__init__",
+      "code_quality.tools.code_quality_analyzer",
+      "src.training.optimization.__init__",
+      "src.monitoring.regime_sr_tracker",
+      "code_quality.quick_summary",
+      "src.core.enhanced_dependency_injection",
+      "src.supervisor.ab_tester",
+      "src.training.optimization.progressive_optimizer",
+      "src.training.optimization.advanced_surrogate_models",
+      "src.supervisor.monitoring",
+      "code_quality.aggressive_syntax_checker",
+      "code_quality.mappings.comprehensive_import_analyzer",
+      "src.training.optimization.computational_optimization_manager",
+      "src.analyst.analyst",
+      "code_quality.test_robustness",
+      "code_quality.mappings.unused_code_analyzer",
+      "src.training.steps.step1.__init__",
+      "code_quality.visualize_function_calls",
+      "code_quality.tools.placeholder_finder",
+      "src.tactician.__init__"
+    ]
+  },
+  "dependencies": {
+    "targeted_corruption_fixer": [
+      "sys",
+      "typing",
+      "ast",
+      "argparse",
+      "re",
+      "logging",
+      "pathlib"
+    ],
+    "scripts.merge_reports": [
+      "sys",
+      "typing",
+      "json",
+      "re",
+      "pathlib"
+    ],
+    "code_quality.visualize_function_calls": [
+      "sys",
+      "subprocess",
+      "json",
+      "argparse",
+      "pathlib",
+      "os"
+    ],
+    "code_quality.test_robustness": [
+      "ast",
+      "pathlib",
+      "re"
+    ],
+    "code_quality.quick_summary": [
+      "os",
+      "pathlib",
+      "json"
+    ],
+    "code_quality.aggressive_syntax_checker": [
+      "sys",
+      "ast",
+      "json",
+      "os",
+      "collections",
+      "pathlib"
+    ],
+    "code_quality.syntax_error_counter": [
+      "sys",
+      "ast",
+      "json",
+      "os",
+      "collections",
+      "pathlib"
+    ],
+    "code_quality.mappings.unused_code_analyzer": [
+      "sys",
+      "typing",
+      "ast",
+      "json",
+      "os",
+      "re",
+      "collections",
+      "pathlib"
+    ],
+    "code_quality.mappings.enhanced_dependency_analyzer": [
+      "sys",
+      "ast",
+      "json",
+      "os",
+      "re",
+      "collections",
+      "pathlib"
+    ],
+    "code_quality.mappings.focused_usage_analyzer": [
+      "sys",
+      "ast",
+      "json",
+      "os",
+      "re",
+      "collections",
+      "pathlib"
+    ],
+    "code_quality.mappings.function_call_analyzer": [
+      "sys",
+      "typing",
+      "ast",
+      "json",
+      "os",
+      "re",
+      "collections",
+      "pathlib"
+    ],
+    "code_quality.mappings.comprehensive_import_analyzer": [
+      "sys",
+      "typing",
+      "ast",
+      "json",
+      "os",
+      "re",
+      "collections",
+      "pathlib"
+    ],
+    "code_quality.mappings.dependency_analyzer": [
+      "sys",
+      "ast",
+      "json",
+      "os",
+      "collections",
+      "pathlib"
+    ],
+    "code_quality.tools.code_quality_analyzer": [
+      "typing",
+      "ast",
+      "subprocess",
+      "json",
+      "argparse",
+      "os",
+      "re",
+      "collections",
+      "pathlib"
+    ],
+    "code_quality.tools.placeholder_finder": [
+      "datetime",
+      "typing",
+      "ast",
+      "json",
+      "argparse",
+      "os",
+      "re",
+      "logging",
+      "collections",
+      "pathlib"
+    ],
+    "src.monitoring.tracking_system": [
+      "enum"
+    ],
+    "src.monitoring.regime_sr_tracker": [
+      "enum"
+    ],
+    "src.monitoring.__init__": [
+      "tracking_system",
+      "integration_manager",
+      "correlation_manager",
+      "advanced_tracer",
+      "ml_monitor",
+      "report_scheduler",
+      "metrics_dashboard"
+    ],
+    "src.monitoring.trade_conditions_monitor": [
+      "enum"
+    ],
+    "src.components.__init__": [
+      "modular_supervisor",
+      "modular_strategist",
+      "modular_analyst",
+      "modular_tactician"
+    ],
+    "src.interfaces.__init__": [
+      "base_interfaces",
+      "event_bus"
+    ],
+    "src.supervisor.monitoring": [
+      "typing",
+      "datetime",
+      "asyncio",
+      "src"
+    ],
+    "src.supervisor.ab_tester": [
+      "datetime",
+      "typing",
+      "src",
+      "asyncio",
+      "copy"
+    ],
+    "src.supervisor.__init__": [
+      "main",
+      "performance_reporter",
+      "optimizer",
+      "risk_allocator",
+      "ab_tester"
+    ],
+    "src.pipelines.components.__init__": [
+      "lifecycle_manager",
+      "notification_manager",
+      "checkpoint_manager",
+      "data_manager",
+      "config_manager",
+      "monitoring_manager",
+      "signal_handler"
+    ],
+    "src.custom_types.base_types": [
+      "typing",
+      "datetime",
+      "decimal"
+    ],
+    "src.custom_types.__init__": [
+      "trading_types",
+      "validation",
+      "data_types",
+      "ml_types",
+      "protocol_types",
+      "config_types",
+      "base_types"
+    ],
+    "src.tactician.__init__": [
+      "position_sizer",
+      "ml_tactics_manager",
+      "tactician",
+      "sr_breakout_predictor",
+      "leverage_sizer"
+    ],
+    "src.training.optimization.cached_optimizer": [
+      "datetime",
+      "typing",
+      "optuna",
+      "src",
+      "json",
+      "hashlib",
+      "pickle",
+      "dataclasses",
+      "os"
+    ],
+    "src.training.optimization.progressive_optimizer": [
+      "time",
+      "typing",
+      "optuna",
+      "pandas",
+      "src",
+      "dataclasses",
+      "enum"
+    ],
+    "src.training.optimization.problem_specific_strategies": [
+      "sklearn",
+      "typing",
+      "src",
+      "scipy",
+      "abc",
+      "numpy",
+      "dataclasses",
+      "enum"
+    ],
+    "src.training.optimization.parallel_optimizer": [
+      "typing",
+      "optuna",
+      "src",
+      "asyncio",
+      "dataclasses",
+      "multiprocessing"
+    ],
+    "src.training.optimization.rollback_manager": [
+      "datetime",
+      "typing",
+      "src",
+      "json",
+      "dataclasses",
+      "pathlib"
+    ],
+    "src.training.optimization.computational_optimization_manager": [
+      "sklearn",
+      "time",
+      "xgboost",
+      "concurrent",
+      "gc",
+      "typing",
+      "optuna",
+      "pandas",
+      "scipy",
+      "psutil",
+      "src",
+      "json",
+      "hashlib",
+      "pickle",
+      "contextlib",
+      "numpy",
+      "dataclasses",
+      "multiprocessing"
+    ],
+    "src.training.optimization.advanced_surrogate_models": [
+      "sklearn",
+      "time",
+      "xgboost",
+      "src",
+      "torch",
+      "lightgbm",
+      "joblib",
+      "abc",
+      "numpy"
+    ],
+    "src.training.optimization.adaptive_trial_allocator": [
+      "typing",
+      "src",
+      "pandas",
+      "numpy",
+      "dataclasses",
+      "collections"
+    ],
+    "src.training.optimization.__init__": [
+      "src",
+      "rollback_manager"
+    ],
+    "src.training.steps.step1.__init__": [
+      "missing_data_downloader_and_gap_filler",
+      "step1_orchestrator",
+      "data_gap_detector",
+      "data_resampler",
+      "aggtrades_validator"
+    ],
+    "src.core.enhanced_dependency_injection": [
+      "src",
+      "typing"
+    ],
+    "src.core.__init__": [
+      "dependency_injection"
+    ],
+    "src.config.constants": [
+      "typing"
+    ],
+    "src.analyst.feature_engineering_orchestrator": [
+      "typing",
+      "__future__",
+      "pandas",
+      "src"
+    ],
+    "src.analyst.autoencoder_feature_generator": [
+      "typing",
+      "__future__",
+      "pandas",
+      "src"
+    ],
+    "src.analyst.analyst": [
+      "datetime",
+      "typing",
+      "src",
+      "pandas",
+      "__future__"
+    ],
+    "src.analyst.predictive_ensembles.__init__": [
+      "ensemble_orchestrator"
+    ],
+    "src.analyst.predictive_ensembles.regime_ensembles.__init__": [
+      "base_ensemble",
+      "volatile_regime_ensemble"
+    ],
+    "exchange.mexc": [
+      "typing",
+      "src",
+      "base_exchange"
+    ],
+    "exchange.binance": [
+      "src"
+    ]
+  },
+  "reverse_dependencies": {
+    "sys": [
+      "code_quality.mappings.function_call_analyzer",
+      "code_quality.mappings.focused_usage_analyzer",
+      "code_quality.mappings.dependency_analyzer",
+      "code_quality.mappings.enhanced_dependency_analyzer",
+      "scripts.merge_reports",
+      "targeted_corruption_fixer",
+      "code_quality.aggressive_syntax_checker",
+      "code_quality.mappings.comprehensive_import_analyzer",
+      "code_quality.syntax_error_counter",
+      "code_quality.mappings.unused_code_analyzer",
+      "code_quality.visualize_function_calls"
+    ],
+    "typing": [
+      "src.analyst.autoencoder_feature_generator",
+      "scripts.merge_reports",
+      "targeted_corruption_fixer",
+      "src.training.optimization.adaptive_trial_allocator",
+      "src.training.optimization.rollback_manager",
+      "src.analyst.feature_engineering_orchestrator",
+      "src.training.optimization.cached_optimizer",
+      "src.training.optimization.problem_specific_strategies",
+      "src.config.constants",
+      "src.custom_types.base_types",
+      "code_quality.mappings.function_call_analyzer",
+      "exchange.mexc",
+      "src.training.optimization.parallel_optimizer",
+      "code_quality.tools.code_quality_analyzer",
+      "src.core.enhanced_dependency_injection",
+      "src.supervisor.ab_tester",
+      "src.training.optimization.progressive_optimizer",
+      "src.supervisor.monitoring",
+      "code_quality.mappings.comprehensive_import_analyzer",
+      "src.training.optimization.computational_optimization_manager",
+      "src.analyst.analyst",
+      "code_quality.mappings.unused_code_analyzer",
+      "code_quality.tools.placeholder_finder"
+    ],
+    "ast": [
+      "code_quality.mappings.function_call_analyzer",
+      "code_quality.mappings.focused_usage_analyzer",
+      "code_quality.mappings.dependency_analyzer",
+      "code_quality.mappings.enhanced_dependency_analyzer",
+      "code_quality.tools.placeholder_finder",
+      "targeted_corruption_fixer",
+      "code_quality.aggressive_syntax_checker",
+      "code_quality.mappings.comprehensive_import_analyzer",
+      "code_quality.syntax_error_counter",
+      "code_quality.mappings.unused_code_analyzer",
+      "code_quality.test_robustness",
+      "code_quality.tools.code_quality_analyzer"
+    ],
+    "argparse": [
+      "code_quality.tools.placeholder_finder",
+      "code_quality.visualize_function_calls",
+      "code_quality.tools.code_quality_analyzer",
+      "targeted_corruption_fixer"
+    ],
+    "re": [
+      "code_quality.mappings.function_call_analyzer",
+      "code_quality.mappings.focused_usage_analyzer",
+      "code_quality.tools.placeholder_finder",
+      "code_quality.mappings.enhanced_dependency_analyzer",
+      "scripts.merge_reports",
+      "targeted_corruption_fixer",
+      "code_quality.mappings.comprehensive_import_analyzer",
+      "code_quality.mappings.unused_code_analyzer",
+      "code_quality.test_robustness",
+      "code_quality.tools.code_quality_analyzer"
+    ],
+    "logging": [
+      "code_quality.tools.placeholder_finder",
+      "targeted_corruption_fixer"
+    ],
+    "pathlib": [
+      "code_quality.mappings.function_call_analyzer",
+      "code_quality.mappings.focused_usage_analyzer",
+      "code_quality.mappings.dependency_analyzer",
+      "code_quality.mappings.enhanced_dependency_analyzer",
+      "code_quality.tools.placeholder_finder",
+      "scripts.merge_reports",
+      "src.training.optimization.rollback_manager",
+      "targeted_corruption_fixer",
+      "code_quality.aggressive_syntax_checker",
+      "code_quality.mappings.comprehensive_import_analyzer",
+      "code_quality.syntax_error_counter",
+      "code_quality.test_robustness",
+      "code_quality.mappings.unused_code_analyzer",
+      "code_quality.visualize_function_calls",
+      "code_quality.tools.code_quality_analyzer",
+      "code_quality.quick_summary"
+    ],
+    "json": [
+      "code_quality.mappings.function_call_analyzer",
+      "code_quality.mappings.focused_usage_analyzer",
+      "code_quality.mappings.dependency_analyzer",
+      "code_quality.mappings.enhanced_dependency_analyzer",
+      "code_quality.tools.placeholder_finder",
+      "scripts.merge_reports",
+      "src.training.optimization.rollback_manager",
+      "src.training.optimization.cached_optimizer",
+      "code_quality.aggressive_syntax_checker",
+      "code_quality.mappings.comprehensive_import_analyzer",
+      "src.training.optimization.computational_optimization_manager",
+      "code_quality.syntax_error_counter",
+      "code_quality.mappings.unused_code_analyzer",
+      "code_quality.visualize_function_calls",
+      "code_quality.tools.code_quality_analyzer",
+      "code_quality.quick_summary"
+    ],
+    "subprocess": [
+      "code_quality.visualize_function_calls",
+      "code_quality.tools.code_quality_analyzer"
+    ],
+    "os": [
+      "code_quality.mappings.function_call_analyzer",
+      "code_quality.mappings.focused_usage_analyzer",
+      "code_quality.mappings.dependency_analyzer",
+      "code_quality.mappings.enhanced_dependency_analyzer",
+      "code_quality.tools.placeholder_finder",
+      "src.training.optimization.cached_optimizer",
+      "code_quality.aggressive_syntax_checker",
+      "code_quality.mappings.comprehensive_import_analyzer",
+      "code_quality.syntax_error_counter",
+      "code_quality.mappings.unused_code_analyzer",
+      "code_quality.visualize_function_calls",
+      "code_quality.tools.code_quality_analyzer",
+      "code_quality.quick_summary"
+    ],
+    "collections": [
+      "src.training.optimization.adaptive_trial_allocator",
+      "code_quality.mappings.function_call_analyzer",
+      "code_quality.mappings.focused_usage_analyzer",
+      "code_quality.mappings.dependency_analyzer",
+      "code_quality.mappings.enhanced_dependency_analyzer",
+      "code_quality.tools.placeholder_finder",
+      "code_quality.aggressive_syntax_checker",
+      "code_quality.mappings.comprehensive_import_analyzer",
+      "code_quality.syntax_error_counter",
+      "code_quality.mappings.unused_code_analyzer",
+      "code_quality.tools.code_quality_analyzer"
+    ],
+    "datetime": [
+      "src.supervisor.ab_tester",
+      "src.training.optimization.rollback_manager",
+      "src.training.optimization.cached_optimizer",
+      "src.supervisor.monitoring",
+      "src.analyst.analyst",
+      "code_quality.tools.placeholder_finder",
+      "src.custom_types.base_types"
+    ],
+    "enum": [
+      "src.monitoring.trade_conditions_monitor",
+      "src.training.optimization.progressive_optimizer",
+      "src.monitoring.tracking_system",
+      "src.training.optimization.problem_specific_strategies",
+      "src.monitoring.regime_sr_tracker"
+    ],
+    "tracking_system": [
+      "src.monitoring.__init__"
+    ],
+    "integration_manager": [
+      "src.monitoring.__init__"
+    ],
+    "correlation_manager": [
+      "src.monitoring.__init__"
+    ],
+    "advanced_tracer": [
+      "src.monitoring.__init__"
+    ],
+    "ml_monitor": [
+      "src.monitoring.__init__"
+    ],
+    "report_scheduler": [
+      "src.monitoring.__init__"
+    ],
+    "metrics_dashboard": [
+      "src.monitoring.__init__"
+    ],
+    "modular_strategist": [
+      "src.components.__init__"
+    ],
+    "modular_tactician": [
+      "src.components.__init__"
+    ],
+    "modular_analyst": [
+      "src.components.__init__"
+    ],
+    "modular_supervisor": [
+      "src.components.__init__"
+    ],
+    "base_interfaces": [
+      "src.interfaces.__init__"
+    ],
+    "event_bus": [
+      "src.interfaces.__init__"
+    ],
+    "asyncio": [
+      "src.training.optimization.parallel_optimizer",
+      "src.supervisor.ab_tester",
+      "src.supervisor.monitoring"
+    ],
+    "src": [
+      "src.analyst.autoencoder_feature_generator",
+      "src.training.optimization.adaptive_trial_allocator",
+      "src.supervisor.ab_tester",
+      "src.training.optimization.progressive_optimizer",
+      "src.training.optimization.advanced_surrogate_models",
+      "src.training.optimization.rollback_manager",
+      "src.core.enhanced_dependency_injection",
+      "src.analyst.feature_engineering_orchestrator",
+      "exchange.mexc",
+      "src.training.optimization.cached_optimizer",
+      "src.supervisor.monitoring",
+      "src.training.optimization.computational_optimization_manager",
+      "exchange.binance",
+      "src.analyst.analyst",
+      "src.training.optimization.problem_specific_strategies",
+      "src.training.optimization.parallel_optimizer",
+      "src.training.optimization.__init__"
+    ],
+    "copy": [
+      "src.supervisor.ab_tester"
+    ],
+    "risk_allocator": [
+      "src.supervisor.__init__"
+    ],
+    "performance_reporter": [
+      "src.supervisor.__init__"
+    ],
+    "optimizer": [
+      "src.supervisor.__init__"
+    ],
+    "main": [
+      "src.supervisor.__init__"
+    ],
+    "ab_tester": [
+      "src.supervisor.__init__"
+    ],
+    "lifecycle_manager": [
+      "src.pipelines.components.__init__"
+    ],
+    "notification_manager": [
+      "src.pipelines.components.__init__"
+    ],
+    "checkpoint_manager": [
+      "src.pipelines.components.__init__"
+    ],
+    "data_manager": [
+      "src.pipelines.components.__init__"
+    ],
+    "config_manager": [
+      "src.pipelines.components.__init__"
+    ],
+    "monitoring_manager": [
+      "src.pipelines.components.__init__"
+    ],
+    "signal_handler": [
+      "src.pipelines.components.__init__"
+    ],
+    "decimal": [
+      "src.custom_types.base_types"
+    ],
+    "trading_types": [
+      "src.custom_types.__init__"
+    ],
+    "validation": [
+      "src.custom_types.__init__"
+    ],
+    "data_types": [
+      "src.custom_types.__init__"
+    ],
+    "ml_types": [
+      "src.custom_types.__init__"
+    ],
+    "protocol_types": [
+      "src.custom_types.__init__"
+    ],
+    "config_types": [
+      "src.custom_types.__init__"
+    ],
+    "base_types": [
+      "src.custom_types.__init__"
+    ],
+    "position_sizer": [
+      "src.tactician.__init__"
+    ],
+    "ml_tactics_manager": [
+      "src.tactician.__init__"
+    ],
+    "tactician": [
+      "src.tactician.__init__"
+    ],
+    "sr_breakout_predictor": [
+      "src.tactician.__init__"
+    ],
+    "leverage_sizer": [
+      "src.tactician.__init__"
+    ],
+    "optuna": [
+      "src.training.optimization.computational_optimization_manager",
+      "src.training.optimization.parallel_optimizer",
+      "src.training.optimization.cached_optimizer",
+      "src.training.optimization.progressive_optimizer"
+    ],
+    "hashlib": [
+      "src.training.optimization.computational_optimization_manager",
+      "src.training.optimization.cached_optimizer"
+    ],
+    "pickle": [
+      "src.training.optimization.computational_optimization_manager",
+      "src.training.optimization.cached_optimizer"
+    ],
+    "dataclasses": [
+      "src.training.optimization.adaptive_trial_allocator",
+      "src.training.optimization.progressive_optimizer",
+      "src.training.optimization.rollback_manager",
+      "src.training.optimization.cached_optimizer",
+      "src.training.optimization.computational_optimization_manager",
+      "src.training.optimization.problem_specific_strategies",
+      "src.training.optimization.parallel_optimizer"
+    ],
+    "time": [
+      "src.training.optimization.computational_optimization_manager",
+      "src.training.optimization.advanced_surrogate_models",
+      "src.training.optimization.progressive_optimizer"
+    ],
+    "pandas": [
+      "src.analyst.autoencoder_feature_generator",
+      "src.training.optimization.adaptive_trial_allocator",
+      "src.training.optimization.progressive_optimizer",
+      "src.analyst.feature_engineering_orchestrator",
+      "src.training.optimization.computational_optimization_manager",
+      "src.analyst.analyst"
+    ],
+    "sklearn": [
+      "src.training.optimization.computational_optimization_manager",
+      "src.training.optimization.problem_specific_strategies",
+      "src.training.optimization.advanced_surrogate_models"
+    ],
+    "scipy": [
+      "src.training.optimization.computational_optimization_manager",
+      "src.training.optimization.problem_specific_strategies"
+    ],
+    "abc": [
+      "src.training.optimization.problem_specific_strategies",
+      "src.training.optimization.advanced_surrogate_models"
+    ],
+    "numpy": [
+      "src.training.optimization.computational_optimization_manager",
+      "src.training.optimization.adaptive_trial_allocator",
+      "src.training.optimization.problem_specific_strategies",
+      "src.training.optimization.advanced_surrogate_models"
+    ],
+    "multiprocessing": [
+      "src.training.optimization.computational_optimization_manager",
+      "src.training.optimization.parallel_optimizer"
+    ],
+    "xgboost": [
+      "src.training.optimization.computational_optimization_manager",
+      "src.training.optimization.advanced_surrogate_models"
+    ],
+    "concurrent": [
+      "src.training.optimization.computational_optimization_manager"
+    ],
+    "gc": [
+      "src.training.optimization.computational_optimization_manager"
+    ],
+    "psutil": [
+      "src.training.optimization.computational_optimization_manager"
+    ],
+    "contextlib": [
+      "src.training.optimization.computational_optimization_manager"
+    ],
+    "torch": [
+      "src.training.optimization.advanced_surrogate_models"
+    ],
+    "lightgbm": [
+      "src.training.optimization.advanced_surrogate_models"
+    ],
+    "joblib": [
+      "src.training.optimization.advanced_surrogate_models"
+    ],
+    "rollback_manager": [
+      "src.training.optimization.__init__"
+    ],
+    "missing_data_downloader_and_gap_filler": [
+      "src.training.steps.step1.__init__"
+    ],
+    "step1_orchestrator": [
+      "src.training.steps.step1.__init__"
+    ],
+    "data_gap_detector": [
+      "src.training.steps.step1.__init__"
+    ],
+    "data_resampler": [
+      "src.training.steps.step1.__init__"
+    ],
+    "aggtrades_validator": [
+      "src.training.steps.step1.__init__"
+    ],
+    "dependency_injection": [
+      "src.core.__init__"
+    ],
+    "__future__": [
+      "src.analyst.autoencoder_feature_generator",
+      "src.analyst.analyst",
+      "src.analyst.feature_engineering_orchestrator"
+    ],
+    "ensemble_orchestrator": [
+      "src.analyst.predictive_ensembles.__init__"
+    ],
+    "base_ensemble": [
+      "src.analyst.predictive_ensembles.regime_ensembles.__init__"
+    ],
+    "volatile_regime_ensemble": [
+      "src.analyst.predictive_ensembles.regime_ensembles.__init__"
+    ],
+    "base_exchange": [
+      "exchange.mexc"
+    ]
+  },
+  "file_imports": {
+    "targeted_corruption_fixer": [
+      "sys",
+      "typing",
+      "ast",
+      "argparse",
+      "re",
+      "logging",
+      "pathlib"
+    ],
+    "ares_launcher": [],
+    "optimize_hmm_regime_parameters_advanced": [],
+    "optimize_hmm_regime_parameters_enhanced": [],
+    "multi_objective_hmm_optimizer": [],
+    "scripts.setup_challenger_model": [],
+    "scripts.merge_reports": [
+      "sys",
+      "typing",
+      "json",
+      "re",
+      "pathlib"
+    ],
+    "scripts.bot_monitor": [],
+    "backtesting.ares_data_downloader_clean": [],
+    "backtesting.ares_data_downloader_optimized": [],
+    "code_quality.visualize_function_calls": [
+      "sys",
+      "subprocess",
+      "json",
+      "argparse",
+      "os",
+      "pathlib"
+    ],
+    "code_quality.test_robustness": [
+      "ast",
+      "pathlib",
+      "re"
+    ],
+    "code_quality.quick_summary": [
+      "pathlib",
+      "os",
+      "json"
+    ],
+    "code_quality.aggressive_syntax_checker": [
+      "sys",
+      "ast",
+      "json",
+      "pathlib",
+      "collections",
+      "os"
+    ],
+    "code_quality.syntax_error_counter": [
+      "sys",
+      "ast",
+      "json",
+      "pathlib",
+      "collections",
+      "os"
+    ],
+    "code_quality.mappings.unused_code_analyzer": [
+      "sys",
+      "typing",
+      "ast",
+      "json",
+      "re",
+      "pathlib",
+      "collections",
+      "os"
+    ],
+    "code_quality.mappings.enhanced_dependency_analyzer": [
+      "sys",
+      "ast",
+      "json",
+      "re",
+      "pathlib",
+      "collections",
+      "os"
+    ],
+    "code_quality.mappings.focused_usage_analyzer": [
+      "sys",
+      "ast",
+      "json",
+      "re",
+      "pathlib",
+      "collections",
+      "os"
+    ],
+    "code_quality.mappings.function_call_analyzer": [
+      "sys",
+      "typing",
+      "ast",
+      "json",
+      "re",
+      "pathlib",
+      "collections",
+      "os"
+    ],
+    "code_quality.mappings.comprehensive_import_analyzer": [
+      "sys",
+      "typing",
+      "ast",
+      "json",
+      "re",
+      "pathlib",
+      "collections",
+      "os"
+    ],
+    "code_quality.mappings.dependency_analyzer": [
+      "sys",
+      "ast",
+      "json",
+      "pathlib",
+      "collections",
+      "os"
+    ],
+    "code_quality.tools.batch_import_cleaner": [],
+    "code_quality.tools.dead_code_remover_original": [],
+    "code_quality.tools.dead_code_remover": [],
+    "code_quality.tools.code_quality_analyzer": [
+      "typing",
+      "ast",
+      "subprocess",
+      "json",
+      "argparse",
+      "re",
+      "pathlib",
+      "collections",
+      "os"
+    ],
+    "code_quality.tools.placeholder_finder": [
+      "datetime",
+      "typing",
+      "ast",
+      "logging",
+      "json",
+      "argparse",
+      "re",
+      "pathlib",
+      "collections",
+      "os"
+    ],
+    "code_quality.tools.syntax_fixer": [],
+    "src.tasks": [],
+    "src.ares_pipeline": [],
+    "src.config": [],
+    "src.config_optuna": [],
+    "src.paper_trader": [],
+    "src.monitoring.error_detection_system": [],
+    "src.monitoring.tracking_system": [
+      "enum"
+    ],
+    "src.monitoring.correlation_manager": [],
+    "src.monitoring.report_scheduler": [],
+    "src.monitoring.fractional_system_monitor": [],
+    "src.monitoring.enhanced_ml_tracker": [],
+    "src.monitoring.performance_dashboard": [],
+    "src.monitoring.integration_manager": [],
+    "src.monitoring.performance_monitor": [],
+    "src.monitoring.surrogate_optimization_monitor": [],
+    "src.monitoring.metrics_dashboard": [],
+    "src.monitoring.fractional_performance_tracker": [],
+    "src.monitoring.csv_exporter": [],
+    "src.monitoring.regime_sr_tracker": [
+      "enum"
+    ],
+    "src.monitoring.advanced_tracer": [],
+    "src.monitoring.__init__": [
+      "tracking_system",
+      "integration_manager",
+      "correlation_manager",
+      "advanced_tracer",
+      "ml_monitor",
+      "report_scheduler",
+      "metrics_dashboard"
+    ],
+    "src.monitoring.trade_conditions_monitor": [
+      "enum"
+    ],
+    "src.monitoring.ml_monitor": [],
+    "src.backtesting.enhanced_backtester": [],
+    "src.launcher.enhanced_trading_launcher": [],
+    "src.components.modular_analyst": [],
+    "src.components.modular_tactician": [],
+    "src.components.modular_supervisor": [],
+    "src.components.__init__": [
+      "modular_strategist",
+      "modular_tactician",
+      "modular_analyst",
+      "modular_supervisor"
+    ],
+    "src.components.modular_strategist": [],
+    "src.interfaces.event_bus": [],
+    "src.interfaces.base_interfaces": [],
+    "src.interfaces.__init__": [
+      "base_interfaces",
+      "event_bus"
+    ],
+    "src.interfaces.enhanced_event_bus": [],
+    "src.trading.live_wavelet_analyzer": [],
+    "src.trading.live_wavelet_demo": [],
+    "src.trading.live_wavelet_integration": [],
+    "src.trading.sr_trading_intelligence": [],
+    "src.supervisor.enhanced_prediction_service": [],
+    "src.supervisor.performance_monitor": [],
+    "src.supervisor.global_portfolio_manager": [],
+    "src.supervisor.performance_reporter": [],
+    "src.supervisor.exchange_ab_tester": [],
+    "src.supervisor.multi_exchange_ab_tester": [],
+    "src.supervisor.dynamic_weighter": [],
+    "src.supervisor.enhanced_model_monitor": [],
+    "src.supervisor.exchange_volume_adapter": [],
+    "src.supervisor.monitoring": [
+      "typing",
+      "datetime",
+      "asyncio",
+      "src"
+    ],
+    "src.supervisor.main": [],
+    "src.supervisor.ab_tester": [
+      "datetime",
+      "typing",
+      "src",
+      "asyncio",
+      "copy"
+    ],
+    "src.supervisor.risk_allocator": [],
+    "src.supervisor.pnl_loss_functions": [],
+    "src.supervisor.__init__": [
+      "risk_allocator",
+      "performance_reporter",
+      "optimizer",
+      "main",
+      "ab_tester"
+    ],
+    "src.supervisor.supervisor": [],
+    "src.supervisor.model_behavior_tracker": [],
+    "src.supervisor.optimizer": [],
+    "src.pipelines.live_trading_pipeline": [],
+    "src.pipelines.improved_pipeline_executor": [],
+    "src.pipelines.base_pipeline": [],
+    "src.pipelines.__init__": [],
+    "src.pipelines.components.monitoring_manager": [],
+    "src.pipelines.components.__init__": [
+      "lifecycle_manager",
+      "notification_manager",
+      "checkpoint_manager",
+      "data_manager",
+      "config_manager",
+      "monitoring_manager",
+      "signal_handler"
+    ],
+    "src.pipelines.components.lifecycle_manager": [],
+    "src.pipelines.components.data_manager": [],
+    "src.sentinel.sentinel": [],
+    "src.sentinel.__init__": [],
+    "src.transition.seq2seq_trainer": [],
+    "src.transition.combined_features_builder": [],
+    "src.transition.baseline_rf": [],
+    "src.transition.inference_combiner": [],
+    "src.transition.rolling_inference": [],
+    "src.transition.event_trigger_indexer": [],
+    "src.transition.multitask_rf": [],
+    "src.transition.rolling_window_dataset": [],
+    "src.transition.path_targets": [],
+    "src.transition.state_sequence_builder": [],
+    "src.transition.event_window_dataset": [],
+    "src.custom_types.base_types": [
+      "typing",
+      "datetime",
+      "decimal"
+    ],
+    "src.custom_types.config_types": [],
+    "src.custom_types.trading_types": [],
+    "src.custom_types.ml_types": [],
+    "src.custom_types.validation": [],
+    "src.custom_types.__init__": [
+      "trading_types",
+      "validation",
+      "data_types",
+      "ml_types",
+      "protocol_types",
+      "config_types",
+      "base_types"
+    ],
+    "src.custom_types.protocol_types": [],
+    "src.custom_types.data_types": [],
+    "src.optimization.parameter_optimizer": [],
+    "src.optimization.backtesting_evaluator": [],
+    "src.reports.paper_trading_reporter": [],
+    "src.protocols.trading_protocols": [],
+    "src.integration.paper_trading_integration": [],
+    "src.tactician.position_sizer": [],
+    "src.tactician.sr_weight_optimizer": [],
+    "src.tactician.position_closing": [],
+    "src.tactician.sr_backtesting_validator": [],
+    "src.tactician.ml_target_updater": [],
+    "src.tactician.position_division_strategy": [],
+    "src.tactician.enhanced_prediction_integrator": [],
+    "src.tactician.tactician": [],
+    "src.tactician.comprehensive_enhanced_scenario_predictor": [],
+    "src.tactician.enhanced_execution_manager": [],
+    "src.tactician.tactics_orchestrator": [],
+    "src.tactician.position_monitor": [],
+    "src.tactician.enhanced_order_manager": [],
+    "src.tactician.sr_data_integration": [],
+    "src.tactician.dynamic_barrier_calculator": [],
+    "src.tactician.scenario_based_predictor": [],
+    "src.tactician.leverage_sizer": [],
+    "src.tactician.sr_levels_manager": [],
+    "src.tactician.step17_optimized_tactician": [],
+    "src.tactician.sr_data_integration_simple": [],
+    "src.tactician.sr_breakout_predictor": [],
+    "src.tactician.enhanced_scenario_based_predictor": [],
+    "src.tactician.sr_detection_optimization": [],
+    "src.tactician.__init__": [
+      "position_sizer",
+      "ml_tactics_manager",
+      "tactician",
+      "sr_breakout_predictor",
+      "leverage_sizer"
+    ],
+    "src.tactician.ml_target_validator": [],
+    "src.tactician.async_order_executor": [],
+    "src.tracking.trade_tracker": [],
+    "src.training.model_trainer": [],
+    "src.training.enhanced_lm_config": [],
+    "src.training.enhanced_training_manager": [],
+    "src.training.data_cleaning": [],
+    "src.training.enhanced_training_manager_enhanced": [],
+    "src.training.enhanced_dynamic_feature_selection": [],
+    "src.training.multi_output_probability_trainer": [],
+    "src.training.data_access_utils": [],
+    "src.training.gpu_acceleration_m1": [],
+    "src.training.regularization": [],
+    "src.training.feature_engineering_optimizer": [],
+    "src.training.feature_integration": [],
+    "src.training.feature_engineering": [],
+    "src.training.wavelet_integration_demo": [],
+    "src.training.enhanced_feature_engineering_optimizer": [],
+    "src.training.enhanced_matrix_operations": [],
+    "src.training.model_saving_utils": [],
+    "src.training.probabilistic_model_integration": [],
+    "src.training.enhanced_lm_optimizer": [],
+    "src.training.step_orchestrator": [],
+    "src.training.enhanced_training_manager_optimized": [],
+    "src.training.early_stage_optimization": [],
+    "src.training.multi_objective_optimizer": [],
+    "src.training.data_sharing_manager": [],
+    "src.training.bayesian_optimizer": [],
+    "src.training.memory_profiler": [],
+    "src.training.integration_guide": [],
+    "src.training.matrix_diverse_lookback_optimizer": [],
+    "src.training.unified_data_orchestrator": [],
+    "src.training.timeframe_relevance_analyzer": [],
+    "src.training.comprehensive_sr_training_pipeline": [],
+    "src.training.dual_model_system": [],
+    "src.training.performance_comparison": [],
+    "src.training.steps_1_7_comprehensive_executor": [],
+    "src.training.adaptive_optimizer": [],
+    "src.training.demo_pipeline_execution": [],
+    "src.training.launcher_integration_patch": [],
+    "src.training.optimized_feature_selection_manager": [],
+    "src.training.feature_selection_manager": [],
+    "src.training.progress_manager": [],
+    "src.training.comprehensive_pipeline_executor": [],
+    "src.training.wavelet_feature_selection_demo": [],
+    "src.training.multi_output_model_trainer": [],
+    "src.training.calibration_manager": [],
+    "src.training.model_probability_generator": [],
+    "src.training.training_orchestrator": [],
+    "src.training.advanced_neural_models": [],
+    "src.training.comprehensive_feature_optimizer": [],
+    "src.training.model_specific_pruning": [],
+    "src.training.matrix_enhancement_manager": [],
+    "src.training.factory": [],
+    "src.training.training_manager": [],
+    "src.training.enhanced_matrix_gpu_integration": [],
+    "src.training.enhanced_coarse_optimizer": [],
+    "src.training.hmm_regime_barrier_optimizer": [],
+    "src.training.ensemble_manager": [],
+    "src.training.data_quality_monitor": [],
+    "src.training.model_training_integrator": [],
+    "src.training.di_training_manager": [],
+    "src.training.__init__": [],
+    "src.training.probability_calculators": [],
+    "src.training.wavelet_feature_selection_workflow": [],
+    "src.training.data_efficiency_optimizer": [],
+    "src.training.optimization_manager": [],
+    "src.training.validator": [],
+    "src.training.tpsl_optimizer": [],
+    "src.training.vectorized_training_pipeline": [],
+    "src.training.enhanced_optimization_orchestrator": [],
+    "src.training.enhanced_multi_timeframe_optimizer": [],
+    "src.training.data_manager": [],
+    "src.training.probabilistic_bayesian_optimizer": [],
+    "src.training.diverse_lookback_optimizer": [],
+    "src.training.wavelet_caching_workflow": [],
+    "src.training.optimized_backtester": [],
+    "src.training.optimization.cached_optimizer": [
+      "datetime",
+      "typing",
+      "optuna",
+      "src",
+      "json",
+      "hashlib",
+      "pickle",
+      "dataclasses",
+      "os"
+    ],
+    "src.training.optimization.transfer_learning_system": [],
+    "src.training.optimization.progressive_optimizer": [
+      "time",
+      "typing",
+      "optuna",
+      "pandas",
+      "src",
+      "dataclasses",
+      "enum"
+    ],
+    "src.training.optimization.problem_specific_strategies": [
+      "sklearn",
+      "typing",
+      "src",
+      "scipy",
+      "abc",
+      "numpy",
+      "dataclasses",
+      "enum"
+    ],
+    "src.training.optimization.parallel_optimizer": [
+      "typing",
+      "optuna",
+      "src",
+      "asyncio",
+      "dataclasses",
+      "multiprocessing"
+    ],
+    "src.training.optimization.rollback_manager": [
+      "datetime",
+      "typing",
+      "src",
+      "json",
+      "dataclasses",
+      "pathlib"
+    ],
+    "src.training.optimization.computational_optimization_manager": [
+      "sklearn",
+      "time",
+      "xgboost",
+      "concurrent",
+      "gc",
+      "typing",
+      "optuna",
+      "pandas",
+      "scipy",
+      "psutil",
+      "src",
+      "json",
+      "hashlib",
+      "pickle",
+      "contextlib",
+      "numpy",
+      "dataclasses",
+      "multiprocessing"
+    ],
+    "src.training.optimization.advanced_surrogate_models": [
+      "sklearn",
+      "time",
+      "xgboost",
+      "src",
+      "torch",
+      "lightgbm",
+      "joblib",
+      "abc",
+      "numpy"
+    ],
+    "src.training.optimization.adaptive_trial_allocator": [
+      "typing",
+      "src",
+      "pandas",
+      "numpy",
+      "dataclasses",
+      "collections"
+    ],
+    "src.training.optimization.__init__": [
+      "src",
+      "rollback_manager"
+    ],
+    "src.training.tests.test_regime_change_prediction": [],
+    "src.training.steps.step04_triple_barrier_method_validator": [],
+    "src.training.steps.multi_timeframe_hmm_ensemble": [],
+    "src.training.steps.update_steps_for_unified_data": [],
+    "src.training.steps.fractional_feature_selector": [],
+    "src.training.steps.step06_feature_interaction_engineering": [],
+    "src.training.steps.step13_analyst_ensemble_creation_validator": [],
+    "src.training.steps.step20_ab_testing_validator": [],
+    "src.training.steps.step14_tactician_labeling_validator": [],
+    "src.training.steps.step10_unified_regime_intelligence": [],
+    "src.training.steps.step18_walk_forward_validation_validator": [],
+    "src.training.steps.step14_tactician_labeling": [],
+    "src.training.steps.hmm_feature_enhancer": [],
+    "src.training.steps.step09_5_multi_timeframe_hmm_ensemble": [],
+    "src.training.steps.step11_analyst_creation_validator": [],
+    "src.training.steps.step09_hmm_based_training_enhanced": [],
+    "src.training.steps.step09_hmm_based_training_validator": [],
+    "src.training.steps.step01_5_data_converter": [],
+    "src.training.steps.step20_ab_testing": [],
+    "src.training.steps.step03_parameter_optimization_validator": [],
+    "src.training.steps.step17_final_parameters_optimization_new": [],
+    "src.training.steps.enhanced_step1_data_collection": [],
+    "src.training.steps.step19_monte_carlo_validation_validator": [],
+    "src.training.steps.feature_artifact_loader": [],
+    "src.training.steps.step02_5_sr_optimization_validator": [],
+    "src.training.steps.data_downloader": [],
+    "src.training.steps.step03_hmm_regime_discovery_validator": [],
+    "src.training.steps.step16_confidence_calibration": [],
+    "src.training.steps.step04_regime_data_splitting_validator": [],
+    "src.training.steps.step21_saving": [],
+    "src.training.steps.step05_labeling": [],
+    "src.training.steps.combined_fractional_system": [],
+    "src.training.steps.step10_unified_regime_intelligence_validator": [],
+    "src.training.steps.step03_5_final_regime_clustering_validator": [],
+    "src.training.steps.vectorized_advanced_feature_engineering": [],
+    "src.training.steps.precompute_wavelet_features": [],
+    "src.training.steps.step02_feature_engineering_validator": [],
+    "src.training.steps.step02_5_sr_optimization": [],
+    "src.training.steps.step08_regime_data_splitting": [],
+    "src.training.steps.step21_saving_validator": [],
+    "src.training.steps.step02_data_reading_validator": [],
+    "src.training.steps.step07_enhanced_matrix_operations": [],
+    "src.training.steps.step19_monte_carlo_validation": [],
+    "src.training.steps.step03_hmm_regime_discovery": [],
+    "src.training.steps.step01_data_collection": [],
+    "src.training.steps.unified_data_loader": [],
+    "src.training.steps.step02_data_reading": [],
+    "src.training.steps.step03_parameter_optimization": [],
+    "src.training.steps.step11_analyst_creation": [],
+    "src.training.steps.step12_analyst_enhancement_validator": [],
+    "src.training.steps.step09_hmm_based_training": [],
+    "src.training.steps.step01_5_data_converter_validator": [],
+    "src.training.steps.step01_data_collection_validator": [],
+    "src.training.steps.vectorized_labelling_orchestrator": [],
+    "src.training.steps.step06_feature_engineering_validator": [],
+    "src.training.steps.step04_regime_data_splitting": [],
+    "src.training.steps.backtesting_with_cached_features": [],
+    "src.training.steps.integrated_data_quality_pipeline": [],
+    "src.training.steps.enhanced_step1_5_data_converter": [],
+    "src.training.steps.step17_final_parameters_optimization": [],
+    "src.training.steps.step03_5_final_regime_clustering": [],
+    "src.training.steps.sr_outcome_model_trainer": [],
+    "src.training.steps.step06_feature_engineering": [],
+    "src.training.steps.step16_confidence_calibration_validator": [],
+    "src.training.steps.step12_analyst_enhancement": [],
+    "src.training.steps.raw_data_quality_checker": [],
+    "src.training.steps.step17_final_parameters_optimization_validator": [],
+    "src.training.steps.step18_walk_forward_validation": [],
+    "src.training.steps.step15_tactician_specialist_training": [],
+    "src.training.steps.__init__": [],
+    "src.training.steps.step08_regime_data_splitting_validator": [],
+    "src.training.steps.step15_tactician_specialist_training_validator": [],
+    "src.training.steps.step05_labeling_validator": [],
+    "src.training.steps.fractional_differentiation": [],
+    "src.training.steps.step13_analyst_ensemble_creation": [],
+    "src.training.steps.step07_enhanced_matrix_operations_validator": [],
+    "src.training.steps.step05_regime_data_splitting_validator": [],
+    "src.training.steps.optimized_step_executor": [],
+    "src.training.steps.step04_triple_barrier_method": [],
+    "src.training.steps.step17_final_parameters_optimization.evaluation_engine": [],
+    "src.training.steps.step17_final_parameters_optimization.advanced_optimization_engine": [],
+    "src.training.steps.step17_final_parameters_optimization.optimized_optuna_optimization_enhanced": [],
+    "src.training.steps.step17_final_parameters_optimization.optimized_optuna_optimization": [],
+    "src.training.steps.step17_final_parameters_optimization.optimized_step17_implementation": [],
+    "src.training.steps.step17_final_parameters_optimization.hyperparameter_optimization_config": [],
+    "src.training.steps.step17_final_parameters_optimization.comprehensive_parameter_integration": [],
+    "src.training.steps.step17_final_parameters_optimization.sr_optuna_optimization": [],
+    "src.training.steps.step17_final_parameters_optimization.efficiency_optimizer": [],
+    "src.training.steps.step17_final_parameters_optimization.step17_probabilistic_bayesian_optimization": [],
+    "src.training.steps.step17_final_parameters_optimization.__init__": [],
+    "src.training.steps.step17_final_parameters_optimization.regime_specific_triple_barrier_optimization": [],
+    "src.training.steps.step1.missing_data_downloader_and_gap_filler": [],
+    "src.training.steps.step1.data_quality_dashboard": [],
+    "src.training.steps.step1.test_missing_data_downloader": [],
+    "src.training.steps.step1.validate_and_fix_aggtrades_format": [],
+    "src.training.steps.step1.comprehensive_gap_filler": [],
+    "src.training.steps.step1.aggtrades_validator": [],
+    "src.training.steps.step1.step1_orchestrator": [],
+    "src.training.steps.step1.data_resampler": [],
+    "src.training.steps.step1.run_step1": [],
+    "src.training.steps.step1.test_enhanced_data_quality_system": [],
+    "src.training.steps.step1.gap_filler_pipeline": [],
+    "src.training.steps.step1.data_gap_detector": [],
+    "src.training.steps.step1.data_quality_monitor": [],
+    "src.training.steps.step1.__init__": [
+      "missing_data_downloader_and_gap_filler",
+      "step1_orchestrator",
+      "data_gap_detector",
+      "data_resampler",
+      "aggtrades_validator"
+    ],
+    "src.training.steps.step1.enhanced_data_quality_manager": [],
+    "src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling": [],
+    "src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_specific_triple_barrier_optimizer": [],
+    "src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling": [],
+    "src.training.steps.step4_analyst_labeling_feature_engineering_components.fractional_triple_barrier_labeling": [],
+    "src.training.steps.step4_analyst_labeling_feature_engineering_components.profit_based_feature_engineering": [],
+    "src.training.steps.step4_analyst_labeling_feature_engineering_components.__init__": [],
+    "src.training.steps.multi_timeframe_training.multi_timeframe_training_manager": [],
+    "src.training.steps.multi_timeframe_training.__init__": [],
+    "src.training.steps.analyst_training_components.regime_specific_tpsl_optimizer": [],
+    "src.training.steps.analyst_training_components.__init__": [],
+    "src.training.steps.data_preparation_components.aggtrades_data_formatting": [],
+    "src.training.steps.data_preparation_components.training_validation_config": [],
+    "src.training.steps.data_preparation_components.__init__": [],
+    "src.training.examples.optimized_training_example": [],
+    "src.training.core.stage_registry": [],
+    "src.training.core.checkpoint_manager": [],
+    "src.training.core.stage_context": [],
+    "src.training.core.pipeline_base": [],
+    "src.training.core.pipeline_orchestrator": [],
+    "src.training.core.__init__": [],
+    "src.exchange.binance": [],
+    "src.core.di_integration": [],
+    "src.core.injectable_base": [],
+    "src.core.di_launcher": [],
+    "src.core.enhanced_factories": [],
+    "src.core.generic_base": [],
+    "src.core.service_registry": [],
+    "src.core.enhanced_dependency_injection": [
+      "src",
+      "typing"
+    ],
+    "src.core.dependency_injection": [],
+    "src.core.config_service": [],
+    "src.core.__init__": [
+      "dependency_injection"
+    ],
+    "src.config.sr_optimization_config": [],
+    "src.config.training_modes": [],
+    "src.config.system": [],
+    "src.config.fractional_implementations_config": [],
+    "src.config.constants": [
+      "typing"
+    ],
+    "src.config.computational_optimization_config": [],
+    "src.config.environment": [],
+    "src.config.label_model_mapping": [],
+    "src.config.config_confidence": [],
+    "src.config.multi_timeframe_hmm_ensemble_config": [],
+    "src.config.enhanced_feature_selection_config": [],
+    "src.config.config": [],
+    "src.config.m1_gpu_config": [],
+    "src.config.config_tpsl": [],
+    "src.config.config_regime_transitions": [],
+    "src.config.config_position_sizing": [],
+    "src.config.enhanced_multi_timeframe_config": [],
+    "src.config.config_manager": [],
+    "src.config.typed_config": [],
+    "src.config.config_sr": [],
+    "src.config.matrix_diverse_lookback_config": [],
+    "src.config.diverse_lookback_config": [],
+    "src.config.computational_optimization": [],
+    "src.config.multi_output_config": [],
+    "src.config.config_two_tier": [],
+    "src.config.config_technical_indicators": [],
+    "src.config.enhanced_reporting_config": [],
+    "src.config.config_system_monitoring": [],
+    "src.config.training": [],
+    "src.config.enhanced_matrix_config": [],
+    "src.config.validation": [],
+    "src.config.enhanced_prediction_service_config": [],
+    "src.config.config_training_optimization": [],
+    "src.config.__init__": [],
+    "src.config.feature_engineering_optimization_config": [],
+    "src.config.config_leverage": [],
+    "src.config.enhanced_feature_optimization_config": [],
+    "src.config.regime_specific_optimization_config": [],
+    "src.config.trading": [],
+    "src.config.config_ensemble": [],
+    "src.utils.lookahead_bias_detector_example": [],
+    "src.utils.supervisor_error_handler_example": [],
+    "src.utils.observability": [],
+    "src.utils.comprehensive_file_validation": [],
+    "src.utils.step_dependency_validator": [],
+    "src.utils.enhanced_validation_decorators": [],
+    "src.utils.data_quality_framework": [],
+    "src.utils.vif_calculator": [],
+    "src.utils.model_performance_monitor": [],
+    "src.utils.data_quality_validator": [],
+    "src.utils.state_manager": [],
+    "src.utils.structured_logging": [],
+    "src.utils.async_utils": [],
+    "src.utils.vif_validation_decorators": [],
+    "src.utils.enhanced_data_quality_decorators": [],
+    "src.utils.enhanced_config_management": [],
+    "src.utils.supervisor_error_handler": [],
+    "src.utils.time_utils": [],
+    "src.utils.data_preprocessing": [],
+    "src.utils.feature_output_validator": [],
+    "src.utils.intelligent_feature_cache": [],
+    "src.utils.parallel_processing_optimizer": [],
+    "src.utils.decorators": [],
+    "src.utils.data_loader": [],
+    "src.utils.enhanced_memory_management": [],
+    "src.utils.standardized_model_manager": [],
+    "src.utils.advanced_decorators": [],
+    "src.utils.training_pipeline_decorators": [],
+    "src.utils.decorator_config": [],
+    "src.utils.enhanced_decorators": [],
+    "src.utils.standardized_config_manager": [],
+    "src.utils.optimization_integration_test": [],
+    "src.utils.enhanced_mlflow_integration": [],
+    "src.utils.purged_kfold": [],
+    "src.utils.centralized_decorators": [],
+    "src.utils.warning_symbols": [],
+    "src.utils.config_loader": [],
+    "src.utils.centralized_decorators_v2": [],
+    "src.utils.vif_validation_decorators_simple": [],
+    "src.utils.decorator_compatibility": [],
+    "src.utils.validation_decorators": [],
+    "src.utils.enhanced_pipeline_decorators": [],
+    "src.utils.error_handler": [],
+    "src.utils.data_validation": [],
+    "src.utils.parquet_utils": [],
+    "src.utils.standardized_error_handler": [],
+    "src.utils.comprehensive_logger": [],
+    "src.utils.validator_orchestrator": [],
+    "src.utils.hmm_composite_manager": [],
+    "src.utils.signal_handler": [],
+    "src.utils.data_optimizer": [],
+    "src.utils.configuration_security": [],
+    "src.utils.security_framework": [],
+    "src.utils.centralized_decorators_simple": [],
+    "src.utils.enhanced_missing_value_handler": [],
+    "src.utils.trading_decorators": [],
+    "src.utils.data_formatting_framework": [],
+    "src.utils.enhanced_data_quality_validator": [],
+    "src.utils.data_quality_decorators": [],
+    "src.utils.quality_alert_system": [],
+    "src.utils.mlflow_utils": [],
+    "src.utils.base_validator": [],
+    "src.utils.confidence": [],
+    "src.utils.pipeline_standards": [],
+    "src.utils.enhanced_error_handling": [],
+    "src.utils.prometheus_metrics": [],
+    "src.utils.__init__": [],
+    "src.utils.decorator_registry": [],
+    "src.utils.steps_1_7_compatibility_framework": [],
+    "src.utils.advanced_ml_validation": [],
+    "src.utils.model_manager": [],
+    "src.utils.domain_errors": [],
+    "src.utils.database_security": [],
+    "src.utils.enhanced_outlier_handler": [],
+    "src.utils.enhanced_error_handler": [],
+    "src.utils.logger": [],
+    "src.utils.lookahead_bias_detector": [],
+    "src.utils.comprehensive_data_quality_validator": [],
+    "src.utils.data_type_optimizer": [],
+    "src.strategist.__init__": [],
+    "src.validation.critical_path_validators": [],
+    "src.analyst.order_book_analyzer": [],
+    "src.analyst.advanced_feature_engineering": [],
+    "src.analyst.multi_timeframe_regime_integration": [],
+    "src.analyst.feature_engineering_orchestrator": [
+      "typing",
+      "__future__",
+      "pandas",
+      "src"
+    ],
+    "src.analyst.meta_labeling_system": [],
+    "src.analyst.autoencoder_feature_generator": [
+      "typing",
+      "__future__",
+      "pandas",
+      "src"
+    ],
+    "src.analyst.enhanced_prediction_integrator": [],
+    "src.analyst.predictive_ensembles": [],
+    "src.analyst.regime_runtime": [],
+    "src.analyst.liquidation_risk_model": [],
+    "src.analyst.multi_timeframe_feature_engineering": [],
+    "src.analyst.dynamic_regime_mapper": [],
+    "src.analyst.enhanced_regime_predictor": [],
+    "src.analyst.decision_aggregator": [],
+    "src.analyst.data_utils": [],
+    "src.analyst.unified_regime_intelligence_runtime": [],
+    "src.analyst.example_directional_analysis": [],
+    "src.analyst.regime_expert_orchestrator": [],
+    "src.analyst.meta_label_relevance": [],
+    "src.analyst.ml_confidence_predictor": [],
+    "src.analyst.di_analyst": [],
+    "src.analyst.__init__": [],
+    "src.analyst.unified_regime_classifier": [],
+    "src.analyst.analyst": [
+      "datetime",
+      "typing",
+      "src",
+      "pandas",
+      "__future__"
+    ],
+    "src.analyst.predictive_ensembles.multi_timeframe_ensemble": [],
+    "src.analyst.predictive_ensembles.enhanced_ensemble_orchestrator": [],
+    "src.analyst.predictive_ensembles.ensemble_orchestrator": [],
+    "src.analyst.predictive_ensembles.two_tier_integration": [],
+    "src.analyst.predictive_ensembles.__init__": [
+      "ensemble_orchestrator"
+    ],
+    "src.analyst.predictive_ensembles.regime_ensembles.volatile_regime_ensemble": [],
+    "src.analyst.predictive_ensembles.regime_ensembles.__init__": [
+      "base_ensemble",
+      "volatile_regime_ensemble"
+    ],
+    "src.analyst.predictive_ensembles.regime_ensembles.base_ensemble": [],
+    "src.database.efficient_features_database": [],
+    "src.database.influxdb_manager": [],
+    "src.database.precomputed_features_manager": [],
+    "src.database.migration_utils": [],
+    "src.database.firestore_manager": [],
+    "src.database.sqlite_manager": [],
+    "analysis.model_training_quality_analysis": [],
+    "analysis.backtesting_quality_analysis": [],
+    "analysis.missing_values_analysis": [],
+    "analysis.data_collection_quality_analysis": [],
+    "analysis.data_preparation_quality_analysis": [],
+    "GUI.api_server": [],
+    "docs.enhanced_mlflow_step_integration_template": [],
+    "crypto_analysis.data_downloader": [],
+    "crypto_analysis.data_analyzer": [],
+    "crypto_analysis.run_analysis": [],
+    "crypto_analysis.test_parquet": [],
+    "exchange.mexc_optimized": [],
+    "exchange.okx": [],
+    "exchange.gateio": [],
+    "exchange.mexc": [
+      "typing",
+      "src",
+      "base_exchange"
+    ],
+    "exchange.factory": [],
+    "exchange.__init__": [],
+    "exchange.binance": [
+      "src"
+    ],
+    "exchange.base_exchange": []
+  }
+}

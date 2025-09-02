@@ -707,6 +707,10 @@ async def run_step(
                 "success": False,
             }
         
+        # Optional: regime-specific training toggle and regime list
+        regime_list = kwargs.get("regimes") or []
+        per_regime_enabled: bool = bool(regime_list)
+
         # Initialize and train ensemble
         logger.info("🎯 Initializing multi-timeframe HMM ensemble...")
         ensemble = MultiTimeframeHMMEnsemble(config, symbol, exchange)
@@ -722,6 +726,22 @@ async def run_step(
                 "success": False,
             }
         
+        # If per-regime enabled, also train per-regime ensembles reusing the same data
+        per_regime_status: dict[str, Any] = {}
+        if per_regime_enabled:
+            for regime_name in regime_list:
+                try:
+                    logger.info(f"🎯 Training per-regime ensemble for regime {regime_name}")
+                    regime_ensemble = MultiTimeframeHMMEnsemble(config, symbol, exchange, regime_name=regime_name)
+                    regime_success = regime_ensemble.train_ensemble(regime_forecasting_data)
+                    per_regime_status[regime_name] = {
+                        "success": bool(regime_success),
+                        "models_dir": regime_ensemble.models_dir,
+                    }
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed per-regime ensemble training for {regime_name}: {e}")
+                    per_regime_status[regime_name] = {"success": False, "error": str(e)}
+
         # Get ensemble status
         ensemble_status = ensemble.get_ensemble_status()
         
@@ -739,6 +759,7 @@ async def run_step(
             "timeframes_trained": list(regime_forecasting_data.keys()),
             "ensemble_method": config.ensemble_method,
             "meta_learner_type": config.meta_learner_type,
+            "per_regime": per_regime_status if per_regime_enabled else None,
         }
         
     except Exception as e:

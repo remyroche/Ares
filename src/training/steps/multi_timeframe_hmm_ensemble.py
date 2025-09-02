@@ -77,10 +77,11 @@ class MultiTimeframeHMMEnsemble:
     across multiple timeframes to improve regime forecasting accuracy.
     """
 
-    def __init__(self, config: EnsembleConfig, symbol: str, exchange: str) -> None:
+    def __init__(self, config: EnsembleConfig, symbol: str, exchange: str, regime_name: str | None = None) -> None:
         self.config = config
         self.symbol = symbol
         self.exchange = exchange
+        self.regime_name = regime_name
         self.logger = logger.getChild(f"{symbol}_{exchange}")
 
         # Timeframe-specific models and predictions
@@ -99,11 +100,15 @@ class MultiTimeframeHMMEnsemble:
         self.ensemble_weights: dict[str, float] = {}
 
         # Model storage
-        self.models_dir = os.path.join(
+        base_dir = os.path.join(
             CONFIG.get("CHECKPOINT_DIR", "models"),
             "multi_timeframe_hmm_ensemble",
             f"{exchange}_{symbol}",
         )
+        if regime_name:
+            self.models_dir = os.path.join(base_dir, f"regime_{regime_name}")
+        else:
+            self.models_dir = base_dir
         os.makedirs(self.models_dir, exist_ok=True)
 
         # Initialize weights

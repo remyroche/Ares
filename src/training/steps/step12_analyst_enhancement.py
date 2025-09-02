@@ -442,7 +442,20 @@ class RegimeAwareAnalystEnhancementStep:
                 with contextlib.suppress(Exception):
                     pass
 
-                return regime_name, enhanced_regime_models
+                # Prepare validation summary for this regime
+                try:
+                    regime_validation = {
+                        "models_enhanced": len(enhanced_regime_models),
+                        "train_size": int(len(X_train)),
+                        "val_size": int(len(X_val)),
+                    }
+                except Exception:
+                    regime_validation = {"models_enhanced": len(enhanced_regime_models)}
+
+                return regime_name, {
+                    "models": enhanced_regime_models,
+                    "validation": regime_validation,
+                }
 
             # Create tasks for parallel processing
             self.logger.info(
@@ -474,8 +487,8 @@ class RegimeAwareAnalystEnhancementStep:
                             f"❌ Error in parallel regime processing: {result}",
                         )
                     else:
-                        regime_name, enhanced_regime_models = result
-                        enhanced_models_summary[regime_name] = enhanced_regime_models
+                        regime_name, enhanced_package = result
+                        enhanced_models_summary[regime_name] = enhanced_package
                         self.logger.info(
                             f"✅ Completed batch processing for regime: {regime_name}",
                         )
@@ -485,8 +498,15 @@ class RegimeAwareAnalystEnhancementStep:
                 gc.collect()
 
             self.logger.info("💾 Saving enhanced models...")
+            # Extract models dict for saving while preserving validation in summary JSON
+            models_only: dict[str, dict[str, Any]] = {}
+            for regime_name, package in enhanced_models_summary.items():
+                try:
+                    models_only[regime_name] = package.get("models", {})
+                except Exception:
+                    models_only[regime_name] = package or {}
             enhanced_models_dir: str = self._save_enhanced_models(
-                enhanced_models_summary,
+                models_only,
                 data_dir,
                 training_input,
             )

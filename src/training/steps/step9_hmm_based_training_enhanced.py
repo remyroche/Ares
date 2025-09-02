@@ -1116,7 +1116,32 @@ async def run_enhanced_step(
         # Prepare enhanced data
         prepared_data = enhanced_trainer.prepare_enhanced_data(data, "1m")
         
-        # Train enhanced model
+        # If regime column present, run per-regime training as well
+        per_regime_results: dict[str, Any] = {}
+        if "composite_cluster_id" in data.columns:
+            try:
+                logger.info("🔁 Running per-regime enhanced training based on 'composite_cluster_id'")
+                regimes = list(pd.Series(data["composite_cluster_id"]).dropna().unique())
+                regime_data: dict[str, Any] = {}
+                for regime_key in regimes:
+                    regime_df = data[data["composite_cluster_id"] == regime_key]
+                    if not regime_df.empty:
+                        # naive split for train/val/test reuse
+                        n = len(regime_df)
+                        train_idx = int(n * 0.7)
+                        val_idx = int(n * 0.85)
+                        regime_data[str(regime_key)] = {
+                            "description": f"Regime {regime_key}",
+                            "train": regime_df.iloc[:train_idx].copy(),
+                            "validation": regime_df.iloc[train_idx:val_idx].copy(),
+                            "test": regime_df.iloc[val_idx:].copy(),
+                        }
+                if regime_data:
+                    per_regime_results = await enhanced_trainer.train_enhanced_regime_specific_models("1m", regime_data)
+            except Exception as e:
+                logger.warning(f"⚠️ Per-regime enhanced training skipped due to error: {e}")
+        
+        # Train enhanced model (global model)
         results = await enhanced_trainer.train_enhanced_model(
             prepared_data, f"enhanced_{symbol}_1m"
         )
@@ -1125,6 +1150,17 @@ async def run_enhanced_step(
             # Save models
             save_path = f"{data_dir}/enhanced_models/{symbol}"
             enhanced_trainer.save_enhanced_models(results, save_path)
+            # Save per-regime models if available
+            if per_regime_results:
+                per_regime_dir = os.path.join(save_path, "per_regime")
+                os.makedirs(per_regime_dir, exist_ok=True)
+                for regime_key, regime_result in per_regime_results.items():
+                    regime_dir = os.path.join(per_regime_dir, f"regime_{regime_key}")
+                    os.makedirs(regime_dir, exist_ok=True)
+                    try:
+                        enhanced_trainer.save_enhanced_models(regime_result, regime_dir)
+                    except Exception:
+                        pass
             
             logger.info("✅ Enhanced HMM-based training completed successfully")
             return True

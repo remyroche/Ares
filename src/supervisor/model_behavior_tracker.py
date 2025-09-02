@@ -337,7 +337,7 @@ class ModelBehaviorTracker:
 
                 # Keep only recent snapshots
                 if len(self.behavior_history[model_id]) > self.max_history_size:
-                    self.behavior_history[model_id] = self.behavior_history[model_id][-self.max_history_size // 2 :]
+                    self.behavior_history[model_id] = self.behavior_history[model_id][-self.max_history_size // 2:]
 
             self.logger.debug("📊 Behavior snapshots captured")
 

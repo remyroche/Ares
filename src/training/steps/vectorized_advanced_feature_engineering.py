@@ -3214,56 +3214,56 @@ class VectorizedAdvancedFeatureEngineering:
             features["price_impact"] = price_impact
             self.logger.info(f"🔍 Added price_impact feature, total features: {len(features)}")
 
-            volume_price_impact, self._calculate_volume_price_impact_vectorized(
-                price_data = volume_data,
+            volume_price_impact = self._calculate_volume_price_impact_vectorized(
+                price_data, volume_data,
             )
-        self._track_nan_origins(
+            self._track_nan_origins(
                 "volume_price_impact", {"volume_price_impact": volume_price_impact},
             )
             features["volume_price_impact"] = volume_price_impact
-        self.logger.info(f"🔍 Added volume_price_impact feature, total features: {len(features)}")
+            self.logger.info(f"🔍 Added volume_price_impact feature, total features: {len(features)}")
 
-        # Order-flow related features (proxies if book data not available)
-            order_flow_imbalance, self._calculate_order_flow_imbalance_vectorized(
-                price_data = volume_data, order_flow_data,
+            # Order-flow related features (proxies if book data not available)
+            order_flow_imbalance = self._calculate_order_flow_imbalance_vectorized(
+                price_data, volume_data, order_flow_data,
             )
-        self._track_nan_origins(
+            self._track_nan_origins(
                 "order_flow_imbalance", {"order_flow_imbalance": order_flow_imbalance},
             )
             features["order_flow_imbalance"] = order_flow_imbalance
 
-        # Generate spread dynamics instead of raw spread
+            # Generate spread dynamics instead of raw spread
             bas = self._calculate_bid_ask_spread_vectorized(price_data)
-        self._track_nan_origins("bid_ask_spread", {"bid_ask_spread": bas})
+            self._track_nan_origins("bid_ask_spread", {"bid_ask_spread": bas})
 
-        # Relative change (returns) and level as separate engineered metrics
-            bas_returns, bas.pct_change().replace([np.inf, -np.inf], np.nan).fillna(0)
-        self._track_nan_origins(
+            # Relative change (returns) and level as separate engineered metrics
+            bas_returns = bas.pct_change().replace([np.inf, -np.inf], np.nan).fillna(0)
+            self._track_nan_origins(
                 "bid_ask_spread_returns", {"bid_ask_spread_returns": bas_returns},
             )
             features["bid_ask_spread_returns"] = bas_returns
             features["bid_ask_spread_level"] = bas  # bounded 0..0.05 already
 
-        # Order book wall features (stationary): use returns/diffs
-        try:
-        if order_flow_data is not None:
-        # Expect optional columns: bid_wall_price/size, ask_wall_price/size, mid
+            # Order book wall features (stationary): use returns/diffs
+            try:
+                if order_flow_data is not None:
+                    # Expect optional columns: bid_wall_price/size, ask_wall_price/size, mid
                     df = order_flow_data
-        if "mid" in df.columns:
-                        mid, pd.Series(df["mid"].values, index=df.index).reindex(
+                    if "mid" in df.columns:
+                        mid = pd.Series(df["mid"].values, index=df.index).reindex(
                             price_data.index, method="ffill"
                         )
                     else:
                         mid = price_data["close"].astype(float)
-        # Distances to nearest walls in pct
-        for side in ["bid", "ask"]:
+                    # Distances to nearest walls in pct
+                    for side in ["bid", "ask"]:
                         pcol = f"{side}_wall_price"
                         scol = f"{side}_wall_size"
-        if pcol in df.columns:
-                            wall_p, pd.Series(df[pcol].values, index=df.index).reindex(
+                        if pcol in df.columns:
+                            wall_p = pd.Series(df[pcol].values, index=df.index).reindex(
                                 price_data.index, method="ffill"
                             )
-        with np.errstate(divide="ignore", invalid="ignore"):
+                            with np.errstate(divide="ignore", invalid="ignore"):
                                 dist = (
                                     ((mid - wall_p).abs() / mid)
                                     .replace([np.inf, -np.inf], np.nan)
@@ -3271,18 +3271,18 @@ class VectorizedAdvancedFeatureEngineering:
                                     .fillna(1.0)
                                 )
                             features[f"nearest_{side}_wall_dist_pct"] = dist
-        if scol in df.columns:
+                        if scol in df.columns:
                             wall_s = (
                                 pd.Series(df[scol].values, index=df.index)
                                 .reindex(price_data.index, method="ffill")
                                 .fillna(0)
                             )
-        # Use diff/returns for stationarity
-        # Use shift(1) to avoid NaN in first row
+                            # Use diff/returns for stationarity
+                            # Use shift(1) to avoid NaN in first row
                             features[f"nearest_{side}_wall_size_change"] = (
                                 (wall_s - wall_s.shift(1)).fillna(0)
                             )
-        with np.errstate(divide="ignore", invalid="ignore"):
+                            with np.errstate(divide="ignore", invalid="ignore"):
                                 features[f"nearest_{side}_wall_size_returns"] = (
                                     (wall_s.pct_change())
                                     .replace([np.inf, -np.inf], np.nan)
@@ -3457,7 +3457,7 @@ class VectorizedAdvancedFeatureEngineering:
             features["sma50_slope"] = pd.Series(0, index=close.index)
 
         except Exception as e:
-            self.logger.exception(f"🚨 Error engineering vectorized advanced features: {e}")
+            self.logger.exception(f"🚨 Error engineering microstructure features: {e}")
             return {}
 
         return features

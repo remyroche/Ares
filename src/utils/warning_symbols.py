@@ -6,289 +6,260 @@ for making log messages more visually distinctive and informative.
 
 import os
 import sys
+from typing import Any
+
 
 class ColorCodes:
+    """ANSI color codes for terminal output."""
 
+    # Reset
+    RESET = "\033[0m"
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="colorcodes initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize ColorCodes."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-    def __init__(self, config: dict[str, Any] | None = None) -
-    def __init__(self, config: dict[str, Any] | None = Non
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
-        """Initialize ColorCodes."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("ColorCodes")
-        self.is_initialized = False
-e) -> None:
-        """Initialize ColorCodes."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("ColorCodes")
-        self.is_initialized = False
-> None:
-        """Initialize ColorCodes."""
-        self.config = co
-    def __init__(self, config: dict[str, Any] | None = None) -> No
-    def __init__(self, config: dict[str, Any] | None = None) -
-    def __init__(self, config: dict[str, Any] | None = None) -> None:
-        """Initialize WarningSymbols."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("WarningSymbols")
-        s
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="colorcodes initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize ColorCodes."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="warningsymbols initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize WarningSymbols."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-return False
-elf.is_initialized = False
-> None:
-        """Initialize WarningSymbols."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("WarningSymbols")
-        self.is_initialized = False
-ne:
-        """Initialize WarningSymbols."""
-        self.config = config or {}
-        self.logger = system_logger.getChild("WarningSymbols")
-        self.is_initialized = False
-nfig or {}
-        self.logger = system_logger.getChild("ColorCodes")
-        self.is_initialized = False
-    passpassself.logger.info("Implementation placeholder - needs specific logic")
-class ColorCodes:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class ColorCodes:
-    pass"""ANSI color codes for terminal output."""
+    # Bold
+    BOLD = "\033[1m"
 
-# Reset
-RESET = "\033[0m"
+    # Colors
+    BLACK = "\033[30m"
+    RED = "\033[31m"
+    GREEN = "\033[32m"
+    YELLOW = "\033[33m"
+    BLUE = "\033[34m"
+    MAGENTA = "\033[35m"
+    CYAN = "\033[36m"
+    WHITE = "\033[37m"
 
-# Bold
-BOLD = "\033[1m"
+    # Bright colors
+    BRIGHT_RED = "\033[91m"
+    BRIGHT_GREEN = "\033[92m"
+    BRIGHT_YELLOW = "\033[93m"
+    BRIGHT_BLUE = "\033[94m"
+    BRIGHT_MAGENTA = "\033[95m"
+    BRIGHT_CYAN = "\033[96m"
+    BRIGHT_WHITE = "\033[97m"
 
-# Colors
-BLACK = "\033[30m"
-RED = "\033[31m"
-GREEN = "\033[32m"
-YELLOW = "\033[33m"
-BLUE = "\033[34m"
-MAGENTA = "\033[35m"
-CYAN = "\033[36m"
-WHITE = "\033[37m"
+    # Background colors
+    BG_BLACK = "\033[40m"
+    BG_RED = "\033[41m"
+    BG_GREEN = "\033[42m"
+    BG_YELLOW = "\033[43m"
+    BG_BLUE = "\033[44m"
+    BG_MAGENTA = "\033[45m"
+    BG_CYAN = "\033[46m"
+    BG_WHITE = "\033[47m"
 
-# Bright colors
-BRIGHT_RED = "\033[91m"
-BRIGHT_GREEN = "\033[92m"
-BRIGHT_YELLOW = "\033[93m"
-BRIGHT_BLUE = "\033[94m"
-BRIGHT_MAGENTA = "\033[95m"
-BRIGHT_CYAN = "\033[96m"
-BRIGHT_WHITE = "\033[97m"
+    # Bright background colors
+    BG_BRIGHT_BLACK = "\033[100m"
+    BG_BRIGHT_RED = "\033[101m"
+    BG_BRIGHT_GREEN = "\033[102m"
+    BG_BRIGHT_YELLOW = "\033[103m"
+    BG_BRIGHT_BLUE = "\033[104m"
+    BG_BRIGHT_MAGENTA = "\033[105m"
+    BG_BRIGHT_CYAN = "\033[106m"
+    BG_BRIGHT_WHITE = "\033[107m"
+
 
 class WarningSymbols:
-    passpassself.logger.info("Implementation placeholder - needs specific logic")
-class WarningSymbols:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class WarningSymbols:
-    pass"""Unicode warning symbols for enhanced visual feedback."""
+    """Warning symbols and status indicators for logging."""
 
-# Success symbols
-CHECKMARK = "✅"
-SUCCESS_CIRCLE = "🟢"
-THUMBS_UP = "👍"
+    # Status symbols
+    SUCCESS = "✅"
+    ERROR = "❌"
+    WARNING = "⚠️"
+    INFO = "ℹ️"
+    DEBUG = "🔍"
+    TRACE = "🔎"
 
-# Warning symbols
-WARNING_TRIANGLE = "⚠️"
-WARNING_SIGN = "🚨"
-EXCLAMATION = "❗"
+    # Process symbols
+    START = "🚀"
+    STOP = "🛑"
+    RELOAD = "🔄"
+    SAVE = "💾"
+    LOAD = "📋"
+    NOTIFY = "📢"
+    WAIT = "⏳"
+    DONE = "🎯"
 
-# Error symbols
-RED_CROSS = "❌"
-FAILURE_SYMBOL = "💥"
-PROBLEM_SYMBOL = "🚫"
-ERROR_SYMBOL = "🔥"
+    # Data symbols
+    DATABASE = "🗄️"
+    FILE = "📁"
+    CONFIG = "⚙️"
+    MODEL = "🤖"
+    TRAINING = "🎓"
+    VALIDATION = "✅"
+    TESTING = "🧪"
+    DEPLOYMENT = "🚀"
 
-# Info symbols
-INFO_CIRCLE = "ℹ️"
-LIGHT_BULB = "💡"
-MAGNIFYING_GLASS = "🔍"
+    # Error symbols
+    CRITICAL = "💥"
+    FAILED = "💀"
+    TIMEOUT = "⏰"
+    CONNECTION = "🔌"
+    MEMORY = "🧠"
+    CPU = "⚡"
+    NETWORK = "🌐"
+    SECURITY = "🔒"
 
-# Process symbols
-GEAR = "⚙️"
-HOURGLASS = "⏳"
-CLOCK = "🕐"
-ARROW = "➡️"
+    # Color mappings for different log levels
+    LEVEL_COLORS = {
+        "DEBUG": ColorCodes.CYAN,
+        "INFO": ColorCodes.GREEN,
+        "WARNING": ColorCodes.YELLOW,
+        "ERROR": ColorCodes.RED,
+        "CRITICAL": ColorCodes.BRIGHT_RED,
+    }
 
-# Status symbols
-PLAY = "▶️"
-PAUSE = "⏸️"
-STOP = "⏹️"
-LOADING = "🔄"
+    @classmethod
+    def colorize(cls, text: str, color: str) -> str:
+        """Apply color to text."""
+        if not cls._supports_color():
+            return text
+        return f"{color}{text}{ColorCodes.RESET}"
 
-# Data symbols
-DATABASE = "🗄️"
-FILE = "📁"
-CHART = "📊"
-GRAPH = "📈"
+    @classmethod
+    def _supports_color(cls) -> bool:
+        """Check if terminal supports color output."""
+        return (
+            hasattr(sys.stdout, "isatty")
+            and sys.stdout.isatty()
+            and os.environ.get("TERM") != "dumb"
+        )
 
-# Network symbols
-GLOBE = "🌐"
-WIFI = "📶"
-SERVER = "🖥️"
-CONNECTION = "🔗"
 
-def should_use_colors(...) -> ...:
-    pass"""..."""
-    pass# Check if we're in a terminal
-if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
-    passreturn False
+# Convenience functions for common warning symbols
+def success(message: str) -> str:
+    """Format success message."""
+    return f"{WarningSymbols.SUCCESS} {message}"
 
-# Check for NO_COLOR environment variable
-if os.environ.get("NO_COLOR"):
-    passpassreturn False
 
-# Check for TERM environment variable
-term, os.environ.get("TERM", "").lower()
-return term not in ("dumb", "unknown")
+def error(message: str) -> str:
+    """Format error message."""
+    return f"{WarningSymbols.ERROR} {message}"
 
-def colorize(...) -> ...:
-    pass"""..."""
-    passif not should_use_colors():
-    passreturn text
 
-result, text
-if bold:
-    passresult, f"{ColorCodes.BOLD}{result}"
+def warning(message: str) -> str:
+    """Format warning message."""
+    return f"{WarningSymbols.WARNING} {message}"
 
-return f"{color}{result}{ColorCodes.RESET}"
 
-def format_warning_message(...) -> ...:
-    """..."""
-    passformatted_symbol, colorize(symbol, color, bold)
-formatted_message, colorize(message, color, bold)
-return f"{formatted_symbol} {formatted_message}"
+def info(message: str) -> str:
+    """Format info message."""
+    return f"{WarningSymbols.INFO} {message}"
 
-def format_error_message(...) -> ...:
-    """..."""
-    passformatted_symbol, colorize(symbol, color, bold)
-formatted_message, colorize(message, color, bold)
-return f"{formatted_symbol} {formatted_message}"
 
-def format_critical_message(...) -> ...:
-    """..."""
-    passformatted_symbol, colorize(symbol, color, bold)
-formatted_message, colorize(message, color, bold)
-return f"{formatted_symbol} {formatted_message}"
+def debug(message: str) -> str:
+    """Format debug message."""
+    return f"{WarningSymbols.DEBUG} {message}"
 
-def format_problem_message(...) -> ...:
-    """..."""
-    passformatted_symbol, colorize(symbol, color, bold)
-formatted_message, colorize(message, color, bold)
-return f"{formatted_symbol} {formatted_message}"
 
-def format_success_message(...) -> ...:
-    """..."""
-    passformatted_symbol, colorize(symbol, color, bold)
-formatted_message, colorize(message, color, bold)
-return f"{formatted_symbol} {formatted_message}"
+def failed(message: str) -> str:
+    """Format failed message."""
+    return f"{WarningSymbols.FAILED} {message}"
 
-def format_info_message(...) -> ...:
-    """..."""
-    passformatted_symbol, colorize(symbol, color, bold)
-formatted_message, colorize(message, color, bold)
-return f"{formatted_symbol} {formatted_message}"
 
-# Convenience functions for common warning types
-def warning(...) -> ...:
-    pass"""..."""
-    passreturn format_warning_message(message)
+def initialization_error(message: str) -> str:
+    """Format initialization error message."""
+    return f"{WarningSymbols.CRITICAL} {message}"
 
-def error(...) -> ...:
-    """..."""
-    passreturn format_error_message(message)
 
-def critical(...) -> ...:
-    """..."""
-    passreturn format_critical_message(message)
+def invalid(message: str) -> str:
+    """Format invalid message."""
+    return f"{WarningSymbols.WARNING} {message}"
 
-def failed(...) -> ...:
-    """..."""
-    passreturn format_problem_message(message)
 
-def success(...) -> ...:
-    """..."""
-    passreturn format_success_message(message)
+def missing(message: str) -> str:
+    """Format missing message."""
+    return f"{WarningSymbols.INFO} {message}"
 
-def info(...) -> ...:
-    """..."""
-    passreturn format_info_message(message)
 
-def initialization_error(...) -> ...:
-    """..."""
-    passreturn format_error_message(message)
+# Color utility functions
+def color_success(text: str) -> str:
+    """Color text as success (green)."""
+    return WarningSymbols.colorize(text, ColorCodes.GREEN)
 
-def invalid(...) -> ...:
-    """..."""
-    passreturn format_problem_message(message)
 
-def missing(...) -> ...:
-    """..."""
-    passreturn format_warning_message(message)
+def color_error(text: str) -> str:
+    """Color text as error (red)."""
+    return WarningSymbols.colorize(text, ColorCodes.RED)
 
-def problem(...) -> ...:
-    """..."""
-    passreturn format_problem_message(message)
 
-def timeout(...) -> ...:
-    """..."""
-    passreturn format_error_message(message)
+def color_warning(text: str) -> str:
+    """Color text as warning (yellow)."""
+    return WarningSymbols.colorize(text, ColorCodes.YELLOW)
 
-def connection_error(...) -> ...:
-    """..."""
-    passreturn format_error_message(message)
 
-def validation_error(...) -> ...:
-    """..."""
-    passreturn format_error_message(message)
+def color_info(text: str) -> str:
+    """Color text as info (blue)."""
+    return WarningSymbols.colorize(text, ColorCodes.BLUE)
 
-def execution_error(...) -> ...:
-    """..."""
-    passreturn format_error_message(message)
+
+def color_debug(text: str) -> str:
+    """Color text as debug (cyan)."""
+    return WarningSymbols.colorize(text, ColorCodes.CYAN)
+
+
+def color_bold(text: str) -> str:
+    """Make text bold."""
+    return WarningSymbols.colorize(text, ColorCodes.BOLD)
+
+
+def color_highlight(text: str) -> str:
+    """Highlight text with bright yellow background."""
+    return WarningSymbols.colorize(text, ColorCodes.BG_BRIGHT_YELLOW + ColorCodes.BLACK)
+
+
+# Status formatting functions
+def format_status(status: str, message: str) -> str:
+    """Format status with appropriate symbol and color."""
+    status_map = {
+        "success": (WarningSymbols.SUCCESS, ColorCodes.GREEN),
+        "error": (WarningSymbols.ERROR, ColorCodes.RED),
+        "warning": (WarningSymbols.WARNING, ColorCodes.YELLOW),
+        "info": (WarningSymbols.INFO, ColorCodes.BLUE),
+        "debug": (WarningSymbols.DEBUG, ColorCodes.CYAN),
+        "failed": (WarningSymbols.FAILED, ColorCodes.RED),
+        "critical": (WarningSymbols.CRITICAL, ColorCodes.BRIGHT_RED),
+    }
+    
+    symbol, color = status_map.get(status.lower(), (WarningSymbols.INFO, ColorCodes.WHITE))
+    return WarningSymbols.colorize(f"{symbol} {message}", color)
+
+
+def format_progress(current: int, total: int, message: str = "") -> str:
+    """Format progress indicator."""
+    percentage = (current / total) * 100 if total > 0 else 0
+    progress_bar = "█" * int(percentage / 5) + "░" * (20 - int(percentage / 5))
+    return f"{WarningSymbols.WAIT} [{progress_bar}] {percentage:.1f}% {message}"
+
+
+def format_table(headers: list[str], rows: list[list[str]], title: str = "") -> str:
+    """Format data as a table."""
+    if not rows:
+        return f"{WarningSymbols.INFO} {title}: No data"
+    
+    # Calculate column widths
+    col_widths = [len(h) for h in headers]
+    for row in rows:
+        for i, cell in enumerate(row):
+            col_widths[i] = max(col_widths[i], len(str(cell)))
+    
+    # Create separator
+    separator = "+" + "+".join("-" * (w + 2) for w in col_widths) + "+"
+    
+    # Build table
+    table = []
+    if title:
+        table.append(f"{WarningSymbols.INFO} {title}")
+    table.append(separator)
+    
+    # Headers
+    header_row = "|" + "|".join(f" {h:<{w}} " for h, w in zip(headers, col_widths)) + "|"
+    table.append(header_row)
+    table.append(separator)
+    
+    # Data rows
+    for row in rows:
+        data_row = "|" + "|".join(f" {str(cell):<{w}} " for cell, w in zip(row, col_widths)) + "|"
+        table.append(data_row)
+    
+    table.append(separator)
+    return "\n".join(table)

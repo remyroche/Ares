@@ -1,0 +1,27 @@
+2025-09-02 08:18:53,106 - INFO - Processing file: src/utils/signal_handler.py
+2025-09-02 08:18:53,107 - INFO - Performing semantic analysis...
+2025-09-02 08:18:53,107 - INFO - Code quality score: 0.00
+2025-09-02 08:18:53,107 - WARNING - Syntax errors found: 1
+2025-09-02 08:18:53,107 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:18:53,109 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:53,111 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:53,112 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:53,113 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:53,115 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:53,117 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:53,118 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:53,120 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:53,121 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:53,123 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:53,125 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:53,127 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:53,128 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:53,129 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:53,131 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:18:53,132 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:18:53,133 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:53,136 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:18:53,136 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:18:53,137 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:18:53,140 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:18:53,143 - INFO - No fixes needed for: src/utils/signal_handler.py

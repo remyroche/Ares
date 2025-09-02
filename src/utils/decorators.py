@@ -23,11 +23,12 @@ import inspect
 import logging
 import time
 from collections.abc import Callable
-from typing import Any, Iterable, TypeVar, cast, Dict, Optional
+from typing import Any, Dict, Iterable, Optional, TypeVar, cast
 
 # Handle optional dependencies
 try:
     import numpy as np
+
     NUMPY_AVAILABLE = True
 except ImportError:
     NUMPY_AVAILABLE = False
@@ -35,6 +36,7 @@ except ImportError:
 
 try:
     import pandas as pd
+
     PANDAS_AVAILABLE = True
 except ImportError:
     PANDAS_AVAILABLE = False
@@ -56,6 +58,7 @@ from src.utils.structured_logging import ensure_correlation_id, get_correlation_
 try:
     from .decorator_config import global_config
     from .decorator_registry import decorator_registry, register_decorator
+
     ENHANCED_SYSTEM_AVAILABLE = True
 except ImportError:
     ENHANCED_SYSTEM_AVAILABLE = False
@@ -93,25 +96,30 @@ except Exception:  # pragma: no cover
 # Enhanced helper functions
 # --------------------------
 
+
 def _get_enhanced_config(key: str, default: Any = None) -> Any:
     """Get configuration from enhanced system if available."""
     if ENHANCED_SYSTEM_AVAILABLE and global_config:
         return getattr(global_config, key, default)
     return default
 
+
 def _should_enable_caching() -> bool:
     """Check if caching should be enabled based on configuration."""
-    return _get_enhanced_config('cache_enabled', False)
+    return _get_enhanced_config("cache_enabled", False)
+
 
 def _should_enable_performance_monitoring() -> bool:
     """Check if performance monitoring should be enabled."""
-    return _get_enhanced_config('enable_performance_monitoring', False)
+    return _get_enhanced_config("enable_performance_monitoring", False)
+
 
 def _get_cache_settings() -> tuple[int, int]:
     """Get cache settings from configuration."""
-    cache_size = _get_enhanced_config('cache_size', 128)
-    cache_ttl = _get_enhanced_config('cache_ttl', 3600)
+    cache_size = _get_enhanced_config("cache_size", 128)
+    cache_ttl = _get_enhanced_config("cache_ttl", 3600)
     return cache_size, cache_ttl
+
 
 def _register_decorator_if_available(name: str, decorator: Callable, **kwargs):
     """Register decorator in enhanced system if available."""
@@ -120,6 +128,7 @@ def _register_decorator_if_available(name: str, decorator: Callable, **kwargs):
             decorator_registry.register(name=name, decorator=decorator, **kwargs)
         except Exception as e:
             logger.debug(f"Could not register decorator {name}: {e}")
+
 
 def _create_cache_key(func: Callable, args: tuple, kwargs: dict) -> str:
     """Create a cache key for function calls."""
@@ -135,82 +144,80 @@ def _create_cache_key(func: Callable, args: tuple, kwargs: dict) -> str:
         key_data = f"{func.__name__}:{str(args)}:{str(sorted(kwargs.items()))}"
         return hash(key_data)
 
+
 def _apply_caching(wrapper_func: Callable, cache_size: int, ttl_seconds: int) -> Callable:
     """Apply caching to a wrapper function."""
     if not _should_enable_caching():
         return wrapper_func
-    
+
     cache = {}
-    
+
     @functools.wraps(wrapper_func)
     def cached_wrapper(*args, **kwargs):
         cache_key = _create_cache_key(wrapper_func, args, kwargs)
         current_time = time.time()
-        
+
         # Check cache
         if cache_key in cache:
             cache_entry = cache[cache_key]
-            if current_time - cache_entry['timestamp'] < ttl_seconds:
+            if current_time - cache_entry["timestamp"] < ttl_seconds:
                 logger.debug(f"Cache hit for {wrapper_func.__name__}")
-                return cache_entry['result']
-        
+                return cache_entry["result"]
+
         # Execute and cache
         result = wrapper_func(*args, **kwargs)
-        cache[cache_key] = {
-            'result': result,
-            'timestamp': current_time
-        }
-        
+        cache[cache_key] = {"result": result, "timestamp": current_time}
+
         # Maintain cache size
         if len(cache) > cache_size:
-            oldest_key = min(cache.keys(), key=lambda k: cache[k]['timestamp'])
+            oldest_key = min(cache.keys(), key=lambda k: cache[k]["timestamp"])
             del cache[oldest_key]
-        
+
         logger.debug(f"Cached result for {wrapper_func.__name__}")
         return result
-    
+
     return cached_wrapper
+
 
 def _apply_performance_monitoring(wrapper_func: Callable, level: str = "basic") -> Callable:
     """Apply performance monitoring to a wrapper function."""
     if not _should_enable_performance_monitoring():
         return wrapper_func
-    
+
     @functools.wraps(wrapper_func)
     def monitored_wrapper(*args, **kwargs):
         start_time = time.time()
         start_memory = _get_memory_usage() if level in ["detailed", "profiling"] else 0
-        
+
         try:
             result = wrapper_func(*args, **kwargs)
             return result
         finally:
             end_time = time.time()
             execution_time = end_time - start_time
-            
-            metrics = {
-                'function': wrapper_func.__name__,
-                'execution_time': execution_time,
-                'timestamp': time.time()
-            }
-            
+
+            metrics = {"function": wrapper_func.__name__, "execution_time": execution_time, "timestamp": time.time()}
+
             if level in ["detailed", "profiling"]:
                 end_memory = _get_memory_usage()
-                metrics['memory_delta_mb'] = end_memory - start_memory
-                metrics['peak_memory_mb'] = end_memory
-            
+                metrics["memory_delta_mb"] = end_memory - start_memory
+                metrics["peak_memory_mb"] = end_memory
+
             _log_performance_metrics(metrics, level)
-    
+
     return monitored_wrapper
+
 
 def _get_memory_usage() -> float:
     """Get current memory usage in MB."""
     try:
         import psutil
+
         process = psutil.Process()
         return process.memory_info().rss / 1024 / 1024
     except ImportError:
         return 0.0
+
 
 def _log_performance_metrics(metrics: Dict[str, Any], level: str):
     """Log performance metrics based on level."""
@@ -226,18 +233,19 @@ def _log_performance_metrics(metrics: Dict[str, Any], level: str):
 # Enhanced Type/schema validation
 # --------------------------
 
+
 @_register_decorator_if_available(
     name="validate_call_or_runtime_types",
     version="2.0",
     description="Enhanced type validation with caching and performance monitoring",
-    tags=["validation", "type-checking", "enhanced"]
+    tags=["validation", "type-checking", "enhanced"],
 )
 def validate_call_or_runtime_types(*v_args: Any, **v_kwargs: Any) -> Callable[[F], F]:
     """Enhanced decorator factory that prefers pydantic.validate_call if available.
 
     Falls back to beartype or typeguard if pydantic is unavailable.
     If none are available, acts as a no-op decorator.
-    
+
     ENHANCED FEATURES:
     - Automatic caching for expensive validation operations
     - Performance monitoring and metrics
@@ -254,12 +262,12 @@ def validate_call_or_runtime_types(*v_args: Any, **v_kwargs: Any) -> Callable[[F
             validated_func = cast("F", _typechecked(func))
         else:
             validated_func = func
-        
+
         # Apply enhanced features
         cache_size, ttl_seconds = _get_cache_settings()
         validated_func = _apply_caching(validated_func, cache_size, ttl_seconds)
         validated_func = _apply_performance_monitoring(validated_func, "basic")
-        
+
         return validated_func
 
     return decorator
@@ -269,7 +277,7 @@ def validate_call_or_runtime_types(*v_args: Any, **v_kwargs: Any) -> Callable[[F
     name="pa_check_input",
     version="2.0",
     description="Enhanced pandera input validation with caching",
-    tags=["validation", "pandera", "dataframe", "enhanced"]
+    tags=["validation", "pandera", "dataframe", "enhanced"],
 )
 def pa_check_input(
     schema: Any, *, arg_name: str | None = None, arg_index: int = 0, strict: bool = True
@@ -294,12 +302,12 @@ def pa_check_input(
                 df_arg_index=arg_index,
                 strict=strict,
             )(func)
-        
+
         # Apply enhanced features
         cache_size, ttl_seconds = _get_cache_settings()
         enhanced_decorator = _apply_caching(base_decorator, cache_size, ttl_seconds)
         enhanced_decorator = _apply_performance_monitoring(enhanced_decorator, "basic")
-        
+
         return enhanced_decorator
 
     return decorator
@@ -309,7 +317,7 @@ def pa_check_input(
     name="pa_check_output",
     version="2.0",
     description="Enhanced pandera output validation with caching",
-    tags=["validation", "pandera", "dataframe", "enhanced"]
+    tags=["validation", "pandera", "dataframe", "enhanced"],
 )
 def pa_check_output(schema: Any, *, strict: bool = True) -> Callable[[F], F]:
     """Enhanced compatibility wrapper for pandera.check_output.
@@ -327,12 +335,12 @@ def pa_check_output(schema: Any, *, strict: bool = True) -> Callable[[F], F]:
         else:
             # Fallback to lightweight validation
             base_decorator = pa_check_io(output_schema=schema, strict=strict)(func)
-        
+
         # Apply enhanced features
         cache_size, ttl_seconds = _get_cache_settings()
         enhanced_decorator = _apply_caching(base_decorator, cache_size, ttl_seconds)
         enhanced_decorator = _apply_performance_monitoring(enhanced_decorator, "basic")
-        
+
         return enhanced_decorator
 
     return decorator
@@ -342,7 +350,7 @@ def pa_check_output(schema: Any, *, strict: bool = True) -> Callable[[F], F]:
     name="pa_check_io",
     version="2.0",
     description="Enhanced pandera I/O validation with intelligent caching",
-    tags=["validation", "pandera", "dataframe", "enhanced"]
+    tags=["validation", "pandera", "dataframe", "enhanced"],
 )
 def pa_check_io(
     *,
@@ -383,7 +391,7 @@ def pa_check_io(
 
         def _validate_input(df_value: Any) -> None:
             if input_schema is None:
-        # Fallback implementation for input_schema
+                # Fallback implementation for input_schema
                 return
             if pa is not None and hasattr(input_schema, "validate"):
                 try:
@@ -402,7 +410,7 @@ def pa_check_io(
 
         def _validate_output(result: Any) -> Any:
             if output_schema is None:
-        # Fallback implementation for output_schema
+                # Fallback implementation for output_schema
                 return result
             if pa is not None and hasattr(output_schema, "validate"):
                 try:
@@ -445,12 +453,12 @@ def pa_check_io(
             base_wrapper = async_wrapper
         else:
             base_wrapper = sync_wrapper
-        
+
         # Apply enhanced features
         cache_size, ttl_seconds = _get_cache_settings()
         enhanced_wrapper = _apply_caching(base_wrapper, cache_size, ttl_seconds)
         enhanced_wrapper = _apply_performance_monitoring(enhanced_wrapper, "basic")
-        
+
         return cast("F", enhanced_wrapper)
 
     return decorator
@@ -460,11 +468,12 @@ def pa_check_io(
 # Enhanced Vectorization guarantees
 # --------------------------
 
+
 @_register_decorator_if_available(
     name="enforce_ndarray",
     version="2.0",
     description="Enhanced ndarray enforcement with performance monitoring",
-    tags=["vectorization", "numpy", "enhanced"]
+    tags=["vectorization", "numpy", "enhanced"],
 )
 def enforce_ndarray(
     *,
@@ -524,7 +533,7 @@ def enforce_ndarray(
         cache_size, ttl_seconds = _get_cache_settings()
         enhanced_wrapper = _apply_caching(wrapper, cache_size, ttl_seconds)
         enhanced_wrapper = _apply_performance_monitoring(enhanced_wrapper, "basic")
-        
+
         return cast("F", enhanced_wrapper)
 
     return decorator
@@ -534,7 +543,7 @@ def enforce_ndarray(
     name="auto_vectorize",
     version="2.0",
     description="Enhanced auto-vectorization with intelligent caching",
-    tags=["vectorization", "numpy", "enhanced"]
+    tags=["vectorization", "numpy", "enhanced"],
 )
 def auto_vectorize(*, otypes: list[type] | None = None) -> Callable[[F], F]:
     """Enhanced wrap a scalar function so that it transparently handles numpy arrays.
@@ -562,7 +571,7 @@ def auto_vectorize(*, otypes: list[type] | None = None) -> Callable[[F], F]:
         cache_size, ttl_seconds = _get_cache_settings()
         enhanced_wrapper = _apply_caching(wrapper, cache_size, ttl_seconds)
         enhanced_wrapper = _apply_performance_monitoring(enhanced_wrapper, "basic")
-        
+
         return cast("F", enhanced_wrapper)
 
     return decorator
@@ -572,11 +581,12 @@ def auto_vectorize(*, otypes: list[type] | None = None) -> Callable[[F], F]:
 # Enhanced NaN/Inf/null guards
 # --------------------------
 
+
 @_register_decorator_if_available(
     name="guard_array_nan_inf",
     version="2.0",
     description="Enhanced NaN/Inf guards with intelligent caching",
-    tags=["data-quality", "validation", "enhanced"]
+    tags=["data-quality", "validation", "enhanced"],
 )
 def guard_array_nan_inf(
     *,
@@ -619,7 +629,7 @@ def guard_array_nan_inf(
                 param_name = param_names[index]
                 value = bound_args.arguments.get(param_name)
                 if value is None:
-        # Fallback implementation for value
+                    # Fallback implementation for value
                     continue
 
                 # Convert to numpy for checking
@@ -645,9 +655,7 @@ def guard_array_nan_inf(
                         f"{'Inf' if has_inf else ''} in argument '{param_name}' (index {index}) for {func.__name__}"
                     )
                     if mode == "raise":
-                        raise DataValidationError(
-                            msg, context={"function": func.__name__}
-                        )
+                        raise DataValidationError(msg, context={"function": func.__name__})
                     if mode == "warn":
                         logger.warning(msg)
                     if mode == "coerce":
@@ -680,7 +688,7 @@ def guard_array_nan_inf(
         cache_size, ttl_seconds = _get_cache_settings()
         enhanced_wrapper = _apply_caching(wrapper, cache_size, ttl_seconds)
         enhanced_wrapper = _apply_performance_monitoring(enhanced_wrapper, "basic")
-        
+
         return cast("F", enhanced_wrapper)
 
     return decorator
@@ -690,7 +698,7 @@ def guard_array_nan_inf(
     name="guard_dataframe_nulls",
     version="2.0",
     description="Enhanced DataFrame null guards with intelligent caching",
-    tags=["data-quality", "validation", "dataframe", "enhanced"]
+    tags=["data-quality", "validation", "dataframe", "enhanced"],
 )
 def guard_dataframe_nulls(
     *,
@@ -720,7 +728,7 @@ def guard_dataframe_nulls(
                 )
             selected = df if columns is None else df[columns]
             num_nan = int(selected.isna().sum().sum())
-            
+
             # Safely check for infinite values only on numeric columns
             num_inf = 0
             try:
@@ -737,14 +745,14 @@ def guard_dataframe_nulls(
                         if pd.api.types.is_numeric_dtype(selected[col]):
                             col_data = selected[col]
                             # Handle pandas Series with mixed types
-                            if hasattr(col_data, 'dtype') and col_data.dtype == 'object':
+                            if hasattr(col_data, "dtype") and col_data.dtype == "object":
                                 # Try to convert to numeric, skipping non-numeric values
-                                col_data = pd.to_numeric(col_data, errors='coerce')
+                                col_data = pd.to_numeric(col_data, errors="coerce")
                             num_inf += int(np.isinf(col_data).sum())
                     except (ValueError, TypeError, AttributeError):
                         # Skip non-numeric columns or columns with conversion issues
                         continue
-            
+
             if num_nan or num_inf:
                 msg = f"DataFrame has {num_nan} NaN and {num_inf} Inf values in {func.__name__}"
                 if mode == "raise":
@@ -756,9 +764,9 @@ def guard_dataframe_nulls(
                     # Only fill numeric columns to avoid type issues
                     numeric_cols = selected.select_dtypes(include=[np.number]).columns
                     if not numeric_cols.empty:
-                        df[numeric_cols] = selected[numeric_cols].replace(
-                            [np.inf, -np.inf], fill_value
-                        ).fillna(fill_value)
+                        df[numeric_cols] = (
+                            selected[numeric_cols].replace([np.inf, -np.inf], fill_value).fillna(fill_value)
+                        )
                     # Fill NaN values in all columns
                     df[selected.columns] = selected.fillna(fill_value)
             return df
@@ -772,9 +780,7 @@ def guard_dataframe_nulls(
             if arg_index < len(param_names):
                 param_name = param_names[arg_index]
                 if param_name in bound_args.arguments:
-                    bound_args.arguments[param_name] = _check(
-                        bound_args.arguments[param_name]
-                    )
+                    bound_args.arguments[param_name] = _check(bound_args.arguments[param_name])
             return await func(*bound_args.args, **bound_args.kwargs)  # type: ignore[misc]
 
         @functools.wraps(func)
@@ -786,9 +792,7 @@ def guard_dataframe_nulls(
             if arg_index < len(param_names):
                 param_name = param_names[arg_index]
                 if param_name in bound_args.arguments:
-                    bound_args.arguments[param_name] = _check(
-                        bound_args.arguments[param_name]
-                    )
+                    bound_args.arguments[param_name] = _check(bound_args.arguments[param_name])
             return func(*bound_args.args, **bound_args.kwargs)
 
         # Choose the appropriate wrapper
@@ -796,12 +800,12 @@ def guard_dataframe_nulls(
             base_wrapper = async_wrapper
         else:
             base_wrapper = sync_wrapper
-        
+
         # Apply enhanced features
         cache_size, ttl_seconds = _get_cache_settings()
         enhanced_wrapper = _apply_caching(base_wrapper, cache_size, ttl_seconds)
         enhanced_wrapper = _apply_performance_monitoring(enhanced_wrapper, "basic")
-        
+
         return cast("F", enhanced_wrapper)
 
     return decorator
@@ -838,7 +842,7 @@ except Exception:  # pragma: no cover
     name="normalize_errors",
     version="2.0",
     description="Enhanced error normalization with intelligent recovery",
-    tags=["error-handling", "recovery", "enhanced"]
+    tags=["error-handling", "recovery", "enhanced"],
 )
 def normalize_errors(
     *,
@@ -879,9 +883,7 @@ def normalize_errors(
                     f"{func.__name__} failed: {exc}",
                     context={"function": func.__name__},
                 )
-                logger.exception(
-                    "Normalized error", extra={"correlation_id": get_correlation_id()}
-                )
+                logger.exception("Normalized error", extra={"correlation_id": get_correlation_id()})
                 if reraise:
                     raise norm_exc from exc
                 return None
@@ -900,9 +902,7 @@ def normalize_errors(
                     f"{func.__name__} failed: {exc}",
                     context={"function": func.__name__},
                 )
-                logger.exception(
-                    "Normalized error", extra={"correlation_id": get_correlation_id()}
-                )
+                logger.exception("Normalized error", extra={"correlation_id": get_correlation_id()})
                 if reraise:
                     raise norm_exc from exc
                 return None
@@ -912,12 +912,12 @@ def normalize_errors(
             base_wrapper = async_wrapper
         else:
             base_wrapper = sync_wrapper
-        
+
         # Apply enhanced features
         cache_size, ttl_seconds = _get_cache_settings()
         enhanced_wrapper = _apply_caching(base_wrapper, cache_size, ttl_seconds)
         enhanced_wrapper = _apply_performance_monitoring(enhanced_wrapper, "basic")
-        
+
         return cast("F", enhanced_wrapper)
 
     return decorator
@@ -963,7 +963,7 @@ def _sanitize(value: Any) -> Any:
     name="with_tracing_span",
     version="2.0",
     description="Enhanced tracing with performance monitoring and caching",
-    tags=["tracing", "logging", "performance", "enhanced"]
+    tags=["tracing", "logging", "performance", "enhanced"],
 )
 def with_tracing_span(
     span_name: str | None = None,
@@ -993,9 +993,7 @@ def with_tracing_span(
         async def async_wrapper(*args: Any, **kwargs: Any):
             cid = ensure_correlation_id()
             # Prefer instance logger if available
-            active_logger = (
-                getattr(args[0], "logger", module_logger) if args else module_logger
-            )
+            active_logger = getattr(args[0], "logger", module_logger) if args else module_logger
             if log_args:
                 safe_args = _sanitize(args)
                 safe_kwargs = _sanitize(kwargs)
@@ -1041,9 +1039,7 @@ def with_tracing_span(
         def sync_wrapper(*args: Any, **kwargs: Any):
             cid = ensure_correlation_id()
             # Prefer instance logger if available
-            active_logger = (
-                getattr(args[0], "logger", module_logger) if args else module_logger
-            )
+            active_logger = getattr(args[0], "logger", module_logger) if args else module_logger
             if log_args:
                 safe_args = _sanitize(args)
                 safe_kwargs = _sanitize(kwargs)
@@ -1090,12 +1086,12 @@ def with_tracing_span(
             base_wrapper = async_wrapper
         else:
             base_wrapper = sync_wrapper
-        
+
         # Apply enhanced features
         cache_size, ttl_seconds = _get_cache_settings()
         enhanced_wrapper = _apply_caching(base_wrapper, cache_size, ttl_seconds)
         enhanced_wrapper = _apply_performance_monitoring(enhanced_wrapper, "detailed")
-        
+
         return cast("F", enhanced_wrapper)
 
     return decorator

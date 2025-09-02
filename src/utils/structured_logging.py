@@ -1,11 +1,12 @@
 from __future__ import annotations
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 import contextvars
 import logging
 import uuid
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
+
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 if TYPE_CHECKING:
     from fastapi import Request
@@ -82,10 +83,7 @@ def get_json_formatter(datefmt: str | None = None) -> logging.Formatter:
 
     Falls back to a plain formatter if python-json-logger is unavailable.
     """
-    fmt = (
-        "%(asctime)s %(levelname)s %(name)s %(message)s "
-        "%(correlation_id)s %(session_id)s"
-    )
+    fmt = "%(asctime)s %(levelname)s %(name)s %(message)s " "%(correlation_id)s %(session_id)s"
     if jsonlogger is None:
         # Fallback implementation for jsonlogger
         return logging.Formatter(fmt=fmt, datefmt=datefmt)

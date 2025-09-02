@@ -1,8 +1,10 @@
 from collections.abc import Iterator
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from dataclasses import dataclass
+
 import numpy as np
 import pandas as pd
+
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 
 @dataclass
@@ -20,9 +22,12 @@ class PurgedKFoldTime:
     purge: pd.Timedelta | int = pd.Timedelta(minutes=30)
     embargo: pd.Timedelta | int = pd.Timedelta(minutes=15)
 
-    def split(self, X: pd.DataFrame,
-              y=None, groups=None,
-              ) -> Iterator[tuple[np.ndarray, np.ndarray]]:
+    def split(
+        self,
+        X: pd.DataFrame,
+        y=None,
+        groups=None,
+    ) -> Iterator[tuple[np.ndarray, np.ndarray]]:
         if not isinstance(X, pd.DataFrame):
             msg = "X must be a pandas DataFrame with an index"
             raise ValueError(msg)
@@ -36,7 +41,7 @@ class PurgedKFoldTime:
         np.argsort(np.arange(n_samples))
         # Build fold boundaries
         fold_sizes = np.full(self.n_splits, n_samples // self.n_splits, dtype=int)
-        fold_sizes[:n_samples % self.n_splits] += 1
+        fold_sizes[: n_samples % self.n_splits] += 1
         current = 0
         folds = []
         for fold_size in fold_sizes:
@@ -52,14 +57,10 @@ class PurgedKFoldTime:
                 val_start_time = index[val_start_i]
                 val_end_time = index[val_stop_i - 1]
                 purge_delta = (
-                    self.purge
-                    if isinstance(self.purge, pd.Timedelta)
-                    else pd.Timedelta(minutes=int(self.purge))
+                    self.purge if isinstance(self.purge, pd.Timedelta) else pd.Timedelta(minutes=int(self.purge))
                 )
                 embargo_delta = (
-                    self.embargo
-                    if isinstance(self.embargo, pd.Timedelta)
-                    else pd.Timedelta(minutes=int(self.embargo))
+                    self.embargo if isinstance(self.embargo, pd.Timedelta) else pd.Timedelta(minutes=int(self.embargo))
                 )
                 # Build boolean mask for training indices
                 train_mask = np.ones(n_samples, dtype=bool)
@@ -73,9 +74,7 @@ class PurgedKFoldTime:
                 train_idx = np.nonzero(train_mask)[0]
             else:
                 purge_n = int(self.purge) if isinstance(self.purge, (int, float)) else 0
-                embargo_n = (
-                    int(self.embargo) if isinstance(self.embargo, (int, float)) else 0
-                )
+                embargo_n = int(self.embargo) if isinstance(self.embargo, (int, float)) else 0
                 left = max(0, val_start_i - purge_n)
                 right = min(n_samples, val_stop_i + embargo_n)
                 train_mask = np.ones(n_samples, dtype=bool)

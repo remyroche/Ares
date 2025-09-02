@@ -21,8 +21,8 @@ import pandas as pd
 
 from src.training.steps.step3_hmm_regime_discovery import run_step as run_step3
 from src.utils.error_handler import handle_errors
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.logger import system_logger
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 # Module-level sets to avoid duplicate logs across multiple instances
 # This prevents log spam when different components instantiate the manager separately
@@ -57,16 +57,20 @@ class HMMCompositeManager:
         return {
             "composite_clusters": os.path.join(data_dir, f"{base_name}.parquet"),
             "block_states": os.path.join(
-                data_dir, f"{exchange}_{symbol}_hmm_block_states_{timeframe}.parquet",
+                data_dir,
+                f"{exchange}_{symbol}_hmm_block_states_{timeframe}.parquet",
             ),
             "intensity": os.path.join(
-                data_dir, f"{exchange}_{symbol}_hmm_composite_intensity_{timeframe}.parquet",
+                data_dir,
+                f"{exchange}_{symbol}_hmm_composite_intensity_{timeframe}.parquet",
             ),
             "meta": os.path.join(
-                data_dir, f"{exchange}_{symbol}_hmm_composite_meta_{timeframe}.json",
+                data_dir,
+                f"{exchange}_{symbol}_hmm_composite_meta_{timeframe}.json",
             ),
             "basic_meta": os.path.join(
-                data_dir, f"{exchange}_{symbol}_hmm_basic_meta_{timeframe}.json",
+                data_dir,
+                f"{exchange}_{symbol}_hmm_basic_meta_{timeframe}.json",
             ),
         }
 
@@ -89,9 +93,7 @@ class HMMCompositeManager:
             # Remove old cache entries (older than 1 hour)
             cutoff_time = current_time - 3600
             old_keys = [
-                k
-                for k, v in self._cache.items()
-                if isinstance(v, dict) and v.get("timestamp", 0) < cutoff_time
+                k for k, v in self._cache.items() if isinstance(v, dict) and v.get("timestamp", 0) < cutoff_time
             ]
             for key in old_keys:
                 try:
@@ -197,9 +199,7 @@ class HMMCompositeManager:
             return self._cache[cache_key]["data"]  # type: ignore[return-value]
 
         if not os.path.exists(composite_path):
-            event_key = (
-                f"{cache_key}|not_found|{'auto' if auto_create else 'meta_only'}"
-            )
+            event_key = f"{cache_key}|not_found|{'auto' if auto_create else 'meta_only'}"
             if auto_create:
                 if event_key not in self._logged_events:
                     self.logger.info(
@@ -631,7 +631,7 @@ class HMMCompositeManager:
             timeframe: Timeframe (optional; if None clears all)
         """
         if exchange is None and symbol is None and timeframe is None:
-        # Fallback implementation for exchange is None and symbol is None and timeframe
+            # Fallback implementation for exchange is None and symbol is None and timeframe
             # Clear all cache
             self._cache.clear()
             self.logger.info("🧹 Cleared all HMM composite manager cache")

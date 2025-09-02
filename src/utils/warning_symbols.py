@@ -5,8 +5,9 @@ for making log messages more visually distinctive and informative.
 """
 
 import os
-from .pipeline_standards import PipelineStandards, pipeline_standards
 import sys
+
+from .pipeline_standards import PipelineStandards, pipeline_standards
 
 
 class ColorCodes:

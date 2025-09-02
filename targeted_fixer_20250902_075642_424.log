@@ -1,0 +1,29 @@
+2025-09-02 07:56:42,427 - INFO - Processing file: src/training/core/pipeline_base.py
+2025-09-02 07:56:42,428 - INFO - Performing semantic analysis...
+2025-09-02 07:56:42,428 - INFO - Code quality score: 0.00
+2025-09-02 07:56:42,428 - WARNING - Syntax errors found: 1
+2025-09-02 07:56:42,428 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 07:56:42,429 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:42,430 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:42,432 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:42,433 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:42,434 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:42,435 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:42,436 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:42,437 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:42,438 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:42,439 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:42,440 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:42,443 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:42,444 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:42,446 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 07:56:42,447 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 07:56:42,448 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:42,450 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:42,451 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:42,452 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:42,458 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:42,458 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 07:56:42,459 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 07:56:42,466 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:42,471 - INFO - No fixes needed for: src/training/core/pipeline_base.py

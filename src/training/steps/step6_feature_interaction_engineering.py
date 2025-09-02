@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
+from collections import Counter
 import logging
 from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import mutual_info_classif
@@ -62,6 +63,23 @@ class FeatureInteractionEngine:
             self.diverse_optimizer = None
             self.use_dynamic_periods = False
             self.logger.warning("⚠️ DiverseLookbackOptimizer not available, using fallback periods")
+        
+        # Optionally initialize MatrixDiverseLookbackOptimizer (vectorized) when enabled
+        self.matrix_optimizer = None
+        # Default to True per request
+        self.use_matrix_optimizer = bool(step6_config.get("use_matrix_optimizer", True))
+        if self.use_matrix_optimizer:
+            try:
+                from src.training.matrix_diverse_lookback_optimizer import MatrixDiverseLookbackOptimizer
+                self.matrix_optimizer = MatrixDiverseLookbackOptimizer(config)
+                # Even if classic optimizer import failed, matrix optimizer enables dynamic periods
+                self.use_dynamic_periods = True
+                self.logger.info("✅ Integrated with MatrixDiverseLookbackOptimizer for vectorized period selection")
+            except Exception as e:
+                # Disable matrix path if import or construction fails
+                self.matrix_optimizer = None
+                self.use_matrix_optimizer = False
+                self.logger.warning(f"⚠️ MatrixDiverseLookbackOptimizer unavailable ({e}), falling back to classic optimization")
         
         # Fallback optimal lookback periods (used if dynamic optimization fails)
         self.fallback_lookback_periods = {
@@ -135,6 +153,8 @@ class FeatureInteractionEngine:
         # Store dynamically selected periods
         self.dynamic_lookback_periods = {}
         self.period_optimization_results = {}
+        # Flag to force consuming regime-specific optimized periods when available
+        self.force_regime_specific_periods = bool(step6_config.get("force_regime_specific_periods", False))
         
         # Interaction patterns and weights
         self.interaction_patterns = {
@@ -222,12 +242,19 @@ class FeatureInteractionEngine:
         try:
             self.logger.info("🎯 Starting dynamic lookback period optimization...")
             
-            # Run diverse lookback optimization
-            optimization_results = await self.diverse_optimizer.find_diverse_lookback_periods(
-                market_data, target, regimes
-            )
+            # Choose optimizer path based on configuration and availability
+            if self.use_matrix_optimizer and self.matrix_optimizer is not None:
+                self.logger.info("🧮 Using MatrixDiverseLookbackOptimizer (vectorized)")
+                optimization_results = await self.matrix_optimizer.find_diverse_lookback_periods_matrix(
+                    market_data, target, regimes
+                )
+            else:
+                self.logger.info("📈 Using DiverseLookbackOptimizer (classic)")
+                optimization_results = await self.diverse_optimizer.find_diverse_lookback_periods(
+                    market_data, target, regimes
+                )
             
-            # Extract optimized periods
+            # Extract optimized periods (optionally force regime-specific)
             self.dynamic_lookback_periods = self._extract_optimized_periods(optimization_results)
             self.period_optimization_results = optimization_results
             
@@ -253,12 +280,40 @@ class FeatureInteractionEngine:
         """
         optimized_periods = {}
         
-        diverse_periods = optimization_results.get("diverse_lookback_periods", {})
+        # If forcing regime-specific periods and they exist, aggregate across regimes
+        if self.force_regime_specific_periods and optimization_results.get("regime_specific_periods"):
+            regime_results = optimization_results.get("regime_specific_periods", {})
+            indicator_to_counter: dict[str, Counter] = {}
+            
+            for _regime_key, regime_data in regime_results.items():
+                # regime_data is expected to be {indicator: {selected_periods: [...], ...}, ...}
+                for indicator, res in regime_data.items():
+                    periods = res.get("selected_periods", [])
+                    if not periods:
+                        continue
+                    if indicator not in indicator_to_counter:
+                        indicator_to_counter[indicator] = Counter()
+                    indicator_to_counter[indicator].update(periods)
+            
+            # Choose top-k periods per indicator by frequency (stable by smaller period value)
+            for indicator, counter in indicator_to_counter.items():
+                # Sort by (-count, period) and cap at 3
+                ranked = sorted(counter.items(), key=lambda x: (-x[1], x[0]))
+                optimized_periods[indicator] = [p for p, _c in ranked[:3]]
+            
+            # If some indicators missing from regime aggregation, fall back to global
+            diverse_periods = optimization_results.get("diverse_lookback_periods", {})
+            for indicator, res in diverse_periods.items():
+                if indicator not in optimized_periods and "selected_periods" in res:
+                    optimized_periods[indicator] = res["selected_periods"]
+            
+            return optimized_periods
         
+        # Default: use global diverse lookback periods
+        diverse_periods = optimization_results.get("diverse_lookback_periods", {})
         for indicator, results in diverse_periods.items():
             if "selected_periods" in results:
                 optimized_periods[indicator] = results["selected_periods"]
-        
         return optimized_periods
     
     def _update_interaction_patterns_with_optimized_periods(self):

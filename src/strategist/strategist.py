@@ -297,15 +297,9 @@ class Strategist:
         try:
             strategy = {
                 "timestamp": datetime.now().isoformat(),
-<<<<<<< HEAD
-                "strategy_type": "technical_analysis",
-                "confidence": 0.0,
-                "direction": "HOLD",
-=======
                 "strategy_type": self.strategy_type,
                 "confidence": 0.0,  # To be set by ML/HMM via analysis integration
                 "direction": "HOLD",  # To be set by ML/HMM via analysis integration
->>>>>>> 66484292 (Refactor strategy generation to rely on ML/HMM for direction and confidence)
                 "entry_price": current_price,
                 "stop_loss": None,
                 "take_profit": None,
@@ -325,62 +319,8 @@ class Strategist:
                     "price_volatility_window": self.price_volatility_window,
                 },
             }
-
-<<<<<<< HEAD
-            # Determine strategy direction based on indicators
-            confidence_factors = []
-
-            # Trend analysis
-            if indicators["trend"] == "BULLISH":
-                confidence_factors.append(0.3)
-                strategy["reasoning"].append("Bullish trend detected")
-            elif indicators["trend"] == "BEARISH":
-                confidence_factors.append(-0.3)
-                strategy["reasoning"].append("Bearish trend detected")
-
-            # Momentum analysis
-            if indicators["momentum"] == "POSITIVE":
-                confidence_factors.append(0.2)
-                strategy["reasoning"].append("Positive momentum")
-            elif indicators["momentum"] == "NEGATIVE":
-                confidence_factors.append(-0.2)
-                strategy["reasoning"].append("Negative momentum")
-
-            # RSI analysis
-            rsi = indicators["rsi"]
-            if rsi < 30:
-                confidence_factors.append(0.2)
-                strategy["reasoning"].append("Oversold conditions (RSI < 30)")
-            elif rsi > 70:
-                confidence_factors.append(-0.2)
-                strategy["reasoning"].append("Overbought conditions (RSI > 70)")
-
-            # Volume analysis
-            if indicators["volume_ratio"] > 1.5:
-                confidence_factors.append(0.1)
-                strategy["reasoning"].append("High volume confirmation")
-            elif indicators["volume_ratio"] < 0.5:
-                confidence_factors.append(-0.1)
-                strategy["reasoning"].append("Low volume - weak signal")
-
-            # Calculate overall confidence
-            if confidence_factors:
-                strategy["confidence"] = min(max(sum(confidence_factors), -1.0), 1.0)
-                strategy["confidence"] = abs(strategy["confidence"])
-
-            # Determine direction
-            if strategy["confidence"] >= self.min_confidence_threshold:
-                if sum(confidence_factors) > 0:
-                    strategy["direction"] = "LONG"
-                else:
-                    strategy["direction"] = "SHORT"
-            else:
-                strategy["direction"] = "HOLD"
-                strategy["reasoning"].append("Insufficient confidence for trade")
-=======
             # Do not use handcrafted feature weights for direction/confidence
             # Direction and confidence will be set by ML/HMM via _integrate_analysis_results
->>>>>>> 66484292 (Refactor strategy generation to rely on ML/HMM for direction and confidence)
 
             return strategy
 

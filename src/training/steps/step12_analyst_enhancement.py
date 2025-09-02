@@ -148,20 +148,19 @@ def _enable_numpy_rng_unpickle_compat(logger=None) -> None:
                 ),
             )
 
+class RegimeAwareAnalystEnhancementStep:
+    """Step 12: Regime-Aware Analyst Models Enhancement.
 
-class AnalystEnhancementStep:
-    """Step 6: Analyst Models Enhancement.
-
-    This step refines the trained analyst models through a sequential process:
-    1.  **Hyperparameter Optimization (HPO):** Uses Optuna with early pruning to find the best hyperparameters efficiently.
-    2.  **Feature Selection:** Employs robust feature selection methods that work around SHAP/Keras compatibility issues.
-    3.  **Final Retraining:** Trains a new model from scratch using the best hyperparameters and the optimal feature set.
-    4.  **Advanced Optimization (Optional):** Applies techniques like quantization, structured pruning (WANDA),
-        and knowledge distillation for further efficiency and performance gains, especially for neural network models.
+    This step refines the trained analyst models through a regime-specific sequential process:
+    1.  **Regime-Specific Model Loading:** Loads models organized by HMM regime clusters
+    2.  **Regime-Specific Hyperparameter Optimization (HPO):** Uses Optuna with regime-aware early pruning
+    3.  **Regime-Specific Feature Selection:** Employs robust feature selection methods per regime
+    4.  **Regime-Specific Final Retraining:** Trains new models using regime-specific optimal parameters
+    5.  **Regime-Specific Advanced Optimization:** Applies regime-aware quantization, pruning, and distillation
     """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initializes the AnalystEnhancementStep.
+        """Initializes the RegimeAwareAnalystEnhancementStep.
 
         Args: config (Dict[str = Any]): Configuration dictionary for the step.
 
@@ -170,7 +169,11 @@ class AnalystEnhancementStep:
         self.standards = pipeline_standards
         self.logger = system_logger
         self._validate_environment()
-        # --- Mac M1/M2/M3 (Apple Silicon) Specific Setup ---
+        
+        # Initialize regime-specific configuration
+        self.regime_config = self._initialize_regime_config()
+        
+        # --- Mac M1 / M2 / M3 (Apple Silicon) Specific Setup ---
         # Use 'mps' for PyTorch to leverage Apple's Metal Performance Shaders for GPU acceleration.
         # Fallback to 'cpu' if MPS is not available or hangs.
         self.device = self._safe_get_device()
@@ -189,6 +192,7 @@ class AnalystEnhancementStep:
             "day_of_week",
             "day_of_month",
             "quarter",
+            "composite_cluster_id",  # Add regime column to metadata
         ]
         self._LABEL_COLUMNS: set[str] = {
             "label",
@@ -197,6 +201,27 @@ class AnalystEnhancementStep:
             "class",
             "signal",
             "prediction",
+        }
+        
+        # Regime-specific state storage
+        self.regime_enhanced_models: dict[str, dict[str, Any]] = {}
+        self.regime_validation_results: dict[str, dict[str, Any]] = {}
+        self.regime_optimization_results: dict[str, dict[str, Any]] = {}
+
+    def _initialize_regime_config(self) -> dict[str, Any]:
+        """Initialize regime-specific configuration for analyst enhancement."""
+        return {
+            "regime_specific_optimization": True,
+            "regime_specific_feature_selection": True,
+            "regime_specific_hyperparameter_optimization": True,
+            "regime_specific_validation": True,
+            "regime_specific_logging": True,
+            "min_regime_samples": 1000,  # Minimum samples per regime for enhancement
+            "regime_validation_split": 0.2,  # Validation split per regime
+            "regime_optimization_trials": 50,  # Optuna trials per regime
+            "regime_feature_selection_threshold": 0.01,  # Feature importance threshold
+            "regime_parallel_processing": True,  # Enable parallel regime processing
+            "regime_memory_optimization": True,  # Enable memory optimization per regime
         }
 
     def _validate_environment(self) -> None:
@@ -257,23 +282,24 @@ class AnalystEnhancementStep:
     @handle_errors(
         exceptions=(Exception,),
         default_return={"status": "FAILED", "error": "Execution failed"},
-        context="analyst enhancement step execution",
+        context="regime-aware analyst enhancement step execution",
     )
     async def execute(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any], ) -> dict[str, Any]:
-        """Executes the full analyst model enhancement pipeline for each regime.
+        """Executes the full regime-aware analyst model enhancement pipeline.
 
         Args:
             training_input (Dict[str, Any]): Input parameters, including symbol, exchange, and data directories.
             pipeline_state (Dict[str, Any]): The current state of the pipeline.
 
         Returns:
-            Dict[str, Any]: A dictionary containing the results of the enhancement process.
+            Dict[str, Any]: A dictionary containing the results of the regime-specific enhancement process.
         """
         self.logger.info(
-            "🚀 Starting Step 6: Analyst Enhancement - Model Optimization and Feature Selection",
+            "🚀 Starting Step 12: Regime-Aware Analyst Enhancement - Model Optimization and Feature Selection",
         )
-        self.logger.info("🔄 Executing Analyst Enhancement...")
+        self.logger.info("🔄 Executing Regime-Aware Analyst Enhancement...")
+        self.logger.info(f"📊 Regime configuration: {self.regime_config}")
         with contextlib.suppress(Exception):
             pass
         start_time = datetime.now()
@@ -341,43 +367,58 @@ class AnalystEnhancementStep:
             )
             enhanced_models_summary: dict[str, dict[str, Any]] = {}
 
-            # Process regimes in parallel for better efficiency
-            async def enhance_regime_models(regime_name: str, regime_models: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-                self.logger.info(f"🚀 Starting enhancement for regime: {regime_name}")
+            # Process regimes in parallel for better efficiency with regime-specific logic
+            async def enhance_regime_models(
+                regime_name: str,
+                regime_models: dict[str, Any],
+            ) -> tuple[str, dict[str, Any]]:
                 self.logger.info(
-                    f"📊 Regime {regime_name} has {len(regime_models)} models to enhance",
+                    f"🚀 Starting regime-specific enhancement for regime: {regime_name}"
+                )
+                self.logger.info(
+                    f"📊 Regime {regime_name} has {len(regime_models)} models to enhance"
                 )
                 with contextlib.suppress(Exception):
                     pass
 
                 try:
                     self.logger.info(
-                        f"📂 Loading training data for regime: {regime_name}",
+                        f"📂 Loading regime-specific training data for regime: {regime_name}"
                     )
+                    # Reuse existing loader for regime-specific data (treat regime_name as timeframe key)
                     X_train, y_train, X_val, y_val = await self._load_regime_data(
                         regime_data_dir,
                         regime_name,
                     )
                     self.logger.info(
-                        f"✅ Loaded data for regime {regime_name}: train={X_train.shape}, val={X_val.shape}"
+                        f"✅ Loaded regime-specific data for regime {regime_name}: train={X_train.shape}, val={X_val.shape}"
                     )
                 except FileNotFoundError as e:
-                    self.logger.exception(f"⚠️ {e} — skipping regime '{regime_name}'")
+                    self.logger.exception(
+                        f"⚠️ {e} — skipping regime '{regime_name}'"
+                    )
+                    return regime_name, {}
+                except Exception as e:
+                    self.logger.error(
+                        f"❌ Error loading regime {regime_name} data: {e}"
+                    )
                     return regime_name, {}
 
                 # Memory cleanup before processing
                 self.logger.info(
-                    f"🧹 Performing memory cleanup for regime: {regime_name}",
+                    f"🧹 Performing memory cleanup for regime: {regime_name}"
                 )
                 gc.collect()
 
                 enhanced_regime_models: dict[str, Any] = {}
                 self.logger.info(
-                    f"🔄 Starting model enhancement loop for regime: {regime_name}",
+                    f"🔄 Starting model enhancement loop for regime: {regime_name}"
                 )
-                for i, (model_name, model_data) in enumerate(regime_models.items(), 1):
+                for i, (model_name, model_data) in enumerate(
+                    regime_models.items(), start=1
+                ):
                     self.logger.info(
-                        f"🔧 Enhancing model {i}/{len(regime_models)}: {model_name} for {regime_name}...",
+                        f"🔧 Enhancing model {i}/{len(regime_models)}: {model_name} for {regime_name}..."
                     )
 
                     enhanced_model_package = await self._enhance_single_model(
@@ -391,7 +432,7 @@ class AnalystEnhancementStep:
                     )
                     enhanced_regime_models[model_name] = enhanced_model_package
                     self.logger.info(
-                        f"✅ Completed enhancement for {model_name} in regime {regime_name}",
+                        f"✅ Completed enhancement for {model_name} in regime {regime_name}"
                     )
 
                     # Memory cleanup after each model
@@ -405,11 +446,13 @@ class AnalystEnhancementStep:
 
             # Create tasks for parallel processing
             self.logger.info(
-                f"🔄 Creating parallel processing tasks for {len(hmm_models)} regimes...",
+                f"🔄 Creating parallel processing tasks for {len(hmm_models)} regimes..."
             )
             tasks: list[asyncio.Task] = []
             for regime_name, regime_models in hmm_models.items():
-                task = asyncio.create_task(enhance_regime_models(regime_name, regime_models))
+                task = asyncio.create_task(
+                    enhance_regime_models(regime_name, regime_models)
+                )
                 tasks.append(task)
 
             # Execute tasks with limited concurrency to avoid memory issues
@@ -3725,9 +3768,8 @@ async def run_step(
 
         # Final summary
         step_duration = time.time() - step_start_time
-        successful_phases = sum(step_phases.values())
+        successful_phases = sum(1 for v in step_phases.values() if v)
         total_phases = len(step_phases)
-
         logger.info("=" * 80)
         logger.info("📊 STEP 6 EXECUTION SUMMARY")
         logger.info("=" * 80)
@@ -3740,14 +3782,13 @@ async def run_step(
                 f"   {status_emoji} {phase}: {'SUCCESS' if status else 'FAILED'}",
             )
 
-        if successful_phases >= 4:  # At least 4 out of 5 phases successful
+        final_result = successful_phases >= 4
+        if final_result:
             logger.info("✅ Step 6: Analyst Enhancement completed successfully")
             logger.info(f"   Success rate: {successful_phases/total_phases*100:.1f}%")
-            final_result = True
         else:
             logger.error("❌ Step 6: Analyst Enhancement failed")
             logger.error(f"   Success rate: {successful_phases/total_phases*100:.1f}%")
-            final_result = False
 
         logger.info("=" * 80)
         return final_result

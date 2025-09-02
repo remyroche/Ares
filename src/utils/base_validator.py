@@ -2,15 +2,15 @@
 Base validator class for training step validators.
 """
 
-import os
 import logging
+import os
 from abc import ABC, abstractmethod
-from typing import Any, Optional, Tuple, Dict
+from typing import Any, Dict, Optional, Tuple
 
 import pandas as pd
 
-from src.utils.warning_symbols import failed, missing, validation_error
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+from src.utils.warning_symbols import failed, missing, validation_error
 
 
 class BaseValidator(ABC):
@@ -61,9 +61,7 @@ class BaseValidator(ABC):
             errors = step_result.get("errors", [])
             warnings = step_result.get("warnings", [])
 
-            critical_errors = [
-                e for e in errors if isinstance(e, dict) and e.get("severity") == "CRITICAL"
-            ]
+            critical_errors = [e for e in errors if isinstance(e, dict) and e.get("severity") == "CRITICAL"]
 
             metrics: dict[str, Any] = {
                 "total_errors": len(errors),
@@ -187,28 +185,28 @@ class BaseValidator(ABC):
             # Check data types
             if check_data_types:
                 for col in df.columns:
-                    if col in ['open', 'high', 'low', 'close', 'volume']:
+                    if col in ["open", "high", "low", "close", "volume"]:
                         if not pd.api.types.is_numeric_dtype(df[col]):
                             metrics["data_type_issues"][col] = f"Expected numeric, got {df[col].dtype}"
                             metrics["critical_issues"].append(f"Invalid data type for {col}")
 
             # Check value ranges for financial data
             if check_value_ranges:
-                for col in ['open', 'high', 'low', 'close']:
+                for col in ["open", "high", "low", "close"]:
                     if col in df.columns:
                         if (df[col] <= 0).any():
                             negative_count = (df[col] <= 0).sum()
                             metrics["value_range_issues"][col] = f"Negative values: {negative_count}"
                             metrics["critical_issues"].append(f"Negative values in {col}: {negative_count}")
-                        
+
                         # Check OHLC consistency
-                        if all(c in df.columns for c in ['open', 'high', 'low', 'close']):
+                        if all(c in df.columns for c in ["open", "high", "low", "close"]):
                             invalid_ohlc = (
-                                (df['high'] < df['low']) | 
-                                (df['high'] < df['open']) | 
-                                (df['high'] < df['close']) |
-                                (df['low'] > df['open']) | 
-                                (df['low'] > df['close'])
+                                (df["high"] < df["low"])
+                                | (df["high"] < df["open"])
+                                | (df["high"] < df["close"])
+                                | (df["low"] > df["open"])
+                                | (df["low"] > df["close"])
                             ).sum()
                             if invalid_ohlc > 0:
                                 metrics["value_range_issues"]["ohlc_consistency"] = f"Invalid OHLC: {invalid_ohlc} rows"
@@ -232,13 +230,13 @@ class BaseValidator(ABC):
                         max_gap = time_diff.max()
                         min_gap = time_diff.min()
                         expected_gap = time_diff.mode().iloc[0] if len(time_diff.mode()) > 0 else None
-                        
+
                         metrics["temporal_issues"] = {
                             "max_gap": str(max_gap),
                             "min_gap": str(min_gap),
                             "expected_gap": str(expected_gap) if expected_gap else None,
                         }
-                        
+
                         # Check for unusually large gaps
                         if expected_gap and max_gap > expected_gap * 10:
                             metrics["critical_issues"].append(f"Large temporal gap detected: {max_gap}")
@@ -299,25 +297,26 @@ class BaseValidator(ABC):
             if check_model_integrity and metrics["is_file"]:
                 try:
                     import pickle
-                    with open(model_path, 'rb') as f:
+
+                    with open(model_path, "rb") as f:
                         model = pickle.load(f)
-                    
+
                     # Basic model validation
-                    if hasattr(model, 'predict'):
+                    if hasattr(model, "predict"):
                         metrics["has_predict_method"] = True
                     else:
                         metrics["integrity_issues"].append("Model missing predict method")
-                    
-                    if hasattr(model, 'fit'):
+
+                    if hasattr(model, "fit"):
                         metrics["has_fit_method"] = True
                     else:
                         metrics["integrity_issues"].append("Model missing fit method")
-                        
+
                 except Exception as e:
                     metrics["integrity_issues"].append(f"Model loading failed: {str(e)}")
 
             passed = (
-                metrics["exists"] 
+                metrics["exists"]
                 and (not required_files or not metrics["missing_files"])
                 and (not check_model_integrity or not metrics["integrity_issues"])
             )
@@ -381,13 +380,15 @@ class BaseValidator(ABC):
                 for key, expected_type in type_validations.items():
                     if key in config:
                         if not isinstance(config[key], expected_type):
-                            metrics["type_issues"][key] = f"Expected {expected_type.__name__}, got {type(config[key]).__name__}"
+                            metrics["type_issues"][
+                                key
+                            ] = f"Expected {expected_type.__name__}, got {type(config[key]).__name__}"
                             metrics["critical_issues"].append(f"Invalid type for {key}")
 
             # Range validation for numeric parameters
             if validate_ranges:
                 range_validations = {
-                    "min_records": (1, float('inf')),
+                    "min_records": (1, float("inf")),
                     "max_gap_ratio": (0.0, 1.0),
                     "price_tolerance": (0.0, 1.0),
                 }
@@ -521,9 +522,7 @@ class BaseValidator(ABC):
                         metrics["missing_files"].append(file_path)
                 if metrics["missing_files"]:
                     self.logger.warning(
-                        missing(
-                            f"⚠️ Missing required files: {metrics['missing_files']}"
-                        ),
+                        missing(f"⚠️ Missing required files: {metrics['missing_files']}"),
                     )
 
             # Check required subdirectories
@@ -534,9 +533,7 @@ class BaseValidator(ABC):
                         metrics["missing_dirs"].append(subdir)
                 if metrics["missing_dirs"]:
                     self.logger.warning(
-                        missing(
-                            f"⚠️ Missing required directories: {metrics['missing_dirs']}"
-                        ),
+                        missing(f"⚠️ Missing required directories: {metrics['missing_dirs']}"),
                     )
 
             passed = (

@@ -9,22 +9,19 @@ import logging
 import logging.handlers
 import os
 import sys
+import sys as _sys
+import threading
 import time
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
-from contextlib import contextmanager
-import threading
-import sys as _sys
 
 # Import pipeline standards
 from .pipeline_standards import PipelineStandards, pipeline_standards
 
 # Standardized import management
-REQUIRED_MODULES = [
-    "src.utils.structured_logging",
-    "src.utils.warning_symbols"
-]
+REQUIRED_MODULES = ["src.utils.structured_logging", "src.utils.warning_symbols"]
 
 # Validate environment dependencies
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
@@ -33,17 +30,22 @@ dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED
 structured_logging = PipelineStandards.safe_import("src.utils.structured_logging", None)
 warning_symbols = PipelineStandards.safe_import("src.utils.warning_symbols", None)
 
+
 # Fallback functions if imports fail
 def create_fallback_correlation_filter():
     class FallbackCorrelationIdFilter:
         def filter(self, record):
             return True
+
     return FallbackCorrelationIdFilter()
+
 
 def create_fallback_json_formatter():
     def formatter(record):
         return f"{record.levelname}: {record.getMessage()}"
+
     return formatter
+
 
 # Initialize fallbacks
 if structured_logging is None:
@@ -54,10 +56,10 @@ else:
     get_json_formatter = structured_logging.get_json_formatter
 
 if warning_symbols is None:
-    critical = lambda msg: print(f"CRITICAL: {msg}")
-    error = lambda msg: print(f"ERROR: {msg}")
-    failed = lambda msg: print(f"FAILED: {msg}")
-    warning = lambda msg: print(f"WARNING: {msg}")
+    def critical(msg): return print(f"CRITICAL: {msg}")
+    def error(msg): return print(f"ERROR: {msg}")
+    def failed(msg): return print(f"FAILED: {msg}")
+    def warning(msg): return print(f"WARNING: {msg}")
 else:
     critical = warning_symbols.critical
     error = warning_symbols.error
@@ -78,10 +80,7 @@ class _SuppressTensorFlowTPUWarningFilter(logging.Filter):
         try:
             if record and isinstance(record.msg, str):
                 msg_text = record.getMessage()
-                if (
-                    record.name.startswith("tensorflow")
-                    and self.TARGET_SUBSTRING in msg_text
-                ):
+                if record.name.startswith("tensorflow") and self.TARGET_SUBSTRING in msg_text:
                     return False
         except Exception:
             # On any failure, do not drop the log
@@ -789,9 +788,7 @@ def log_io_operation(
     try:
         ctx = " ".join(f"{k}={v}" for k, v in context.items() if v is not None)
         logger.info(
-            f"🔧 {operation} start"
-            + (f" path={path}" if path is not None else "")
-            + (f" {ctx}" if ctx else ""),
+            f"🔧 {operation} start" + (f" path={path}" if path is not None else "") + (f" {ctx}" if ctx else ""),
         )
     except Exception:
         # Logging issues should never break execution
@@ -801,11 +798,7 @@ def log_io_operation(
         elapsed = time.perf_counter() - start
         size_str = "n/a"
         try:
-            if (
-                path is not None
-                and os.path.exists(str(path))
-                and os.path.isfile(str(path))
-            ):
+            if path is not None and os.path.exists(str(path)) and os.path.isfile(str(path)):
                 size_str = _format_bytes(os.path.getsize(str(path)))
         except Exception:
             pass
@@ -874,11 +867,7 @@ def log_dataframe_overview(
         )
         # Nulls snapshot for up to 10 columns
         try:
-            nulls = (
-                df[columns_list[:10]].isnull().sum().to_dict()  # type: ignore[index]
-                if columns_list
-                else {}
-            )
+            nulls = df[columns_list[:10]].isnull().sum().to_dict() if columns_list else {}  # type: ignore[index]
             if nulls:
                 logger.info(f"🧪 {df_name} nulls (first 10 cols): {nulls}")
         except Exception:
@@ -939,9 +928,7 @@ def heartbeat(
                     if "regime" in context:
                         context_parts.append(f"regime={context['regime']}")
                     if "asset" in context and "timeframe" in context:
-                        context_parts.append(
-                            f"asset={context['asset']}/{context['timeframe']}"
-                        )
+                        context_parts.append(f"asset={context['asset']}/{context['timeframe']}")
                     elif "asset" in context:
                         context_parts.append(f"asset={context['asset']}")
 
@@ -958,9 +945,7 @@ def heartbeat(
                         # Ignore detail provider errors
                         pass
 
-                logger.info(
-                    f"⏳ {name} still running... elapsed={elapsed:.1f}s{context_str}{extra}"
-                )
+                logger.info(f"⏳ {name} still running... elapsed={elapsed:.1f}s{context_str}{extra}")
             except Exception:
                 # Never crash on logging
                 pass

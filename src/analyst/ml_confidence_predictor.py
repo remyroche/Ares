@@ -2835,7 +2835,12 @@ class MLConfidencePredictor:
                                 np.clip(calibrator.predict([[conf_val]])[0], 0.0, 1.0)
                             )
                     except Exception as e:
-                        self.logger.debug(f"Failed to calibrate confidence for {label}: {e}")
+                        if hasattr(self, "logger") and self.logger is not None:
+                            self.logger.warning(
+                                "Calibrator application failed for label '%s': %s",
+                                label,
+                                e,
+                            )
                 confidences[label] = float(np.clip(conf_val, 0.0, 1.0))
             except (ValueError, TypeError, IndexError) as e:
                 self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
@@ -2979,7 +2984,12 @@ class MLConfidencePredictor:
                                 np.clip(calibrator.predict([[conf_val]])[0], 0.0, 1.0)
                             )
                     except Exception as e:
-                        self.logger.debug(f"Failed to calibrate confidence for {label}: {e}")
+                        if hasattr(self, "logger") and self.logger is not None:
+                            self.logger.warning(
+                                "Calibrator application failed for label '%s': %s",
+                                label,
+                                e,
+                            )
                 confidences[label] = float(np.clip(conf_val, 0.0, 1.0))
             except (ValueError, TypeError, IndexError) as e:
                 self.logger.debug(f"Error in {self.__class__.__name__}: {e}")

@@ -4,13 +4,13 @@ Ensures that steps don't proceed if their prerequisites have failed.
 """
 
 import asyncio
-from typing import Dict, List, Any, Optional
-from pathlib import Path
 import json
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-from src.utils.warning_symbols import error, warning, critical
+from src.utils.warning_symbols import critical, error, warning
 
 
 class StepDependencyValidator:
@@ -18,7 +18,7 @@ class StepDependencyValidator:
     Validates step dependencies to ensure pipeline integrity.
     Prevents steps from running if their prerequisites have failed.
     """
-    
+
     def __init__(self):
         self.logger = system_logger.getChild("StepDependencyValidator")
         # Define step dependencies (step -> list of required steps)
@@ -198,11 +198,11 @@ class StepDependencyValidator:
     ) -> Dict[str, Any]:
         """
         Validate that all dependencies for a step have been completed successfully.
-        
+
         Args:
             step_name: Name of the step to validate
             pipeline_state: Current state of the pipeline
-            
+
         Returns:
             Dict[str, Any]: Result including validity and reason
         """
@@ -224,15 +224,15 @@ class StepDependencyValidator:
                 "failed_steps": failed_steps,
             }
         return {"valid": True, "reason": "All dependencies satisfied"}
-        
+
     async def _validate_single_dependency(self, step_name: str, pipeline_state: Dict[str, Any]) -> bool:
         """
         Validate a single step dependency.
-        
+
         Args:
             step_name: Name of the required step
             pipeline_state: Current state of the pipeline
-            
+
         Returns:
             bool: True if dependency is met, False otherwise
         """
@@ -240,105 +240,105 @@ class StepDependencyValidator:
         if step_name not in pipeline_state:
             self.logger.error(f"❌ Step {step_name} not found in pipeline state")
             return False
-            
+
         step_result = pipeline_state[step_name]
-        
+
         # Check if step completed successfully
         if not isinstance(step_result, dict):
             self.logger.error(f"❌ Step {step_name} result is not a dictionary")
             return False
-            
+
         status = step_result.get("status", "UNKNOWN")
         if status != "SUCCESS":
             self.logger.error(f"❌ Step {step_name} failed with status: {status}")
             return False
-            
+
         # Check if step has required data
         if not await self._validate_step_data(step_name):
             self.logger.error(f"❌ Step {step_name} data validation failed")
             return False
-            
+
         self.logger.info(f"✅ Step {step_name} dependency validated")
         return True
-        
+
     async def _validate_step_data(self, step_name: str) -> bool:
         """
         Validate that a step has the required data files and structure.
-        
+
         Args:
             step_name: Name of the step to validate
-            
+
         Returns:
             bool: True if data validation passes, False otherwise
         """
         if step_name not in self.critical_data_requirements:
             self.logger.warning(f"No data requirements defined for {step_name}")
             return True
-            
+
         requirements = self.critical_data_requirements[step_name]
-        
+
         # Check required files
         required_files = requirements.get("required_files", [])
         for file_pattern in required_files:
             if not await self._check_file_pattern(file_pattern):
                 self.logger.error(f"❌ Required file pattern not found: {file_pattern}")
                 return False
-                
+
         # Check required columns (if we have data to check)
         required_columns = requirements.get("required_columns", [])
         if required_columns:
             if not await self._check_columns(step_name, required_columns):
                 self.logger.error(f"❌ Required columns not found: {required_columns}")
                 return False
-                
+
         # Check minimum rows
         min_rows = requirements.get("min_rows", 0)
         if min_rows > 0:
             if not await self._check_min_rows(step_name, min_rows):
                 self.logger.error(f"❌ Insufficient data rows: {min_rows} required")
                 return False
-                
+
         return True
-        
+
     async def _check_file_pattern(self, file_pattern: str) -> bool:
         """
         Check if files matching a pattern exist.
-        
+
         Args:
             file_pattern: Glob pattern to check
-            
+
         Returns:
             bool: True if files exist, False otherwise
         """
         try:
-            from pathlib import Path
             import glob
-            
+            from pathlib import Path
+
             # Convert glob pattern to path
             pattern_path = Path(file_pattern)
-            
+
             # Check if any files match the pattern
             matching_files = list(Path(pattern_path.parent).glob(pattern_path.name))
-            
+
             if not matching_files:
                 self.logger.warning(f"No files found matching pattern: {file_pattern}")
                 return False
-                
+
             self.logger.debug(f"Found {len(matching_files)} files matching: {file_pattern}")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error checking file pattern {file_pattern}: {e}")
             return False
-            
+
     async def _check_columns(self, step_name: str, required_columns: List[str]) -> bool:
         """
         Check if required columns exist in step data.
-        
+
         Args:
             step_name: Name of the step
             required_columns: List of required column names
-            
+
         Returns:
             bool: True if all columns exist, False otherwise
         """
@@ -347,19 +347,19 @@ class StepDependencyValidator:
             # For now, we'll assume columns exist if the step completed successfully
             self.logger.debug(f"Column validation for {step_name}: {required_columns}")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error checking columns for {step_name}: {e}")
             return False
-            
+
     async def _check_min_rows(self, step_name: str, min_rows: int) -> bool:
         """
         Check if step data has minimum required rows.
-        
+
         Args:
             step_name: Name of the step
             min_rows: Minimum number of rows required
-            
+
         Returns:
             bool: True if sufficient rows exist, False otherwise
         """
@@ -368,45 +368,45 @@ class StepDependencyValidator:
             # For now, we'll assume sufficient rows exist if the step completed successfully
             self.logger.debug(f"Row count validation for {step_name}: {min_rows} required")
             return True
-            
+
         except Exception as e:
             self.logger.error(f"Error checking row count for {step_name}: {e}")
             return False
-            
+
     def get_step_dependencies(self, step_name: str) -> List[str]:
         """
         Get the list of dependencies for a step.
-        
+
         Args:
             step_name: Name of the step
-            
+
         Returns:
             List[str]: List of required step names
         """
         return self.step_dependencies.get(step_name, [])
-        
+
     def get_critical_requirements(self, step_name: str) -> Dict[str, Any]:
         """
         Get the critical data requirements for a step.
-        
+
         Args:
             step_name: Name of the step
-            
+
         Returns:
             Dict[str, Any]: Dictionary of requirements
         """
         return self.critical_data_requirements.get(step_name, {})
-        
+
     def clear_validation_cache(self) -> None:
         """Clear the validation cache."""
         self.validation_cache.clear()
         self.last_validation_time.clear()
         self.logger.info("Validation cache cleared")
-        
+
     def get_validation_stats(self) -> Dict[str, Any]:
         """
         Get validation statistics.
-        
+
         Returns:
             Dict[str, Any]: Validation statistics
         """
@@ -414,7 +414,7 @@ class StepDependencyValidator:
             "cache_size": len(self.validation_cache),
             "last_validation_times": self.last_validation_time,
             "total_steps": len(self.step_dependencies),
-            "total_requirements": len(self.critical_data_requirements)
+            "total_requirements": len(self.critical_data_requirements),
         }
 
 
@@ -425,11 +425,11 @@ step_dependency_validator = StepDependencyValidator()
 async def validate_step_dependencies(step_name: str, pipeline_state: Dict[str, Any]) -> bool:
     """
     Convenience function to validate step dependencies.
-    
+
     Args:
         step_name: Name of the step to validate
         pipeline_state: Current state of the pipeline
-        
+
     Returns:
         bool: True if all dependencies are met, False otherwise
     """
@@ -445,10 +445,10 @@ async def validate_step_dependencies(step_name: str, pipeline_state: Dict[str, A
 def get_step_dependencies(step_name: str) -> List[str]:
     """
     Convenience function to get step dependencies.
-    
+
     Args:
         step_name: Name of the step
-        
+
     Returns:
         List[str]: List of required step names
     """
@@ -458,10 +458,10 @@ def get_step_dependencies(step_name: str) -> List[str]:
 def get_critical_requirements(step_name: str) -> Dict[str, Any]:
     """
     Convenience function to get critical requirements.
-    
+
     Args:
         step_name: Name of the step
-        
+
     Returns:
         Dict[str, Any]: Dictionary of requirements
     """

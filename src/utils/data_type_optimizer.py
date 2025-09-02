@@ -6,10 +6,11 @@ and improve computational efficiency in feature engineering.
 """
 
 import logging
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 import numpy as np
 import pandas as pd
+
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
 logger = logging.getLogger(__name__)
 
@@ -189,10 +190,7 @@ def apply_feature_specific_optimization(df: pd.DataFrame) -> pd.DataFrame:
                         if df[col].dtype == "int64":
                             c_min = df[col].min()
                             c_max = df[col].max()
-                            if (
-                                c_min > np.iinfo(np.int32).min
-                                and c_max < np.iinfo(np.int32).max
-                            ):
+                            if c_min > np.iinfo(np.int32).min and c_max < np.iinfo(np.int32).max:
                                 optimized_df[col] = df[col].astype("int32")
                 except Exception as e:
                     logger.debug(f"Could not optimize {col} to {dtype}: {e}")

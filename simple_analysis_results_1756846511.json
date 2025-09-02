@@ -1,0 +1,233 @@
+{
+  "directory": "src/utils",
+  "file_count": 66,
+  "analysis_time": 25.041764736175537,
+  "results": [
+    {
+      "tool": "flake8",
+      "error": "Expecting value: line 1 column 1 (char 0)"
+    },
+    {
+      "tool": "pylint",
+      "issues_count": 4864,
+      "issues": [
+        {
+          "type": "convention",
+          "module": "src.utils.observability",
+          "obj": "",
+          "line": 1,
+          "column": 0,
+          "endLine": null,
+          "endColumn": null,
+          "path": "src/utils/observability.py",
+          "symbol": "missing-module-docstring",
+          "message": "Missing module docstring",
+          "message-id": "C0114"
+        },
+        {
+          "type": "warning",
+          "module": "src.utils.observability",
+          "obj": "init_sentry",
+          "line": 43,
+          "column": 11,
+          "endLine": 43,
+          "endColumn": 20,
+          "path": "src/utils/observability.py",
+          "symbol": "broad-exception-caught",
+          "message": "Catching too general exception Exception",
+          "message-id": "W0718"
+        },
+        {
+          "type": "convention",
+          "module": "src.utils.observability",
+          "obj": "init_sentry",
+          "line": 25,
+          "column": 8,
+          "endLine": 25,
+          "endColumn": 25,
+          "path": "src/utils/observability.py",
+          "symbol": "import-outside-toplevel",
+          "message": "Import outside toplevel (sentry_sdk)",
+          "message-id": "C0415"
+        },
+        {
+          "type": "error",
+          "module": "src.utils.observability",
+          "obj": "init_sentry",
+          "line": 25,
+          "column": 8,
+          "endLine": 25,
+          "endColumn": 25,
+          "path": "src/utils/observability.py",
+          "symbol": "import-error",
+          "message": "Unable to import 'sentry_sdk'",
+          "message-id": "E0401"
+        },
+        {
+          "type": "error",
+          "module": "src.utils.observability",
+          "obj": "init_sentry",
+          "line": 26,
+          "column": 8,
+          "endLine": 26,
+          "endColumn": 70,
+          "path": "src/utils/observability.py",
+          "symbol": "import-error",
+          "message": "Unable to import 'sentry_sdk.integrations.aiohttp'",
+          "message-id": "E0401"
+        },
+        {
+          "type": "convention",
+          "module": "src.utils.observability",
+          "obj": "init_sentry",
+          "line": 26,
+          "column": 8,
+          "endLine": 26,
+          "endColumn": 70,
+          "path": "src/utils/observability.py",
+          "symbol": "import-outside-toplevel",
+          "message": "Import outside toplevel (sentry_sdk.integrations.aiohttp.AioHttpIntegration)",
+          "message-id": "C0415"
+        },
+        {
+          "type": "error",
+          "module": "src.utils.observability",
+          "obj": "init_sentry",
+          "line": 27,
+          "column": 8,
+          "endLine": 27,
+          "endColumn": 70,
+          "path": "src/utils/observability.py",
+          "symbol": "import-error",
+          "message": "Unable to import 'sentry_sdk.integrations.fastapi'",
+          "message-id": "E0401"
+        },
+        {
+          "type": "convention",
+          "module": "src.utils.observability",
+          "obj": "init_sentry",
+          "line": 27,
+          "column": 8,
+          "endLine": 27,
+          "endColumn": 70,
+          "path": "src/utils/observability.py",
+          "symbol": "import-outside-toplevel",
+          "message": "Import outside toplevel (sentry_sdk.integrations.fastapi.FastApiIntegration)",
+          "message-id": "C0415"
+        },
+        {
+          "type": "error",
+          "module": "src.utils.observability",
+          "obj": "init_sentry",
+          "line": 28,
+          "column": 8,
+          "endLine": 28,
+          "endColumn": 70,
+          "path": "src/utils/observability.py",
+          "symbol": "import-error",
+          "message": "Unable to import 'sentry_sdk.integrations.logging'",
+          "message-id": "E0401"
+        },
+        {
+          "type": "convention",
+          "module": "src.utils.observability",
+          "obj": "init_sentry",
+          "line": 28,
+          "column": 8,
+          "endLine": 28,
+          "endColumn": 70,
+          "path": "src/utils/observability.py",
+          "symbol": "import-outside-toplevel",
+          "message": "Import outside toplevel (sentry_sdk.integrations.logging.LoggingIntegration)",
+          "message-id": "C0415"
+        }
+      ]
+    },
+    {
+      "tool": "mypy",
+      "issues_count": 972,
+      "issues": [
+        "src/config/training_modes.py:311: error: Incompatible return value type (got \"dict[str, dict[str, object]]\", expected \"dict[str, dict[str, int]]\")  [return-value]",
+        "src/config/training_modes.py:470: error: Incompatible default for argument \"step_name\" (default has type \"None\", argument has type \"str\")  [assignment]",
+        "src/config/training_modes.py:470: note: PEP 484 prohibits implicit Optional. Accordingly, mypy has changed its default to no_implicit_optional=True",
+        "src/config/training_modes.py:470: note: Use https://github.com/hauntsaninja/no_implicit_optional to automatically upgrade your codebase",
+        "src/utils/pipeline_standards.py:385: error: \"Collection[str]\" has no attribute \"items\"  [attr-defined]",
+        "src/utils/pipeline_standards.py:440: error: Value of type \"Collection[str]\" is not indexable  [index]",
+        "src/utils/pipeline_standards.py:442: error: Value of type \"Collection[str]\" is not indexable  [index]",
+        "src/utils/pipeline_standards.py:444: error: Value of type \"Collection[str]\" is not indexable  [index]",
+        "src/utils/pipeline_standards.py:446: error: Value of type \"Collection[str]\" is not indexable  [index]",
+        "src/utils/pipeline_standards.py:450: error: \"Collection[str]\" has no attribute \"items\"  [attr-defined]"
+      ]
+    },
+    {
+      "tool": "bandit",
+      "error": "Expecting value: line 1 column 1 (char 0)"
+    },
+    {
+      "tool": "radon",
+      "complex_functions_count": 76,
+      "complex_functions": [
+        {
+          "file": "src/utils/enhanced_validation_decorators.py",
+          "function": "_extract_file_paths_from_args",
+          "complexity": 17,
+          "rank": "C"
+        },
+        {
+          "file": "src/utils/data_quality_framework.py",
+          "function": "_apply_validation_rule",
+          "complexity": 22,
+          "rank": "D"
+        },
+        {
+          "file": "src/utils/data_quality_framework.py",
+          "function": "_handle_outliers",
+          "complexity": 18,
+          "rank": "C"
+        },
+        {
+          "file": "src/utils/data_quality_framework.py",
+          "function": "_generate_recommendations",
+          "complexity": 14,
+          "rank": "C"
+        },
+        {
+          "file": "src/utils/data_quality_framework.py",
+          "function": "validate_data",
+          "complexity": 11,
+          "rank": "C"
+        },
+        {
+          "file": "src/utils/vif_calculator.py",
+          "function": "calculate_vif_robust",
+          "complexity": 15,
+          "rank": "C"
+        },
+        {
+          "file": "src/utils/model_performance_monitor.py",
+          "function": "_check_performance_thresholds",
+          "complexity": 13,
+          "rank": "C"
+        },
+        {
+          "file": "src/utils/model_performance_monitor.py",
+          "function": "_log_performance_summary",
+          "complexity": 13,
+          "rank": "C"
+        },
+        {
+          "file": "src/utils/model_performance_monitor.py",
+          "function": "_generate_recommendations",
+          "complexity": 13,
+          "rank": "C"
+        },
+        {
+          "file": "src/utils/data_preprocessing.py",
+          "function": "regularize_timestamps",
+          "complexity": 13,
+          "rank": "C"
+        }
+      ]
+    }
+  ]
+}

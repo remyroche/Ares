@@ -1,13 +1,23 @@
-"""Warning symbols and color utilities for enhanced logging output.
+"""
+Warning Symbols Module
 
-This module provides warning symbols, color codes, and formatting utilities
-for making log messages more visually distinctive and informative.
+This module provides warning symbols and color codes for terminal output,
+including functions for creating warning messages and error indicators.
 """
 
 import os
 import sys
-from typing import Optional
+import logging
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
 
+# Add project root to path
+project_root = Path(__file__).parent.parent.parent
+if str(project_root) not in sys.path:
+
+from src.utils.logger import system_logger
+
+# ANSI color codes for terminal output
 
 class ColorCodes:
     """ANSI color codes for terminal output."""
@@ -37,197 +47,178 @@ class ColorCodes:
     BRIGHT_CYAN = "\033[96m"
     BRIGHT_WHITE = "\033[97m"
 
-
 class WarningSymbols:
-    """Unicode warning symbols for enhanced visual feedback."""
+    """Warning symbols and message formatting utilities."""
     
-    # Success symbols
-    CHECKMARK = "✅"
-    SUCCESS_CIRCLE = "🟢"
-    THUMBS_UP = "👍"
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """Initialize WarningSymbols."""
+        self.config = config or {}
+        self.logger = system_logger.getChild("WarningSymbols")
+        self.is_initialized = False
+        
+        # Default warning symbols
+        self.symbols = {
+            "warning": "⚠️",
+            "error": "❌",
+            "success": "✅",
+            "info": "ℹ️",
+            "loading": "🔄",
+            "check": "✓",
+            "cross": "✗",
+            "arrow": "→",
+            "star": "⭐",
+            "fire": "🔥",
+            "rocket": "🚀",
+            "gear": "⚙️",
+            "lock": "🔒",
+            "unlock": "🔓",
+            "clock": "⏰",
+            "calendar": "📅",
+            "chart": "📊",
+            "database": "💾",
+            "network": "🌐",
+            "security": "🔐"
+        }
+        
+        # Color mappings
+        self.colors = {
+            "warning": ColorCodes.YELLOW,
+            "error": ColorCodes.RED,
+            "success": ColorCodes.GREEN,
+            "info": ColorCodes.BLUE,
+            "loading": ColorCodes.CYAN,
+            "default": ColorCodes.WHITE
+        }
+        
+        self.is_initialized = True
+        self.logger.info("WarningSymbols initialized successfully")
     
-    # Warning symbols
-    WARNING_TRIANGLE = "⚠️"
-    WARNING_SIGN = "🚨"
-    EXCLAMATION = "❗"
+    def get_symbol(self, symbol_name: str) -> str:
+        """Get a warning symbol by name."""
+        try:
+            return self.symbols.get(symbol_name, "•")
+        except Exception as e:
+            self.logger.error(f"Error getting symbol {symbol_name}: {e}")
+            return "•"
     
-    # Error symbols
-    RED_CROSS = "❌"
-    FAILURE_SYMBOL = "💥"
-    PROBLEM_SYMBOL = "🚫"
-    ERROR_SYMBOL = "🔥"
+    def get_color(self, color_name: str) -> str:
+        """Get a color code by name."""
+        try:
+            return self.colors.get(color_name, ColorCodes.WHITE)
+        except Exception as e:
+            self.logger.error(f"Error getting color {color_name}: {e}")
+            return ColorCodes.WHITE
     
-    # Info symbols
-    INFO_CIRCLE = "ℹ️"
-    LIGHT_BULB = "💡"
-    MAGNIFYING_GLASS = "🔍"
+    def format_message(self, message: str, symbol: str = "info", color: str = "default", bold: bool = False) -> str:
+        """Format a message with symbol and color."""
+        try:
+            symbol_char = self.get_symbol(symbol)
+            color_code = self.get_color(color)
+            bold_code = ColorCodes.BOLD if bold else ""
+            
+            formatted = f"{color_code}{bold_code}{symbol_char} {message}{ColorCodes.RESET}"
+            return formatted
+        except Exception as e:
+            self.logger.error(f"Error formatting message: {e}")
+            return message
     
-    # Process symbols
-    GEAR = "⚙️"
-    HOURGLASS = "⏳"
-    CLOCK = "🕐"
-    ARROW = "➡️"
+    def warning(self, message: str, bold: bool = False) -> str:
+        """Create a warning message."""
+        return self.format_message(message, "warning", "warning", bold)
     
-    # Status symbols
-    PLAY = "▶️"
-    PAUSE = "⏸️"
-    STOP = "⏹️"
-    LOADING = "🔄"
+    def error(self, message: str, bold: bool = False) -> str:
+        """Create an error message."""
+        return self.format_message(message, "error", "error", bold)
     
-    # Data symbols
-    DATABASE = "🗄️"
-    FILE = "📁"
-    CHART = "📊"
-    GRAPH = "📈"
+    def success(self, message: str, bold: bool = False) -> str:
+        """Create a success message."""
+        return self.format_message(message, "success", "success", bold)
     
-    # Network symbols
-    GLOBE = "🌐"
-    WIFI = "📶"
-    SERVER = "🖥️"
-    CONNECTION = "🔗"
-
-
-def should_use_colors() -> bool:
-    """Check if colors should be used in terminal output."""
-    # Check if we're in a terminal
-    if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
-        return False
+    def info(self, message: str, bold: bool = False) -> str:
+        """Create an info message."""
+        return self.format_message(message, "info", "info", bold)
     
-    # Check for NO_COLOR environment variable
-    if os.environ.get("NO_COLOR"):
-        return False
+    def loading(self, message: str, bold: bool = False) -> str:
+        """Create a loading message."""
+        return self.format_message(message, "loading", "loading", bold)
     
-    # Check for TERM environment variable
-    term = os.environ.get("TERM", "").lower()
-    return term not in ("dumb", "unknown")
-
-
-def colorize(text: str, color: str, bold: bool = False) -> str:
-    """Apply color formatting to text."""
-    if not should_use_colors():
-        return text
+    def custom(self, message: str, symbol: str, color: str = "default", bold: bool = False) -> str:
+        """Create a custom formatted message."""
+        return self.format_message(message, symbol, color, bold)
     
-    result = text
-    if bold:
-        result = f"{ColorCodes.BOLD}{result}"
+    def add_symbol(self, name: str, symbol: str) -> None:
+        """Add a custom symbol."""
+        try:
+            self.symbols[name] = symbol
+            self.logger.info(f"Added custom symbol: {name} = {symbol}")
+        except Exception as e:
+            self.logger.error(f"Error adding symbol {name}: {e}")
     
-    return f"{color}{result}{ColorCodes.RESET}"
+    def add_color(self, name: str, color_code: str) -> None:
+        """Add a custom color."""
+        try:
+            self.colors[name] = color_code
+            self.logger.info(f"Added custom color: {name} = {color_code}")
+        except Exception as e:
+            self.logger.error(f"Error adding color {name}: {e}")
+    
+    def get_all_symbols(self) -> Dict[str, str]:
+        """Get all available symbols."""
+        return self.symbols.copy()
+    
+    def get_all_colors(self) -> Dict[str, str]:
+        """Get all available colors."""
+        return self.colors.copy()
+    
+    def reset_colors(self) -> None:
+        """Reset colors to default."""
+        try:
+            self.colors = {
+                "warning": ColorCodes.YELLOW,
+                "error": ColorCodes.RED,
+                "success": ColorCodes.GREEN,
+                "info": ColorCodes.BLUE,
+                "loading": ColorCodes.CYAN,
+                "default": ColorCodes.WHITE
+            }
+            self.logger.info("Colors reset to defaults")
+        except Exception as e:
+            self.logger.error(f"Error resetting colors: {e}")
 
+# Global warning symbols instance
+warning_symbols = WarningSymbols()
 
-def format_warning_message(message: str, symbol: str = WarningSymbols.WARNING_TRIANGLE, 
-                          color: str = ColorCodes.YELLOW, bold: bool = False) -> str:
-    """Format a warning message with symbol and color."""
-    formatted_symbol = colorize(symbol, color, bold)
-    formatted_message = colorize(message, color, bold)
-    return f"{formatted_symbol} {formatted_message}"
-
-
-def format_error_message(message: str, symbol: str = WarningSymbols.RED_CROSS, 
-                        color: str = ColorCodes.RED, bold: bool = False) -> str:
-    """Format an error message with symbol and color."""
-    formatted_symbol = colorize(symbol, color, bold)
-    formatted_message = colorize(message, color, bold)
-    return f"{formatted_symbol} {formatted_message}"
-
-
-def format_critical_message(message: str, symbol: str = WarningSymbols.FAILURE_SYMBOL, 
-                           color: str = ColorCodes.BRIGHT_RED, bold: bool = True) -> str:
-    """Format a critical message with symbol and color."""
-    formatted_symbol = colorize(symbol, color, bold)
-    formatted_message = colorize(message, color, bold)
-    return f"{formatted_symbol} {formatted_message}"
-
-
-def format_problem_message(message: str, symbol: str = WarningSymbols.PROBLEM_SYMBOL, 
-                          color: str = ColorCodes.RED, bold: bool = False) -> str:
-    """Format a problem message with symbol and color."""
-    formatted_symbol = colorize(symbol, color, bold)
-    formatted_message = colorize(message, color, bold)
-    return f"{formatted_symbol} {formatted_message}"
-
-
-def format_success_message(message: str, symbol: str = WarningSymbols.CHECKMARK, 
-                          color: str = ColorCodes.GREEN, bold: bool = False) -> str:
-    """Format a success message with symbol and color."""
-    formatted_symbol = colorize(symbol, color, bold)
-    formatted_message = colorize(message, color, bold)
-    return f"{formatted_symbol} {formatted_message}"
-
-
-def format_info_message(message: str, symbol: str = WarningSymbols.INFO_CIRCLE, 
-                       color: str = ColorCodes.CYAN, bold: bool = False) -> str:
-    """Format an info message with symbol and color."""
-    formatted_symbol = colorize(symbol, color, bold)
-    formatted_message = colorize(message, color, bold)
-    return f"{formatted_symbol} {formatted_message}"
-
-
-# Convenience functions for common warning types
-def warning(message: str) -> str:
+# Convenience functions for backward compatibility
+def warning(message: str, bold: bool = False) -> str:
     """Create a warning message."""
-    return format_warning_message(message)
+    return warning_symbols.warning(message, bold)
 
-
-def error(message: str) -> str:
+def error(message: str, bold: bool = False) -> str:
     """Create an error message."""
-    return format_error_message(message)
+    return warning_symbols.error(message, bold)
 
-
-def critical(message: str) -> str:
-    """Create a critical message."""
-    return format_critical_message(message)
-
-
-def failed(message: str) -> str:
-    """Create a failure message."""
-    return format_problem_message(message)
-
-
-def success(message: str) -> str:
+def success(message: str, bold: bool = False) -> str:
     """Create a success message."""
-    return format_success_message(message)
+    return warning_symbols.success(message, bold)
 
-
-def info(message: str) -> str:
+def info(message: str, bold: bool = False) -> str:
     """Create an info message."""
-    return format_info_message(message)
+    return warning_symbols.info(message, bold)
 
+def loading(message: str, bold: bool = False) -> str:
+    """Create a loading message."""
+    return warning_symbols.loading(message, bold)
 
-def initialization_error(message: str) -> str:
-    """Create an initialization error message."""
-    return format_error_message(message)
+def failed(message: str, bold: bool = False) -> str:
+    """Create a failed message (alias for error)."""
+    return warning_symbols.error(message, bold)
 
+def missing(message: str, bold: bool = False) -> str:
+    """Create a missing message (alias for warning)."""
+    return warning_symbols.warning(message, bold)
 
-def invalid(message: str) -> str:
-    """Create an invalid input message."""
-    return format_problem_message(message)
+# Convenience function for creating warning symbols instance
+def create_warning_symbols(config: Optional[Dict[str, Any]] = None) -> WarningSymbols:
+    """Create a new WarningSymbols instance."""
+    return WarningSymbols(config)
 
-
-def missing(message: str) -> str:
-    """Create a missing data message."""
-    return format_warning_message(message)
-
-
-def problem(message: str) -> str:
-    """Create a problem message."""
-    return format_problem_message(message)
-
-
-def timeout(message: str) -> str:
-    """Create a timeout message."""
-    return format_error_message(message)
-
-
-def connection_error(message: str) -> str:
-    """Create a connection error message."""
-    return format_error_message(message)
-
-
-def validation_error(message: str) -> str:
-    """Create a validation error message."""
-    return format_error_message(message)
-
-
-def execution_error(message: str) -> str:
-    """Create an execution error message."""
-    return format_error_message(message)

@@ -1,8 +1,13 @@
 """
-Data Quality Framework
+Comprehensive Data Quality Framework
 
-This module provides a comprehensive data quality framework that integrates with
-the enhanced outlier handler and other quality validation tools.
+This module provides a comprehensive data quality framework that includes:
+- Data validation and schema enforcement
+- Data quality scoring and metrics
+- Data cleaning and preprocessing
+- Data profiling and analysis
+- Quality policy management
+- Cross-step quality consistency
 """
 
 import pandas as pd
@@ -10,18 +15,91 @@ import numpy as np
 from typing import Dict, Any, List, Optional, Union
 from datetime import datetime
 import logging
+from enum import Enum
 
 from .enhanced_outlier_handler import enhanced_outlier_handler, OutlierSeverity
 from .logger import system_logger
 
 
+class DataQualityLevel(Enum):
+    """Data quality issue severity levels."""
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
+class DataFormat(Enum):
+    """Standard data formats."""
+    KLINES = "klines"
+    FEATURES = "features"
+    LABELS = "labels"
+    PREDICTIONS = "predictions"
+    METADATA = "metadata"
+    CONFIG = "config"
+
+
 class DataQualityFramework:
-    """Comprehensive data quality framework with outlier handling integration."""
+    """Comprehensive data quality framework with validation, cleaning, and profiling."""
     
     def __init__(self):
         """Initialize data quality framework."""
         self.logger = system_logger.getChild("DataQualityFramework")
         self.outlier_handler = enhanced_outlier_handler
+        
+        # Quality policies
+        self.quality_policies = {
+            "strict_validation": True,
+            "auto_clean": True,
+            "profiling_enabled": True,
+            "max_issues_critical": 0,
+            "max_issues_high": 5,
+            "max_issues_medium": 20,
+            "max_issues_low": 100
+        }
+        
+        # Validation rules
+        self.validation_rules = {
+            "klines_schema": {
+                "required_columns": ["timestamp", "open", "high", "low", "close", "volume"],
+                "data_types": {
+                    "timestamp": "int64",
+                    "open": "float64",
+                    "high": "float64",
+                    "low": "float64",
+                    "close": "float64",
+                    "volume": "float64"
+                },
+                "constraints": {
+                    "timestamp": {"min": 0, "max": None},
+                    "open": {"min": 0, "max": None},
+                    "high": {"min": 0, "max": None},
+                    "low": {"min": 0, "max": None},
+                    "close": {"min": 0, "max": None},
+                    "volume": {"min": 0, "max": None}
+                }
+            },
+            "features_schema": {
+                "required_columns": ["timestamp"],
+                "data_types": {
+                    "timestamp": "int64"
+                },
+                "constraints": {
+                    "timestamp": {"min": 0, "max": None}
+                }
+            },
+            "labels_schema": {
+                "required_columns": ["timestamp", "label"],
+                "data_types": {
+                    "timestamp": "int64",
+                    "label": "int64"
+                },
+                "constraints": {
+                    "timestamp": {"min": 0, "max": None},
+                    "label": {"min": 0, "max": None}
+                }
+            }
+        }
         
         # Default cleaning rules
         self.default_cleaning_rules = {
@@ -38,7 +116,7 @@ class DataQualityFramework:
             "schema_validation": True
         }
         
-        self.logger.info("🔧 Data Quality Framework initialized")
+        self.logger.info("🔧 Comprehensive Data Quality Framework initialized")
     
     def clean_data(self, data: pd.DataFrame, cleaning_rules: Dict[str, Any] = None) -> pd.DataFrame:
         """Clean data according to specified rules.
@@ -88,6 +166,196 @@ class DataQualityFramework:
         self.logger.info(f"   Columns removed: {cols_removed}")
         
         return cleaned_data
+    
+    def validate_data(self, data: pd.DataFrame, validation_rules: List[str] = None) -> Dict[str, Any]:
+        """Validate data according to specified validation rules.
+        
+        Args:
+            data: Data to validate
+            validation_rules: List of validation rule names to apply
+            
+        Returns:
+            Validation results
+        """
+        if validation_rules is None:
+            validation_rules = list(self.validation_rules.keys())
+        
+        validation_results = {
+            "overall_passed": True,
+            "passed_rules": 0,
+            "failed_rules": 0,
+            "total_rules": len(validation_rules),
+            "rule_results": {},
+            "critical_issues": 0,
+            "high_issues": 0,
+            "medium_issues": 0,
+            "low_issues": 0,
+            "errors": [],
+            "warnings": []
+        }
+        
+        for rule_name in validation_rules:
+            if rule_name not in self.validation_rules:
+                validation_results["warnings"].append(f"Unknown validation rule: {rule_name}")
+                continue
+            
+            rule = self.validation_rules[rule_name]
+            rule_result = self._apply_validation_rule(data, rule, rule_name)
+            
+            validation_results["rule_results"][rule_name] = rule_result
+            
+            if rule_result["passed"]:
+                validation_results["passed_rules"] += 1
+            else:
+                validation_results["failed_rules"] += 1
+                validation_results["overall_passed"] = False
+                
+                # Count issues by severity
+                for issue in rule_result["issues"]:
+                    severity = issue.get("severity", "medium")
+                    if severity == "critical":
+                        validation_results["critical_issues"] += 1
+                    elif severity == "high":
+                        validation_results["high_issues"] += 1
+                    elif severity == "medium":
+                        validation_results["medium_issues"] += 1
+                    elif severity == "low":
+                        validation_results["low_issues"] += 1
+        
+        # Check if overall validation passed based on quality policies
+        if not self._check_quality_policy_compliance(validation_results):
+            validation_results["overall_passed"] = False
+        
+        # Log validation results
+        self._log_validation_results(validation_results)
+        
+        return validation_results
+    
+    def _apply_validation_rule(self, data: pd.DataFrame, rule: Dict[str, Any], rule_name: str) -> Dict[str, Any]:
+        """Apply a specific validation rule to data."""
+        rule_result = {
+            "passed": True,
+            "issues": [],
+            "warnings": []
+        }
+        
+        try:
+            # Check required columns
+            missing_columns = set(rule["required_columns"]) - set(data.columns)
+            if missing_columns:
+                rule_result["passed"] = False
+                rule_result["issues"].append({
+                    "type": "missing_columns",
+                    "severity": "critical",
+                    "message": f"Missing required columns: {missing_columns}",
+                    "details": list(missing_columns)
+                })
+            
+            # Check data types
+            for column, expected_type in rule["data_types"].items():
+                if column in data.columns:
+                    actual_type = str(data[column].dtype)
+                    if actual_type != expected_type:
+                        rule_result["warnings"].append({
+                            "type": "data_type_mismatch",
+                            "severity": "medium",
+                            "message": f"Column '{column}' has type {actual_type}, expected {expected_type}",
+                            "details": {"column": column, "actual": actual_type, "expected": expected_type}
+                        })
+            
+            # Check constraints
+            for column, constraints in rule["constraints"].items():
+                if column in data.columns:
+                    column_data = data[column]
+                    
+                    if "min" in constraints and constraints["min"] is not None:
+                        min_violations = (column_data < constraints["min"]).sum()
+                        if min_violations > 0:
+                            rule_result["issues"].append({
+                                "type": "constraint_violation",
+                                "severity": "high",
+                                "message": f"Column '{column}' has {min_violations} values below minimum {constraints['min']}",
+                                "details": {"column": column, "violations": min_violations, "min": constraints["min"]}
+                            })
+                    
+                    if "max" in constraints and constraints["max"] is not None:
+                        max_violations = (column_data > constraints["max"]).sum()
+                        if max_violations > 0:
+                            rule_result["issues"].append({
+                                "type": "constraint_violation",
+                                "severity": "high",
+                                "message": f"Column '{column}' has {max_violations} values above maximum {constraints['max']}",
+                                "details": {"column": column, "violations": max_violations, "max": constraints["max"]}
+                            })
+            
+            # Check for infinite values in numeric columns
+            numeric_columns = data.select_dtypes(include=[np.number]).columns
+            for column in numeric_columns:
+                if column in data.columns:
+                    infinite_count = np.isinf(data[column]).sum()
+                    if infinite_count > 0:
+                        rule_result["issues"].append({
+                            "type": "infinite_values",
+                            "severity": "critical",
+                            "message": f"Column '{column}' has {infinite_count} infinite values",
+                            "details": {"column": column, "count": infinite_count}
+                        })
+            
+            # Check OHLC consistency for klines data
+            if rule_name == "klines_schema" and all(col in data.columns for col in ["open", "high", "low", "close"]):
+                ohlc_violations = (
+                    (data["high"] < data["low"]) |
+                    (data["high"] < data["open"]) |
+                    (data["high"] < data["close"]) |
+                    (data["low"] > data["open"]) |
+                    (data["low"] > data["close"])
+                ).sum()
+                
+                if ohlc_violations > 0:
+                    rule_result["issues"].append({
+                        "type": "ohlc_inconsistency",
+                        "severity": "high",
+                        "message": f"OHLC data has {ohlc_violations} inconsistent rows",
+                        "details": {"violations": ohlc_violations}
+                    })
+            
+            # Update passed status based on issues
+            if rule_result["issues"]:
+                rule_result["passed"] = False
+                
+        except Exception as e:
+            rule_result["passed"] = False
+            rule_result["issues"].append({
+                "type": "validation_error",
+                "severity": "critical",
+                "message": f"Error during validation: {str(e)}",
+                "details": {"error": str(e)}
+            })
+        
+        return rule_result
+    
+    def _check_quality_policy_compliance(self, validation_results: Dict[str, Any]) -> bool:
+        """Check if validation results comply with quality policies."""
+        summary = validation_results
+        
+        if summary["critical_issues"] > self.quality_policies["max_issues_critical"]:
+            return False
+        if summary["high_issues"] > self.quality_policies["max_issues_high"]:
+            return False
+        if summary["medium_issues"] > self.quality_policies["max_issues_medium"]:
+            return False
+        if summary["low_issues"] > self.quality_policies["max_issues_low"]:
+            return False
+        return True
+    
+    def _log_validation_results(self, results: Dict[str, Any]) -> None:
+        """Log validation results."""
+        
+        if results["overall_passed"]:
+            self.logger.info(f"Data validation passed: {results['passed_rules']}/{results['total_rules']} rules passed")
+        else:
+            self.logger.error(f"Data validation failed: {results['failed_rules']}/{results['total_rules']} rules failed")
+            self.logger.error(f"Issues: Critical={results['critical_issues']}, High={results['high_issues']}, Medium={results['medium_issues']}, Low={results['low_issues']}")
     
     def _validate_schema(self, data: pd.DataFrame, rules: Dict[str, Any]) -> pd.DataFrame:
         """Validate data schema."""
@@ -443,10 +711,260 @@ class DataQualityFramework:
                 recommendations.append("High-dimensional data - consider feature selection")
             
             return recommendations
-            
+        
         except Exception as e:
             self.logger.error(f"Error generating recommendations: {e}")
             return ["Error generating recommendations"]
+    
+    def format_data(self, data: pd.DataFrame, data_type: str = "klines") -> pd.DataFrame:
+        """Format data according to standardized formats.
+        
+        Args:
+            data: Data to format
+            data_type: Type of data (klines, features, etc.)
+            
+        Returns:
+            Formatted data
+        """
+        formatted_data = data.copy()
+        
+        if data_type == "klines":
+            formatted_data = self._format_klines_data(formatted_data)
+        elif data_type == "features":
+            formatted_data = self._format_features_data(formatted_data)
+        elif data_type == "labels":
+            formatted_data = self._format_labels_data(formatted_data)
+        else:
+            self.logger.warning(f"Unknown data type for formatting: {data_type}")
+        
+        return formatted_data
+    
+    def _format_klines_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Format klines data."""
+        formatted = data.copy()
+        
+        # Ensure timestamp is int64
+        if "timestamp" in formatted.columns:
+            formatted["timestamp"] = pd.to_numeric(formatted["timestamp"], errors='coerce').astype('int64')
+        
+        # Ensure OHLCV columns are float64
+        ohlcv_columns = ["open", "high", "low", "close", "volume"]
+        for col in ohlcv_columns:
+            if col in formatted.columns:
+                formatted[col] = pd.to_numeric(formatted[col], errors='coerce').astype('float64')
+        
+        # Sort by timestamp
+        if "timestamp" in formatted.columns:
+            formatted = formatted.sort_values("timestamp").reset_index(drop=True)
+        
+        return formatted
+    
+    def _format_features_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Format features data."""
+        formatted = data.copy()
+        
+        # Ensure all numeric columns are float64
+        numeric_columns = formatted.select_dtypes(include=[np.number]).columns
+        for col in numeric_columns:
+            formatted[col] = pd.to_numeric(formatted[col], errors='coerce').astype('float64')
+        
+        # Handle infinite values
+        formatted = formatted.replace([np.inf, -np.inf], np.nan)
+        
+        return formatted
+    
+    def _format_labels_data(self, data: pd.DataFrame) -> pd.DataFrame:
+        """Format labels data."""
+        formatted = data.copy()
+        
+        # Ensure label columns are int64
+        label_columns = [col for col in formatted.columns if "label" in col.lower()]
+        for col in label_columns:
+            formatted[col] = pd.to_numeric(formatted[col], errors='coerce').astype('int64')
+        
+        return formatted
+    
+    def profile_data(self, data: pd.DataFrame) -> Dict[str, Any]:
+        """Generate comprehensive data profile.
+        
+        Args:
+            data: Data to profile
+            
+        Returns:
+            Data profile
+        """
+        if not self.quality_policies["profiling_enabled"]:
+            return {"profiling_disabled": True}
+        
+        profile = {
+            "timestamp": datetime.now().isoformat(),
+            "data_shape": data.shape,
+            "memory_usage": data.memory_usage(deep=True).sum(),
+            "columns": {},
+            "summary": {
+                "total_rows": len(data),
+                "total_columns": len(data.columns),
+                "missing_values": data.isnull().sum().sum(),
+                "duplicate_rows": data.duplicated().sum(),
+                "numeric_columns": len(data.select_dtypes(include=[np.number]).columns),
+                "categorical_columns": len(data.select_dtypes(include=['object']).columns),
+                "datetime_columns": len(data.select_dtypes(include=['datetime']).columns)
+            }
+        }
+        
+        # Profile each column
+        for column in data.columns:
+            col_data = data[column]
+            col_profile = {
+                "dtype": str(col_data.dtype),
+                "missing_count": col_data.isnull().sum(),
+                "missing_ratio": col_data.isnull().sum() / len(col_data),
+                "unique_count": col_data.nunique(),
+                "unique_ratio": col_data.nunique() / len(col_data)
+            }
+            
+            # Numeric column statistics
+            if pd.api.types.is_numeric_dtype(col_data):
+                col_profile.update({
+                    "min": float(col_data.min()) if not col_data.isna().all() else None,
+                    "max": float(col_data.max()) if not col_data.isna().all() else None,
+                    "mean": float(col_data.mean()) if not col_data.isna().all() else None,
+                    "median": float(col_data.median()) if not col_data.isna().all() else None,
+                    "std": float(col_data.std()) if not col_data.isna().all() else None,
+                    "zero_count": (col_data == 0).sum(),
+                    "negative_count": (col_data < 0).sum(),
+                    "infinite_count": np.isinf(col_data).sum()
+                })
+            
+            # Categorical column statistics
+            elif pd.api.types.is_object_dtype(col_data):
+                value_counts = col_data.value_counts()
+                col_profile.update({
+                    "top_values": value_counts.head(5).to_dict(),
+                    "empty_string_count": (col_data == "").sum(),
+                    "whitespace_only_count": col_data.astype(str).str.strip().eq("").sum()
+                })
+            
+            profile["columns"][column] = col_profile
+        
+        return profile
+    
+    def get_quality_report(self, data: pd.DataFrame, include_profile: bool = True) -> Dict[str, Any]:
+        """Generate comprehensive data quality report.
+        
+        Args:
+            data: Data to analyze
+            include_profile: Whether to include data profiling
+            
+        Returns:
+            Quality report
+        """
+        report = {
+            "timestamp": datetime.now().isoformat(),
+            "data_shape": data.shape,
+            "validation_results": self.validate_data(data),
+            "quality_score": self.calculate_quality_score(data)
+        }
+        
+        if include_profile:
+            report["data_profile"] = self.profile_data(data)
+        
+        # Add quality metrics
+        report["quality_metrics"] = {
+            "completeness": self._calculate_completeness_score(data),
+            "consistency": self._calculate_consistency_score(data),
+            "accuracy": self._calculate_accuracy_score(data),
+            "timeliness": self._calculate_timeliness_score(data)
+        }
+        
+        return report
+    
+    def calculate_quality_score(self, data: pd.DataFrame) -> float:
+        """Calculate overall data quality score.
+        
+        Args:
+            data: Data to score
+            
+        Returns:
+            Quality score between 0 and 1
+        """
+        scores = []
+        
+        # Completeness score
+        completeness = 1 - (data.isnull().sum().sum() / (len(data) * len(data.columns)))
+        scores.append(completeness)
+        
+        # Consistency score (no duplicates)
+        consistency = 1 - (data.duplicated().sum() / len(data))
+        scores.append(consistency)
+        
+        # Validity score (no infinite values in numeric columns)
+        numeric_cols = data.select_dtypes(include=[np.number]).columns
+        if len(numeric_cols) > 0:
+            infinite_ratio = np.isinf(data[numeric_cols]).sum().sum() / (len(data) * len(numeric_cols))
+            validity = 1 - infinite_ratio
+        else:
+            validity = 1.0
+        scores.append(validity)
+        
+        # Range validity score
+        range_scores = []
+        for col in numeric_cols:
+            if col in ["open", "high", "low", "close", "volume"]:
+                # Check for negative values in price/volume columns
+                negative_ratio = (data[col] < 0).sum() / len(data)
+                range_scores.append(1 - negative_ratio)
+        
+        if range_scores:
+            scores.append(np.mean(range_scores))
+        
+        return np.mean(scores)
+    
+    def _calculate_completeness_score(self, data: pd.DataFrame) -> float:
+        """Calculate completeness score."""
+        return 1 - (data.isnull().sum().sum() / (len(data) * len(data.columns)))
+    
+    def _calculate_consistency_score(self, data: pd.DataFrame) -> float:
+        """Calculate consistency score."""
+        return 1 - (data.duplicated().sum() / len(data))
+    
+    def _calculate_accuracy_score(self, data: pd.DataFrame) -> float:
+        """Calculate accuracy score."""
+        # This is a simplified accuracy score
+        # In practice, you would implement domain-specific accuracy checks
+        numeric_cols = data.select_dtypes(include=[np.number]).columns
+        if len(numeric_cols) == 0:
+            return 1.0
+        
+        # Check for reasonable ranges
+        accuracy_scores = []
+        for col in numeric_cols:
+            if col in ["open", "high", "low", "close"]:
+                # Check OHLC consistency
+                if all(c in data.columns for c in ["open", "high", "low", "close"]):
+                    ohlc_valid = ((data["high"] >= data["low"]) & 
+                                  (data["high"] >= data["open"]) & 
+                                  (data["high"] >= data["close"]) &
+                                  (data["low"] <= data["open"]) & 
+                                  (data["low"] <= data["close"])).mean()
+                    accuracy_scores.append(ohlc_valid)
+        
+        return np.mean(accuracy_scores) if accuracy_scores else 1.0
+    
+    def _calculate_timeliness_score(self, data: pd.DataFrame) -> float:
+        """Calculate timeliness score."""
+        if "timestamp" not in data.columns:
+            return 1.0
+        
+        try:
+            # Check if timestamps are in reasonable range
+            timestamps = pd.to_datetime(data["timestamp"], unit='s')
+            now = pd.Timestamp.now()
+            time_diff = abs((timestamps - now).dt.total_seconds())
+            timeliness = 1 - min(time_diff.mean() / (365 * 24 * 3600), 1.0)  # Normalize to 1 year
+            return timeliness
+        except:
+            return 0.5  # Default score if timestamp parsing fails
 
 
 # Global data quality framework instance

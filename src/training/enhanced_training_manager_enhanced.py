@@ -2670,8 +2670,6 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                         "small_movements": len([d for d in upper_barrier_post_hit_movements if d <= 0.01]),  # <= 1%
                         "medium_movements": len([d for d in upper_barrier_post_hit_movements if 0.01 < d <= 0.05]),  # 1-5%
                         "large_movements": len([d for d in upper_barrier_post_hit_movements if d > 0.05])  # > 5%
-
-                        }
                     }
                 },
                 "summary_statistics": {
@@ -2818,6 +2816,827 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         
         return warnings
     
+    # Enhanced step execution methods with comprehensive reporting
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step1_data_collection"
+    )
+    async def execute_step1_data_collection(
+        self,
+        enhanced_training_input: Dict[str, Any],
+        force_rerun: bool = False,
+    ) -> bool:
+        """Execute Step 1: Data Collection with enhanced reporting."""
+        
+        step_start_time = time.time()
+        step_errors = []
+        step_warnings = []
+        
+        try:
+            from src.training.steps import step1_data_collection
+            
+            result = await step1_data_collection.run_step(
+                enhanced_training_input=enhanced_training_input,
+                force_rerun=force_rerun,
+            )
+            
+            # Generate step report
+            await self._generate_step_report(
+                "step1_data_collection",
+                result,
+                step_start_time,
+                bool(result),
+                step_errors,
+                step_warnings
+            )
+            
+            return result
+            
+        except Exception as e:
+            step_errors.append(str(e))
+            self.logger.error(f"❌ Step 1 failed: {e}")
+            
+            # Generate step report even on failure
+            await self._generate_step_report(
+                "step1_data_collection",
+                None,
+                step_start_time,
+                False,
+                step_errors,
+                step_warnings
+            )
+            raise
+    
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step1_5_data_converter"
+    )
+    async def execute_step1_5_data_converter(
+        self,
+        enhanced_training_input: Dict[str, Any],
+        force_rerun: bool = False,
+    ) -> bool:
+        """Execute Step 1.5: Data Converter with enhanced reporting."""
+        
+        step_start_time = time.time()
+        step_errors = []
+        step_warnings = []
+        
+        try:
+            from src.training.steps.step1_5_data_converter import run_step as step1_5_run_step
+            
+            result = await step1_5_run_step(
+                enhanced_training_input=enhanced_training_input,
+                force_rerun=force_rerun,
+            )
+            
+            # Generate step report
+            await self._generate_step_report(
+                "step1_5_data_converter",
+                result,
+                step_start_time,
+                bool(result),
+                step_errors,
+                step_warnings
+            )
+            
+            return result
+            
+        except Exception as e:
+            step_errors.append(str(e))
+            self.logger.error(f"❌ Step 1.5 failed: {e}")
+            
+            # Generate step report even on failure
+            await self._generate_step_report(
+                "step1_5_data_converter",
+                None,
+                step_start_time,
+                False,
+                step_errors,
+                step_warnings
+            )
+            raise
+    
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step2_feature_engineering"
+    )
+    async def execute_step2_feature_engineering(
+        self,
+        enhanced_training_input: Dict[str, Any],
+        feature_config: Dict[str, Any] = None,
+    ) -> bool:
+        """Execute Step 2: Feature Engineering with enhanced reporting."""
+        
+        step_start_time = time.time()
+        step_errors = []
+        step_warnings = []
+        
+        try:
+            from src.training.steps import step2_feature_engineering
+            
+            result = await step2_feature_engineering.run_step(
+                enhanced_training_input=enhanced_training_input,
+                feature_config=feature_config,
+            )
+            
+            # Generate step report
+            await self._generate_step_report(
+                "step2_feature_engineering",
+                result,
+                step_start_time,
+                bool(result),
+                step_errors,
+                step_warnings
+            )
+            
+            return result
+            
+        except Exception as e:
+            step_errors.append(str(e))
+            self.logger.error(f"❌ Step 2 failed: {e}")
+            
+            # Generate step report even on failure
+            await self._generate_step_report(
+                "step2_feature_engineering",
+                None,
+                step_start_time,
+                False,
+                step_errors,
+                step_warnings
+            )
+            raise
+    
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step3_hmm_regime_discovery"
+    )
+    async def execute_step3_hmm_regime_discovery(
+        self,
+        enhanced_training_input: Dict[str, Any],
+        force_rerun: bool = False,
+    ) -> bool:
+        """Execute Step 3: HMM Regime Discovery with comprehensive reporting."""
+        
+        step_start_time = time.time()
+        step_errors = []
+        step_warnings = []
+        
+        try:
+            from src.training.steps import step3_hmm_regime_discovery as _step3
+            
+            result = await _step3.run_step(
+                enhanced_training_input=enhanced_training_input,
+                force_rerun=force_rerun,
+            )
+            
+            # Generate step report
+            await self._generate_step_report(
+                "step3_hmm_regime_discovery",
+                result,
+                step_start_time,
+                bool(result),
+                step_errors,
+                step_warnings
+            )
+            
+            return result
+            
+        except Exception as e:
+            step_errors.append(str(e))
+            self.logger.error(f"❌ Step 3 failed: {e}")
+            
+            # Generate step report even on failure
+            await self._generate_step_report(
+                "step3_hmm_regime_discovery",
+                None,
+                step_start_time,
+                False,
+                step_errors,
+                step_warnings
+            )
+            raise
+    
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step4_regime_data_splitting"
+    )
+    async def execute_step4_regime_data_splitting(
+        self,
+        enhanced_training_input: Dict[str, Any],
+    ) -> bool:
+        """Execute Step 4: Regime Data Splitting with enhanced reporting."""
+        
+        step_start_time = time.time()
+        step_errors = []
+        step_warnings = []
+        
+        try:
+            from src.training.steps import step4_regime_data_splitting
+            
+            result = await step4_regime_data_splitting.run_step(
+                enhanced_training_input=enhanced_training_input,
+                config=self.config,
+            )
+            
+            # Generate step report
+            await self._generate_step_report(
+                "step4_regime_data_splitting",
+                result,
+                step_start_time,
+                bool(result),
+                step_errors,
+                step_warnings
+            )
+            
+            return result
+            
+        except Exception as e:
+            step_errors.append(str(e))
+            self.logger.error(f"❌ Step 4 failed: {e}")
+            
+            # Generate step report even on failure
+            await self._generate_step_report(
+                "step4_regime_data_splitting",
+                None,
+                step_start_time,
+                False,
+                step_errors,
+                step_warnings
+            )
+            raise
+    
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step5_triple_barrier_method"
+    )
+    async def execute_step5_triple_barrier_method(
+        self,
+        enhanced_training_input: Dict[str, Any],
+    ) -> bool:
+        """Execute Step 5: Triple Barrier Method with enhanced reporting."""
+        
+        step_start_time = time.time()
+        step_errors = []
+        step_warnings = []
+        
+        try:
+            from src.training.steps import step5_triple_barrier_method
+            
+            result = await step5_triple_barrier_method.run_step(
+                enhanced_training_input=enhanced_training_input,
+                config=self.config,
+            )
+            
+            # Generate step report
+            await self._generate_step_report(
+                "step5_triple_barrier_method",
+                result,
+                step_start_time,
+                bool(result),
+                step_errors,
+                step_warnings
+            )
+            
+            return result
+            
+        except Exception as e:
+            step_errors.append(str(e))
+            self.logger.error(f"❌ Step 5 failed: {e}")
+            
+            # Generate step report even on failure
+            await self._generate_step_report(
+                "step5_triple_barrier_method",
+                None,
+                step_start_time,
+                False,
+                step_errors,
+                step_warnings
+            )
+            raise
+    
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step6_hmm_based_training"
+    )
+    async def execute_step6_hmm_based_training(
+        self,
+        enhanced_training_input: Dict[str, Any],
+        feature_config: Dict[str, Any] = None,
+        force_rerun: bool = False,
+    ) -> bool:
+        """Execute Step 6: HMM-Based Training with comprehensive reporting."""
+        
+        step_start_time = time.time()
+        step_errors = []
+        step_warnings = []
+        
+        try:
+            from src.training.steps import step6_hmm_based_training
+            
+            result = await step6_hmm_based_training.run_step(
+                enhanced_training_input=enhanced_training_input,
+                feature_config=feature_config,
+                config=self.config,
+            )
+            
+            # Generate step report
+            await self._generate_step_report(
+                "step6_hmm_based_training",
+                result,
+                step_start_time,
+                bool(result),
+                step_errors,
+                step_warnings
+            )
+            
+            return result
+            
+        except Exception as e:
+            step_errors.append(str(e))
+            self.logger.error(f"❌ Step 6 failed: {e}")
+            
+            # Generate step report even on failure
+            await self._generate_step_report(
+                "step6_hmm_based_training",
+                None,
+                step_start_time,
+                False,
+                step_errors,
+                step_warnings
+            )
+            raise
+    
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step7_analyst_enhancement"
+    )
+    async def execute_step7_analyst_enhancement(
+        self,
+        enhanced_training_input: Dict[str, Any],
+    ) -> bool:
+        """Execute Step 7: Analyst Enhancement with enhanced reporting."""
+        
+        step_start_time = time.time()
+        step_errors = []
+        step_warnings = []
+        
+        try:
+            from src.training.steps import step7_analyst_enhancement
+            
+            result = await step7_analyst_enhancement.run_step(
+                enhanced_training_input=enhanced_training_input,
+                config=self.config,
+            )
+            
+            # Generate step report
+            await self._generate_step_report(
+                "step7_analyst_enhancement",
+                result,
+                step_start_time,
+                bool(result),
+                step_errors,
+                step_warnings
+            )
+            
+            return result
+            
+        except Exception as e:
+            step_errors.append(str(e))
+            self.logger.error(f"❌ Step 7 failed: {e}")
+            
+            # Generate step report even on failure
+            await self._generate_step_report(
+                "step7_analyst_enhancement",
+                None,
+                step_start_time,
+                False,
+                step_errors,
+                step_warnings
+            )
+            raise
+    
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step8_tactician_labeling"
+    )
+    async def execute_step8_tactician_labeling(
+        self,
+        enhanced_training_input: Dict[str, Any],
+    ) -> bool:
+        """Execute Step 8: Tactician Labeling with enhanced reporting."""
+        
+        step_start_time = time.time()
+        step_errors = []
+        step_warnings = []
+        
+        try:
+            from src.training.steps import step8_tactician_labeling
+            
+            result = await step8_tactician_labeling.run_step(
+                enhanced_training_input=enhanced_training_input,
+                config=self.config,
+            )
+            
+            # Generate step report
+            await self._generate_step_report(
+                "step8_tactician_labeling",
+                result,
+                step_start_time,
+                bool(result),
+                step_errors,
+                step_warnings
+            )
+            
+            return result
+            
+        except Exception as e:
+            step_errors.append(str(e))
+            self.logger.error(f"❌ Step 8 failed: {e}")
+            
+            # Generate step report even on failure
+            await self._generate_step_report(
+                "step8_tactician_labeling",
+                None,
+                step_start_time,
+                False,
+                step_errors,
+                step_warnings
+            )
+            raise
+    
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step9_tactician_specialist_training"
+    )
+    async def execute_step9_tactician_specialist_training(
+        self,
+        enhanced_training_input: Dict[str, Any],
+        feature_config: Dict[str, Any] = None,
+        force_rerun: bool = False,
+    ) -> bool:
+        """Execute Step 9: Tactician Specialist Training with comprehensive reporting."""
+        
+        step_start_time = time.time()
+        step_errors = []
+        step_warnings = []
+        
+        try:
+            from src.training.steps import step9_tactician_specialist_training
+            
+            result = await step9_tactician_specialist_training.run_step(
+                enhanced_training_input=enhanced_training_input,
+                feature_config=feature_config,
+                config=self.config,
+            )
+            
+            # Generate step report
+            await self._generate_step_report(
+                "step9_tactician_specialist_training",
+                result,
+                step_start_time,
+                bool(result),
+                step_errors,
+                step_warnings
+            )
+            
+            return result
+            
+        except Exception as e:
+            step_errors.append(str(e))
+            self.logger.error(f"❌ Step 9 failed: {e}")
+            
+            # Generate step report even on failure
+            await self._generate_step_report(
+                "step9_tactician_specialist_training",
+                None,
+                step_start_time,
+                False,
+                step_errors,
+                step_warnings
+            )
+            raise
+    
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step10_confidence_calibration"
+    )
+    async def execute_step10_confidence_calibration(
+        self,
+        enhanced_training_input: Dict[str, Any],
+    ) -> bool:
+        """Execute Step 10: Confidence Calibration with enhanced reporting."""
+        
+        step_start_time = time.time()
+        step_errors = []
+        step_warnings = []
+        
+        try:
+            from src.training.steps import step10_confidence_calibration
+            
+            result = await step10_confidence_calibration.run_step(
+                enhanced_training_input=enhanced_training_input,
+                config=self.config,
+            )
+            
+            # Generate step report
+            await self._generate_step_report(
+                "step10_confidence_calibration",
+                result,
+                step_start_time,
+                bool(result),
+                step_errors,
+                step_warnings
+            )
+            
+            return result
+            
+        except Exception as e:
+            step_errors.append(str(e))
+            self.logger.error(f"❌ Step 10 failed: {e}")
+            
+            # Generate step report even on failure
+            await self._generate_step_report(
+                "step10_confidence_calibration",
+                None,
+                step_start_time,
+                False,
+                step_errors,
+                step_warnings
+            )
+            raise
+    
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step11_final_parameters_optimization"
+    )
+    async def execute_step11_final_parameters_optimization(
+        self,
+        enhanced_training_input: Dict[str, Any],
+        feature_config: Dict[str, Any] = None,
+        force_rerun: bool = False,
+    ) -> bool:
+        """Execute Step 11: Final Parameters Optimization with enhanced reporting."""
+        
+        step_start_time = time.time()
+        step_errors = []
+        step_warnings = []
+        
+        try:
+            from src.training.steps import step11_final_parameters_optimization
+            
+            result = await step11_final_parameters_optimization.run_step(
+                enhanced_training_input=enhanced_training_input,
+                feature_config=feature_config,
+                config=self.config,
+            )
+            
+            # Generate step report
+            await self._generate_step_report(
+                "step11_final_parameters_optimization",
+                result,
+                step_start_time,
+                bool(result),
+                step_errors,
+                step_warnings
+            )
+            
+            return result
+            
+        except Exception as e:
+            step_errors.append(str(e))
+            self.logger.error(f"❌ Step 11 failed: {e}")
+            
+            # Generate step report even on failure
+            await self._generate_step_report(
+                "step11_final_parameters_optimization",
+                None,
+                step_start_time,
+                False,
+                step_errors,
+                step_warnings
+            )
+            raise
+    
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step12_walk_forward_validation"
+    )
+    async def execute_step12_walk_forward_validation(
+        self,
+        enhanced_training_input: Dict[str, Any],
+        feature_config: Dict[str, Any] = None,
+        force_rerun: bool = False,
+    ) -> bool:
+        """Execute Step 12: Walk Forward Validation with comprehensive reporting."""
+        
+        step_start_time = time.time()
+        step_errors = []
+        step_warnings = []
+        
+        try:
+            from src.training.steps import step12_walk_forward_validation
+            
+            result = await step12_walk_forward_validation.run_step(
+                enhanced_training_input=enhanced_training_input,
+                feature_config=feature_config,
+                config=self.config,
+            )
+            
+            # Generate step report
+            await self._generate_step_report(
+                "step12_walk_forward_validation",
+                result,
+                step_start_time,
+                bool(result),
+                step_errors,
+                step_warnings
+            )
+            
+            return result
+            
+        except Exception as e:
+            step_errors.append(str(e))
+            self.logger.error(f"❌ Step 12 failed: {e}")
+            
+            # Generate step report even on failure
+            await self._generate_step_report(
+                "step12_walk_forward_validation",
+                None,
+                step_start_time,
+                False,
+                step_errors,
+                step_warnings
+            )
+            raise
+    
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step13_monte_carlo_validation"
+    )
+    async def execute_step13_monte_carlo_validation(
+        self,
+        enhanced_training_input: Dict[str, Any],
+        feature_config: Dict[str, Any] = None,
+        force_rerun: bool = False,
+    ) -> bool:
+        """Execute Step 13: Monte Carlo Validation with comprehensive reporting."""
+        
+        step_start_time = time.time()
+        step_errors = []
+        step_warnings = []
+        
+        try:
+            from src.training.steps import step13_monte_carlo_validation
+            
+            result = await step13_monte_carlo_validation.run_step(
+                enhanced_training_input=enhanced_training_input,
+                feature_data=enhanced_training_input,
+                feature_config=feature_config,
+                config=self.config,
+            )
+            
+            # Generate step report
+            await self._generate_step_report(
+                "step13_monte_carlo_validation",
+                result,
+                step_start_time,
+                bool(result),
+                step_errors,
+                step_warnings
+            )
+            
+            return result
+            
+        except Exception as e:
+            step_errors.append(str(e))
+            self.logger.error(f"❌ Step 13 failed: {e}")
+            
+            # Generate step report even on failure
+            await self._generate_step_report(
+                "step13_monte_carlo_validation",
+                None,
+                step_start_time,
+                False,
+                step_errors,
+                step_warnings
+            )
+            raise
+    
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step14_ab_testing"
+    )
+    async def execute_step14_ab_testing(
+        self,
+        enhanced_training_input: Dict[str, Any],
+    ) -> bool:
+        """Execute Step 14: A/B Testing with enhanced reporting."""
+        
+        step_start_time = time.time()
+        step_errors = []
+        step_warnings = []
+        
+        try:
+            from src.training.steps import step14_ab_testing
+            
+            result = await step14_ab_testing.run_step(
+                enhanced_training_input=enhanced_training_input,
+                config=self.config,
+            )
+            
+            # Generate step report
+            await self._generate_step_report(
+                "step14_ab_testing",
+                result,
+                step_start_time,
+                bool(result),
+                step_errors,
+                step_warnings
+            )
+            
+            return result
+            
+        except Exception as e:
+            step_errors.append(str(e))
+            self.logger.error(f"❌ Step 14 failed: {e}")
+            
+            # Generate step report even on failure
+            await self._generate_step_report(
+                "step14_ab_testing",
+                None,
+                step_start_time,
+                False,
+                step_errors,
+                step_warnings
+            )
+            raise
+    
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=False,
+        context="step15_saving"
+    )
+    async def execute_step15_saving(
+        self,
+        enhanced_training_input: Dict[str, Any],
+    ) -> bool:
+        """Execute Step 15: Saving Results with enhanced reporting."""
+        
+        step_start_time = time.time()
+        step_errors = []
+        step_warnings = []
+        
+        try:
+            from src.training.steps import step15_saving
+            
+            result = await step15_saving.run_step(
+                enhanced_training_input=enhanced_training_input,
+                config=self.config,
+            )
+            
+            # Generate step report
+            await self._generate_step_report(
+                "step15_saving",
+                result,
+                step_start_time,
+                bool(result),
+                step_errors,
+                step_warnings
+            )
+            
+            return result
+            
+        except Exception as e:
+            step_errors.append(str(e))
+            self.logger.error(f"❌ Step 15 failed: {e}")
+            
+            # Generate step report even on failure
+            await self._generate_step_report(
+                "step15_saving",
+                None,
+                step_start_time,
+                False,
+                step_errors,
+                step_warnings
+            )
+            raise
+
     # Placeholder methods for other step metrics (to be implemented based on actual step outputs)
     async def _get_tactician_labeling_metrics(self, result: Any) -> Dict[str, Any]:
         return {"status": "Metrics calculation not implemented yet"}

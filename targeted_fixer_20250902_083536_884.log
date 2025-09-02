@@ -1,0 +1,26 @@
+2025-09-02 08:35:36,887 - INFO - Processing file: src/utils/intelligent_feature_cache.py
+2025-09-02 08:35:36,888 - INFO - Performing semantic analysis...
+2025-09-02 08:35:36,888 - INFO - Code quality score: 0.00
+2025-09-02 08:35:36,888 - WARNING - Syntax errors found: 1
+2025-09-02 08:35:36,888 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:35:36,889 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:36,890 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:36,890 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:36,891 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:36,891 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:36,892 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:36,892 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:36,893 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:36,893 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:36,894 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:36,895 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:36,895 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:36,896 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:36,897 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:36,897 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:36,899 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:36,902 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:35:36,902 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:35:36,902 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:35:36,904 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:36,906 - INFO - No fixes needed for: src/utils/intelligent_feature_cache.py

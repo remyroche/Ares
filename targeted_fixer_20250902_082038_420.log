@@ -1,0 +1,19 @@
+2025-09-02 08:20:38,423 - INFO - Processing file: src/utils/data_validation.py
+2025-09-02 08:20:38,423 - INFO - Performing semantic analysis...
+2025-09-02 08:20:38,423 - INFO - Code quality score: 0.00
+2025-09-02 08:20:38,423 - WARNING - Syntax errors found: 1
+2025-09-02 08:20:38,423 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:20:38,424 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:38,424 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:38,425 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:38,425 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:38,425 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:38,425 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:38,426 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:38,426 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:38,426 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:38,428 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:38,430 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:38,430 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:38,431 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:38,433 - INFO - No fixes needed for: src/utils/data_validation.py

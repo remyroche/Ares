@@ -1,0 +1,26 @@
+2025-09-02 08:18:32,512 - INFO - Processing file: src/utils/prometheus_metrics.py
+2025-09-02 08:18:32,512 - INFO - Performing semantic analysis...
+2025-09-02 08:18:32,512 - INFO - Code quality score: 0.00
+2025-09-02 08:18:32,512 - WARNING - Syntax errors found: 1
+2025-09-02 08:18:32,512 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:18:32,513 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:32,514 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:32,515 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:32,515 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:32,516 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:32,516 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:32,517 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:32,517 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:32,518 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:32,519 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:32,519 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:32,520 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:32,524 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:32,524 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:32,526 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:18:32,526 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:18:32,527 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:32,529 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:18:32,529 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:18:32,531 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:32,532 - INFO - No fixes needed for: src/utils/prometheus_metrics.py

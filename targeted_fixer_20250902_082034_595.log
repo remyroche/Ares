@@ -1,0 +1,26 @@
+2025-09-02 08:20:34,598 - INFO - Processing file: src/utils/data_type_optimizer.py
+2025-09-02 08:20:34,598 - INFO - Performing semantic analysis...
+2025-09-02 08:20:34,598 - INFO - Code quality score: 0.00
+2025-09-02 08:20:34,598 - WARNING - Syntax errors found: 1
+2025-09-02 08:20:34,598 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:20:34,599 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:34,599 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:34,599 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:34,600 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:34,600 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:34,601 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:34,601 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:34,601 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:34,602 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:34,602 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:34,602 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:34,603 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:34,603 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:34,604 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:34,604 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:34,606 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:34,607 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:20:34,608 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:20:34,608 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:20:34,609 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:20:34,610 - INFO - No fixes needed for: src/utils/data_type_optimizer.py

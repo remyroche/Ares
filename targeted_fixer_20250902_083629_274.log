@@ -1,0 +1,24 @@
+2025-09-02 08:36:29,278 - INFO - Processing file: src/utils/configuration_security.py
+2025-09-02 08:36:29,278 - INFO - Performing semantic analysis...
+2025-09-02 08:36:29,279 - INFO - Code quality score: 0.00
+2025-09-02 08:36:29,279 - WARNING - Syntax errors found: 1
+2025-09-02 08:36:29,279 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:36:29,280 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:29,281 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:29,282 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:29,283 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:29,284 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:29,285 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:29,286 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:29,287 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:29,287 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:29,288 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:29,289 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:29,290 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:29,291 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:29,292 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:29,294 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:29,297 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:36:29,297 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:36:29,299 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:36:29,302 - INFO - No fixes needed for: src/utils/configuration_security.py

@@ -1,0 +1,15 @@
+2025-09-02 08:12:43,041 - INFO - Processing file: src/ares_pipeline.py
+2025-09-02 08:12:43,041 - INFO - Performing semantic analysis...
+2025-09-02 08:12:43,086 - INFO - Code quality score: 0.50
+2025-09-02 08:12:43,086 - WARNING - Semantic issues found: 103
+2025-09-02 08:12:43,086 - WARNING - Structure issues found: 60
+2025-09-02 08:12:43,103 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:12:43,123 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:12:43,127 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:12:43,130 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:12:43,147 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:12:43,155 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:12:43,156 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:12:43,157 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:12:43,174 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:12:43,182 - INFO - No fixes needed for: src/ares_pipeline.py

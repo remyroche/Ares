@@ -1,0 +1,14 @@
+2025-09-02 08:25:11,930 - INFO - Processing file: src/utils/data_quality_validator.py
+2025-09-02 08:25:11,930 - INFO - Performing semantic analysis...
+2025-09-02 08:25:11,947 - INFO - Code quality score: 0.50
+2025-09-02 08:25:11,947 - WARNING - Semantic issues found: 34
+2025-09-02 08:25:11,947 - WARNING - Structure issues found: 38
+2025-09-02 08:25:11,950 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:25:11,955 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:25:11,957 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:25:11,959 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:25:11,963 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:25:11,963 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:25:11,965 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:25:12,036 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:25:12,039 - INFO - No fixes needed for: src/utils/data_quality_validator.py

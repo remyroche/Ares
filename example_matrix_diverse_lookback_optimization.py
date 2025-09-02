@@ -185,7 +185,7 @@ async def demonstrate_matrix_diverse_lookback_optimization():
     print("   4. {exchange}_{symbol}_{timeframe}_optimized_feature_parameters.json")
     print("      - Optimized parameters for subsequent steps")
     print("      - Ready-to-use feature parameters")
-    print("      - Integration with step7, step8, step9")
+    print("      - Integration with step07, step08, step09")
     print()
     
     # 8. Show integration with subsequent steps

@@ -1623,7 +1623,7 @@ class EnhancedTrainingManager:
                 else:
                     # Verify previous step artifacts BEFORE execution (step1_5 should have completed)
                     if not await self.verify_previous_step_artifacts("step2_feature_engineering", symbol, exchange, timeframe):
-                        self.logger.error("❌ Previous step artifacts not found for step2, stopping pipeline")
+                        self.logger.error("❌ Previous step artifacts not found for step02, stopping pipeline")
                         return False
 
                     # Validate step dependencies BEFORE execution (step1_5 should have completed)
@@ -1651,7 +1651,7 @@ class EnhancedTrainingManager:
                                 "enable_explicit_meta_labels": False,
                             }
 
-                        # Execute step2 with QA decorators
+                        # Execute step02 with QA decorators
                         step2_success = await self._execute_step2_with_qa(
                             symbol=symbol,
                             exchange=exchange,
@@ -1725,7 +1725,7 @@ class EnhancedTrainingManager:
                 else:
                     # Verify previous step artifacts BEFORE execution
                     if not await self.verify_previous_step_artifacts("step2_5_sr_optimization", symbol, exchange, timeframe):
-                        self.logger.error("❌ Previous step artifacts not found for step2.5, stopping pipeline")
+                        self.logger.error("❌ Previous step artifacts not found for step02.5, stopping pipeline")
                         return False
 
                     # Validate step dependencies BEFORE execution
@@ -1816,7 +1816,7 @@ class EnhancedTrainingManager:
                 else:
                     # Verify previous step artifacts BEFORE execution
                     if not await self.verify_previous_step_artifacts("step4_regime_data_splitting", symbol, exchange, timeframe):
-                        self.logger.error("❌ Previous step artifacts not found for step4, stopping pipeline")
+                        self.logger.error("❌ Previous step artifacts not found for step04, stopping pipeline")
                         return False
 
                     # Validate step dependencies BEFORE execution
@@ -1898,7 +1898,7 @@ class EnhancedTrainingManager:
                 else:
                     # Verify previous step artifacts BEFORE execution
                     if not await self.verify_previous_step_artifacts("step5_triple_barrier_method", symbol, exchange, timeframe):
-                        self.logger.error("❌ Previous step artifacts not found for step5, stopping pipeline")
+                        self.logger.error("❌ Previous step artifacts not found for step05, stopping pipeline")
                         return False
 
                     # Validate step dependencies BEFORE execution
@@ -1978,7 +1978,7 @@ class EnhancedTrainingManager:
                 else:
                     # Verify previous step artifacts BEFORE execution
                     if not await self.verify_previous_step_artifacts("step6_labeling", symbol, exchange, timeframe):
-                        self.logger.error("❌ Previous step artifacts not found for step6, stopping pipeline")
+                        self.logger.error("❌ Previous step artifacts not found for step06, stopping pipeline")
                         return False
 
                     # Validate step dependencies BEFORE execution
@@ -2058,7 +2058,7 @@ class EnhancedTrainingManager:
                 else:
                     # Verify previous step artifacts BEFORE execution
                     if not await self.verify_previous_step_artifacts("step7_feature_engineering", symbol, exchange, timeframe):
-                        self.logger.error("❌ Previous step artifacts not found for step7, stopping pipeline")
+                        self.logger.error("❌ Previous step artifacts not found for step07, stopping pipeline")
                         return False
 
                     # Validate step dependencies BEFORE execution
@@ -2138,7 +2138,7 @@ class EnhancedTrainingManager:
                 else:
                     # Verify previous step artifacts BEFORE execution
                     if not await self.verify_previous_step_artifacts("step7_regime_data_splitting", symbol, exchange, timeframe):
-                        self.logger.error("❌ Previous step artifacts not found for step7, stopping pipeline")
+                        self.logger.error("❌ Previous step artifacts not found for step07, stopping pipeline")
                         return False
 
                     # Validate step dependencies BEFORE execution
@@ -2218,7 +2218,7 @@ class EnhancedTrainingManager:
                 else:
                     # Verify previous step artifacts BEFORE execution
                     if not await self.verify_previous_step_artifacts("step8_enhanced_hmm_based_training", symbol, exchange, timeframe):
-                        self.logger.error("❌ Previous step artifacts not found for step8, stopping pipeline")
+                        self.logger.error("❌ Previous step artifacts not found for step08, stopping pipeline")
                         return False
 
                     # Validate step dependencies BEFORE execution

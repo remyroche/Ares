@@ -34,7 +34,7 @@ async def main():
             print("❌ Step2 feature engineering failed!")
             
     except Exception as e:
-        print(f"❌ Error running step2: {e}")
+        print(f"❌ Error running step02: {e}")
         import traceback
         traceback.print_exc()
 

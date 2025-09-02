@@ -7,7 +7,7 @@
 #### **1. Step7 - Enhanced Matrix Operations**
 - **Extensive SR Features**: Step7 identifies and processes comprehensive SR features
 - **Feature Categories**: Basic SR, Enhanced SR, SR Optimization, Advanced Analysis
-- **Feature Count**: 50+ SR-related features identified in step7
+- **Feature Count**: 50+ SR-related features identified in step07
 
 **Step7 SR Features Identified:**
 ```python
@@ -68,7 +68,7 @@ sr_levels_result = {
 - **Incomplete Integration**: Current training may use only basic features
 
 #### **2. Training Pipeline Issues**
-- **Feature Selection**: May not include all SR features from step7
+- **Feature Selection**: May not include all SR features from step07
 - **SR Level Features**: SR levels from step2_5 not converted to ML features
 - **Feature Consistency**: Different components may use different feature sets
 
@@ -78,7 +78,7 @@ sr_levels_result = {
 
 #### **Step7 Features → ML Training**
 ```python
-# All SR features from step7 should be included in ML training
+# All SR features from step07 should be included in ML training
 step7_sr_features = [
     # Proximity Features (8 features)
     "sr_proximity", "support_proximity", "resistance_proximity", "sr_zone_width",
@@ -106,7 +106,7 @@ step7_sr_features = [
     "sr_optimization_score", "sr_optimized_method_weights", "sr_optimized_dbscan_eps",
     "sr_optimized_dbscan_min_samples", "delta_sr_score", "clarity_factor"
 ]
-# Total: 42 comprehensive SR features from step7
+# Total: 42 comprehensive SR features from step07
 ```
 
 #### **Step2_5 SR Levels → ML Features**
@@ -157,17 +157,17 @@ def convert_sr_levels_to_features(sr_levels_result):
 class EnhancedMultiOutputModelTrainer:
     def __init__(self, config):
         self.config = config
-        self.step7_features = []  # Features from step7
+        self.step7_features = []  # Features from step07
         self.step2_5_sr_levels = {}  # SR levels from step2_5
         
     def load_step7_features(self, step7_output_path):
-        """Load comprehensive SR features from step7."""
-        # Load step7 matrix operations results
+        """Load comprehensive SR features from step07."""
+        # Load step07 matrix operations results
         step7_results = load_step7_results(step7_output_path)
         
         # Extract all SR features
         self.step7_features = step7_results.get("sr_features", [])
-        self.logger.info(f"Loaded {len(self.step7_features)} SR features from step7")
+        self.logger.info(f"Loaded {len(self.step7_features)} SR features from step07")
         
     def load_step2_5_sr_levels(self, step2_5_output_path):
         """Load SR levels from step2_5."""
@@ -179,7 +179,7 @@ class EnhancedMultiOutputModelTrainer:
         self.logger.info(f"Loaded SR levels: {len(self.step2_5_sr_levels.get('support_levels', []))} support, {len(self.step2_5_sr_levels.get('resistance_levels', []))} resistance")
         
     def prepare_comprehensive_features(self, market_data):
-        """Prepare comprehensive feature set including step7 and step2_5 features."""
+        """Prepare comprehensive feature set including step07 and step2_5 features."""
         features = {}
         
         # 1. Basic market features
@@ -256,12 +256,12 @@ def validate_feature_completeness(self, features_df):
 ## Implementation Steps
 
 ### **Step 1: Update Training Pipeline**
-1. **Modify MultiOutputModelTrainer** to load step7 and step2_5 results
+1. **Modify MultiOutputModelTrainer** to load step07 and step2_5 results
 2. **Add feature extraction methods** for comprehensive SR features
 3. **Implement feature validation** to ensure completeness
 
 ### **Step 2: Feature Integration**
-1. **Load step7 SR features** into training pipeline
+1. **Load step07 SR features** into training pipeline
 2. **Convert step2_5 SR levels** to ML features
 3. **Combine all features** into comprehensive feature set
 
@@ -278,7 +278,7 @@ def validate_feature_completeness(self, features_df):
 ## Expected Benefits
 
 ### **1. Enhanced Model Performance**
-- **Comprehensive SR Context**: 57+ SR features (42 from step7 + 15 from step2_5)
+- **Comprehensive SR Context**: 57+ SR features (42 from step07 + 15 from step2_5)
 - **Better Breakout Prediction**: Advanced SR analysis for improved predictions
 - **Improved Risk Management**: Detailed SR level information
 
@@ -296,10 +296,10 @@ def validate_feature_completeness(self, features_df):
 
 The current ML training pipeline needs to be enhanced to:
 
-✅ **Load and use ALL SR features from step7** (42+ features)  
+✅ **Load and use ALL SR features from step07** (42+ features)  
 ✅ **Convert and use SR levels from step2_5** (15+ features)  
 ✅ **Ensure comprehensive feature integration** across all ML models  
 ✅ **Validate feature completeness** and quality  
 ✅ **Train models with full SR context** for better performance  
 
-This will ensure that all ML models are trained on the complete feature set that includes both the extensive SR features from step7 and the optimized SR levels from step2_5, leading to significantly improved model performance and more accurate predictions.
+This will ensure that all ML models are trained on the complete feature set that includes both the extensive SR features from step07 and the optimized SR levels from step2_5, leading to significantly improved model performance and more accurate predictions.

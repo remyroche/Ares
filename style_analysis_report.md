@@ -16198,236 +16198,236 @@
 - `src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py:1038` - Trailing whitespace
 - `src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py:1042` - Trailing whitespace
 - `src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py:1045` - Trailing whitespace
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:47` - Trailing whitespace
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:259` - Trailing whitespace
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:270` - Trailing whitespace
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:279` - Trailing whitespace
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:298` - Trailing whitespace
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:303` - Trailing whitespace
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:421` - Trailing whitespace
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:427` - Trailing whitespace
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:446` - Trailing whitespace
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:451` - Trailing whitespace
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:568` - Trailing whitespace
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:572` - Trailing whitespace
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:578` - Trailing whitespace
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:597` - Trailing whitespace
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:602` - Trailing whitespace
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:629` - Trailing whitespace
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:678` - Trailing whitespace
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:686` - Trailing whitespace
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:693` - Trailing whitespace
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:698` - Trailing whitespace
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:703` - Trailing whitespace
-- `src/training/steps/step1/data_quality_dashboard.py:61` - Trailing whitespace
-- `src/training/steps/step1/data_quality_dashboard.py:67` - Trailing whitespace
-- `src/training/steps/step1/data_quality_dashboard.py:98` - Trailing whitespace
-- `src/training/steps/step1/data_quality_dashboard.py:101` - Trailing whitespace
-- `src/training/steps/step1/data_quality_dashboard.py:109` - Trailing whitespace
-- `src/training/steps/step1/data_quality_dashboard.py:368` - Trailing whitespace
-- `src/training/steps/step1/data_quality_dashboard.py:752` - Trailing whitespace
-- `src/training/steps/step1/data_quality_dashboard.py:759` - Trailing whitespace
-- `src/training/steps/step1/data_quality_dashboard.py:766` - Trailing whitespace
-- `src/training/steps/step1/data_quality_dashboard.py:791` - Trailing whitespace
-- `src/training/steps/step1/data_quality_dashboard.py:817` - Trailing whitespace
-- `src/training/steps/step1/data_quality_dashboard.py:833` - Trailing whitespace
-- `src/training/steps/step1/data_quality_dashboard.py:836` - Trailing whitespace
-- `src/training/steps/step1/data_quality_dashboard.py:845` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:152` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:156` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:160` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:169` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:172` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:176` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:182` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:192` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:196` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:200` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:204` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:208` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:212` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:216` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:222` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:225` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:228` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:230` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:235` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:240` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:243` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:246` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:250` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:254` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:257` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:263` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:267` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:270` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:273` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:277` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:280` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:283` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:289` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:295` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:301` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:307` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:312` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:316` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:319` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:322` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:328` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:335` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:341` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:345` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:348` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:354` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:359` - Trailing whitespace
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:366` - Trailing whitespace
-- `src/training/steps/step1/comprehensive_gap_filler.py:935` - Trailing whitespace
-- `src/training/steps/step1/comprehensive_gap_filler.py:943` - Trailing whitespace
-- `src/training/steps/step1/comprehensive_gap_filler.py:1046` - Trailing whitespace
-- `src/training/steps/step1/comprehensive_gap_filler.py:1057` - Trailing whitespace
-- `src/training/steps/step1/comprehensive_gap_filler.py:1061` - Trailing whitespace
-- `src/training/steps/step1/comprehensive_gap_filler.py:1068` - Trailing whitespace
-- `src/training/steps/step1/aggtrades_validator.py:346` - Trailing whitespace
-- `src/training/steps/step1/aggtrades_validator.py:355` - Trailing whitespace
-- `src/training/steps/step1/aggtrades_validator.py:360` - Trailing whitespace
-- `src/training/steps/step1/step1_orchestrator.py:284` - Trailing whitespace
-- `src/training/steps/step1/step1_orchestrator.py:294` - Trailing whitespace
-- `src/training/steps/step1/step1_orchestrator.py:299` - Trailing whitespace
-- `src/training/steps/step1/step1_orchestrator.py:304` - Trailing whitespace
-- `src/training/steps/step1/data_resampler.py:431` - Trailing whitespace
-- `src/training/steps/step1/data_resampler.py:506` - Trailing whitespace
-- `src/training/steps/step1/data_resampler.py:514` - Trailing whitespace
-- `src/training/steps/step1/data_resampler.py:519` - Trailing whitespace
-- `src/training/steps/step1/data_resampler.py:524` - Trailing whitespace
-- `src/training/steps/step1/data_resampler.py:529` - Trailing whitespace
-- `src/training/steps/step1/run_step1.py:35` - Trailing whitespace
-- `src/training/steps/step1/run_step1.py:38` - Trailing whitespace
-- `src/training/steps/step1/run_step1.py:49` - Trailing whitespace
-- `src/training/steps/step1/run_step1.py:84` - Trailing whitespace
-- `src/training/steps/step1/run_step1.py:90` - Trailing whitespace
-- `src/training/steps/step1/run_step1.py:100` - Trailing whitespace
-- `src/training/steps/step1/data_gap_detector.py:79` - Trailing whitespace
-- `src/training/steps/step1/data_gap_detector.py:134` - Trailing whitespace
-- `src/training/steps/step1/data_gap_detector.py:137` - Trailing whitespace
-- `src/training/steps/step1/data_gap_detector.py:144` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:33` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:81` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:85` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:96` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:119` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:125` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:132` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:135` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:138` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:140` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:154` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:164` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:182` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:188` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:194` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:201` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:203` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:206` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:217` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:219` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:229` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:232` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:235` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:317` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:398` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:401` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:408` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:411` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:421` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:425` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:428` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:444` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:453` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:458` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:473` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:475` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:478` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:484` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:487` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:504` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:507` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:537` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:546` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:551` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:555` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:559` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:563` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:572` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:588` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:593` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:602` - Trailing whitespace
-- `src/training/steps/step1/data_quality_monitor.py:611` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:45` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:84` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:85` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:86` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:93` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:101` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:106` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:124` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:128` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:133` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:145` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:154` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:173` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:177` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:179` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:188` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:194` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:197` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:206` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:208` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:219` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:222` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:232` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:240` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:248` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:251` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:257` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:268` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:272` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:279` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:286` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:290` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:310` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:312` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:324` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:330` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:339` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:346` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:353` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:359` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:367` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:381` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:382` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:383` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:389` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:393` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:396` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:404` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:407` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:410` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:413` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:421` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:434` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:447` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:457` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:462` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:466` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:476` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:481` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:485` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:488` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:495` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:507` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:508` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:520` - Trailing whitespace
-- `src/training/steps/step1/enhanced_data_quality_manager.py:521` - Trailing whitespace
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:47` - Trailing whitespace
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:259` - Trailing whitespace
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:270` - Trailing whitespace
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:279` - Trailing whitespace
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:298` - Trailing whitespace
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:303` - Trailing whitespace
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:421` - Trailing whitespace
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:427` - Trailing whitespace
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:446` - Trailing whitespace
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:451` - Trailing whitespace
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:568` - Trailing whitespace
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:572` - Trailing whitespace
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:578` - Trailing whitespace
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:597` - Trailing whitespace
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:602` - Trailing whitespace
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:629` - Trailing whitespace
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:678` - Trailing whitespace
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:686` - Trailing whitespace
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:693` - Trailing whitespace
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:698` - Trailing whitespace
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:703` - Trailing whitespace
+- `src/training/steps/step01/data_quality_dashboard.py:61` - Trailing whitespace
+- `src/training/steps/step01/data_quality_dashboard.py:67` - Trailing whitespace
+- `src/training/steps/step01/data_quality_dashboard.py:98` - Trailing whitespace
+- `src/training/steps/step01/data_quality_dashboard.py:101` - Trailing whitespace
+- `src/training/steps/step01/data_quality_dashboard.py:109` - Trailing whitespace
+- `src/training/steps/step01/data_quality_dashboard.py:368` - Trailing whitespace
+- `src/training/steps/step01/data_quality_dashboard.py:752` - Trailing whitespace
+- `src/training/steps/step01/data_quality_dashboard.py:759` - Trailing whitespace
+- `src/training/steps/step01/data_quality_dashboard.py:766` - Trailing whitespace
+- `src/training/steps/step01/data_quality_dashboard.py:791` - Trailing whitespace
+- `src/training/steps/step01/data_quality_dashboard.py:817` - Trailing whitespace
+- `src/training/steps/step01/data_quality_dashboard.py:833` - Trailing whitespace
+- `src/training/steps/step01/data_quality_dashboard.py:836` - Trailing whitespace
+- `src/training/steps/step01/data_quality_dashboard.py:845` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:152` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:156` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:160` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:169` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:172` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:176` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:182` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:192` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:196` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:200` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:204` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:208` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:212` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:216` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:222` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:225` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:228` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:230` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:235` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:240` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:243` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:246` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:250` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:254` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:257` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:263` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:267` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:270` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:273` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:277` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:280` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:283` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:289` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:295` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:301` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:307` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:312` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:316` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:319` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:322` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:328` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:335` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:341` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:345` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:348` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:354` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:359` - Trailing whitespace
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:366` - Trailing whitespace
+- `src/training/steps/step01/comprehensive_gap_filler.py:935` - Trailing whitespace
+- `src/training/steps/step01/comprehensive_gap_filler.py:943` - Trailing whitespace
+- `src/training/steps/step01/comprehensive_gap_filler.py:1046` - Trailing whitespace
+- `src/training/steps/step01/comprehensive_gap_filler.py:1057` - Trailing whitespace
+- `src/training/steps/step01/comprehensive_gap_filler.py:1061` - Trailing whitespace
+- `src/training/steps/step01/comprehensive_gap_filler.py:1068` - Trailing whitespace
+- `src/training/steps/step01/aggtrades_validator.py:346` - Trailing whitespace
+- `src/training/steps/step01/aggtrades_validator.py:355` - Trailing whitespace
+- `src/training/steps/step01/aggtrades_validator.py:360` - Trailing whitespace
+- `src/training/steps/step01/step1_orchestrator.py:284` - Trailing whitespace
+- `src/training/steps/step01/step1_orchestrator.py:294` - Trailing whitespace
+- `src/training/steps/step01/step1_orchestrator.py:299` - Trailing whitespace
+- `src/training/steps/step01/step1_orchestrator.py:304` - Trailing whitespace
+- `src/training/steps/step01/data_resampler.py:431` - Trailing whitespace
+- `src/training/steps/step01/data_resampler.py:506` - Trailing whitespace
+- `src/training/steps/step01/data_resampler.py:514` - Trailing whitespace
+- `src/training/steps/step01/data_resampler.py:519` - Trailing whitespace
+- `src/training/steps/step01/data_resampler.py:524` - Trailing whitespace
+- `src/training/steps/step01/data_resampler.py:529` - Trailing whitespace
+- `src/training/steps/step01/run_step1.py:35` - Trailing whitespace
+- `src/training/steps/step01/run_step1.py:38` - Trailing whitespace
+- `src/training/steps/step01/run_step1.py:49` - Trailing whitespace
+- `src/training/steps/step01/run_step1.py:84` - Trailing whitespace
+- `src/training/steps/step01/run_step1.py:90` - Trailing whitespace
+- `src/training/steps/step01/run_step1.py:100` - Trailing whitespace
+- `src/training/steps/step01/data_gap_detector.py:79` - Trailing whitespace
+- `src/training/steps/step01/data_gap_detector.py:134` - Trailing whitespace
+- `src/training/steps/step01/data_gap_detector.py:137` - Trailing whitespace
+- `src/training/steps/step01/data_gap_detector.py:144` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:33` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:81` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:85` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:96` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:119` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:125` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:132` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:135` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:138` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:140` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:154` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:164` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:182` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:188` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:194` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:201` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:203` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:206` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:217` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:219` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:229` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:232` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:235` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:317` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:398` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:401` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:408` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:411` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:421` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:425` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:428` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:444` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:453` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:458` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:473` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:475` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:478` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:484` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:487` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:504` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:507` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:537` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:546` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:551` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:555` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:559` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:563` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:572` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:588` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:593` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:602` - Trailing whitespace
+- `src/training/steps/step01/data_quality_monitor.py:611` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:45` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:84` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:85` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:86` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:93` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:101` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:106` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:124` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:128` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:133` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:145` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:154` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:173` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:177` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:179` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:188` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:194` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:197` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:206` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:208` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:219` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:222` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:232` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:240` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:248` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:251` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:257` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:268` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:272` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:279` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:286` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:290` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:310` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:312` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:324` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:330` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:339` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:346` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:353` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:359` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:367` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:381` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:382` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:383` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:389` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:393` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:396` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:404` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:407` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:410` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:413` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:421` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:434` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:447` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:457` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:462` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:466` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:476` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:481` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:485` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:488` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:495` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:507` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:508` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:520` - Trailing whitespace
+- `src/training/steps/step01/enhanced_data_quality_manager.py:521` - Trailing whitespace
 - `src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py:25` - Trailing whitespace
 - `src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py:26` - Trailing whitespace
 - `src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py:27` - Trailing whitespace
@@ -31412,208 +31412,208 @@
 - `src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py:923` - Line too long (91 characters)
 - `src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py:926` - Line too long (92 characters)
 - `src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py:975` - Line too long (106 characters)
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:195` - Line too long (97 characters)
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:210` - Line too long (91 characters)
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:241` - Line too long (89 characters)
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:349` - Line too long (95 characters)
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:368` - Line too long (91 characters)
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:405` - Line too long (100 characters)
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:407` - Line too long (93 characters)
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:420` - Line too long (108 characters)
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:497` - Line too long (93 characters)
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:516` - Line too long (92 characters)
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:553` - Line too long (100 characters)
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:555` - Line too long (93 characters)
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:632` - Line too long (92 characters)
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:652` - Line too long (102 characters)
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:659` - Line too long (96 characters)
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:666` - Line too long (98 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:57` - Line too long (102 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:156` - Line too long (100 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:282` - Line too long (99 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:286` - Line too long (91 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:287` - Line too long (100 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:288` - Line too long (98 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:289` - Line too long (100 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:298` - Line too long (100 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:302` - Line too long (91 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:345` - Line too long (119 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:348` - Line too long (119 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:351` - Line too long (115 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:354` - Line too long (117 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:376` - Line too long (99 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:408` - Line too long (90 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:409` - Line too long (148 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:410` - Line too long (120 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:416` - Line too long (94 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:417` - Line too long (104 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:418` - Line too long (105 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:426` - Line too long (102 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:464` - Line too long (91 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:478` - Line too long (120 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:480` - Line too long (94 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:491` - Line too long (112 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:493` - Line too long (91 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:503` - Line too long (112 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:505` - Line too long (91 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:664` - Line too long (101 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:668` - Line too long (92 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:707` - Line too long (121 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:713` - Line too long (89 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:716` - Line too long (92 characters)
-- `src/training/steps/step1/data_quality_dashboard.py:790` - Line too long (102 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:4` - Line too long (90 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:180` - Line too long (98 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:188` - Line too long (104 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:218` - Line too long (108 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:219` - Line too long (104 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:220` - Line too long (104 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:221` - Line too long (104 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:242` - Line too long (90 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:245` - Line too long (89 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:253` - Line too long (105 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:256` - Line too long (106 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:269` - Line too long (109 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:272` - Line too long (110 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:279` - Line too long (118 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:282` - Line too long (119 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:294` - Line too long (142 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:300` - Line too long (129 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:315` - Line too long (100 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:318` - Line too long (152 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:321` - Line too long (149 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:340` - Line too long (91 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:358` - Line too long (98 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:365` - Line too long (131 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:427` - Line too long (89 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:514` - Line too long (93 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:523` - Line too long (93 characters)
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:571` - Line too long (122 characters)
-- `src/training/steps/step1/aggtrades_validator.py:140` - Line too long (99 characters)
-- `src/training/steps/step1/aggtrades_validator.py:148` - Line too long (105 characters)
-- `src/training/steps/step1/aggtrades_validator.py:236` - Line too long (89 characters)
-- `src/training/steps/step1/aggtrades_validator.py:332` - Line too long (93 characters)
-- `src/training/steps/step1/aggtrades_validator.py:341` - Line too long (93 characters)
-- `src/training/steps/step1/aggtrades_validator.py:354` - Line too long (183 characters)
-- `src/training/steps/step1/aggtrades_validator.py:426` - Line too long (92 characters)
-- `src/training/steps/step1/aggtrades_validator.py:469` - Line too long (122 characters)
-- `src/training/steps/step1/step1_orchestrator.py:38` - Line too long (91 characters)
-- `src/training/steps/step1/step1_orchestrator.py:71` - Line too long (133 characters)
-- `src/training/steps/step1/step1_orchestrator.py:112` - Line too long (110 characters)
-- `src/training/steps/step1/step1_orchestrator.py:115` - Line too long (112 characters)
-- `src/training/steps/step1/step1_orchestrator.py:189` - Line too long (94 characters)
-- `src/training/steps/step1/step1_orchestrator.py:193` - Line too long (95 characters)
-- `src/training/steps/step1/step1_orchestrator.py:207` - Line too long (92 characters)
-- `src/training/steps/step1/step1_orchestrator.py:241` - Line too long (103 characters)
-- `src/training/steps/step1/step1_orchestrator.py:307` - Line too long (98 characters)
-- `src/training/steps/step1/step1_orchestrator.py:310` - Line too long (97 characters)
-- `src/training/steps/step1/step1_orchestrator.py:317` - Line too long (94 characters)
-- `src/training/steps/step1/step1_orchestrator.py:498` - Line too long (92 characters)
-- `src/training/steps/step1/step1_orchestrator.py:524` - Line too long (94 characters)
-- `src/training/steps/step1/step1_orchestrator.py:532` - Line too long (152 characters)
-- `src/training/steps/step1/step1_orchestrator.py:544` - Line too long (98 characters)
-- `src/training/steps/step1/step1_orchestrator.py:545` - Line too long (121 characters)
-- `src/training/steps/step1/data_resampler.py:102` - Line too long (110 characters)
-- `src/training/steps/step1/data_resampler.py:161` - Line too long (95 characters)
-- `src/training/steps/step1/data_resampler.py:266` - Line too long (106 characters)
-- `src/training/steps/step1/data_resampler.py:285` - Line too long (89 characters)
-- `src/training/steps/step1/data_resampler.py:335` - Line too long (98 characters)
-- `src/training/steps/step1/data_resampler.py:414` - Line too long (179 characters)
-- `src/training/steps/step1/data_resampler.py:421` - Line too long (90 characters)
-- `src/training/steps/step1/data_resampler.py:511` - Line too long (92 characters)
-- `src/training/steps/step1/data_resampler.py:512` - Line too long (102 characters)
-- `src/training/steps/step1/data_resampler.py:528` - Line too long (89 characters)
-- `src/training/steps/step1/data_resampler.py:636` - Line too long (99 characters)
-- `src/training/steps/step1/data_resampler.py:712` - Line too long (129 characters)
-- `src/training/steps/step1/data_resampler.py:911` - Line too long (89 characters)
-- `src/training/steps/step1/run_step1.py:39` - Line too long (89 characters)
-- `src/training/steps/step1/run_step1.py:44` - Line too long (89 characters)
-- `src/training/steps/step1/run_step1.py:45` - Line too long (147 characters)
-- `src/training/steps/step1/run_step1.py:108` - Line too long (105 characters)
-- `src/training/steps/step1/run_step1.py:137` - Line too long (128 characters)
-- `src/training/steps/step1/run_step1.py:144` - Line too long (89 characters)
-- `src/training/steps/step1/gap_filler_pipeline.py:99` - Line too long (131 characters)
-- `src/training/steps/step1/gap_filler_pipeline.py:106` - Line too long (106 characters)
-- `src/training/steps/step1/gap_filler_pipeline.py:200` - Line too long (121 characters)
-- `src/training/steps/step1/gap_filler_pipeline.py:325` - Line too long (94 characters)
-- `src/training/steps/step1/gap_filler_pipeline.py:340` - Line too long (93 characters)
-- `src/training/steps/step1/gap_filler_pipeline.py:344` - Line too long (101 characters)
-- `src/training/steps/step1/gap_filler_pipeline.py:349` - Line too long (93 characters)
-- `src/training/steps/step1/gap_filler_pipeline.py:362` - Line too long (124 characters)
-- `src/training/steps/step1/data_gap_detector.py:43` - Line too long (103 characters)
-- `src/training/steps/step1/data_gap_detector.py:50` - Line too long (98 characters)
-- `src/training/steps/step1/data_gap_detector.py:65` - Line too long (140 characters)
-- `src/training/steps/step1/data_gap_detector.py:82` - Line too long (102 characters)
-- `src/training/steps/step1/data_gap_detector.py:85` - Line too long (92 characters)
-- `src/training/steps/step1/data_gap_detector.py:107` - Line too long (98 characters)
-- `src/training/steps/step1/data_gap_detector.py:109` - Line too long (157 characters)
-- `src/training/steps/step1/data_gap_detector.py:113` - Line too long (92 characters)
-- `src/training/steps/step1/data_gap_detector.py:115` - Line too long (146 characters)
-- `src/training/steps/step1/data_gap_detector.py:119` - Line too long (94 characters)
-- `src/training/steps/step1/data_gap_detector.py:121` - Line too long (151 characters)
-- `src/training/steps/step1/data_gap_detector.py:143` - Line too long (157 characters)
-- `src/training/steps/step1/data_gap_detector.py:152` - Line too long (118 characters)
-- `src/training/steps/step1/data_gap_detector.py:200` - Line too long (115 characters)
-- `src/training/steps/step1/data_gap_detector.py:245` - Line too long (93 characters)
-- `src/training/steps/step1/data_gap_detector.py:252` - Line too long (116 characters)
-- `src/training/steps/step1/data_gap_detector.py:297` - Line too long (93 characters)
-- `src/training/steps/step1/data_gap_detector.py:306` - Line too long (98 characters)
-- `src/training/steps/step1/data_gap_detector.py:310` - Line too long (105 characters)
-- `src/training/steps/step1/data_gap_detector.py:416` - Line too long (95 characters)
-- `src/training/steps/step1/data_gap_detector.py:426` - Line too long (96 characters)
-- `src/training/steps/step1/data_gap_detector.py:436` - Line too long (97 characters)
-- `src/training/steps/step1/data_quality_monitor.py:133` - Line too long (89 characters)
-- `src/training/steps/step1/data_quality_monitor.py:213` - Line too long (92 characters)
-- `src/training/steps/step1/data_quality_monitor.py:231` - Line too long (94 characters)
-- `src/training/steps/step1/data_quality_monitor.py:234` - Line too long (103 characters)
-- `src/training/steps/step1/data_quality_monitor.py:301` - Line too long (93 characters)
-- `src/training/steps/step1/data_quality_monitor.py:307` - Line too long (94 characters)
-- `src/training/steps/step1/data_quality_monitor.py:311` - Line too long (111 characters)
-- `src/training/steps/step1/data_quality_monitor.py:316` - Line too long (90 characters)
-- `src/training/steps/step1/data_quality_monitor.py:329` - Line too long (93 characters)
-- `src/training/steps/step1/data_quality_monitor.py:355` - Line too long (109 characters)
-- `src/training/steps/step1/data_quality_monitor.py:376` - Line too long (125 characters)
-- `src/training/steps/step1/data_quality_monitor.py:407` - Line too long (91 characters)
-- `src/training/steps/step1/data_quality_monitor.py:542` - Line too long (110 characters)
-- `src/training/steps/step1/data_quality_monitor.py:544` - Line too long (120 characters)
-- `src/training/steps/step1/data_quality_monitor.py:565` - Line too long (89 characters)
-- `src/training/steps/step1/data_quality_monitor.py:571` - Line too long (94 characters)
-- `src/training/steps/step1/data_quality_monitor.py:587` - Line too long (94 characters)
-- `src/training/steps/step1/data_quality_monitor.py:597` - Line too long (90 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:40` - Line too long (89 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:105` - Line too long (98 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:127` - Line too long (99 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:131` - Line too long (115 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:135` - Line too long (105 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:142` - Line too long (94 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:147` - Line too long (93 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:148` - Line too long (107 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:151` - Line too long (106 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:156` - Line too long (108 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:158` - Line too long (103 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:169` - Line too long (99 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:215` - Line too long (116 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:264` - Line too long (104 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:300` - Line too long (110 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:301` - Line too long (107 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:319` - Line too long (114 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:326` - Line too long (99 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:332` - Line too long (111 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:341` - Line too long (94 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:342` - Line too long (96 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:355` - Line too long (105 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:387` - Line too long (104 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:388` - Line too long (89 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:406` - Line too long (106 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:409` - Line too long (89 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:412` - Line too long (97 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:428` - Line too long (115 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:429` - Line too long (122 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:430` - Line too long (116 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:443` - Line too long (110 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:446` - Line too long (93 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:487` - Line too long (106 characters)
-- `src/training/steps/step1/enhanced_data_quality_manager.py:512` - Line too long (92 characters)
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:195` - Line too long (97 characters)
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:210` - Line too long (91 characters)
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:241` - Line too long (89 characters)
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:349` - Line too long (95 characters)
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:368` - Line too long (91 characters)
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:405` - Line too long (100 characters)
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:407` - Line too long (93 characters)
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:420` - Line too long (108 characters)
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:497` - Line too long (93 characters)
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:516` - Line too long (92 characters)
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:553` - Line too long (100 characters)
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:555` - Line too long (93 characters)
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:632` - Line too long (92 characters)
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:652` - Line too long (102 characters)
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:659` - Line too long (96 characters)
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:666` - Line too long (98 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:57` - Line too long (102 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:156` - Line too long (100 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:282` - Line too long (99 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:286` - Line too long (91 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:287` - Line too long (100 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:288` - Line too long (98 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:289` - Line too long (100 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:298` - Line too long (100 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:302` - Line too long (91 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:345` - Line too long (119 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:348` - Line too long (119 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:351` - Line too long (115 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:354` - Line too long (117 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:376` - Line too long (99 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:408` - Line too long (90 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:409` - Line too long (148 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:410` - Line too long (120 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:416` - Line too long (94 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:417` - Line too long (104 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:418` - Line too long (105 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:426` - Line too long (102 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:464` - Line too long (91 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:478` - Line too long (120 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:480` - Line too long (94 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:491` - Line too long (112 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:493` - Line too long (91 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:503` - Line too long (112 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:505` - Line too long (91 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:664` - Line too long (101 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:668` - Line too long (92 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:707` - Line too long (121 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:713` - Line too long (89 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:716` - Line too long (92 characters)
+- `src/training/steps/step01/data_quality_dashboard.py:790` - Line too long (102 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:4` - Line too long (90 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:180` - Line too long (98 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:188` - Line too long (104 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:218` - Line too long (108 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:219` - Line too long (104 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:220` - Line too long (104 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:221` - Line too long (104 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:242` - Line too long (90 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:245` - Line too long (89 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:253` - Line too long (105 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:256` - Line too long (106 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:269` - Line too long (109 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:272` - Line too long (110 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:279` - Line too long (118 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:282` - Line too long (119 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:294` - Line too long (142 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:300` - Line too long (129 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:315` - Line too long (100 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:318` - Line too long (152 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:321` - Line too long (149 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:340` - Line too long (91 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:358` - Line too long (98 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:365` - Line too long (131 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:427` - Line too long (89 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:514` - Line too long (93 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:523` - Line too long (93 characters)
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:571` - Line too long (122 characters)
+- `src/training/steps/step01/aggtrades_validator.py:140` - Line too long (99 characters)
+- `src/training/steps/step01/aggtrades_validator.py:148` - Line too long (105 characters)
+- `src/training/steps/step01/aggtrades_validator.py:236` - Line too long (89 characters)
+- `src/training/steps/step01/aggtrades_validator.py:332` - Line too long (93 characters)
+- `src/training/steps/step01/aggtrades_validator.py:341` - Line too long (93 characters)
+- `src/training/steps/step01/aggtrades_validator.py:354` - Line too long (183 characters)
+- `src/training/steps/step01/aggtrades_validator.py:426` - Line too long (92 characters)
+- `src/training/steps/step01/aggtrades_validator.py:469` - Line too long (122 characters)
+- `src/training/steps/step01/step1_orchestrator.py:38` - Line too long (91 characters)
+- `src/training/steps/step01/step1_orchestrator.py:71` - Line too long (133 characters)
+- `src/training/steps/step01/step1_orchestrator.py:112` - Line too long (110 characters)
+- `src/training/steps/step01/step1_orchestrator.py:115` - Line too long (112 characters)
+- `src/training/steps/step01/step1_orchestrator.py:189` - Line too long (94 characters)
+- `src/training/steps/step01/step1_orchestrator.py:193` - Line too long (95 characters)
+- `src/training/steps/step01/step1_orchestrator.py:207` - Line too long (92 characters)
+- `src/training/steps/step01/step1_orchestrator.py:241` - Line too long (103 characters)
+- `src/training/steps/step01/step1_orchestrator.py:307` - Line too long (98 characters)
+- `src/training/steps/step01/step1_orchestrator.py:310` - Line too long (97 characters)
+- `src/training/steps/step01/step1_orchestrator.py:317` - Line too long (94 characters)
+- `src/training/steps/step01/step1_orchestrator.py:498` - Line too long (92 characters)
+- `src/training/steps/step01/step1_orchestrator.py:524` - Line too long (94 characters)
+- `src/training/steps/step01/step1_orchestrator.py:532` - Line too long (152 characters)
+- `src/training/steps/step01/step1_orchestrator.py:544` - Line too long (98 characters)
+- `src/training/steps/step01/step1_orchestrator.py:545` - Line too long (121 characters)
+- `src/training/steps/step01/data_resampler.py:102` - Line too long (110 characters)
+- `src/training/steps/step01/data_resampler.py:161` - Line too long (95 characters)
+- `src/training/steps/step01/data_resampler.py:266` - Line too long (106 characters)
+- `src/training/steps/step01/data_resampler.py:285` - Line too long (89 characters)
+- `src/training/steps/step01/data_resampler.py:335` - Line too long (98 characters)
+- `src/training/steps/step01/data_resampler.py:414` - Line too long (179 characters)
+- `src/training/steps/step01/data_resampler.py:421` - Line too long (90 characters)
+- `src/training/steps/step01/data_resampler.py:511` - Line too long (92 characters)
+- `src/training/steps/step01/data_resampler.py:512` - Line too long (102 characters)
+- `src/training/steps/step01/data_resampler.py:528` - Line too long (89 characters)
+- `src/training/steps/step01/data_resampler.py:636` - Line too long (99 characters)
+- `src/training/steps/step01/data_resampler.py:712` - Line too long (129 characters)
+- `src/training/steps/step01/data_resampler.py:911` - Line too long (89 characters)
+- `src/training/steps/step01/run_step1.py:39` - Line too long (89 characters)
+- `src/training/steps/step01/run_step1.py:44` - Line too long (89 characters)
+- `src/training/steps/step01/run_step1.py:45` - Line too long (147 characters)
+- `src/training/steps/step01/run_step1.py:108` - Line too long (105 characters)
+- `src/training/steps/step01/run_step1.py:137` - Line too long (128 characters)
+- `src/training/steps/step01/run_step1.py:144` - Line too long (89 characters)
+- `src/training/steps/step01/gap_filler_pipeline.py:99` - Line too long (131 characters)
+- `src/training/steps/step01/gap_filler_pipeline.py:106` - Line too long (106 characters)
+- `src/training/steps/step01/gap_filler_pipeline.py:200` - Line too long (121 characters)
+- `src/training/steps/step01/gap_filler_pipeline.py:325` - Line too long (94 characters)
+- `src/training/steps/step01/gap_filler_pipeline.py:340` - Line too long (93 characters)
+- `src/training/steps/step01/gap_filler_pipeline.py:344` - Line too long (101 characters)
+- `src/training/steps/step01/gap_filler_pipeline.py:349` - Line too long (93 characters)
+- `src/training/steps/step01/gap_filler_pipeline.py:362` - Line too long (124 characters)
+- `src/training/steps/step01/data_gap_detector.py:43` - Line too long (103 characters)
+- `src/training/steps/step01/data_gap_detector.py:50` - Line too long (98 characters)
+- `src/training/steps/step01/data_gap_detector.py:65` - Line too long (140 characters)
+- `src/training/steps/step01/data_gap_detector.py:82` - Line too long (102 characters)
+- `src/training/steps/step01/data_gap_detector.py:85` - Line too long (92 characters)
+- `src/training/steps/step01/data_gap_detector.py:107` - Line too long (98 characters)
+- `src/training/steps/step01/data_gap_detector.py:109` - Line too long (157 characters)
+- `src/training/steps/step01/data_gap_detector.py:113` - Line too long (92 characters)
+- `src/training/steps/step01/data_gap_detector.py:115` - Line too long (146 characters)
+- `src/training/steps/step01/data_gap_detector.py:119` - Line too long (94 characters)
+- `src/training/steps/step01/data_gap_detector.py:121` - Line too long (151 characters)
+- `src/training/steps/step01/data_gap_detector.py:143` - Line too long (157 characters)
+- `src/training/steps/step01/data_gap_detector.py:152` - Line too long (118 characters)
+- `src/training/steps/step01/data_gap_detector.py:200` - Line too long (115 characters)
+- `src/training/steps/step01/data_gap_detector.py:245` - Line too long (93 characters)
+- `src/training/steps/step01/data_gap_detector.py:252` - Line too long (116 characters)
+- `src/training/steps/step01/data_gap_detector.py:297` - Line too long (93 characters)
+- `src/training/steps/step01/data_gap_detector.py:306` - Line too long (98 characters)
+- `src/training/steps/step01/data_gap_detector.py:310` - Line too long (105 characters)
+- `src/training/steps/step01/data_gap_detector.py:416` - Line too long (95 characters)
+- `src/training/steps/step01/data_gap_detector.py:426` - Line too long (96 characters)
+- `src/training/steps/step01/data_gap_detector.py:436` - Line too long (97 characters)
+- `src/training/steps/step01/data_quality_monitor.py:133` - Line too long (89 characters)
+- `src/training/steps/step01/data_quality_monitor.py:213` - Line too long (92 characters)
+- `src/training/steps/step01/data_quality_monitor.py:231` - Line too long (94 characters)
+- `src/training/steps/step01/data_quality_monitor.py:234` - Line too long (103 characters)
+- `src/training/steps/step01/data_quality_monitor.py:301` - Line too long (93 characters)
+- `src/training/steps/step01/data_quality_monitor.py:307` - Line too long (94 characters)
+- `src/training/steps/step01/data_quality_monitor.py:311` - Line too long (111 characters)
+- `src/training/steps/step01/data_quality_monitor.py:316` - Line too long (90 characters)
+- `src/training/steps/step01/data_quality_monitor.py:329` - Line too long (93 characters)
+- `src/training/steps/step01/data_quality_monitor.py:355` - Line too long (109 characters)
+- `src/training/steps/step01/data_quality_monitor.py:376` - Line too long (125 characters)
+- `src/training/steps/step01/data_quality_monitor.py:407` - Line too long (91 characters)
+- `src/training/steps/step01/data_quality_monitor.py:542` - Line too long (110 characters)
+- `src/training/steps/step01/data_quality_monitor.py:544` - Line too long (120 characters)
+- `src/training/steps/step01/data_quality_monitor.py:565` - Line too long (89 characters)
+- `src/training/steps/step01/data_quality_monitor.py:571` - Line too long (94 characters)
+- `src/training/steps/step01/data_quality_monitor.py:587` - Line too long (94 characters)
+- `src/training/steps/step01/data_quality_monitor.py:597` - Line too long (90 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:40` - Line too long (89 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:105` - Line too long (98 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:127` - Line too long (99 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:131` - Line too long (115 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:135` - Line too long (105 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:142` - Line too long (94 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:147` - Line too long (93 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:148` - Line too long (107 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:151` - Line too long (106 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:156` - Line too long (108 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:158` - Line too long (103 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:169` - Line too long (99 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:215` - Line too long (116 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:264` - Line too long (104 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:300` - Line too long (110 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:301` - Line too long (107 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:319` - Line too long (114 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:326` - Line too long (99 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:332` - Line too long (111 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:341` - Line too long (94 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:342` - Line too long (96 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:355` - Line too long (105 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:387` - Line too long (104 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:388` - Line too long (89 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:406` - Line too long (106 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:409` - Line too long (89 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:412` - Line too long (97 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:428` - Line too long (115 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:429` - Line too long (122 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:430` - Line too long (116 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:443` - Line too long (110 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:446` - Line too long (93 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:487` - Line too long (106 characters)
+- `src/training/steps/step01/enhanced_data_quality_manager.py:512` - Line too long (92 characters)
 - `src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py:1` - Line too long (111 characters)
 - `src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py:100` - Line too long (99 characters)
 - `src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py:103` - Line too long (92 characters)
@@ -38913,100 +38913,100 @@
 - `src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py:953` - Function missing docstring
 - `src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py:1007` - Function missing docstring
 - `src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py:1028` - Function missing docstring
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:49` - Function missing docstring
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:50` - Function missing docstring
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:54` - Function missing docstring
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:55` - Function missing docstring
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:59` - Function missing docstring
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:60` - Function missing docstring
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:64` - Function missing docstring
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:65` - Function missing docstring
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:69` - Function missing docstring
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:70` - Function missing docstring
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:74` - Function missing docstring
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:75` - Function missing docstring
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:79` - Function missing docstring
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:80` - Function missing docstring
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:84` - Function missing docstring
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:85` - Function missing docstring
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:103` - Function missing docstring
-- `src/training/steps/step1/data_quality_dashboard.py:57` - Function missing docstring
-- `src/training/steps/step1/data_quality_dashboard.py:70` - Function missing docstring
-- `src/training/steps/step1/data_quality_dashboard.py:91` - Function missing docstring
-- `src/training/steps/step1/data_quality_dashboard.py:107` - Function missing docstring
-- `src/training/steps/step1/data_quality_dashboard.py:171` - Function missing docstring
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:85` - Function missing docstring
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:90` - Function missing docstring
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:128` - Function missing docstring
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:232` - Function missing docstring
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:260` - Function missing docstring
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:286` - Function missing docstring
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:304` - Function missing docstring
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:325` - Function missing docstring
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:351` - Function missing docstring
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:382` - Function missing docstring
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:477` - Function missing docstring
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:535` - Function missing docstring
-- `src/training/steps/step1/comprehensive_gap_filler.py:29` - Function missing docstring
-- `src/training/steps/step1/comprehensive_gap_filler.py:48` - Function missing docstring
-- `src/training/steps/step1/comprehensive_gap_filler.py:105` - Function missing docstring
-- `src/training/steps/step1/comprehensive_gap_filler.py:165` - Function missing docstring
-- `src/training/steps/step1/comprehensive_gap_filler.py:224` - Function missing docstring
-- `src/training/steps/step1/comprehensive_gap_filler.py:558` - Function missing docstring
-- `src/training/steps/step1/comprehensive_gap_filler.py:873` - Function missing docstring
-- `src/training/steps/step1/comprehensive_gap_filler.py:908` - Function missing docstring
-- `src/training/steps/step1/aggtrades_validator.py:54` - Function missing docstring
-- `src/training/steps/step1/aggtrades_validator.py:59` - Function missing docstring
-- `src/training/steps/step1/aggtrades_validator.py:91` - Function missing docstring
-- `src/training/steps/step1/aggtrades_validator.py:191` - Function missing docstring
-- `src/training/steps/step1/aggtrades_validator.py:286` - Function missing docstring
-- `src/training/steps/step1/aggtrades_validator.py:385` - Function missing docstring
-- `src/training/steps/step1/aggtrades_validator.py:437` - Function missing docstring
-- `src/training/steps/step1/step1_orchestrator.py:40` - Function missing docstring
-- `src/training/steps/step1/step1_orchestrator.py:340` - Function missing docstring
-- `src/training/steps/step1/step1_orchestrator.py:414` - Function missing docstring
-- `src/training/steps/step1/step1_orchestrator.py:548` - Function missing docstring
-- `src/training/steps/step1/step1_orchestrator.py:598` - Function missing docstring
-- `src/training/steps/step1/data_resampler.py:66` - Function missing docstring
-- `src/training/steps/step1/data_resampler.py:71` - Function missing docstring
-- `src/training/steps/step1/data_resampler.py:101` - Function missing docstring
-- `src/training/steps/step1/data_resampler.py:188` - Function missing docstring
-- `src/training/steps/step1/data_resampler.py:265` - Function missing docstring
-- `src/training/steps/step1/data_resampler.py:339` - Function missing docstring
-- `src/training/steps/step1/data_resampler.py:413` - Function missing docstring
-- `src/training/steps/step1/data_resampler.py:556` - Function missing docstring
-- `src/training/steps/step1/data_resampler.py:651` - Function missing docstring
-- `src/training/steps/step1/data_resampler.py:715` - Function missing docstring
-- `src/training/steps/step1/data_resampler.py:788` - Function missing docstring
-- `src/training/steps/step1/data_resampler.py:841` - Function missing docstring
-- `src/training/steps/step1/run_step1.py:32` - Function missing docstring
-- `src/training/steps/step1/gap_filler_pipeline.py:31` - Function missing docstring
-- `src/training/steps/step1/gap_filler_pipeline.py:48` - Function missing docstring
-- `src/training/steps/step1/gap_filler_pipeline.py:158` - Function missing docstring
-- `src/training/steps/step1/data_gap_detector.py:32` - Function missing docstring
-- `src/training/steps/step1/data_gap_detector.py:65` - Function missing docstring
-- `src/training/steps/step1/data_gap_detector.py:152` - Function missing docstring
-- `src/training/steps/step1/data_gap_detector.py:200` - Function missing docstring
-- `src/training/steps/step1/data_gap_detector.py:252` - Function missing docstring
-- `src/training/steps/step1/data_gap_detector.py:310` - Function missing docstring
-- `src/training/steps/step1/data_gap_detector.py:375` - Function missing docstring
-- `src/training/steps/step1/data_quality_monitor.py:34` - Function missing docstring
-- `src/training/steps/step1/data_quality_monitor.py:56` - Function missing docstring
-- `src/training/steps/step1/data_quality_monitor.py:71` - Function missing docstring
-- `src/training/steps/step1/data_quality_monitor.py:78` - Function missing docstring
-- `src/training/steps/step1/data_quality_monitor.py:152` - Function missing docstring
-- `src/training/steps/step1/data_quality_monitor.py:162` - Function missing docstring
-- `src/training/steps/step1/data_quality_monitor.py:433` - Function missing docstring
-- `src/training/steps/step1/data_quality_monitor.py:482` - Function missing docstring
-- `src/training/steps/step1/data_quality_monitor.py:502` - Function missing docstring
-- `src/training/steps/step1/data_quality_monitor.py:522` - Function missing docstring
-- `src/training/steps/step1/data_quality_monitor.py:527` - Function missing docstring
-- `src/training/steps/step1/data_quality_monitor.py:597` - Function missing docstring
-- `src/training/steps/step1/data_quality_monitor.py:599` - Function missing docstring
-- `src/training/steps/step1/data_quality_monitor.py:606` - Function missing docstring
-- `src/training/steps/step1/data_quality_monitor.py:608` - Function missing docstring
-- `src/training/steps/step1/enhanced_data_quality_manager.py:42` - Function missing docstring
-- `src/training/steps/step1/enhanced_data_quality_manager.py:52` - Function missing docstring
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:49` - Function missing docstring
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:50` - Function missing docstring
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:54` - Function missing docstring
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:55` - Function missing docstring
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:59` - Function missing docstring
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:60` - Function missing docstring
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:64` - Function missing docstring
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:65` - Function missing docstring
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:69` - Function missing docstring
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:70` - Function missing docstring
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:74` - Function missing docstring
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:75` - Function missing docstring
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:79` - Function missing docstring
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:80` - Function missing docstring
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:84` - Function missing docstring
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:85` - Function missing docstring
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:103` - Function missing docstring
+- `src/training/steps/step01/data_quality_dashboard.py:57` - Function missing docstring
+- `src/training/steps/step01/data_quality_dashboard.py:70` - Function missing docstring
+- `src/training/steps/step01/data_quality_dashboard.py:91` - Function missing docstring
+- `src/training/steps/step01/data_quality_dashboard.py:107` - Function missing docstring
+- `src/training/steps/step01/data_quality_dashboard.py:171` - Function missing docstring
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:85` - Function missing docstring
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:90` - Function missing docstring
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:128` - Function missing docstring
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:232` - Function missing docstring
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:260` - Function missing docstring
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:286` - Function missing docstring
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:304` - Function missing docstring
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:325` - Function missing docstring
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:351` - Function missing docstring
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:382` - Function missing docstring
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:477` - Function missing docstring
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:535` - Function missing docstring
+- `src/training/steps/step01/comprehensive_gap_filler.py:29` - Function missing docstring
+- `src/training/steps/step01/comprehensive_gap_filler.py:48` - Function missing docstring
+- `src/training/steps/step01/comprehensive_gap_filler.py:105` - Function missing docstring
+- `src/training/steps/step01/comprehensive_gap_filler.py:165` - Function missing docstring
+- `src/training/steps/step01/comprehensive_gap_filler.py:224` - Function missing docstring
+- `src/training/steps/step01/comprehensive_gap_filler.py:558` - Function missing docstring
+- `src/training/steps/step01/comprehensive_gap_filler.py:873` - Function missing docstring
+- `src/training/steps/step01/comprehensive_gap_filler.py:908` - Function missing docstring
+- `src/training/steps/step01/aggtrades_validator.py:54` - Function missing docstring
+- `src/training/steps/step01/aggtrades_validator.py:59` - Function missing docstring
+- `src/training/steps/step01/aggtrades_validator.py:91` - Function missing docstring
+- `src/training/steps/step01/aggtrades_validator.py:191` - Function missing docstring
+- `src/training/steps/step01/aggtrades_validator.py:286` - Function missing docstring
+- `src/training/steps/step01/aggtrades_validator.py:385` - Function missing docstring
+- `src/training/steps/step01/aggtrades_validator.py:437` - Function missing docstring
+- `src/training/steps/step01/step1_orchestrator.py:40` - Function missing docstring
+- `src/training/steps/step01/step1_orchestrator.py:340` - Function missing docstring
+- `src/training/steps/step01/step1_orchestrator.py:414` - Function missing docstring
+- `src/training/steps/step01/step1_orchestrator.py:548` - Function missing docstring
+- `src/training/steps/step01/step1_orchestrator.py:598` - Function missing docstring
+- `src/training/steps/step01/data_resampler.py:66` - Function missing docstring
+- `src/training/steps/step01/data_resampler.py:71` - Function missing docstring
+- `src/training/steps/step01/data_resampler.py:101` - Function missing docstring
+- `src/training/steps/step01/data_resampler.py:188` - Function missing docstring
+- `src/training/steps/step01/data_resampler.py:265` - Function missing docstring
+- `src/training/steps/step01/data_resampler.py:339` - Function missing docstring
+- `src/training/steps/step01/data_resampler.py:413` - Function missing docstring
+- `src/training/steps/step01/data_resampler.py:556` - Function missing docstring
+- `src/training/steps/step01/data_resampler.py:651` - Function missing docstring
+- `src/training/steps/step01/data_resampler.py:715` - Function missing docstring
+- `src/training/steps/step01/data_resampler.py:788` - Function missing docstring
+- `src/training/steps/step01/data_resampler.py:841` - Function missing docstring
+- `src/training/steps/step01/run_step1.py:32` - Function missing docstring
+- `src/training/steps/step01/gap_filler_pipeline.py:31` - Function missing docstring
+- `src/training/steps/step01/gap_filler_pipeline.py:48` - Function missing docstring
+- `src/training/steps/step01/gap_filler_pipeline.py:158` - Function missing docstring
+- `src/training/steps/step01/data_gap_detector.py:32` - Function missing docstring
+- `src/training/steps/step01/data_gap_detector.py:65` - Function missing docstring
+- `src/training/steps/step01/data_gap_detector.py:152` - Function missing docstring
+- `src/training/steps/step01/data_gap_detector.py:200` - Function missing docstring
+- `src/training/steps/step01/data_gap_detector.py:252` - Function missing docstring
+- `src/training/steps/step01/data_gap_detector.py:310` - Function missing docstring
+- `src/training/steps/step01/data_gap_detector.py:375` - Function missing docstring
+- `src/training/steps/step01/data_quality_monitor.py:34` - Function missing docstring
+- `src/training/steps/step01/data_quality_monitor.py:56` - Function missing docstring
+- `src/training/steps/step01/data_quality_monitor.py:71` - Function missing docstring
+- `src/training/steps/step01/data_quality_monitor.py:78` - Function missing docstring
+- `src/training/steps/step01/data_quality_monitor.py:152` - Function missing docstring
+- `src/training/steps/step01/data_quality_monitor.py:162` - Function missing docstring
+- `src/training/steps/step01/data_quality_monitor.py:433` - Function missing docstring
+- `src/training/steps/step01/data_quality_monitor.py:482` - Function missing docstring
+- `src/training/steps/step01/data_quality_monitor.py:502` - Function missing docstring
+- `src/training/steps/step01/data_quality_monitor.py:522` - Function missing docstring
+- `src/training/steps/step01/data_quality_monitor.py:527` - Function missing docstring
+- `src/training/steps/step01/data_quality_monitor.py:597` - Function missing docstring
+- `src/training/steps/step01/data_quality_monitor.py:599` - Function missing docstring
+- `src/training/steps/step01/data_quality_monitor.py:606` - Function missing docstring
+- `src/training/steps/step01/data_quality_monitor.py:608` - Function missing docstring
+- `src/training/steps/step01/enhanced_data_quality_manager.py:42` - Function missing docstring
+- `src/training/steps/step01/enhanced_data_quality_manager.py:52` - Function missing docstring
 - `src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py:24` - Function missing docstring
 - `src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py:84` - Function missing docstring
 - `src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py:135` - Function missing docstring
@@ -44268,19 +44268,19 @@
 - `src/training/steps/step17_final_parameters_optimization/step17_probabilistic_bayesian_optimization.py:930` - File doesn't end with newline
 - `src/training/steps/step17_final_parameters_optimization/__init__.py:84` - File doesn't end with newline
 - `src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py:1046` - File doesn't end with newline
-- `src/training/steps/step1/missing_data_downloader_and_gap_filler.py:704` - File doesn't end with newline
-- `src/training/steps/step1/data_quality_dashboard.py:852` - File doesn't end with newline
-- `src/training/steps/step1/validate_and_fix_aggtrades_format.py:605` - File doesn't end with newline
-- `src/training/steps/step1/comprehensive_gap_filler.py:1107` - File doesn't end with newline
-- `src/training/steps/step1/aggtrades_validator.py:488` - File doesn't end with newline
-- `src/training/steps/step1/step1_orchestrator.py:650` - File doesn't end with newline
-- `src/training/steps/step1/data_resampler.py:918` - File doesn't end with newline
-- `src/training/steps/step1/run_step1.py:201` - File doesn't end with newline
-- `src/training/steps/step1/gap_filler_pipeline.py:369` - File doesn't end with newline
-- `src/training/steps/step1/data_gap_detector.py:442` - File doesn't end with newline
-- `src/training/steps/step1/data_quality_monitor.py:612` - File doesn't end with newline
-- `src/training/steps/step1/__init__.py:25` - File doesn't end with newline
-- `src/training/steps/step1/enhanced_data_quality_manager.py:527` - File doesn't end with newline
+- `src/training/steps/step01/missing_data_downloader_and_gap_filler.py:704` - File doesn't end with newline
+- `src/training/steps/step01/data_quality_dashboard.py:852` - File doesn't end with newline
+- `src/training/steps/step01/validate_and_fix_aggtrades_format.py:605` - File doesn't end with newline
+- `src/training/steps/step01/comprehensive_gap_filler.py:1107` - File doesn't end with newline
+- `src/training/steps/step01/aggtrades_validator.py:488` - File doesn't end with newline
+- `src/training/steps/step01/step1_orchestrator.py:650` - File doesn't end with newline
+- `src/training/steps/step01/data_resampler.py:918` - File doesn't end with newline
+- `src/training/steps/step01/run_step1.py:201` - File doesn't end with newline
+- `src/training/steps/step01/gap_filler_pipeline.py:369` - File doesn't end with newline
+- `src/training/steps/step01/data_gap_detector.py:442` - File doesn't end with newline
+- `src/training/steps/step01/data_quality_monitor.py:612` - File doesn't end with newline
+- `src/training/steps/step01/__init__.py:25` - File doesn't end with newline
+- `src/training/steps/step01/enhanced_data_quality_manager.py:527` - File doesn't end with newline
 - `src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py:488` - File doesn't end with newline
 - `src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_specific_triple_barrier_optimizer.py:853` - File doesn't end with newline
 - `src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_aware_triple_barrier_labeling.py:710` - File doesn't end with newline
@@ -44379,7 +44379,7 @@
 - `src/training/steps/fractional_feature_selector.py:253` - Bare except clause
 - `src/training/steps/step9_hmm_based_training.py:3027` - Bare except clause
 - `src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py:743` - Bare except clause
-- `src/training/steps/step1/data_resampler.py:808` - Bare except clause
+- `src/training/steps/step01/data_resampler.py:808` - Bare except clause
 - `src/utils/data_quality_framework.py:390` - Bare except clause
 - `src/utils/data_quality_framework.py:398` - Bare except clause
 - `src/utils/data_quality_framework.py:966` - Bare except clause

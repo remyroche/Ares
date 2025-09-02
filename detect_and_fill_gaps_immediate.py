@@ -12,7 +12,7 @@ from src.utils.logger import system_logger
 import asyncio
 import sys
 
-from src.training.steps.step1.data_gap_detector import DataGapDetector
+from src.training.steps.step01.data_gap_detector import DataGapDetector
 
 # Add project root to path
 project_root, Path(__file__).parent

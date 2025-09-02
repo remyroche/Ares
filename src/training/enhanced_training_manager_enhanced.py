@@ -478,7 +478,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                             summary.append(f"    Majority Class: {balance.get('majority_class', 'N/A')}")
                             summary.append(f"    Minority Class: {balance.get('minority_class', 'N/A')}")
             
-            elif step_name == "step6_hmm_based_training":
+            elif step_name == "step6_feature_generation":
                 if "training_analysis" in quality_metrics:
                     training = quality_metrics["training_analysis"]
                     summary.append("  Training Analysis:")
@@ -508,7 +508,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                     summary.append(f"    Training Time: {quality.get('training_time', 'N/A')}")
                     summary.append(f"    Memory Usage: {quality.get('memory_usage', 'N/A')}")
             
-            elif step_name == "step7_analyst_enhancement":
+            elif step_name == "step7_matrix_feature_selection":
                 if "enhancement_analysis" in quality_metrics:
                     enhancement = quality_metrics["enhancement_analysis"]
                     summary.append("  Enhancement Analysis:")
@@ -1176,7 +1176,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="step6_hmm_based_training"
+        context="step6_feature_generation"
     )
     @monitor_pipeline_step(
         stage=PipelineStage.MODEL_TRAINING,
@@ -1197,7 +1197,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         data_dir: str,
         force_rerun: bool,
     ) -> bool:
-        """Execute Step 6: HMM-Based Training with comprehensive reporting."""
+        """Execute Step 6: Feature Generation with comprehensive reporting."""
         
         step_start_time = time.time()
         step_errors = []
@@ -1217,7 +1217,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report
             await self._generate_step_report(
-                "step6_hmm_based_training",
+                "step6_feature_generation",
                 result,
                 step_start_time,
                 bool(result),
@@ -1245,7 +1245,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="step7_analyst_enhancement"
+        context="step7_matrix_feature_selection"
     )
     @monitor_pipeline_step(
         stage=PipelineStage.MODEL_TRAINING,
@@ -1260,7 +1260,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
         data_dir: str,
         force_rerun: bool,
     ) -> bool:
-        """Execute Step 7: Analyst Enhancement with enhanced reporting."""
+        """Execute Step 7: Matrix Feature Selection with enhanced reporting."""
         
         step_start_time = time.time()
         step_errors = []
@@ -1280,7 +1280,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report
             await self._generate_step_report(
-                "step7_analyst_enhancement",
+                "step7_matrix_feature_selection",
                 result,
                 step_start_time,
                 bool(result),
@@ -3124,15 +3124,15 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="step6_hmm_based_training"
+        context="step6_feature_generation"
     )
-    async def execute_step6_hmm_based_training(
+    async def execute_step6_feature_generation(
         self,
         enhanced_training_input: Dict[str, Any],
         feature_config: Dict[str, Any] = None,
         force_rerun: bool = False,
     ) -> bool:
-        """Execute Step 6: HMM-Based Training with comprehensive reporting."""
+        """Execute Step 6: Feature Generation with comprehensive reporting."""
         
         step_start_time = time.time()
         step_errors = []
@@ -3149,7 +3149,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report
             await self._generate_step_report(
-                "step6_hmm_based_training",
+                "step6_feature_generation",
                 result,
                 step_start_time,
                 bool(result),
@@ -3165,7 +3165,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report even on failure
             await self._generate_step_report(
-                "step6_hmm_based_training",
+                "step6_feature_generation",
                 None,
                 step_start_time,
                 False,
@@ -3177,13 +3177,13 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
     @handle_errors(
         exceptions=(Exception,),
         default_return=False,
-        context="step7_analyst_enhancement"
+        context="step7_matrix_feature_selection"
     )
-    async def execute_step7_analyst_enhancement(
+    async def execute_step7_matrix_feature_selection(
         self,
         enhanced_training_input: Dict[str, Any],
     ) -> bool:
-        """Execute Step 7: Analyst Enhancement with enhanced reporting."""
+        """Execute Step 7: Matrix Feature Selection with enhanced reporting."""
         
         step_start_time = time.time()
         step_errors = []
@@ -3199,7 +3199,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report
             await self._generate_step_report(
-                "step7_analyst_enhancement",
+                "step7_matrix_feature_selection",
                 result,
                 step_start_time,
                 bool(result),
@@ -3215,7 +3215,7 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
             
             # Generate step report even on failure
             await self._generate_step_report(
-                "step7_analyst_enhancement",
+                "step7_matrix_feature_selection",
                 None,
                 step_start_time,
                 False,

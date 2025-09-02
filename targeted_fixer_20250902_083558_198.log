@@ -1,0 +1,25 @@
+2025-09-02 08:35:58,202 - INFO - Processing file: src/utils/advanced_decorators.py
+2025-09-02 08:35:58,202 - INFO - Performing semantic analysis...
+2025-09-02 08:35:58,202 - INFO - Code quality score: 0.00
+2025-09-02 08:35:58,202 - WARNING - Syntax errors found: 1
+2025-09-02 08:35:58,202 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:35:58,206 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:58,209 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:58,212 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:58,215 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:58,219 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:58,222 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:58,225 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:58,228 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:58,232 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:58,236 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:58,239 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:58,244 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:58,247 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:58,251 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:58,254 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:58,257 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:58,260 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:35:58,260 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:35:58,266 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:58,269 - INFO - No fixes needed for: src/utils/advanced_decorators.py

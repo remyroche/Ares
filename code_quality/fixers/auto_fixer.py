@@ -33,7 +33,7 @@ class AutoFixer:
         # Register built-in plugins
         self._register_builtin_plugins()
     
-    def fix_all(self, directory: str) -> Dict[str, Any]):
+    def fix_all(self, directory: str) -> Dict[str, Any]:
         """
         Fix all issues in a directory using configured tools.
         
@@ -110,8 +110,8 @@ class AutoFixer:
     def _register_builtin_plugins(self):
         """Register built-in code fixing plugins."""
         try:
-            from ..plugins.black_fixer import BlackFixer
-            from ..plugins.isort_fixer import IsortFixer
+            from code_quality.plugins.black_fixer import BlackFixer
+            from code_quality.plugins.isort_fixer import IsortFixer
             
             # Register plugins with configuration
             black_config = {
@@ -131,6 +131,43 @@ class AutoFixer:
             
         except ImportError as e:
             print(f"Warning: Could not import built-in plugins: {e}")
+    
+    def _fix_single_file(self, file_path: str) -> Dict[str, Any]:
+        """Fix a single file using available plugins."""
+        try:
+            available_fixers = self.plugin_manager.get_available_fixers(file_path)
+            
+            if not available_fixers:
+                return {
+                    'success': False,
+                    'message': 'No suitable fixers available',
+                    'fixers_used': []
+                }
+            
+            file_results = []
+            for fixer in available_fixers:
+                try:
+                    result = fixer.fix(file_path)
+                    file_results.append(result)
+                except Exception as e:
+                    file_results.append({
+                        'success': False,
+                        'tool': fixer.get_name(),
+                        'error': str(e)
+                    })
+            
+            return {
+                'success': any(r.get('success', False) for r in file_results),
+                'fixers_used': [f.get_name() for f in available_fixers],
+                'results': file_results
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'message': f'Error fixing file: {str(e)}',
+                'error': str(e)
+            }
     
     def fix_file(self, file_path: str) -> Dict[str, Any]:
         """

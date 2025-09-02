@@ -2707,20 +2707,31 @@ class MLConfidencePredictor:
                 self.ensemble_weights = {
                     k: 1.0 / len(performance_history) for k in performance_history
                 }
-        # Apply regime-specific weighting if available
-        if hasattr(self, 'current_regime') and self.current_regime:
-            # Adjust weights based on regime performance
-            regime_performance = performance_history.get(f"regime_{self.current_regime}", {})
-            if regime_performance and regime_performance.get("accuracy", 0) > 0.6:
-                # Boost regime-specific model weight
-                regime_key = f"regime_{self.current_regime}"
-                if regime_key in self.ensemble_weights:
-                    self.ensemble_weights[regime_key] *= 1.5
-                    # Re-normalize
-                    total_weight = sum(self.ensemble_weights.values())
-                    self.ensemble_weights = {
-                        k: v / total_weight for k, v in self.ensemble_weights.items()
-                    }
+        # Apply adaptive weighting based on recent performance
+        if performance_history:
+            # Boost weights for models with consistent recent performance
+            for model_name, weight in self.ensemble_weights.items():
+                if model_name in performance_history:
+                    model_perf = performance_history[model_name]
+                    # Check recent consistency (low variance in accuracy)
+                    if 'recent_accuracies' in model_perf and len(model_perf['recent_accuracies']) > 3:
+                        recent_acc = model_perf['recent_accuracies'][-5:]  # Last 5 predictions
+                        acc_variance = np.var(recent_acc) if len(recent_acc) > 1 else 1.0
+                        
+                        # Boost weight for consistent performers (low variance, high accuracy)
+                        if acc_variance < 0.01 and np.mean(recent_acc) > 0.7:
+                            self.ensemble_weights[model_name] *= 1.2
+                    
+                    # Penalize models with declining performance
+                    if 'accuracy_trend' in model_perf and model_perf['accuracy_trend'] < -0.1:
+                        self.ensemble_weights[model_name] *= 0.8
+            
+            # Re-normalize weights
+            total_weight = sum(self.ensemble_weights.values())
+            if total_weight > 0:
+                self.ensemble_weights = {
+                    k: v / total_weight for k, v in self.ensemble_weights.items()
+                }
         
         self.logger.info(f"Updated ensemble weights: {self.ensemble_weights}")
 

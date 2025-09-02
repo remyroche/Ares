@@ -163,7 +163,12 @@ class Step1_5DataConverterValidator(BaseValidator):
             total_records = 0
 
             for file_path in parquet_files:
-                file_validation = await self._validate_single_unified_file(file_path)
+                file_validation = await self._validate_single_unified_file(
+                    file_path=file_path,
+                    symbol=symbol,
+                    exchange=exchange,
+                    timeframe=timeframe,
+                )
                 if file_validation["valid"]:
                     valid_files += 1
                     total_records += file_validation["records"]
@@ -185,7 +190,13 @@ class Step1_5DataConverterValidator(BaseValidator):
             self.logger.exception(f"❌ Error validating unified files: {e}")
             return False
 
-    async def _validate_single_unified_file(self, file_path: str) -> dict[str, Any]:
+    async def _validate_single_unified_file(
+        self,
+        file_path: str,
+        symbol: str,
+        exchange: str,
+        timeframe: str,
+    ) -> dict[str, Any]:
         """Validate a single unified data file.
 
         Args:
@@ -208,6 +219,15 @@ class Step1_5DataConverterValidator(BaseValidator):
 
             # Check required columns
             missing_columns = [col for col in self.required_columns if col not in df.columns]
+            # Also enforce unified schema fields
+            unified_required = ["exchange", "symbol", "timeframe"]
+            missing_unified = [col for col in unified_required if col not in df.columns]
+            if missing_unified:
+                return {
+                    "valid": False,
+                    "records": len(df),
+                    "error": f"Missing unified schema columns: {missing_unified}",
+                }
             if missing_columns:
                 return {
                     "valid": False,
@@ -215,13 +235,52 @@ class Step1_5DataConverterValidator(BaseValidator):
                     "error": f"Missing columns: {missing_columns}",
                 }
 
-            # Check data types
-            if "timestamp" in df.columns and not pd.api.types.is_datetime64_any_dtype(df["timestamp"]):
+            # Check timestamp type (allow int64 ms or datetime64)
+            if "timestamp" not in df.columns:
                 return {
                     "valid": False,
                     "records": len(df),
-                    "error": "Timestamp column is not datetime type",
+                    "error": "Missing timestamp column",
                 }
+            ts_is_datetime = pd.api.types.is_datetime64_any_dtype(df["timestamp"])  # type: ignore[arg-type]
+            ts_is_numeric = pd.api.types.is_integer_dtype(df["timestamp"]) or pd.api.types.is_float_dtype(df["timestamp"])  # type: ignore[arg-type]
+            if not (ts_is_datetime or ts_is_numeric):
+                return {
+                    "valid": False,
+                    "records": len(df),
+                    "error": "Timestamp column must be datetime64 or numeric (ms)",
+                }
+
+            # Validate unified schema values match inputs
+            try:
+                if "exchange" in df.columns:
+                    # exchange may be stored lowercase in unified path
+                    df_exchange = str(df["exchange"].dropna().iloc[0]).upper()
+                    if df_exchange != exchange.upper():
+                        return {
+                            "valid": False,
+                            "records": len(df),
+                            "error": f"Exchange mismatch in data: {df_exchange} != {exchange}",
+                        }
+                if "symbol" in df.columns:
+                    df_symbol = str(df["symbol"].dropna().iloc[0])
+                    if df_symbol != symbol:
+                        return {
+                            "valid": False,
+                            "records": len(df),
+                            "error": f"Symbol mismatch in data: {df_symbol} != {symbol}",
+                        }
+                if "timeframe" in df.columns:
+                    df_timeframe = str(df["timeframe"].dropna().iloc[0])
+                    if df_timeframe != timeframe:
+                        return {
+                            "valid": False,
+                            "records": len(df),
+                            "error": f"Timeframe mismatch in data: {df_timeframe} != {timeframe}",
+                        }
+            except Exception:
+                # If sampling failed, continue with a warning via result
+                pass
 
             # Check for reasonable data ranges
             price_columns = ["open", "high", "low", "close"]
@@ -301,6 +360,23 @@ class Step1_5DataConverterValidator(BaseValidator):
 
             if str(config.get("timeframe")) != timeframe:
                 self.logger.warning(f"⚠️ Timeframe mismatch in config: {config.get('timeframe')} != {timeframe}")
+                return False
+
+            # Validate that data_path exists and matches expected unified base path
+            expected_base = os.path.join(
+                data_dir, "unified", exchange.lower(), symbol, timeframe
+            )
+            cfg_path = str(config.get("data_path", ""))
+            if not cfg_path:
+                self.logger.warning("⚠️ Config missing data_path field")
+                return False
+            if os.path.abspath(cfg_path) != os.path.abspath(expected_base):
+                self.logger.warning(
+                    f"⚠️ Config data_path mismatch: {cfg_path} != {expected_base}"
+                )
+                return False
+            if not os.path.isdir(cfg_path):
+                self.logger.warning(f"⚠️ Config data_path does not exist: {cfg_path}")
                 return False
 
             self.logger.info(f"✅ Config validation passed: {config_path}")

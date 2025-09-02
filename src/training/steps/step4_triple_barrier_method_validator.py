@@ -88,7 +88,7 @@ async def run_validator(
             import pandas as pd
             data = pd.read_parquet(triple_barrier_path)
             
-            # Check required columns
+            # Check required columns (expect 'triple_barrier_label')
             required_columns = ["triple_barrier_label"]
             missing_columns = [col for col in required_columns if col not in data.columns]
             

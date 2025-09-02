@@ -1,0 +1,32 @@
+2025-09-02 08:19:51,686 - INFO - Processing file: src/utils/supervisor_error_handler.py
+2025-09-02 08:19:51,686 - INFO - Performing semantic analysis...
+2025-09-02 08:19:51,687 - INFO - Code quality score: 0.00
+2025-09-02 08:19:51,687 - WARNING - Syntax errors found: 1
+2025-09-02 08:19:51,687 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:19:51,688 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:51,689 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:51,689 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:51,690 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:51,695 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:51,695 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:51,696 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:51,697 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:51,698 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:51,698 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:51,699 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:51,700 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:51,702 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:51,702 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:51,704 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:19:51,705 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:19:51,706 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:51,707 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:51,708 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:51,708 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:51,709 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:51,713 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:51,713 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:19:51,714 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:51,714 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:19:51,720 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:19:51,723 - INFO - No fixes needed for: src/utils/supervisor_error_handler.py

@@ -3,7 +3,8 @@
 Diagnostic script to understand why interaction features are being filtered out
 """
 
-from src.training.steps.vectorized_advanced_feature_engineering import (VectorizedAdvancedFeatureEngineering), import os
+from src.training.steps.vectorized_advanced_feature_engineering import (VectorizedAdvancedFeatureEngineering)
+import os
 import sys
 
 import numpy as np
@@ -17,7 +18,7 @@ def diagnose_interaction_features():
     print("🔍 Diagnosing interaction features filtering issue...")
 
     # Create a mock instance
-    config , {
+    config, {
         "symbol": "ETHUSDT",
         "exchange": "BINANCE",
         "timeframe": "1m",
@@ -39,11 +40,11 @@ def diagnose_interaction_features():
         def debug(self, msg):
             print(f"DEBUG: {msg}")
 
-    feature_eng = VectorizedAdvancedFeatureEngineering(config)
-    feature_eng.logger = MockLogger()
+    feature_eng=VectorizedAdvancedFeatureEngineering(config)
+    feature_eng.logger=MockLogger()
 
     # Create mock features that simulate the issue
-    mock_features = {
+    mock_features={
         # Original features
         "rsi": pd.Series([0.5, 0.6, 0.7, 0.8, 0.9]),
         "volume": pd.Series([100, 110, 120, 130, 140]),
@@ -80,13 +81,13 @@ def diagnose_interaction_features():
     print("\n🔧 Testing feature capping logic...")
 
     # Identify RAW-only keys in each category (normalized variants handled separately)
-    accel_raw = [k for k in mock_features if "_accel_" in k and not k.endswith("_norm")]
-    cross_time_raw = [
+    accel_raw=[k for k in mock_features if "_accel_" in k and not k.endswith("_norm")]
+    cross_time_raw=[
         k
         for k in mock_features
         if "_diff_" in k and not k.endswith("_norm") and ("m_" in k or "h_" in k)
     ]
-    diff_raw = [
+    diff_raw=[
         k
         for k in mock_features
         if "_diff_" in k
@@ -100,14 +101,14 @@ def diagnose_interaction_features():
     print(f"Difference raw features: {diff_raw}")
 
     # Priority patterns (keep strongest first)
-    accel_priority = [
+    accel_priority=[
         "rsi_accel",
         "macd_histogram_accel",
         "macd_accel",
         "price_momentum_",
         "volatility_20_accel",
     ]
-    diff_priority = [
+    diff_priority=[
         "rsi_diff_",
         "macd_histogram_diff_",
         "macd_diff_",
@@ -119,7 +120,7 @@ def diagnose_interaction_features():
         "bb_position_diff_",
         "order_flow_imbalance_diff_",
     ]
-    cross_priority = [
+    cross_priority=[
         "rsi_diff_",
         "volatility_diff_",
         "price_range_diff_",
@@ -127,58 +128,58 @@ def diagnose_interaction_features():
         "volume_diff_",
     ]
 
-    def rank_keys(keys = patterns):
+    def rank_keys(keys=patterns):
         def score(k: str) -> int:
-            for idx , p in enumerate(patterns):
+            for idx, p in enumerate(patterns):
                 if p in k:
                     return idx
             return len(patterns) + 1
 
-        return sorted(keys, key = score)
+        return sorted(keys, key=score)
 
-    accel_ranked = rank_keys(accel_raw = accel_priority)
-    diff_ranked = rank_keys(diff_raw, diff_priority)
-    cross_ranked = rank_keys(cross_time_raw = cross_priority)
+    accel_ranked=rank_keys(accel_raw = accel_priority)
+    diff_ranked=rank_keys(diff_raw, diff_priority)
+    cross_ranked=rank_keys(cross_time_raw = cross_priority)
 
     print(f"Ranked acceleration: {accel_ranked}")
     print(f"Ranked difference: {diff_ranked}")
     print(f"Ranked cross-timeframe: {cross_ranked}")
 
     # Caps (doubled to broaden feature set)
-    max_accel = 20  # ~40 with norms
+    max_accel=20  # ~40 with norms
     max_diff = 50  # ~100 with norms
     max_cross_time = 100  # ~200 with norms
 
     kept_accel_raw = set(accel_ranked[:max_accel])
-    kept_cross_raw = set(cross_ranked[:max_cross_time])
-    kept_diff_raw = set(diff_ranked[:max_diff])
+    kept_cross_raw=set(cross_ranked[:max_cross_time])
+    kept_diff_raw=set(diff_ranked[:max_diff])
 
     print(f"Kept acceleration raw: {kept_accel_raw}")
     print(f"Kept cross-timeframe raw: {kept_cross_raw}")
     print(f"Kept difference raw: {kept_diff_raw}")
 
     # Include normalized counterparts for kept raw keys (do not count against caps)
-    kept_keys = set()
+    kept_keys=set()
     for raw_key in list(kept_accel_raw) + list(kept_cross_raw) + list(kept_diff_raw):
         kept_keys.add(raw_key)
-        norm_key = f"{raw_key}_norm"
+        norm_key=f"{raw_key}_norm"
         if norm_key in mock_features:
             kept_keys.add(norm_key)
 
     print(f"Total kept keys (including norms): {kept_keys}")
 
     # Rebuild final features with caps applied
-    capped_features = {}
-    for k , v in mock_features.items():
+    capped_features={}
+    for k, v in mock_features.items():
         # Keep capped categories (raw+their norms)
         if k in kept_keys:
             capped_features[k] = v
             continue
         # Pass-through for non-targeted categories (e.g., interactions) untouched
-        is_accel = "_accel_" in k
+        is_accel="_accel_" in k
         is_diff = "_diff_" in k
         is_cross = is_diff and ("m_" in k or "h_" in k)
-        # If not accel/diff/cross-timeframe = keep
+        # If not accel/diff/cross-timeframe=keep
         if not is_accel and not is_diff and not is_cross:
             capped_features[k] = v
             print(f"✅ Kept non-targeted feature: {k}")
@@ -192,13 +193,13 @@ def diagnose_interaction_features():
 
     # Test the interaction feature detection logic
     print("\n🔍 Testing interaction feature detection...")
-    interaction_features = [f for f in capped_features if "_x_" in f]
+    interaction_features=[f for f in capped_features if "_x_" in f]
     print(f"Interaction features found: {interaction_features}")
     print(f"Interaction feature count: {len(interaction_features)}")
 
     # Test the summary logging logic
     print("\n📊 Testing summary logging logic...")
-    diff_features = [f for f in capped_features if "_diff_" in f]
+    diff_features=[f for f in capped_features if "_diff_" in f]
     accel_features = [f for f in capped_features if "_accel_" in f]
     norm_features = [f for f in capped_features if "_norm" in f]
     cross_timeframe_features = [
@@ -212,5 +213,5 @@ def diagnose_interaction_features():
     print(f"  - Cross-timeframe features: {len(cross_timeframe_features)}")
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     diagnose_interaction_features()

@@ -35,7 +35,7 @@ from src.training.steps.data_preparation_components.training_validation_config i
 )
 
 # Ensure project root in path
-project_root = Path(__file__).parent.parent
+project_root=Path(__file__).parent.parent
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
@@ -43,9 +43,9 @@ if str(project_root) not in sys.path:
 @handle_errors(default_return=False, context="blank_training_run_main")
 async def main() -> bool:
     """Orchestrate the blank training run with minimal parameters."""
-    start_time = time.time()
+    start_time=time.time()
     setup_logging()
-    logger = system_logger.getChild("BlankTrainingRun")
+    logger=system_logger.getChild("BlankTrainingRun")
 
     logger.info("=" * 80)
     logger.info("BLANK TRAINING RUN INITIALIZATION")
@@ -55,7 +55,7 @@ async def main() -> bool:
     logger.info(f"Working directory: {Path.cwd()}")
     logger.info(f"Script path: {Path(__file__).absolute()}")
 
-    parser = argparse.ArgumentParser(
+    parser=argparse.ArgumentParser(
         description="Run a 'blank' training pipeline for testing.",
     )
     parser.add_argument(
@@ -70,7 +70,7 @@ async def main() -> bool:
         default=CONFIG.get("EXCHANGE", "BINANCE"),
         help="The exchange for the blank run (e.g., BINANCE).",
     )
-    args = parser.parse_args()
+    args=parser.parse_args()
 
     logger.info("Command line arguments:")
     logger.info(f"   Symbol: {args.symbol}")
@@ -89,7 +89,7 @@ async def main() -> bool:
 
     # Initialize Training Manager
     logger.info("Initializing EnhancedTrainingManager...")
-    training_manager = EnhancedTrainingManager(CONFIG)
+    training_manager=EnhancedTrainingManager(CONFIG)
 
     # Attempt to initialize internal components
     if hasattr(training_manager, "initialize_components"):
@@ -99,12 +99,12 @@ async def main() -> bool:
     logger.info("Using existing data only (no downloads)")
 
     # Required files (adjust to your environment)
-    klines_filename = f"data_cache/klines_{args.exchange}_{args.symbol}_1m_consolidated_fixed.csv"
+    klines_filename=f"data_cache/klines_{args.exchange}_{args.symbol}_1m_consolidated_fixed.csv"
     agg_trades_filename = f"data_cache/aggtrades_{args.exchange}_{args.symbol}_2025-07-31.csv"
     futures_filename = f"data_cache/futures_{args.exchange}_{args.symbol}_consolidated.csv"
 
     required_files = [klines_filename, agg_trades_filename, futures_filename]
-    missing_files = [f for f in required_files if not os.path.exists(f)]
+    missing_files=[f for f in required_files if not os.path.exists(f)]
     if missing_files:
         logger.error(f"Missing required data files: {missing_files}")
         logger.error("Please ensure data files exist before running the blank pipeline.")
@@ -120,12 +120,12 @@ async def main() -> bool:
     auto_reformat_aggtrades_files_for_exchange(args.exchange, args.symbol)
 
     # Load the CSV data and validate
-    csv_data_file = klines_filename
+    csv_data_file=klines_filename
     if not os.path.exists(csv_data_file):
         logger.error(f"CSV data file not found: {csv_data_file}")
         return False
 
-    klines_df = pd.read_csv(csv_data_file)
+    klines_df=pd.read_csv(csv_data_file)
     logger.info(
         f"Loaded CSV data: {len(klines_df)} rows x {len(klines_df.columns)} columns",
     )
@@ -146,12 +146,12 @@ async def main() -> bool:
     else:
         logger.warning("Futures file not found, skipping that part of validation")
 
-    format_valid, format_errors = validate_data_format(validation_data)
+    format_valid, format_errors=validate_data_format(validation_data)
     if not format_valid:
         logger.error(f"Data format validation failed: {format_errors}")
         return False
 
-    quality_valid, quality_errors = validate_data_quality(validation_data)
+    quality_valid, quality_errors=validate_data_quality(validation_data)
     if not quality_valid:
         logger.error(f"Data quality validation failed: {quality_errors}")
         return False
@@ -159,9 +159,9 @@ async def main() -> bool:
     logger.info("Data validation passed")
 
     # Optionally create a pickle artifact used by some downstream steps
-    pickle_dir = Path("data/training")
+    pickle_dir=Path("data/training")
     pickle_dir.mkdir(parents=True, exist_ok=True)
-    pickle_file = pickle_dir / f"{args.exchange}_{args.symbol}_collected_data.pkl"
+    pickle_file=pickle_dir / f"{args.exchange}_{args.symbol}_collected_data.pkl"
     try:
         import pickle  # local import to avoid overhead if unused
 
@@ -175,16 +175,16 @@ async def main() -> bool:
     logger.info("Starting lightweight optimized training execution...")
     result: dict[str, Any] = {}
     if hasattr(training_manager, "execute_optimized_training"):
-        result = await training_manager.execute_optimized_training(
+        result=await training_manager.execute_optimized_training(
             args.symbol, args.exchange, timeframe="1m"
         )
     elif hasattr(training_manager, "execute_enhanced_training"):
-        result_success = await training_manager.execute_enhanced_training(
+        result_success=await training_manager.execute_enhanced_training(
             {"symbol": args.symbol, "exchange": args.exchange, "training_mode": "blank"}
         )
-        result = {"success": bool(result_success)}
+        result={"success": bool(result_success)}
 
-    duration = time.time() - start_time
+    duration=time.time() - start_time
     logger.info(f"Training pipeline completed in {duration:.2f} seconds")
 
     if result is not None:
@@ -199,5 +199,5 @@ async def main() -> bool:
     return False
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     asyncio.run(main())

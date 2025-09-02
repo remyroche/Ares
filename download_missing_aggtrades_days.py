@@ -20,24 +20,24 @@ from backtesting.ares_data_downloader_optimized import (
 )
 
 # Add project root to path
-project_root = Path(__file__).parent
+project_root=Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 # Setup logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
-logger = logging.getLogger(__name__)
+logger=logging.getLogger(__name__)
 
 # Global flag for graceful shutdown
-shutdown_requested = False
+shutdown_requested=False
 
 
 def signal_handler(signum, frame):
     """Handle interrupt signals gracefully"""
     global shutdown_requested
     print(f"\n⚠️ Received signal {signum}. Gracefully shutting down...")
-    shutdown_requested = True
+    shutdown_requested=True
 
 
 # Register signal handlers
@@ -45,7 +45,7 @@ signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
 # Missing aggtrades days identified from analysis
-MISSING_AGGTRADES_DAYS = [
+MISSING_AGGTRADES_DAYS=[
     "2024-03-05",
     "2024-04-05",
     "2024-04-16",
@@ -71,7 +71,7 @@ async def download_single_day_aggtrades(date_str: str) -> bool:
     print("-" * 60)
 
     try:
-        config = DownloadConfig(
+        config=DownloadConfig(
             symbol="ETHUSDT",
             exchange="BINANCE",
             interval="1m",
@@ -80,13 +80,13 @@ async def download_single_day_aggtrades(date_str: str) -> bool:
             end_date_str=date_str,
         )
 
-        downloader = OptimizedDataDownloader(config)
+        downloader=OptimizedDataDownloader(config)
         # Initialize the downloader first
         if not await downloader.initialize():
             print(f"❌ Failed to initialize downloader for {date_str}")
             return False
         # Download only aggtrades data, not all data types
-        success = await downloader.download_aggtrades_parallel()
+        success=await downloader.download_aggtrades_parallel()
 
         if success:
             print(f"✅ Successfully downloaded aggtrades data for {date_str}")
@@ -109,7 +109,7 @@ async def download_missing_aggtrades_batch():
     print("🚀 Downloading aggtrades data for all missing days")
     print("=" * 80)
 
-    results = {}
+    results={}
     total_days = len(MISSING_AGGTRADES_DAYS)
 
     for i, date_str in enumerate(MISSING_AGGTRADES_DAYS, 1):
@@ -118,7 +118,7 @@ async def download_missing_aggtrades_batch():
             break
 
         print(f"\n📅 Processing day {i}/{total_days}: {date_str}")
-        success = await download_single_day_aggtrades(date_str)
+        success=await download_single_day_aggtrades(date_str)
         results[date_str] = success
 
         # Add a small delay between downloads to be respectful to the API
@@ -131,8 +131,8 @@ async def download_missing_aggtrades_batch():
     print("📊 DOWNLOAD SUMMARY")
     print("=" * 80)
 
-    successful_downloads = sum(1 for success in results.values() if success)
-    failed_downloads = len(results) - successful_downloads
+    successful_downloads=sum(1 for success in results.values() if success)
+    failed_downloads=len(results) - successful_downloads
 
     print(f"✅ Successful downloads: {successful_downloads}")
     print(f"❌ Failed downloads: {failed_downloads}")
@@ -144,7 +144,7 @@ async def download_missing_aggtrades_batch():
             if not success:
                 print(f"   - {date_str}")
 
-    return successful_downloads == len(results)
+    return successful_downloads== len(results)
 
 
 async def download_missing_aggtrades_by_month():
@@ -157,14 +157,14 @@ async def download_missing_aggtrades_by_month():
     print("=" * 80)
 
     # Group missing days by month
-    missing_by_month = {}
+    missing_by_month={}
     for date_str in MISSING_AGGTRADES_DAYS:
         month = date_str[:7]  # YYYY-MM
         if month not in missing_by_month:
             missing_by_month[month] = []
         missing_by_month[month].append(date_str)
 
-    results = {}
+    results={}
 
     for month, dates in missing_by_month.items():
         if shutdown_requested:
@@ -175,19 +175,19 @@ async def download_missing_aggtrades_by_month():
         print(f"Missing days: {', '.join(dates)}")
 
         # Download the entire month to ensure we get all missing days
-        start_date = f"{month}-01"
+        start_date=f"{month}-01"
 
         # Calculate end date (last day of month)
         if month.endswith("-02"):
             # February - handle leap years
-            year = int(month[:4])
-            if year % 4 == 0 and (year % 100 != 0 or year % 400 == 0):
-                end_date = f"{month}-29"
+            year=int(month[:4])
+            if year % 4== 0 and (year % 100 != 0 or year % 400 == 0):
+                end_date=f"{month}-29"
             else:
                 end_date = f"{month}-28"
         elif month.endswith(("-04", "-06", "-09", "-11")):
             # 30-day months
-            end_date = f"{month}-30"
+            end_date=f"{month}-30"
         else:
             # 31-day months
             end_date = f"{month}-31"
@@ -202,7 +202,7 @@ async def download_missing_aggtrades_by_month():
                 end_date_str=end_date,
             )
 
-            downloader = OptimizedDataDownloader(config)
+            downloader=OptimizedDataDownloader(config)
             # Initialize the downloader first
             if not await downloader.initialize():
                 print(f"❌ Failed to initialize downloader for {month}")
@@ -210,7 +210,7 @@ async def download_missing_aggtrades_by_month():
                     results[date_str] = False
                 continue
             # Download only aggtrades data, not all data types
-            success = await downloader.download_aggtrades_parallel()
+            success=await downloader.download_aggtrades_parallel()
 
             if success:
                 print(f"✅ Successfully downloaded aggtrades data for {month}")
@@ -239,8 +239,8 @@ async def download_missing_aggtrades_by_month():
     print("📊 DOWNLOAD SUMMARY")
     print("=" * 80)
 
-    successful_downloads = sum(1 for success in results.values() if success)
-    failed_downloads = len(results) - successful_downloads
+    successful_downloads=sum(1 for success in results.values() if success)
+    failed_downloads=len(results) - successful_downloads
 
     print(f"✅ Successful downloads: {successful_downloads}")
     print(f"❌ Failed downloads: {failed_downloads}")
@@ -252,7 +252,7 @@ async def download_missing_aggtrades_by_month():
             if not success:
                 print(f"   - {date_str}")
 
-    return successful_downloads == len(results)
+    return successful_downloads== len(results)
 
 
 async def main():
@@ -274,16 +274,16 @@ async def main():
     print("2. Download by month (faster but downloads entire months)")
 
     while True:
-        choice = input("\nEnter choice (1 or 2): ").strip()
+        choice=input("\nEnter choice (1 or 2): ").strip()
         if choice in ["1", "2"]:
             break
         print("❌ Invalid choice. Please enter 1 or 2.")
 
     try:
-        if choice == "1":
+        if choice== "1":
             success = await download_missing_aggtrades_batch()
         else:
-            success = await download_missing_aggtrades_by_month()
+            success=await download_missing_aggtrades_by_month()
 
         if success:
             print("\n🎉 All missing aggtrades days downloaded successfully!")
@@ -299,5 +299,5 @@ async def main():
         print("\n👋 Download process completed")
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     asyncio.run(main())

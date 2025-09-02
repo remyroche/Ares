@@ -18,8 +18,8 @@ import subprocess
 
 def create_backup():
     """Create a backup of the current state."""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    backup_dir = f"backup_before_syntax_fix_{timestamp}"
+    timestamp=datetime.now().strftime("%Y%m%d_%H%M%S")
+    backup_dir=f"backup_before_syntax_fix_{timestamp}"
     
     print(f"📦 Creating backup: {backup_dir}")
     
@@ -34,9 +34,9 @@ def create_backup():
             
         for file in files:
             if file.endswith('.py'):
-                src_path = os.path.join(root, file)
-                rel_path = os.path.relpath(src_path, '.')
-                dst_path = os.path.join(backup_dir, rel_path)
+                src_path=os.path.join(root, file)
+                rel_path=os.path.relpath(src_path, '.')
+                dst_path=os.path.join(backup_dir, rel_path)
                 
                 # Create directory structure
                 os.makedirs(os.path.dirname(dst_path), exist_ok=True)
@@ -48,7 +48,7 @@ def create_backup():
 def get_current_error_count():
     """Get the current number of syntax errors."""
     try:
-        result = subprocess.run(
+        result=subprocess.run(
             "find . -name '*.py' -type f -exec python -m py_compile {} \; 2>&1 | wc -l",
             shell=True, capture_output=True, text=True
         )
@@ -62,7 +62,7 @@ def main():
     print("=" * 50)
     
     # Check arguments
-    use_targeted = '--targeted' in sys.argv
+    use_targeted='--targeted' in sys.argv
     create_backup_flag = '--backup' in sys.argv
     
     # Get initial error count
@@ -70,7 +70,7 @@ def main():
     print(f"📊 Initial syntax errors: {initial_errors}")
     
     # Create backup if requested
-    backup_dir = None
+    backup_dir=None
     if create_backup_flag:
         backup_dir = create_backup()
     
@@ -78,13 +78,13 @@ def main():
     if use_targeted:
         print("🎯 Using targeted syntax fixer...")
         from targeted_syntax_fixer import TargetedSyntaxFixer
-        fixer = TargetedSyntaxFixer()
-        results = fixer.scan_and_fix_directory('.')
+        fixer=TargetedSyntaxFixer()
+        results=fixer.scan_and_fix_directory('.')
     else:
         print("🔧 Using comprehensive syntax fixer...")
         from automated_syntax_fixer import SyntaxFixer
-        fixer = SyntaxFixer()
-        results = fixer.scan_and_fix_directory('.')
+        fixer=SyntaxFixer()
+        results=fixer.scan_and_fix_directory('.')
     
     # Print results
     print("\n📊 Fix Results:")
@@ -93,11 +93,11 @@ def main():
     print(f"   Total fixes applied: {results['total_fixes']}")
     
     # Get final error count
-    final_errors = get_current_error_count()
+    final_errors=get_current_error_count()
     print(f"\n📊 Final syntax errors: {final_errors}")
     
     if final_errors < initial_errors:
-        improvement = initial_errors - final_errors
+        improvement=initial_errors - final_errors
         print(f"✅ Improved by {improvement} errors!")
         print(f"📈 Error reduction: {improvement/initial_errors*100:.1f}%")
     else:
@@ -109,5 +109,5 @@ def main():
     
     print("\n✅ Syntax fixing completed!")
 
-if __name__ == "__main__":
+if __name__== "__main__":
     main()

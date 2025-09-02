@@ -26,7 +26,7 @@ def consolidate_klines_data(symbol="ETHUSDT", exchange="BINANCE", timeframe="1m"
     print(f"🔄 Consolidating {timeframe} klines data for {symbol} on {exchange}")
 
     # Pattern to match monthly files
-    pattern = f"data_cache/klines_{exchange}_{symbol}_{timeframe}_*.csv"
+    pattern=f"data_cache/klines_{exchange}_{symbol}_{timeframe}_*.csv"
 
     # Find all matching files
     files = sorted(glob.glob(pattern))
@@ -42,7 +42,7 @@ def consolidate_klines_data(symbol="ETHUSDT", exchange="BINANCE", timeframe="1m"
         print(f"   ... and {len(files) - 10} more files")
 
     # Read and concatenate all files
-    dataframes = []
+    dataframes=[]
     total_rows = 0
 
     for file in files:
@@ -63,65 +63,65 @@ def consolidate_klines_data(symbol="ETHUSDT", exchange="BINANCE", timeframe="1m"
 
     # Concatenate all dataframes
     print(f"🔄 Concatenating {len(dataframes)} dataframes...")
-    consolidated_df = pd.concat(dataframes, ignore_index = True)
+    consolidated_df=pd.concat(dataframes, ignore_index=True)
 
     # Remove duplicates based on timestamp
     print("🔄 Removing duplicates...")
     if "timestamp" in consolidated_df.columns:
-        consolidated_df = consolidated_df.drop_duplicates(subset=["timestamp"])
+        consolidated_df=consolidated_df.drop_duplicates(subset=["timestamp"])
     elif "time" in consolidated_df.columns:
-        consolidated_df = consolidated_df.drop_duplicates(subset=["time"])
+        consolidated_df=consolidated_df.drop_duplicates(subset=["time"])
 
     # Sort by timestamp
     print("🔄 Sorting by timestamp...")
     if "timestamp" in consolidated_df.columns:
-        consolidated_df = consolidated_df.sort_values("timestamp")
+        consolidated_df=consolidated_df.sort_values("timestamp")
     elif "time" in consolidated_df.columns:
-        consolidated_df = consolidated_df.sort_values("time")
+        consolidated_df=consolidated_df.sort_values("time")
 
     print(f"✅ Consolidated data: {len(consolidated_df)} rows")
 
     # Save consolidated file
-    output_file = (
+    output_file=(
         f"data_cache/klines_{exchange}_{symbol}_{timeframe}_consolidated_fixed.csv"
     )
     print(f"💾 Saving consolidated data to: {output_file}")
 
-    consolidated_df.to_csv(output_file, index = False)
+    consolidated_df.to_csv(output_file, index=False)
 
     # Verify the file was created
     if os.path.exists(output_file):
-        file_size = os.path.getsize(output_file)
+        file_size=os.path.getsize(output_file)
         print(f"✅ Successfully created {output_file}")
         print(f"📊 File size: {file_size:,} bytes ({file_size/1024/1024:.1f} MB)")
 
         # Show date range
         if "timestamp" in consolidated_df.columns:
             # Check if timestamp is numeric (milliseconds) or string (datetime)
-            sample_timestamp = consolidated_df["timestamp"].iloc[0]
+            sample_timestamp=consolidated_df["timestamp"].iloc[0]
             if (
-                isinstance(sample_timestamp , int | float)
+                isinstance(sample_timestamp, int | float)
                 or str(sample_timestamp).isdigit()
             ):
-                start_date = pd.to_datetime(
+                start_date=pd.to_datetime(
                     consolidated_df["timestamp"].min(),
                     unit="ms",
                 )
-                end_date = pd.to_datetime(consolidated_df["timestamp"].max(), unit="ms")
+                end_date=pd.to_datetime(consolidated_df["timestamp"].max(), unit="ms")
             else:
-                start_date = pd.to_datetime(consolidated_df["timestamp"].min())
-                end_date = pd.to_datetime(consolidated_df["timestamp"].max())
+                start_date=pd.to_datetime(consolidated_df["timestamp"].min())
+                end_date=pd.to_datetime(consolidated_df["timestamp"].max())
         elif "time" in consolidated_df.columns:
-            start_date = pd.to_datetime(consolidated_df["time"].min())
-            end_date = pd.to_datetime(consolidated_df["time"].max())
+            start_date=pd.to_datetime(consolidated_df["time"].min())
+            end_date=pd.to_datetime(consolidated_df["time"].max())
         else:
-            start_date, end_date = "Unknown"
+            start_date, end_date="Unknown"
 
         print(f"📅 Date range: {start_date} to {end_date}")
 
         # Calculate data span in days
-        if isinstance(start_date , datetime) and isinstance(end_date, datetime):
-            data_span = (end_date - start_date).days
+        if isinstance(start_date, datetime) and isinstance(end_date, datetime):
+            data_span=(end_date - start_date).days
             print(f"📊 Data span: {data_span} days")
 
         return True
@@ -134,7 +134,7 @@ def main():
     print("🚀 Starting data consolidation...")
 
     # Consolidate 1m klines data
-    success = consolidate_klines_data("ETHUSDT", "BINANCE", "1m")
+    success=consolidate_klines_data("ETHUSDT", "BINANCE", "1m")
 
     if success:
         print("✅ Data consolidation completed successfully!")
@@ -151,5 +151,5 @@ def main():
     return 0
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     sys.exit(main())

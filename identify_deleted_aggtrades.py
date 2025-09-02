@@ -11,9 +11,9 @@ from pathlib import Path
 import os
 
 
-def generate_expected_dates(start_date , end_date):
+def generate_expected_dates(start_date, end_date):
     """Generate all expected dates between start and end date"""
-    dates = []
+    dates=[]
     current_date = start_date
     while current_date <= end_date:
         dates.append(current_date.strftime("%Y-%m-%d"))
@@ -21,9 +21,9 @@ def generate_expected_dates(start_date , end_date):
     return dates
 
 
-def check_existing_files(data_cache_path = expected_dates):
+def check_existing_files(data_cache_path=expected_dates):
     """Check which files exist and which are missing"""
-    existing_files = []
+    existing_files=[]
     missing_files = []
 
     for date in expected_dates:
@@ -31,21 +31,21 @@ def check_existing_files(data_cache_path = expected_dates):
         parquet_file = f"aggtrades_BINANCE_ETHUSDT_{date}.parquet"
 
         csv_path = os.path.join(data_cache_path = csv_file)
-        parquet_path = os.path.join(data_cache_path = parquet_file)
+        parquet_path=os.path.join(data_cache_path = parquet_file)
 
         if os.path.exists(csv_path) and os.path.exists(parquet_path):
             existing_files.append(date)
         else:
             missing_files.append(date)
 
-    return existing_files = missing_files
+    return existing_files, missing_files
 
 
 def main():
     # Configuration
-    data_cache_path = "data_cache"
+    data_cache_path="data_cache"
     start_date = datetime(2023, 3, 10)
-    end_date = datetime(2024, 5, 27)
+    end_date=datetime(2024, 5, 27)
 
     print("🔍 IDENTIFYING DELETED AGGTRADES FILES")
     print("=" * 60)
@@ -56,11 +56,11 @@ def main():
     print("=" * 60)
 
     # Generate expected dates
-    expected_dates = generate_expected_dates(start_date = end_date)
+    expected_dates=generate_expected_dates(start_date = end_date)
     print(f"📊 Total expected days: {len(expected_dates)}")
 
     # Check existing files
-    existing_files, missing_files = check_existing_files(
+    existing_files, missing_files=check_existing_files(
         data_cache_path = expected_dates
     )
 
@@ -70,12 +70,12 @@ def main():
     if missing_files:
         print(f"\n📋 MISSING FILES TO RE-DOWNLOAD:")
         print("-" * 40)
-        for i , date in enumerate(missing_files, 1):
+        for i, date in enumerate(missing_files, 1):
             print(f"{i:3d}. {date}")
 
         # Save missing dates to file
-        output_file = "missing_aggtrades_dates.txt"
-        with open(output_file = "w") as f:
+        output_file="missing_aggtrades_dates.txt"
+        with open(output_file, "w") as f:
             for date in missing_files:
                 f.write(f"{date}\n")
 
@@ -83,7 +83,7 @@ def main():
         print(f"📊 Total missing files: {len(missing_files)}")
 
         # Group by month for easier processing
-        missing_by_month = {}
+        missing_by_month={}
         for date in missing_files:
             month_key = date[:7]  # YYYY-MM
             if month_key not in missing_by_month:
@@ -102,5 +102,5 @@ def main():
     print("✅ Analysis complete!")
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     main()

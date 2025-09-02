@@ -6,20 +6,21 @@ This script analyzes the HMM regime discovery process to understand why
 0 distinct market archetypes are being found.
 """
 
-from pathlib import Path, import os
+from pathlib import Path
+import os
 import sys
 
 import pandas as pd
 
 # Add the project root to the Python path
-project_root , Path(__file__).parent
+project_root, Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 
-def analyze_hmm_combinations(symbol = "ETHUSDT", exchange="BINANCE", timeframe="1m"):
+def analyze_hmm_combinations(symbol="ETHUSDT", exchange="BINANCE", timeframe="1m"):
     """Analyze HMM combinations to understand the clustering issue."""
 
-    data_dir = "data/training"
+    data_dir="data/training"
 
     # Check if HMM block states exist
     block_states_path = os.path.join(
@@ -33,44 +34,44 @@ def analyze_hmm_combinations(symbol = "ETHUSDT", exchange="BINANCE", timeframe="
     print("=" * 80)
 
     # Load block states
-    block_df = pd.read_parquet(block_states_path)
+    block_df=pd.read_parquet(block_states_path)
     print(f"📈 Loaded {len(block_df)} rows of HMM block states")
 
     # Extract state columns
-    state_cols = [col for col in block_df.columns if col.endswith("_state_id")]
+    state_cols=[col for col in block_df.columns if col.endswith("_state_id")]
     print(f"🔍 Found {len(state_cols)} state columns: {state_cols}")
 
     # Analyze each block's states
     for col in state_cols:
-        block_name = col.replace("_state_id", "")
-        states = block_df[col].dropna()
-        unique_states = states.unique()
-        state_counts = states.value_counts()
+        block_name=col.replace("_state_id", "")
+        states=block_df[col].dropna()
+        unique_states=states.unique()
+        state_counts=states.value_counts()
 
         print(f"\n📊 Block: {block_name}")
         print(f"   Unique states: {len(unique_states)} - {sorted(unique_states)}")
         print("   State distribution:")
-        for state , count in state_counts.items():
-            percentage = (count / len(states)) * 100
+        for state, count in state_counts.items():
+            percentage=(count / len(states)) * 100
             print(f"     State {state}: {count} ({percentage:.2f}%)")
 
     # Create combinations
     print("\n🔗 Creating combinations...")
-    combination_keys = []
+    combination_keys=[]
     for idx in range(len(block_df)):
-        key_parts = []
+        key_parts=[]
         for col in state_cols:
             state_val = block_df.iloc[idx][col]
             if pd.notna(state_val):
-                block_name = col.replace("_state_id", "")
+                block_name=col.replace("_state_id", "")
                 key_parts.append(f"{block_name}:{int(state_val)}")
         if key_parts:
             combination_keys.append("|".join(key_parts))
         else:
             combination_keys.append("")
 
-    combo_series = pd.Series(combination_keys)
-    combo_counts = combo_series.value_counts()
+    combo_series=pd.Series(combination_keys)
+    combo_counts=combo_series.value_counts()
 
     print("📊 Combination Analysis:")
     print(f"   Total combinations: {len(combo_series)}")
@@ -79,12 +80,12 @@ def analyze_hmm_combinations(symbol = "ETHUSDT", exchange="BINANCE", timeframe="
 
     # Show top combinations
     print("\n🏆 Top 10 combinations:")
-    for i , (combo, count) in enumerate(combo_counts.head(10).items()):
-        percentage = (count / len(combo_series)) * 100
+    for i, (combo, count) in enumerate(combo_counts.head(10).items()):
+        percentage=(count / len(combo_series)) * 100
         print(f"   {i+1}. {combo}: {count} ({percentage:.3f}%)")
 
     # Analyze filtering threshold
-    min_count_threshold = max(5, int(0.005 * len(combo_series)))
+    min_count_threshold=max(5, int(0.005 * len(combo_series)))
     print("\n🎯 Filtering Analysis:")
     print(f"   Minimum count threshold: {min_count_threshold}")
     print(
@@ -95,10 +96,10 @@ def analyze_hmm_combinations(symbol = "ETHUSDT", exchange="BINANCE", timeframe="
     )
 
     # Show combinations that would be kept
-    kept_combos = combo_counts[combo_counts >= min_count_threshold]
+    kept_combos=combo_counts[combo_counts >= min_count_threshold]
     print("\n✅ Combinations that would be kept:")
-    for combo , count in kept_combos.items():
-        percentage = (count / len(combo_series)) * 100
+    for combo, count in kept_combos.items():
+        percentage=(count / len(combo_series)) * 100
         print(f"   {combo}: {count} ({percentage:.3f}%)")
 
     # Check if we have enough data for clustering
@@ -116,8 +117,8 @@ def analyze_hmm_combinations(symbol = "ETHUSDT", exchange="BINANCE", timeframe="
 
         # Calculate what threshold would work
         if len(combo_counts) > 0:
-            max_count = combo_counts.max()
-            suggested_threshold = max(1, max_count // 10)  # Use 10% of max count
+            max_count=combo_counts.max()
+            suggested_threshold=max(1, max_count // 10)  # Use 10% of max count
             print(f"\n   Suggested threshold: {suggested_threshold}")
             print(
                 f"   This would keep {len(combo_counts[combo_counts >= suggested_threshold])} combinations",
@@ -140,7 +141,7 @@ def main():
     print("=" * 80)
 
     # Analyze for different timeframes
-    timeframes = ["1m", "5m", "15m", "30m"]
+    timeframes=["1m", "5m", "15m", "30m"]
 
     for tf in timeframes:
         print(f"\n{'='*20} TIMEFRAME: {tf} {'='*20}")
@@ -148,5 +149,5 @@ def main():
         print()
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     main()

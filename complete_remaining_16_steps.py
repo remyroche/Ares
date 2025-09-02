@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import List, Dict, Any
 
 # Steps that need full integration
-STEPS_TO_INTEGRATE = [
+STEPS_TO_INTEGRATE=[
     "step3_hmm_regime_discovery.py",
     "step6_feature_engineering.py",
     "step9_hmm_based_training.py",
@@ -28,7 +28,7 @@ STEPS_TO_INTEGRATE = [
 ]
 
 # Template for artifact logging method (fixed template)
-ARTIFACT_LOGGING_METHOD_TEMPLATE = '''
+ARTIFACT_LOGGING_METHOD_TEMPLATE='''
     async def _log_step{step_num}_artifacts_and_report(
         self, 
         training_input: dict[str, Any], 
@@ -37,12 +37,12 @@ ARTIFACT_LOGGING_METHOD_TEMPLATE = '''
     ) -> None:
         """Log step {step_num} artifacts and create detailed report."""
         try:
-            symbol = training_input.get("symbol", "ETHUSDT")
-            exchange = training_input.get("exchange", "BINANCE")
-            timeframe = training_input.get("timeframe", "1m")
+            symbol=training_input.get("symbol", "ETHUSDT")
+            exchange=training_input.get("exchange", "BINANCE")
+            timeframe=training_input.get("timeframe", "1m")
             
             # Collect execution metadata
-            execution_metadata = {{
+            execution_metadata={{
                 "start_time": datetime.now().isoformat(),
                 "end_time": datetime.now().isoformat(),
                 "duration_seconds": 0.0,  # Will be calculated if available
@@ -53,7 +53,7 @@ ARTIFACT_LOGGING_METHOD_TEMPLATE = '''
             }}
             
             # Collect artifacts generated
-            artifacts_generated = []
+            artifacts_generated=[]
             if pipeline_state.get("step{step_num}_completed", False):
                 # Add expected artifacts for step {step_num}
                 artifacts_generated.extend([
@@ -62,7 +62,7 @@ ARTIFACT_LOGGING_METHOD_TEMPLATE = '''
                 ])
             
             # Collect metrics
-            metrics_calculated = {{
+            metrics_calculated={{
                 "step{step_num}_success": 1.0 if pipeline_state.get("step{step_num}_completed", False) else 0.0,
                 "total_artifacts_generated": len(artifacts_generated),
             }}
@@ -74,7 +74,7 @@ ARTIFACT_LOGGING_METHOD_TEMPLATE = '''
                         metrics_calculated[f"step{step_num}_{key}"] = float(value)
             
             # Create training input for report
-            training_input_for_report = {{
+            training_input_for_report={{
                 "symbol": symbol,
                 "exchange": exchange,
                 "timeframe": timeframe,
@@ -85,13 +85,13 @@ ARTIFACT_LOGGING_METHOD_TEMPLATE = '''
             }}
             
             # Create step data for report
-            step_data = {{
+            step_data={{
                 "step_results": step_results,
                 "pipeline_state": pipeline_state,
             }}
             
             # Create detailed report
-            report_data = create_detailed_step_report(
+            report_data=create_detailed_step_report(
                 step_name="step{step_num}",
                 step_data=step_data,
                 training_input=training_input_for_report,
@@ -102,7 +102,7 @@ ARTIFACT_LOGGING_METHOD_TEMPLATE = '''
             )
             
             # Log the report
-            report_name = log_step_report(
+            report_name=log_step_report(
                 config=self.config,
                 step_name="step{step_num}",
                 report_data=report_data,
@@ -135,7 +135,7 @@ ARTIFACT_LOGGING_METHOD_TEMPLATE = '''
             
             # Log step-specific summary if available
             if step_results:
-                summary_report_name = log_step_report(
+                summary_report_name=log_step_report(
                     config=self.config,
                     step_name="step{step_num}",
                     report_data=step_results,
@@ -161,7 +161,7 @@ ARTIFACT_LOGGING_METHOD_TEMPLATE = '''
 
 def extract_step_number(filename: str) -> str:
     """Extract step number from filename."""
-    match = re.search(r'step(\d+(?:_\d+)?)', filename)
+    match=re.search(r'step(\d+(?:_\d+)?)', filename)
     if match:
         return match.group(1)
     return "unknown"
@@ -171,13 +171,13 @@ def find_execute_methods(file_path: Path) -> List[tuple[str, int]]:
     """Find all execute methods in a step file."""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+            content=f.read()
         
-        methods = []
+        methods=[]
         lines = content.split('\n')
         
         # Look for different execute method patterns
-        patterns = [
+        patterns=[
             r'async def execute\s*\([^)]*\)\s*->[^:]*:',
             r'def execute\s*\([^)]*\)\s*->[^:]*:',
             r'async def execute_[a-zA-Z_]*\s*\([^)]*\)\s*->[^:]*:',
@@ -204,7 +204,7 @@ def add_mlflow_imports(file_path: Path) -> bool:
     """Add MLflow imports to a step file."""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+            content=f.read()
         
         # Check if imports already exist
         if "from src.utils.enhanced_mlflow_integration import" in content:
@@ -212,17 +212,17 @@ def add_mlflow_imports(file_path: Path) -> bool:
             return True
         
         # Find the right place to add imports (after existing imports)
-        lines = content.split('\n')
-        import_end = 0
+        lines=content.split('\n')
+        import_end=0
         
         for i, line in enumerate(lines):
             if line.strip().startswith('import ') or line.strip().startswith('from '):
-                import_end = i + 1
+                import_end=i + 1
             elif line.strip() and not line.strip().startswith('#'):
                 break
         
         # Add MLflow imports
-        mlflow_imports = [
+        mlflow_imports=[
             "",
             "from src.utils.enhanced_mlflow_integration import (",
             "    with_enhanced_mlflow_logging,",
@@ -236,7 +236,7 @@ def add_mlflow_imports(file_path: Path) -> bool:
         ]
         
         lines[import_end:import_end] = mlflow_imports
-        new_content = '\n'.join(lines)
+        new_content='\n'.join(lines)
         
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(new_content)
@@ -253,7 +253,7 @@ def add_mlflow_decorator(file_path: Path) -> bool:
     """Add MLflow decorator to execute methods."""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+            content=f.read()
         
         # Check if decorator already exists
         if "@with_enhanced_mlflow_logging" in content:
@@ -261,41 +261,41 @@ def add_mlflow_decorator(file_path: Path) -> bool:
             return True
         
         # Find execute methods
-        execute_methods = find_execute_methods(file_path)
+        execute_methods=find_execute_methods(file_path)
         
         if not execute_methods:
             print(f"⚠️ Could not find execute methods in {file_path.name}")
             return False
         
         # Extract step number
-        step_num = extract_step_number(file_path.name)
-        decorator = f'    @with_enhanced_mlflow_logging("step{step_num}")'
+        step_num=extract_step_number(file_path.name)
+        decorator=f'    @with_enhanced_mlflow_logging("step{step_num}")'
         
         # Add decorator to each execute method
-        lines = content.split('\n')
-        changes_made = False
+        lines=content.split('\n')
+        changes_made=False
         
         for method_line, line_num in execute_methods:
             # Check if decorator is already present before this method
-            decorator_present = False
+            decorator_present=False
             for i in range(line_num - 1, max(0, line_num - 10), -1):
                 if lines[i].strip().startswith('@with_enhanced_mlflow_logging'):
-                    decorator_present = True
+                    decorator_present=True
                     break
                 elif lines[i].strip() and not lines[i].strip().startswith('@'):
                     break
             
             if not decorator_present:
                 # Find the right position (before other decorators)
-                insert_pos = line_num
+                insert_pos=line_num
                 for i in range(line_num - 1, -1, -1):
                     if lines[i].strip().startswith('@'):
-                        insert_pos = i
+                        insert_pos=i
                     elif lines[i].strip() and not lines[i].strip().startswith('#'):
                         break
                 
                 lines.insert(insert_pos, decorator)
-                changes_made = True
+                changes_made=True
         
         if changes_made:
             new_content = '\n'.join(lines)
@@ -317,12 +317,12 @@ def add_artifact_logging_call(file_path: Path) -> bool:
     """Add call to artifact logging method before return statement."""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+            content=f.read()
         
         # Find execute methods and their return statements
-        lines = content.split('\n')
-        step_num = extract_step_number(file_path.name)
-        method_name = f"_log_step{step_num}_artifacts_and_report"
+        lines=content.split('\n')
+        step_num=extract_step_number(file_path.name)
+        method_name=f"_log_step{step_num}_artifacts_and_report"
         
         # Look for return statements in execute methods
         changes_made = False
@@ -332,19 +332,18 @@ def add_artifact_logging_call(file_path: Path) -> bool:
                 # Found execute method, look for return statement
                 for j in range(i + 1, len(lines)):
                     if lines[j].strip().startswith('return '):
-                        # Add call before return
-                        call_line = f'            # Log artifacts and create detailed report'
+                        # Add call before return call_line, f'            # Log artifacts and create detailed report'
                         call_line2 = f'            await self.{method_name}(training_input, pipeline_state, result)'
                         lines.insert(j, call_line2)
                         lines.insert(j, call_line)
-                        changes_made = True
+                        changes_made=True
                         break
                     elif lines[j].strip() and not lines[j].strip().startswith(' ') and not lines[j].strip().startswith('#'):
                         # Found another method, execute method ended
                         break
         
         if changes_made:
-            new_content = '\n'.join(lines)
+            new_content='\n'.join(lines)
             with open(file_path, 'w', encoding='utf-8') as f:
                 f.write(new_content)
             
@@ -363,24 +362,24 @@ def add_artifact_logging_method(file_path: Path) -> bool:
     """Add artifact logging method to step file."""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+            content=f.read()
         
         # Check if method already exists
-        step_num = extract_step_number(file_path.name)
-        method_name = f"_log_step{step_num}_artifacts_and_report"
+        step_num=extract_step_number(file_path.name)
+        method_name=f"_log_step{step_num}_artifacts_and_report"
         
         if method_name in content:
             print(f"✅ Artifact logging method already exists in {file_path.name}")
             return True
         
         # Find the end of the file to add the method
-        lines = content.split('\n')
+        lines=content.split('\n')
         
         # Add the artifact logging method at the end
-        method_content = ARTIFACT_LOGGING_METHOD_TEMPLATE.format(step_num=step_num)
+        method_content=ARTIFACT_LOGGING_METHOD_TEMPLATE.format(step_num=step_num)
         
         lines.append(method_content)
-        new_content = '\n'.join(lines)
+        new_content='\n'.join(lines)
         
         with open(file_path, 'w', encoding='utf-8') as f:
             f.write(new_content)
@@ -395,7 +394,7 @@ def add_artifact_logging_method(file_path: Path) -> bool:
 
 def integrate_step_file(file_path: Path) -> Dict[str, bool]:
     """Integrate a single step file with enhanced MLflow logging."""
-    results = {
+    results={
         "imports": False,
         "decorator": False,
         "call": False,
@@ -421,7 +420,7 @@ def integrate_step_file(file_path: Path) -> Dict[str, bool]:
 
 def main():
     """Main function to integrate all remaining step files."""
-    steps_dir = Path("src/training/steps")
+    steps_dir=Path("src/training/steps")
     
     if not steps_dir.exists():
         print(f"❌ Steps directory not found: {steps_dir}")
@@ -431,7 +430,7 @@ def main():
     print(f"📁 Steps directory: {steps_dir}")
     print(f"📋 Steps to integrate: {len(STEPS_TO_INTEGRATE)}")
     
-    results = {}
+    results={}
     
     for step_file in STEPS_TO_INTEGRATE:
         file_path = steps_dir / step_file
@@ -447,14 +446,14 @@ def main():
     print("📊 INTEGRATION SUMMARY")
     print("="*60)
     
-    successful_integrations = 0
+    successful_integrations=0
     total_steps = len(results)
     
     for step_file, step_results in results.items():
-        success_count = sum(step_results.values())
-        total_count = len(step_results)
+        success_count=sum(step_results.values())
+        total_count=len(step_results)
         
-        if success_count == total_count:
+        if success_count== total_count:
             print(f"✅ {step_file}: All integrations successful")
             successful_integrations += 1
         elif success_count > 0:
@@ -464,11 +463,11 @@ def main():
     
     print(f"\n🎯 Overall: {successful_integrations}/{total_steps} steps fully integrated")
     
-    if successful_integrations == total_steps:
+    if successful_integrations== total_steps:
         print("🎉 All remaining steps successfully integrated with enhanced MLflow logging!")
     else:
         print("⚠️ Some steps may need manual review")
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     main()

@@ -19,8 +19,8 @@ import numpy as np
 import pandas as pd
 
 # Add the src directory to the Python path
-current_dir = Path(__file__).parent
-src_dir = current_dir.parent / "src"
+current_dir=Path(__file__).parent
+src_dir=current_dir.parent / "src"
 sys.path.insert(0, str(src_dir))
 
 
@@ -31,12 +31,12 @@ async def validate_multicollinearity_fix() -> bool:
 
 	# Create sample data
 	print("📊 Creating sample data...")
-	dates = pd.date_range("2024-01-01", periods=1000, freq="1min")
+	dates=pd.date_range("2024-01-01", periods=1000, freq="1min")
 
 	np.random.seed(42)
-	base_price = 100 + np.cumsum(np.random.randn(1000) * 0.1)
+	base_price=100 + np.cumsum(np.random.randn(1000) * 0.1)
 
-	price_data = pd.DataFrame(
+	price_data=pd.DataFrame(
 		{
 			"timestamp": dates,
 			"open": base_price + np.random.randn(1000) * 0.5,
@@ -47,7 +47,7 @@ async def validate_multicollinearity_fix() -> bool:
 		}
 	)
 
-	volume_data = pd.DataFrame(
+	volume_data=pd.DataFrame(
 		{"timestamp": dates, "volume": price_data["volume"].copy()}
 	)
 
@@ -56,7 +56,7 @@ async def validate_multicollinearity_fix() -> bool:
 	volume_data.set_index("timestamp", inplace=True)
 
 	# Initialize feature engineering
-	config = {
+	config={
 		"vectorized_advanced_feature_engineering": {
 			"enable_multi_timeframe_features": True,
 			"timeframes": ["1m", "5m", "15m", "30m"],
@@ -67,17 +67,17 @@ async def validate_multicollinearity_fix() -> bool:
 	}
 
 	try:
-		feature_eng = VectorizedAdvancedFeatureEngineering(config)
+		feature_eng=VectorizedAdvancedFeatureEngineering(config)
 		await feature_eng.initialize()
 
 		# Engineer features
 		print("🔧 Engineering features...")
-		features = await feature_eng.engineer_features(
+		features=await feature_eng.engineer_features(
 			price_data=price_data, volume_data=volume_data
 		)
 
 		# Convert features to DataFrame
-		feature_df = pd.DataFrame()
+		feature_df=pd.DataFrame()
 		for feature_name, feature_series in features.items():
 			if isinstance(feature_series, pd.Series):
 				feature_df[feature_name] = feature_series
@@ -86,15 +86,15 @@ async def validate_multicollinearity_fix() -> bool:
 
 		# Check for perfect correlations
 		print("🔍 Checking for perfect correlations...")
-		correlation_matrix = feature_df.corr()
+		correlation_matrix=feature_df.corr()
 
 		# Find perfect correlations (r >= 0.9999)
 		perfect_correlations: List[Tuple[str, str, float]] = []
 		for i in range(len(correlation_matrix.columns)):
 			for j in range(i + 1, len(correlation_matrix.columns)):
-				corr_value = float(abs(correlation_matrix.iloc[i, j]))
+				corr_value=float(abs(correlation_matrix.iloc[i, j]))
 				if corr_value >= 0.9999:
-					feature1 = correlation_matrix.columns[i]
+					feature1=correlation_matrix.columns[i]
 					feature2 = correlation_matrix.columns[j]
 					perfect_correlations.append((feature1, feature2, corr_value))
 
@@ -106,7 +106,7 @@ async def validate_multicollinearity_fix() -> bool:
 		print("✅ No perfect correlations found!")
 
 		# Check specific problematic features
-		problematic_features = [
+		problematic_features=[
 			"1m_price_change",
 			"5m_price_change",
 			"15m_price_change",
@@ -125,9 +125,9 @@ async def validate_multicollinearity_fix() -> bool:
 				print(f"   ⚠️ Missing {feature}")
 
 		# Check that the features are different
-		correlation = 0.0
+		correlation=0.0
 		if all(f in feature_df.columns for f in ["1m_price_change", "5m_price_change"]):
-			correlation = float(
+			correlation=float(
 				feature_df["1m_price_change"].corr(
 					feature_df["5m_price_change"],
 				)
@@ -149,7 +149,7 @@ async def validate_multicollinearity_fix() -> bool:
 def main() -> None:
 	"""Main function to run the validation."""
 
-	success = asyncio.run(validate_multicollinearity_fix())
+	success=asyncio.run(validate_multicollinearity_fix())
 	if success:
 		print("\n🎉 MULTICOLLINEARITY FIX VALIDATION PASSED!")
 		print("✅ Your feature engineering is now working correctly.")
@@ -159,5 +159,5 @@ def main() -> None:
 		sys.exit(1)
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
 	main()

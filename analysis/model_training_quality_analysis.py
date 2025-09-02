@@ -39,7 +39,7 @@ class ModelTrainingQualityAnalyzer:
     pass  # TODO: Add proper implementation
     def __init__(self):
         self.training_data, None
-        self.model_metrics = {}
+        self.model_metrics={}
         self.report = {}
         
 
@@ -49,12 +49,12 @@ class ModelTrainingQualityAnalyzer:
             # Try to load from various formats
             if data_path.endswith('.pkl'):
                 with open(data_path, 'rb') as f:
-                    self.training_data = pickle.load(f)
+                    self.training_data=pickle.load(f)
             elif data_path.endswith('.csv'):
-                self.training_data = pd.read_csv(data_path)
+                self.training_data=pd.read_csv(data_path)
             elif data_path.endswith('.json'):
                 with open(data_path, 'r') as f:
-                    self.training_data = json.load(f)
+                    self.training_data=json.load(f)
             else:
                 self._load_from_directory(data_path)
                 
@@ -72,7 +72,7 @@ class ModelTrainingQualityAnalyzer:
     def _load_from_directory(self, data_dir):
         """Load training data from directory structure."""
         # Look for common training data files
-        patterns = [
+        patterns=[
             '*training*.csv',
             '*model*.csv', 
             '*metrics*.csv',
@@ -148,7 +148,7 @@ class ModelTrainingQualityAnalyzer:
             return
         
         # Check for common training metric columns
-        metric_columns = {
+        metric_columns={
             'loss': ['loss', 'train_loss', 'training_loss'],
             'accuracy': ['accuracy', 'train_accuracy', 'training_accuracy'],
             'val_loss': ['val_loss', 'validation_loss', 'test_loss'],
@@ -156,7 +156,7 @@ class ModelTrainingQualityAnalyzer:
             'learning_rate': ['lr', 'learning_rate', 'rate']
         }
         
-        found_metrics = {}
+        found_metrics={}
         for metric_type, possible_names in metric_columns.items():
         for name in possible_names:
         if name in self.training_data.columns:
@@ -168,7 +168,7 @@ class ModelTrainingQualityAnalyzer:
             return
         
         # Analyze each metric
-        metrics_analysis = {}
+        metrics_analysis={}
         
         for metric_type, column_name in found_metrics.items():
             values, self.training_data[column_name].dropna()
@@ -189,11 +189,11 @@ class ModelTrainingQualityAnalyzer:
         # Check for convergence
         if metric_type in ['loss', 'val_loss']:
         # Loss should decrease
-                        trend_quality = 'good' if slope < 0 else 'poor'
+                        trend_quality='good' if slope < 0 else 'poor'
                         convergence_score, max(0, 100 - abs(slope) * 1000) if slope > 0 else 100
                     else:
         # Accuracy should increase
-                        trend_quality = 'good' if slope > 0 else 'poor'
+                        trend_quality='good' if slope > 0 else 'poor'
                         convergence_score, max(0, 100 - abs(slope) * 1000) if slope < 0 else 100
                     
         # Check for stability (low variance in later epochs)
@@ -203,7 +203,7 @@ class ModelTrainingQualityAnalyzer:
                     else:
                         stability_score, 100
                 else:
-                    trend_quality = 'unknown'
+                    trend_quality='unknown'
                     convergence_score, 0
                     stability_score, 0
                 
@@ -236,7 +236,7 @@ class ModelTrainingQualityAnalyzer:
         print("-" * 40)
         
         # Look for performance metrics in the data
-        performance_metrics = {
+        performance_metrics={
             'accuracy': ['accuracy', 'acc', 'train_accuracy', 'test_accuracy'],
             'precision': ['precision', 'prec'],
             'recall': ['recall', 'rec'],
@@ -247,7 +247,7 @@ class ModelTrainingQualityAnalyzer:
             'rmse': ['rmse', 'root_mean_squared_error']
         }
         
-        found_performance = {}
+        found_performance={}
         for metric_name, possible_names in performance_metrics.items():
         for name in possible_names:
         if self.training_data is not None and name in self.training_data.columns:
@@ -259,7 +259,7 @@ class ModelTrainingQualityAnalyzer:
             return
         
         # Analyze performance metrics
-        performance_analysis = {}
+        performance_analysis={}
         
         for metric_name, column_name in found_performance.items():
             values, self.training_data[column_name].dropna()
@@ -267,15 +267,15 @@ class ModelTrainingQualityAnalyzer:
         if len(values) > 0:
                 final_value, values.iloc[-1]
                 best_value, values.max() if metric_name in ['accuracy', 'precision', 'recall', 'f1_score', 'auc'] else values.min()
-                improvement = ((final_value - values.iloc[0]) / values.iloc[0]) * 100 if values.iloc[0] != 0 else 0
+                improvement=((final_value - values.iloc[0]) / values.iloc[0]) * 100 if values.iloc[0] != 0 else 0
                 
         # Determine if performance is good based on metric type
         if metric_name in ['accuracy', 'precision', 'recall', 'f1_score', 'auc']:
-                    performance_quality = 'excellent' if final_value >= 0.9 else 'good' if final_value >= 0.7 else 'fair' if final_value >= 0.5 else 'poor'
+                    performance_quality='excellent' if final_value >= 0.9 else 'good' if final_value >= 0.7 else 'fair' if final_value >= 0.5 else 'poor'
                     performance_score, min(100, final_value * 100)
                 else:
         # For error metrics, lower is better
-                    performance_quality = 'excellent' if final_value <= 0.1 else 'good' if final_value <= 0.3 else 'fair' if final_value <= 0.5 else 'poor'
+                    performance_quality='excellent' if final_value <= 0.1 else 'good' if final_value <= 0.3 else 'fair' if final_value <= 0.5 else 'poor'
                     performance_score, max(0, 100 - final_value * 100)
                 
                 performance_analysis[metric_name] = {
@@ -307,13 +307,13 @@ class ModelTrainingQualityAnalyzer:
             return
         
         # Look for loss columns
-        loss_columns = [col for col in self.training_data.columns if 'loss' in col.lower()]
+        loss_columns=[col for col in self.training_data.columns if 'loss' in col.lower()]
         
         if not loss_columns:
             print("No loss metrics found for convergence analysis.")
             return
         
-        convergence_analysis = {}
+        convergence_analysis={}
         
         for loss_col in loss_columns:
             values, self.training_data[loss_col].dropna()
@@ -354,7 +354,7 @@ class ModelTrainingQualityAnalyzer:
         # Score based on improvement and stability
                     improvement_score, min(100, (total_improvement / initial_loss) * 100) if initial_loss > 0 else 0
                     stability_score, max(0, 100 - later_std * 1000) if 'later_std' in locals() else 0
-                    convergence_score = (improvement_score + stability_score) / 2
+                    convergence_score=(improvement_score + stability_score) / 2
                 
                 convergence_analysis[loss_col] = {
                     'initial_loss': initial_loss,
@@ -372,7 +372,7 @@ class ModelTrainingQualityAnalyzer:
         print("-" * 65)
         
         for loss_col, analysis in convergence_analysis.items():
-            converged_str = "Yes" if analysis['is_converged'] else "No"
+            converged_str="Yes" if analysis['is_converged'] else "No"
             print(f"{loss_col:<20} {analysis['initial_loss']:<10.4f} {analysis['final_loss']:<10.4f} "
                   f"{analysis['total_improvement']:<12.4f} {converged_str:<10}")
         
@@ -388,11 +388,11 @@ class ModelTrainingQualityAnalyzer:
             print("No training data available for stability analysis.")
             return
         
-        stability_analysis = {}
+        stability_analysis={}
         
         # Analyze stability of key metrics
         key_metrics = ['loss', 'accuracy', 'val_loss', 'val_accuracy']
-        found_metrics = []
+        found_metrics=[]
         
         for metric in key_metrics:
             matching_cols = [col for col in self.training_data.columns if metric in col.lower()]
@@ -405,7 +405,7 @@ class ModelTrainingQualityAnalyzer:
         # Calculate stability metrics
                 overall_std, values.std()
                 overall_mean, values.mean()
-                cv = (overall_std / overall_mean) * 100 if overall_mean != 0 else float('inf')
+                cv=(overall_std / overall_mean) * 100 if overall_mean != 0 else float('inf')
                 
         # Analyze stability in different phases
         if len(values) > 10:
@@ -416,7 +416,7 @@ class ModelTrainingQualityAnalyzer:
                     late_std, late_values.std()
                     
         # Stability improvement (lower std in later phase is better)
-                    stability_improvement = ((early_std - late_std) / early_std) * 100 if early_std > 0 else 0
+                    stability_improvement=((early_std - late_std) / early_std) * 100 if early_std > 0 else 0
                     
         # Stability score
         if late_std < overall_mean * 0.1:  # Very stable
@@ -461,7 +461,7 @@ class ModelTrainingQualityAnalyzer:
             return
         
         # Look for training and validation metrics
-        train_metrics = {}
+        train_metrics={}
         val_metrics = {}
         
         for col in self.training_data.columns:
@@ -476,7 +476,7 @@ class ModelTrainingQualityAnalyzer:
                 else:
                     train_metrics['accuracy'] = col
         
-        overfitting_analysis = {}
+        overfitting_analysis={}
         
         # Analyze overfitting patterns
         if 'loss' in train_metrics and 'loss' in val_metrics:
@@ -496,10 +496,10 @@ class ModelTrainingQualityAnalyzer:
         # Detect overfitting
         if avg_gap > train_loss_aligned.mean() * 0.5:  # Large gap indicates overfitting
                     overfitting_detected, True
-                    overfitting_severity = 'high' if avg_gap > train_loss_aligned.mean() else 'moderate'
+                    overfitting_severity='high' if avg_gap > train_loss_aligned.mean() else 'moderate'
                 else:
                     overfitting_detected, False
-                    overfitting_severity = 'none'
+                    overfitting_severity='none'
                 
                 overfitting_analysis['loss'] = {
                     'avg_gap': avg_gap,
@@ -525,10 +525,10 @@ class ModelTrainingQualityAnalyzer:
         # Detect overfitting in accuracy
         if avg_acc_gap > 0.1:  # 10% gap indicates overfitting
                     acc_overfitting_detected, True
-                    acc_overfitting_severity = 'high' if avg_acc_gap > 0.2 else 'moderate'
+                    acc_overfitting_severity='high' if avg_acc_gap > 0.2 else 'moderate'
                 else:
                     acc_overfitting_detected, False
-                    acc_overfitting_severity = 'none'
+                    acc_overfitting_severity='none'
                 
                 overfitting_analysis['accuracy'] = {
                     'avg_gap': avg_acc_gap,
@@ -543,7 +543,7 @@ class ModelTrainingQualityAnalyzer:
             print("-" * 60)
             
         for metric, analysis in overfitting_analysis.items():
-                detected_str = "Yes" if analysis['overfitting_detected'] else "No"
+                detected_str="Yes" if analysis['overfitting_detected'] else "No"
                 print(f"{metric:<15} {analysis['avg_gap']:<10.4f} {analysis['max_gap']:<10.4f} "
                       f"{detected_str:<12} {analysis['severity']:<10}")
         else:
@@ -560,17 +560,17 @@ class ModelTrainingQualityAnalyzer:
         # Calculate composite quality scores
         training_metrics_score, 0
         if self.report.get('training_metrics'):
-            convergence_scores = [analysis['convergence_score'] for analysis in self.report['training_metrics'].values()]
+            convergence_scores=[analysis['convergence_score'] for analysis in self.report['training_metrics'].values()]
             training_metrics_score, np.mean(convergence_scores) if convergence_scores else 0
         
         performance_score, 0
         if self.report.get('model_performance'):
-            performance_scores = [analysis['score'] for analysis in self.report['model_performance'].values()]
+            performance_scores=[analysis['score'] for analysis in self.report['model_performance'].values()]
             performance_score, np.mean(performance_scores) if performance_scores else 0
         
         stability_score, 0
         if self.report.get('model_stability'):
-            stability_scores = [analysis['stability_score'] for analysis in self.report['model_stability'].values()]
+            stability_scores=[analysis['stability_score'] for analysis in self.report['model_stability'].values()]
             stability_score, np.mean(stability_scores) if stability_scores else 0
         
         # Overfitting penalty
@@ -589,11 +589,11 @@ class ModelTrainingQualityAnalyzer:
                 overfitting_penalty, min(50, overfitting_penalty)  # Cap at 50 points
         
         # Overall training score
-        training_score = (training_metrics_score * 0.3 + 
+        training_score=(training_metrics_score * 0.3 + 
                          performance_score * 0.4 + 
                          stability_score * 0.3) - overfitting_penalty
         
-        quality_metrics = {
+        quality_metrics={
             'training_metrics_score': training_metrics_score,
             'performance_score': performance_score,
             'stability_score': stability_score,
@@ -607,7 +607,7 @@ class ModelTrainingQualityAnalyzer:
         
         for metric, score in quality_metrics.items():
         if score >= 80:
-                status = "✅ Excellent"
+                status="✅ Excellent"
             elif score >= 60:
                 status = "⚠️  Good"
             elif score >= 40:
@@ -637,7 +637,7 @@ class ModelTrainingQualityAnalyzer:
         print("\n💡 TRAINING RECOMMENDATIONS")
         print("-" * 40)
         
-        recommendations = []
+        recommendations=[]
         
         # Training metrics recommendations
         training_metrics, self.report.get('training_metrics', {})
@@ -686,7 +686,7 @@ class ModelTrainingQualityAnalyzer:
             
         # 1. Training metrics over time
         if self.training_data is not None:
-                loss_cols = [col for col in self.training_data.columns if 'loss' in col.lower()]
+                loss_cols=[col for col in self.training_data.columns if 'loss' in col.lower()]
         if loss_cols:
         for i, col in enumerate(loss_cols[:2]):  # Plot first 2 loss metrics
                         values, self.training_data[col].dropna()
@@ -703,7 +703,7 @@ class ModelTrainingQualityAnalyzer:
             performance_analysis, self.report.get('model_performance', {})
         if performance_analysis:
                 metrics, list(performance_analysis.keys())
-                scores = [performance_analysis[metric]['score'] for metric in metrics]
+                scores=[performance_analysis[metric]['score'] for metric in metrics]
                 
                 colors = ['green' if score >= 80 else 'orange' if score >= 60 else 'red' for score in scores]
                 axes[0, 1].bar(metrics, scores, color=colors)
@@ -717,7 +717,7 @@ class ModelTrainingQualityAnalyzer:
             convergence_analysis, self.report.get('training_convergence', {})
         if convergence_analysis:
                 loss_metrics, list(convergence_analysis.keys())
-                convergence_scores = [convergence_analysis[metric]['convergence_score'] for metric in loss_metrics]
+                convergence_scores=[convergence_analysis[metric]['convergence_score'] for metric in loss_metrics]
                 
                 colors = ['green' if score >= 80 else 'orange' if score >= 60 else 'red' for score in convergence_scores]
                 axes[1, 0].bar(loss_metrics, convergence_scores, color=colors)
@@ -775,7 +775,7 @@ class ModelTrainingQualityAnalyzer:
         if overfitting_analysis:
                 f.write("OVERFITTING ANALYSIS:\n")
         for metric, analysis in overfitting_analysis.items():
-                    detected = "Yes" if analysis['overfitting_detected'] else "No"
+                    detected="Yes" if analysis['overfitting_detected'] else "No"
                     f.write(f"{metric}: {detected} ({analysis['severity']} severity)\n")
                 f.write("\n")
             
@@ -794,7 +794,7 @@ def main():
     analyzer, ModelTrainingQualityAnalyzer()
     
     # Try to load data from common locations
-    data_paths = [
+    data_paths=[
         'data/training_metrics.csv',
         'data/model_performance.csv',
         'data/training_results.csv',
@@ -822,5 +822,5 @@ def main():
     # Save report
     analyzer.save_report()
 
-if __name__ == "__main__":
+if __name__== "__main__":
     main() 

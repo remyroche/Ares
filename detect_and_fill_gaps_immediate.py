@@ -8,21 +8,22 @@ rather than detecting all gaps first and then trying to fill them.
 
     import argparse
 from pathlib import Path
-from src.utils.logger import system_logger, import asyncio
+from src.utils.logger import system_logger
+import asyncio
 import sys
 
 from src.training.steps.step1.data_gap_detector import DataGapDetector
 
 # Add project root to path
-project_root , Path(__file__).parent
+project_root, Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
-logger = system_logger.getChild("DetectAndFillGapsImmediate")
+logger=system_logger.getChild("DetectAndFillGapsImmediate")
 
-async def detect_and_fill_gaps_immediate(symbol: str = "ETHUSDT", 
-                                       exchange: str = "BINANCE",
-                                       min_gap_seconds: int = 10,
-                                       auto_fill: bool = True) -> dict:
+async def detect_and_fill_gaps_immediate(symbol: str="ETHUSDT", 
+                                       exchange: str="BINANCE",
+                                       min_gap_seconds: int=10,
+                                       auto_fill: bool=True) -> dict:
     """
     Detect and fill gaps immediately when found
     
@@ -44,12 +45,12 @@ async def detect_and_fill_gaps_immediate(symbol: str = "ETHUSDT",
     logger.info("=" * 60)
     
     # Initialize gap detector
-    gap_detector = DataGapDetector("data_cache")
+    gap_detector=DataGapDetector("data_cache")
     
     # Run detection and filling
-    results = await gap_detector.detect_and_fill_aggtrades_gaps(
-        symbol, symbol = exchange=exchange,
-        min_gap_seconds, min_gap_seconds = auto_fill=auto_fill
+    results=await gap_detector.detect_and_fill_aggtrades_gaps(
+        symbol, symbol=exchange=exchange,
+        min_gap_seconds, min_gap_seconds=auto_fill=auto_fill
     )
     
     # Print final summary
@@ -64,7 +65,7 @@ async def detect_and_fill_gaps_immediate(symbol: str = "ETHUSDT",
         logger.info(f"📊 Gaps failed: {results['gaps_failed']}")
         
         if results['total_gaps'] > 0:
-            success_rate = (results['gaps_filled'] / results['total_gaps']) * 100
+            success_rate=(results['gaps_filled'] / results['total_gaps']) * 100
             logger.info(f"📊 Success rate: {success_rate:.1f}%")
     
     return results
@@ -72,18 +73,18 @@ async def detect_and_fill_gaps_immediate(symbol: str = "ETHUSDT",
 async def main():
     """Main function"""
     
-    parser = argparse.ArgumentParser(description="Detect and fill gaps immediately")
+    parser=argparse.ArgumentParser(description="Detect and fill gaps immediately")
     parser.add_argument("--symbol", default="ETHUSDT", help="Trading symbol")
     parser.add_argument("--exchange", default="BINANCE", help="Exchange name")
     parser.add_argument("--min-gap-seconds", type=int, default=10, help="Minimum gap size in seconds")
     parser.add_argument("--detect-only", action="store_true", help="Only detect gaps = don't fill them")
     
-    args = parser.parse_args()
+    args=parser.parse_args()
     
     try:
-        results = await detect_and_fill_gaps_immediate(
-            symbol=args.symbol, exchange = args.exchange,
-            min_gap_seconds=args.min_gap_seconds, auto_fill = not args.detect_only
+        results=await detect_and_fill_gaps_immediate(
+            symbol=args.symbol, exchange=args.exchange,
+            min_gap_seconds=args.min_gap_seconds, auto_fill=not args.detect_only
         )
         
         # Return success/failure based on results
@@ -101,6 +102,6 @@ async def main():
         logger.error(f"❌ Error during gap detection and filling: {e}")
         return False
 
-if __name__ == "__main__":
+if __name__== "__main__":
     success = asyncio.run(main())
     sys.exit(0 if success else 1)

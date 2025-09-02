@@ -63,13 +63,13 @@ class OptimizationMetrics:
 class DataStreamer:
     """Data streaming for large datasets."""
     
-    def __init__(self, chunk_size: int = 10000):
-        self.chunk_size = chunk_size
+    def __init__(self, chunk_size: int=10000):
+        self.chunk_size=chunk_size
     
     def stream_data(self, data: pd.DataFrame) -> pd.DataFrame:
         """Stream data in chunks for processing."""
         for i in range(0, len(data), self.chunk_size):
-            chunk = data.iloc[i:i + self.chunk_size]
+            chunk=data.iloc[i:i + self.chunk_size]
             yield chunk
     
     def process_chunk(self, chunk: pd.DataFrame, processor_func) -> pd.DataFrame:
@@ -80,24 +80,24 @@ class DataStreamer:
 class RobustnessChecker:
     """Robustness checks for optimization results."""
     
-    def __init__(self, n_bootstrap: int = 100, confidence_level: float = 0.95):
-        self.n_bootstrap = n_bootstrap
+    def __init__(self, n_bootstrap: int=100, confidence_level: float=0.95):
+        self.n_bootstrap=n_bootstrap
         self.confidence_level = confidence_level
     
     def bootstrap_confidence_intervals(self, data: pd.DataFrame, 
                                      metric_func, 
-                                     n_samples: int = None) -> Dict[str, float]:
+                                     n_samples: int=None) -> Dict[str, float]:
         """Calculate bootstrap confidence intervals for metrics."""
         
         if n_samples is None:
-            n_samples = len(data)
+            n_samples=len(data)
         
-        bootstrap_scores = []
+        bootstrap_scores=[]
         
         for _ in range(self.n_bootstrap):
             # Bootstrap sample
-            bootstrap_indices = np.random.choice(len(data), size=n_samples, replace=True)
-            bootstrap_data = data.iloc[bootstrap_indices]
+            bootstrap_indices=np.random.choice(len(data), size=n_samples, replace=True)
+            bootstrap_data=data.iloc[bootstrap_indices]
             
             # Calculate metric
             try:
@@ -109,12 +109,12 @@ class RobustnessChecker:
         if not bootstrap_scores:
             return {'mean': 0.0, 'std': 0.0, 'ci_lower': 0.0, 'ci_upper': 0.0}
         
-        bootstrap_scores = np.array(bootstrap_scores)
+        bootstrap_scores=np.array(bootstrap_scores)
         
         # Calculate confidence intervals
-        alpha = 1 - self.confidence_level
+        alpha=1 - self.confidence_level
         ci_lower = np.percentile(bootstrap_scores, alpha/2 * 100)
-        ci_upper = np.percentile(bootstrap_scores, (1 - alpha/2) * 100)
+        ci_upper=np.percentile(bootstrap_scores, (1 - alpha/2) * 100)
         
         return {
             'mean': np.mean(bootstrap_scores),
@@ -128,10 +128,10 @@ class RobustnessChecker:
                            param_ranges: Dict[str, List[Any]]) -> Dict[str, Dict[str, float]]:
         """Perform sensitivity analysis on parameters."""
         
-        sensitivity_results = {}
+        sensitivity_results={}
         
         for param_name, param_range in param_ranges.items():
-            param_scores = []
+            param_scores=[]
             
             for param_value in param_range:
                 # Create modified parameters
@@ -140,10 +140,10 @@ class RobustnessChecker:
                 
                 try:
                     # Generate clusters with modified parameters
-                    cluster_data = self._generate_test_clusters(data, test_params)
+                    cluster_data=self._generate_test_clusters(data, test_params)
                     
                     # Calculate score
-                    score = self._calculate_test_score(cluster_data)
+                    score=self._calculate_test_score(cluster_data)
                     param_scores.append(score)
                 except Exception:
                     param_scores.append(0.0)
@@ -160,23 +160,23 @@ class RobustnessChecker:
         return sensitivity_results
     
     def outlier_detection(self, data: pd.DataFrame, 
-                         contamination: float = 0.1) -> Tuple[pd.DataFrame, np.ndarray]:
+                         contamination: float=0.1) -> Tuple[pd.DataFrame, np.ndarray]:
         """Detect and remove outliers from data."""
         
         # Use Isolation Forest for outlier detection
-        iso_forest = IsolationForest(contamination=contamination, random_state=42)
-        outlier_labels = iso_forest.fit_predict(data.select_dtypes(include=[np.number]))
+        iso_forest=IsolationForest(contamination=contamination, random_state=42)
+        outlier_labels=iso_forest.fit_predict(data.select_dtypes(include=[np.number]))
         
         # Remove outliers
-        clean_data = data[outlier_labels == 1].copy()
-        outlier_mask = outlier_labels == -1
+        clean_data=data[outlier_labels == 1].copy()
+        outlier_mask=outlier_labels == -1
         
         return clean_data, outlier_mask
     
     def _generate_test_clusters(self, data: pd.DataFrame, params: Dict[str, Any]) -> pd.DataFrame:
         """Generate test clusters for sensitivity analysis."""
         # Simplified cluster generation for testing
-        result_data = data.copy()
+        result_data=data.copy()
         result_data['composite_cluster_id'] = np.random.randint(
             0, params.get('target_regimes', 18), size=len(data)
         )
@@ -187,8 +187,8 @@ class RobustnessChecker:
         if 'composite_cluster_id' not in cluster_data.columns:
             return 0.0
         
-        n_regimes = len(cluster_data['composite_cluster_id'].unique())
-        target_regimes = 18
+        n_regimes=len(cluster_data['composite_cluster_id'].unique())
+        target_regimes=18
         
         # Simple target penalty
         penalty = 1.0 - abs(n_regimes - target_regimes) / target_regimes
@@ -199,22 +199,22 @@ class AdvancedMetricsCalculator:
     """Calculate advanced metrics for regime quality."""
     
     def __init__(self):
-        self.metrics_history = []
+        self.metrics_history=[]
     
     def calculate_regime_persistence(self, cluster_data: pd.DataFrame, 
-                                   window_size: int = 100) -> float:
+                                   window_size: int=100) -> float:
         """Calculate regime persistence over time."""
         
         if 'composite_cluster_id' not in cluster_data.columns:
             return 0.0
         
-        cluster_series = cluster_data['composite_cluster_id'].values
+        cluster_series=cluster_data['composite_cluster_id'].values
         
         # Calculate regime changes
         regime_changes = np.diff(cluster_series) != 0
-        total_periods = len(cluster_series)
+        total_periods=len(cluster_series)
         
-        if total_periods == 0:
+        if total_periods== 0:
             return 0.0
         
         # Calculate persistence as average regime duration
@@ -225,21 +225,21 @@ class AdvancedMetricsCalculator:
             return 1.0
         
         # Calculate regime durations
-        durations = []
+        durations=[]
         prev_change = -1
         
         for change_idx in change_indices:
             duration = change_idx - prev_change
             durations.append(duration)
-            prev_change = change_idx
+            prev_change=change_idx
         
         # Add final regime duration
         final_duration = total_periods - prev_change - 1
         durations.append(final_duration)
         
         # Calculate average persistence
-        avg_duration = np.mean(durations)
-        max_possible_duration = total_periods
+        avg_duration=np.mean(durations)
+        max_possible_duration=total_periods
         
         persistence = avg_duration / max_possible_duration
         
@@ -251,21 +251,21 @@ class AdvancedMetricsCalculator:
         if 'composite_cluster_id' not in cluster_data.columns:
             return 0.0
         
-        cluster_series = cluster_data['composite_cluster_id'].values
+        cluster_series=cluster_data['composite_cluster_id'].values
         
         # Calculate transition probabilities
         unique_regimes = np.unique(cluster_series)
-        n_regimes = len(unique_regimes)
+        n_regimes=len(unique_regimes)
         
         if n_regimes < 2:
             return 0.0
         
         # Create transition matrix
-        transition_matrix = np.zeros((n_regimes, n_regimes))
-        regime_to_idx = {regime: idx for idx, regime in enumerate(unique_regimes)}
+        transition_matrix=np.zeros((n_regimes, n_regimes))
+        regime_to_idx={regime: idx for idx, regime in enumerate(unique_regimes)}
         
         for i in range(len(cluster_series) - 1):
-            current_regime = cluster_series[i]
+            current_regime=cluster_series[i]
             next_regime = cluster_series[i + 1]
             
             current_idx = regime_to_idx[current_regime]
@@ -274,12 +274,12 @@ class AdvancedMetricsCalculator:
             transition_matrix[current_idx, next_idx] += 1
         
         # Normalize transition matrix
-        row_sums = transition_matrix.sum(axis=1)
-        row_sums[row_sums == 0] = 1  # Avoid division by zero
+        row_sums=transition_matrix.sum(axis=1)
+        row_sums[row_sums== 0] = 1  # Avoid division by zero
         transition_matrix = transition_matrix / row_sums[:, np.newaxis]
         
         # Calculate smoothness as entropy of transition probabilities
-        # Lower entropy = smoother transitions
+        # Lower entropy=smoother transitions
         entropy = 0.0
         for row in transition_matrix:
             row = row[row > 0]  # Remove zero probabilities
@@ -287,11 +287,11 @@ class AdvancedMetricsCalculator:
                 entropy += -np.sum(row * np.log(row))
         
         # Normalize by maximum possible entropy
-        max_entropy = n_regimes * np.log(n_regimes)
+        max_entropy=n_regimes * np.log(n_regimes)
         if max_entropy > 0:
-            smoothness = 1.0 - (entropy / max_entropy)
+            smoothness=1.0 - (entropy / max_entropy)
         else:
-            smoothness = 0.0
+            smoothness=0.0
         
         return max(0.0, smoothness)
     
@@ -302,7 +302,7 @@ class AdvancedMetricsCalculator:
         if not market_condition_columns or 'composite_cluster_id' not in cluster_data.columns:
             return 0.0
         
-        correlations = []
+        correlations=[]
         
         for col in market_condition_columns:
             if col not in cluster_data.columns:
@@ -315,15 +315,15 @@ class AdvancedMetricsCalculator:
                 continue
             
             # Calculate how well regimes differentiate this market condition
-            regime_values = regime_means.values
+            regime_values=regime_means.values
             overall_mean = cluster_data[col].mean()
             
             # Calculate F-statistic (variance between regimes / variance within regimes)
-            ss_between = np.sum((regime_values - overall_mean) ** 2)
-            ss_within = np.sum((cluster_data[col].values - cluster_data.groupby('composite_cluster_id')[col].transform('mean').values) ** 2)
+            ss_between=np.sum((regime_values - overall_mean) ** 2)
+            ss_within=np.sum((cluster_data[col].values - cluster_data.groupby('composite_cluster_id')[col].transform('mean').values) ** 2)
             
             if ss_within > 0:
-                f_stat = ss_between / ss_within
+                f_stat=ss_between / ss_within
                 correlation = f_stat / (f_stat + 1)  # Convert to correlation-like measure
                 correlations.append(correlation)
         
@@ -335,24 +335,24 @@ class AdvancedMetricsCalculator:
         """Calculate all advanced metrics."""
         
         # Basic metrics
-        regime_differentiation = self._calculate_regime_differentiation(cluster_data, market_condition_columns)
-        internal_coherence = self._calculate_internal_coherence(cluster_data, market_condition_columns)
-        regime_balance = self._calculate_regime_balance(cluster_data)
-        target_count_penalty = self._calculate_target_count_penalty(cluster_data, params)
+        regime_differentiation=self._calculate_regime_differentiation(cluster_data, market_condition_columns)
+        internal_coherence=self._calculate_internal_coherence(cluster_data, market_condition_columns)
+        regime_balance=self._calculate_regime_balance(cluster_data)
+        target_count_penalty=self._calculate_target_count_penalty(cluster_data, params)
         
         # Advanced metrics
-        regime_persistence = self.calculate_regime_persistence(cluster_data)
-        transition_smoothness = self.calculate_transition_smoothness(cluster_data)
-        market_correlation = self.calculate_market_correlation(cluster_data, market_condition_columns)
+        regime_persistence=self.calculate_regime_persistence(cluster_data)
+        transition_smoothness=self.calculate_transition_smoothness(cluster_data)
+        market_correlation=self.calculate_market_correlation(cluster_data, market_condition_columns)
         
         # Calculate overall score
-        weights = [0.3, 0.2, 0.1, 0.1, 0.1, 0.1, 0.1]  # Adjust weights as needed
-        scores = [regime_differentiation, internal_coherence, regime_balance, 
+        weights=[0.3, 0.2, 0.1, 0.1, 0.1, 0.1, 0.1]  # Adjust weights as needed
+        scores=[regime_differentiation, internal_coherence, regime_balance, 
                  target_count_penalty, regime_persistence, transition_smoothness, market_correlation]
         
-        overall_score = np.average(scores, weights=weights)
+        overall_score=np.average(scores, weights=weights)
         
-        metrics = OptimizationMetrics(
+        metrics=OptimizationMetrics(
             regime_differentiation=regime_differentiation,
             internal_coherence=internal_coherence,
             regime_balance=regime_balance,
@@ -373,7 +373,7 @@ class AdvancedMetricsCalculator:
         if not market_condition_columns or 'composite_cluster_id' not in cluster_data.columns:
             return 0.0
         
-        valid_columns = [col for col in market_condition_columns if col in cluster_data.columns]
+        valid_columns=[col for col in market_condition_columns if col in cluster_data.columns]
         if not valid_columns:
             return 0.0
         
@@ -383,26 +383,26 @@ class AdvancedMetricsCalculator:
         if len(regime_means_matrix) < 2:
             return 0.0
         
-        differentiation_scores = []
+        differentiation_scores=[]
         
         for col in valid_columns:
             regime_means = regime_means_matrix[col].values
             n_regimes = len(regime_means)
             
             # Matrix operations for pairwise differences
-            means_i = regime_means[:, np.newaxis]
-            means_j = regime_means[np.newaxis, :]
-            differences = np.abs(means_i - means_j)
+            means_i=regime_means[:, np.newaxis]
+            means_j=regime_means[np.newaxis, :]
+            differences=np.abs(means_i - means_j)
             
             # Remove diagonal and get valid differences
-            mask = ~np.eye(n_regimes, dtype=bool)
-            valid_differences = differences[mask]
+            mask=~np.eye(n_regimes, dtype=bool)
+            valid_differences=differences[mask]
             
             if len(valid_differences) > 0:
                 # Normalize by overall range
-                overall_range = cluster_data[col].max() - cluster_data[col].min()
+                overall_range=cluster_data[col].max() - cluster_data[col].min()
                 if overall_range > 0:
-                    avg_difference = np.mean(valid_differences) / overall_range
+                    avg_difference=np.mean(valid_differences) / overall_range
                     differentiation_scores.append(avg_difference)
         
         return np.mean(differentiation_scores) if differentiation_scores else 0.0
@@ -414,7 +414,7 @@ class AdvancedMetricsCalculator:
         if not market_condition_columns or 'composite_cluster_id' not in cluster_data.columns:
             return 0.0
         
-        valid_columns = [col for col in market_condition_columns if col in cluster_data.columns]
+        valid_columns=[col for col in market_condition_columns if col in cluster_data.columns]
         if not valid_columns:
             return 0.0
         
@@ -423,20 +423,20 @@ class AdvancedMetricsCalculator:
         for col in valid_columns:
             # Vectorized calculation
             regime_stats = cluster_data.groupby('composite_cluster_id')[col].agg(['mean', 'std', 'count'])
-            valid_regimes = regime_stats[regime_stats['count'] > 1]
+            valid_regimes=regime_stats[regime_stats['count'] > 1]
             
             if len(valid_regimes) > 0:
-                means = valid_regimes['mean'].values
+                means=valid_regimes['mean'].values
                 stds = valid_regimes['std'].values
                 
                 # Avoid division by zero
                 non_zero_means = means != 0
                 if np.any(non_zero_means):
-                    cvs = stds[non_zero_means] / np.abs(means[non_zero_means])
+                    cvs=stds[non_zero_means] / np.abs(means[non_zero_means])
                     
                     if len(cvs) > 0:
-                        avg_cv = np.mean(cvs)
-                        coherence = 1.0 / (1.0 + avg_cv)
+                        avg_cv=np.mean(cvs)
+                        coherence=1.0 / (1.0 + avg_cv)
                         coherence_scores.append(coherence)
         
         return np.mean(coherence_scores) if coherence_scores else 0.0
@@ -447,16 +447,16 @@ class AdvancedMetricsCalculator:
         if 'composite_cluster_id' not in cluster_data.columns:
             return 0.0
         
-        regime_sizes = cluster_data['composite_cluster_id'].value_counts().values
+        regime_sizes=cluster_data['composite_cluster_id'].value_counts().values
         
         if len(regime_sizes) < 2:
             return 0.0
         
         # Calculate coefficient of variation
-        mean_size = np.mean(regime_sizes)
-        std_size = np.std(regime_sizes)
+        mean_size=np.mean(regime_sizes)
+        std_size=np.std(regime_sizes)
         
-        if mean_size == 0:
+        if mean_size== 0:
             return 0.0
         
         cv = std_size / mean_size
@@ -471,11 +471,11 @@ class AdvancedMetricsCalculator:
         if 'composite_cluster_id' not in cluster_data.columns:
             return 0.0
         
-        target_regimes = params.get('target_regimes', 18)
-        actual_regimes = len(cluster_data['composite_cluster_id'].unique())
+        target_regimes=params.get('target_regimes', 18)
+        actual_regimes=len(cluster_data['composite_cluster_id'].unique())
         
         # Penalty based on distance from target
-        penalty = 1.0 - abs(actual_regimes - target_regimes) / target_regimes
+        penalty=1.0 - abs(actual_regimes - target_regimes) / target_regimes
         
         # Additional penalty for being outside the 15-20 range
         if actual_regimes < 15 or actual_regimes > 20:
@@ -488,15 +488,15 @@ class AdvancedHMMRegimeOptimizer:
     """Advanced HMM Regime Optimizer with comprehensive features."""
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        self.config = config or self._get_default_config()
-        self.study = None
+        self.config=config or self._get_default_config()
+        self.study=None
         self.best_params = {}
         self.best_score = -np.inf
         self.optimization_history = []
         self.cv_results = {}
         self.metrics_calculator = AdvancedMetricsCalculator()
-        self.robustness_checker = RobustnessChecker()
-        self.data_streamer = DataStreamer()
+        self.robustness_checker=RobustnessChecker()
+        self.data_streamer=DataStreamer()
         
     def _get_default_config(self) -> Dict[str, Any]:
         """Get default configuration for advanced optimization."""
@@ -538,8 +538,8 @@ class AdvancedHMMRegimeOptimizer:
         }
     
     def optimize_advanced(self, data: pd.DataFrame, feature_columns: List[str], 
-                         market_condition_columns: List[str], n_trials: int = 100,
-                         timeout: Optional[int] = None, study_name: str = "advanced_optimization") -> Dict[str, Any]:
+                         market_condition_columns: List[str], n_trials: int=100,
+                         timeout: Optional[int] = None, study_name: str="advanced_optimization") -> Dict[str, Any]:
         """Run advanced optimization with all features."""
         
         print(f"🚀 Starting Advanced HMM Regime Optimization...")
@@ -551,21 +551,21 @@ class AdvancedHMMRegimeOptimizer:
         # Outlier detection
         if self.config['robustness_checks']['outlier_detection']:
             print("🔍 Performing outlier detection...")
-            clean_data, outlier_mask = self.robustness_checker.outlier_detection(
+            clean_data, outlier_mask=self.robustness_checker.outlier_detection(
                 data, self.config['robustness_checks']['contamination']
             )
             print(f"🧹 Removed {np.sum(outlier_mask)} outliers ({np.sum(outlier_mask)/len(data)*100:.1f}%)")
         else:
-            clean_data = data.copy()
+            clean_data=data.copy()
         
         # Pre-process data
-        processed_data = self._preprocess_data_advanced(clean_data, feature_columns, market_condition_columns)
+        processed_data=self._preprocess_data_advanced(clean_data, feature_columns, market_condition_columns)
         
         # Create advanced study
-        self.study = self._create_advanced_study(study_name)
+        self.study=self._create_advanced_study(study_name)
         
         # Create objective function with cross-validation
-        objective = self._create_advanced_objective(processed_data, feature_columns, market_condition_columns)
+        objective=self._create_advanced_objective(processed_data, feature_columns, market_condition_columns)
         
         # Run optimization
         self.study.optimize(
@@ -577,7 +577,7 @@ class AdvancedHMMRegimeOptimizer:
         )
         
         # Store best results
-        self.best_params = self.study.best_params
+        self.best_params=self.study.best_params
         self.best_score = self.study.best_value
         
         # Perform robustness checks on best result
@@ -601,7 +601,7 @@ class AdvancedHMMRegimeOptimizer:
         """Create advanced Optuna study with Bayesian optimization."""
         
         # Choose sampler based on configuration
-        sampler_config = self.config['bayesian_optimization']
+        sampler_config=self.config['bayesian_optimization']
         if sampler_config['sampler'] == 'tpe':
             sampler = TPESampler(
                 seed=42,
@@ -609,20 +609,20 @@ class AdvancedHMMRegimeOptimizer:
                 n_ei_candidates=sampler_config['n_ei_candidates']
             )
         elif sampler_config['sampler'] == 'cmaes':
-            sampler = CmaEsSampler(seed=42)
+            sampler=CmaEsSampler(seed=42)
         elif sampler_config['sampler'] == 'nsga2':
-            sampler = NSGAIISampler(seed=42)
+            sampler=NSGAIISampler(seed=42)
         else:
-            sampler = optuna.samplers.RandomSampler(seed=42)
+            sampler=optuna.samplers.RandomSampler(seed=42)
         
         # Choose pruner for early stopping
         if self.config['early_stopping']['enabled']:
-            pruner = MedianPruner(
+            pruner=MedianPruner(
                 n_startup_trials=5,
                 n_warmup_steps=10
             )
         else:
-            pruner = optuna.pruners.NopPruner()
+            pruner=optuna.pruners.NopPruner()
         
         return optuna.create_study(
             direction='maximize',
@@ -636,7 +636,7 @@ class AdvancedHMMRegimeOptimizer:
         """Advanced pre-processing with data streaming support."""
         
         # Filter valid columns
-        valid_features = [col for col in feature_columns if col in data.columns]
+        valid_features=[col for col in feature_columns if col in data.columns]
         valid_market_conditions = [col for col in market_condition_columns if col in data.columns]
         
         # Create advanced pre-processed data structure
@@ -653,7 +653,7 @@ class AdvancedHMMRegimeOptimizer:
         
         # Pre-calculate ranges for normalization
         for col in valid_features:
-            col_data = data[col].dropna()
+            col_data=data[col].dropna()
             if len(col_data) > 0:
                 processed_data['feature_ranges'][col] = {
                     'min': col_data.min(),
@@ -664,7 +664,7 @@ class AdvancedHMMRegimeOptimizer:
                 }
         
         for col in valid_market_conditions:
-            col_data = data[col].dropna()
+            col_data=data[col].dropna()
             if len(col_data) > 0:
                 processed_data['market_condition_ranges'][col] = {
                     'min': col_data.min(),
@@ -676,13 +676,13 @@ class AdvancedHMMRegimeOptimizer:
         
         # Create cross-validation splits if enabled
         if self.config['cross_validation']['enabled']:
-            cv_folds = self.config['cross_validation']['cv_folds']
+            cv_folds=self.config['cross_validation']['cv_folds']
             if self.config['cross_validation']['time_series_split']:
                 tscv = TimeSeriesSplit(n_splits=cv_folds)
                 processed_data['cv_splits'] = list(tscv.split(data))
             else:
                 from sklearn.model_selection import KFold
-                kf = KFold(n_splits=cv_folds, shuffle=True, random_state=42)
+                kf=KFold(n_splits=cv_folds, shuffle=True, random_state=42)
                 processed_data['cv_splits'] = list(kf.split(data))
         
         return processed_data
@@ -696,29 +696,29 @@ class AdvancedHMMRegimeOptimizer:
             """Advanced objective function with cross-validation and early stopping."""
             
             # Suggest parameters
-            params = self._suggest_advanced_parameters(trial)
+            params=self._suggest_advanced_parameters(trial)
             
             try:
                 # Use cross-validation if enabled
                 if self.config['cross_validation']['enabled'] and processed_data['cv_splits']:
-                    cv_scores = []
+                    cv_scores=[]
                     
                     for train_idx, val_idx in processed_data['cv_splits']:
                         # Split data
-                        train_data = processed_data['data'].iloc[train_idx]
+                        train_data=processed_data['data'].iloc[train_idx]
                         val_data = processed_data['data'].iloc[val_idx]
                         
                         # Generate clusters for training data
                         train_clusters = self._generate_clusters_advanced(train_data, params)
                         
                         # Evaluate on validation data
-                        val_score = self._evaluate_regime_quality_advanced(
+                        val_score=self._evaluate_regime_quality_advanced(
                             val_data, train_clusters, processed_data['market_condition_columns'], params
                         )
                         cv_scores.append(val_score)
                     
                     # Return mean CV score
-                    final_score = np.mean(cv_scores)
+                    final_score=np.mean(cv_scores)
                     
                     # Store CV results
                     self.cv_results[trial.number] = {
@@ -729,8 +729,8 @@ class AdvancedHMMRegimeOptimizer:
                     
                 else:
                     # Standard evaluation without CV
-                    cluster_data = self._generate_clusters_advanced(processed_data['data'], params)
-                    final_score = self._evaluate_regime_quality_advanced(
+                    cluster_data=self._generate_clusters_advanced(processed_data['data'], params)
+                    final_score=self._evaluate_regime_quality_advanced(
                         cluster_data, None, processed_data['market_condition_columns'], params
                     )
                 
@@ -738,17 +738,17 @@ class AdvancedHMMRegimeOptimizer:
                 if self.config['early_stopping']['enabled']:
                     if hasattr(self, '_best_score_history'):
                         if len(self._best_score_history) >= self.config['early_stopping']['patience']:
-                            recent_improvement = max(self._best_score_history[-self.config['early_stopping']['patience']:]) - min(self._best_score_history[-self.config['early_stopping']['patience']:])
+                            recent_improvement=max(self._best_score_history[-self.config['early_stopping']['patience']:]) - min(self._best_score_history[-self.config['early_stopping']['patience']:])
                             if recent_improvement < self.config['early_stopping']['min_delta']:
                                 trial.report(-np.inf, step=0)
                                 raise optuna.TrialPruned()
                     else:
-                        self._best_score_history = []
+                        self._best_score_history=[]
                     
                     self._best_score_history.append(final_score)
                 
                 # Store trial information
-                trial_info = {
+                trial_info={
                     'trial_number': trial.number,
                     'params': params,
                     'score': final_score,
@@ -787,7 +787,7 @@ class AdvancedHMMRegimeOptimizer:
         
         # This would implement the actual cluster generation logic
         # For now, return a simple implementation
-        result_data = data.copy()
+        result_data=data.copy()
         result_data['composite_cluster_id'] = np.random.randint(
             0, params.get('target_regimes', 18), size=len(data)
         )
@@ -800,7 +800,7 @@ class AdvancedHMMRegimeOptimizer:
         """Advanced regime quality evaluation with all metrics."""
         
         # Calculate all advanced metrics
-        metrics = self.metrics_calculator.calculate_all_metrics(
+        metrics=self.metrics_calculator.calculate_all_metrics(
             cluster_data, market_condition_columns, params
         )
         
@@ -813,19 +813,19 @@ class AdvancedHMMRegimeOptimizer:
         
         print("🔍 Performing robustness checks...")
         
-        robustness_results = {}
+        robustness_results={}
         
         # Bootstrap confidence intervals
         if self.config['robustness_checks']['bootstrap_enabled']:
             print("📊 Calculating bootstrap confidence intervals...")
             
             def metric_func(data_subset):
-                cluster_data = self._generate_clusters_advanced(data_subset, self.best_params)
+                cluster_data=self._generate_clusters_advanced(data_subset, self.best_params)
                 return self._evaluate_regime_quality_advanced(
                     cluster_data, None, market_condition_columns, self.best_params
                 )
             
-            bootstrap_results = self.robustness_checker.bootstrap_confidence_intervals(
+            bootstrap_results=self.robustness_checker.bootstrap_confidence_intervals(
                 data, metric_func
             )
             robustness_results['bootstrap'] = bootstrap_results
@@ -834,13 +834,13 @@ class AdvancedHMMRegimeOptimizer:
         if self.config['robustness_checks']['sensitivity_analysis']:
             print("📈 Performing sensitivity analysis...")
             
-            param_ranges = {
+            param_ranges={
                 'n_components': [2, 4, 6, 8, 10],
                 'target_regimes': [15, 16, 17, 18, 19, 20],
                 'similarity_threshold': [0.3, 0.5, 0.7, 0.8]
             }
             
-            sensitivity_results = self.robustness_checker.sensitivity_analysis(
+            sensitivity_results=self.robustness_checker.sensitivity_analysis(
                 data, self.best_params, param_ranges
             )
             robustness_results['sensitivity'] = sensitivity_results
@@ -854,7 +854,7 @@ def main():
     
     # Create sample data
     np.random.seed(42)
-    n_samples = 10000
+    n_samples=10000
     n_features = 20
     
     data = pd.DataFrame(
@@ -868,11 +868,11 @@ def main():
     data['volume'] = np.random.lognormal(0, 1, n_samples)
     data['returns'] = np.random.normal(0, 0.02, n_samples)
     
-    feature_columns = [f'feature_{i}' for i in range(n_features)]
-    market_condition_columns = ['volatility', 'momentum', 'volume', 'returns']
+    feature_columns=[f'feature_{i}' for i in range(n_features)]
+    market_condition_columns=['volatility', 'momentum', 'volume', 'returns']
     
     # Initialize advanced optimizer
-    config = {
+    config={
         "optimization_settings": {
             "n_trials": 50,
             "timeout": 600,
@@ -902,10 +902,10 @@ def main():
         }
     }
     
-    optimizer = AdvancedHMMRegimeOptimizer(config)
+    optimizer=AdvancedHMMRegimeOptimizer(config)
     
     # Run advanced optimization
-    results = optimizer.optimize_advanced(
+    results=optimizer.optimize_advanced(
         data=data,
         feature_columns=feature_columns,
         market_condition_columns=market_condition_columns,
@@ -919,5 +919,5 @@ def main():
     print(f"📊 Robustness results: {results['robustness_results']}")
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     main()

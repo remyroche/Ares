@@ -18,16 +18,16 @@ from src.utils.warning_symbols import error, failed, missing, warning
 import pandas as pd
 
 # Add the project root to the Python path
-project_root = Path(__file__).parent.parent
+project_root=Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-logger = system_logger.getChild("MEXCAggTradesDownloader")
+logger=system_logger.getChild("MEXCAggTradesDownloader")
 
 @handle_errors(
     exceptions=(Exception,),
     default_return=False, context="download_mexc_agg_trades",
 )
-async def download_mexc_agg_trades(symbol: str = "BTCUSDT", lookback_days: int = 30, output_dir: str = "data") -> bool:
+async def download_mexc_agg_trades(symbol: str="BTCUSDT", lookback_days: int=30, output_dir: str="data") -> bool:
     """
     Download aggregated trades from MEXC with Binance-compatible format.
 
@@ -45,14 +45,14 @@ async def download_mexc_agg_trades(symbol: str = "BTCUSDT", lookback_days: int =
     os.makedirs(output_dir, exist_ok=True)
 
     # Initialize MEXC exchange
-    exchange = ExchangeFactory.get_exchange("mexc")
+    exchange=ExchangeFactory.get_exchange("mexc")
 
     # Calculate time range
-    end_time = datetime.now()
-    start_time = end_time - timedelta(days=lookback_days)
+    end_time=datetime.now()
+    start_time=end_time - timedelta(days=lookback_days)
 
-    start_time_ms = int(start_time.timestamp() * 1000)
-    end_time_ms = int(end_time.timestamp() * 1000)
+    start_time_ms=int(start_time.timestamp() * 1000)
+    end_time_ms=int(end_time.timestamp() * 1000)
 
     logger.info(f"📅 Time range: {start_time} to {end_time}")
     logger.info(f"🔢 Timestamps: {start_time_ms} to {end_time_ms}")
@@ -60,7 +60,7 @@ async def download_mexc_agg_trades(symbol: str = "BTCUSDT", lookback_days: int =
     # Download aggregated trades
     logger.info("📥 Downloading aggregated trades from MEXC...")
 
-    trades = await exchange.get_historical_agg_trades(
+    trades=await exchange.get_historical_agg_trades(
         symbol=symbol,
         start_time_ms=start_time_ms,
         end_time_ms=end_time_ms,
@@ -74,11 +74,11 @@ async def download_mexc_agg_trades(symbol: str = "BTCUSDT", lookback_days: int =
     logger.info(f"✅ Downloaded {len(trades)} aggregated trades from MEXC")
 
     # Convert to DataFrame with Binance-compatible format
-    df = pd.DataFrame(trades)
+    df=pd.DataFrame(trades)
 
     # Ensure we have the correct columns (Binance format: a, p, q, T, m, f, l)
-    expected_columns = ["a", "p", "q", "T", "m", "f", "l"]
-    missing_columns = [col for col in expected_columns if col not in df.columns]
+    expected_columns=["a", "p", "q", "T", "m", "f", "l"]
+    missing_columns=[col for col in expected_columns if col not in df.columns]
 
     if missing_columns:
         print(missing(f"⚠️ Missing columns in MEXC data: {missing_columns}"))
@@ -87,14 +87,14 @@ async def download_mexc_agg_trades(symbol: str = "BTCUSDT", lookback_days: int =
             df[col] = 0
 
     # Reorder columns to match Binance format
-    df = df[expected_columns]
+    df=df[expected_columns]
 
     # Convert timestamp to datetime
     df["timestamp"] = pd.to_datetime(df["T"], unit="ms")
     df.set_index("timestamp", inplace=True)
 
     # Convert numeric columns
-    numeric_cols = ["p", "q", "a", "f", "l"]
+    numeric_cols=["p", "q", "a", "f", "l"]
     df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors="coerce")
 
     # Convert boolean column
@@ -105,10 +105,10 @@ async def download_mexc_agg_trades(symbol: str = "BTCUSDT", lookback_days: int =
     logger.info(f"📈 Data range: {df.index.min()} to {df.index.max()}")
 
     # Save to CSV file
-    filename = f"{output_dir}/agg_trades_{symbol}_mexc.csv"
+    filename=f"{output_dir}/agg_trades_{symbol}_mexc.csv"
     df.to_csv(filename)
 
-    file_size = os.path.getsize(filename)
+    file_size=os.path.getsize(filename)
     logger.info(f"💾 Saved to '{filename}'")
     logger.info(f"📁 File size: {file_size:,} bytes")
     logger.info(f"📊 Total records: {len(df)}")
@@ -138,7 +138,7 @@ async def download_mexc_agg_trades(symbol: str = "BTCUSDT", lookback_days: int =
     else:
         print(warning("⚠️ Quantity column is not numeric"))
 
-    if df["m"].dtype == "bool":
+    if df["m"].dtype== "bool":
         logger.info("✅ Maker flag column is boolean")
     else:
         print(warning("⚠️ Maker flag column is not boolean"))
@@ -153,7 +153,7 @@ async def download_mexc_agg_trades(symbol: str = "BTCUSDT", lookback_days: int =
 async def main():
     """Main function to run the download script."""
 
-    parser = argparse.ArgumentParser(description="Download MEXC aggregated trades")
+    parser=argparse.ArgumentParser(description="Download MEXC aggregated trades")
     parser.add_argument("--symbol", default="BTCUSDT", help="Trading symbol")
     parser.add_argument(
         "--days",
@@ -163,9 +163,9 @@ async def main():
     )
     parser.add_argument("--output", default="data", help="Output directory")
 
-    args = parser.parse_args()
+    args=parser.parse_args()
 
-    success = await download_mexc_agg_trades(
+    success=await download_mexc_agg_trades(
         symbol=args.symbol, lookback_days=args.days,
         output_dir=args.output
     )
@@ -177,5 +177,5 @@ async def main():
         print(failed("❌ MEXC aggregated trades download failed!"))
         sys.exit(1)
 
-if __name__ == "__main__":
+if __name__== "__main__":
     asyncio.run(main())

@@ -15,42 +15,42 @@ import pandas as pd
 class CleanGapFiller:
     """Clean gap filling that continues until gaps are fully filled."""
 
-    def __init__(self, data_cache_path: str = "data_cache") -> None:
-        self.data_cache_path = Path(data_cache_path)
-        self.session = None
+    def __init__(self, data_cache_path: str="data_cache") -> None:
+        self.data_cache_path=Path(data_cache_path)
+        self.session=None
         self.max_calls = 20  # Maximum calls to prevent infinite loops
         self.call_delay = 0.1  # Delay between calls
 
     async def _ensure_session(self) -> None:
         if self.session is None:
-            self.session = aiohttp.ClientSession()
+            self.session=aiohttp.ClientSession()
 
     async def close_session(self) -> None:
         if self.session:
             await self.session.close()
 
     def detect_gaps_in_file(
-        self, file_path: Path, min_gap_seconds: int = 10,
+        self, file_path: Path, min_gap_seconds: int=10,
     ) -> list[dict]:
         """Detect gaps in a single aggtrades file."""
         try:
-            df = pd.read_parquet(file_path)
+            df=pd.read_parquet(file_path)
 
             if df.empty or "timestamp" not in df.columns:
                 return []
 
             # Sort by timestamp and calculate time differences
-            df = df.sort_values("timestamp").reset_index(drop=True)
+            df=df.sort_values("timestamp").reset_index(drop=True)
             df["time_diff"] = df["timestamp"].diff().dt.total_seconds()
 
             # Find gaps larger than threshold
-            gaps = []
+            gaps=[]
             gap_rows = df[df["time_diff"] > min_gap_seconds]
 
             for idx, row in gap_rows.iterrows():
                 if idx > 0:
-                    gap_start = df.loc[idx - 1, "timestamp"]
-                    gap_end = row["timestamp"]
+                    gap_start=df.loc[idx - 1, "timestamp"]
+                    gap_end=row["timestamp"]
                     gap_duration = (gap_end - gap_start).total_seconds()
 
                     gaps.append(
@@ -73,7 +73,7 @@ class CleanGapFiller:
         """Fetch data from Binance Vision."""
         await self._ensure_session()
 
-        base_url = "https://data.binance.vision"
+        base_url="https://data.binance.vision"
         path = f"data/futures/um/daily/aggTrades/{symbol}/{symbol}-aggTrades-{date_str}.zip"
         url = f"{base_url}/{path}"
 
@@ -83,15 +83,15 @@ class CleanGapFiller:
             async with self.session.get(url, ssl=ssl_context) as resp:
                 if resp.status != 200:
                     return []
-                content = await resp.read()
+                content=await resp.read()
 
             with zipfile.ZipFile(io.BytesIO(content)) as zf:
-                csv_names = [n for n in zf.namelist() if n.endswith(".csv")]
+                csv_names=[n for n in zf.namelist() if n.endswith(".csv")]
                 if not csv_names:
                     return []
 
                 with zf.open(csv_names[0]) as f:
-                    df = pd.read_csv(
+                    df=pd.read_csv(
                         f,
                         header=None,
                         names=["a", "p", "q", "f", "l", "T", "m", "M"],
@@ -117,8 +117,8 @@ class CleanGapFiller:
             )
 
             # Filter to gap period
-            df = df.dropna(subset=["T"])
-            df = df[(df["T"] >= start_ms) & (df["T"] < end_ms)]
+            df=df.dropna(subset=["T"])
+            df=df[(df["T"] >= start_ms) & (df["T"] < end_ms)]
 
             return df[["a", "p", "q", "f", "l", "T", "m"]].to_dict(orient="records")
 
@@ -128,7 +128,7 @@ class CleanGapFiller:
     def _standardize_format(self, df: pd.DataFrame) -> pd.DataFrame:
         """Standardize data format."""
         if "a" in df.columns:
-            column_mapping = {
+            column_mapping={
                 "a": "agg_trade_id",
                 "p": "price",
                 "q": "quantity",
@@ -137,12 +137,12 @@ class CleanGapFiller:
                 "T": "timestamp",
                 "m": "is_buyer_maker",
             }
-            df = df.rename(columns=column_mapping)
+            df=df.rename(columns=column_mapping)
 
         if "timestamp" in df.columns and df["timestamp"].dtype in ["int64", "float64"]:
             df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
 
-        expected_columns = [
+        expected_columns=[
             "agg_trade_id",
             "price",
             "quantity",
@@ -151,15 +151,15 @@ class CleanGapFiller:
             "timestamp",
             "is_buyer_maker",
         ]
-        available_columns = [col for col in expected_columns if col in df.columns]
+        available_columns=[col for col in expected_columns if col in df.columns]
         return df[available_columns]
 
     async def fill_gap_until_complete(
-        self, gap_info: dict, symbol: str = "ETHUSDT",
+        self, gap_info: dict, symbol: str="ETHUSDT",
     ) -> dict:
         """Fill a gap with multiple API calls until it's fully filled."""
         try:
-            gap_start = gap_info["gap_start"]
+            gap_start=gap_info["gap_start"]
             gap_end = gap_info["gap_end"]
             file_name = gap_info["file"]
             gap_duration = gap_info["gap_duration_seconds"]
@@ -176,18 +176,18 @@ class CleanGapFiller:
 
                 # Convert to timestamps
                 start_ms = int(gap_start.timestamp() * 1000)
-                end_ms = int(gap_end.timestamp() * 1000)
-                date_str = gap_start.strftime("%Y-%m-%d")
+                end_ms=int(gap_end.timestamp() * 1000)
+                date_str=gap_start.strftime("%Y-%m-%d")
 
 
                 # Fetch data
-                trades = await self._fetch_from_binance_vision(
+                trades=await self._fetch_from_binance_vision(
                     symbol, date_str, start_ms, end_ms,
                 )
 
                 if trades:
                     all_trades.extend(trades)
-                    consecutive_empty = 0
+                    consecutive_empty=0
 
                     # Check if we have enough data
                     expected_trades = max(1, int(gap_duration / 2))
@@ -203,13 +203,13 @@ class CleanGapFiller:
 
             if all_trades:
                 # Remove duplicates
-                unique_trades = []
+                unique_trades=[]
                 seen = set()
 
                 for trade in all_trades:
-                    trade_id = trade.get("a", 0)
-                    timestamp = trade.get("T", 0)
-                    unique_id = (trade_id, timestamp)
+                    trade_id=trade.get("a", 0)
+                    timestamp=trade.get("T", 0)
+                    unique_id=(trade_id, timestamp)
 
                     if unique_id not in seen:
                         seen.add(unique_id)
@@ -217,16 +217,16 @@ class CleanGapFiller:
 
 
                 # Convert and save
-                df_missing = pd.DataFrame(unique_trades)
-                df_missing = self._standardize_format(df_missing)
+                df_missing=pd.DataFrame(unique_trades)
+                df_missing=self._standardize_format(df_missing)
 
-                file_path = self.data_cache_path / file_name
+                file_path=self.data_cache_path / file_name
                 if file_path.exists():
-                    df_existing = pd.read_parquet(file_path)
-                    df_combined = pd.concat(
+                    df_existing=pd.read_parquet(file_path)
+                    df_combined=pd.concat(
                         [df_existing, df_missing], ignore_index=True,
                     )
-                    df_combined = df_combined.sort_values("timestamp").drop_duplicates(
+                    df_combined=df_combined.sort_values("timestamp").drop_duplicates(
                         subset=["timestamp"],
                     )
                     df_combined.to_parquet(file_path, compression="zstd", index=False)
@@ -249,18 +249,15 @@ class CleanGapFiller:
             return {"success": False, "error": str(e), "rows_added": 0, "calls_made": 0}
 
     async def process_all_gaps(
-        self, symbol: str = "ETHUSDT", exchange: str = "BINANCE",
+        self, symbol: str="ETHUSDT", exchange: str="BINANCE",
     ) -> None:
         """Process all gaps in all files."""
         # Find all aggtrades files
-        pattern = f"aggtrades_{exchange}_{symbol}_*.parquet"
+        pattern=f"aggtrades_{exchange}_{symbol}_*.parquet"
         files = list(self.data_cache_path.glob(pattern))
 
         if not files:
-            return
-
-
-        total_files = 0
+            return total_files, 0
         total_files_with_gaps = 0
         total_gaps = 0
         total_filled = 0
@@ -278,7 +275,7 @@ class CleanGapFiller:
 
                 for _i, gap in enumerate(gaps):
     pass  # TODO: Add proper implementation
-                    result = await self.fill_gap_until_complete(gap, symbol)
+                    result=await self.fill_gap_until_complete(gap, symbol)
                     total_calls += result.get("calls_made", 0)
 
                     if result["success"]:
@@ -298,12 +295,12 @@ class CleanGapFiller:
 
 
 async def main() -> None:
-    gap_filler = CleanGapFiller()
+    gap_filler=CleanGapFiller()
     try:
         await gap_filler.process_all_gaps()
     finally:
         await gap_filler.close_session()
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     asyncio.run(main())

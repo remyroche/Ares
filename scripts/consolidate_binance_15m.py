@@ -15,7 +15,7 @@ from src.utils.warning_symbols import error, invalid, missing, warning
 import pandas as pd
 
 # Add the project root to the path
-project_root = Path(__file__).parent.parent
+project_root=Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
 
@@ -27,19 +27,19 @@ def _list_source_files(pattern: str) -> List[str]:
 def consolidate_binance_15m_data() -> bool:
 	"""Consolidate all Binance 15m klines data files."""
 	setup_logging()
-	logger = system_logger.getChild("ConsolidateBinance15m")
+	logger=system_logger.getChild("ConsolidateBinance15m")
 
 	print("🔄 Consolidating Binance 15m data...")
 	logger.info("🔄 Starting Binance 15m data consolidation...")
 
 	# Find all 15m Binance files
-	pattern = "data_cache/klines_BINANCE_ETHUSDT_15m_*.csv"
+	pattern="data_cache/klines_BINANCE_ETHUSDT_15m_*.csv"
 	source_files = _list_source_files(pattern)
 
 	logger.info(f"📁 Found {len(source_files)} 15m Binance files")
 	logger.info("📋 Source files:")
 	for i, file in enumerate(source_files[:5], 1):
-		file_size = os.path.getsize(file)
+		file_size=os.path.getsize(file)
 		logger.info(f"   {i}. {os.path.basename(file)} ({file_size:,} bytes)")
 	if len(source_files) > 5:
 		logger.info(f"   ... and {len(source_files) - 5} more files")
@@ -49,12 +49,12 @@ def consolidate_binance_15m_data() -> bool:
 		return False
 
 	# Output file
-	output_file = "data_cache/klines_BINANCE_ETHUSDT_15m_consolidated.csv"
+	output_file="data_cache/klines_BINANCE_ETHUSDT_15m_consolidated.csv"
 	logger.info(f"💾 Output file: {output_file}")
 
 	# Consolidate all files
 	all_data: list[pd.DataFrame] = []
-	total_records = 0
+	total_records=0
 
 	for i, file in enumerate(source_files, 1):
 		logger.info(
@@ -63,7 +63,7 @@ def consolidate_binance_15m_data() -> bool:
 
 		try:
 			# Read the CSV file
-			df = pd.read_csv(file)
+			df=pd.read_csv(file)
 			logger.info(f"   📊 Loaded {len(df)} records")
 
 			# Validate data
@@ -72,7 +72,7 @@ def consolidate_binance_15m_data() -> bool:
 				continue
 
 			# Check columns
-			expected_columns = ["timestamp", "open", "high", "low", "close", "volume"]
+			expected_columns=["timestamp", "open", "high", "low", "close", "volume"]
 			if not all(col in df.columns for col in expected_columns):
 				print(missing(f"   ⚠️ Missing columns in {os.path.basename(file)}"))
 				print(warning(f"   📋 Expected: {expected_columns}"))
@@ -84,7 +84,7 @@ def consolidate_binance_15m_data() -> bool:
 			df.set_index("timestamp", inplace=True)
 
 			# Convert numeric columns
-			numeric_cols = ["open", "high", "low", "close", "volume"]
+			numeric_cols=["open", "high", "low", "close", "volume"]
 			df[numeric_cols] = df[numeric_cols].apply(pd.to_numeric, errors="coerce")
 
 			# Check for reasonable price data
@@ -93,8 +93,8 @@ def consolidate_binance_15m_data() -> bool:
 				continue
 
 			# Check price range (ETH should be reasonable)
-			min_price = float(df["low"].min())
-			max_price = float(df["high"].max())
+			min_price=float(df["low"].min())
+			max_price=float(df["high"].max())
 			if min_price < 100 or max_price > 10000:
 				logger.warning(
 					f"   ⚠️ Unreasonable price range in {os.path.basename(file)}: ${min_price:.2f} - ${max_price:.2f}",
@@ -120,14 +120,14 @@ def consolidate_binance_15m_data() -> bool:
 	logger.info(f"📊 Consolidating {len(all_data)} dataframes...")
 
 	# Combine all dataframes
-	consolidated_df = pd.concat(all_data, ignore_index=False)
+	consolidated_df=pd.concat(all_data, ignore_index=False)
 	logger.info(f"📈 Combined dataframe shape: {consolidated_df.shape}")
 
 	# Remove duplicates
-	initial_count = len(consolidated_df)
-	consolidated_df = consolidated_df[~consolidated_df.index.duplicated(keep="first")]
-	final_count = len(consolidated_df)
-	duplicates_removed = initial_count - final_count
+	initial_count=len(consolidated_df)
+	consolidated_df=consolidated_df[~consolidated_df.index.duplicated(keep="first")]
+	final_count=len(consolidated_df)
+	duplicates_removed=initial_count - final_count
 
 	logger.info(f"🧹 Removed {duplicates_removed} duplicate records")
 	logger.info(f"📊 Final dataframe shape: {consolidated_df.shape}")
@@ -145,13 +145,13 @@ def consolidate_binance_15m_data() -> bool:
 	logger.info(f"💾 Saving consolidated data to {output_file}...")
 	consolidated_df.to_csv(output_file)
 
-	file_size = os.path.getsize(output_file)
+	file_size=os.path.getsize(output_file)
 	logger.info(f"✅ Consolidated file saved: {file_size:,} bytes")
 	logger.info(f"📊 Total records: {len(consolidated_df)}")
 
 	# Verify the saved file
 	logger.info("🔍 Verifying saved file...")
-	verification_df = pd.read_csv(output_file)
+	verification_df=pd.read_csv(output_file)
 	verification_df["timestamp"] = pd.to_datetime(verification_df["timestamp"])
 	verification_df.set_index("timestamp", inplace=True)
 
@@ -176,7 +176,7 @@ def consolidate_binance_15m_data() -> bool:
 	return True
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
 	success = consolidate_binance_15m_data()
 	if not success:
 		sys.exit(1)

@@ -35,6 +35,7 @@ project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
     sys.path.append(str(project_root))
 
+
 from src.utils.logger import system_logger
 
 class DataQualityLevel(Enum):
@@ -56,6 +57,7 @@ class ValidationIssue:
 
 @dataclass
 class ValidationResult:
+
     """Represents a validation result."""
     is_valid: bool
     issues: List[ValidationIssue]

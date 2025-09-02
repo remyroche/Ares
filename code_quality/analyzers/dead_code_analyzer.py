@@ -13,7 +13,7 @@ import vulture
 from vulture.core import Vulture
 
 from ..core.config import AnalysisConfig
-from ..utils.file_utils import find_python_files
+from minimal_file_utils import find_python_files
 
 
 @dataclass

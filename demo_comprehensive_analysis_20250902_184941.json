@@ -1,0 +1,314 @@
+{
+  "metadata": {
+    "generated_at": "2025-09-02 18:49:41",
+    "project_root": "/workspace",
+    "analysis_duration": 45.67
+  },
+  "global_metrics": {
+    "total_directories": 5,
+    "total_files": 1247,
+    "total_analyzers_run": 8,
+    "total_issues_found": 156,
+    "total_issues_fixed": 89,
+    "total_processing_time": 45.67,
+    "success_rate": 94.2,
+    "categories_covered": [
+      "syntax",
+      "complexity",
+      "dead_code",
+      "dependencies",
+      "call_graph",
+      "signatures",
+      "linting",
+      "auto_fixing"
+    ],
+    "top_issues": [
+      [
+        "syntax",
+        45
+      ],
+      [
+        "linting",
+        38
+      ],
+      [
+        "complexity",
+        29
+      ],
+      [
+        "dependencies",
+        24
+      ],
+      [
+        "dead_code",
+        20
+      ]
+    ]
+  },
+  "directory_summaries": {
+    "root": {
+      "directory": "root",
+      "total_files": 23,
+      "files_analyzed": 23,
+      "total_issues": 12,
+      "total_fixed": 8,
+      "analyzers_run": [
+        "syntax",
+        "complexity",
+        "dead_code",
+        "dependencies",
+        "call_graph",
+        "signatures",
+        "linting",
+        "auto_fixing"
+      ],
+      "categories_covered": [
+        "syntax",
+        "complexity",
+        "dead_code",
+        "dependencies",
+        "call_graph",
+        "signatures",
+        "linting",
+        "auto_fixing"
+      ],
+      "processing_time": 2.34
+    },
+    "code_quality": {
+      "directory": "code_quality",
+      "total_files": 45,
+      "files_analyzed": 45,
+      "total_issues": 23,
+      "total_fixed": 18,
+      "analyzers_run": [
+        "syntax",
+        "complexity",
+        "dead_code",
+        "dependencies",
+        "call_graph",
+        "signatures",
+        "linting",
+        "auto_fixing"
+      ],
+      "categories_covered": [
+        "syntax",
+        "complexity",
+        "dead_code",
+        "dependencies",
+        "call_graph",
+        "signatures",
+        "linting",
+        "auto_fixing"
+      ],
+      "processing_time": 12.34
+    },
+    "data_quality": {
+      "directory": "data_quality",
+      "total_files": 18,
+      "files_analyzed": 18,
+      "total_issues": 8,
+      "total_fixed": 6,
+      "analyzers_run": [
+        "syntax",
+        "complexity",
+        "dead_code",
+        "dependencies",
+        "call_graph",
+        "signatures",
+        "linting",
+        "auto_fixing"
+      ],
+      "categories_covered": [
+        "syntax",
+        "complexity",
+        "dead_code",
+        "dependencies",
+        "call_graph",
+        "signatures",
+        "linting",
+        "auto_fixing"
+      ],
+      "processing_time": 4.56
+    },
+    "src": {
+      "directory": "src",
+      "total_files": 156,
+      "files_analyzed": 156,
+      "total_issues": 67,
+      "total_fixed": 45,
+      "analyzers_run": [
+        "syntax",
+        "complexity",
+        "dead_code",
+        "dependencies",
+        "call_graph",
+        "signatures",
+        "linting",
+        "auto_fixing"
+      ],
+      "categories_covered": [
+        "syntax",
+        "complexity",
+        "dead_code",
+        "dependencies",
+        "call_graph",
+        "signatures",
+        "linting",
+        "auto_fixing"
+      ],
+      "processing_time": 18.92
+    },
+    "tests": {
+      "directory": "tests",
+      "total_files": 1005,
+      "files_analyzed": 1005,
+      "total_issues": 46,
+      "total_fixed": 12,
+      "analyzers_run": [
+        "syntax",
+        "complexity",
+        "dead_code",
+        "dependencies",
+        "call_graph",
+        "signatures",
+        "linting",
+        "auto_fixing"
+      ],
+      "categories_covered": [
+        "syntax",
+        "complexity",
+        "dead_code",
+        "dependencies",
+        "call_graph",
+        "signatures",
+        "linting",
+        "auto_fixing"
+      ],
+      "processing_time": 7.51
+    }
+  },
+  "detailed_results": {
+    "by_category": {
+      "syntax": [
+        {
+          "file_path": "main.py",
+          "directory": "root",
+          "analyzer_name": "syntax",
+          "category": "syntax",
+          "issues_found": 2,
+          "issues_fixed": 1,
+          "details": {
+            "status": "success",
+            "syntax_errors": 2
+          },
+          "processing_time": 0.12,
+          "status": "success"
+        }
+      ],
+      "complexity": [
+        {
+          "file_path": "complex_function.py",
+          "directory": "src",
+          "analyzer_name": "complexity",
+          "category": "complexity",
+          "issues_found": 5,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "complexity_score": 15
+          },
+          "processing_time": 0.45,
+          "status": "success"
+        }
+      ],
+      "dead_code": [
+        {
+          "file_path": "unused_functions.py",
+          "directory": "src",
+          "analyzer_name": "dead_code",
+          "category": "dead_code",
+          "issues_found": 3,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "unused_functions": 3
+          },
+          "processing_time": 0.23,
+          "status": "success"
+        }
+      ],
+      "dependencies": [
+        {
+          "file_path": "imports.py",
+          "directory": "src",
+          "analyzer_name": "dependencies",
+          "category": "dependencies",
+          "issues_found": 4,
+          "issues_fixed": 0,
+          "details": {
+            "status": "success",
+            "circular_imports": 1,
+            "unused_imports": 3
+          },
+          "processing_time": 0.67,
+          "status": "success"
+        }
+      ],
+      "auto_fixing": [
+        {
+          "file_path": "formatting.py",
+          "directory": "src",
+          "analyzer_name": "auto_fixer",
+          "category": "auto_fixing",
+          "issues_found": 8,
+          "issues_fixed": 8,
+          "details": {
+            "status": "success",
+            "formatting_fixes": 8
+          },
+          "processing_time": 0.89,
+          "status": "success"
+        }
+      ]
+    },
+    "by_analyzer": {
+      "syntax": [
+        {
+          "file_path": "main.py",
+          "directory": "root",
+          "analyzer_name": "syntax",
+          "category": "syntax",
+          "issues_found": 2,
+          "issues_fixed": 1,
+          "details": {
+            "status": "success"
+          },
+          "processing_time": 0.12,
+          "status": "success"
+        }
+      ],
+      "auto_fixer": [
+        {
+          "file_path": "formatting.py",
+          "directory": "src",
+          "analyzer_name": "auto_fixer",
+          "category": "auto_fixing",
+          "issues_found": 8,
+          "issues_fixed": 8,
+          "details": {
+            "status": "success"
+          },
+          "processing_time": 0.89,
+          "status": "success"
+        }
+      ]
+    }
+  },
+  "summary": {
+    "total_analysis_runs": 1247,
+    "successful_runs": 1174,
+    "failed_runs": 73,
+    "categories_analyzed": 8,
+    "analyzers_used": 8
+  }
+}

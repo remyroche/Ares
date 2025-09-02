@@ -1,0 +1,71 @@
+================================================================================
+COMPREHENSIVE PROFESSIONAL ANALYSIS DEMO REPORT
+================================================================================
+
+Generated: 2025-09-02 19:03:46
+Project Root: /workspace/test_analysis_dir
+Analysis Duration: 0.01 seconds
+Note: This is a DEMO using basic Python tools. Install the full toolkit for professional analysis.
+
+🌍 GLOBAL METRICS
+--------------------------------------------------
+Total Directories: 1
+Total Files: 3
+Total Analyzers Run: 5
+Total Issues Found: 10
+Total Issues Fixed: 0
+Success Rate: 100.0%
+Categories Covered: complexity, dead_code, dependencies, function_calls, syntax
+
+🚨 TOP ISSUES BY CATEGORY
+--------------------------------------------------
+• syntax: 3 issues
+• dead_code: 2 issues
+• function_calls: 1 issues
+• dependencies: 1 issues
+
+📁 DIRECTORY ANALYSIS SUMMARIES
+================================================================================
+
+📂 root/
+   Files: 3 (analyzed: 3)
+   Issues: 10 (fixed: 0)
+   Analyzers: 5
+   Categories: complexity, dead_code, dependencies, function_calls, syntax
+   Processing Time: 0.01s
+
+🔍 ANALYSIS BY CATEGORY
+================================================================================
+
+📊 SYNTAX
+   Files Analyzed: 3
+   Issues Found: 3
+   Issues Fixed: 0
+
+📊 COMPLEXITY
+   Files Analyzed: 3
+   Issues Found: 0
+   Issues Fixed: 0
+
+📊 DEAD_CODE
+   Files Analyzed: 3
+   Issues Found: 5
+   Issues Fixed: 0
+
+📊 FUNCTION_CALLS
+   Files Analyzed: 3
+   Issues Found: 1
+   Issues Fixed: 0
+
+📊 DEPENDENCIES
+   Files Analyzed: 3
+   Issues Found: 1
+   Issues Fixed: 0
+
+================================================================================
+END OF COMPREHENSIVE PROFESSIONAL ANALYSIS DEMO REPORT
+================================================================================
+
+💡 This is a DEMO showing the comprehensive analysis concept.
+   To run the full professional analysis, install dependencies and run:
+   python comprehensive_professional_analysis.py

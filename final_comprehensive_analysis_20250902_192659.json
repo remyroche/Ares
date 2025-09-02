@@ -1,0 +1,991 @@
+{
+  "metadata": {
+    "generated_at": "2025-09-02 19:26:59",
+    "project_root": "/workspace/test_analysis_dir",
+    "total_analyzers": 6,
+    "categories_analyzed": [
+      "type_checking",
+      "advanced_ast",
+      "architecture",
+      "code_duplication",
+      "error_handling",
+      "concurrency"
+    ]
+  },
+  "global_metrics": {
+    "total_directories": 1,
+    "total_files": 3,
+    "total_analyzers_run": 6,
+    "total_issues_found": 0,
+    "total_issues_fixed": 0,
+    "total_processing_time": 0.009987831115722656,
+    "success_rate": 100.0,
+    "categories_covered": [
+      "code_duplication",
+      "advanced_ast",
+      "architecture",
+      "concurrency",
+      "error_handling",
+      "type_checking"
+    ],
+    "top_issues": []
+  },
+  "directory_summaries": {
+    ".": {
+      "directory": ".",
+      "total_files": 3,
+      "files_analyzed": 3,
+      "total_issues": 0,
+      "total_fixed": 0,
+      "analyzers_run": [
+        "code_duplication",
+        "advanced_ast",
+        "architecture",
+        "concurrency",
+        "error_handling",
+        "type_checking"
+      ],
+      "categories_covered": [
+        "code_duplication",
+        "advanced_ast",
+        "architecture",
+        "concurrency",
+        "error_handling",
+        "type_checking"
+      ],
+      "processing_time": 0.009475231170654297
+    }
+  },
+  "analysis_results": [
+    {
+      "file_path": "/workspace/test_analysis_dir/simple_test.py",
+      "directory": ".",
+      "analyzer_name": "type_checking",
+      "category": "type_checking",
+      "issues_found": 0,
+      "issues_fixed": 0,
+      "details": {
+        "type_info": [
+          {
+            "name": "simple_function",
+            "type_hint": "<ast.Name object at 0x7f70236dc850>",
+            "line": 10,
+            "node_type": "function",
+            "has_type_hint": true
+          },
+          {
+            "name": "complex_function",
+            "type_hint": "<ast.Subscript object at 0x7f70236de410>",
+            "line": 14,
+            "node_type": "function",
+            "has_type_hint": true
+          },
+          {
+            "name": "TestClass",
+            "type_hint": "object",
+            "line": 31,
+            "node_type": "class",
+            "has_type_hint": false
+          },
+          {
+            "name": "main",
+            "type_hint": "Any",
+            "line": 46,
+            "node_type": "function",
+            "has_type_hint": false
+          },
+          {
+            "name": "__init__",
+            "type_hint": "Any",
+            "line": 34,
+            "node_type": "function",
+            "has_type_hint": true
+          },
+          {
+            "name": "add_value",
+            "type_hint": "<ast.Constant object at 0x7f70236dfb50>",
+            "line": 38,
+            "node_type": "function",
+            "has_type_hint": true
+          },
+          {
+            "name": "get_stats",
+            "type_hint": "<ast.Subscript object at 0x7f702386cb10>",
+            "line": 42,
+            "node_type": "function",
+            "has_type_hint": true
+          }
+        ],
+        "missing_type_hints": [
+          "Class 'TestClass' missing base class type hints",
+          "Function 'main' missing return type hint",
+          "Function 'main' missing parameter type hints",
+          "Function '__init__' missing return type hint",
+          "Function 'get_stats' missing parameter type hints"
+        ],
+        "total_functions": 6,
+        "total_classes": 1,
+        "functions_with_types": 5,
+        "classes_with_types": 0
+      },
+      "processing_time": 0.00048804283142089844,
+      "status": "success"
+    },
+    {
+      "file_path": "/workspace/test_analysis_dir/simple_test.py",
+      "directory": ".",
+      "analyzer_name": "advanced_ast",
+      "category": "advanced_ast",
+      "issues_found": 0,
+      "issues_fixed": 0,
+      "details": {
+        "structure": {
+          "structures": [
+            {
+              "name": "simple_function",
+              "node_type": "function",
+              "line": 10,
+              "complexity": 1,
+              "metrics": {
+                "parameters": 1,
+                "defaults": 0,
+                "varargs": false,
+                "kwargs": false,
+                "decorators": 0,
+                "has_docstring": true,
+                "has_type_hints": true
+              }
+            },
+            {
+              "name": "complex_function",
+              "node_type": "function",
+              "line": 14,
+              "complexity": 2,
+              "metrics": {
+                "parameters": 1,
+                "defaults": 0,
+                "varargs": false,
+                "kwargs": false,
+                "decorators": 0,
+                "has_docstring": true,
+                "has_type_hints": true
+              }
+            },
+            {
+              "name": "TestClass",
+              "node_type": "class",
+              "line": 31,
+              "complexity": 4,
+              "children": [
+                "method:__init__",
+                "method:add_value",
+                "method:get_stats"
+              ],
+              "metrics": {
+                "bases": 0,
+                "methods": 3,
+                "has_docstring": true
+              }
+            },
+            {
+              "name": "main",
+              "node_type": "function",
+              "line": 46,
+              "complexity": 1,
+              "metrics": {
+                "parameters": 0,
+                "defaults": 0,
+                "varargs": false,
+                "kwargs": false,
+                "decorators": 0,
+                "has_docstring": true,
+                "has_type_hints": false
+              }
+            },
+            {
+              "name": "__init__",
+              "node_type": "function",
+              "line": 34,
+              "complexity": 1,
+              "metrics": {
+                "parameters": 2,
+                "defaults": 0,
+                "varargs": false,
+                "kwargs": false,
+                "decorators": 0,
+                "has_docstring": false,
+                "has_type_hints": true
+              }
+            },
+            {
+              "name": "add_value",
+              "node_type": "function",
+              "line": 38,
+              "complexity": 1,
+              "metrics": {
+                "parameters": 2,
+                "defaults": 0,
+                "varargs": false,
+                "kwargs": false,
+                "decorators": 0,
+                "has_docstring": true,
+                "has_type_hints": true
+              }
+            },
+            {
+              "name": "get_stats",
+              "node_type": "function",
+              "line": 42,
+              "complexity": 1,
+              "metrics": {
+                "parameters": 1,
+                "defaults": 0,
+                "varargs": false,
+                "kwargs": false,
+                "decorators": 0,
+                "has_docstring": true,
+                "has_type_hints": true
+              }
+            }
+          ],
+          "counts": {
+            "functions": 6,
+            "classes": 1
+          },
+          "total_structures": 7
+        },
+        "patterns": {
+          "patterns": [],
+          "total_patterns": 0
+        },
+        "quality": {
+          "overall_score": 90.0,
+          "structure_quality": 80.0,
+          "complexity_quality": 100.0,
+          "issues": []
+        }
+      },
+      "processing_time": 0.0013132095336914062,
+      "status": "success"
+    },
+    {
+      "file_path": "/workspace/test_analysis_dir/simple_test.py",
+      "directory": ".",
+      "analyzer_name": "architecture",
+      "category": "architecture",
+      "issues_found": 0,
+      "issues_fixed": 0,
+      "details": {
+        "coupling": {
+          "external_dependencies": [
+            "typing",
+            "os",
+            "sys"
+          ],
+          "internal_dependencies": [
+            "simple_function",
+            "print",
+            "main",
+            "len",
+            "min",
+            "complex_function",
+            "TestClass",
+            "sum",
+            "max"
+          ],
+          "total_dependencies": 12,
+          "coupling_score": 33
+        },
+        "cohesion": {
+          "cohesion_score": 100.0,
+          "issues": [],
+          "total_issues": 0
+        },
+        "dependencies": {
+          "dependency_graph": {
+            "complex_function": [
+              "sum",
+              "len",
+              "max",
+              "min"
+            ],
+            "main": [
+              "TestClass",
+              "print",
+              "simple_function",
+              "print"
+            ],
+            "get_stats": [
+              "complex_function"
+            ]
+          },
+          "total_dependencies": 9
+        }
+      },
+      "processing_time": 0.0006401538848876953,
+      "status": "success"
+    },
+    {
+      "file_path": "/workspace/test_analysis_dir/simple_test.py",
+      "directory": ".",
+      "analyzer_name": "code_duplication",
+      "category": "code_duplication",
+      "issues_found": 0,
+      "issues_fixed": 0,
+      "details": {
+        "function_duplications": {
+          "total_functions": 6,
+          "duplicate_functions": [],
+          "duplicate_count": 0
+        },
+        "class_duplications": {
+          "total_classes": 1,
+          "duplicate_classes": [],
+          "duplicate_count": 0
+        }
+      },
+      "processing_time": 0.0004382133483886719,
+      "status": "success"
+    },
+    {
+      "file_path": "/workspace/test_analysis_dir/simple_test.py",
+      "directory": ".",
+      "analyzer_name": "error_handling",
+      "category": "error_handling",
+      "issues_found": 0,
+      "issues_fixed": 0,
+      "details": {
+        "exceptions": {
+          "try_blocks": [],
+          "except_blocks": 0,
+          "bare_excepts": [],
+          "total_exception_handlers": 0
+        },
+        "quality": {
+          "quality_score": 70.0,
+          "exception_coverage": 0.0,
+          "issues": [
+            "Low exception handling coverage"
+          ],
+          "total_issues": 1
+        }
+      },
+      "processing_time": 0.0005090236663818359,
+      "status": "success"
+    },
+    {
+      "file_path": "/workspace/test_analysis_dir/simple_test.py",
+      "directory": ".",
+      "analyzer_name": "concurrency",
+      "category": "concurrency",
+      "issues_found": 0,
+      "issues_fixed": 0,
+      "details": {
+        "threading": {
+          "threading_imports": [],
+          "thread_creations": [],
+          "total_threading_operations": 0
+        },
+        "async_patterns": {
+          "async_functions": [],
+          "await_statements": [],
+          "total_async_operations": 0
+        },
+        "quality": {
+          "quality_score": 100.0,
+          "issues": [],
+          "total_issues": 0,
+          "threading_operations": 0
+        }
+      },
+      "processing_time": 0.0005350112915039062,
+      "status": "success"
+    },
+    {
+      "file_path": "/workspace/test_analysis_dir/__init__.py",
+      "directory": ".",
+      "analyzer_name": "type_checking",
+      "category": "type_checking",
+      "issues_found": 0,
+      "issues_fixed": 0,
+      "details": {
+        "type_info": [],
+        "missing_type_hints": [],
+        "total_functions": 0,
+        "total_classes": 0,
+        "functions_with_types": 0,
+        "classes_with_types": 0
+      },
+      "processing_time": 7.677078247070312e-05,
+      "status": "success"
+    },
+    {
+      "file_path": "/workspace/test_analysis_dir/__init__.py",
+      "directory": ".",
+      "analyzer_name": "advanced_ast",
+      "category": "advanced_ast",
+      "issues_found": 0,
+      "issues_fixed": 0,
+      "details": {
+        "structure": {
+          "structures": [],
+          "counts": {
+            "functions": 0,
+            "classes": 0
+          },
+          "total_structures": 0
+        },
+        "patterns": {
+          "patterns": [],
+          "total_patterns": 0
+        },
+        "quality": {
+          "overall_score": 100.0,
+          "structure_quality": 100.0,
+          "complexity_quality": 100.0,
+          "issues": []
+        }
+      },
+      "processing_time": 0.00010657310485839844,
+      "status": "success"
+    },
+    {
+      "file_path": "/workspace/test_analysis_dir/__init__.py",
+      "directory": ".",
+      "analyzer_name": "architecture",
+      "category": "architecture",
+      "issues_found": 0,
+      "issues_fixed": 0,
+      "details": {
+        "coupling": {
+          "external_dependencies": [],
+          "internal_dependencies": [],
+          "total_dependencies": 0,
+          "coupling_score": 0
+        },
+        "cohesion": {
+          "cohesion_score": 100.0,
+          "issues": [],
+          "total_issues": 0
+        },
+        "dependencies": {
+          "dependency_graph": {},
+          "total_dependencies": 0
+        }
+      },
+      "processing_time": 7.2479248046875e-05,
+      "status": "success"
+    },
+    {
+      "file_path": "/workspace/test_analysis_dir/__init__.py",
+      "directory": ".",
+      "analyzer_name": "code_duplication",
+      "category": "code_duplication",
+      "issues_found": 0,
+      "issues_fixed": 0,
+      "details": {
+        "function_duplications": {
+          "total_functions": 0,
+          "duplicate_functions": [],
+          "duplicate_count": 0
+        },
+        "class_duplications": {
+          "total_classes": 0,
+          "duplicate_classes": [],
+          "duplicate_count": 0
+        }
+      },
+      "processing_time": 5.030632019042969e-05,
+      "status": "success"
+    },
+    {
+      "file_path": "/workspace/test_analysis_dir/__init__.py",
+      "directory": ".",
+      "analyzer_name": "error_handling",
+      "category": "error_handling",
+      "issues_found": 0,
+      "issues_fixed": 0,
+      "details": {
+        "exceptions": {
+          "try_blocks": [],
+          "except_blocks": 0,
+          "bare_excepts": [],
+          "total_exception_handlers": 0
+        },
+        "quality": {
+          "quality_score": 70.0,
+          "exception_coverage": 0,
+          "issues": [
+            "Low exception handling coverage"
+          ],
+          "total_issues": 1
+        }
+      },
+      "processing_time": 4.601478576660156e-05,
+      "status": "success"
+    },
+    {
+      "file_path": "/workspace/test_analysis_dir/__init__.py",
+      "directory": ".",
+      "analyzer_name": "concurrency",
+      "category": "concurrency",
+      "issues_found": 0,
+      "issues_fixed": 0,
+      "details": {
+        "threading": {
+          "threading_imports": [],
+          "thread_creations": [],
+          "total_threading_operations": 0
+        },
+        "async_patterns": {
+          "async_functions": [],
+          "await_statements": [],
+          "total_async_operations": 0
+        },
+        "quality": {
+          "quality_score": 100.0,
+          "issues": [],
+          "total_issues": 0,
+          "threading_operations": 0
+        }
+      },
+      "processing_time": 5.4836273193359375e-05,
+      "status": "success"
+    },
+    {
+      "file_path": "/workspace/test_analysis_dir/another_test.py",
+      "directory": ".",
+      "analyzer_name": "type_checking",
+      "category": "type_checking",
+      "issues_found": 0,
+      "issues_fixed": 0,
+      "details": {
+        "type_info": [
+          {
+            "name": "calculate_area",
+            "type_hint": "<ast.Name object at 0x7f70236df9d0>",
+            "line": 14,
+            "node_type": "function",
+            "has_type_hint": true
+          },
+          {
+            "name": "fibonacci",
+            "type_hint": "<ast.Name object at 0x7f70236dd490>",
+            "line": 18,
+            "node_type": "function",
+            "has_type_hint": true
+          },
+          {
+            "name": "process_data",
+            "type_hint": "<ast.Name object at 0x7f702370f150>",
+            "line": 24,
+            "node_type": "function",
+            "has_type_hint": true
+          },
+          {
+            "name": "DataProcessor",
+            "type_hint": "object",
+            "line": 49,
+            "node_type": "class",
+            "has_type_hint": false
+          },
+          {
+            "name": "__init__",
+            "type_hint": "Any",
+            "line": 52,
+            "node_type": "function",
+            "has_type_hint": false
+          },
+          {
+            "name": "process_item",
+            "type_hint": "Any",
+            "line": 56,
+            "node_type": "function",
+            "has_type_hint": false
+          },
+          {
+            "name": "get_summary",
+            "type_hint": "Any",
+            "line": 66,
+            "node_type": "function",
+            "has_type_hint": false
+          }
+        ],
+        "missing_type_hints": [
+          "Class 'DataProcessor' missing base class type hints",
+          "Function '__init__' missing return type hint",
+          "Function '__init__' missing parameter type hints",
+          "Function 'process_item' missing return type hint",
+          "Function 'process_item' missing parameter type hints",
+          "Function 'get_summary' missing return type hint",
+          "Function 'get_summary' missing parameter type hints"
+        ],
+        "total_functions": 6,
+        "total_classes": 1,
+        "functions_with_types": 3,
+        "classes_with_types": 0
+      },
+      "processing_time": 0.0004818439483642578,
+      "status": "success"
+    },
+    {
+      "file_path": "/workspace/test_analysis_dir/another_test.py",
+      "directory": ".",
+      "analyzer_name": "advanced_ast",
+      "category": "advanced_ast",
+      "issues_found": 0,
+      "issues_fixed": 0,
+      "details": {
+        "structure": {
+          "structures": [
+            {
+              "name": "calculate_area",
+              "node_type": "function",
+              "line": 14,
+              "complexity": 1,
+              "metrics": {
+                "parameters": 1,
+                "defaults": 0,
+                "varargs": false,
+                "kwargs": false,
+                "decorators": 0,
+                "has_docstring": true,
+                "has_type_hints": true
+              }
+            },
+            {
+              "name": "fibonacci",
+              "node_type": "function",
+              "line": 18,
+              "complexity": 2,
+              "metrics": {
+                "parameters": 1,
+                "defaults": 0,
+                "varargs": false,
+                "kwargs": false,
+                "decorators": 0,
+                "has_docstring": true,
+                "has_type_hints": true
+              }
+            },
+            {
+              "name": "process_data",
+              "node_type": "function",
+              "line": 24,
+              "complexity": 3,
+              "metrics": {
+                "parameters": 1,
+                "defaults": 0,
+                "varargs": false,
+                "kwargs": false,
+                "decorators": 0,
+                "has_docstring": true,
+                "has_type_hints": true
+              }
+            },
+            {
+              "name": "DataProcessor",
+              "node_type": "class",
+              "line": 49,
+              "complexity": 5,
+              "children": [
+                "method:__init__",
+                "method:process_item",
+                "method:get_summary"
+              ],
+              "metrics": {
+                "bases": 0,
+                "methods": 3,
+                "has_docstring": true
+              }
+            },
+            {
+              "name": "__init__",
+              "node_type": "function",
+              "line": 52,
+              "complexity": 1,
+              "metrics": {
+                "parameters": 1,
+                "defaults": 0,
+                "varargs": false,
+                "kwargs": false,
+                "decorators": 0,
+                "has_docstring": false,
+                "has_type_hints": false
+              }
+            },
+            {
+              "name": "process_item",
+              "node_type": "function",
+              "line": 56,
+              "complexity": 2,
+              "metrics": {
+                "parameters": 2,
+                "defaults": 0,
+                "varargs": false,
+                "kwargs": false,
+                "decorators": 0,
+                "has_docstring": true,
+                "has_type_hints": false
+              }
+            },
+            {
+              "name": "get_summary",
+              "node_type": "function",
+              "line": 66,
+              "complexity": 1,
+              "metrics": {
+                "parameters": 1,
+                "defaults": 0,
+                "varargs": false,
+                "kwargs": false,
+                "decorators": 0,
+                "has_docstring": true,
+                "has_type_hints": false
+              }
+            }
+          ],
+          "counts": {
+            "functions": 6,
+            "classes": 1
+          },
+          "total_structures": 7
+        },
+        "patterns": {
+          "patterns": [],
+          "total_patterns": 0
+        },
+        "quality": {
+          "overall_score": 90.0,
+          "structure_quality": 80.0,
+          "complexity_quality": 100.0,
+          "issues": []
+        }
+      },
+      "processing_time": 0.0017483234405517578,
+      "status": "success"
+    },
+    {
+      "file_path": "/workspace/test_analysis_dir/another_test.py",
+      "directory": ".",
+      "analyzer_name": "architecture",
+      "category": "architecture",
+      "issues_found": 0,
+      "issues_fixed": 0,
+      "details": {
+        "coupling": {
+          "external_dependencies": [
+            "math",
+            "json",
+            "datetime"
+          ],
+          "internal_dependencies": [
+            "print",
+            "len",
+            "DataProcessor",
+            "fibonacci",
+            "str",
+            "process_data",
+            "sum",
+            "calculate_area"
+          ],
+          "total_dependencies": 11,
+          "coupling_score": 31
+        },
+        "cohesion": {
+          "cohesion_score": 100.0,
+          "issues": [],
+          "total_issues": 0
+        },
+        "dependencies": {
+          "dependency_graph": {
+            "fibonacci": [
+              "fibonacci",
+              "fibonacci"
+            ],
+            "process_data": [
+              "sum",
+              "len",
+              "sum",
+              "str"
+            ],
+            "process_item": [
+              "str"
+            ],
+            "get_summary": [
+              "len"
+            ]
+          },
+          "total_dependencies": 8
+        }
+      },
+      "processing_time": 0.0009002685546875,
+      "status": "success"
+    },
+    {
+      "file_path": "/workspace/test_analysis_dir/another_test.py",
+      "directory": ".",
+      "analyzer_name": "code_duplication",
+      "category": "code_duplication",
+      "issues_found": 0,
+      "issues_fixed": 0,
+      "details": {
+        "function_duplications": {
+          "total_functions": 6,
+          "duplicate_functions": [],
+          "duplicate_count": 0
+        },
+        "class_duplications": {
+          "total_classes": 1,
+          "duplicate_classes": [],
+          "duplicate_count": 0
+        }
+      },
+      "processing_time": 0.0006442070007324219,
+      "status": "success"
+    },
+    {
+      "file_path": "/workspace/test_analysis_dir/another_test.py",
+      "directory": ".",
+      "analyzer_name": "error_handling",
+      "category": "error_handling",
+      "issues_found": 0,
+      "issues_fixed": 0,
+      "details": {
+        "exceptions": {
+          "try_blocks": [
+            {
+              "line": 29,
+              "body_length": 6,
+              "handlers": 1
+            },
+            {
+              "line": 58,
+              "body_length": 3,
+              "handlers": 1
+            }
+          ],
+          "except_blocks": 0,
+          "bare_excepts": [],
+          "total_exception_handlers": 0
+        },
+        "quality": {
+          "quality_score": 70.0,
+          "exception_coverage": 33.33333333333333,
+          "issues": [
+            "Low exception handling coverage"
+          ],
+          "total_issues": 1
+        }
+      },
+      "processing_time": 0.0006451606750488281,
+      "status": "success"
+    },
+    {
+      "file_path": "/workspace/test_analysis_dir/another_test.py",
+      "directory": ".",
+      "analyzer_name": "concurrency",
+      "category": "concurrency",
+      "issues_found": 0,
+      "issues_fixed": 0,
+      "details": {
+        "threading": {
+          "threading_imports": [],
+          "thread_creations": [],
+          "total_threading_operations": 0
+        },
+        "async_patterns": {
+          "async_functions": [],
+          "await_statements": [],
+          "total_async_operations": 0
+        },
+        "quality": {
+          "quality_score": 100.0,
+          "issues": [],
+          "total_issues": 0,
+          "threading_operations": 0
+        }
+      },
+      "processing_time": 0.00072479248046875,
+      "status": "success"
+    }
+  ],
+  "results_by_directory": {
+    ".": {
+      "type_checking": [
+        "AnalysisResult(file_path='/workspace/test_analysis_dir/simple_test.py', directory='.', analyzer_name='type_checking', category='type_checking', issues_found=0, issues_fixed=0, details={'type_info': [{'name': 'simple_function', 'type_hint': '<ast.Name object at 0x7f70236dc850>', 'line': 10, 'node_type': 'function', 'has_type_hint': True}, {'name': 'complex_function', 'type_hint': '<ast.Subscript object at 0x7f70236de410>', 'line': 14, 'node_type': 'function', 'has_type_hint': True}, {'name': 'TestClass', 'type_hint': 'object', 'line': 31, 'node_type': 'class', 'has_type_hint': False}, {'name': 'main', 'type_hint': 'Any', 'line': 46, 'node_type': 'function', 'has_type_hint': False}, {'name': '__init__', 'type_hint': 'Any', 'line': 34, 'node_type': 'function', 'has_type_hint': True}, {'name': 'add_value', 'type_hint': '<ast.Constant object at 0x7f70236dfb50>', 'line': 38, 'node_type': 'function', 'has_type_hint': True}, {'name': 'get_stats', 'type_hint': '<ast.Subscript object at 0x7f702386cb10>', 'line': 42, 'node_type': 'function', 'has_type_hint': True}], 'missing_type_hints': [\"Class 'TestClass' missing base class type hints\", \"Function 'main' missing return type hint\", \"Function 'main' missing parameter type hints\", \"Function '__init__' missing return type hint\", \"Function 'get_stats' missing parameter type hints\"], 'total_functions': 6, 'total_classes': 1, 'functions_with_types': 5, 'classes_with_types': 0}, processing_time=0.00048804283142089844, status='success')",
+        "AnalysisResult(file_path='/workspace/test_analysis_dir/__init__.py', directory='.', analyzer_name='type_checking', category='type_checking', issues_found=0, issues_fixed=0, details={'type_info': [], 'missing_type_hints': [], 'total_functions': 0, 'total_classes': 0, 'functions_with_types': 0, 'classes_with_types': 0}, processing_time=7.677078247070312e-05, status='success')",
+        "AnalysisResult(file_path='/workspace/test_analysis_dir/another_test.py', directory='.', analyzer_name='type_checking', category='type_checking', issues_found=0, issues_fixed=0, details={'type_info': [{'name': 'calculate_area', 'type_hint': '<ast.Name object at 0x7f70236df9d0>', 'line': 14, 'node_type': 'function', 'has_type_hint': True}, {'name': 'fibonacci', 'type_hint': '<ast.Name object at 0x7f70236dd490>', 'line': 18, 'node_type': 'function', 'has_type_hint': True}, {'name': 'process_data', 'type_hint': '<ast.Name object at 0x7f702370f150>', 'line': 24, 'node_type': 'function', 'has_type_hint': True}, {'name': 'DataProcessor', 'type_hint': 'object', 'line': 49, 'node_type': 'class', 'has_type_hint': False}, {'name': '__init__', 'type_hint': 'Any', 'line': 52, 'node_type': 'function', 'has_type_hint': False}, {'name': 'process_item', 'type_hint': 'Any', 'line': 56, 'node_type': 'function', 'has_type_hint': False}, {'name': 'get_summary', 'type_hint': 'Any', 'line': 66, 'node_type': 'function', 'has_type_hint': False}], 'missing_type_hints': [\"Class 'DataProcessor' missing base class type hints\", \"Function '__init__' missing return type hint\", \"Function '__init__' missing parameter type hints\", \"Function 'process_item' missing return type hint\", \"Function 'process_item' missing parameter type hints\", \"Function 'get_summary' missing return type hint\", \"Function 'get_summary' missing parameter type hints\"], 'total_functions': 6, 'total_classes': 1, 'functions_with_types': 3, 'classes_with_types': 0}, processing_time=0.0004818439483642578, status='success')"
+      ],
+      "advanced_ast": [
+        "AnalysisResult(file_path='/workspace/test_analysis_dir/simple_test.py', directory='.', analyzer_name='advanced_ast', category='advanced_ast', issues_found=0, issues_fixed=0, details={'structure': {'structures': [{'name': 'simple_function', 'node_type': 'function', 'line': 10, 'complexity': 1, 'metrics': {'parameters': 1, 'defaults': 0, 'varargs': False, 'kwargs': False, 'decorators': 0, 'has_docstring': True, 'has_type_hints': True}}, {'name': 'complex_function', 'node_type': 'function', 'line': 14, 'complexity': 2, 'metrics': {'parameters': 1, 'defaults': 0, 'varargs': False, 'kwargs': False, 'decorators': 0, 'has_docstring': True, 'has_type_hints': True}}, {'name': 'TestClass', 'node_type': 'class', 'line': 31, 'complexity': 4, 'children': ['method:__init__', 'method:add_value', 'method:get_stats'], 'metrics': {'bases': 0, 'methods': 3, 'has_docstring': True}}, {'name': 'main', 'node_type': 'function', 'line': 46, 'complexity': 1, 'metrics': {'parameters': 0, 'defaults': 0, 'varargs': False, 'kwargs': False, 'decorators': 0, 'has_docstring': True, 'has_type_hints': False}}, {'name': '__init__', 'node_type': 'function', 'line': 34, 'complexity': 1, 'metrics': {'parameters': 2, 'defaults': 0, 'varargs': False, 'kwargs': False, 'decorators': 0, 'has_docstring': False, 'has_type_hints': True}}, {'name': 'add_value', 'node_type': 'function', 'line': 38, 'complexity': 1, 'metrics': {'parameters': 2, 'defaults': 0, 'varargs': False, 'kwargs': False, 'decorators': 0, 'has_docstring': True, 'has_type_hints': True}}, {'name': 'get_stats', 'node_type': 'function', 'line': 42, 'complexity': 1, 'metrics': {'parameters': 1, 'defaults': 0, 'varargs': False, 'kwargs': False, 'decorators': 0, 'has_docstring': True, 'has_type_hints': True}}], 'counts': {'functions': 6, 'classes': 1}, 'total_structures': 7}, 'patterns': {'patterns': [], 'total_patterns': 0}, 'quality': {'overall_score': 90.0, 'structure_quality': 80.0, 'complexity_quality': 100.0, 'issues': []}}, processing_time=0.0013132095336914062, status='success')",
+        "AnalysisResult(file_path='/workspace/test_analysis_dir/__init__.py', directory='.', analyzer_name='advanced_ast', category='advanced_ast', issues_found=0, issues_fixed=0, details={'structure': {'structures': [], 'counts': {'functions': 0, 'classes': 0}, 'total_structures': 0}, 'patterns': {'patterns': [], 'total_patterns': 0}, 'quality': {'overall_score': 100.0, 'structure_quality': 100.0, 'complexity_quality': 100.0, 'issues': []}}, processing_time=0.00010657310485839844, status='success')",
+        "AnalysisResult(file_path='/workspace/test_analysis_dir/another_test.py', directory='.', analyzer_name='advanced_ast', category='advanced_ast', issues_found=0, issues_fixed=0, details={'structure': {'structures': [{'name': 'calculate_area', 'node_type': 'function', 'line': 14, 'complexity': 1, 'metrics': {'parameters': 1, 'defaults': 0, 'varargs': False, 'kwargs': False, 'decorators': 0, 'has_docstring': True, 'has_type_hints': True}}, {'name': 'fibonacci', 'node_type': 'function', 'line': 18, 'complexity': 2, 'metrics': {'parameters': 1, 'defaults': 0, 'varargs': False, 'kwargs': False, 'decorators': 0, 'has_docstring': True, 'has_type_hints': True}}, {'name': 'process_data', 'node_type': 'function', 'line': 24, 'complexity': 3, 'metrics': {'parameters': 1, 'defaults': 0, 'varargs': False, 'kwargs': False, 'decorators': 0, 'has_docstring': True, 'has_type_hints': True}}, {'name': 'DataProcessor', 'node_type': 'class', 'line': 49, 'complexity': 5, 'children': ['method:__init__', 'method:process_item', 'method:get_summary'], 'metrics': {'bases': 0, 'methods': 3, 'has_docstring': True}}, {'name': '__init__', 'node_type': 'function', 'line': 52, 'complexity': 1, 'metrics': {'parameters': 1, 'defaults': 0, 'varargs': False, 'kwargs': False, 'decorators': 0, 'has_docstring': False, 'has_type_hints': False}}, {'name': 'process_item', 'node_type': 'function', 'line': 56, 'complexity': 2, 'metrics': {'parameters': 2, 'defaults': 0, 'varargs': False, 'kwargs': False, 'decorators': 0, 'has_docstring': True, 'has_type_hints': False}}, {'name': 'get_summary', 'node_type': 'function', 'line': 66, 'complexity': 1, 'metrics': {'parameters': 1, 'defaults': 0, 'varargs': False, 'kwargs': False, 'decorators': 0, 'has_docstring': True, 'has_type_hints': False}}], 'counts': {'functions': 6, 'classes': 1}, 'total_structures': 7}, 'patterns': {'patterns': [], 'total_patterns': 0}, 'quality': {'overall_score': 90.0, 'structure_quality': 80.0, 'complexity_quality': 100.0, 'issues': []}}, processing_time=0.0017483234405517578, status='success')"
+      ],
+      "architecture": [
+        "AnalysisResult(file_path='/workspace/test_analysis_dir/simple_test.py', directory='.', analyzer_name='architecture', category='architecture', issues_found=0, issues_fixed=0, details={'coupling': {'external_dependencies': ['typing', 'os', 'sys'], 'internal_dependencies': ['simple_function', 'print', 'main', 'len', 'min', 'complex_function', 'TestClass', 'sum', 'max'], 'total_dependencies': 12, 'coupling_score': 33}, 'cohesion': {'cohesion_score': 100.0, 'issues': [], 'total_issues': 0}, 'dependencies': {'dependency_graph': {'complex_function': ['sum', 'len', 'max', 'min'], 'main': ['TestClass', 'print', 'simple_function', 'print'], 'get_stats': ['complex_function']}, 'total_dependencies': 9}}, processing_time=0.0006401538848876953, status='success')",
+        "AnalysisResult(file_path='/workspace/test_analysis_dir/__init__.py', directory='.', analyzer_name='architecture', category='architecture', issues_found=0, issues_fixed=0, details={'coupling': {'external_dependencies': [], 'internal_dependencies': [], 'total_dependencies': 0, 'coupling_score': 0}, 'cohesion': {'cohesion_score': 100.0, 'issues': [], 'total_issues': 0}, 'dependencies': {'dependency_graph': {}, 'total_dependencies': 0}}, processing_time=7.2479248046875e-05, status='success')",
+        "AnalysisResult(file_path='/workspace/test_analysis_dir/another_test.py', directory='.', analyzer_name='architecture', category='architecture', issues_found=0, issues_fixed=0, details={'coupling': {'external_dependencies': ['math', 'json', 'datetime'], 'internal_dependencies': ['print', 'len', 'DataProcessor', 'fibonacci', 'str', 'process_data', 'sum', 'calculate_area'], 'total_dependencies': 11, 'coupling_score': 31}, 'cohesion': {'cohesion_score': 100.0, 'issues': [], 'total_issues': 0}, 'dependencies': {'dependency_graph': {'fibonacci': ['fibonacci', 'fibonacci'], 'process_data': ['sum', 'len', 'sum', 'str'], 'process_item': ['str'], 'get_summary': ['len']}, 'total_dependencies': 8}}, processing_time=0.0009002685546875, status='success')"
+      ],
+      "code_duplication": [
+        "AnalysisResult(file_path='/workspace/test_analysis_dir/simple_test.py', directory='.', analyzer_name='code_duplication', category='code_duplication', issues_found=0, issues_fixed=0, details={'function_duplications': {'total_functions': 6, 'duplicate_functions': [], 'duplicate_count': 0}, 'class_duplications': {'total_classes': 1, 'duplicate_classes': [], 'duplicate_count': 0}}, processing_time=0.0004382133483886719, status='success')",
+        "AnalysisResult(file_path='/workspace/test_analysis_dir/__init__.py', directory='.', analyzer_name='code_duplication', category='code_duplication', issues_found=0, issues_fixed=0, details={'function_duplications': {'total_functions': 0, 'duplicate_functions': [], 'duplicate_count': 0}, 'class_duplications': {'total_classes': 0, 'duplicate_classes': [], 'duplicate_count': 0}}, processing_time=5.030632019042969e-05, status='success')",
+        "AnalysisResult(file_path='/workspace/test_analysis_dir/another_test.py', directory='.', analyzer_name='code_duplication', category='code_duplication', issues_found=0, issues_fixed=0, details={'function_duplications': {'total_functions': 6, 'duplicate_functions': [], 'duplicate_count': 0}, 'class_duplications': {'total_classes': 1, 'duplicate_classes': [], 'duplicate_count': 0}}, processing_time=0.0006442070007324219, status='success')"
+      ],
+      "error_handling": [
+        "AnalysisResult(file_path='/workspace/test_analysis_dir/simple_test.py', directory='.', analyzer_name='error_handling', category='error_handling', issues_found=0, issues_fixed=0, details={'exceptions': {'try_blocks': [], 'except_blocks': 0, 'bare_excepts': [], 'total_exception_handlers': 0}, 'quality': {'quality_score': 70.0, 'exception_coverage': 0.0, 'issues': ['Low exception handling coverage'], 'total_issues': 1}}, processing_time=0.0005090236663818359, status='success')",
+        "AnalysisResult(file_path='/workspace/test_analysis_dir/__init__.py', directory='.', analyzer_name='error_handling', category='error_handling', issues_found=0, issues_fixed=0, details={'exceptions': {'try_blocks': [], 'except_blocks': 0, 'bare_excepts': [], 'total_exception_handlers': 0}, 'quality': {'quality_score': 70.0, 'exception_coverage': 0, 'issues': ['Low exception handling coverage'], 'total_issues': 1}}, processing_time=4.601478576660156e-05, status='success')",
+        "AnalysisResult(file_path='/workspace/test_analysis_dir/another_test.py', directory='.', analyzer_name='error_handling', category='error_handling', issues_found=0, issues_fixed=0, details={'exceptions': {'try_blocks': [{'line': 29, 'body_length': 6, 'handlers': 1}, {'line': 58, 'body_length': 3, 'handlers': 1}], 'except_blocks': 0, 'bare_excepts': [], 'total_exception_handlers': 0}, 'quality': {'quality_score': 70.0, 'exception_coverage': 33.33333333333333, 'issues': ['Low exception handling coverage'], 'total_issues': 1}}, processing_time=0.0006451606750488281, status='success')"
+      ],
+      "concurrency": [
+        "AnalysisResult(file_path='/workspace/test_analysis_dir/simple_test.py', directory='.', analyzer_name='concurrency', category='concurrency', issues_found=0, issues_fixed=0, details={'threading': {'threading_imports': [], 'thread_creations': [], 'total_threading_operations': 0}, 'async_patterns': {'async_functions': [], 'await_statements': [], 'total_async_operations': 0}, 'quality': {'quality_score': 100.0, 'issues': [], 'total_issues': 0, 'threading_operations': 0}}, processing_time=0.0005350112915039062, status='success')",
+        "AnalysisResult(file_path='/workspace/test_analysis_dir/__init__.py', directory='.', analyzer_name='concurrency', category='concurrency', issues_found=0, issues_fixed=0, details={'threading': {'threading_imports': [], 'thread_creations': [], 'total_threading_operations': 0}, 'async_patterns': {'async_functions': [], 'await_statements': [], 'total_async_operations': 0}, 'quality': {'quality_score': 100.0, 'issues': [], 'total_issues': 0, 'threading_operations': 0}}, processing_time=5.4836273193359375e-05, status='success')",
+        "AnalysisResult(file_path='/workspace/test_analysis_dir/another_test.py', directory='.', analyzer_name='concurrency', category='concurrency', issues_found=0, issues_fixed=0, details={'threading': {'threading_imports': [], 'thread_creations': [], 'total_threading_operations': 0}, 'async_patterns': {'async_functions': [], 'await_statements': [], 'total_async_operations': 0}, 'quality': {'quality_score': 100.0, 'issues': [], 'total_issues': 0, 'threading_operations': 0}}, processing_time=0.00072479248046875, status='success')"
+      ]
+    }
+  },
+  "category_summary": {
+    "type_checking": {
+      "description": "Type Checking and Validation",
+      "files_analyzed": 3,
+      "total_issues": 0,
+      "total_fixed": 0,
+      "success_rate": 100.0
+    },
+    "advanced_ast": {
+      "description": "Advanced AST Analysis",
+      "files_analyzed": 3,
+      "total_issues": 0,
+      "total_fixed": 0,
+      "success_rate": 100.0
+    },
+    "architecture": {
+      "description": "Code Architecture Analysis",
+      "files_analyzed": 3,
+      "total_issues": 0,
+      "total_fixed": 0,
+      "success_rate": 100.0
+    },
+    "code_duplication": {
+      "description": "Code Duplication Detection",
+      "files_analyzed": 3,
+      "total_issues": 0,
+      "total_fixed": 0,
+      "success_rate": 100.0
+    },
+    "error_handling": {
+      "description": "Error Handling Analysis",
+      "files_analyzed": 3,
+      "total_issues": 0,
+      "total_fixed": 0,
+      "success_rate": 100.0
+    },
+    "concurrency": {
+      "description": "Concurrency Analysis",
+      "files_analyzed": 3,
+      "total_issues": 0,
+      "total_fixed": 0,
+      "success_rate": 100.0
+    }
+  }
+}

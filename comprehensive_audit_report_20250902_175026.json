@@ -1,0 +1,232 @@
+{
+  "audit_summary": {
+    "audit_timestamp": "2025-09-02T17:50:26.033242",
+    "target_path": ".",
+    "audit_mode": "exhaustive",
+    "recursive": false,
+    "file_pattern": "*",
+    "max_files": 5,
+    "total_files": 5,
+    "successful_audits": 5,
+    "failed_audits": 0,
+    "success_rate": 1.0,
+    "overall_quality": "excellent",
+    "quality_distribution": {
+      "excellent": 5
+    },
+    "total_size_mb": 0.028,
+    "critical_issues": 0,
+    "total_recommendations": 1,
+    "top_recommendations": [
+      "File appears to be in good condition"
+    ],
+    "audit_duration_seconds": 0.01
+  },
+  "analysis_results": {
+    "step_formatter.py": {
+      "file_path": "step_formatter.py",
+      "file_name": "step_formatter.py",
+      "audit_timestamp": "2025-09-02T17:50:26.037810",
+      "basic_analysis": {
+        "size_bytes": 12558,
+        "size_mb": 0.012,
+        "created_time": "2025-09-02T17:47:29.579229",
+        "modified_time": "2025-09-02T17:47:29.579229",
+        "extension": ".py",
+        "is_readable": true,
+        "is_writable": true,
+        "is_executable": false
+      },
+      "format_analysis": {
+        "format": "PYTHON",
+        "is_valid": true,
+        "total_characters": 12558,
+        "total_lines": 380,
+        "non_empty_lines": 301,
+        "imports": 8,
+        "functions": 11,
+        "classes": 1,
+        "encoding": "UTF-8",
+        "syntax_check": {
+          "is_valid": true,
+          "errors": []
+        }
+      },
+      "quality_assessment": {
+        "overall_quality": "excellent",
+        "quality_score": 100,
+        "issues": [],
+        "assessment_timestamp": "2025-09-02T17:50:26.037799"
+      },
+      "issues": [],
+      "recommendations": [
+        "File appears to be in good condition"
+      ],
+      "audit_type": "single_file"
+    },
+    "kelly_criterion_fix.py": {
+      "file_path": "kelly_criterion_fix.py",
+      "file_name": "kelly_criterion_fix.py",
+      "audit_timestamp": "2025-09-02T17:50:26.038581",
+      "basic_analysis": {
+        "size_bytes": 6889,
+        "size_mb": 0.007,
+        "created_time": "2025-09-02T17:47:29.559229",
+        "modified_time": "2025-09-02T17:47:29.559229",
+        "extension": ".py",
+        "is_readable": true,
+        "is_writable": true,
+        "is_executable": false
+      },
+      "format_analysis": {
+        "format": "PYTHON",
+        "is_valid": true,
+        "total_characters": 6889,
+        "total_lines": 195,
+        "non_empty_lines": 163,
+        "imports": 0,
+        "functions": 2,
+        "classes": 0,
+        "encoding": "UTF-8",
+        "syntax_check": {
+          "is_valid": true,
+          "errors": []
+        }
+      },
+      "quality_assessment": {
+        "overall_quality": "excellent",
+        "quality_score": 100,
+        "issues": [],
+        "assessment_timestamp": "2025-09-02T17:50:26.038574"
+      },
+      "issues": [],
+      "recommendations": [
+        "File appears to be in good condition"
+      ],
+      "audit_type": "single_file"
+    },
+    "check_trade_data.py": {
+      "file_path": "check_trade_data.py",
+      "file_name": "check_trade_data.py",
+      "audit_timestamp": "2025-09-02T17:50:26.038840",
+      "basic_analysis": {
+        "size_bytes": 756,
+        "size_mb": 0.001,
+        "created_time": "2025-09-02T17:47:29.379229",
+        "modified_time": "2025-09-02T17:47:29.379229",
+        "extension": ".py",
+        "is_readable": true,
+        "is_writable": true,
+        "is_executable": false
+      },
+      "format_analysis": {
+        "format": "PYTHON",
+        "is_valid": true,
+        "total_characters": 756,
+        "total_lines": 29,
+        "non_empty_lines": 22,
+        "imports": 2,
+        "functions": 0,
+        "classes": 0,
+        "encoding": "UTF-8",
+        "syntax_check": {
+          "is_valid": true,
+          "errors": []
+        }
+      },
+      "quality_assessment": {
+        "overall_quality": "excellent",
+        "quality_score": 100,
+        "issues": [],
+        "assessment_timestamp": "2025-09-02T17:50:26.038836"
+      },
+      "issues": [],
+      "recommendations": [
+        "File appears to be in good condition"
+      ],
+      "audit_type": "single_file"
+    },
+    "create_regime_splits.py": {
+      "file_path": "create_regime_splits.py",
+      "file_name": "create_regime_splits.py",
+      "audit_timestamp": "2025-09-02T17:50:26.039511",
+      "basic_analysis": {
+        "size_bytes": 5122,
+        "size_mb": 0.005,
+        "created_time": "2025-09-02T17:47:29.551229",
+        "modified_time": "2025-09-02T17:47:29.551229",
+        "extension": ".py",
+        "is_readable": true,
+        "is_writable": true,
+        "is_executable": false
+      },
+      "format_analysis": {
+        "format": "PYTHON",
+        "is_valid": true,
+        "total_characters": 5095,
+        "total_lines": 146,
+        "non_empty_lines": 112,
+        "imports": 3,
+        "functions": 1,
+        "classes": 0,
+        "encoding": "UTF-8",
+        "syntax_check": {
+          "is_valid": true,
+          "errors": []
+        }
+      },
+      "quality_assessment": {
+        "overall_quality": "excellent",
+        "quality_score": 100,
+        "issues": [],
+        "assessment_timestamp": "2025-09-02T17:50:26.039505"
+      },
+      "issues": [],
+      "recommendations": [
+        "File appears to be in good condition"
+      ],
+      "audit_type": "single_file"
+    },
+    "demo_step_formatting.py": {
+      "file_path": "demo_step_formatting.py",
+      "file_name": "demo_step_formatting.py",
+      "audit_timestamp": "2025-09-02T17:50:26.039937",
+      "basic_analysis": {
+        "size_bytes": 2865,
+        "size_mb": 0.003,
+        "created_time": "2025-09-02T17:47:29.555229",
+        "modified_time": "2025-09-02T17:47:29.555229",
+        "extension": ".py",
+        "is_readable": true,
+        "is_writable": true,
+        "is_executable": false
+      },
+      "format_analysis": {
+        "format": "PYTHON",
+        "is_valid": true,
+        "total_characters": 2790,
+        "total_lines": 94,
+        "non_empty_lines": 82,
+        "imports": 1,
+        "functions": 1,
+        "classes": 0,
+        "encoding": "UTF-8",
+        "syntax_check": {
+          "is_valid": true,
+          "errors": []
+        }
+      },
+      "quality_assessment": {
+        "overall_quality": "excellent",
+        "quality_score": 100,
+        "issues": [],
+        "assessment_timestamp": "2025-09-02T17:50:26.039932"
+      },
+      "issues": [],
+      "recommendations": [
+        "File appears to be in good condition"
+      ],
+      "audit_type": "single_file"
+    }
+  }
+}

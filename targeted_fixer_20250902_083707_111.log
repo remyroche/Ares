@@ -1,0 +1,27 @@
+2025-09-02 08:37:07,114 - INFO - Processing file: src/interfaces/event_bus.py
+2025-09-02 08:37:07,114 - INFO - Performing semantic analysis...
+2025-09-02 08:37:07,114 - INFO - Code quality score: 0.00
+2025-09-02 08:37:07,114 - WARNING - Syntax errors found: 1
+2025-09-02 08:37:07,114 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:37:07,116 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:07,118 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:07,119 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:07,120 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:07,122 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:07,123 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:07,125 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:07,126 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:07,128 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:07,129 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:07,131 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:37:07,131 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:37:07,133 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:07,134 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:07,136 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:07,137 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:07,139 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:07,142 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:07,143 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:07,143 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:37:07,146 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:37:07,148 - INFO - No fixes needed for: src/interfaces/event_bus.py

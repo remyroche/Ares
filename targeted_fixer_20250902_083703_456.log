@@ -1,0 +1,20 @@
+2025-09-02 08:37:03,460 - INFO - Processing file: src/interfaces/base_interfaces.py
+2025-09-02 08:37:03,460 - INFO - Performing semantic analysis...
+2025-09-02 08:37:03,461 - INFO - Code quality score: 0.00
+2025-09-02 08:37:03,461 - WARNING - Syntax errors found: 1
+2025-09-02 08:37:03,461 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:37:03,465 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:03,469 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:03,472 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:03,476 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:03,480 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:03,484 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:03,490 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:03,494 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:03,498 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:03,502 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:03,505 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:03,509 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:03,512 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:37:03,520 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:37:03,523 - INFO - No fixes needed for: src/interfaces/base_interfaces.py

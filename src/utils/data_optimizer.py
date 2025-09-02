@@ -15,9 +15,9 @@ from typing import Any
 import pandas as pd
 
 from src.utils.centralized_decorators import guard_dataframe_nulls, with_tracing_span
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.comprehensive_logger import get_component_logger
 from src.utils.error_handler import handle_errors
+from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import error, initialization_error, missing
 
 
@@ -35,9 +35,7 @@ class DataOptimizer:
         self.optimizer_config: dict[str, Any] = config.get("data_optimizer", {})
         self.chunk_size: int = int(self.optimizer_config.get("chunk_size", 10_000))
         self.memory_limit: float = float(self.optimizer_config.get("memory_limit", 0.8))
-        self.compression_enabled: bool = bool(
-            self.optimizer_config.get("compression_enabled", True)
-        )
+        self.compression_enabled: bool = bool(self.optimizer_config.get("compression_enabled", True))
         self.cache_enabled: bool = bool(self.optimizer_config.get("cache_enabled", True))
 
         # Data processing statistics
@@ -60,6 +58,7 @@ class DataOptimizer:
 
 # Shared column projection helpers for Parquet reads
 
+
 def ohlcv_columns() -> list[str]:
     return ["timestamp", "open", "high", "low", "close", "volume"]
 
@@ -70,7 +69,6 @@ def trade_columns() -> list[str]:
 
 def regime_columns() -> list[str]:
     return ["timestamp", "regime", "confidence"]
-
 
     @handle_errors(
         exceptions=(Exception,),
@@ -338,7 +336,11 @@ def regime_columns() -> list[str]:
 
     @with_tracing_span("DataOptimizer.optimize_market_data", log_args=False)
     @guard_dataframe_nulls(mode="warn", arg_index=1)
-    @handle_errors(exceptions=(Exception,), default_return=lambda self, market_data: market_data, context="market data optimization")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=lambda self, market_data: market_data,
+        context="market data optimization",
+    )
     async def optimize_market_data(self, market_data: pd.DataFrame) -> pd.DataFrame:
         """Optimize market data specifically for trading operations."""
         self.logger.info("Optimizing market data for trading operations...")
@@ -372,7 +374,11 @@ def regime_columns() -> list[str]:
         self.logger.info(f"Market data optimized: {len(market_data)} rows")
         return market_data
 
-    @handle_errors(exceptions=(Exception,), default_return=lambda self, ensemble_data: ensemble_data, context="ensemble data optimization")
+    @handle_errors(
+        exceptions=(Exception,),
+        default_return=lambda self, ensemble_data: ensemble_data,
+        context="ensemble data optimization",
+    )
     async def optimize_ensemble_data(self, ensemble_data: dict[str, pd.DataFrame]) -> dict[str, pd.DataFrame]:
         """Optimize ensemble data for model training."""
         self.logger.info("Optimizing ensemble data for model training...")
@@ -413,8 +419,10 @@ def regime_columns() -> list[str]:
                 "memory_saved_mb": float(self.processing_stats["memory_saved"]) / 1024 / 1024,
                 "total_processed": int(self.processing_stats["total_processed"]),
                 "cache_efficiency": (
-                    float(self.processing_stats["cache_hits"]) /
-                    max(1.0, float(self.processing_stats["cache_hits"]) + float(self.processing_stats["cache_misses"]))
+                    float(self.processing_stats["cache_hits"])
+                    / max(
+                        1.0, float(self.processing_stats["cache_hits"]) + float(self.processing_stats["cache_misses"])
+                    )
                 ),
                 "timestamp": datetime.now().isoformat(),
             }

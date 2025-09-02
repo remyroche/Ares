@@ -21,8 +21,8 @@ except Exception as e:  # pragma: no cover - optional dependency fallback
     _PROM_IMPORT_ERROR = e
     _PROM_AVAILABLE = False
 
-from src.utils.warning_symbols import failed
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+from src.utils.warning_symbols import failed
 
 logger = logging.getLogger(__name__)
 
@@ -147,9 +147,7 @@ class PrometheusMetrics:
             sock.close()
             if result == 0:
                 # Port is already in use, don't start another server
-                logger.info(
-                    f"Prometheus metrics server already running on port {self.port}"
-                )
+                logger.info(f"Prometheus metrics server already running on port {self.port}")
                 self.metrics_initialized = True
                 return
         except Exception:
@@ -257,7 +255,7 @@ class PrometheusMetrics:
     def get_metrics(self) -> str:
         """Get current metrics in Prometheus format."""
         if not _PROM_AVAILABLE or generate_latest is None:
-        # Fallback implementation for not _PROM_AVAILABLE or generate_latest
+            # Fallback implementation for not _PROM_AVAILABLE or generate_latest
             return ""
         return generate_latest()  # type: ignore[return-value]
 

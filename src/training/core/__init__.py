@@ -9,7 +9,9 @@ from .stage_context import StageContext
 from .stage_registry import StageRegistry
 
 __all__ = [
+    "CheckpointManager",
     "PipelineOrchestrator",
+    "PipelineStage",
     "StageContext",
     "StageRegistry",
 ]

@@ -5,6 +5,7 @@ This module defines the standards and configurations for the Ares trading system
 including data quality levels, validation rules, and pipeline configurations.
 """
 
+
 import os
 import sys
 import asyncio
@@ -13,6 +14,21 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 from dataclasses import dataclass
 from enum import Enum
+
+# Try to import optional dependencies
+try:
+    import pandas as pd
+    PANDAS_AVAILABLE = True
+except ImportError:
+    PANDAS_AVAILABLE = False
+    pd = None
+
+try:
+    import numpy as np
+    NUMPY_AVAILABLE = True
+except ImportError:
+    NUMPY_AVAILABLE = False
+    np = None
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -27,6 +43,7 @@ class DataQualityLevel(Enum):
     WARNING = "warning"
     ERROR = "error"
     CRITICAL = "critical"
+
 
 @dataclass
 class ValidationIssue:

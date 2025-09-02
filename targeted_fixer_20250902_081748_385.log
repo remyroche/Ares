@@ -1,0 +1,27 @@
+2025-09-02 08:17:48,390 - INFO - Processing file: src/utils/mlflow_utils.py
+2025-09-02 08:17:48,390 - INFO - Performing semantic analysis...
+2025-09-02 08:17:48,390 - INFO - Code quality score: 0.00
+2025-09-02 08:17:48,390 - WARNING - Syntax errors found: 1
+2025-09-02 08:17:48,390 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:17:48,391 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:48,392 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:48,393 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:48,393 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:48,394 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:48,394 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:48,395 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:48,396 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:48,396 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:48,397 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:48,398 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:48,398 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:48,399 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:48,400 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:48,401 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:48,403 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:48,404 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:48,407 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:48,408 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:48,408 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:17:48,410 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:17:48,413 - INFO - No fixes needed for: src/utils/mlflow_utils.py

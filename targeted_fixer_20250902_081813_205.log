@@ -1,0 +1,27 @@
+2025-09-02 08:18:13,208 - INFO - Processing file: src/utils/parallel_processing_optimizer.py
+2025-09-02 08:18:13,208 - INFO - Performing semantic analysis...
+2025-09-02 08:18:13,209 - INFO - Code quality score: 0.00
+2025-09-02 08:18:13,209 - WARNING - Syntax errors found: 1
+2025-09-02 08:18:13,209 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:18:13,210 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:13,210 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:13,211 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:13,212 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:13,212 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:13,213 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:13,213 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:13,214 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:13,215 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:13,215 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:13,216 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:13,217 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:13,217 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:13,218 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:13,219 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:13,220 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:13,221 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:13,224 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:18:13,224 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:18:13,224 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:18:13,226 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:13,227 - INFO - No fixes needed for: src/utils/parallel_processing_optimizer.py

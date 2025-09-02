@@ -1,0 +1,27 @@
+2025-09-02 07:59:04,309 - INFO - Processing file: src/ares_pipeline.py
+2025-09-02 07:59:04,309 - INFO - Performing semantic analysis...
+2025-09-02 07:59:04,309 - INFO - Code quality score: 0.00
+2025-09-02 07:59:04,309 - WARNING - Syntax errors found: 1
+2025-09-02 07:59:04,309 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 07:59:04,311 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:59:04,313 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:59:04,314 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:59:04,315 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:59:04,317 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:59:04,318 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:59:04,319 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:59:04,321 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:59:04,322 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:59:04,324 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:59:04,325 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:59:04,327 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:59:04,328 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:59:04,329 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:59:04,333 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 07:59:04,334 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 07:59:04,336 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:59:04,343 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:59:04,344 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:59:04,345 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 07:59:04,350 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:59:04,356 - INFO - No fixes needed for: src/ares_pipeline.py

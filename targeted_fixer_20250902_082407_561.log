@@ -1,0 +1,25 @@
+2025-09-02 08:24:07,564 - INFO - Processing file: src/utils/enhanced_outlier_handler.py
+2025-09-02 08:24:07,564 - INFO - Performing semantic analysis...
+2025-09-02 08:24:07,565 - INFO - Code quality score: 0.00
+2025-09-02 08:24:07,565 - WARNING - Syntax errors found: 1
+2025-09-02 08:24:07,565 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:24:07,567 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:24:07,568 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:24:07,570 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:24:07,572 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:24:07,573 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:24:07,575 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:24:07,577 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:24:07,578 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:24:07,580 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:24:07,582 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:24:07,584 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:24:07,588 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:24:07,589 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:24:07,593 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:24:07,595 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:24:07,598 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:24:07,598 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:24:07,599 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:24:07,602 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:24:07,605 - INFO - No fixes needed for: src/utils/enhanced_outlier_handler.py

@@ -1,0 +1,25 @@
+2025-09-02 07:56:39,370 - INFO - Processing file: src/training/core/checkpoint_manager.py
+2025-09-02 07:56:39,370 - INFO - Performing semantic analysis...
+2025-09-02 07:56:39,370 - INFO - Code quality score: 0.00
+2025-09-02 07:56:39,370 - WARNING - Syntax errors found: 1
+2025-09-02 07:56:39,370 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 07:56:39,372 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:39,373 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:39,374 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:39,376 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:39,377 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:39,378 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:39,379 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:39,381 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:39,382 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:39,383 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:39,384 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:39,386 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:39,387 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:39,390 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 07:56:39,391 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:39,397 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:39,397 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 07:56:39,398 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 07:56:39,404 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 07:56:39,409 - INFO - No fixes needed for: src/training/core/checkpoint_manager.py

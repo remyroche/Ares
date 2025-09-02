@@ -14,11 +14,11 @@ from typing import Any, Dict, List, Optional, Union
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
 if str(project_root) not in sys.path:
-    sys.path.append(str(project_root))
 
 from src.utils.logger import system_logger
 
 # ANSI color codes for terminal output
+
 class ColorCodes:
     """ANSI color codes for terminal output."""
     
@@ -221,3 +221,4 @@ def missing(message: str, bold: bool = False) -> str:
 def create_warning_symbols(config: Optional[Dict[str, Any]] = None) -> WarningSymbols:
     """Create a new WarningSymbols instance."""
     return WarningSymbols(config)
+

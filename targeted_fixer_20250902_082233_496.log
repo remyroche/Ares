@@ -1,0 +1,26 @@
+2025-09-02 08:22:33,499 - INFO - Processing file: src/utils/enhanced_mlflow_integration.py
+2025-09-02 08:22:33,500 - INFO - Performing semantic analysis...
+2025-09-02 08:22:33,500 - INFO - Code quality score: 0.00
+2025-09-02 08:22:33,500 - WARNING - Syntax errors found: 1
+2025-09-02 08:22:33,500 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:22:33,502 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:22:33,503 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:22:33,505 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:22:33,506 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:22:33,508 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:22:33,509 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:22:33,511 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:22:33,512 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:22:33,513 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:22:33,515 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:22:33,517 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:22:33,518 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:22:33,520 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:22:33,522 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:22:33,523 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:22:33,525 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:22:33,531 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:22:33,531 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:22:33,532 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:22:33,538 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:22:33,543 - INFO - No fixes needed for: src/utils/enhanced_mlflow_integration.py

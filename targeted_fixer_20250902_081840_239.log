@@ -1,0 +1,24 @@
+2025-09-02 08:18:40,243 - INFO - Processing file: src/utils/quality_alert_system.py
+2025-09-02 08:18:40,243 - INFO - Performing semantic analysis...
+2025-09-02 08:18:40,244 - INFO - Code quality score: 0.00
+2025-09-02 08:18:40,244 - WARNING - Syntax errors found: 1
+2025-09-02 08:18:40,244 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:18:40,245 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:40,246 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:40,248 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:40,249 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:40,250 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:40,251 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:40,252 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:40,254 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:40,255 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:40,256 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:40,257 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:40,258 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:40,260 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:40,263 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:40,266 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:18:40,267 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:18:40,268 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:40,272 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:18:40,274 - INFO - No fixes needed for: src/utils/quality_alert_system.py

@@ -370,7 +370,7 @@ class BaseEnsemble:
             )
             return
 
-        # SR context features are now provided upstream (step4 unified S/R system)
+        # SR context features are now provided upstream (step04 unified S/R system)
 
         # Apply comprehensive feature normalization (Step 4 Enhancement)
         self.logger.info("Applying comprehensive feature normalization...")
@@ -516,7 +516,7 @@ class BaseEnsemble:
             )
             return {"prediction": "HOLD", "confidence": 0.0}
 
-        # SR context features are expected upstream (step4 unified S/R system)
+        # SR context features are expected upstream (step04 unified S/R system)
 
         # Apply comprehensive feature normalization (Step 4 Enhancement)
         self.logger.info(
@@ -762,7 +762,7 @@ class BaseEnsemble:
                 )
                 return pd.DataFrame()
 
-            # SR context features are expected upstream (step4 unified S/R system)
+            # SR context features are expected upstream (step04 unified S/R system)
 
             # Apply feature normalization
             historical_features = self.normalize_non_price_features(historical_features)
@@ -979,7 +979,7 @@ class BaseEnsemble:
     def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
         raise NotImplementedError
 
-    # SR context features were moved to step4 unified S/R system.
+    # SR context features were moved to step04 unified S/R system.
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),

@@ -108,7 +108,7 @@ def get_step_specific_guidance(step_name: str) -> Dict[str, Any]:
         "step3_regime_data_splitting": {
             "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
             "timeframe": "1m",
-            "notes": "Uses regime classification results from step2",
+            "notes": "Uses regime classification results from step02",
         },
         "step4_analyst_labeling_feature_engineering": {
             "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
@@ -118,17 +118,17 @@ def get_step_specific_guidance(step_name: str) -> Dict[str, Any]:
         "step5_hmm_based_training": {
             "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
             "timeframe": "1m",
-            "notes": "Uses labeled data from step4",
+            "notes": "Uses labeled data from step04",
         },
         "step6_analyst_enhancement": {
             "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
             "timeframe": "1m",
-            "notes": "Uses trained models from step5",
+            "notes": "Uses trained models from step05",
         },
         "step7_analyst_ensemble_creation": {
             "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
             "timeframe": "1m",
-            "notes": "Creates ensemble from step6 models",
+            "notes": "Creates ensemble from step06 models",
         },
         "step8_tactician_labeling": {
             "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
@@ -138,12 +138,12 @@ def get_step_specific_guidance(step_name: str) -> Dict[str, Any]:
         "step9_tactician_specialist_training": {
             "lookback_days": BLANK_TRAINING_LOOKBACK_DAYS,
             "timeframe": "1m",
-            "notes": "Uses labeled data from step8",
+            "notes": "Uses labeled data from step08",
         },
         "step10_tactician_ensemble_creation": {
             "lookback_days": 180,
             "timeframe": "1m",
-            "notes": "Creates ensemble from step9 models",
+            "notes": "Creates ensemble from step09 models",
         },
         "step11_confidence_calibration": {
             "lookback_days": 180,
@@ -203,8 +203,8 @@ def generate_step_update_template(step_name: str) -> str:
 # {guidance['notes']}
 
 ## 4. Additional data processing (if needed):
-# - If the step needs regime labels, load them from step2 results
-# - If the step needs analyst predictions, load them from step7 results
+# - If the step needs regime labels, load them from step02 results
+# - If the step needs analyst predictions, load them from step07 results
 # - If the step needs tactician predictions, load them from step10 results
 
 ## 5. Example of loading additional data:

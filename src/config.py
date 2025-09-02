@@ -115,7 +115,7 @@ class ModelTrainingConfig:
             self.enhanced_lm_optimizer={
                 "feature_selection": {
                     "enable": True, "methods": ["mutual_info", "lasso", "random_forest", "shap"],
-                    "target_features": {"step6": 80, "step6_5": 100, "step9": 90},
+                    "target_features": {"step06": 80, "step6_5": 100, "step09": 90},
                     "vif_threshold": 10.0,
                     "correlation_threshold": 0.95,
                     "variance_threshold": 0.01,

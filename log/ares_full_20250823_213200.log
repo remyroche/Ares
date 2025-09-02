@@ -27,20 +27,20 @@
 2025-08-23 21:32:00,572 INFO AresTradingSystem.System.SignalHandler Shutdown callback registered - -
 2025-08-23 21:32:00,572 INFO AresSystem ================================================================================ - -
 2025-08-23 21:32:00,572 INFO AresGlobal [SYSTEM] ================================================================================ - -
-2025-08-23 21:32:00,572 INFO AresSystem 🚀 ARES LAUNCHER STARTED - Mode: step2 - Symbol: ETHUSDT - Exchange: BINANCE - -
-2025-08-23 21:32:00,572 INFO AresGlobal [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: step2 - Symbol: ETHUSDT - Exchange: BINANCE - -
+2025-08-23 21:32:00,572 INFO AresSystem 🚀 ARES LAUNCHER STARTED - Mode: step02 - Symbol: ETHUSDT - Exchange: BINANCE - -
+2025-08-23 21:32:00,572 INFO AresGlobal [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: step02 - Symbol: ETHUSDT - Exchange: BINANCE - -
 2025-08-23 21:32:00,572 INFO AresSystem Start time: 2025-08-23 21:32:00 - -
 2025-08-23 21:32:00,572 INFO AresGlobal [SYSTEM] Start time: 2025-08-23 21:32:00 - -
 2025-08-23 21:32:00,572 INFO AresSystem Log directory: log - -
 2025-08-23 21:32:00,572 INFO AresGlobal [SYSTEM] Log directory: log - -
 2025-08-23 21:32:00,572 INFO AresSystem ================================================================================ - -
 2025-08-23 21:32:00,572 INFO AresGlobal [SYSTEM] ================================================================================ - -
-2025-08-23 21:32:00,573 INFO AresGlobal.AresLauncher 🚀 Running step2 with existing data for ETHUSDT on BINANCE - -
-2025-08-23 21:32:00,573 INFO AresGlobal.AresLauncher 📊 Using existing data from step1 and step1_5 - no new downloads - -
-2025-08-23 21:32:00,573 INFO src.utils.data_completeness_validator.DataCompletenessValidator 🔍 Validating step1 data completeness for ETHUSDT on BINANCE - -
+2025-08-23 21:32:00,573 INFO AresGlobal.AresLauncher 🚀 Running step02 with existing data for ETHUSDT on BINANCE - -
+2025-08-23 21:32:00,573 INFO AresGlobal.AresLauncher 📊 Using existing data from step01 and step1_5 - no new downloads - -
+2025-08-23 21:32:00,573 INFO src.utils.data_completeness_validator.DataCompletenessValidator 🔍 Validating step01 data completeness for ETHUSDT on BINANCE - -
 2025-08-23 21:32:00,573 DEBUG src.utils.data_completeness_validator.DataCompletenessValidator Step1 validation: aggtrades=True, 1m=True, 5m=True, total=3 - -
 2025-08-23 21:32:00,573 INFO src.utils.data_completeness_validator.DataCompletenessValidator ✅ Step1 and Step1_5 data appear complete - -
-2025-08-23 21:32:00,573 INFO src.utils.data_completeness_validator.DataCompletenessValidator 🔍 Validating step1 data completeness for ETHUSDT on BINANCE - -
+2025-08-23 21:32:00,573 INFO src.utils.data_completeness_validator.DataCompletenessValidator 🔍 Validating step01 data completeness for ETHUSDT on BINANCE - -
 2025-08-23 21:32:00,573 DEBUG src.utils.data_completeness_validator.DataCompletenessValidator Step1 validation: aggtrades=True, 1m=True, 5m=True, total=3 - -
 2025-08-23 21:32:00,573 INFO src.utils.data_completeness_validator.DataCompletenessValidator ✅ Step1 and Step1_5 data appear complete - -
 2025-08-23 21:32:00,573 INFO AresGlobal.AresLauncher ✅ Data validation passed - proceeding with existing data - -
@@ -49,11 +49,11 @@
 2025-08-23 21:32:00,577 INFO AresGlobal.ProgressManager Initialized ProgressManager for ETHUSDT on BINANCE - -
 2025-08-23 21:32:00,577 INFO AresGlobal.ProgressManager Progress directory: data/training/progress/BINANCE_ETHUSDT - -
 2025-08-23 21:32:00,577 INFO AresGlobal.StepOrchestrator Initialized StepOrchestrator for ETHUSDT on BINANCE - -
-2025-08-23 21:32:00,577 INFO AresGlobal.AresLauncher 🔍 Validating existing data for step2 execution - -
-2025-08-23 21:32:00,577 INFO src.utils.data_completeness_validator.DataCompletenessValidator 🔍 Validating step1 data completeness for ETHUSDT on BINANCE - -
+2025-08-23 21:32:00,577 INFO AresGlobal.AresLauncher 🔍 Validating existing data for step02 execution - -
+2025-08-23 21:32:00,577 INFO src.utils.data_completeness_validator.DataCompletenessValidator 🔍 Validating step01 data completeness for ETHUSDT on BINANCE - -
 2025-08-23 21:32:00,577 DEBUG src.utils.data_completeness_validator.DataCompletenessValidator Step1 validation: aggtrades=True, 1m=True, 5m=True, total=3 - -
 2025-08-23 21:32:00,577 INFO src.utils.data_completeness_validator.DataCompletenessValidator ✅ Step1 and Step1_5 data appear complete - -
-2025-08-23 21:32:00,577 INFO src.utils.data_completeness_validator.DataCompletenessValidator 🔍 Validating step1 data completeness for ETHUSDT on BINANCE - -
+2025-08-23 21:32:00,577 INFO src.utils.data_completeness_validator.DataCompletenessValidator 🔍 Validating step01 data completeness for ETHUSDT on BINANCE - -
 2025-08-23 21:32:00,577 DEBUG src.utils.data_completeness_validator.DataCompletenessValidator Step1 validation: aggtrades=True, 1m=True, 5m=True, total=3 - -
 2025-08-23 21:32:00,577 INFO src.utils.data_completeness_validator.DataCompletenessValidator ✅ Step1 and Step1_5 data appear complete - -
 2025-08-23 21:32:00,577 INFO AresGlobal.AresLauncher ✅ Data validation passed - proceeding with existing data - -

@@ -171,7 +171,7 @@ else:
     enable_debug_logging=True,
     save_intermediate_results=True,
     enable_profiling=True,
-    debug_output_dir="debug_output/step6",
+    debug_output_dir="debug_output/step06",
 )
 @monitor_feature_engineering(
     track_feature_importance=True,
@@ -261,16 +261,16 @@ async def run_step(
         # Note: Data validation is now handled by decorators (@validate_step_prerequisites, @secure_data_processing)
         logger.info("✅ Data validation passed (handled by decorators)")
 
-        # 2) Load regime information from step3
-        logger.info("📊 Loading regime information from step3...")
+        # 2) Load regime information from step03
+        logger.info("📊 Loading regime information from step03...")
         regime_data = await _load_regime_data(symbol, exchange, timeframe)
         if regime_data is not None:
             logger.info(f"✅ Loaded regime data with {len(regime_data)} regimes")
         else:
             logger.warning("⚠️ No regime data found - proceeding without regime-aware features")
 
-        # 3) Load labeled data from step5
-        logger.info("📊 Loading labeled data from step5...")
+        # 3) Load labeled data from step05
+        logger.info("📊 Loading labeled data from step05...")
         labeled_data = await _load_labeled_data(symbol, exchange, timeframe)
         if labeled_data is None or labeled_data.empty:
             logger.error("❌ Failed to load labeled data")
@@ -401,7 +401,7 @@ async def _load_unified_data(symbol: str, exchange: str, timeframe: str, data_di
 
 
 async def _load_regime_data(symbol: str, exchange: str, timeframe: str) -> pd.DataFrame:
-    """Load unified regime data with labels from step4/step8."""
+    """Load unified regime data with labels from step04/step08."""
     try:
         # Try to load unified regime dataset first (new approach)
         unified_regime_file = Path(f"data/training/{exchange}_{symbol}_{timeframe}_unified_regime_data.parquet")
@@ -419,7 +419,7 @@ async def _load_regime_data(symbol: str, exchange: str, timeframe: str) -> pd.Da
         if regime_file.exists():
             regime_data = pd.read_parquet(regime_file)
             system_logger.info(f"⚠️ Loaded legacy regime data: {regime_data.shape}")
-            system_logger.info(f"   Note: Consider running step4/step8 for unified approach")
+            system_logger.info(f"   Note: Consider running step04/step08 for unified approach")
             return regime_data
         else:
             system_logger.warning(f"⚠️ No regime data found (neither unified nor legacy)")
@@ -434,7 +434,7 @@ async def _load_regime_data(symbol: str, exchange: str, timeframe: str) -> pd.Da
 
 
 async def _load_labeled_data(symbol: str, exchange: str, timeframe: str) -> pd.DataFrame:
-    """Load labeled data from step5."""
+    """Load labeled data from step05."""
     try:
         labeled_file = Path(f"data/training/{exchange}_{symbol}_{timeframe}_labeled_data.parquet")
         
@@ -1112,7 +1112,7 @@ async def _enhanced_integration_with_vectorized_features(
             "timeframe": timeframe,
             "enable_regime_aware_features": "regime" in features.columns,
             "enable_advanced_features": True,
-            "enable_basic_features": False,  # Already done in step6
+            "enable_basic_features": False,  # Already done in step06
             "feature_engineering_parameters": {
                 "enable_wavelet_transforms": True,
                 "enable_multi_timeframe": True,

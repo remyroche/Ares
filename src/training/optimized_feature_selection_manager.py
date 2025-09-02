@@ -108,7 +108,7 @@ class OptimizedFeatureSelectionManager:
         features_df: pd.DataFrame,
         target: pd.Series,
         model_type: str = "general",
-        step_name: str = "step2",
+        step_name: str = "step02",
         **kwargs,
     ) -> tuple[pd.DataFrame, dict[str, Any]]:
         """Optimized feature selection with computational efficiency and balanced feature mix.
@@ -183,7 +183,7 @@ class OptimizedFeatureSelectionManager:
         """Get target feature count based on model type and step."""
         target_config = self.config["target_features"]
 
-        if step_name == "step2":
+        if step_name == "step02":
             return target_config.get("step2_general", 100)
         if model_type == "neural_networks":
             return target_config.get("neural_networks", 80)

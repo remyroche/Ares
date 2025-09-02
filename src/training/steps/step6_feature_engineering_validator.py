@@ -174,7 +174,7 @@ class Step6FeatureEngineeringValidator(BaseValidator):
             else:
                 # Validate each file using BaseValidator
                 for file_path in step5_files:
-                    file_valid, file_metrics = self.validate_file_exists(str(file_path), "step5 output file")
+                    file_valid, file_metrics = self.validate_file_exists(str(file_path), "step05 output file")
                     if not file_valid:
                         validation_result["warnings"].append(f"File validation failed: {file_path}")
                 

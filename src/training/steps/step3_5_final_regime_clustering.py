@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Step 3.5: Final Regime Clustering with Advanced Reporting.
 
-This module performs final regime clustering using optimized parameters from step3,
+This module performs final regime clustering using optimized parameters from step03,
 with comprehensive reporting and analysis of regime characteristics.
 """
 
@@ -55,7 +55,7 @@ class FinalRegimeClusteringStep:
         """Initialize regime clustering components."""
         self.logger.info("🔧 Initializing final regime clustering components...")
         try:
-            # Load optimized parameters from step3
+            # Load optimized parameters from step03
             self._load_optimized_parameters()
             self.logger.info("✅ Final regime clustering components initialized successfully")
             
@@ -65,7 +65,7 @@ class FinalRegimeClusteringStep:
 
     @secure_data_processing
     def _load_optimized_parameters(self) -> None:
-        """Load optimized parameters from step3."""
+        """Load optimized parameters from step03."""
         try:
             # Load parameter optimization results
             param_file = Path("data/optimization/parameter_optimization_results.json")
@@ -217,7 +217,7 @@ class FinalRegimeClusteringStep:
     @monitor_feature_engineering()
     @validate_data_structure
     async def _prepare_features_with_optimized_params(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Prepare features using optimized parameters from step3."""
+        """Prepare features using optimized parameters from step03."""
         try:
             self.logger.info("🔧 Preparing features with optimized parameters...")
             
@@ -741,7 +741,7 @@ class FinalRegimeClusteringStep:
                 "performance_metrics": reports.get("performance_metrics", {}),
                 "recommendations": reports.get("recommendations", []),
                 "next_steps": [
-                    "Proceed to step4 for feature engineering",
+                    "Proceed to step04 for feature engineering",
                     "Use regime clusters for strategy development",
                     "Validate regime stability over time"
                 ]

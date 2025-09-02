@@ -1,6 +1,6 @@
 """Step1 Orchestrator - Coordinates data collection and validation processes.
 
-Coordinates data collection processes for step1. This orchestrator focuses on:
+Coordinates data collection processes for step01. This orchestrator focuses on:
 1. Detecting missing data gaps (aggtrades, klines, futures)
 2. Validating data quality and format
 3. Preparing data for step1_5_data_converter.py processing
@@ -35,7 +35,7 @@ logger = system_logger.getChild("Step1Orchestrator")
 
 
 class Step1Orchestrator:
-    """Orchestrates step1 data collection processes with proper decorators and security."""
+    """Orchestrates step01 data collection processes with proper decorators and security."""
 
     def __init__(self, data_cache_path: str = "data_cache") -> None:
         self.data_cache_path = Path(data_cache_path)
@@ -70,7 +70,7 @@ class Step1Orchestrator:
     async def run_complete_step1(
         self, symbol: str, exchange: str, start_date: datetime | None = None, end_date: datetime | None = None, auto_fix: bool = True
     ) -> dict:
-        """Run complete step1 data collection process including:
+        """Run complete step01 data collection process including:
         1. Detect missing data gaps (aggtrades, klines, futures)
         2. Validate data quality and format
         3. Prepare data for step1_5_data_converter.py processing.
@@ -83,7 +83,7 @@ class Step1Orchestrator:
             auto_fix: Whether to automatically fix issues
 
         Returns:
-            Dictionary with step1 collection results
+            Dictionary with step01 collection results
 
         """
         start_time = datetime.now()
@@ -314,7 +314,7 @@ class Step1Orchestrator:
         except Exception as e:
             end_time = datetime.now()
             execution_time = end_time - start_time
-            logger.exception(f"❌ CRITICAL ERROR in step1 process after {execution_time}: {e}")
+            logger.exception(f"❌ CRITICAL ERROR in step01 process after {execution_time}: {e}")
             results["success"] = False
             results["errors"].append(f"Critical error: {str(e)}")
             return results
@@ -383,7 +383,7 @@ class Step1Orchestrator:
                 readiness_result["ready"] = False
                 readiness_result["issues"].append(f"Invalid format: {file_path.name}")
 
-        # Check for 1m consolidated data (should be created by step1)
+        # Check for 1m consolidated data (should be created by step01)
         data_cache_path = Path("data_cache")
         consolidated_1m_path = (
             data_cache_path / f"klines_{exchange}_{symbol}_1m_consolidated.parquet"
@@ -414,7 +414,7 @@ class Step1Orchestrator:
     def generate_comprehensive_report(
         self, symbol: str, exchange: str, results: dict
     ) -> str:
-        """Generate a comprehensive report of the step1 process.
+        """Generate a comprehensive report of the step01 process.
 
         Args:
             symbol: Trading symbol
@@ -596,14 +596,14 @@ class Step1Orchestrator:
         return health_result
 
     def get_step1_status(self, symbol: str, exchange: str) -> dict:
-        """Get current status of step1 data.
+        """Get current status of step01 data.
 
         Args:
             symbol: Trading symbol
             exchange: Exchange name
 
         Returns:
-            Dictionary with step1 status
+            Dictionary with step01 status
 
         """
         status = {

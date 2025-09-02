@@ -365,7 +365,7 @@ def main():
         logger.info(f"Total changes: {stats['total_changes']}")
         
         if args.dry_run and stats['total_changes'] > 0:
-            logger.info("\nThis was a dry run. Use --live to apply changes.")
+            logger.info("\nThis was a dry run. Remove --dry-run flag to apply changes.")
         elif stats['total_changes'] == 0:
             logger.info("\nNo step mentions found to format.")
         

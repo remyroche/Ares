@@ -393,8 +393,8 @@ async def run_enhanced_step1(
     Returns:
         Updated pipeline state
     """
-    step1 = EnhancedStep1DataCollection(config)
-    return await step1.execute(training_input, pipeline_state)
+    step01 = EnhancedStep1DataCollection(config)
+    return await step01.execute(training_input, pipeline_state)
 
 
 # Example usage
@@ -419,7 +419,7 @@ if __name__ == "__main__":
         )
         
         # Create enhanced Step1 instance
-        step1 = EnhancedStep1DataCollection(config)
+        step01 = EnhancedStep1DataCollection(config)
         
         # Prepare training input
         training_input = {
@@ -437,7 +437,7 @@ if __name__ == "__main__":
         
         # Execute enhanced data collection
         try:
-            result = await step1.execute(training_input, pipeline_state)
+            result = await step01.execute(training_input, pipeline_state)
             
             print("=" * 60)
             print("ENHANCED STEP1 EXECUTION RESULTS")

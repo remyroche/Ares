@@ -216,9 +216,9 @@ class AggtradesFormatValidator:
             
             # Determine compatibility
             result['step1_5_compatible'] = len([i for i in result['issues'] if 'step1_5' in i.lower()]) == 0
-            result['step2_compatible'] = len([i for i in result['issues'] if 'step2' in i.lower()]) == 0
-            result['step3_compatible'] = len([i for i in result['issues'] if 'step3' in i.lower()]) == 0
-            result['step4_compatible'] = len([i for i in result['issues'] if 'step4' in i.lower()]) == 0
+            result['step2_compatible'] = len([i for i in result['issues'] if 'step02' in i.lower()]) == 0
+            result['step3_compatible'] = len([i for i in result['issues'] if 'step03' in i.lower()]) == 0
+            result['step4_compatible'] = len([i for i in result['issues'] if 'step04' in i.lower()]) == 0
             
             # Overall validity
             result['valid'] = len(result['issues']) == 0
@@ -258,7 +258,7 @@ class AggtradesFormatValidator:
         return issues
 
     def _validate_step2_compatibility(self, df: pd.DataFrame) -> List[str]:
-        """Validate step2 feature engineering compatibility"""
+        """Validate step02 feature engineering compatibility"""
         issues = []
         
         if 'price' in df.columns:
@@ -266,59 +266,59 @@ class AggtradesFormatValidator:
             max_price = df['price'].max()
             
             if min_price < self.STEP2_REQUIREMENTS['min_price']:
-                issues.append(f"step2: Price too low ({min_price} < {self.STEP2_REQUIREMENTS['min_price']})")
+                issues.append(f"step02: Price too low ({min_price} < {self.STEP2_REQUIREMENTS['min_price']})")
             
             if max_price > self.STEP2_REQUIREMENTS['max_price']:
-                issues.append(f"step2: Price too high ({max_price} > {self.STEP2_REQUIREMENTS['max_price']})")
+                issues.append(f"step02: Price too high ({max_price} > {self.STEP2_REQUIREMENTS['max_price']})")
         
         if 'quantity' in df.columns:
             min_quantity = df['quantity'].min()
             max_quantity = df['quantity'].max()
             
             if min_quantity < self.STEP2_REQUIREMENTS['min_quantity']:
-                issues.append(f"step2: Quantity too low ({min_quantity} < {self.STEP2_REQUIREMENTS['min_quantity']})")
+                issues.append(f"step02: Quantity too low ({min_quantity} < {self.STEP2_REQUIREMENTS['min_quantity']})")
             
             if max_quantity > self.STEP2_REQUIREMENTS['max_quantity']:
-                issues.append(f"step2: Quantity too high ({max_quantity} > {self.STEP2_REQUIREMENTS['max_quantity']})")
+                issues.append(f"step02: Quantity too high ({max_quantity} > {self.STEP2_REQUIREMENTS['max_quantity']})")
         
         return issues
 
     def _validate_step3_compatibility(self, df: pd.DataFrame) -> List[str]:
-        """Validate step3 regime discovery compatibility"""
+        """Validate step03 regime discovery compatibility"""
         issues = []
         
         if 'timestamp' in df.columns:
             # Check time span
             time_span = (df['timestamp'].max() - df['timestamp'].min()).days
             if time_span < self.STEP3_REQUIREMENTS['required_time_span_days']:
-                issues.append(f"step3: Insufficient time span ({time_span} days < {self.STEP3_REQUIREMENTS['required_time_span_days']} days)")
+                issues.append(f"step03: Insufficient time span ({time_span} days < {self.STEP3_REQUIREMENTS['required_time_span_days']} days)")
             
             # Check for large gaps
             time_diffs = df['timestamp'].diff().dropna()
             max_gap = time_diffs.max().total_seconds()
             if max_gap > self.STEP3_REQUIREMENTS['max_gap_seconds']:
-                issues.append(f"step3: Large time gap detected ({max_gap:.1f}s > {self.STEP3_REQUIREMENTS['max_gap_seconds']}s)")
+                issues.append(f"step03: Large time gap detected ({max_gap:.1f}s > {self.STEP3_REQUIREMENTS['max_gap_seconds']}s)")
         
         return issues
 
     def _validate_step4_compatibility(self, df: pd.DataFrame) -> List[str]:
-        """Validate step4 labeling compatibility"""
+        """Validate step04 labeling compatibility"""
         issues = []
         
         # Check required features
         for feature in self.STEP4_REQUIREMENTS['required_features']:
             if feature not in df.columns:
-                issues.append(f"step4: Missing required feature: {feature}")
+                issues.append(f"step04: Missing required feature: {feature}")
         
         if 'timestamp' in df.columns:
             # Check labeling period requirements
             time_span_hours = (df['timestamp'].max() - df['timestamp'].min()).total_seconds() / 3600
             
             if time_span_hours < self.STEP4_REQUIREMENTS['min_labeling_period_hours']:
-                issues.append(f"step4: Insufficient labeling period ({time_span_hours:.1f}h < {self.STEP4_REQUIREMENTS['min_labeling_period_hours']}h)")
+                issues.append(f"step04: Insufficient labeling period ({time_span_hours:.1f}h < {self.STEP4_REQUIREMENTS['min_labeling_period_hours']}h)")
             
             if time_span_hours > self.STEP4_REQUIREMENTS['max_labeling_period_hours']:
-                issues.append(f"step4: Excessive labeling period ({time_span_hours:.1f}h > {self.STEP4_REQUIREMENTS['max_labeling_period_hours']}h)")
+                issues.append(f"step04: Excessive labeling period ({time_span_hours:.1f}h > {self.STEP4_REQUIREMENTS['max_labeling_period_hours']}h)")
         
         return issues
 

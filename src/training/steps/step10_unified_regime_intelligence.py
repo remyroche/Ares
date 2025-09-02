@@ -1241,7 +1241,7 @@ class UnifiedRegimeIntelligenceStep:
                 else 100.0
             )
 
-            # TPSL parameters from step2-3 (triple barrier labeling)
+            # TPSL parameters from step02-3 (triple barrier labeling)
             profit_take_multiplier = 0.002  # 0.2% take profit
             stop_loss_multiplier = 0.001  # 0.1% stop loss
 

@@ -622,19 +622,19 @@ def get_integration_settings() -> dict[str, Any]:
     """
     return {
         "subsequent_steps": {
-            "step7": {
+            "step07": {
                 "load_optimized_parameters": True,
                 "parameter_file_path": "data/optimized_feature_parameters/{exchange}_{symbol}_{timeframe}_optimized_feature_parameters.json",
                 "fallback_parameters": "default_feature_parameters",
                 "validate_parameters": True
             },
-            "step8": {
+            "step08": {
                 "load_optimized_parameters": True,
                 "use_optimized_periods": True,
                 "feature_generation": "optimized",
                 "parameter_validation": True
             },
-            "step9": {
+            "step09": {
                 "load_optimized_parameters": True,
                 "feature_engineering": "optimized",
                 "period_optimization": True

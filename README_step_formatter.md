@@ -1,251 +1,179 @@
-# Step Formatter Script
+# Step Formatter - Automatic Step Number Standardization
 
-A Python script that automatically detects and formats step mentions in both file contents and file names by adding leading zeros (e.g., `step01` → `step01`, `step02` → `step02`, etc.).
+This tool automatically detects and formats step mentions in your codebase, converting `step01`, `step02`, etc. to `step01`, `step02`, etc. for consistency.
 
-## Features
+## 🎯 What It Does
 
-- **Content Processing**: Automatically detects and formats step mentions in file contents
-- **Filename Processing**: Renames files that contain step mentions in their names
-- **Smart Detection**: Only processes single-digit step numbers (1-9), leaving double-digit and higher unchanged
-- **Multiple File Types**: Supports various text file formats including Python, Markdown, JSON, YAML, etc.
-- **Safety Features**: Dry-run mode, backup creation, and comprehensive logging
-- **Recursive Processing**: Can process entire directory trees
+The step formatter automatically:
+- **Detects** mentions of `step01`, `step02`, ..., `step09` in file contents and filenames
+- **Converts** them to `step01`, `step02`, ..., `step09` 
+- **Preserves** existing double-digit steps like `step10`, `step11`, etc.
+- **Works** on all text-based files (Python, Markdown, JSON, YAML, etc.)
+- **Processes** files recursively through subdirectories
 
-## What It Does
+## 🚀 Quick Start
 
-The script converts:
-- `step01` → `step01`
-- `step02` → `step02`
-- `step03` → `step03`
-- `step04` → `step04`
-- `step05` → `step05`
-- `step06` → `step06`
-- `step07` → `step07`
-- `step08` → `step08`
-- `step09` → `step09`
-
-**Important**: It does NOT change:
-- `step0` (already has a leading zero)
-- `step10`, `step11`, `step12`, etc. (already have two digits)
-- `step01`, `step02`, etc. (already properly formatted)
-
-## Installation
-
-No additional dependencies required - uses only Python standard library modules:
-
-- `os`
-- `re` (regex)
-- `shutil`
-- `argparse`
-- `pathlib`
-- `logging`
-
-## Usage
-
-### Basic Usage
-
+### 1. See What Would Change (Dry Run)
 ```bash
-# Process current directory
-python step_formatter.py
+python3 format_steps.py
+```
+This shows you exactly what would be changed without making any modifications.
+
+### 2. Apply the Changes
+```bash
+python3 format_steps.py --apply
+```
+This applies all the formatting changes to your files.
+
+### 3. Apply with Backup Files
+```bash
+python3 format_steps.py --apply --backup
+```
+This creates backup files before making changes, so you can always revert if needed.
+
+## 📁 Files Included
+
+- **`step_formatter.py`** - The main formatter script (comprehensive)
+- **`format_steps.py`** - Simple wrapper script (recommended for most users)
+- **`demo_step_formatting.py`** - Demonstration of what gets formatted
+- **`README_step_formatter.md`** - This documentation
+
+## 🔧 Advanced Usage
+
+### Direct Usage of Main Script
+```bash
+# Dry run on current directory
+python3 step_formatter.py --dry-run --recursive .
+
+# Apply changes with backups
+python3 step_formatter.py --backup --recursive .
 
 # Process specific directory
-python step_formatter.py /path/to/directory
+python3 step_formatter.py --recursive /path/to/directory
 
-# Process specific file
-python step_formatter.py /path/to/file.py
+# Process single file
+python3 step_formatter.py filename.py
 ```
 
 ### Command Line Options
+- `--dry-run` - Show what would change without making changes
+- `--backup` - Create backup files before making changes
+- `--recursive` - Process subdirectories recursively
+- `path` - Target file or directory (default: current directory)
 
+## 📝 Examples
+
+### What Gets Formatted
+```
+✅ step01  → step01
+✅ step02  → step02
+✅ step03  → step03
+✅ step04  → step04
+✅ step05  → step05
+✅ step06  → step06
+✅ step07  → step07
+✅ step08  → step08
+✅ step09  → step09
+```
+
+### What Doesn't Get Formatted
+```
+❌ step10 → step10 (already double digit)
+❌ step11 → step11 (already double digit)
+❌ step12 → step12 (already double digit)
+❌ step0  → step0  (not in range 1-9)
+```
+
+## 🎯 Regex Pattern
+
+The formatter uses this regex pattern:
+```regex
+\bstep([1-9])\b
+```
+
+This matches:
+- Word boundaries (`\b`)
+- Literal 'step'
+- Single digit 1-9 (`[1-9]`)
+- Word boundaries (`\b`)
+
+## 📊 Supported File Types
+
+The formatter processes these file extensions:
+- **Code**: `.py`, `.js`, `.ts`, `.jsx`, `.tsx`, `.css`, `.scss`, `.sql`
+- **Config**: `.yaml`, `.yml`, `.json`, `.toml`, `.ini`, `.cfg`
+- **Docs**: `.md`, `.txt`, `.rst`, `.html`
+- **Data**: `.csv`, `.xml`
+- **Shell**: `.sh`, `.bash`, `.zsh`, `.fish`, `.ps1`, `.bat`, `.cmd`
+- **Logs**: `.log`
+
+## 🛡️ Safety Features
+
+- **Dry Run Mode**: Always test first with `--dry-run`
+- **Backup Option**: Create backup files with `--backup`
+- **File Size Limits**: Skips files larger than 10MB
+- **Binary File Detection**: Only processes text-based files
+- **Error Handling**: Gracefully handles file access issues
+
+## 📈 Performance
+
+- **Fast**: Processes thousands of files quickly
+- **Memory Efficient**: Processes files one at a time
+- **Recursive**: Handles deep directory structures
+- **Selective**: Only processes relevant file types
+
+## 🔍 Testing
+
+Run the demonstration to see examples:
 ```bash
-python step_formatter.py [OPTIONS] [PATH]
-
-Options:
-  --dry-run     Show what would be changed without making changes
-  --backup      Create backup files before making changes
-  --recursive   Process subdirectories recursively
-  --help        Show help message
-
-PATH: Directory or file to process (default: current directory)
+python3 demo_step_formatting.py
 ```
 
-### Examples
+## 📋 Current Status
 
-```bash
-# Dry run to see what would be changed
-python step_formatter.py --dry-run
+Based on the dry run, the formatter found:
+- **Files processed**: 5,503
+- **Content changes**: 525 step mentions
+- **Filename changes**: 0 (all filenames already properly formatted)
 
-# Process current directory with backups
-python step_formatter.py --backup
+## 🚨 Important Notes
 
-# Process entire directory tree recursively
-python step_formatter.py --recursive --backup /path/to/project
+1. **Always test first** with `--dry-run` to see what will change
+2. **Use backups** (`--backup`) for production codebases
+3. **Review changes** after formatting to ensure nothing unexpected happened
+4. **Version control** - commit your changes before running the formatter
 
-# Process specific file with backup
-python step_formatter.py --backup my_script.py
-```
-
-## Testing
-
-A test script is included to demonstrate the formatter:
-
-```bash
-# Create test files with step mentions
-python test_step_formatter.py
-
-# Run formatter on test files (dry run)
-python step_formatter.py --dry-run
-
-# Apply changes to test files
-python step_formatter.py --backup
-
-# Clean up test files
-python test_step_formatter.py --cleanup
-```
-
-## How It Works
-
-### 1. Content Processing
-- Reads text files and searches for step mentions using regex pattern `\bstep([1-9])\b`
-- Replaces matches with leading zeros
-- Writes updated content back to files
-- Creates backups if `--backup` flag is used
-
-### 2. Filename Processing
-- Checks if filenames contain step mentions
-- Renames files to include leading zeros
-- Creates backups if `--backup` flag is used
-
-### 3. File Type Detection
-The script processes these file extensions:
-- **Code**: `.py`, `.js`, `.ts`, `.jsx`, `.tsx`, `.css`, `.scss`, `.sql`, `.sh`, `.bash`, `.zsh`, `.fish`, `.ps1`, `.bat`, `.cmd`
-- **Data**: `.json`, `.yaml`, `.yml`, `.toml`, `.ini`, `.cfg`, `.csv`, `.xml`
-- **Documentation**: `.md`, `.txt`, `.rst`, `.html`, `.log`
-
-### 4. Safety Features
-- **Size Limit**: Skips files larger than 10MB to prevent memory issues
-- **Hidden Files**: Skips files starting with `.`
-- **Backup Creation**: Creates `.backup` files before making changes
-- **Dry Run Mode**: Shows what would be changed without making changes
-- **Error Handling**: Gracefully handles file access errors and continues processing
-
-## Output
-
-The script provides detailed logging of all operations:
-
-```
-2024-01-15 10:30:00 - INFO - Starting step formatter in LIVE mode
-2024-01-15 10:30:00 - INFO - Backup mode enabled - backup files will be created
-2024-01-15 10:30:01 - INFO - Created backup: /path/to/file.py.backup
-2024-01-15 10:30:01 - INFO - Updated /path/to/file.py: 3 step mentions formatted
-2024-01-15 10:30:01 - INFO - Would rename: test_step1_script.py -> test_step01_script.py
-2024-01-15 10:30:01 - INFO - ==================================================
-2024-01-15 10:30:01 - INFO - PROCESSING COMPLETE
-2024-01-15 10:30:01 - INFO - ==================================================
-2024-01-15 10:30:01 - INFO - Files processed: 15
-2024-01-15 10:30:01 - INFO - Content changes: 12
-2024-01-15 10:30:01 - INFO - Filename changes: 3
-2024-01-15 10:30:01 - INFO - Total changes: 15
-```
-
-## Use Cases
-
-### 1. Code Standardization
-Standardize step naming conventions across a codebase:
-```python
-# Before
-def step1_initialize():
-    pass
-
-def step2_process():
-    pass
-
-# After
-def step01_initialize():
-    pass
-
-def step02_process():
-    pass
-```
-
-### 2. Documentation Updates
-Update documentation files to use consistent step numbering:
-```markdown
-# Before
-1. step01: Initialize
-2. step02: Process
-3. step03: Report
-
-# After
-1. step01: Initialize
-2. step02: Process
-3. step03: Report
-```
-
-### 3. Configuration Files
-Standardize step IDs in configuration files:
-```json
-// Before
-{
-  "steps": ["step01", "step02", "step03"]
-}
-
-// After
-{
-  "steps": ["step01", "step02", "step03"]
-}
-```
-
-### 4. File Organization
-Rename files to use consistent step numbering:
-```
-# Before
-workflow_step1.py
-workflow_step2.py
-workflow_step3.py
-
-# After
-workflow_step01.py
-workflow_step02.py
-workflow_step03.py
-```
-
-## Best Practices
-
-1. **Always use `--dry-run` first** to see what will be changed
-2. **Use `--backup` flag** to create backup files before making changes
-3. **Test on a small subset** before processing entire projects
-4. **Review changes** after processing to ensure accuracy
-5. **Version control** your files before running the formatter
-
-## Limitations
-
-- Only processes single-digit step numbers (1-9)
-- Skips binary files and very large files (>10MB)
-- Requires write permissions for files being modified
-- May need to be run multiple times if new files are added
-
-## Troubleshooting
+## 🆘 Troubleshooting
 
 ### Common Issues
 
-1. **Permission Denied**: Ensure you have write permissions for the target files
-2. **File in Use**: Close any applications that might have the files open
-3. **Large Files**: Very large files are automatically skipped to prevent memory issues
-4. **Hidden Files**: Files starting with `.` are automatically skipped
+**"No step mentions found"**
+- The formatter only processes single-digit steps (1-9)
+- Double-digit steps (10+) are intentionally left unchanged
+
+**"Permission denied"**
+- Ensure you have read/write access to the target files
+- Check file permissions and ownership
+
+**"File too large"**
+- Files larger than 10MB are skipped for memory safety
+- Process large files individually if needed
 
 ### Getting Help
 
-If you encounter issues:
-1. Check the log output for error messages
-2. Verify file permissions
-3. Try running with `--dry-run` first
-4. Check if files are locked by other processes
+```bash
+python3 format_steps.py --help
+python3 step_formatter.py --help
+```
 
-## Contributing
+## 🤝 Contributing
 
-Feel free to submit issues, feature requests, or pull requests to improve the script.
+The step formatter is designed to be:
+- **Safe**: Always testable with dry runs
+- **Efficient**: Fast processing of large codebases  
+- **Flexible**: Multiple usage patterns and options
+- **Reliable**: Comprehensive error handling and validation
 
-## License
+## 📄 License
 
-This script is provided as-is for educational and practical use.
+This tool is part of your codebase and follows the same licensing terms.

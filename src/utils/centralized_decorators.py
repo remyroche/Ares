@@ -614,7 +614,7 @@ def step_specific_ml_validation(step_name: str, **kwargs):
     """
     # Step-specific configurations
     step_configs = {
-        "step1": {
+        "step01": {
             "min_quality_score": 0.7,
             "required_grade": "C",
             "validation_level": "basic"
@@ -624,17 +624,17 @@ def step_specific_ml_validation(step_name: str, **kwargs):
             "required_grade": "C",
             "validation_level": "basic"
         },
-        "step2": {
+        "step02": {
             "min_quality_score": 0.8,
             "required_grade": "B",
             "validation_level": "comprehensive"
         },
-        "step3": {
+        "step03": {
             "min_quality_score": 0.7,
             "required_grade": "C",
             "validation_level": "comprehensive"
         },
-        "step4": {
+        "step04": {
             "min_quality_score": 0.85,
             "required_grade": "B",
             "validation_level": "comprehensive"

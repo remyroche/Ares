@@ -35,7 +35,7 @@ class FullyMigratedTactician:
     
     This replaces the old multi-output system entirely with:
     - Fractal scenario analysis (17 scenarios: 8 profit, 8 risk, 1 neutral)
-    - All step7 technical indicators
+    - All step07 technical indicators
     - 15-minute look-ahead period
     - Complete step17 optimization
     """

@@ -239,7 +239,7 @@ def generate_standardized_artifact_name(
     Args:
         exchange: Exchange name (e.g., "BINANCE")
         token: Token/symbol name (e.g., "ETHUSDT")
-        step_number: Step number (e.g., "step3", "step6")
+        step_number: Step number (e.g., "step03", "step06")
         artifact_type: Type of artifact (e.g., "composite_clusters", "features_train", "hmm_model")
         extension: File extension (e.g., ".parquet", ".pkl", ".json")
         timestamp: Optional timestamp, defaults to current time

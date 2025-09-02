@@ -1033,7 +1033,7 @@ class UnifiedDataConverter:
 
 	async def _run_enhanced_quality_validation(self, symbol: str, exchange: str, timeframe: str) -> bool:
 		try:
-			from .step1.enhanced_data_quality_manager import EnhancedDataQualityManager
+			from .step01.enhanced_data_quality_manager import EnhancedDataQualityManager
 			self.logger.info("🔍 Running enhanced quality validation...")
 			manager = EnhancedDataQualityManager(str(self.data_cache_dir))
 			results = await manager.comprehensive_quality_check(

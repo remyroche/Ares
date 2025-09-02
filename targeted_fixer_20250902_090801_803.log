@@ -1,0 +1,25 @@
+2025-09-02 09:08:01,807 - INFO - Processing file: src/tactician/sr_levels_manager.py
+2025-09-02 09:08:01,807 - INFO - Performing semantic analysis...
+2025-09-02 09:08:01,807 - INFO - Code quality score: 0.00
+2025-09-02 09:08:01,807 - WARNING - Syntax errors found: 1
+2025-09-02 09:08:01,807 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 09:08:01,809 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:01,811 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:01,812 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:01,814 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:01,815 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:01,816 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:01,818 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:01,819 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:01,820 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:01,822 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:01,823 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:01,825 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:01,826 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:01,829 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:01,831 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:01,832 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:08:01,833 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:08:01,833 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:08:01,836 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:08:01,838 - INFO - No fixes needed for: src/tactician/sr_levels_manager.py

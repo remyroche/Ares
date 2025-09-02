@@ -3,7 +3,6 @@
 SR Levels Manager - Comprehensive Support/Resistance Level Management
 
 This module provides:
-    self.logger.info("Implementation placeholder - needs specific logic")
 1. SR level calculation based on backtesting data
 2. Continuous updates during live trading
 3. Comprehensive level information (age, strength, volume, etc.)
@@ -29,10 +28,14 @@ logger = system_logger.getChild("SRLevelsManager")
 
 
 class SRLevel:
-    pass"""Individual Support/Resistance Level with comprehensive information."""
+    """Individual Support/Resistance Level with comprehensive information."""
 
-    def __init__(...):
-    passpassself.price = price
+    def __init__(self, price: float, level_type: str, method: str, data_source: str,
+                 timestamp: datetime, strength: float = 0.5, volume: float = 0.0,
+                 touch_count: int = 0, age_hours: float = 0.0, bounce_rate: float = 0.0,
+                 isolation_score: float = 0.0, confidence: float = 0.5, metadata: Optional[Dict[str, Any]] = None):
+        """Initialize SR Level."""
+        self.price = price
         self.level_type = level_type
         self.method = method
         self.data_source = data_source
@@ -51,9 +54,9 @@ class SRLevel:
         self.total_touches = touch_count
         self.creation_time = timestamp
 
-    def to_dict(...) -> ...:
-    """..."""
-    passreturn {
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert level to dictionary representation."""
+        return {
             "price": self.price,
             "level_type": self.level_type,
             "method": self.method,
@@ -73,9 +76,9 @@ class SRLevel:
         }
 
     @classmethod
-    def from_dict(...) -> ...:
-    """..."""
-    passreturn cls(
+    def from_dict(cls, data: Dict[str, Any]) -> 'SRLevel':
+        """Create level from dictionary representation."""
+        return cls(
             price=data["price"],
             level_type=data["level_type"],
             method=data["method"],
@@ -93,15 +96,15 @@ class SRLevel:
 
 
 class SRLevelsManager:
-    pass"""
+    """
     Comprehensive Support/Resistance Levels Manager.
     
     Manages SR levels with persistent storage, continuous updates,
     and comprehensive level information including age, strength, volume, etc.
     """
 
-    def __init__(...):
-    passpass"""
+    def __init__(self, config: Dict[str, Any]):
+        """
         Initialize SR Levels Manager.
 
         Args:
@@ -123,12 +126,9 @@ class SRLevelsManager:
         # SR predictor for level detection
         self.sr_predictor: Optional[SRBreakoutPredictor] = None
 
-    async def initialize(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def initialize(self) -> bool:
+        """Initialize the SR Levels Manager."""
+        try:
             self.logger.info("Initializing SR Levels Manager...")
 
             # Initialize SR predictor
@@ -142,84 +142,72 @@ except Exception as e:
             return True
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"❌ SR Levels Manager initialization failed: {e}")
+            self.logger.error(f"❌ SR Levels Manager initialization failed: {e}")
             return False
 
-    async def load_levels(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def load_levels(self) -> None:
+        """Load existing SR levels from storage."""
+        try:
             support_file = self.storage_path / "support_levels.json"
             resistance_file = self.storage_path / "resistance_levels.json"
 
             # Load support levels
             if support_file.exists():
-    passwith open(support_file, 'r') as f:
-    passdata = json.load(f)
+                with open(support_file, 'r') as f:
+                    data = json.load(f)
                     self.support_levels = [SRLevel.from_dict(item) for item in data]
                     self.logger.info(f"Loaded {len(self.support_levels)} support levels")
 
             # Load resistance levels
             if resistance_file.exists():
-    passpasswith open(resistance_file, 'r') as f:
-    passdata = json.load(f)
+                with open(resistance_file, 'r') as f:
+                    data = json.load(f)
                     self.resistance_levels = [SRLevel.from_dict(item) for item in data]
                     self.logger.info(f"Loaded {len(self.resistance_levels)} resistance levels")
 
         except Exception as e:
-    passpasspasspasspasspasspasspassself.logger.error(f"Error loading SR levels: {e}")
+            self.logger.error(f"Error loading SR levels: {e}")
 
-    async def save_levels(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def save_levels(self) -> None:
+        """Save current SR levels to storage."""
+        try:
             # Save support levels
             support_file = self.storage_path / "support_levels.json"
             with open(support_file, 'w') as f:
-    passjson.dump([level.to_dict() for level in self.support_levels], f, indent=2)
+                json.dump([level.to_dict() for level in self.support_levels], f, indent=2)
 
             # Save resistance levels
             resistance_file = self.storage_path / "resistance_levels.json"
             with open(resistance_file, 'w') as f:
-    passpassjson.dump([level.to_dict() for level in self.resistance_levels], f, indent=2)
+                json.dump([level.to_dict() for level in self.resistance_levels], f, indent=2)
 
             self.logger.info("SR levels saved successfully")
 
         except Exception as e:
-    passpasspasspasspasspasspasspassself.logger.error(f"Error saving SR levels: {e}")
+            self.logger.error(f"Error saving SR levels: {e}")
 
-    async def update_levels(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def update_levels(self, market_data: Dict[str, Any]) -> None:
+        """Update SR levels with new market data."""
+        try:
             if not self.sr_predictor:
-    passreturn
+                return
 
             # Get new levels from SR predictor
             new_levels = await self.sr_predictor.detect_levels(market_data)
 
             # Update existing levels
             for level_data in new_levels:
-    passawait self._update_or_add_level(level_data)
+                await self._update_or_add_level(level_data)
 
             # Save updated levels
             await self.save_levels()
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error updating SR levels: {e}")
+            self.logger.error(f"Error updating SR levels: {e}")
 
-    async def _update_or_add_level(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    async def _update_or_add_level(self, level_data: Dict[str, Any]) -> None:
+        """Update existing level or add new one."""
+        try:
             price = level_data["price"]
             level_type = level_data["level_type"]
             method = level_data["method"]
@@ -228,13 +216,13 @@ except Exception as e:
             existing_level = self._find_existing_level(price, level_type, method)
 
             if existing_level:
-    pass# Update existing level
+                # Update existing level
                 existing_level.touch_count += 1
                 existing_level.last_touch = datetime.now()
                 existing_level.strength = level_data.get("strength", existing_level.strength)
                 existing_level.confidence = level_data.get("confidence", existing_level.confidence)
             else:
-    pass# Add new level
+                # Add new level
                 new_level = SRLevel(
                     price=price,
                     level_type=level_type,
@@ -249,38 +237,32 @@ except Exception as e:
                 )
 
                 if level_type == "support":
-    passself.support_levels.append(new_level)
+                    self.support_levels.append(new_level)
                 else:
-    passself.resistance_levels.append(new_level)
+                    self.resistance_levels.append(new_level)
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error updating/adding level: {e}")
+            self.logger.error(f"Error updating/adding level: {e}")
 
-    def _find_existing_level(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    def _find_existing_level(self, price: float, level_type: str, method: str) -> Optional[SRLevel]:
+        """Find existing level with similar price and method."""
+        try:
             levels = self.support_levels if level_type == "support" else self.resistance_levels
             
             for level in levels:
-    passpassif (abs(level.price - price) / price < 0.001 and 
+                if (abs(level.price - price) / price < 0.001 and 
                     level.method == method):
-    passreturn level
+                    return level
 
             return None
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error finding existing level: {e}")
+            self.logger.error(f"Error finding existing level: {e}")
             return None
 
-    def get_nearby_levels(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    def get_nearby_levels(self, price: float, distance_pct: float = 0.02) -> Dict[str, List[SRLevel]]:
+        """Get nearby support and resistance levels."""
+        try:
             nearby_support = []
             nearby_resistance = []
 
@@ -288,13 +270,13 @@ except Exception as e:
 
             # Find nearby support levels
             for level in self.support_levels:
-    passif abs(level.price - price) <= distance:
-    passnearby_support.append(level)
+                if abs(level.price - price) <= distance:
+                    nearby_support.append(level)
 
             # Find nearby resistance levels
             for level in self.resistance_levels:
-    passif abs(level.price - price) <= distance:
-    passnearby_resistance.append(level)
+                if abs(level.price - price) <= distance:
+                    nearby_resistance.append(level)
 
             return {
                 "support": sorted(nearby_support, key=lambda x: x.strength, reverse=True),
@@ -302,15 +284,12 @@ except Exception as e:
             }
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error getting nearby levels: {e}")
+            self.logger.error(f"Error getting nearby levels: {e}")
             return {"support": [], "resistance": []}
 
-    def get_level_statistics(...) -> ...:
-    """..."""
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
+    def get_level_statistics(self) -> Dict[str, Any]:
+        """Get comprehensive statistics about all SR levels."""
+        try:
             total_support = len(self.support_levels)
             total_resistance = len(self.resistance_levels)
             
@@ -326,19 +305,19 @@ except Exception as e:
             }
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error getting level statistics: {e}")
+            self.logger.error(f"Error getting level statistics: {e}")
             return {}
 
-    async def cleanup(...) -> ...:
-    """..."""
-    passtry:
-    pass# Save levels before cleanup
+    async def cleanup(self) -> None:
+        """Cleanup resources and save data."""
+        try:
+            # Save levels before cleanup
             await self.save_levels()
 
             if self.sr_predictor:
-    passawait self.sr_predictor.cleanup()
+                await self.sr_predictor.cleanup()
 
             self.logger.info("✅ SR Levels Manager cleanup completed")
 
         except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"❌ SR Levels Manager cleanup failed: {e}")
+            self.logger.error(f"❌ SR Levels Manager cleanup failed: {e}")

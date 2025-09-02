@@ -1,0 +1,13 @@
+2025-09-02 09:12:23,215 - INFO - Processing file: src/tactician/sr_levels_manager.py
+2025-09-02 09:12:23,216 - INFO - Performing semantic analysis...
+2025-09-02 09:12:23,226 - INFO - Code quality score: 0.68
+2025-09-02 09:12:23,226 - WARNING - Semantic issues found: 50
+2025-09-02 09:12:23,226 - WARNING - Structure issues found: 7
+2025-09-02 09:12:23,227 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:12:23,230 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:12:23,231 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:12:23,232 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:12:23,232 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:12:23,233 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:12:23,235 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:12:23,237 - INFO - No fixes needed for: src/tactician/sr_levels_manager.py

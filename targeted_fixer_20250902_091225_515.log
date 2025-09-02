@@ -1,0 +1,17 @@
+2025-09-02 09:12:25,518 - INFO - Processing file: src/tactician/sr_weight_optimizer.py
+2025-09-02 09:12:25,518 - INFO - Performing semantic analysis...
+2025-09-02 09:12:25,532 - INFO - Code quality score: 0.58
+2025-09-02 09:12:25,532 - WARNING - Semantic issues found: 44
+2025-09-02 09:12:25,532 - WARNING - Structure issues found: 17
+2025-09-02 09:12:25,535 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:12:25,540 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:12:25,541 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 09:12:25,542 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 09:12:25,545 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:12:25,547 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:12:25,550 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:12:25,554 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:12:25,554 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:12:25,555 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 09:12:25,560 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 09:12:25,563 - INFO - No fixes needed for: src/tactician/sr_weight_optimizer.py

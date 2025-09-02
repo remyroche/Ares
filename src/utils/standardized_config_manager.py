@@ -131,7 +131,7 @@ class StandardizedConfigManager:
         """Create standardized configuration for a specific step.
         
         Args:
-            step_name: Name of the step (e.g., "step1", "step9")
+            step_name: Name of the step (e.g., "step01", "step09")
             base_config: Base configuration dictionary
             
         Returns:

@@ -529,7 +529,7 @@ class TacticianSpecialistTrainingStep:
                 )
                 try:
                     optimization_results, optimized_features = await self.enhanced_lm_optimizer.optimize_lm_model(
-                        step_name="step9",
+                        step_name="step09",
                         features_df=X_train,
                         target=y_train,
                         model_type=model_type,

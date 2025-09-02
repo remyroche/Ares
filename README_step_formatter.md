@@ -1,11 +1,11 @@
 # Step Formatter - Automatic Step Number Standardization
 
-This tool automatically detects and formats step mentions in your codebase, converting `step1`, `step2`, etc. to `step01`, `step02`, etc. for consistency.
+This tool automatically detects and formats step mentions in your codebase, converting `step01`, `step02`, etc. to `step01`, `step02`, etc. for consistency.
 
 ## 🎯 What It Does
 
 The step formatter automatically:
-- **Detects** mentions of `step1`, `step2`, ..., `step9` in file contents and filenames
+- **Detects** mentions of `step01`, `step02`, ..., `step09` in file contents and filenames
 - **Converts** them to `step01`, `step02`, ..., `step09` 
 - **Preserves** existing double-digit steps like `step10`, `step11`, etc.
 - **Works** on all text-based files (Python, Markdown, JSON, YAML, etc.)
@@ -65,15 +65,15 @@ python3 step_formatter.py filename.py
 
 ### What Gets Formatted
 ```
-✅ step1  → step01
-✅ step2  → step02
-✅ step3  → step03
-✅ step4  → step04
-✅ step5  → step05
-✅ step6  → step06
-✅ step7  → step07
-✅ step8  → step08
-✅ step9  → step09
+✅ step01  → step01
+✅ step02  → step02
+✅ step03  → step03
+✅ step04  → step04
+✅ step05  → step05
+✅ step06  → step06
+✅ step07  → step07
+✅ step08  → step08
+✅ step09  → step09
 ```
 
 ### What Doesn't Get Formatted

@@ -167,7 +167,7 @@ class PipelineConfig:
     """Configuration for the entire pipeline."""
     
     # Step configurations
-    step1: Step1Config = field(default_factory=Step1Config)
+    step01: Step1Config = field(default_factory=Step1Config)
     step1_5: Step1_5Config = field(default_factory=Step1_5Config)
     
     # Global settings
@@ -186,8 +186,8 @@ class PipelineConfig:
         issues = []
         
         # Validate individual step configurations
-        step1_issues = self.step1.validate()
-        issues.extend([f"step1.{issue}" for issue in step1_issues])
+        step1_issues = self.step01.validate()
+        issues.extend([f"step01.{issue}" for issue in step1_issues])
         
         step1_5_issues = self.step1_5.validate()
         issues.extend([f"step1_5.{issue}" for issue in step1_5_issues])
@@ -204,7 +204,7 @@ class PipelineConfig:
     def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to dictionary."""
         return {
-            "step1": self.step1.to_dict(),
+            "step01": self.step01.to_dict(),
             "step1_5": self.step1_5.to_dict(),
             "environment": self.environment,
             "log_level": self.log_level,
@@ -218,11 +218,11 @@ class PipelineConfig:
     @classmethod
     def from_dict(cls, config_dict: Dict[str, Any]) -> 'PipelineConfig':
         """Create configuration from dictionary."""
-        step1_config = Step1Config.from_dict(config_dict.get("step1", {}))
+        step1_config = Step1Config.from_dict(config_dict.get("step01", {}))
         step1_5_config = Step1_5Config.from_dict(config_dict.get("step1_5", {}))
         
         return cls(
-            step1=step1_config,
+            step01=step1_config,
             step1_5=step1_5_config,
             environment=config_dict.get("environment", "development"),
             log_level=config_dict.get("log_level", "INFO"),
@@ -295,25 +295,25 @@ class ConfigManager:
             base_config.environment = "development"
             base_config.log_level = "DEBUG"
             base_config.enable_profiling = True
-            base_config.step1.max_memory_mb = 512
+            base_config.step01.max_memory_mb = 512
             base_config.step1_5.max_memory_mb = 512
-            base_config.step1.chunk_size = 5000
+            base_config.step01.chunk_size = 5000
             base_config.step1_5.chunk_size = 5000
         
         elif environment == "staging":
             base_config.environment = "staging"
             base_config.log_level = "INFO"
             base_config.enable_profiling = False
-            base_config.step1.max_memory_mb = 2048
+            base_config.step01.max_memory_mb = 2048
             base_config.step1_5.max_memory_mb = 2048
         
         elif environment == "production":
             base_config.environment = "production"
             base_config.log_level = "WARNING"
             base_config.enable_profiling = False
-            base_config.step1.max_memory_mb = 4096
+            base_config.step01.max_memory_mb = 4096
             base_config.step1_5.max_memory_mb = 4096
-            base_config.step1.max_retries = 5
+            base_config.step01.max_retries = 5
             base_config.step1_5.max_retries = 5
         
         return base_config
@@ -366,7 +366,7 @@ def validate_and_save_config(config: PipelineConfig, config_name: str = "pipelin
 
 # Environment-specific configuration presets
 DEVELOPMENT_CONFIG = {
-    "step1": {
+    "step01": {
         "max_memory_mb": 512,
         "chunk_size": 5000,
         "max_retries": 2,
@@ -384,7 +384,7 @@ DEVELOPMENT_CONFIG = {
 }
 
 STAGING_CONFIG = {
-    "step1": {
+    "step01": {
         "max_memory_mb": 2048,
         "chunk_size": 10000,
         "max_retries": 3
@@ -401,7 +401,7 @@ STAGING_CONFIG = {
 }
 
 PRODUCTION_CONFIG = {
-    "step1": {
+    "step01": {
         "max_memory_mb": 4096,
         "chunk_size": 20000,
         "max_retries": 5,

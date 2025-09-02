@@ -4,7 +4,7 @@ Early Stage Optimization Module
 
 This module handles optimization that should happen BEFORE ML trading begins:
 1. SR (Stationarity and Randomness) optimization (step2_5)
-2. Regime-specific triple barrier optimization (step4)
+2. Regime-specific triple barrier optimization (step04)
 
 These optimizations happen early in the pipeline to ensure:
 - Proper data preprocessing (SR)
@@ -39,7 +39,7 @@ try:
 except ImportError:
     OPTUNA_AVAILABLE = False
 
-# Import regime-specific triple barrier optimizer from step4 components
+# Import regime-specific triple barrier optimizer from step04 components
 try:
     from .steps.step4_analyst_labeling_feature_engineering_components.regime_specific_triple_barrier_optimizer import (
         RegimeSpecificTripleBarrierOptimizer,
@@ -58,7 +58,7 @@ class EarlyStageOptimizer:
     
     This includes:
     - SR optimization (step2_5) - data preprocessing parameters
-    - Regime-specific triple barrier optimization (step4) - trading parameters
+    - Regime-specific triple barrier optimization (step04) - trading parameters
     """
     
     def __init__(self, config: Dict[str, Any], training_manager=None):
@@ -742,5 +742,5 @@ if __name__ == "__main__":
     print("✅ Early Stage Optimizer created successfully!")
     print("This optimizer handles:")
     print("  - SR parameter optimization (step2_5)")
-    print("  - Regime-specific triple barrier optimization (step4)")
+    print("  - Regime-specific triple barrier optimization (step04)")
     print("  - Both happen BEFORE ML trading begins")

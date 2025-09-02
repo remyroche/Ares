@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 class FeatureInteractionEngine:
     """
-    Advanced feature interaction engineering for step6.
+    Advanced feature interaction engineering for step06.
     
     Creates interaction terms between:
     - Technical indicators (RSI, MACD, Bollinger Bands, etc.)

@@ -37,7 +37,7 @@ class FeatureSelectionConfig(BaseModel):
         description="Feature selection methods to use",
     )
     target_features: dict[str, int] = Field(
-        default={"step6": 80, "step6_5": 100, "step9": 90},
+        default={"step06": 80, "step6_5": 100, "step09": 90},
         description="Target number of features for each step",
     )
     vif_threshold: float = Field(default=10.0, ge=1.0, le=100.0, description="VIF threshold for multicollinearity")
@@ -239,7 +239,7 @@ def get_fast_config() -> EnhancedLMOptimizerConfig:
         ),
         feature_selection=FeatureSelectionConfig(
             methods=["mutual_info", "random_forest"],
-            target_features={"step6": 50, "step6_5": 60, "step9": 50},
+            target_features={"step06": 50, "step6_5": 60, "step09": 50},
         ),
         experiment_tracking=ExperimentTrackingConfig(
             enable=False,
@@ -258,7 +258,7 @@ def get_comprehensive_config() -> EnhancedLMOptimizerConfig:
         ),
         feature_selection=FeatureSelectionConfig(
             methods=["mutual_info", "lasso", "random_forest", "shap"],
-            target_features={"step6": 100, "step6_5": 120, "step9": 100},
+            target_features={"step06": 100, "step6_5": 120, "step09": 100},
         ),
         experiment_tracking=ExperimentTrackingConfig(
             enable=True,

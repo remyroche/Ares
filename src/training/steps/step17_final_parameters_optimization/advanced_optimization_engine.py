@@ -800,11 +800,11 @@ class ParameterInteractionDetector:
         
         try:
             # Get parameter configurations
-            step1, name1 = param1.split(".", 1)
-            step2, name2 = param2.split(".", 1)
+            step01, name1 = param1.split(".", 1)
+            step02, name2 = param2.split(".", 1)
             
-            config1 = self._get_param_config(parameter_mapping, step1, name1)
-            config2 = self._get_param_config(parameter_mapping, step2, name2)
+            config1 = self._get_param_config(parameter_mapping, step01, name1)
+            config2 = self._get_param_config(parameter_mapping, step02, name2)
             
             if not (config1 and config2):
                 return None

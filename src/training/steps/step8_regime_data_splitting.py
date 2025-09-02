@@ -137,7 +137,7 @@ class RegimeDataSplittingStep:
         self.logger.info(f"   - Maintains temporal continuity: Yes")
         self.logger.info("✅ Unified HMM Composite Regime Data Creation initialized successfully")
 
-    @with_enhanced_mlflow_logging("step8")
+    @with_enhanced_mlflow_logging("step08")
     @with_tracing_span("step8_regime_splitting.execute", log_args=False)
     @handle_errors(exceptions=(Exception,), default_return={"success": False, "error": "Execution failed"}, context="step8_execution")
     async def execute(self) -> dict[str, Any]:

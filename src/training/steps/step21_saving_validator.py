@@ -185,7 +185,7 @@ class Step16SavingValidator(BaseValidator):
 				f"{data_dir}/{exchange}_{symbol}_train_data.pkl",
 				f"{data_dir}/{exchange}_{symbol}_validation_data.pkl",
 				f"{data_dir}/{exchange}_{symbol}_test_data.pkl",
-				# features/labels are emitted per-step as parquet in step4
+				# features/labels are emitted per-step as parquet in step04
 				f"{data_dir}/{exchange}_{symbol}_labeled_train.parquet",
 				f"{data_dir}/{exchange}_{symbol}_labeled_validation.parquet",
 				f"{data_dir}/{exchange}_{symbol}_labeled_test.parquet",

@@ -377,7 +377,7 @@ class Step3ParameterOptimizationValidator(BaseValidator):
             else:
                 # Validate each file using BaseValidator
                 for file_path in step2_files:
-                    file_valid, file_metrics = self.validate_file_exists(str(file_path), "step2 output file")
+                    file_valid, file_metrics = self.validate_file_exists(str(file_path), "step02 output file")
                     if not file_valid:
                         validation_result["warnings"].append(f"File validation failed: {file_path}")
                 

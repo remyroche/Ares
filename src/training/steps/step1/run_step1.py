@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Step 1 Runner Script.
 
-This script demonstrates how to use the step1 module to:
+This script demonstrates how to use the step01 module to:
 1. Detect missing data gaps
 2. Validate and fix aggtrades format
 3. Resample data to multiple timeframes
@@ -14,7 +14,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from src.training.steps.step1 import (
+from src.training.steps.step01 import (
     AggtradesValidator,
     DataGapDetector,
     DataPreparation,
@@ -30,7 +30,7 @@ sys.path.insert(0, str(project_root))
 logger = system_logger.getChild("Step1Runner")
 
 def main() -> None:
-    """Main function to run step1 processes."""
+    """Main function to run step01 processes."""
     start_time = datetime.now()
     
     logger.info("🚀 STEP1 LAUNCHER STARTING")
@@ -65,7 +65,7 @@ def main() -> None:
     orchestrator = Step1Orchestrator()
 
     if args.mode == "complete":
-        # Run complete step1 process
+        # Run complete step01 process
         results = asyncio.run(orchestrator.run_complete_step1(
             symbol=args.symbol,
             exchange=args.exchange,

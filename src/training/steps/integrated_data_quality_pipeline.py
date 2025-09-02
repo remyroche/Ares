@@ -5,7 +5,7 @@ This script demonstrates the comprehensive data quality management system that:
 - Detects and fills data gaps
 - Validates data quality and formatting
 - Ensures efficient processing with proper decorators
-- Integrates step1/step1_5 components with step3/step4
+- Integrates step01/step1_5 components with step03/step04
 - Provides automatic data preparation when gaps are detected
 """
 
@@ -43,7 +43,7 @@ class IntegratedDataQualityPipeline:
     def _initialize_components(self) -> None:
         """Initialize all pipeline components."""
         try:
-            from .step1.enhanced_data_quality_manager import EnhancedDataQualityManager
+            from .step01.enhanced_data_quality_manager import EnhancedDataQualityManager
             self.enhanced_quality_manager = EnhancedDataQualityManager(str(self.data_cache_path))
             logger.info("✅ Enhanced data quality manager initialized")
         except ImportError as e:
@@ -73,10 +73,10 @@ class IntegratedDataQualityPipeline:
             symbol: Trading symbol
             exchange: Exchange name
             timeframe: Data timeframe
-            run_step1: Whether to run step1 data collection
+            run_step1: Whether to run step01 data collection
             run_step1_5: Whether to run step1_5 data conversion
-            run_step3: Whether to run step3 HMM regime discovery
-            run_step4: Whether to run step4 processing labeling
+            run_step3: Whether to run step03 HMM regime discovery
+            run_step4: Whether to run step04 processing labeling
             force_rerun: Whether to force re-run all steps
             
         Returns:
@@ -210,7 +210,7 @@ class IntegratedDataQualityPipeline:
 
     @with_tracing_span("run_step1_data_collection")
     async def _run_step1_data_collection(self, symbol: str, exchange: str, timeframe: str, force_rerun: bool) -> Dict[str, Any]:
-        """Run step1 data collection."""
+        """Run step01 data collection."""
         try:
             from .step1_data_collection import run_step as run_step1
             
@@ -230,7 +230,7 @@ class IntegratedDataQualityPipeline:
                 "timeframe": timeframe
             }
         except Exception as e:
-            logger.exception(f"❌ Error in step1 data collection: {e}")
+            logger.exception(f"❌ Error in step01 data collection: {e}")
             return {"success": False, "error": str(e)}
 
     @with_tracing_span("run_step1_5_data_conversion")
@@ -260,7 +260,7 @@ class IntegratedDataQualityPipeline:
 
     @with_tracing_span("run_step3_hmm_discovery")
     async def _run_step3_hmm_discovery(self, symbol: str, exchange: str, timeframe: str, force_rerun: bool) -> Dict[str, Any]:
-        """Run step3 HMM regime discovery."""
+        """Run step03 HMM regime discovery."""
         try:
             from .step3_hmm_regime_discovery import run_step as run_step3
             
@@ -280,14 +280,14 @@ class IntegratedDataQualityPipeline:
                 "timeframe": timeframe
             }
         except Exception as e:
-            logger.exception(f"❌ Error in step3 HMM discovery: {e}")
+            logger.exception(f"❌ Error in step03 HMM discovery: {e}")
             return {"success": False, "error": str(e)}
 
     @with_tracing_span("run_step4_labeling")
     async def _run_step4_labeling(self, symbol: str, exchange: str, timeframe: str, force_rerun: bool) -> Dict[str, Any]:
-        """Run step4 processing labeling."""
+        """Run step04 processing labeling."""
         try:
-            # First ensure data quality for step4
+            # First ensure data quality for step04
             if self.enhanced_quality_manager:
                 data_ready = await self.enhanced_quality_manager.get_data_for_step3_step4(
                     symbol=symbol,
@@ -296,11 +296,11 @@ class IntegratedDataQualityPipeline:
                 )
                 
                 if not data_ready.get("success", False):
-                    logger.warning("⚠️ Data not ready for step4, attempting to fix...")
-                    # The step4 module will handle data quality internally
+                    logger.warning("⚠️ Data not ready for step04, attempting to fix...")
+                    # The step04 module will handle data quality internally
             
-            # For now, return success as step4 integration is complex
-            # In a full implementation, this would call the actual step4 processing
+            # For now, return success as step04 integration is complex
+            # In a full implementation, this would call the actual step04 processing
             logger.info("📝 Step4 processing labeling would be executed here")
             
             return {
@@ -312,7 +312,7 @@ class IntegratedDataQualityPipeline:
                 "note": "Step4 integration placeholder"
             }
         except Exception as e:
-            logger.exception(f"❌ Error in step4 labeling: {e}")
+            logger.exception(f"❌ Error in step04 labeling: {e}")
             return {"success": False, "error": str(e)}
 
     @with_tracing_span("run_final_quality_check")

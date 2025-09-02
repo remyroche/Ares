@@ -512,7 +512,7 @@ class DataQualityDashboard:
 
         async function runStep1() {{
             try {{
-                const response = await fetch('/api/run-step1', {{ method: 'POST' }});
+                const response = await fetch('/api/run-step01', {{ method: 'POST' }});
                 const result = await response.json();
                 alert(`Step1 result: ${{result.success ? 'Success' : 'Failed'}}`);
                 refreshDashboard();

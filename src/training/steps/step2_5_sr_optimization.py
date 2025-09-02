@@ -1394,7 +1394,7 @@ class SROptimizationStep:
                 },
                 "recommendations": {
                     "next_steps": [
-                        "Proceed to step3 for parameter optimization",
+                        "Proceed to step03 for parameter optimization",
                         "Use optimized SR parameters in subsequent steps",
                         "Monitor SR performance with new parameters"
                     ],

@@ -20,12 +20,12 @@
 2025-08-23 21:38:34,832 INFO AresGlobal.AresLauncher Backtest log: log/ares_backtest_20250823_213834.log - -
 2025-08-23 21:38:34,832 INFO AresGlobal.AresLauncher ================================================================================ - -
 2025-08-23 21:38:34,833 INFO AresGlobal [SYSTEM] ================================================================================ - -
-2025-08-23 21:38:34,833 INFO AresGlobal [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: step2 - Symbol: ETHUSDT - Exchange: BINANCE - -
+2025-08-23 21:38:34,833 INFO AresGlobal [SYSTEM] 🚀 ARES LAUNCHER STARTED - Mode: step02 - Symbol: ETHUSDT - Exchange: BINANCE - -
 2025-08-23 21:38:34,833 INFO AresGlobal [SYSTEM] Start time: 2025-08-23 21:38:34 - -
 2025-08-23 21:38:34,833 INFO AresGlobal [SYSTEM] Log directory: log - -
 2025-08-23 21:38:34,833 INFO AresGlobal [SYSTEM] ================================================================================ - -
-2025-08-23 21:38:34,833 INFO AresGlobal.AresLauncher 🚀 Running step2 with existing data for ETHUSDT on BINANCE - -
-2025-08-23 21:38:34,833 INFO AresGlobal.AresLauncher 📊 Using existing data from step1 and step1_5 - no new downloads - -
+2025-08-23 21:38:34,833 INFO AresGlobal.AresLauncher 🚀 Running step02 with existing data for ETHUSDT on BINANCE - -
+2025-08-23 21:38:34,833 INFO AresGlobal.AresLauncher 📊 Using existing data from step01 and step1_5 - no new downloads - -
 2025-08-23 21:38:34,834 INFO AresGlobal.AresLauncher 📁 Using simple file existence validator - -
 2025-08-23 21:38:34,834 INFO AresGlobal.AresLauncher ✅ Data validation passed - proceeding with existing data - -
 2025-08-23 21:38:34,834 INFO AresGlobal.AresLauncher Starting from step: step2_feature_engineering - -
@@ -33,7 +33,7 @@
 2025-08-23 21:38:34,835 INFO AresGlobal.ProgressManager Initialized ProgressManager for ETHUSDT on BINANCE - -
 2025-08-23 21:38:34,835 INFO AresGlobal.ProgressManager Progress directory: data/training/progress/BINANCE_ETHUSDT - -
 2025-08-23 21:38:34,835 INFO AresGlobal.StepOrchestrator Initialized StepOrchestrator for ETHUSDT on BINANCE - -
-2025-08-23 21:38:34,835 INFO AresGlobal.AresLauncher 📁 Basic validation for step2 execution - -
+2025-08-23 21:38:34,835 INFO AresGlobal.AresLauncher 📁 Basic validation for step02 execution - -
 2025-08-23 21:38:34,835 INFO AresGlobal.AresLauncher ✅ Found consolidated data: data_cache/aggtrades_BINANCE_ETHUSDT_consolidated.parquet - -
 2025-08-23 21:38:34,835 INFO AresGlobal.StepOrchestrator 🚀 Starting execution from step: step2_feature_engineering - -
 2025-08-23 21:38:34,836 ERROR AresGlobal.StepOrchestrator Failed to setup enhanced training manager: No module named 'numpy' - -

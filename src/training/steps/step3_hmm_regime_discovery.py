@@ -2,7 +2,7 @@
 """Step 3: HMM Regime Discovery with Standardized Data Quality Management.
 
 This module performs Hidden Markov Model (HMM) regime discovery with standardized
-data quality checks and automatic data preparation using step1/step1_5 components.
+data quality checks and automatic data preparation using step01/step1_5 components.
 """
 
 import asyncio
@@ -562,7 +562,7 @@ class HMMRegimeDiscoveryStep:
 
             self.logger.info(f"🎯 Validating data quality for {symbol} on {exchange} ({timeframe})...")
 
-            # Get data ready for step3/step4 (which includes HMM)
+            # Get data ready for step03/step04 (which includes HMM)
             self.logger.info("📋 Requesting data from quality manager...")
             data_results = await self.data_quality_manager.get_data_for_step3_step4(
                 symbol=symbol,
@@ -582,7 +582,7 @@ class HMMRegimeDiscoveryStep:
                 error = data_results.get("error", "Unknown error")
                 self.logger.error(f"   Error: {error}")
                 
-                # Try to fix missing data using step1/step1_5 components
+                # Try to fix missing data using step01/step1_5 components
                 self.logger.info("🔄 Attempting to fix missing data...")
                 fix_results = await self._fix_missing_data(training_input)
                 
@@ -610,7 +610,7 @@ class HMMRegimeDiscoveryStep:
         context="fix_missing_data"
     )
     async def _fix_missing_data(self, training_input: dict[str, Any]) -> dict[str, Any]:
-        """Fix missing data using step1 and step1_5 components."""
+        """Fix missing data using step01 and step1_5 components."""
         try:
             symbol = training_input.get("symbol", "ETHUSDT")
             exchange = training_input.get("exchange", "BINANCE")
@@ -618,10 +618,10 @@ class HMMRegimeDiscoveryStep:
 
             self.logger.info(f"🔄 Fixing missing data for {symbol} on {exchange} ({timeframe})...")
 
-            # Try step1 data collection
+            # Try step01 data collection
             step1_success = False
             try:
-                self.logger.info("📥 Attempting step1 data collection...")
+                self.logger.info("📥 Attempting step01 data collection...")
                 from .step1_data_collection import run_step as run_step1
                 step1_success = await run_step1(
                     symbol=symbol,
@@ -634,7 +634,7 @@ class HMMRegimeDiscoveryStep:
                 else:
                     self.logger.warning("⚠️ Step1 data collection failed")
             except Exception as e:
-                self.logger.warning(f"⚠️ Could not run step1: {e}")
+                self.logger.warning(f"⚠️ Could not run step01: {e}")
 
             # Try step1_5 data conversion
             step1_5_success = False

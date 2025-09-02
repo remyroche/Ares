@@ -84,7 +84,7 @@ class ComprehensiveSRTrainingPipeline:
             start_time = datetime.now()
             self.logger.info(f"🚀 Starting comprehensive SR training for {symbol} on {exchange}")
             
-            # Step 1: Load step7 features
+            # Step 1: Load step07 features
             step7_success = await self._load_step7_features()
             if not step7_success:
                 self.logger.warning("⚠️ Step7 features not loaded, continuing with available features")
@@ -127,9 +127,9 @@ class ComprehensiveSRTrainingPipeline:
             return {"success": False, "error": str(e)}
 
     async def _load_step7_features(self) -> bool:
-        """Load step7 enhanced matrix operations features."""
+        """Load step07 enhanced matrix operations features."""
         try:
-            self.logger.info("📊 Loading step7 enhanced matrix operations features...")
+            self.logger.info("📊 Loading step07 enhanced matrix operations features...")
             
             success = await self.model_trainer.load_step7_features(self.step7_output_path)
             
@@ -142,7 +142,7 @@ class ComprehensiveSRTrainingPipeline:
             return success
             
         except Exception as e:
-            self.logger.error(f"❌ Error loading step7 features: {e}")
+            self.logger.error(f"❌ Error loading step07 features: {e}")
             return False
 
     async def _load_step2_5_sr_levels(self) -> bool:

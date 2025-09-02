@@ -479,14 +479,14 @@ class DataQualityMonitor:
     def _get_required_keys_for_step(self, step_name: str) -> List[str]:
         """Get required keys for a specific step."""
         key_requirements = {
-            "step1": ["symbol", "exchange", "timeframe", "data_dir"],
+            "step01": ["symbol", "exchange", "timeframe", "data_dir"],
             "step1_5": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step2": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step3": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step4": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step5": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step6": ["symbol", "exchange", "timeframe", "data_dir"],
-            "step7": ["symbol", "exchange", "timeframe", "data_dir"]
+            "step02": ["symbol", "exchange", "timeframe", "data_dir"],
+            "step03": ["symbol", "exchange", "timeframe", "data_dir"],
+            "step04": ["symbol", "exchange", "timeframe", "data_dir"],
+            "step05": ["symbol", "exchange", "timeframe", "data_dir"],
+            "step06": ["symbol", "exchange", "timeframe", "data_dir"],
+            "step07": ["symbol", "exchange", "timeframe", "data_dir"]
         }
         return key_requirements.get(step_name, [])
 
@@ -582,14 +582,14 @@ class DataQualityMonitor:
     def _get_required_columns_for_step(self, step_name: str) -> List[str]:
         """Get required columns for a specific step."""
         column_requirements = {
-            "step1": ["timestamp", "open", "high", "low", "close", "volume"],
+            "step01": ["timestamp", "open", "high", "low", "close", "volume"],
             "step1_5": ["timestamp", "open", "high", "low", "close", "volume"],
-            "step2": ["timestamp", "open", "high", "low", "close", "volume"],
-            "step3": ["timestamp", "open", "high", "low", "close", "volume"],
-            "step4": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"],
-            "step5": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"],
-            "step6": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"],
-            "step7": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"]
+            "step02": ["timestamp", "open", "high", "low", "close", "volume"],
+            "step03": ["timestamp", "open", "high", "low", "close", "volume"],
+            "step04": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"],
+            "step05": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"],
+            "step06": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"],
+            "step07": ["timestamp", "open", "high", "low", "close", "volume", "composite_cluster_id"]
         }
         return column_requirements.get(step_name, [])
 
@@ -1058,10 +1058,10 @@ async def main():
     })
     
     # Monitor data quality
-    quality_metrics = await monitor.monitor_data_quality(sample_data, "step1")
-    compatibility_metrics = await monitor.monitor_compatibility(sample_data, "step1")
-    format_metrics = await monitor.monitor_format(sample_data, "step1")
-    index_metrics = await monitor.monitor_indexing(sample_data, "step1")
+    quality_metrics = await monitor.monitor_data_quality(sample_data, "step01")
+    compatibility_metrics = await monitor.monitor_compatibility(sample_data, "step01")
+    format_metrics = await monitor.monitor_format(sample_data, "step01")
+    index_metrics = await monitor.monitor_indexing(sample_data, "step01")
     
     # Generate report
     report = await monitor.generate_quality_report()

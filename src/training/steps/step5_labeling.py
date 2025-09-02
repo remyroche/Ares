@@ -5,7 +5,7 @@ This module creates comprehensive labels for the training data, combining triple
 labels with additional labeling strategies and meta-labeling features.
 
 Key Enhancements:
-- Dynamic Label Generation: Added the ability to generate triple barrier labels directly within step5 using regime-aware methods
+- Dynamic Label Generation: Added the ability to generate triple barrier labels directly within step05 using regime-aware methods
 - Regime-Aware Triple Barrier: Integrated HMM regime-specific barrier optimization for more sophisticated labeling
 - Fallback Mechanisms: Implemented robust fallback to default labeling when regime-aware methods aren't available
 - Configuration-Driven Behavior: Added configurable toggles for automatic barrier recalculation
@@ -425,7 +425,7 @@ class LabelingStep:
         New Labeling Flow:
         Primary Path: Attempts regime-aware labeling using HMMRegimeBarrierOptimizer
         Fallback Path: Uses OptimizedTripleBarrierLabeling if regime-aware methods fail
-        Data Source Flexibility: Can work with unified data or step4 output depending on configuration
+        Data Source Flexibility: Can work with unified data or step04 output depending on configuration
         """
         try:
             result_data = data.copy()

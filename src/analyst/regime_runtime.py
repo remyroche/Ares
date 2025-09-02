@@ -161,8 +161,10 @@ def get_current_regime_info(
                     try:
                         kid = int(c.split("_")[-1])
                         intensities[kid] = float(row_int[c].iloc[0])
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        system_logger.debug(
+                            "Failed to parse intensity column '%s': %s", c, e
+                        )
     # Forecasting features
     p_emerge: dict[int, float] = {}
     exit_hazard: float | None = None

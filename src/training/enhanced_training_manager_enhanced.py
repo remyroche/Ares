@@ -407,6 +407,14 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                             summary.append(f"      - {feature}")
                         if len(zero_var_features) > 10:
                             summary.append(f"      ... and {len(zero_var_features) - 10} more")
+                    
+                    zero_var_features = quality_issues.get('zero_variance_features', [])
+                    summary.append(f"    Zero Variance Features ({len(zero_var_features)}):")
+                    if zero_var_features:
+                        for feature in zero_var_features[:10]:
+                            summary.append(f"      - {feature}")
+                        if len(zero_var_features) > 10:
+                            summary.append(f"      ... and {len(zero_var_features) - 10} more")
             
             elif step_name == "step3_hmm_regime_discovery":
                 if "regime_analysis" in quality_metrics:

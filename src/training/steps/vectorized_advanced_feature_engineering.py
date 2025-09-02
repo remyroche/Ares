@@ -4577,109 +4577,109 @@ class VectorizedAdvancedFeatureEngineering:
         try:
             features = {}
 
-        if price_data.empty or len(price_data) < 100:  # Need sufficient data
-        self.logger.warning(f"⚠️ Insufficient data for cross-timeframe features: {len(price_data)} rows")
-        return features
+            if price_data.empty or len(price_data) < 100:  # Need sufficient data
+                self.logger.warning(f"⚠️ Insufficient data for cross-timeframe features: {len(price_data)} rows")
+                return features
 
             close = price_data["close"].astype(float)
             high = price_data["high"].astype(float)
             low = price_data["low"].astype(float)
             open_price = price_data["open"].astype(float)
 
-        # Validate input data
-        if close.isna().all() or close.std() == 0:
-        self.logger.warning("⚠️ Invalid close data for cross-timeframe features")
-        return features
+            # Validate input data
+            if close.isna().all() or close.std() == 0:
+                self.logger.warning("⚠️ Invalid close data for cross-timeframe features")
+                return features
 
-        # Define multiple timeframes for cross-timeframe analysis (reduced set for safety)
+            # Define multiple timeframes for cross-timeframe analysis (reduced set for safety)
             timeframes = [1, 3, 5, 10, 15, 20]  # Reduced from 10 to 6 timeframes
 
-        # 1. Cross-timeframe momentum features (with validation)
-        for i, tf1 in enumerate(timeframes[:4]):  # Use first 4 timeframes
-        for tf2 in timeframes[i+1:5]:  # Compare with next timeframes
-        if tf1 < len(close) and tf2 < len(close):
-        # Price momentum differences
+            # 1. Cross-timeframe momentum features (with validation)
+            for i, tf1 in enumerate(timeframes[:4]):  # Use first 4 timeframes
+                for tf2 in timeframes[i+1:5]:  # Compare with next timeframes
+                    if tf1 < len(close) and tf2 < len(close):
+                        # Price momentum differences
                         momentum_diff = close.pct_change(tf1) - close.pct_change(tf2)
-        if momentum_diff.var() > 1e-12:
+                        if momentum_diff.var() > 1e-12:
                             features[f"momentum_{tf1}m_{tf2}m"] = momentum_diff
 
-        # Momentum ratio with safety check
+                        # Momentum ratio with safety check
                         momentum_ratio = close.pct_change(tf1) / (close.pct_change(tf2) + 1e-8)
-        if momentum_ratio.var() > 1e-12:
+                        if momentum_ratio.var() > 1e-12:
                             features[f"momentum_ratio_{tf1}m_{tf2}m"] = momentum_ratio
 
-        # High-Low momentum differences (only if we have enough data)
-        if len(close) >= max(tf1, tf2) * 2:
+                        # High-Low momentum differences (only if we have enough data)
+                        if len(close) >= max(tf1, tf2) * 2:
                             hl_momentum_1 = (high.rolling(tf1, min_periods=tf1//2).max() - low.rolling(tf1, min_periods=tf1//2).min()) / (close.rolling(tf1, min_periods=tf1//2).mean() + 1e-8)
                             hl_momentum_2 = (high.rolling(tf2, min_periods=tf2//2).max() - low.rolling(tf2, min_periods=tf2//2).min()) / (close.rolling(tf2, min_periods=tf2//2).mean() + 1e-8)
                             hl_diff = hl_momentum_1 - hl_momentum_2
-        if hl_diff.var() > 1e-12:
+                            if hl_diff.var() > 1e-12:
                                 features[f"hl_momentum_{tf1}m_{tf2}m"] = hl_diff
 
-        # 2. Cross-timeframe volatility features (with validation)
-        for i, tf1 in enumerate(timeframes[:3]):
-        for tf2 in timeframes[i+1:4]:
-        if tf1 < len(close) and tf2 < len(close):
+            # 2. Cross-timeframe volatility features (with validation)
+            for i, tf1 in enumerate(timeframes[:3]):
+                for tf2 in timeframes[i+1:4]:
+                    if tf1 < len(close) and tf2 < len(close):
                         returns = close.pct_change().fillna(method="ffill").fillna(method="bfill").fillna(0)
                         returns_1 = returns.rolling(tf1, min_periods=tf1//2).std()
                         returns_2 = returns.rolling(tf2, min_periods=tf2//2).std()
 
-        # Volatility ratio with safety check
+                        # Volatility ratio with safety check
                         vol_ratio = returns_1 / (returns_2 + 1e-8)
-        if vol_ratio.var() > 1e-12:
+                        if vol_ratio.var() > 1e-12:
                             features[f"volatility_ratio_{tf1}m_{tf2}m"] = vol_ratio
 
-        # Volatility difference
+                        # Volatility difference
                         vol_diff = returns_1 - returns_2
-        if vol_diff.var() > 1e-12:
+                        if vol_diff.var() > 1e-12:
                             features[f"volatility_diff_{tf1}m_{tf2}m"] = vol_diff
 
-        # Volatility std (only if we have enough data)
-        if len(returns_1) >= 20:
+                        # Volatility std (only if we have enough data)
+                        if len(returns_1) >= 20:
                             vol_std = (returns_1 - returns_2).rolling(20, min_periods=10).std()
-        if vol_std.var() > 1e-12:
+                            if vol_std.var() > 1e-12:
                                 features[f"volatility_std_{tf1}m_{tf2}m"] = vol_std
 
-        # 3. Cross-timeframe volume features (with validation)
-        if volume_data is not None and isinstance(volume_data, pd.DataFrame) and not volume_data.empty and "volume" in volume_data.columns:
+            # 3. Cross-timeframe volume features (with validation)
+            if volume_data is not None and isinstance(volume_data, pd.DataFrame) and not volume_data.empty and "volume" in volume_data.columns:
                 volume = volume_data["volume"].astype(float)
-        if volume.var() > 1e-12:  # Only if volume has meaningful variance
-        for i, tf1 in enumerate(timeframes[:3]):
-        for tf2 in timeframes[i+1:4]:
-        if tf1 < len(volume) and tf2 < len(volume):
+                if volume.var() > 1e-12:  # Only if volume has meaningful variance
+                    for i, tf1 in enumerate(timeframes[:3]):
+                        for tf2 in timeframes[i+1:4]:
+                            if tf1 < len(volume) and tf2 < len(volume):
                                 vol_1 = volume.rolling(tf1, min_periods=tf1//2).mean()
                                 vol_2 = volume.rolling(tf2, min_periods=tf2//2).mean()
 
-        # Volume ratio with safety check
+                                # Volume ratio with safety check
                                 vol_ratio = vol_1 / (vol_2 + 1e-8)
-        if vol_ratio.var() > 1e-12:
+                                if vol_ratio.var() > 1e-12:
                                     features[f"volume_ratio_{tf1}m_{tf2}m"] = vol_ratio
 
-        # Volume difference
+                                # Volume difference
                                 vol_diff = vol_1 - vol_2
-        if vol_diff.var() > 1e-12:
+                                if vol_diff.var() > 1e-12:
                                     features[f"volume_diff_{tf1}m_{tf2}m"] = vol_diff
 
-        # Volume momentum
+                                # Volume momentum
                                 vol_momentum = volume.pct_change(tf1) - volume.pct_change(tf2)
-        if vol_momentum.var() > 1e-12:
+                                if vol_momentum.var() > 1e-12:
                                     features[f"volume_momentum_{tf1}m_{tf2}m"] = vol_momentum
 
-        # 4. Cross-timeframe price range features (with validation)
-        for i, tf1 in enumerate(timeframes[:3]):
-        for tf2 in timeframes[i+1:4]:
-        if tf1 < len(close) and tf2 < len(close):
+            # 4. Cross-timeframe price range features (with validation)
+            for i, tf1 in enumerate(timeframes[:3]):
+                for tf2 in timeframes[i+1:4]:
+                    if tf1 < len(close) and tf2 < len(close):
                         range_1 = (high.rolling(tf1, min_periods=tf1//2).max() - low.rolling(tf1, min_periods=tf1//2).min()) / (close.rolling(tf1, min_periods=tf1//2).mean() + 1e-8)
                         range_2 = (high.rolling(tf2, min_periods=tf2//2).max() - low.rolling(tf2, min_periods=tf2//2).min()) / (close.rolling(tf2, min_periods=tf2//2).mean() + 1e-8)
 
-        # Price range ratio with safety check
+                        # Price range ratio with safety check
                         range_ratio = range_1 / (range_2 + 1e-8)
-        if range_ratio.var() > 1e-12:
+                        if range_ratio.var() > 1e-12:
                             features[f"price_range_ratio_{tf1}m_{tf2}m"] = range_ratio
 
-        # Price range difference
+                        # Price range difference
                         range_diff = range_1 - range_2
-        if range_diff.var() > 1e-12:
+                        if range_diff.var() > 1e-12:
                             features[f"price_range_diff_{tf1}m_{tf2}m"] = range_diff
 
         # 5. Cross-timeframe RSI features (with validation)

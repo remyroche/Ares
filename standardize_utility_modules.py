@@ -54,7 +54,7 @@ def standardize_utility_module(file_path: str) -> bool:
                 )
             else:
                 # Add at the top after other imports
-                content = re.sub(r'(import [^\n]+\n')',
+                content = re.sub(r'(import [^\n]+\n)',
                     r'\1from src.utils.pipeline_standards import PipelineStandards, pipeline_standards\n',
                     content,
                     count=1

@@ -81,7 +81,7 @@ async def download_futures_month(year: int, month: int):
         success=await downloader.download_futures_parallel()
 
         if success:
-    pass  # TODO: Add proper implementation
+            pass  # TODO: Add proper implementation
         else:
             pass
 
@@ -135,7 +135,7 @@ async def main() -> bool:
 
         # Download 2025 futures data
         if not shutdown_requested:
-    pass  # TODO: Add proper implementation
+            pass  # TODO: Add proper implementation
             results_2025=await download_futures_2025_01_to_04()
             all_results.update(results_2025)
 
@@ -148,12 +148,12 @@ async def main() -> bool:
     # Summary
 
     if shutdown_requested:
-    pass  # TODO: Add proper implementation
+        pass  # TODO: Add proper implementation
     success_count=sum(1 for success in all_results.values() if success)
     total_count=len(all_results)
 
     for _task, _success in all_results.items():
-    pass  # TODO: Add proper implementation
+        pass  # TODO: Add proper implementation
     if success_count== total_count and not shutdown_requested:
         return True
     if shutdown_requested:

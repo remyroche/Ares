@@ -5313,26 +5313,26 @@ class VectorizedAdvancedFeatureEngineering:
         # Generate interaction features for high-priority combinations
         try:
             interaction_features = await self._generate_interaction_features(valid_enhanced_features, features, price_data)
-        if isinstance(interaction_features, dict):
-        # Filter out any coroutine features from interaction_features before updating
-                    valid_interaction_features = {}
-                    coroutine_count = 0
-        for key, value in interaction_features.items():
-        if hasattr(value, "__await__"):
-        self.logger.warning(f"⚠️ Skipping coroutine feature from interaction generation: {key}")
-                            coroutine_count += 1
-                            continue
-                        valid_interaction_features[key] = value
+            if isinstance(interaction_features, dict):
+                # Filter out any coroutine features from interaction_features before updating
+                valid_interaction_features = {}
+                coroutine_count = 0
+                for key, value in interaction_features.items():
+                    if hasattr(value, "__await__"):
+                        self.logger.warning(f"⚠️ Skipping coroutine feature from interaction generation: {key}")
+                        coroutine_count += 1
+                        continue
+                    valid_interaction_features[key] = value
 
-        if coroutine_count > 0:
-        self.logger.info(f"⚠️ Filtered out {coroutine_count} coroutine features from interaction generation")
+                if coroutine_count > 0:
+                    self.logger.info(f"⚠️ Filtered out {coroutine_count} coroutine features from interaction generation")
 
-                    enhanced_features.update(valid_interaction_features)
-                else:
-        self.logger.warning(f"⚠️ Interaction features not a dict: {type(interaction_features)}")
+                enhanced_features.update(valid_interaction_features)
+            else:
+                self.logger.warning(f"⚠️ Interaction features not a dict: {type(interaction_features)}")
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to generate interaction features: {e}")
-                interaction_features = {}
+            self.logger.warning(f"⚠️ Failed to generate interaction features: {e}")
+            interaction_features = {}
 
         # Validate that features doesn't contain coroutines before generating cross-timeframe features
             valid_features = {}

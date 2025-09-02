@@ -1,33 +1,30 @@
 """
-Code Quality Tools - A comprehensive suite for Python code analysis, auto-fixing, and reporting.
-
-This package provides tools for:
-- Auto-fixing Python syntax and style issues
-- Comprehensive code quality analysis
-- Call graph mapping and dead code detection
-- Dependency analysis and management
-- Syntax validation and AST parsing
-- Detailed reporting and visualization
+Code Quality Tools - Comprehensive Python code analysis and fixing suite.
 """
 
-from .core import (
+from .core.config import (
     CodeQualityConfig,
     AutoFixConfig,
     AnalysisConfig,
     ReportingConfig,
-    ConfigManager,
     get_default_config,
-    load_config
+    load_config,
+    save_config
 )
 
 from .fixers.auto_fixer import AutoFixer
 from .fixers.sequential_fixer import SequentialFixer
-from .analyzers.linter_analyzer import LinterAnalyzer, LinterResult
-from .analyzers.call_graph_analyzer import CallGraphAnalyzer, CallNode
-from .analyzers.dependency_analyzer import DependencyAnalyzer, DependencyInfo
-from .analyzers.syntax_validator import SyntaxValidator, SyntaxError, ASTNode
+
+from .analyzers.linter_analyzer import LinterAnalyzer
+from .analyzers.syntax_validator import SyntaxValidator
+from .analyzers.call_graph_analyzer import CallGraphAnalyzer
+from .analyzers.dependency_analyzer import DependencyAnalyzer
+from .analyzers.import_analyzer import ImportAnalyzer, ImportIssue
+from .analyzers.signature_analyzer import SignatureAnalyzer, SignatureIssue, FunctionSignature, FunctionCall
+
 from .reporters.quality_reporter import QualityReporter
-from .utils import (
+
+from .utils.file_utils import (
     find_python_files,
     is_valid_python_file,
     get_file_info,
@@ -38,6 +35,7 @@ from .utils import (
     find_unused_imports
 )
 
+
 __version__ = "1.0.0"
 __author__ = "Code Quality Tools Team"
 
@@ -47,27 +45,32 @@ __all__ = [
     "AutoFixConfig", 
     "AnalysisConfig",
     "ReportingConfig",
-    "ConfigManager",
     "get_default_config",
     "load_config",
+    "save_config",
     
-    # Main tools
+    # Fixers
     "AutoFixer",
     "SequentialFixer",
+    
+    # Analyzers
     "LinterAnalyzer",
-    "CallGraphAnalyzer", 
-    "DependencyAnalyzer",
     "SyntaxValidator",
+    "CallGraphAnalyzer",
+    "DependencyAnalyzer",
+    "ImportAnalyzer",
+    "SignatureAnalyzer",
+    
+    # Issue classes
+    "ImportIssue",
+    "SignatureIssue",
+    "FunctionSignature",
+    "FunctionCall",
+    
+    # Reporters
     "QualityReporter",
     
-    # Data classes
-    "LinterResult",
-    "CallNode",
-    "DependencyInfo",
-    "SyntaxError",
-    "ASTNode",
-    
-    # Utility functions
+    # Utilities
     "find_python_files",
     "is_valid_python_file",
     "get_file_info",
@@ -78,33 +81,27 @@ __all__ = [
     "find_unused_imports"
 ]
 
-# Quick access functions for common operations
-def quick_analysis(directory: str, output_dir: str = None) -> dict:
-    """
-    Run a quick comprehensive analysis of a directory.
-    
-    Args:
-        directory: Directory to analyze
-        output_dir: Optional output directory for reports
-        
-    Returns:
-        Analysis results
-    """
-    reporter = QualityReporter()
-    return reporter.generate_comprehensive_report(directory, output_dir=output_dir)
 
-def auto_fix(directory: str) -> dict:
+# Quick access functions
+def auto_fix(target: str, config: CodeQualityConfig = None) -> dict:
     """
-    Auto-fix common issues in a directory.
+    Quick auto-fix for Python code.
     
     Args:
-        directory: Directory to fix
+        target: File or directory path
+        config: Optional configuration
         
     Returns:
         Fix results
     """
-    fixer = AutoFixer()
-    return fixer.fix_all(directory)
+    config = config or get_default_config()
+    fixer = AutoFixer(config)
+    
+    if os.path.isfile(target):
+        return fixer.fix_file(target)
+    else:
+        return fixer.fix_all(target)
+
 
 def sequential_fix(target: str, output_dir: str = None) -> dict:
     """
@@ -120,41 +117,46 @@ def sequential_fix(target: str, output_dir: str = None) -> dict:
     fixer = SequentialFixer()
     return fixer.run_pipeline(target=target, output_dir=output_dir)
 
-def validate_syntax(directory: str) -> dict:
-    """
-    Validate syntax for all Python files in a directory.
-    
-    Args:
-        directory: Directory to validate
-        
-    Returns:
-        Validation results
-    """
-    validator = SyntaxValidator()
-    return validator.validate_directory(directory)
 
-def analyze_dependencies(directory: str) -> dict:
+def analyze_imports(target: str, config: CodeQualityConfig = None) -> dict:
     """
-    Analyze dependencies for all Python files in a directory.
+    Quick import analysis for Python code.
     
     Args:
-        directory: Directory to analyze
+        target: File or directory path
+        config: Optional configuration
         
     Returns:
-        Dependency analysis results
+        Import analysis results
     """
-    analyzer = DependencyAnalyzer()
-    return analyzer.analyze_directory(directory)
+    config = config or get_default_config()
+    analyzer = ImportAnalyzer(config)
+    
+    if os.path.isfile(target):
+        return analyzer.analyze_files([target])
+    else:
+        return analyzer.analyze_directory(target)
 
-def map_call_graph(directory: str) -> dict:
+
+def analyze_signatures(target: str, config: CodeQualityConfig = None) -> dict:
     """
-    Map the call graph for all Python files in a directory.
+    Quick function signature analysis for Python code.
     
     Args:
-        directory: Directory to analyze
+        target: File or directory path
+        config: Optional configuration
         
     Returns:
-        Call graph analysis results
+        Signature analysis results
     """
-    analyzer = CallGraphAnalyzer()
-    return analyzer.analyze_directory(directory)
+    config = config or get_default_config()
+    analyzer = SignatureAnalyzer(config)
+    
+    if os.path.isfile(target):
+        return analyzer.analyze_files([target])
+    else:
+        return analyzer.analyze_directory(target)
+
+
+# Add missing import
+import os

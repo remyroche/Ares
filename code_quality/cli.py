@@ -3,180 +3,228 @@
 Command-line interface for Code Quality Tools.
 """
 
-import sys
 import argparse
-from pathlib import Path
+import sys
 import os
+from pathlib import Path
 
-from .core import get_default_config, load_config
+from .core.config import get_default_config, load_config
 from .fixers.auto_fixer import AutoFixer
-from .fixers.sequential_fixer import SequentialFixer
 from .analyzers.linter_analyzer import LinterAnalyzer
+from .analyzers.syntax_validator import SyntaxValidator
 from .analyzers.call_graph_analyzer import CallGraphAnalyzer
 from .analyzers.dependency_analyzer import DependencyAnalyzer
-from .analyzers.syntax_validator import SyntaxValidator
+from .analyzers.import_analyzer import ImportAnalyzer
+from .analyzers.signature_analyzer import SignatureAnalyzer
 from .reporters.quality_reporter import QualityReporter
-
-
-def main():
-    """Main CLI entry point."""
-    parser = argparse.ArgumentParser(
-        description="Code Quality Tools - Comprehensive Python code analysis and fixing",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Run comprehensive analysis
-  python -m code_quality.cli analyze --path /path/to/code --output reports/
-  
-  # Auto-fix code issues
-  python -m code_quality.cli fix --path /path/to/code
-  
-  # Run sequential auto-fix pipeline
-  python -m code_quality.cli sequential-fix --target /path/to/code --output reports/
-  
-  # Validate syntax only
-  python -m code_quality.cli validate --path /path/to/code
-  
-  # Map call graph
-  python -m code_quality.cli call-graph --path /path/to/code --visualize
-  
-  # Analyze dependencies
-  python -m code_quality.cli dependencies --path /path/to/code
-        """
-    )
-    
-    subparsers = parser.add_subparsers(dest='command', help='Available commands')
-    
-    # Comprehensive analysis command
-    analyze_parser = subparsers.add_parser('analyze', help='Run comprehensive code quality analysis')
-    analyze_parser.add_argument('--path', required=True, help='Path to directory containing Python files')
-    analyze_parser.add_argument('--output', help='Output directory for reports')
-    analyze_parser.add_argument('--config', help='Path to configuration file')
-    analyze_parser.add_argument('--auto-fix', action='store_true', help='Run auto-fixing before analysis')
-    
-    # Auto-fix command
-    fix_parser = subparsers.add_parser('fix', help='Auto-fix code issues')
-    fix_parser.add_argument('--path', required=True, help='Path to directory or file containing Python code')
-    fix_parser.add_argument('--config', help='Path to configuration file')
-    fix_parser.add_argument('--max-line-length', type=int, default=88, help='Maximum line length')
-    fix_parser.add_argument('--aggressive', action='store_true', help='Enable aggressive fixing')
-    
-    # Sequential fix command
-    sequential_parser = subparsers.add_parser('sequential-fix', help='Run sequential auto-fix pipeline')
-    sequential_parser.add_argument('--target', required=True, 
-                                 help='Path to Python file, directory, or comma-separated list of files')
-    sequential_parser.add_argument('--config', help='Path to configuration file')
-    sequential_parser.add_argument('--output', help='Output directory for reports')
-    sequential_parser.add_argument('--no-backups', action='store_true', help='Disable backup creation')
-    
-    # Syntax validation command
-    validate_parser = subparsers.add_parser('validate', help='Validate Python syntax')
-    validate_parser.add_argument('--path', required=True, help='Path to directory containing Python files')
-    validate_parser.add_argument('--config', help='Path to configuration file')
-    validate_parser.add_argument('--output', help='Output file for validation report (JSON)')
-    
-    # Linter analysis command
-    linter_parser = subparsers.add_parser('lint', help='Run linter analysis')
-    linter_parser.add_argument('--path', required=True, help='Path to directory containing Python files')
-    linter_parser.add_argument('--config', help='Path to configuration file')
-    linter_parser.add_argument('--output', help='Output file for linter results (JSON)')
-    
-    # Call graph command
-    call_graph_parser = subparsers.add_parser('call-graph', help='Analyze call graph and dependencies')
-    call_graph_parser.add_argument('--path', required=True, help='Path to directory containing Python files')
-    call_graph_parser.add_argument('--config', help='Path to configuration file')
-    call_graph_parser.add_argument('--output', help='Output directory for results')
-    call_graph_parser.add_argument('--format', choices=['json', 'dot', 'gexf'], default='json', 
-                                 help='Output format for graph export')
-    call_graph_parser.add_argument('--visualize', action='store_true', help='Generate graph visualization')
-    
-    # Dependency analysis command
-    deps_parser = subparsers.add_parser('dependencies', help='Analyze package dependencies')
-    deps_parser.add_argument('--path', required=True, help='Path to directory containing Python files')
-    deps_parser.add_argument('--config', help='Path to configuration file')
-    deps_parser.add_argument('--output', help='Output directory for results')
-    deps_parser.add_argument('--generate-requirements', help='Generate requirements.txt file')
-    deps_parser.add_argument('--check-security', action='store_true', help='Check for security vulnerabilities')
-    
-    # Parse arguments
-    args = parser.parse_args()
-    
-    if not args.command:
-        parser.print_help()
-        return 1
-    
-    # Load configuration
-    if args.config:
-        config = load_config(args.config)
-    else:
-        config = get_default_config()
-    
-    try:
-        if args.command == 'analyze':
-            return _run_comprehensive_analysis(args, config)
-        elif args.command == 'fix':
-            return _run_auto_fix(args, config)
-        elif args.command == 'sequential-fix':
-            return _run_sequential_fix(args, config)
-        elif args.command == 'validate':
-            return _run_syntax_validation(args, config)
-        elif args.command == 'lint':
-            return _run_linter_analysis(args, config)
-        elif args.command == 'call-graph':
-            return _run_call_graph_analysis(args, config)
-        elif args.command == 'dependencies':
-            return _run_dependency_analysis(args, config)
-        else:
-            print(f"Unknown command: {args.command}")
-            return 1
-            
-    except KeyboardInterrupt:
-        print("\nOperation cancelled by user.")
-        return 1
-    except Exception as e:
-        print(f"Error: {e}")
-        return 1
-
-
-def _run_comprehensive_analysis(args, config):
-    """Run comprehensive code quality analysis."""
-    print("Running comprehensive code quality analysis...")
-    
-    reporter = QualityReporter(config)
-    results = reporter.generate_comprehensive_report(
-        directory=args.path,
-        run_auto_fix=args.auto_fix,
-        output_dir=args.output
-    )
-    
-    print("Analysis completed successfully!")
-    return 0
+from .fixers.sequential_fixer import SequentialFixer
+from .merge_conflict_detector import MergeConflictDetector
 
 
 def _run_auto_fix(args, config):
-    """Run auto-fixing on code."""
-    print("Running auto-fixer...")
+    """Run auto-fix on files or directories."""
+    print("Running auto-fix...")
     
-    # Update config with command line arguments
-    config.auto_fix.max_line_length = args.max_line_length
-    config.auto_fix.aggressive = args.aggressive
-    
-    fixer = AutoFixer(config)
-    
-    # Check if path is a file or directory
     if os.path.isfile(args.path):
+        # Single file
+        fixer = AutoFixer(config)
         results = fixer.fix_file(args.path)
+        print("Auto-fix completed!")
+        return 0
     else:
+        # Directory
+        fixer = AutoFixer(config)
         results = fixer.fix_all(args.path)
+        
+        # Print summary
+        summary = fixer.get_fix_summary()
+        print(f"\nAuto-fix Summary:")
+        print(f"  Tools run: {', '.join(summary['tools_run'])}")
+        print(f"  Successful: {', '.join(summary['successful_tools'])}")
+        if summary['failed_tools']:
+            print(f"  Failed: {', '.join(summary['failed_tools'])}")
+        
+        print("Auto-fix completed!")
+        return 0
+
+
+def _run_linter_analysis(args, config):
+    """Run linter analysis."""
+    print("Running linter analysis...")
     
-    # Print summary
-    summary = fixer.get_fix_summary()
-    print(f"\nAuto-fix completed!")
-    print(f"Tools run: {', '.join(summary['tools_run'])}")
-    print(f"Successful: {', '.join(summary['successful_tools'])}")
-    print(f"Failed: {', '.join(summary['failed_tools'])}")
+    analyzer = LinterAnalyzer(config)
+    results = analyzer.analyze_directory(args.path)
     
-    return 0 if not summary['failed_tools'] else 1
+    print(f"\nLinter Analysis Results:")
+    print(f"  Total issues: {results['total_issues']}")
+    print(f"  Files with issues: {results['total_files_with_issues']}")
+    print(f"  Errors: {results['total_errors']}")
+    print(f"  Warnings: {results['total_warnings']}")
+    
+    if args.output:
+        import json
+        output_path = Path(args.output)
+        output_path.mkdir(exist_ok=True)
+        
+        report_file = output_path / "linter_analysis_report.json"
+        with open(report_file, 'w') as f:
+            json.dump(results, f, indent=2)
+        print(f"Report saved to: {report_file}")
+    
+    return 0
+
+
+def _run_syntax_validation(args, config):
+    """Run syntax validation."""
+    print("Running syntax validation...")
+    
+    validator = SyntaxValidator(config)
+    results = validator.validate_directory(args.path)
+    
+    print(f"\nSyntax Validation Results:")
+    print(f"  Total files: {results['summary']['total_files']}")
+    print(f"  Valid files: {results['summary']['valid_files']}")
+    print(f"  Invalid files: {results['summary']['invalid_files']}")
+    print(f"  AST parseable: {results['summary']['ast_parseable_files']}")
+    print(f"  Compilable: {results['summary']['compilable_files']}")
+    print(f"  Total errors: {results['summary']['total_errors']}")
+    
+    if args.output:
+        import json
+        output_path = Path(args.output)
+        output_path.mkdir(exist_ok=True)
+        
+        report_file = output_path / "syntax_validation_report.json"
+        with open(report_file, 'w') as f:
+            json.dump(results, f, indent=2)
+        print(f"Report saved to: {report_file}")
+    
+    return 0
+
+
+def _run_call_graph_analysis(args, config):
+    """Run call graph analysis."""
+    print("Running call graph analysis...")
+    
+    analyzer = CallGraphAnalyzer(config)
+    results = analyzer.analyze_directory(args.path)
+    
+    print(f"\nCall Graph Analysis Results:")
+    print(f"  Total files: {results['summary']['total_files']}")
+    print(f"  Total functions: {results['summary']['total_functions']}")
+    print(f"  Total calls: {results['summary']['total_calls']}")
+    print(f"  Dead code candidates: {results['summary']['dead_code_candidates']}")
+    print(f"  Circular dependencies: {results['summary']['circular_dependencies']}")
+    
+    if args.output:
+        import json
+        output_path = Path(args.output)
+        output_path.mkdir(exist_ok=True)
+        
+        # Save main report
+        report_file = output_path / "call_graph_analysis_report.json"
+        with open(report_file, 'w') as f:
+            json.dump(results, f, indent=2)
+        print(f"Report saved to: {report_file}")
+        
+        # Export graph if requested
+        if args.export_graph:
+            graph_file = output_path / "call_graph.gml"
+            analyzer.export_graph(graph_file)
+            print(f"Graph exported to: {graph_file}")
+    
+    return 0
+
+
+def _run_dependency_analysis(args, config):
+    """Run dependency analysis."""
+    print("Running dependency analysis...")
+    
+    analyzer = DependencyAnalyzer(config)
+    results = analyzer.analyze_directory(args.path)
+    
+    print(f"\nDependency Analysis Results:")
+    print(f"  Total dependencies: {results['summary']['total_dependencies']}")
+    print(f"  Missing dependencies: {results['summary']['missing_dependencies']}")
+    print(f"  Unused dependencies: {results['summary']['unused_dependencies']}")
+    print(f"  Security issues: {results['summary']['security_issues']}")
+    
+    if args.output:
+        import json
+        output_path = Path(args.output)
+        output_path.mkdir(exist_ok=True)
+        
+        report_file = output_path / "dependency_analysis_report.json"
+        with open(report_file, 'w') as f:
+            json.dump(results, f, indent=2)
+        print(f"Report saved to: {report_file}")
+    
+    return 0
+
+
+def _run_import_analysis(args, config):
+    """Run import analysis."""
+    print("Running import analysis...")
+    
+    analyzer = ImportAnalyzer(config)
+    results = analyzer.analyze_directory(args.path)
+    
+    print(f"\nImport Analysis Results:")
+    print(f"  Total files analyzed: {results['summary']['total_files_analyzed']}")
+    print(f"  Total imports: {results['summary']['total_imports']}")
+    print(f"  Total issues: {results['summary']['total_issues']}")
+    print(f"  Duplicate imports: {results['summary']['duplicate_imports']}")
+    print(f"  Circular dependencies: {results['summary']['circular_dependencies']}")
+    print(f"  Conflicting imports: {results['summary']['conflicting_imports']}")
+    
+    if args.output:
+        import json
+        output_path = Path(args.output)
+        output_path.mkdir(exist_ok=True)
+        
+        # Save main report
+        report_file = output_path / "import_analysis_report.json"
+        with open(report_file, 'w') as f:
+            json.dump(results, f, indent=2)
+        print(f"Report saved to: {report_file}")
+        
+        # Export import graph if requested
+        if args.export_graph:
+            graph_file = output_path / "import_graph.png"
+            analyzer.visualize_import_graph(graph_file)
+            print(f"Import graph saved to: {graph_file}")
+    
+    return 0
+
+
+def _run_signature_analysis(args, config):
+    """Run function signature analysis."""
+    print("Running function signature analysis...")
+    
+    analyzer = SignatureAnalyzer(config)
+    results = analyzer.analyze_directory(args.path)
+    
+    print(f"\nFunction Signature Analysis Results:")
+    print(f"  Total files analyzed: {results['summary']['total_files_analyzed']}")
+    print(f"  Total functions: {results['summary']['total_functions']}")
+    print(f"  Total function calls: {results['summary']['total_function_calls']}")
+    print(f"  Total issues: {results['summary']['total_issues']}")
+    print(f"  Signature changes: {results['summary']['signature_changes']}")
+    print(f"  Compatibility issues: {results['summary']['compatibility_issues']}")
+    print(f"  Missing functions: {results['summary']['missing_functions']}")
+    print(f"  Unused functions: {results['summary']['unused_functions']}")
+    
+    if args.output:
+        import json
+        output_path = Path(args.output)
+        output_path.mkdir(exist_ok=True)
+        
+        report_file = output_path / "signature_analysis_report.json"
+        with open(report_file, 'w') as f:
+            json.dump(results, f, indent=2)
+        print(f"Report saved to: {report_file}")
+    
+    return 0
 
 
 def _run_sequential_fix(args, config):
@@ -208,135 +256,146 @@ def _run_sequential_fix(args, config):
         return 2
 
 
-def _run_syntax_validation(args, config):
-    """Run syntax validation."""
-    print("Running syntax validation...")
+def _run_merge_conflict_detection(args, config):
+    """Run merge conflict detection."""
+    print("Running merge conflict detection...")
     
-    validator = SyntaxValidator(config)
-    results = validator.validate_directory(args.path)
+    detector = MergeConflictDetector(config)
+    results = detector.detect_conflicts(
+        target=args.target,
+        output_dir=args.output
+    )
     
-    # Print summary
-    validator.print_summary()
+    print("Merge conflict detection completed!")
     
-    # Export results if requested
+    # Return appropriate exit code
+    if results["summary"]["overall_status"] == "clean":
+        return 0
+    elif results["summary"]["overall_status"] == "warnings":
+        return 1
+    else:
+        return 2
+
+
+def _run_quality_report(args, config):
+    """Run comprehensive quality report."""
+    print("Running comprehensive quality report...")
+    
+    reporter = QualityReporter(config)
+    results = reporter.generate_comprehensive_report(args.path)
+    
+    print(f"\nQuality Report Generated:")
+    print(f"  Overall score: {results['overall_score']}/100")
+    print(f"  Files analyzed: {results['summary']['total_files']}")
+    print(f"  Issues found: {results['summary']['total_issues']}")
+    
     if args.output:
-        validator.export_report(args.output)
+        print(f"Reports saved to: {args.output}")
     
-    # Return error code if there are syntax errors
-    if results["summary"]["total_errors"] > 0:
+    return 0
+
+
+def main():
+    """Main CLI entry point."""
+    parser = argparse.ArgumentParser(
+        description="Code Quality Tools - Comprehensive Python code analysis and fixing"
+    )
+    parser.add_argument("--config", help="Path to configuration file")
+    
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+    
+    # Auto-fix command
+    auto_fix_parser = subparsers.add_parser('auto-fix', help='Auto-fix Python code')
+    auto_fix_parser.add_argument('--path', required=True, help='Path to Python file or directory')
+    
+    # Linter analysis command
+    linter_parser = subparsers.add_parser('linter', help='Run linter analysis')
+    linter_parser.add_argument('--path', required=True, help='Path to Python file or directory')
+    linter_parser.add_argument('--output', help='Output directory for reports')
+    
+    # Syntax validation command
+    syntax_parser = subparsers.add_parser('syntax', help='Run syntax validation')
+    syntax_parser.add_argument('--path', required=True, help='Path to Python file or directory')
+    syntax_parser.add_argument('--output', help='Output directory for reports')
+    
+    # Call graph analysis command
+    call_graph_parser = subparsers.add_parser('call-graph', help='Run call graph analysis')
+    call_graph_parser.add_argument('--path', required=True, help='Path to Python file or directory')
+    call_graph_parser.add_argument('--output', help='Output directory for reports')
+    call_graph_parser.add_argument('--export-graph', action='store_true', help='Export call graph')
+    
+    # Dependency analysis command
+    dependency_parser = subparsers.add_parser('dependencies', help='Run dependency analysis')
+    dependency_parser.add_argument('--path', required=True, help='Path to Python file or directory')
+    dependency_parser.add_argument('--output', help='Output directory for reports')
+    
+    # Import analysis command
+    import_parser = subparsers.add_parser('imports', help='Run import analysis')
+    import_parser.add_argument('--path', required=True, help='Path to Python file or directory')
+    import_parser.add_argument('--output', help='Output directory for reports')
+    import_parser.add_argument('--export-graph', action='store_true', help='Export import graph')
+    
+    # Signature analysis command
+    signature_parser = subparsers.add_parser('signatures', help='Run function signature analysis')
+    signature_parser.add_argument('--path', required=True, help='Path to Python file or directory')
+    signature_parser.add_argument('--output', help='Output directory for reports')
+    
+    # Sequential fix command
+    sequential_parser = subparsers.add_parser('sequential-fix', help='Run sequential auto-fix pipeline')
+    sequential_parser.add_argument('--target', required=True, 
+                                 help='Path to Python file, directory, or comma-separated list of files')
+    sequential_parser.add_argument('--config', help='Path to configuration file')
+    sequential_parser.add_argument('--output', help='Output directory for reports')
+    sequential_parser.add_argument('--no-backups', action='store_true', help='Disable backup creation')
+    
+    # Merge conflict detection command
+    merge_conflict_parser = subparsers.add_parser('merge-conflicts', help='Detect merge conflicts and compatibility issues')
+    merge_conflict_parser.add_argument('--target', required=True,
+                                     help='Path to Python file, directory, or comma-separated list of files')
+    merge_conflict_parser.add_argument('--config', help='Path to configuration file')
+    merge_conflict_parser.add_argument('--output', help='Output directory for reports')
+    
+    # Quality report command
+    quality_parser = subparsers.add_parser('quality-report', help='Generate comprehensive quality report')
+    quality_parser.add_argument('--path', required=True, help='Path to Python file or directory')
+    quality_parser.add_argument('--output', help='Output directory for reports')
+    
+    args = parser.parse_args()
+    
+    if not args.command:
+        parser.print_help()
         return 1
     
-    return 0
-
-
-def _run_linter_analysis(args, config):
-    """Run linter analysis."""
-    print("Running linter analysis...")
+    # Load configuration
+    if args.config:
+        config = load_config(args.config)
+    else:
+        config = get_default_config()
     
-    analyzer = LinterAnalyzer(config)
-    results = analyzer.analyze_directory(args.path)
-    
-    # Print summary
-    print(f"\nLinter analysis completed!")
-    print(f"Total issues: {results['total_issues']}")
-    print(f"Files with issues: {results['total_files_with_issues']}")
-    print(f"Errors: {results['total_errors']}")
-    print(f"Warnings: {results['total_warnings']}")
-    
-    # Export results if requested
-    if args.output:
-        import json
-        with open(args.output, 'w') as f:
-            json.dump(results, f, indent=2)
-        print(f"Results saved to {args.output}")
-    
-    return 0
-
-
-def _run_call_graph_analysis(args, config):
-    """Run call graph analysis."""
-    print("Running call graph analysis...")
-    
-    analyzer = CallGraphAnalyzer(config)
-    results = analyzer.analyze_directory(args.path)
-    
-    # Print summary
-    print(f"\nCall graph analysis completed!")
-    print(f"Total nodes: {results['total_nodes']}")
-    print(f"Total edges: {results['total_edges']}")
-    print(f"Potential dead code: {len(results['potential_dead_code'])}")
-    print(f"Circular dependencies: {len(results['circular_dependencies'])}")
-    
-    # Export results if requested
-    if args.output:
-        output_dir = Path(args.output)
-        output_dir.mkdir(exist_ok=True)
-        
-        # Export graph
-        graph_file = output_dir / f"call_graph.{args.format}"
-        analyzer.export_graph(str(graph_file), args.format)
-        print(f"Call graph exported to {graph_file}")
-        
-        # Export analysis results
-        results_file = output_dir / "call_graph_analysis.json"
-        import json
-        with open(results_file, 'w') as f:
-            json.dump(results, f, indent=2)
-        print(f"Analysis results exported to {results_file}")
-        
-        # Generate visualization
-        if args.visualize:
-            viz_file = output_dir / "call_graph_visualization.png"
-            analyzer.visualize_graph(str(viz_file))
-            print(f"Graph visualization saved to {viz_file}")
-    
-    return 0
-
-
-def _run_dependency_analysis(args, config):
-    """Run dependency analysis."""
-    print("Running dependency analysis...")
-    
-    analyzer = DependencyAnalyzer(config)
-    results = analyzer.analyze_directory(args.path)
-    
-    # Print summary
-    print(f"\nDependency analysis completed!")
-    print(f"Total dependencies: {results['total_dependencies']}")
-    print(f"Installed: {results['installed_dependencies']}")
-    print(f"Missing: {results['missing_dependencies']}")
-    print(f"Unused: {results['unused_dependencies']}")
-    
-    # Check security vulnerabilities
-    if args.check_security:
-        print("\nChecking security vulnerabilities...")
-        vulnerabilities = analyzer.check_security_vulnerabilities()
-        if vulnerabilities:
-            print(f"Found {len(vulnerabilities)} security vulnerabilities:")
-            for vuln in vulnerabilities[:5]:
-                print(f"  - {vuln['package']}: {vuln['severity']} - {vuln['description']}")
-        else:
-            print("No security vulnerabilities found.")
-    
-    # Generate requirements.txt
-    if args.generate_requirements:
-        analyzer.generate_requirements_txt(args.generate_requirements)
-    
-    # Export results
-    if args.output:
-        output_dir = Path(args.output)
-        output_dir.mkdir(exist_ok=True)
-        
-        # Export analysis
-        analysis_file = output_dir / "dependency_analysis.json"
-        analyzer.export_analysis(str(analysis_file))
-        print(f"\nAnalysis results exported to {analysis_file}")
-        
-        # Generate requirements.txt
-        requirements_file = output_dir / "requirements_generated.txt"
-        analyzer.generate_requirements_txt(str(requirements_file))
-    
-    return 0
+    # Dispatch to appropriate handler
+    if args.command == 'auto-fix':
+        return _run_auto_fix(args, config)
+    elif args.command == 'linter':
+        return _run_linter_analysis(args, config)
+    elif args.command == 'syntax':
+        return _run_syntax_validation(args, config)
+    elif args.command == 'call-graph':
+        return _run_call_graph_analysis(args, config)
+    elif args.command == 'dependencies':
+        return _run_dependency_analysis(args, config)
+    elif args.command == 'imports':
+        return _run_import_analysis(args, config)
+    elif args.command == 'signatures':
+        return _run_signature_analysis(args, config)
+    elif args.command == 'sequential-fix':
+        return _run_sequential_fix(args, config)
+    elif args.command == 'merge-conflicts':
+        return _run_merge_conflict_detection(args, config)
+    elif args.command == 'quality-report':
+        return _run_quality_report(args, config)
+    else:
+        print(f"Unknown command: {args.command}")
+        return 1
 
 
 if __name__ == "__main__":

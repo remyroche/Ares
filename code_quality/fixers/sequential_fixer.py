@@ -13,6 +13,8 @@ from ..core.config import CodeQualityConfig, get_default_config
 from ..fixers.auto_fixer import AutoFixer
 from ..analyzers.linter_analyzer import LinterAnalyzer
 from ..analyzers.syntax_validator import SyntaxValidator
+from ..analyzers.import_analyzer import ImportAnalyzer
+from ..analyzers.signature_analyzer import SignatureAnalyzer
 from ..utils.file_utils import find_python_files, is_valid_python_file
 
 
@@ -22,9 +24,11 @@ class SequentialFixer:
     
     Pipeline:
     1. Auto-fix syntax and style issues
-    2. Run linter analysis and report errors
+    2. Run linter analysis and error reporting
     3. Validate AST parsing and compilation
-    4. Generate comprehensive report
+    4. Analyze imports for conflicts and circular dependencies
+    5. Analyze function signatures for compatibility issues
+    6. Generate comprehensive report
     """
     
     def __init__(self, config: Optional[CodeQualityConfig] = None):
@@ -112,18 +116,32 @@ class SequentialFixer:
             syntax_results = self._run_syntax_validation(target_files)
             self.results["step_results"]["syntax_validation"] = syntax_results
             
-            # Step 4: Generate comprehensive summary
+            # Step 4: Import analysis for conflicts and circular dependencies
             print("\n" + "-"*50)
-            print("STEP 4: GENERATING COMPREHENSIVE SUMMARY")
+            print("STEP 4: IMPORT ANALYSIS - CONFLICTS & CIRCULAR DEPENDENCIES")
+            print("-"*50)
+            import_results = self._run_import_analysis(target_files)
+            self.results["step_results"]["import_analysis"] = import_results
+            
+            # Step 5: Function signature analysis for compatibility
+            print("\n" + "-"*50)
+            print("STEP 5: FUNCTION SIGNATURE ANALYSIS - COMPATIBILITY CHECK")
+            print("-"*50)
+            signature_results = self._run_signature_analysis(target_files)
+            self.results["step_results"]["signature_analysis"] = signature_results
+            
+            # Step 6: Generate comprehensive summary
+            print("\n" + "-"*50)
+            print("STEP 6: GENERATING COMPREHENSIVE SUMMARY")
             print("-"*50)
             summary = self._generate_comprehensive_summary()
             self.results["summary"] = summary
             
-            # Step 5: Save reports if requested
+            # Step 7: Save reports if requested
             if output_dir:
                 self._save_reports(output_dir)
             
-            # Step 6: Print final summary
+            # Step 8: Print final summary
             self._print_final_summary()
             
         except Exception as e:
@@ -327,6 +345,128 @@ class SequentialFixer:
             print(f"Error running syntax validation: {e}")
             return {"status": "error", "error": str(e)}
     
+    def _run_import_analysis(self, files: List[str]) -> Dict[str, Any]:
+        """Run import analysis on the target files."""
+        print(f"Running import analysis on {len(files)} files...")
+        
+        try:
+            # Find the common parent directory
+            if len(files) == 1:
+                target_dir = str(Path(files[0]).parent)
+            else:
+                # Find common ancestor directory
+                paths = [Path(f) for f in files]
+                common_prefix = Path(os.path.commonpath([str(p) for p in paths]))
+                target_dir = str(common_prefix)
+            
+            import_analyzer = ImportAnalyzer(self.config)
+            import_results = import_analyzer.analyze_directory(target_dir)
+            
+            # Filter results to only include our target files
+            filtered_results = {
+                "summary": {
+                    "total_files_analyzed": len(files),
+                    "total_imports": 0,
+                    "total_issues": 0,
+                    "duplicate_imports": 0,
+                    "circular_dependencies": 0,
+                    "conflicting_imports": 0
+                },
+                "issues": {
+                    "duplicate_imports": [],
+                    "circular_dependencies": [],
+                    "conflicting_imports": []
+                }
+            }
+            
+            # Filter issues to only include our target files
+            for issue_type in ["duplicate_imports", "circular_dependencies", "conflicting_imports"]:
+                if issue_type in import_results.get("issues", {}):
+                    for issue in import_results["issues"][issue_type]:
+                        if issue.get("file") in files:
+                            filtered_results["issues"][issue_type].append(issue)
+                            filtered_results["summary"][f"{issue_type}"] += 1
+                            filtered_results["summary"]["total_issues"] += 1
+            
+            # Get total imports for our files
+            for file_path in files:
+                if file_path in import_results.get("files", {}):
+                    filtered_results["summary"]["total_imports"] += import_results["files"][file_path].get("total_imports", 0)
+            
+            return {
+                "status": "success",
+                "results": filtered_results,
+                "full_results": import_results
+            }
+            
+        except Exception as e:
+            print(f"Error running import analysis: {e}")
+            return {"status": "error", "error": str(e)}
+    
+    def _run_signature_analysis(self, files: List[str]) -> Dict[str, Any]:
+        """Run function signature analysis on the target files."""
+        print(f"Running function signature analysis on {len(files)} files...")
+        
+        try:
+            # Find the common parent directory
+            if len(files) == 1:
+                target_dir = str(Path(files[0]).parent)
+            else:
+                # Find common ancestor directory
+                paths = [Path(f) for f in files]
+                common_prefix = Path(os.path.commonpath([str(p) for p in paths]))
+                target_dir = str(common_prefix)
+            
+            signature_analyzer = SignatureAnalyzer(self.config)
+            signature_results = signature_analyzer.analyze_directory(target_dir)
+            
+            # Filter results to only include our target files
+            filtered_results = {
+                "summary": {
+                    "total_files_analyzed": len(files),
+                    "total_functions": 0,
+                    "total_function_calls": 0,
+                    "total_issues": 0,
+                    "signature_changes": 0,
+                    "compatibility_issues": 0,
+                    "missing_functions": 0,
+                    "unused_functions": 0
+                },
+                "issues": {
+                    "signature_changes": [],
+                    "compatibility_issues": [],
+                    "missing_functions": [],
+                    "unused_functions": []
+                }
+            }
+            
+            # Filter issues to only include our target files
+            for issue_type in ["signature_changes", "compatibility_issues", "missing_functions", "unused_functions"]:
+                if issue_type in signature_results.get("issues", {}):
+                    for issue in signature_results["issues"][issue_type]:
+                        if issue.get("file") in files:
+                            filtered_results["issues"][issue_type].append(issue)
+                            filtered_results["summary"][f"{issue_type}"] += 1
+                            filtered_results["summary"]["total_issues"] += 1
+            
+            # Get function counts for our files
+            for file_path in files:
+                if file_path in signature_results.get("functions", {}):
+                    filtered_results["summary"]["total_functions"] += len(signature_results["functions"][file_path])
+                
+                if file_path in signature_results.get("calls", {}):
+                    filtered_results["summary"]["total_function_calls"] += len(signature_results["calls"][file_path])
+            
+            return {
+                "status": "success",
+                "results": filtered_results,
+                "full_results": signature_results
+            }
+            
+        except Exception as e:
+            print(f"Error running signature analysis: {e}")
+            return {"status": "error", "error": str(e)}
+    
     def _generate_comprehensive_summary(self) -> Dict[str, Any]:
         """Generate a comprehensive summary of all pipeline steps."""
         summary = {
@@ -351,6 +491,8 @@ class SequentialFixer:
         auto_fix = self.results["step_results"].get("auto_fix", {})
         linter = self.results["step_results"].get("linter_analysis", {})
         syntax = self.results["step_results"].get("syntax_validation", {})
+        imports = self.results["step_results"].get("import_analysis", {})
+        signatures = self.results["step_results"].get("signature_analysis", {})
         
         summary["metrics"] = {
             "files_processed": auto_fix.get("total_files_processed", 0),
@@ -359,7 +501,9 @@ class SequentialFixer:
             "linter_issues": linter.get("results", {}).get("total_issues", 0) if linter.get("status") == "success" else 0,
             "syntax_errors": syntax.get("results", {}).get("summary", {}).get("total_errors", 0) if syntax.get("status") == "success" else 0,
             "valid_files": syntax.get("results", {}).get("summary", {}).get("valid_files", 0) if syntax.get("status") == "success" else 0,
-            "invalid_files": syntax.get("results", {}).get("summary", {}).get("invalid_files", 0) if syntax.get("status") == "success" else 0
+            "invalid_files": syntax.get("results", {}).get("summary", {}).get("invalid_files", 0) if syntax.get("status") == "success" else 0,
+            "import_issues": imports.get("results", {}).get("summary", {}).get("total_issues", 0) if imports.get("status") == "success" else 0,
+            "signature_issues": signatures.get("results", {}).get("summary", {}).get("total_issues", 0) if signatures.get("status") == "success" else 0
         }
         
         # Generate recommendations
@@ -375,6 +519,20 @@ class SequentialFixer:
                 "priority": "medium",
                 "category": "quality",
                 "message": f"Address {summary['metrics']['linter_issues']} linting issues for better code quality"
+            })
+        
+        if summary["metrics"]["import_issues"] > 0:
+            summary["recommendations"].append({
+                "priority": "high",
+                "category": "imports",
+                "message": f"Resolve {summary['metrics']['import_issues']} import conflicts and circular dependencies"
+            })
+        
+        if summary["metrics"]["signature_issues"] > 0:
+            summary["recommendations"].append({
+                "priority": "high",
+                "category": "compatibility",
+                "message": f"Fix {summary['metrics']['signature_issues']} function signature compatibility issues"
             })
         
         if auto_fix.get("failed_tools"):
@@ -438,6 +596,8 @@ class SequentialFixer:
         print(f"  Syntax errors: {metrics['syntax_errors']}")
         print(f"  Valid files: {metrics['valid_files']}")
         print(f"  Invalid files: {metrics['invalid_files']}")
+        print(f"  Import issues: {metrics['import_issues']}")
+        print(f"  Signature issues: {metrics['signature_issues']}")
         
         if summary["recommendations"]:
             print(f"\nRecommendations:")

@@ -2739,8 +2739,13 @@ class MLConfidencePredictor:
                             conf_val = float(
                                 np.clip(calibrator.predict([[conf_val]])[0], 0.0, 1.0)
                             )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        if hasattr(self, "logger") and self.logger is not None:
+                            self.logger.warning(
+                                "Calibrator application failed for label '%s': %s",
+                                label,
+                                e,
+                            )
                 confidences[label] = float(np.clip(conf_val, 0.0, 1.0))
             except Exception:
                 confidences[label] = 0.5
@@ -2882,8 +2887,13 @@ class MLConfidencePredictor:
                             conf_val = float(
                                 np.clip(calibrator.predict([[conf_val]])[0], 0.0, 1.0)
                             )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        if hasattr(self, "logger") and self.logger is not None:
+                            self.logger.warning(
+                                "Calibrator application failed for label '%s': %s",
+                                label,
+                                e,
+                            )
                 confidences[label] = float(np.clip(conf_val, 0.0, 1.0))
             except Exception:
                 confidences[label] = 0.5

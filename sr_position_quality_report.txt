@@ -1,0 +1,27 @@
+================================================================================
+DATA QUALITY ANALYSIS REPORT
+================================================================================
+
+FILE INFORMATION:
+----------------------------------------
+File Name: sr_position_analysis.csv
+File Path: results/sr_position_analysis.csv
+Context: SR Position Analysis Data
+Analysis Time: 2025-09-02T17:24:16.143696
+
+FILE DETAILS:
+----------------------------------------
+Format: CSV
+Size: 0.677 MB
+
+QUALITY ASSESSMENT:
+----------------------------------------
+Overall Quality: EXCELLENT
+Quality Score: 100/100
+
+STRUCTURE ANALYSIS:
+----------------------------------------
+
+================================================================================
+End of Report
+================================================================================

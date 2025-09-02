@@ -1,0 +1,237 @@
+{
+  "directory_path": "data_quality",
+  "analysis_timestamp": "2025-09-02T17:24:39.354920",
+  "file_pattern": "*",
+  "summary": {
+    "overall_quality": "critical",
+    "total_files": 12,
+    "successful_analyses": 12,
+    "failed_analyses": 0,
+    "success_rate": 1.0,
+    "quality_distribution": {
+      "excellent": 10,
+      "critical": 2
+    },
+    "total_size_bytes": 234426,
+    "total_size_mb": 0.224
+  },
+  "file_results": {
+    "data_quality/test_directory_functionality.py": {
+      "file_path": "data_quality/test_directory_functionality.py",
+      "file_name": "test_directory_functionality.py",
+      "context": "File: test_directory_functionality.py",
+      "analysis_timestamp": "2025-09-02T17:24:39.351115",
+      "file_info": {
+        "size_bytes": 7726,
+        "size_mb": 0.007,
+        "format": "TEXT"
+      },
+      "structure_analysis": {
+        "total_characters": 7661,
+        "total_lines": 197,
+        "non_empty_lines": 149,
+        "average_line_length": 38.89,
+        "longest_line": 139,
+        "shortest_line": 0,
+        "encoding_issues": []
+      },
+      "quality_assessment": {
+        "overall_quality": "excellent",
+        "quality_score": 100,
+        "issues": []
+      },
+      "issues": [],
+      "recommendations": []
+    },
+    "data_quality/simple_quality_orchestrator.py": {
+      "file_path": "data_quality/simple_quality_orchestrator.py",
+      "file_name": "simple_quality_orchestrator.py",
+      "context": "File: simple_quality_orchestrator.py",
+      "analysis_timestamp": "2025-09-02T17:24:39.352209",
+      "file_info": {
+        "size_bytes": 38362,
+        "size_mb": 0.037,
+        "format": "TEXT"
+      },
+      "structure_analysis": {
+        "total_characters": 38336,
+        "total_lines": 967,
+        "non_empty_lines": 793,
+        "average_line_length": 39.64,
+        "longest_line": 126,
+        "shortest_line": 0,
+        "encoding_issues": []
+      },
+      "quality_assessment": {
+        "overall_quality": "excellent",
+        "quality_score": 100,
+        "issues": []
+      },
+      "issues": [],
+      "recommendations": []
+    },
+    "data_quality/__init__.py": {
+      "file_path": "data_quality/__init__.py",
+      "file_name": "__init__.py",
+      "context": "File: __init__.py",
+      "analysis_timestamp": "2025-09-02T17:24:39.352336",
+      "file_info": {
+        "size_bytes": 0,
+        "size_mb": 0.0,
+        "format": "TEXT"
+      },
+      "structure_analysis": {
+        "total_characters": 0,
+        "total_lines": 1,
+        "non_empty_lines": 0,
+        "average_line_length": 0.0,
+        "longest_line": 0,
+        "shortest_line": 0,
+        "encoding_issues": []
+      },
+      "quality_assessment": {
+        "overall_quality": "critical",
+        "quality_score": 0,
+        "issues": [
+          "Empty content"
+        ]
+      },
+      "issues": [
+        "Empty text file"
+      ],
+      "recommendations": [
+        "Add meaningful content to the text file"
+      ]
+    },
+    "data_quality/example_usage.py": {
+      "file_path": "data_quality/example_usage.py",
+      "file_name": "example_usage.py",
+      "context": "File: example_usage.py",
+      "analysis_timestamp": "2025-09-02T17:24:39.352986",
+      "file_info": {
+        "size_bytes": 20197,
+        "size_mb": 0.019,
+        "format": "TEXT"
+      },
+      "structure_analysis": {
+        "total_characters": 20086,
+        "total_lines": 514,
+        "non_empty_lines": 395,
+        "average_line_length": 39.08,
+        "longest_line": 111,
+        "shortest_line": 0,
+        "encoding_issues": []
+      },
+      "quality_assessment": {
+        "overall_quality": "excellent",
+        "quality_score": 100,
+        "issues": []
+      },
+      "issues": [],
+      "recommendations": []
+    },
+    "data_quality/unified_quality_orchestrator.py": {
+      "file_path": "data_quality/unified_quality_orchestrator.py",
+      "file_name": "unified_quality_orchestrator.py",
+      "context": "File: unified_quality_orchestrator.py",
+      "analysis_timestamp": "2025-09-02T17:24:39.354570",
+      "file_info": {
+        "size_bytes": 50628,
+        "size_mb": 0.048,
+        "format": "TEXT"
+      },
+      "structure_analysis": {
+        "total_characters": 50581,
+        "total_lines": 1286,
+        "non_empty_lines": 1061,
+        "average_line_length": 39.33,
+        "longest_line": 139,
+        "shortest_line": 0,
+        "encoding_issues": []
+      },
+      "quality_assessment": {
+        "overall_quality": "excellent",
+        "quality_score": 100,
+        "issues": []
+      },
+      "issues": [],
+      "recommendations": []
+    },
+    "data_quality/example_thresholds.json": {
+      "file_path": "data_quality/example_thresholds.json",
+      "file_name": "example_thresholds.json",
+      "context": "File: example_thresholds.json",
+      "analysis_timestamp": "2025-09-02T17:24:39.354904",
+      "file_info": {
+        "size_bytes": 300,
+        "size_mb": 0.0,
+        "format": "JSON"
+      },
+      "structure_analysis": {
+        "type": "object",
+        "keys": [
+          "max_nan_ratio",
+          "max_infinite_count",
+          "min_unique_values",
+          "max_constant_ratio",
+          "max_gap_hours",
+          "price_tolerance",
+          "volume_tolerance",
+          "max_correlation_threshold",
+          "min_feature_count",
+          "vif_threshold"
+        ],
+        "key_count": 10,
+        "nested_structures": {
+          "max_nan_ratio": {
+            "type": "float",
+            "value_sample": "0.05"
+          },
+          "max_infinite_count": {
+            "type": "int",
+            "value_sample": "10"
+          },
+          "min_unique_values": {
+            "type": "int",
+            "value_sample": "5"
+          },
+          "max_constant_ratio": {
+            "type": "float",
+            "value_sample": "0.9"
+          },
+          "max_gap_hours": {
+            "type": "int",
+            "value_sample": "24"
+          },
+          "price_tolerance": {
+            "type": "float",
+            "value_sample": "0.0001"
+          },
+          "volume_tolerance": {
+            "type": "float",
+            "value_sample": "0.0001"
+          },
+          "max_correlation_threshold": {
+            "type": "float",
+            "value_sample": "0.9"
+          },
+          "min_feature_count": {
+            "type": "int",
+            "value_sample": "50"
+          },
+          "vif_threshold": {
+            "type": "float",
+            "value_sample": "10.0"
+          }
+        }
+      },
+      "quality_assessment": {
+        "overall_quality": "excellent",
+        "quality_score": 100,
+        "issues": []
+      },
+      "issues": [],
+      "recommendations": []
+    }
+  }
+}

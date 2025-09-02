@@ -1,0 +1,27 @@
+{
+  "file_path": "syntax_error_report.txt",
+  "file_name": "syntax_error_report.txt",
+  "context": "Syntax Error Report",
+  "analysis_timestamp": "2025-09-02T17:28:44.138559",
+  "file_info": {
+    "size_bytes": 58251,
+    "size_mb": 0.056,
+    "format": "TEXT"
+  },
+  "structure_analysis": {
+    "total_characters": 58242,
+    "total_lines": 1621,
+    "non_empty_lines": 1217,
+    "average_line_length": 35.93,
+    "longest_line": 149,
+    "shortest_line": 0,
+    "encoding_issues": []
+  },
+  "quality_assessment": {
+    "overall_quality": "excellent",
+    "quality_score": 100,
+    "issues": []
+  },
+  "issues": [],
+  "recommendations": []
+}

@@ -1,0 +1,42 @@
+================================================================================
+DIRECTORY DATA QUALITY ANALYSIS REPORT
+================================================================================
+
+DIRECTORY INFORMATION:
+----------------------------------------
+Directory Path: data_quality
+Analysis Time: 2025-09-02T17:24:39.354920
+File Pattern: *
+
+ANALYSIS SUMMARY:
+----------------------------------------
+Overall Quality: CRITICAL
+Total Files: 12
+Successful Analyses: 12
+Failed Analyses: 0
+Success Rate: 100.0%
+Total Size: 0.224 MB
+
+QUALITY DISTRIBUTION:
+----------------------------------------
+• Excellent: 10 files
+• Critical: 2 files
+
+INDIVIDUAL FILE RESULTS:
+----------------------------------------
+✅ test_directory_functionality.py: EXCELLENT (0.007 MB)
+
+✅ simple_quality_orchestrator.py: EXCELLENT (0.037 MB)
+
+✅ __init__.py: CRITICAL (0.0 MB)
+    - Empty text file
+
+✅ example_usage.py: EXCELLENT (0.019 MB)
+
+✅ unified_quality_orchestrator.py: EXCELLENT (0.048 MB)
+
+✅ example_thresholds.json: EXCELLENT (0.0 MB)
+
+================================================================================
+End of Report
+================================================================================

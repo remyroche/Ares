@@ -1,0 +1,30 @@
+================================================================================
+DATA QUALITY ANALYSIS REPORT
+================================================================================
+
+FILE INFORMATION:
+----------------------------------------
+File Name: trade_data_20250822_092158.json
+File Path: trade_data_20250822_092158.json
+Context: Trade Data Analysis
+Analysis Time: 2025-09-02T17:24:08.032586
+
+FILE DETAILS:
+----------------------------------------
+Format: JSON
+Size: 0.003 MB
+
+QUALITY ASSESSMENT:
+----------------------------------------
+Overall Quality: EXCELLENT
+Quality Score: 100/100
+
+STRUCTURE ANALYSIS:
+----------------------------------------
+Type: JSON Object
+Key Count: 3
+Keys: trades, performance_metrics, model_performance
+
+================================================================================
+End of Report
+================================================================================

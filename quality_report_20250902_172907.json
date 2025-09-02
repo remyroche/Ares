@@ -1,0 +1,27 @@
+{
+  "file_path": "config/enhanced_reporting_config.yaml",
+  "file_name": "enhanced_reporting_config.yaml",
+  "context": "YAML Configuration",
+  "analysis_timestamp": "2025-09-02T17:29:07.085896",
+  "file_info": {
+    "size_bytes": 4668,
+    "size_mb": 0.004,
+    "format": "TEXT"
+  },
+  "structure_analysis": {
+    "total_characters": 4668,
+    "total_lines": 159,
+    "non_empty_lines": 137,
+    "average_line_length": 29.36,
+    "longest_line": 90,
+    "shortest_line": 0,
+    "encoding_issues": []
+  },
+  "quality_assessment": {
+    "overall_quality": "excellent",
+    "quality_score": 100,
+    "issues": []
+  },
+  "issues": [],
+  "recommendations": []
+}

@@ -18,7 +18,7 @@ from functools import wraps
 from typing import Dict, Any
 
 # Add the project root to the path
-project_root = Path(__file__).parent.parent
+project_root=Path(__file__).parent.parent
 sys.path.append(str(project_root))
 
 from src.utils.warning_symbols import warning
@@ -30,7 +30,7 @@ def _log_exceptions(logger_name: str, default_return):
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
-            logger = system_logger.getChild(logger_name)
+            logger=system_logger.getChild(logger_name)
             try:
                 return func(*args, **kwargs)
             except Exception as e:  # noqa: BLE001
@@ -56,19 +56,19 @@ def detect_price_corruption(df: pd.DataFrame) -> bool:
         return False
 
     # Check if we have price columns
-    price_cols = ["open", "high", "low", "close"]
+    price_cols=["open", "high", "low", "close"]
     if not all(col in df.columns for col in price_cols):
         return False
 
     # Calculate median price
-    median_price = float(df["close"].median())
+    median_price=float(df["close"].median())
 
     # For ETH, reasonable price range is $100-$10,000
     # If median is outside this range, data is corrupted
     return bool(median_price < 100 or median_price > 10000)
 
 
-def fix_corrupted_prices(df: pd.DataFrame, target_median: float = 3000.0) -> pd.DataFrame:
+def fix_corrupted_prices(df: pd.DataFrame, target_median: float=3000.0) -> pd.DataFrame:
     """
     Fix corrupted prices by scaling them to a reasonable range.
 
@@ -83,18 +83,18 @@ def fix_corrupted_prices(df: pd.DataFrame, target_median: float = 3000.0) -> pd.
         return df
 
     # Check if we have price columns
-    price_cols = ["open", "high", "low", "close"]
+    price_cols=["open", "high", "low", "close"]
     if not all(col in df.columns for col in price_cols):
         return df
 
-    current_median = float(df["close"].median())
+    current_median=float(df["close"].median())
 
     if current_median <= 0:
         print(f"Warning: Invalid median price: {current_median}")
         return df
 
     # Calculate scale factor
-    scale_factor = target_median / current_median
+    scale_factor=target_median / current_median
 
     print("Fixing corrupted prices:")
     print(f"  Current median: ${current_median:.2f}")
@@ -106,7 +106,7 @@ def fix_corrupted_prices(df: pd.DataFrame, target_median: float = 3000.0) -> pd.
         df[col] = df[col] * scale_factor
 
     # Verify the fix
-    new_median = float(df["close"].median())
+    new_median=float(df["close"].median())
     print(f"  New median: ${new_median:.2f}")
     print(f"  Price range: ${df['close'].min():.2f} to ${df['close'].max():.2f}")
 
@@ -126,20 +126,20 @@ def process_csv_file(csv_path: str, output_dir: str) -> bool:
         bool: True if successful, False otherwise
     """
     print(f"\nProcessing: {csv_path}")
-    csv_path_obj = Path(csv_path)
+    csv_path_obj=Path(csv_path)
     if not csv_path_obj.exists() or csv_path_obj.suffix.lower() != ".csv":
         print(warning(f"Invalid CSV path: {csv_path}"))
         return False
 
     # Load CSV file
-    df = pd.read_csv(csv_path)
+    df=pd.read_csv(csv_path)
     print(f"  Loaded {len(df)} rows")
     print(f"  Columns: {list(df.columns)}")
 
     # Check for price corruption
     if detect_price_corruption(df):
         print("  Detected corrupted prices, fixing...")
-        df = fix_corrupted_prices(df)
+        df=fix_corrupted_prices(df)
     else:
         print("  Prices appear to be valid")
 
@@ -156,7 +156,7 @@ def process_csv_file(csv_path: str, output_dir: str) -> bool:
     }
 
     # Create output filename
-    csv_name = csv_path_obj.stem
+    csv_name=csv_path_obj.stem
     pkl_name = f"{csv_name}_cached_data.pkl"
     pkl_path = os.path.join(output_dir, pkl_name)
 
@@ -177,13 +177,13 @@ def main() -> bool:
     print("=" * 50)
 
     # Check for CSV files in data_cache
-    data_cache_dir = "data_cache"
+    data_cache_dir="data_cache"
     if not os.path.exists(data_cache_dir):
         print(warning(f"Data cache directory not found: {data_cache_dir}"))
         return False
 
     # Find CSV files
-    csv_files = []
+    csv_files=[]
     for pattern in ["klines_*.csv", "aggtrades_*.csv", "futures_*.csv"]:
         csv_files.extend(Path(data_cache_dir).glob(pattern))
 
@@ -194,7 +194,7 @@ def main() -> bool:
     print(f"📁 Found {len(csv_files)} CSV files to process")
 
     # Process each CSV file
-    success_count = 0
+    success_count=0
     for csv_file in csv_files:
         if process_csv_file(str(csv_file), data_cache_dir):
             success_count += 1
@@ -202,7 +202,7 @@ def main() -> bool:
     print(f"\n✅ Successfully processed {success_count}/{len(csv_files)} files")
 
     # Also check for existing pickle files and fix them
-    pkl_files = list(Path(data_cache_dir).glob("*_cached_data.pkl"))
+    pkl_files=list(Path(data_cache_dir).glob("*_cached_data.pkl"))
     if pkl_files:
         print(f"\n🔍 Found {len(pkl_files)} existing pickle files")
         print(warning(" Consider regenerating these files with corrected data"))
@@ -210,9 +210,9 @@ def main() -> bool:
         for pkl_file in pkl_files:
             try:
                 with open(pkl_file, "rb") as f:
-                    data = pickle.load(f)
+                    data=pickle.load(f)
                 if "klines" in data and isinstance(data["klines"], pd.DataFrame):
-                    df = data["klines"]
+                    df=data["klines"]
                     if detect_price_corruption(df):
                         print(f"  ❌ {pkl_file.name}: Contains corrupted prices")
                     else:
@@ -225,6 +225,6 @@ def main() -> bool:
     return True
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     success = main()
     sys.exit(0 if success else 1)

@@ -21,7 +21,7 @@ import pandas as pd
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
-logger = logging.getLogger(__name__)
+logger=logging.getLogger(__name__)
 
 
 def fix_timeframe_data():
@@ -34,9 +34,9 @@ def fix_timeframe_data():
         return False
 
     # Look for existing klines files
-    klines_patterns = ["klines_*.parquet", "klines_*.csv"]
+    klines_patterns=["klines_*.parquet", "klines_*.csv"]
 
-    klines_files = []
+    klines_files=[]
     for pattern in klines_patterns:
         klines_files.extend(glob.glob(os.path.join("data_cache", pattern)))
 
@@ -47,12 +47,12 @@ def fix_timeframe_data():
     logger.info(f"📁 Found {len(klines_files)} klines files")
 
     # Find the most recent consolidated 1m file
-    consolidated_1m_patterns = [
+    consolidated_1m_patterns=[
         "klines_*_1m_consolidated.parquet",
         "klines_*_1m_consolidated.csv",
     ]
 
-    consolidated_1m_files = []
+    consolidated_1m_files=[]
     for pattern in consolidated_1m_patterns:
         consolidated_1m_files.extend(glob.glob(os.path.join("data_cache", pattern)))
 
@@ -61,15 +61,15 @@ def fix_timeframe_data():
         return False
 
     # Use the most recent consolidated 1m file
-    latest_1m_file = max(consolidated_1m_files, key=os.path.getctime)
+    latest_1m_file=max(consolidated_1m_files, key=os.path.getctime)
     logger.info(f"📁 Using 1m data from: {latest_1m_file}")
 
     try:
         # Load the 1m data
         if latest_1m_file.endswith(".parquet"):
-            df_1m = pd.read_parquet(latest_1m_file)
+            df_1m=pd.read_parquet(latest_1m_file)
         else:
-            df_1m = pd.read_csv(latest_1m_file)
+            df_1m=pd.read_csv(latest_1m_file)
 
         # Ensure we have timestamp column
         if "timestamp" not in df_1m.columns:
@@ -78,17 +78,17 @@ def fix_timeframe_data():
 
         # Convert timestamp to datetime
         df_1m["timestamp"] = pd.to_datetime(df_1m["timestamp"])
-        df_1m = df_1m.set_index("timestamp")
+        df_1m=df_1m.set_index("timestamp")
 
         # Validate timestamps
-        if df_1m.index.min().year == 1970:
+        if df_1m.index.min().year== 1970:
             logger.error("❌ 1m data has corrupted 1970 timestamps")
             return False
 
         logger.info(f"✅ Loaded 1m data: {len(df_1m)} records")
         logger.info(f"📅 Date range: {df_1m.index.min()} to {df_1m.index.max()}")
 
-        # Create timeframe files for 5m = 15m, 30m = 1h, 4h = 1d
+        # Create timeframe files for 5m=15m, 30m=1h, 4h=1d
         timeframes = ["5m", "15m", "30m", "1h", "4h", "1d"]
 
         for timeframe in timeframes:
@@ -96,7 +96,7 @@ def fix_timeframe_data():
 
             try:
                 # Resample 1m data to target timeframe
-                if timeframe == "5m":
+                if timeframe== "5m":
                     df_resampled = (
                         df_1m.resample("5min")
                         .agg(
@@ -110,7 +110,7 @@ def fix_timeframe_data():
                         )
                         .dropna()
                     )
-                elif timeframe == "15m":
+                elif timeframe== "15m":
                     df_resampled = (
                         df_1m.resample("15min")
                         .agg(
@@ -124,7 +124,7 @@ def fix_timeframe_data():
                         )
                         .dropna()
                     )
-                elif timeframe == "30m":
+                elif timeframe== "30m":
                     df_resampled = (
                         df_1m.resample("30min")
                         .agg(
@@ -138,7 +138,7 @@ def fix_timeframe_data():
                         )
                         .dropna()
                     )
-                elif timeframe == "1h":
+                elif timeframe== "1h":
                     df_resampled = (
                         df_1m.resample("1h")
                         .agg(
@@ -152,7 +152,7 @@ def fix_timeframe_data():
                         )
                         .dropna()
                     )
-                elif timeframe == "4h":
+                elif timeframe== "4h":
                     df_resampled = (
                         df_1m.resample("4h")
                         .agg(
@@ -166,7 +166,7 @@ def fix_timeframe_data():
                         )
                         .dropna()
                     )
-                elif timeframe == "1d":
+                elif timeframe== "1d":
                     df_resampled = (
                         df_1m.resample("1D")
                         .agg(
@@ -182,10 +182,10 @@ def fix_timeframe_data():
                     )
 
                 # Reset index to make timestamp a column
-                df_resampled = df_resampled.reset_index()
+                df_resampled=df_resampled.reset_index()
 
                 # Save to file
-                output_path = f"data_cache/klines_BINANCE_ETHUSDT_{timeframe}_consolidated.parquet"
+                output_path=f"data_cache/klines_BINANCE_ETHUSDT_{timeframe}_consolidated.parquet"
                 df_resampled.to_parquet(output_path, index=False)
 
                 logger.info(f"✅ Created {timeframe} timeframe file: {output_path}")
@@ -210,7 +210,7 @@ def validate_timeframe_files():
     logger.info("🔍 Validating timeframe files...")
 
     # Check for timeframe files
-    timeframe_patterns = [
+    timeframe_patterns=[
         "klines_*_5m_consolidated.parquet",
         "klines_*_15m_consolidated.parquet",
         "klines_*_30m_consolidated.parquet",
@@ -219,14 +219,14 @@ def validate_timeframe_files():
         "klines_*_1d_consolidated.parquet",
     ]
 
-    valid_files = []
+    valid_files=[]
     corrupted_files = []
 
     for pattern in timeframe_patterns:
         files = glob.glob(os.path.join("data_cache", pattern))
         for file_path in files:
             try:
-                df = pd.read_parquet(file_path)
+                df=pd.read_parquet(file_path)
 
                 if "timestamp" not in df.columns:
                     logger.warning(
@@ -239,7 +239,7 @@ def validate_timeframe_files():
                 df["timestamp"] = pd.to_datetime(df["timestamp"])
 
                 # Check for 1970 timestamps
-                if df["timestamp"].min().year == 1970:
+                if df["timestamp"].min().year== 1970:
                     logger.error(
                         f"❌ {os.path.basename(file_path)} has corrupted 1970 timestamps"
                     )
@@ -265,7 +265,7 @@ def validate_timeframe_files():
                 corrupted_files.append(file_path)
 
     logger.info(
-        f"📊 Validation results: {len(valid_files)} valid files = {len(corrupted_files)} corrupted files"
+        f"📊 Validation results: {len(valid_files)} valid files={len(corrupted_files)} corrupted files"
     )
 
     if corrupted_files:
@@ -281,7 +281,7 @@ def cleanup_corrupted_files():
     logger.info("🧹 Cleaning up corrupted timeframe files...")
 
     # Look for files with 1970 timestamps
-    timeframe_patterns = [
+    timeframe_patterns=[
         "klines_*_5m_consolidated.parquet",
         "klines_*_15m_consolidated.parquet",
         "klines_*_30m_consolidated.parquet",
@@ -290,19 +290,19 @@ def cleanup_corrupted_files():
         "klines_*_1d_consolidated.parquet",
     ]
 
-    cleaned_files = []
+    cleaned_files=[]
 
     for pattern in timeframe_patterns:
         files = glob.glob(os.path.join("data_cache", pattern))
         for file_path in files:
             try:
-                df = pd.read_parquet(file_path)
+                df=pd.read_parquet(file_path)
 
                 if "timestamp" in df.columns:
                     df["timestamp"] = pd.to_datetime(df["timestamp"])
 
                     # Check for 1970 timestamps
-                    if df["timestamp"].min().year == 1970:
+                    if df["timestamp"].min().year== 1970:
                         logger.warning(
                             f"🗑️ Removing corrupted file: {os.path.basename(file_path)}"
                         )
@@ -345,5 +345,5 @@ def main():
     logger.info("✅ Multi-timeframe data fixes completed!")
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     main()

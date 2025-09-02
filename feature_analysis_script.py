@@ -5,17 +5,18 @@ Analyzes detailed validation reports to provide actionable insights
 """
 
 from collections import defaultdict
-from typing import Any, import argparse
+from typing import Any
+import argparse
 import json
 
 
-def analyze_validation_report(report_file: str) -> dict[str , Any]:
+def analyze_validation_report(report_file: str) -> dict[str, Any]:
     """Analyze a detailed validation report"""
 
     with open(report_file) as f:
-        report = json.load(f)
+        report=json.load(f)
 
-    analysis = {
+    analysis={
         "summary": report["validation_summary"],
         "issue_breakdown": {},
         "problematic_features": {},
@@ -23,7 +24,7 @@ def analyze_validation_report(report_file: str) -> dict[str , Any]:
     }
 
     # Analyze issues by category
-    for issue_type , issues in report["issue_categories"].items():
+    for issue_type, issues in report["issue_categories"].items():
         analysis["issue_breakdown"][issue_type] = {
             "count": len(issues),
             "features": [issue["feature"] for issue in issues],
@@ -31,11 +32,11 @@ def analyze_validation_report(report_file: str) -> dict[str , Any]:
         }
 
     # Identify problematic features
-    feature_analysis = report["feature_analysis"]
+    feature_analysis=report["feature_analysis"]
     problematic = defaultdict(list)
 
-    for feature , analysis_data in feature_analysis.items():
-        issues = []
+    for feature, analysis_data in feature_analysis.items():
+        issues=[]
 
         # Check missing values
         if analysis_data["missing_percentage"] > 50:
@@ -49,7 +50,7 @@ def analyze_validation_report(report_file: str) -> dict[str , Any]:
 
         # Check infinite values
         if "infinite_count" in analysis_data and analysis_data["infinite_count"] > 0:
-            inf_pct = (
+            inf_pct=(
                 analysis_data["infinite_count"] / analysis_data["total_values"]
             ) * 100
             if inf_pct > 5:
@@ -113,7 +114,7 @@ def analyze_validation_report(report_file: str) -> dict[str , Any]:
     return analysis
 
 
-def print_analysis(analysis: dict[str , Any]):
+def print_analysis(analysis: dict[str, Any]):
     """Print the analysis results"""
 
     print("=" * 80)
@@ -121,7 +122,7 @@ def print_analysis(analysis: dict[str , Any]):
     print("=" * 80)
 
     # Summary
-    summary = analysis["summary"]
+    summary=analysis["summary"]
     print("\n📊 VALIDATION SUMMARY:")
     print(f"  Total Issues: {summary['total_issues']}")
     print(f"  Critical: {summary['critical_issues']}")
@@ -131,7 +132,7 @@ def print_analysis(analysis: dict[str , Any]):
 
     # Issue breakdown
     print("\n🔍 ISSUE BREAKDOWN:")
-    for issue_type , details in analysis["issue_breakdown"].items():
+    for issue_type, details in analysis["issue_breakdown"].items():
         print(f"  {issue_type}: {details['count']} issues")
         if details["count"] <= 10:
             for feature in details["features"]:
@@ -141,7 +142,7 @@ def print_analysis(analysis: dict[str , Any]):
 
     # Problematic features
     print("\n⚠️ PROBLEMATIC FEATURES:")
-    for feature , issues in analysis["problematic_features"].items():
+    for feature, issues in analysis["problematic_features"].items():
         print(f"  {feature}: {', '.join(issues)}")
 
     # Recommendations
@@ -152,17 +153,17 @@ def print_analysis(analysis: dict[str , Any]):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Analyze detailed validation report")
+    parser=argparse.ArgumentParser(description="Analyze detailed validation report")
     parser.add_argument(
         "report_file",
         help="Path to the detailed validation report JSON file",
     )
 
-    args = parser.parse_args()
+    args=parser.parse_args()
 
-    analysis = analyze_validation_report(args.report_file)
+    analysis=analyze_validation_report(args.report_file)
     print_analysis(analysis)
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     main()

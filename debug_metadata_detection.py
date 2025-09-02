@@ -12,16 +12,14 @@ def test_metadata_detection(file_path: Path):
     
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+            content=f.read()
         
         # Extract step number
-        step_match = re.search(r'step(\d+(?:_\d+)?)', file_path.name)
+        step_match=re.search(r'step(\d+(?:_\d+)?)', file_path.name)
         if not step_match:
             print("❌ Could not extract step number")
-            return
-        
-        step_num = step_match.group(1)
-        method_name = f"_log_step{step_num}_artifacts_and_report"
+            return step_num, step_match.group(1)
+        method_name=f"_log_step{step_num}_artifacts_and_report"
         
         print(f"   Looking for method: {method_name}")
         
@@ -30,49 +28,49 @@ def test_metadata_detection(file_path: Path):
             return
         
         # Find method content
-        method_start = content.find(method_name)
-        if method_start == -1:
+        method_start=content.find(method_name)
+        if method_start== -1:
             print("❌ Could not find method start")
             return
         
         # Find the opening brace of the method
-        brace_start = content.find(":", method_start)
-        if brace_start == -1:
+        brace_start=content.find(":", method_start)
+        if brace_start== -1:
             print("❌ Could not find method opening brace")
             return
         
         # Find method end by looking for the next method or end of file
         # Look for the next method that's at the same indentation level
-        lines = content.split('\n')
-        method_start_line = content[:method_start].count('\n')
+        lines=content.split('\n')
+        method_start_line=content[:method_start].count('\n')
         
-        method_end = len(content)
+        method_end=len(content)
         for i in range(method_start_line + 1, len(lines)):
-            line = lines[i]
+            line=lines[i]
             if line.strip().startswith('def ') and line.strip() != method_name:
                 # Found next method, calculate end position
-                method_end = content.find(line, method_start)
+                method_end=content.find(line, method_start)
                 break
         
         # Get the entire method content from the method name to the end
-        method_content = content[method_start:method_end]
+        method_content=content[method_start:method_end]
         
         print(f"   Method content length: {len(method_content)} characters")
         print(f"   First 200 characters: {method_content[:200]}")
         print(f"   Last 200 characters: {method_content[-200:]}")
         
         # Test metadata field detection
-        metadata_fields = ["asset", "lookback_period", "project_version", "date"]
+        metadata_fields=["asset", "lookback_period", "project_version", "date"]
         
         for field in metadata_fields:
             # Look for different patterns
-            patterns = [
+            patterns=[
                 f'"{field}"',
                 f"'{field}'",
                 field
             ]
             
-            found = False
+            found=False
             for pattern in patterns:
                 if pattern in method_content:
                     found = True
@@ -83,7 +81,7 @@ def test_metadata_detection(file_path: Path):
                 print(f"   ❌ Not found: {field}")
         
         # Test specific patterns we added
-        specific_patterns = [
+        specific_patterns=[
             '"asset": symbol',
             'lookback_period": self.config.get("lookback_days"',
             'project_version": self.config.get("project_version"',
@@ -102,21 +100,21 @@ def test_metadata_detection(file_path: Path):
 
 def main():
     """Main function to test metadata detection."""
-    steps_dir = Path("src/training/steps")
+    steps_dir=Path("src/training/steps")
     
     # Test a few files
-    test_files = [
+    test_files=[
         "step2_data_reading.py",
         "step8_regime_data_splitting.py",
         "step1_data_collection.py"
     ]
     
     for test_file in test_files:
-        file_path = steps_dir / test_file
+        file_path=steps_dir / test_file
         if file_path.exists():
             test_metadata_detection(file_path)
         else:
             print(f"❌ File not found: {test_file}")
 
-if __name__ == "__main__":
+if __name__== "__main__":
     main()

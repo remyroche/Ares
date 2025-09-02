@@ -31,7 +31,7 @@ from src.config.modular_config import (
 )
 
 # Re-export all the functions and classes for backward compatibility
-__all__ = [
+__all__=[
     "get_complete_config",
     "get_environment_config",
     "get_system_config_section",
@@ -76,7 +76,7 @@ def get_environment_settings():
 class DatabaseConfig:
     """Database configuration settings."""
 
-    host: str = "localhost"
+    host: str="localhost"
     port: int = 5432
     database: str = "ares_trading"
     username: str = "postgres"
@@ -112,7 +112,7 @@ class ModelTrainingConfig:
 
     def __post_init__(self):
         if self.enhanced_lm_optimizer is None:
-            self.enhanced_lm_optimizer = {
+            self.enhanced_lm_optimizer={
                 "feature_selection": {
                     "enable": True, "methods": ["mutual_info", "lasso", "random_forest", "shap"],
                     "target_features": {"step6": 80, "step6_5": 100, "step9": 90},
@@ -155,7 +155,7 @@ class ModelTrainingConfig:
 class RiskConfig:
     """Risk management configuration settings."""
 
-    max_position_size: float = 0.1
+    max_position_size: float=0.1
     max_drawdown: float = 0.15
     stop_loss_pct: float = 0.05
     take_profit_pct: float = 0.1
@@ -179,10 +179,10 @@ class ConfigurationManager:
             config: Configuration dictionary
         """
         self.config: dict[str, Any] = config
-        self.logger = system_logger.getChild("ConfigurationManager")
+        self.logger=system_logger.getChild("ConfigurationManager")
 
         # Configuration manager state
-        self.is_initialized: bool = False
+        self.is_initialized: bool=False
         self.config_history: list[dict[str, Any]] = []
         self.config_sections: dict[str, Any] = {}
 
@@ -191,7 +191,7 @@ class ConfigurationManager:
             "config_manager",
             {},
         )
-        self.max_config_history: int = self.config_manager_config.get(
+        self.max_config_history: int=self.config_manager_config.get(
             "max_config_history",
             100,
         )
@@ -211,7 +211,7 @@ class ConfigurationManager:
         Initialize configuration manager.
 
         Returns:
-            bool: True if initialization successful = False otherwise
+            bool: True if initialization successful=False otherwise
         """
         try:
             self.logger.info("Initializing Configuration Manager...")
@@ -230,7 +230,7 @@ class ConfigurationManager:
             # Initialize configuration service
             await self._initialize_config_service()
 
-            self.is_initialized = True
+            self.is_initialized=True
             self.logger.info("✅ Configuration Manager initialized successfully")
             return True
 
@@ -281,7 +281,7 @@ class ConfigurationManager:
         Validate configuration manager configuration.
 
         Returns:
-            bool: True if configuration is valid = False otherwise
+            bool: True if configuration is valid=False otherwise
         """
         try:
             # Validate configuration manager specific settings
@@ -308,7 +308,7 @@ class ConfigurationManager:
         """Initialize configuration sections."""
         try:
             # Initialize all configuration sections
-            self.config_sections = {
+            self.config_sections={
                 "environment": get_environment_config(),
                 "system": get_system_config_section(),
                 "trading": get_trading_config_section(),
@@ -348,7 +348,7 @@ class ConfigurationManager:
         Run the configuration manager.
 
         Returns:
-            bool: True if successful = False otherwise
+            bool: True if successful=False otherwise
         """
         try:
             self.logger.info("🚀 Starting Configuration Manager...")
@@ -377,7 +377,7 @@ class ConfigurationManager:
         """Update configuration."""
         try:
             # Add to configuration history
-            history_entry = {
+            history_entry={
                 "timestamp": "2024-01-01T00:00:00",  # Placeholder timestamp
                 "config_sections": self.config_sections.copy(),
             }
@@ -386,7 +386,7 @@ class ConfigurationManager:
 
             # Limit history size
             if len(self.config_history) > self.max_config_history:
-                self.config_history = self.config_history[-self.max_config_history :]
+                self.config_history=self.config_history[-self.max_config_history :]
 
             self.logger.info(
                 f"📁 Updated configuration (history: {len(self.config_history)} entries)",
@@ -452,7 +452,7 @@ class ConfigurationManager:
         """Stop the configuration manager and cleanup resources."""
         try:
             self.logger.info("🛑 Stopping Configuration Manager...")
-            self.is_initialized = False
+            self.is_initialized=False
             self.logger.info("✅ Configuration Manager stopped successfully")
 
         except Exception:
@@ -465,11 +465,11 @@ class ConfigurationManager:
             "history_count": len(self.config_history),
         }
 
-    def get_history(self, limit: int | None = None) -> list[dict[str, Any]]:
+    def get_history(self, limit: int | None=None) -> list[dict[str, Any]]:
         """Get configuration history."""
-        history = self.config_history.copy()
+        history=self.config_history.copy()
         if limit:
-            history = history[-limit:]
+            history=history[-limit:]
         return history
 
     def get_config_sections(self) -> dict[str, Any]:
@@ -523,7 +523,7 @@ class ConfigurationManager:
     default_return=None, context="configuration manager setup",
 )
 async def setup_configuration_manager(
-    config: dict[str, Any] | None = None,
+    config: dict[str, Any] | None=None,
 ) -> ConfigurationManager | None:
     """
     Setup and return a configured ConfigurationManager instance.
@@ -536,9 +536,9 @@ async def setup_configuration_manager(
     """
     try:
         if config is None:
-            config = get_complete_config()
+            config=get_complete_config()
 
-        manager = ConfigurationManager(config)
+        manager=ConfigurationManager(config)
         if await manager.initialize():
             return manager
         return None

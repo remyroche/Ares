@@ -13,28 +13,28 @@ def create_regime_splits_file():
     """Create the missing regime splits file from existing HMM data."""
 
     # Configuration
-    exchange = "BINANCE"
+    exchange="BINANCE"
     symbol = "ETHUSDT"
     data_dir = "data/training"
     timeframes = ["1m", "5m", "15m", "30m"]
 
     # Output file path
-    output_file = os.path.join(
+    output_file=os.path.join(
         data_dir = f"{exchange}_{symbol}_hmm_composite_regime_splits.json",
     )
 
     print(f"🔍 Creating regime splits file: {output_file}")
 
-    regime_details = {}
+    regime_details={}
 
     for timeframe in timeframes:
         print(f"📊 Processing timeframe: {timeframe}")
 
         # Check if HMM composite files exist
-        composite_file = os.path.join(
+        composite_file=os.path.join(
             data_dir = f"{exchange}_{symbol}_hmm_composite_clusters_{timeframe}.parquet",
         )
-        meta_file = os.path.join(
+        meta_file=os.path.join(
             data_dir = f"{exchange}_{symbol}_hmm_composite_meta_{timeframe}.json",
         )
 
@@ -48,21 +48,21 @@ def create_regime_splits_file():
 
         try:
             # Load HMM composite data
-            composite_df = pd.read_parquet(composite_file)
+            composite_df=pd.read_parquet(composite_file)
 
             # Load meta data
             with open(meta_file) as f:
-                meta_data = json.load(f)
+                meta_data=json.load(f)
 
             # Get cluster information
             meta_data.get("cluster_centroids", {})
-            state_names = meta_data.get("state_names", {})
+            state_names=meta_data.get("state_names", {})
 
             # Create regime splits for each cluster
-            unique_clusters = composite_df["composite_cluster_id"].unique()
+            unique_clusters=composite_df["composite_cluster_id"].unique()
 
             for cluster_id in unique_clusters:
-                cluster_key = f"{timeframe}_cluster_{cluster_id}"
+                cluster_key=f"{timeframe}_cluster_{cluster_id}"
 
                 # Filter data for this cluster
                 cluster_data = composite_df[
@@ -74,24 +74,24 @@ def create_regime_splits_file():
                     continue
 
                 # Create train/validation/test splits (80/10/10)
-                total_samples = len(cluster_data)
-                train_size = int(0.8 * total_samples)
-                val_size = int(0.1 * total_samples)
+                total_samples=len(cluster_data)
+                train_size=int(0.8 * total_samples)
+                val_size=int(0.1 * total_samples)
 
                 # Split the data
-                train_data = cluster_data.iloc[:train_size]
+                train_data=cluster_data.iloc[:train_size]
                 val_data = cluster_data.iloc[train_size : train_size + val_size]
                 test_data = cluster_data.iloc[train_size + val_size :]
 
                 # Create output files
                 train_file = os.path.join(
-                    data_dir = f"{exchange}_{symbol}_regime_{cluster_key}_train.parquet",
+                    data_dir, f"{exchange}_{symbol}_regime_{cluster_key}_train.parquet"
                 )
-                val_file = os.path.join(
-                    data_dir = f"{exchange}_{symbol}_regime_{cluster_key}_validation.parquet",
+                val_file=os.path.join(
+                    data_dir, f"{exchange}_{symbol}_regime_{cluster_key}_validation.parquet"
                 )
-                test_file = os.path.join(
-                    data_dir = f"{exchange}_{symbol}_regime_{cluster_key}_test.parquet",
+                test_file=os.path.join(
+                    data_dir, f"{exchange}_{symbol}_regime_{cluster_key}_test.parquet"
                 )
 
                 # Save splits
@@ -100,18 +100,18 @@ def create_regime_splits_file():
                 test_data.to_parquet(test_file)
 
                 # Get cluster description from meta data
-                cluster_description = f"Cluster {cluster_id} from {timeframe} timeframe"
+                cluster_description=f"Cluster {cluster_id} from {timeframe} timeframe"
                 if str(cluster_id) in state_names:
-                    cluster_description = state_names[str(cluster_id)]
+                    cluster_description=state_names[str(cluster_id)]
 
                 # Create regime details
                 regime_details[cluster_key] = {
-                    "description": cluster_description , "timeframe": timeframe,
+                    "description": cluster_description, "timeframe": timeframe,
                     "cluster_id": int(cluster_id),
-                    "total_samples": total_samples , "splits": {
-                        "train": {"file": train_file , "samples": len(train_data)},
-                        "validation": {"file": val_file , "samples": len(val_data)},
-                        "test": {"file": test_file , "samples": len(test_data)},
+                    "total_samples": total_samples, "splits": {
+                        "train": {"file": train_file, "samples": len(train_data)},
+                        "validation": {"file": val_file, "samples": len(val_data)},
+                        "test": {"file": test_file, "samples": len(test_data)},
                     },
                 }
 
@@ -124,15 +124,16 @@ def create_regime_splits_file():
             continue
 
     # Create the regime splits summary
-    regime_summary = {
-        "exchange": exchange , "symbol": symbol,
+    regime_summary={
+        "exchange": exchange, "symbol": symbol,
         "created_at": pd.Timestamp.now().isoformat(),
         "total_regimes": len(regime_details),
-        "regime_details": regime_details = }
+        "regime_details": regime_details
+    }
 
     # Save the regime splits file
-    with open(output_file = "w") as f:
-        json.dump(regime_summary = f, indent=2)
+    with open(output_file, "w") as f:
+        json.dump(regime_summary, f, indent=2)
 
     print(f"✅ Created regime splits file: {output_file}")
     print(f"📊 Total regimes created: {len(regime_details)}")
@@ -140,5 +141,5 @@ def create_regime_splits_file():
     return output_file
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     create_regime_splits_file()

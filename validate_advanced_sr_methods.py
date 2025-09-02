@@ -22,7 +22,7 @@ def check_file_syntax(file_path: str) -> bool:
 
 def find_advanced_sr_methods(file_path: str) -> dict[str, list[int]]:
     """Find advanced S/R method definitions in the file."""
-    advanced_methods = {
+    advanced_methods={
         'calculate_fibonacci_levels': [],
         'detect_elliott_wave_levels': [],
         'analyze_order_flow_levels': [],
@@ -35,8 +35,8 @@ def find_advanced_sr_methods(file_path: str) -> dict[str, list[int]]:
     
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
-            lines = content.split('\n')
+            content=f.read()
+            lines=content.split('\n')
             
         for line_num, line in enumerate(lines, 1):
             for method in advanced_methods.keys():
@@ -50,11 +50,11 @@ def find_advanced_sr_methods(file_path: str) -> dict[str, list[int]]:
 
 def check_method_implementation(file_path: str, method_name: str) -> dict[str, bool]:
     """Check if a method is properly implemented."""
-    implementation_checks = {}
+    implementation_checks={}
     
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+            content=f.read()
             
         # Check for method definition
         if f"async def {method_name}" in content or f"def {method_name}" in content:
@@ -93,14 +93,14 @@ def check_method_implementation(file_path: str, method_name: str) -> dict[str, b
 
 def check_integration_with_existing_methods(file_path: str) -> dict[str, bool]:
     """Check if advanced methods are integrated with existing methods."""
-    integration_checks = {}
+    integration_checks={}
     
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+            content=f.read()
             
         # Check if advanced methods are called in get_sr_context
-        if "fibonacci_levels = await self.calculate_fibonacci_levels" in content:
+        if "fibonacci_levels=await self.calculate_fibonacci_levels" in content:
             integration_checks["fibonacci_integrated"] = True
         else:
             integration_checks["fibonacci_integrated"] = False
@@ -141,7 +141,7 @@ def validate_advanced_sr_methods():
     print("🚀 Validating Advanced S/R Methods Implementation")
     print("=" * 70)
     
-    sr_file = "src/tactician/sr_breakout_predictor.py"
+    sr_file="src/tactician/sr_breakout_predictor.py"
     
     if not Path(sr_file).exists():
         print(f"❌ S/R predictor file not found: {sr_file}")
@@ -156,9 +156,9 @@ def validate_advanced_sr_methods():
     
     # Find advanced methods
     print("\n🔍 Finding advanced S/R methods...")
-    advanced_methods = find_advanced_sr_methods(sr_file)
+    advanced_methods=find_advanced_sr_methods(sr_file)
     
-    found_methods = []
+    found_methods=[]
     for method, lines in advanced_methods.items():
         if lines:
             found_methods.append(method)
@@ -172,23 +172,23 @@ def validate_advanced_sr_methods():
     
     # Check implementation quality
     print("\n🔧 Checking implementation quality...")
-    implementation_results = {}
+    implementation_results={}
     for method in found_methods:
         checks = check_method_implementation(sr_file, method)
         implementation_results[method] = checks
         
         print(f"\n📊 {method}:")
         for check_name, result in checks.items():
-            status = "✅" if result else "❌"
+            status="✅" if result else "❌"
             print(f"   {status} {check_name}: {result}")
     
     # Check integration
     print("\n🔗 Checking integration with existing methods...")
-    integration_checks = check_integration_with_existing_methods(sr_file)
+    integration_checks=check_integration_with_existing_methods(sr_file)
     
     print("\n📊 Integration Status:")
     for check_name, result in integration_checks.items():
-        status = "✅" if result else "❌"
+        status="✅" if result else "❌"
         print(f"   {status} {check_name}: {result}")
     
     # Summary
@@ -196,8 +196,8 @@ def validate_advanced_sr_methods():
     print("📊 ADVANCED S/R METHODS VALIDATION SUMMARY")
     print("=" * 70)
     
-    total_methods = len(advanced_methods)
-    found_count = len(found_methods)
+    total_methods=len(advanced_methods)
+    found_count=len(found_methods)
     
     print(f"Total Advanced Methods: {total_methods}")
     print(f"Methods Found: {found_count}")
@@ -205,7 +205,7 @@ def validate_advanced_sr_methods():
     print(f"Success Rate: {found_count/total_methods*100:.1f}%")
     
     # Implementation quality summary
-    total_checks = 0
+    total_checks=0
     passed_checks = 0
     
     for method, checks in implementation_results.items():
@@ -221,15 +221,15 @@ def validate_advanced_sr_methods():
         print(f"Quality Score: {passed_checks/total_checks*100:.1f}%")
     
     # Integration summary
-    integration_passed = sum(integration_checks.values())
-    integration_total = len(integration_checks)
+    integration_passed=sum(integration_checks.values())
+    integration_total=len(integration_checks)
     
     print(f"\nIntegration Status:")
     print(f"Integration Checks: {integration_passed}/{integration_total}")
     print(f"Integration Score: {integration_passed/integration_total*100:.1f}%")
     
     # Overall result
-    if found_count == total_methods and integration_passed == integration_total:
+    if found_count== total_methods and integration_passed == integration_total:
         print("\n🎉 ALL ADVANCED S/R METHODS VALIDATIONS PASSED!")
         print("The advanced S/R methods are properly implemented and integrated.")
         return True
@@ -243,14 +243,14 @@ def analyze_method_details():
     print("\n🔍 Advanced Methods Analysis")
     print("=" * 50)
     
-    sr_file = "src/tactician/sr_breakout_predictor.py"
+    sr_file="src/tactician/sr_breakout_predictor.py"
     
     try:
         with open(sr_file, 'r', encoding='utf-8') as f:
-            content = f.read()
+            content=f.read()
             
         # Check for specific features
-        features = {
+        features={
             "Fibonacci Levels": "calculate_fibonacci_levels" in content,
             "Elliott Wave Analysis": "detect_elliott_wave_levels" in content,
             "Order Flow Analysis": "analyze_order_flow_levels" in content,
@@ -263,13 +263,13 @@ def analyze_method_details():
         
         print("\n📋 Feature Analysis:")
         for feature, implemented in features.items():
-            status = "✅" if implemented else "❌"
+            status="✅" if implemented else "❌"
             print(f"   {status} {feature}: {'Implemented' if implemented else 'Not Found'}")
             
     except Exception as e:
         print(f"❌ Error analyzing method details: {e}")
 
-if __name__ == "__main__":
+if __name__== "__main__":
     # Validate advanced methods
     validation_passed = validate_advanced_sr_methods()
     

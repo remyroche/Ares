@@ -13,11 +13,11 @@ def analyze_threshold_impact(log_file_path: str) -> dict[str, Any]:
     """Analyze the impact of strict thresholds on validation results"""
 
     # New thresholds
-    NEW_WARNING_THRESHOLD = 0.001  # 0.1%
+    NEW_WARNING_THRESHOLD=0.001  # 0.1%
     NEW_ERROR_THRESHOLD = 0.01  # 1%
 
     # Old thresholds (from the report)
-    OLD_WARNING_THRESHOLD = 0.1  # 10%
+    OLD_WARNING_THRESHOLD=0.1  # 10%
     OLD_ERROR_THRESHOLD = 0.5  # 50%
 
     analysis = {
@@ -35,7 +35,7 @@ def analyze_threshold_impact(log_file_path: str) -> dict[str, Any]:
     }
 
     # Calculate impact
-    warning_impact = OLD_WARNING_THRESHOLD / NEW_WARNING_THRESHOLD  # 100x more strict
+    warning_impact=OLD_WARNING_THRESHOLD / NEW_WARNING_THRESHOLD  # 100x more strict
     error_impact = OLD_ERROR_THRESHOLD / NEW_ERROR_THRESHOLD  # 50x more strict
 
     analysis["recommendations"] = [
@@ -92,7 +92,7 @@ def create_feature_specific_thresholds():
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Analyze strict validation thresholds")
+    parser=argparse.ArgumentParser(description="Analyze strict validation thresholds")
     parser.add_argument("log_file", help="Path to the log file")
     parser.add_argument(
         "--output",
@@ -100,13 +100,13 @@ def main():
         help="Output file for analysis",
     )
 
-    args = parser.parse_args()
+    args=parser.parse_args()
 
     # Analyze threshold impact
-    analysis = analyze_threshold_impact(args.log_file)
+    analysis=analyze_threshold_impact(args.log_file)
 
     # Get feature-specific thresholds
-    feature_thresholds = create_feature_specific_thresholds()
+    feature_thresholds=create_feature_specific_thresholds()
 
     # Write analysis to file
     with open(args.output, "w") as f:
@@ -145,5 +145,5 @@ def main():
     print(f"Analysis written to {args.output}")
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     main()

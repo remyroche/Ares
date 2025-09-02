@@ -10,7 +10,7 @@ from celery import Celery
 from celery.schedules import crontab
 
 # Configure Celery
-app = Celery("ares_tasks", broker="redis://localhost:6379/0")
+app=Celery("ares_tasks", broker="redis://localhost:6379/0")
 
 @app.task
 def run_trading_bot_instance(symbol: str, exchange: str) -> None:
@@ -24,7 +24,7 @@ def run_trading_bot_instance(symbol: str, exchange: str) -> None:
     os.environ["ARES_SYMBOL"] = symbol
     os.environ["ARES_EXCHANGE"] = exchange
 
-    pipeline = AresPipeline()
+    pipeline=AresPipeline()
     # The pipeline's run_async method will be called by the worker
     # We assume the pipeline is designed to run indefinitely.
 
@@ -39,15 +39,15 @@ def run_monthly_training_pipeline() -> None:
     try:
         async def run_training():
             # Initialize database manager
-            db_manager = SQLiteManager({})
+            db_manager=SQLiteManager({})
             await db_manager.initialize()
 
             # Initialize enhanced training manager
-            training_manager = EnhancedTrainingManager(db_manager)
+            training_manager=EnhancedTrainingManager(db_manager)
 
             # Get current trading symbol and exchange
-            env_settings = get_environment_settings()
-            symbol = env_settings.trade_symbol
+            env_settings=get_environment_settings()
+            symbol=env_settings.trade_symbol
             exchange_name = env_settings.exchange_name
 
             # Run full training pipeline

@@ -27,29 +27,29 @@ from src.training.enhanced_training_manager import EnhancedTrainingManager
 from src.utils.warning_symbols import error, failed
 
 # Add the project root to the Python path
-project_root = Path(__file__).parent.parent
+project_root=Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 
 async def main() -> None:
     """Main function to run the resumed training pipeline."""
     setup_logging()
-    logger = system_logger.getChild("ResumeTraining")
+    logger=system_logger.getChild("ResumeTraining")
 
     if len(sys.argv) < 2:
         print(error("A symbol argument is required."))
         print(__doc__)
         sys.exit(1)
 
-    symbol = sys.argv[1].upper()
-    exchange = sys.argv[2].upper() if len(sys.argv) > 2 else "BINANCE"
+    symbol=sys.argv[1].upper()
+    exchange=sys.argv[2].upper() if len(sys.argv) > 2 else "BINANCE"
 
     logger.info(f"Attempting to resume training for {symbol} on {exchange}...")
 
     # Step 1: Consolidate and update data cache before resuming.
     # This ensures the latest data is downloaded and the consolidated .pkl file is ready.
     logger.info("Step 1: Consolidating and updating data cache before resuming...")
-    data_dir = "data_cache"
+    data_dir="data_cache"
 
     # Run data collection step WITHOUT forcing rerun.
     # step1_data_collection.run_step returns a bool indicating success.
@@ -69,15 +69,15 @@ async def main() -> None:
         "Data consolidation successful. Proceeding with training pipeline from Step 2.",
     )
 
-    db_manager: SQLiteManager | None = None
+    db_manager: SQLiteManager | None=None
     try:
         db_manager = SQLiteManager(CONFIG)
         await db_manager.initialize()
 
-        training_manager = EnhancedTrainingManager(db_manager)
+        training_manager=EnhancedTrainingManager(db_manager)
 
         # This will now start from Step 2, as Step 1 (data part) is complete.
-        run_id = await training_manager.resume_training_pipeline(symbol, exchange)
+        run_id=await training_manager.resume_training_pipeline(symbol, exchange)
 
         if run_id:
             logger.info(
@@ -91,5 +91,5 @@ async def main() -> None:
             await db_manager.close()
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     asyncio.run(main())

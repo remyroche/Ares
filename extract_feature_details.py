@@ -5,42 +5,43 @@ Provides detailed information about which features are causing issues
 """
 
 from collections import defaultdict
-from typing import Any, import argparse
+from typing import Any
+import argparse
 import json
 
 
-def extract_feature_issues_from_logs(log_file_path: str) -> dict[str , Any]:
+def extract_feature_issues_from_logs(log_file_path: str) -> dict[str, Any]:
     """Extract specific feature issues from log files"""
 
-    feature_issues , defaultdict(list)
-    issue_summary , defaultdict(int)
+    feature_issues, defaultdict(list)
+    issue_summary, defaultdict(int)
 
     with open(log_file_path) as f:
         for line in f:
             try:
                 if line.strip().startswith("{"):
-                    log_entry = json.loads(line.strip())
-                    message = log_entry.get("message", "")
+                    log_entry=json.loads(line.strip())
+                    message=log_entry.get("message", "")
 
                     # Look for specific issue details
                     if "issue_type" in message or "feature" in message:
                         # Extract feature name and issue type
                         if ":" in message and " - " in message:
-                            parts = message.split(" - ")
+                            parts=message.split(" - ")
                             if len(parts) >= 2:
-                                feature_part = parts[0].strip()
-                                issue_part = parts[1].strip()
+                                feature_part=parts[0].strip()
+                                issue_part=parts[1].strip()
 
                                 # Extract feature name
                                 if "Feature " in feature_part:
-                                    feature_name = feature_part.replace(
+                                    feature_name=feature_part.replace(
                                         "Feature ",
                                         "",
                                     ).strip()
 
                                     # Extract issue type
                                     if "missing values" in issue_part:
-                                        issue_type = "missing_values"
+                                        issue_type="missing_values"
                                     elif "infinite values" in issue_part:
                                         issue_type = "infinite_values"
                                     elif "zero variance" in issue_part:
@@ -62,8 +63,8 @@ def extract_feature_issues_from_logs(log_file_path: str) -> dict[str , Any]:
 
                                     feature_issues[feature_name].append(
                                         {
-                                            "issue_type": issue_type , "description": issue_part,
-                                            "message": message = },
+                                            "issue_type": issue_type, "description": issue_part,
+                                            "message": message=},
                                     )
                                     issue_summary[issue_type] += 1
 
@@ -76,10 +77,10 @@ def extract_feature_issues_from_logs(log_file_path: str) -> dict[str , Any]:
     }
 
 
-def categorize_features_by_type(feature_names: list[str]) -> dict[str , list[str]]:
+def categorize_features_by_type(feature_names: list[str]) -> dict[str, list[str]]:
     """Categorize features by their type based on naming patterns"""
 
-    categories = {
+    categories={
         "wavelet": [],
         "technical_indicator": [],
         "momentum": [],
@@ -93,7 +94,7 @@ def categorize_features_by_type(feature_names: list[str]) -> dict[str , list[str
     }
 
     for feature in feature_names:
-        feature_lower = feature.lower()
+        feature_lower=feature.lower()
 
         if any(
             keyword in feature_lower
@@ -156,12 +157,12 @@ def categorize_features_by_type(feature_names: list[str]) -> dict[str , list[str
 
 
 def generate_feature_action_plan(
-    feature_issues: dict[str , list[dict]],
-    issue_summary: dict[str , int],
+    feature_issues: dict[str, list[dict]],
+    issue_summary: dict[str, int],
 ) -> str:
     """Generate an action plan for fixing feature issues"""
 
-    report = []
+    report=[]
     report.append("=" * 80)
     report.append("FEATURE ISSUE ACTION PLAN")
     report.append("=" * 80)
@@ -169,16 +170,16 @@ def generate_feature_action_plan(
     # Issue summary
     report.append("\n📊 ISSUE SUMMARY:")
     report.append("-" * 50)
-    for issue_type , count in issue_summary.items():
+    for issue_type, count in issue_summary.items():
         report.append(f"  {issue_type}: {count} issues")
 
     # Categorize features
-    all_features = list(feature_issues.keys())
-    categories = categorize_features_by_type(all_features)
+    all_features=list(feature_issues.keys())
+    categories=categorize_features_by_type(all_features)
 
     report.append("\n🔍 FEATURE CATEGORIES:")
     report.append("-" * 50)
-    for category , features in categories.items():
+    for category, features in categories.items():
         if features:
             report.append(f"  {category}: {len(features)} features")
             if len(features) <= 5:
@@ -192,9 +193,9 @@ def generate_feature_action_plan(
     report.append("-" * 50)
 
     # Missing values
-    missing_features = [
+    missing_features=[
         f
-        for f , issues in feature_issues.items()
+        for f, issues in feature_issues.items()
         if any(issue["issue_type"] == "missing_values" for issue in issues)
     ]
     if missing_features:
@@ -212,9 +213,9 @@ def generate_feature_action_plan(
         report.append("     - Consider forward-fill or interpolation for time series")
 
     # Infinite values
-    infinite_features = [
+    infinite_features=[
         f
-        for f , issues in feature_issues.items()
+        for f, issues in feature_issues.items()
         if any(issue["issue_type"] == "infinite_values" for issue in issues)
     ]
     if infinite_features:
@@ -230,9 +231,9 @@ def generate_feature_action_plan(
         report.append("     - Implement clipping or replacement strategies")
 
     # Low variance
-    low_var_features = [
+    low_var_features=[
         f
-        for f , issues in feature_issues.items()
+        for f, issues in feature_issues.items()
         if any(
             issue["issue_type"] in ["zero_variance", "low_variance"] for issue in issues
         )
@@ -250,9 +251,9 @@ def generate_feature_action_plan(
         report.append("     - Consider removing features with zero variance")
 
     # Extreme values
-    extreme_features = [
+    extreme_features=[
         f
-        for f , issues in feature_issues.items()
+        for f, issues in feature_issues.items()
         if any(issue["issue_type"] == "extreme_values" for issue in issues)
     ]
     if extreme_features:
@@ -268,9 +269,9 @@ def generate_feature_action_plan(
         report.append("     - Implement clipping to reasonable bounds")
 
     # Data type issues
-    dtype_features = [
+    dtype_features=[
         f
-        for f , issues in feature_issues.items()
+        for f, issues in feature_issues.items()
         if any(issue["issue_type"] == "data_type" for issue in issues)
     ]
     if dtype_features:
@@ -301,27 +302,27 @@ def generate_feature_action_plan(
     report.append("\n3. Missing Value Thresholds:")
     report.append("   - Warning: 10% (current)")
     report.append("   - Error: 50% (current)")
-    report.append("   - Consider: 20% warning = 70% error")
+    report.append("   - Consider: 20% warning=70% error")
 
     return "\n".join(report)
 
 
 def main():
-    parser = argparse.ArgumentParser(
+    parser=argparse.ArgumentParser(
         description="Extract detailed feature issues from validation logs",
     )
     parser.add_argument("log_file", help="Path to the log file to analyze")
     parser.add_argument("--output", help="Output file for the detailed report")
 
-    args = parser.parse_args()
+    args=parser.parse_args()
 
     # Extract feature issues
     print("Extracting feature issues from logs...")
-    results = extract_feature_issues_from_logs(args.log_file)
+    results=extract_feature_issues_from_logs(args.log_file)
 
     # Generate action plan
     print("Generating action plan...")
-    action_plan = generate_feature_action_plan(
+    action_plan=generate_feature_action_plan(
         results["feature_issues"],
         results["issue_summary"],
     )
@@ -331,7 +332,7 @@ def main():
 
     # Save to file if requested
     if args.output:
-        with open(args.output = "w") as f:
+        with open(args.output="w") as f:
             f.write(action_plan)
         print(f"\nDetailed report saved to: {args.output}")
 
@@ -342,5 +343,5 @@ def main():
     print(f"  Issue types: {list(results['issue_summary'].keys())}")
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     main()

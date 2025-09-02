@@ -84,7 +84,7 @@ import logging
 try:
     import requests
 
-    REQUESTS_AVAILABLE = True
+    REQUESTS_AVAILABLE=True
 except ImportError:
     REQUESTS_AVAILABLE = False
 
@@ -115,7 +115,7 @@ from src.utils.signal_handler import setup_signal_handlers
 from src.utils.observability import init_observability
 
 # Add the project root to the Python path
-project_root = Path(__file__).parent
+project_root=Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 
@@ -124,7 +124,7 @@ class AresLauncher:
 
     def __init__(self):
         # Initialize comprehensive logging
-        self.comprehensive_logger = setup_comprehensive_logging(CONFIG)
+        self.comprehensive_logger=setup_comprehensive_logging(CONFIG)
 
         # Ensure comprehensive logging is available for all existing logging calls
         ensure_comprehensive_logging_available()
@@ -137,18 +137,18 @@ class AresLauncher:
                 f"Observability init skipped: {_obs_exc}"
             )
 
-        self.logger = self.comprehensive_logger.get_component_logger("AresLauncher")
-        self.global_logger = self.comprehensive_logger.get_global_logger()
-        self.full_log_path = getattr(
+        self.logger=self.comprehensive_logger.get_component_logger("AresLauncher")
+        self.global_logger=self.comprehensive_logger.get_global_logger()
+        self.full_log_path=getattr(
             self.comprehensive_logger, "get_full_log_path", lambda: None
         )()
-        self.trades_log_path = getattr(
+        self.trades_log_path=getattr(
             self.comprehensive_logger, "get_trades_log_path", lambda: None
         )()
-        self.backtest_log_path = getattr(
+        self.backtest_log_path=getattr(
             self.comprehensive_logger, "get_backtest_log_path", lambda: None
         )()
-        self.processes = []  # Track subprocesses for cleanup
+        self.processes=[]  # Track subprocesses for cleanup
         self.gui_process = None
         self.portfolio_process = None
         self.signal_handler = None
@@ -190,7 +190,7 @@ class AresLauncher:
     )
     def setup_signal_handling(self):
         """Set up centralized signal handling."""
-        self.signal_handler = setup_signal_handlers()
+        self.signal_handler=setup_signal_handlers()
         self.signal_handler.register_shutdown_callback(self.cleanup)
         self.logger.info("✅ Centralized signal handling set up")
 
@@ -232,16 +232,16 @@ class AresLauncher:
     @handle_errors(exceptions=(Exception,), default_return=False, context="launch_gui")
     def launch_gui(
         self,
-        mode: str | None = None,
-        symbol: str | None = None,
-        exchange: str | None = None,
+        mode: str | None=None,
+        symbol: str | None=None,
+        exchange: str | None=None,
     ):
         """Launch the GUI server."""
         self.logger.info("🚀 Launching GUI server...")
 
         # Prefer unified start script which runs API and frontend
-        script_path = Path("GUI/start.sh")
-        env = os.environ.copy()
+        script_path=Path("GUI/start.sh")
+        env=os.environ.copy()
         # Allow user to override ports via env
         env.setdefault("API_PORT", env.get("API_PORT", "8000"))
         env.setdefault("FRONTEND_PORT", env.get("FRONTEND_PORT", "3000"))
@@ -249,15 +249,15 @@ class AresLauncher:
         # Otherwise Vite proxy will forward /api to API_PORT
 
         if script_path.exists():
-            cmd = ["bash", str(script_path)]
+            cmd=["bash", str(script_path)]
         else:
             # Fallback: start API only (legacy behaviour)
-            cmd = [sys.executable, "GUI/api_server.py"]
+            cmd=[sys.executable, "GUI/api_server.py"]
             # Pass optional mode args if provided and using api_server directly
             if mode and symbol and exchange:
                 cmd.extend(["--mode", mode, "--symbol", symbol, "--exchange", exchange])
 
-        self.gui_process = subprocess.Popen(
+        self.gui_process=subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -274,8 +274,8 @@ class AresLauncher:
         if self.gui_process.poll() is None:
             if REQUESTS_AVAILABLE:
                 try:
-                    fp = int(env.get("FRONTEND_PORT", "3000"))
-                    ap = int(env.get("API_PORT", "8000"))
+                    fp=int(env.get("FRONTEND_PORT", "3000"))
+                    ap=int(env.get("API_PORT", "8000"))
                     requests.get(f"http://localhost:{fp}", timeout=2)
                     requests.get(f"http://localhost:{ap}/docs", timeout=2)
                     self.logger.info("✅ GUI (frontend+API) appears healthy")
@@ -284,7 +284,7 @@ class AresLauncher:
             self.logger.info("✅ GUI server is running")
             return True
 
-        stdout, stderr = self.gui_process.communicate()
+        stdout, stderr=self.gui_process.communicate()
         self.logger.error(f"❌ GUI start failed. STDERR: {stderr}\nSTDOUT: {stdout}")
         return False
 
@@ -297,7 +297,7 @@ class AresLauncher:
         """Launch the portfolio manager."""
         self.logger.info("🚀 Launching portfolio manager...")
 
-        self.portfolio_process = subprocess.Popen(
+        self.portfolio_process=subprocess.Popen(
             [sys.executable, "src/supervisor/global_portfolio_manager.py"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -313,13 +313,13 @@ class AresLauncher:
         """Normalize legacy step names to the current ones used by the orchestrator."""
         if not step_name:
             return None
-        mapping = {
+        mapping={
             # Legacy -> Current
             "step2_market_regime_classification": "step2_processing_labeling_feature_engineering",
             "step3_regime_data_splitting": "step4_regime_data_splitting",
             "step4_analyst_labeling_feature_engineering": "step2_processing_labeling_feature_engineering",
         }
-        normalized = mapping.get(step_name, step_name)
+        normalized=mapping.get(step_name, step_name)
         if normalized != step_name:
             self.logger.info(
                 f"🔁 Normalized requested step '{step_name}' -> '{normalized}'"
@@ -327,12 +327,12 @@ class AresLauncher:
         return normalized
 
     def _clear_checkpoint_files(
-        self, symbol: str, exchange: str, timeframe: str = "1m"
+        self, symbol: str, exchange: str, timeframe: str="1m"
     ) -> None:
         """Remove enhanced training checkpoints to guarantee a fresh start."""
         try:
-            ns_dir = Path("checkpoints") / exchange / symbol / timeframe
-            target_file = ns_dir / "training_progress.json"
+            ns_dir=Path("checkpoints") / exchange / symbol / timeframe
+            target_file=ns_dir / "training_progress.json"
             if target_file.exists():
                 target_file.unlink()
                 self.logger.info(f"🗑️  Cleared checkpoint: {target_file}")
@@ -349,7 +349,7 @@ class AresLauncher:
     def _force_fresh_start_from_step(self, orchestrator, start_step: str) -> None:
         """Clear progress from the specified start step onward to enforce a fresh run."""
         try:
-            steps = orchestrator.list_available_steps()
+            steps=orchestrator.list_available_steps()
             if start_step not in steps:
                 self.logger.warning(
                     f"Cannot clear progress: step '{start_step}' is not in available steps"
@@ -358,10 +358,10 @@ class AresLauncher:
             
             # Find the index of the starting step
             try:
-                start_index = steps.index(start_step)
+                start_index=steps.index(start_step)
             except ValueError:
                 self.logger.warning(f"⚠️ Unknown step {start_step}, clearing all progress")
-                start_index = 0
+                start_index=0
             
             # Clear progress for the starting step and all subsequent steps
             steps_to_clear = steps[start_index:]
@@ -384,13 +384,13 @@ class AresLauncher:
         symbol: str,
         exchange: str,
         training_mode: str,
-        lookback_days: int = None,
-        with_gui: bool = False,
+        lookback_days: int=None,
+        with_gui: bool=False,
     ):
         """Run unified training with enhanced training manager using centralized mode configuration."""
         # Get the training mode configuration
         try:
-            mode_config = get_training_mode_config(training_mode)
+            mode_config=get_training_mode_config(training_mode)
         except ValueError as e:
             self.logger.error(f"❌ Invalid training mode: {e}")
             print(f"❌ Invalid training mode: {e}")
@@ -398,7 +398,7 @@ class AresLauncher:
 
         # Use the mode's default lookback_days if not provided
         if lookback_days is None:
-            lookback_days = mode_config.lookback_days
+            lookback_days=mode_config.lookback_days
 
         # Set environment variables for training mode
         import os
@@ -408,18 +408,18 @@ class AresLauncher:
             os.environ["BLANK_TRAINING_MODE"] = "0"
             os.environ["FULL_TRAINING_MODE"] = "0"
             print(f"💡 LIGHT TRAINING MODE: Set LIGHT_TRAINING_MODE=1")
-        elif training_mode == "blank":
+        elif training_mode== "blank":
             os.environ["BLANK_TRAINING_MODE"] = "1"
             os.environ["LIGHT_TRAINING_MODE"] = "0"
             os.environ["FULL_TRAINING_MODE"] = "0"
             print(f"🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1")
-        elif training_mode == "full":
+        elif training_mode== "full":
             os.environ["FULL_TRAINING_MODE"] = "1"
             os.environ["LIGHT_TRAINING_MODE"] = "0"
             os.environ["BLANK_TRAINING_MODE"] = "0"
             print(f"🚀 FULL TRAINING MODE: Set FULL_TRAINING_MODE=1")
 
-        mode_display = f"{training_mode} training"
+        mode_display=f"{training_mode} training"
         intensity_pct = f"{get_intensity_percentage(training_mode)*100:.0f}%"
         print(f"🚀 Starting {mode_display} for {symbol} on {exchange}")
         print(f"📊 Mode Configuration ({intensity_pct} of full intensity):")
@@ -441,7 +441,7 @@ class AresLauncher:
             from src.training.enhanced_training_manager import EnhancedTrainingManager
             from src.utils.logger import system_logger
 
-            logger = system_logger.getChild("EnhancedTrainingPipeline")
+            logger=system_logger.getChild("EnhancedTrainingPipeline")
 
             logger.info("=" * 80)
             logger.info("🚀 ENHANCED TRAINING PIPELINE START")
@@ -465,7 +465,7 @@ class AresLauncher:
                 logger.info("📊 STEP 0: Initializing Database Manager...")
                 print("   📊 Setting up database manager...")
 
-                default_config = {
+                default_config={
                     "database": {
                         "sqlite_path": "data/ares.db",
                         "backup_enabled": True,
@@ -475,7 +475,7 @@ class AresLauncher:
                     },
                 }
 
-                db_manager = SQLiteManager(default_config)
+                db_manager=SQLiteManager(default_config)
                 await db_manager.initialize()
                 logger.info("✅ Database manager initialized successfully")
                 print("   ✅ Database manager initialized successfully")
@@ -485,7 +485,7 @@ class AresLauncher:
                 print("   🤖 Initializing enhanced training manager...")
 
                 # Get training configuration from centralized mode configuration
-                training_config = get_training_config_dict(training_mode)
+                training_config=get_training_config_dict(training_mode)
                 training_config["database"] = default_config["database"]
                 
                 # Override lookback_days if provided
@@ -493,7 +493,7 @@ class AresLauncher:
                     training_config["enhanced_training_manager"]["lookback_days"] = lookback_days
                     logger.info(f"📈 Overriding lookback_days to: {lookback_days}")
 
-                training_manager = EnhancedTrainingManager(training_config)
+                training_manager=EnhancedTrainingManager(training_config)
                 logger.info("✅ Enhanced training manager initialized successfully")
                 print("   ✅ Enhanced training manager initialized successfully")
 
@@ -508,7 +508,7 @@ class AresLauncher:
                     return False
 
                 # Prepare training input using centralized configuration
-                training_input = get_training_input_dict(
+                training_input=get_training_input_dict(
                     mode=training_mode,
                     symbol=symbol,
                     exchange=exchange,
@@ -517,7 +517,7 @@ class AresLauncher:
                 )
 
                 # Execute the enhanced training
-                success = await training_manager.execute_enhanced_training(
+                success=await training_manager.execute_enhanced_training(
                     training_input,
                 )
 
@@ -563,7 +563,7 @@ class AresLauncher:
         print("⏳ Training is running... This may take several minutes.")
         print("📊 You can monitor progress in the logs directory.")
 
-        success = asyncio.run(run_enhanced_training())
+        success=asyncio.run(run_enhanced_training())
 
         if success:
             self.logger.info(f"✅ {mode_display} completed successfully")
@@ -584,7 +584,7 @@ class AresLauncher:
         self,
         symbol: str,
         exchange: str,
-        with_gui: bool = False,
+        with_gui: bool=False,
     ):
         """Run enhanced blank training using unified training method."""
         # Note: The system still processes all available data files during consolidation,
@@ -606,7 +606,7 @@ class AresLauncher:
         self,
         symbol: str,
         exchange: str,
-        with_gui: bool = False,
+        with_gui: bool=False,
     ):
         """Run light training using unified training method with 30 days."""
         # Light training uses only 30 days for very quick testing
@@ -631,28 +631,28 @@ class AresLauncher:
         # Show intensity comparison table
         print("\n📊 INTENSITY COMPARISON")
         print("-" * 80)
-        comparison = get_intensity_comparison()
+        comparison=get_intensity_comparison()
         
         # Print header
         print(f"{'Mode':<8} {'Intensity':<12} {'Max Trials':<12} {'N Trials':<10} {'Duration':<10} {'Lookback':<10}")
         print("-" * 80)
         
         for mode, data in comparison.items():
-            intensity_pct = f"{data['intensity_percentage']*100:.0f}%"
+            intensity_pct=f"{data['intensity_percentage']*100:.0f}%"
             print(f"{mode:<8} {intensity_pct:<12} {data['max_trials']:<12} {data['n_trials']:<10} {data['estimated_duration_minutes']:<10}min {data['lookback_days']:<10}days")
         
         print("\n" + "=" * 80)
         print("📋 DETAILED MODE CONFIGURATIONS")
         print("=" * 80)
         
-        modes = list_available_modes()
-        recommendations = get_mode_recommendations()
+        modes=list_available_modes()
+        recommendations=get_mode_recommendations()
         
         for mode_name, description in modes.items():
             try:
-                config = get_training_mode_config(mode_name)
-                recommendation = recommendations.get(mode_name, "No specific recommendation available.")
-                intensity_pct = f"{get_intensity_percentage(mode_name)*100:.0f}%"
+                config=get_training_mode_config(mode_name)
+                recommendation=recommendations.get(mode_name, "No specific recommendation available.")
+                intensity_pct=f"{get_intensity_percentage(mode_name)*100:.0f}%"
                 
                 print(f"\n📊 {mode_name.upper()} MODE ({intensity_pct} of full intensity)")
                 print(f"   Description: {description}")
@@ -694,7 +694,7 @@ class AresLauncher:
         self,
         symbol: str,
         exchange: str,
-        with_gui: bool = False,
+        with_gui: bool=False,
     ):
         """Run full training using unified training method with full parameters."""
         # Full training uses complete dataset and full training parameters
@@ -714,14 +714,14 @@ class AresLauncher:
         self,
         symbol: str,
         exchange: str,
-        with_gui: bool = False,
+        with_gui: bool=False,
     ):
         """Resume training from the last checkpoint."""
         self.logger.info(f"🔄 Resuming training for {symbol} on {exchange}")
         print(f"🔄 Resuming training for {symbol} on {exchange}")
 
         # Check if checkpoint exists
-        checkpoint_file = Path("checkpoints/training_progress.json")
+        checkpoint_file=Path("checkpoints/training_progress.json")
         if not checkpoint_file.exists():
             self.logger.error("❌ No checkpoint found to resume from")
             print("❌ No checkpoint found to resume from")
@@ -729,11 +729,11 @@ class AresLauncher:
 
         try:
             with open(checkpoint_file, "r") as f:
-                checkpoint_data = json.load(f)
+                checkpoint_data=json.load(f)
 
-            training_mode = checkpoint_data.get("training_mode", "blank")
-            lookback_days = checkpoint_data.get("lookback_days", 30)
-            last_step = checkpoint_data.get("current_step", "")
+            training_mode=checkpoint_data.get("training_mode", "blank")
+            lookback_days=checkpoint_data.get("lookback_days", 30)
+            last_step=checkpoint_data.get("current_step", "")
 
             self.logger.info(f"📂 Found checkpoint: {last_step}")
             print(f"📂 Found checkpoint: {last_step}")
@@ -770,15 +770,15 @@ class AresLauncher:
             from src.config import CONFIG
 
             # Initialize precomputer
-            precomputer = WaveletFeaturePrecomputer(CONFIG)
-            init_success = asyncio.run(precomputer.initialize())
+            precomputer=WaveletFeaturePrecomputer(CONFIG)
+            init_success=asyncio.run(precomputer.initialize())
 
             if not init_success:
                 self.logger.error("❌ Failed to initialize wavelet precomputer")
                 return False
 
             # Check if cache already exists
-            cache_dir = CONFIG.get("wavelet_cache", {}).get(
+            cache_dir=CONFIG.get("wavelet_cache", {}).get(
                 "cache_dir", "data/wavelet_cache"
             )
             import os
@@ -791,7 +791,7 @@ class AresLauncher:
                 return True
 
             # Data path for precomputation
-            data_path = f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
+            data_path=f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
 
             if not os.path.exists(data_path):
                 self.logger.error(f"❌ Consolidated data file not found: {data_path}")
@@ -802,7 +802,7 @@ class AresLauncher:
             self.logger.info("🚀 Starting wavelet feature precomputation...")
             print("🚀 Starting wavelet feature precomputation...")
 
-            success = asyncio.run(
+            success=asyncio.run(
                 precomputer.precompute_dataset(data_path=data_path, symbol=symbol)
             )
 
@@ -813,7 +813,7 @@ class AresLauncher:
                 print("✅ Wavelet feature precomputation completed successfully")
 
                 # Print statistics
-                stats = precomputer.get_precomputation_stats()
+                stats=precomputer.get_precomputation_stats()
                 print(f"📊 Precomputation Statistics: {stats}")
                 return True
             else:
@@ -831,7 +831,7 @@ class AresLauncher:
         default_return=False,
         context="run_backtesting",
     )
-    def run_backtesting(self, symbol: str, exchange: str, with_gui: bool = False):
+    def run_backtesting(self, symbol: str, exchange: str, with_gui: bool=False):
         """Run enhanced backtesting using cached wavelet features by default."""
         self.logger.info(
             f"📊 Running backtesting with cached wavelet features for {symbol} on {exchange}"
@@ -863,16 +863,16 @@ class AresLauncher:
             from src.config import CONFIG
 
             # Initialize backtesting with cached features
-            backtester = BacktestingWithCachedFeatures(CONFIG)
+            backtester=BacktestingWithCachedFeatures(CONFIG)
 
             # Initialize the backtesting system
-            init_success = asyncio.run(backtester.initialize())
+            init_success=asyncio.run(backtester.initialize())
             if not init_success:
                 self.logger.error("❌ Failed to initialize backtesting system")
                 return False
 
             # Load data for backtesting
-            data_path = f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
+            data_path=f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
             volume_path = f"data_cache/volume_{exchange}_{symbol}_consolidated.parquet"
 
             # Check if consolidated data exists
@@ -886,8 +886,8 @@ class AresLauncher:
                 return False
 
             # Load data
-            price_data = asyncio.run(backtester._load_backtest_data(data_path))
-            volume_data = (
+            price_data=asyncio.run(backtester._load_backtest_data(data_path))
+            volume_data=(
                 asyncio.run(backtester._load_volume_data(volume_path))
                 if os.path.exists(volume_path)
                 else None
@@ -902,7 +902,7 @@ class AresLauncher:
             print(f"🚀 Starting backtest with {len(price_data)} data points")
 
             # Strategy configuration
-            strategy_config = {
+            strategy_config={
                 "strategy_type": "wavelet_energy_entropy",
                 "parameters": {
                     "energy_threshold": 0.5,
@@ -912,7 +912,7 @@ class AresLauncher:
             }
 
             # Run the backtest
-            results = asyncio.run(
+            results=asyncio.run(
                 backtester.run_backtest(
                     price_data=price_data,
                     volume_data=volume_data,
@@ -926,7 +926,7 @@ class AresLauncher:
                 return False
 
             # Print results
-            strategy_results = results.get("strategy_results", {})
+            strategy_results=results.get("strategy_results", {})
             print("=" * 80)
             print("📊 BACKTESTING RESULTS")
             print("=" * 80)
@@ -939,7 +939,7 @@ class AresLauncher:
             print("=" * 80)
 
             # Print performance stats
-            stats = backtester.get_performance_stats()
+            stats=backtester.get_performance_stats()
             print("📈 PERFORMANCE STATISTICS")
             print(f"Cache Hit Rate: {stats.get('cache_hit_rate', 0):.2%}")
             print(f"Avg Backtest Time: {stats.get('avg_backtest_time', 0):.3f}s")
@@ -965,10 +965,10 @@ class AresLauncher:
         symbol: str,
         exchange: str,
         trading_mode: str,
-        with_gui: bool = False,
+        with_gui: bool=False,
     ):
         """Unified trading method for both paper and live trading modes."""
-        mode_display = "paper trading" if trading_mode == "PAPER" else "live trading"
+        mode_display="paper trading" if trading_mode == "PAPER" else "live trading"
         self.logger.info(f"📊 Running {mode_display} for {symbol} on {exchange}")
         print(f"📊 Running {mode_display} for {symbol} on {exchange}")
         print("=" * 80)
@@ -984,7 +984,7 @@ class AresLauncher:
             os.environ["TRADING_MODE"] = trading_mode
 
             # Run the same pipeline but with different trading mode
-            process = subprocess.Popen(
+            process=subprocess.Popen(
                 [sys.executable, "src/ares_pipeline.py", symbol, exchange],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,  # Redirect stderr to stdout
@@ -1000,17 +1000,17 @@ class AresLauncher:
 
             # Read output in real-time
             while True:
-                output = process.stdout.readline()
-                if output == "" and process.poll() is not None:
+                output=process.stdout.readline()
+                if output== "" and process.poll() is not None:
                     break
                 if output:
                     print(output.strip())  # Print to terminal in real-time
                     self.logger.info(output.strip())  # Also log it
 
             # Get the final return code
-            return_code = process.poll()
+            return_code=process.poll()
 
-            if return_code == 0:
+            if return_code== 0:
                 self.logger.info(f"✅ {mode_display} completed successfully")
                 print(f"✅ {mode_display} completed successfully")
                 return True
@@ -1030,7 +1030,7 @@ class AresLauncher:
         default_return=False,
         context="run_paper_trading",
     )
-    def run_paper_trading(self, symbol: str, exchange: str, with_gui: bool = False):
+    def run_paper_trading(self, symbol: str, exchange: str, with_gui: bool=False):
         """Run paper trading using unified trading method."""
         return self._run_unified_trading(
             symbol=symbol,
@@ -1044,7 +1044,7 @@ class AresLauncher:
         default_return=False,
         context="run_live_trading",
     )
-    def run_live_trading(self, symbol: str, exchange: str, with_gui: bool = False):
+    def run_live_trading(self, symbol: str, exchange: str, with_gui: bool=False):
         """Run live trading using unified trading method."""
         return self._run_unified_trading(
             symbol=symbol,
@@ -1060,7 +1060,7 @@ class AresLauncher:
         default_return=False,
         context="run_portfolio_trading",
     )
-    def run_portfolio_trading(self, with_gui: bool = False):
+    def run_portfolio_trading(self, with_gui: bool=False):
         """Run portfolio trading with optional GUI."""
         self.logger.info("📈 Running portfolio trading")
 
@@ -1073,7 +1073,7 @@ class AresLauncher:
             return False
 
         # Launch individual trading bots for each supported token
-        supported_tokens = CONFIG.get("SUPPORTED_TOKENS", {}).get(
+        supported_tokens=CONFIG.get("SUPPORTED_TOKENS", {}).get(
             "BINANCE",
             ["ETHUSDT"],
         )
@@ -1081,7 +1081,7 @@ class AresLauncher:
         for token in supported_tokens:
             self.logger.info(f"🚀 Launching trading bot for {token}")
             try:
-                process = subprocess.Popen(
+                process=subprocess.Popen(
                     [sys.executable, "src/ares_pipeline.py", token, "BINANCE"],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
@@ -1140,7 +1140,7 @@ class AresLauncher:
         self,
         symbol: str,
         exchange: str,
-        with_gui: bool = False,
+        with_gui: bool=False,
     ):
         """Run challenger trading with optional GUI."""
         self.logger.info(f"🏆 Running challenger trading for {symbol} on {exchange}")
@@ -1151,7 +1151,7 @@ class AresLauncher:
 
         try:
             # Run the challenger trading script
-            process = subprocess.Popen(
+            process=subprocess.Popen(
                 [sys.executable, "scripts/setup_challenger_model.py", symbol, exchange],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -1159,9 +1159,9 @@ class AresLauncher:
             )
             self.processes.append(process)
 
-            stdout, stderr = process.communicate()
+            stdout, stderr=process.communicate()
 
-            if process.returncode == 0:
+            if process.returncode== 0:
                 self.logger.info("✅ Challenger trading completed successfully")
                 return True
             self.logger.error(f"❌ Challenger trading failed: {stderr}")
@@ -1180,7 +1180,7 @@ class AresLauncher:
         self,
         symbol: str,
         exchange: str,
-        with_gui: bool = False,
+        with_gui: bool=False,
     ):
         """Run enhanced comprehensive training pipeline with efficiency optimizations."""
         self.logger.info(
@@ -1196,7 +1196,7 @@ class AresLauncher:
             print(
                 f"🚀 Starting multi-timeframe blank training for {symbol} on {exchange}...",
             )
-            process = subprocess.Popen(
+            process=subprocess.Popen(
                 [
                     sys.executable,
                     "scripts/run_multi_timeframe_training.py",
@@ -1214,17 +1214,17 @@ class AresLauncher:
 
             # Read output in real-time
             while True:
-                output = process.stdout.readline()
-                if output == "" and process.poll() is not None:
+                output=process.stdout.readline()
+                if output== "" and process.poll() is not None:
                     break
                 if output:
                     print(output.strip())  # Print to terminal in real-time
                     self.logger.info(output.strip())  # Also log it
 
             # Get the final return code
-            return_code = process.poll()
+            return_code=process.poll()
 
-            if return_code == 0:
+            if return_code== 0:
                 self.logger.info(
                     "✅ Enhanced comprehensive training completed successfully",
                 )
@@ -1251,8 +1251,8 @@ class AresLauncher:
         self,
         symbol: str,
         exchange: str,
-        with_gui: bool = False,
-        quick_test: bool = False,
+        with_gui: bool=False,
+        quick_test: bool=False,
     ):
         """Run multi-timeframe training with ensemble creation."""
         self.logger.info(
@@ -1267,7 +1267,7 @@ class AresLauncher:
             # Run the multi-timeframe training script
             print(f"🚀 Starting multi-timeframe training for {symbol} on {exchange}...")
 
-            cmd = [
+            cmd=[
                 sys.executable,
                 "scripts/run_multi_timeframe_training.py",
                 "--symbol",
@@ -1283,7 +1283,7 @@ class AresLauncher:
                     "🧪 Running in quick-test mode (limited data/parameters)",
                 )
 
-            process = subprocess.Popen(
+            process=subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,  # Redirect stderr to stdout
@@ -1295,17 +1295,17 @@ class AresLauncher:
 
             # Read output in real-time
             while True:
-                output = process.stdout.readline()
-                if output == "" and process.poll() is not None:
+                output=process.stdout.readline()
+                if output== "" and process.poll() is not None:
                     break
                 if output:
                     print(output.strip())  # Print to terminal in real-time
                     self.logger.info(output.strip())  # Also log it
 
             # Get the final return code
-            return_code = process.poll()
+            return_code=process.poll()
 
-            if return_code == 0:
+            if return_code== 0:
                 self.logger.info("✅ Multi-timeframe training completed successfully")
                 print("✅ Multi-timeframe training completed successfully")
                 return True
@@ -1328,7 +1328,7 @@ class AresLauncher:
         self,
         symbol: str,
         exchange: str,
-        with_gui: bool = False,
+        with_gui: bool=False,
     ):
         """Run standard blank training pipeline for quick testing."""
         self.logger.info(f"🧪 Running blank training for {symbol} on {exchange}")
@@ -1340,7 +1340,7 @@ class AresLauncher:
         try:
             # Run the standard blank training script
             print(f"🚀 Starting blank training for {symbol} on {exchange}...")
-            process = subprocess.Popen(
+            process=subprocess.Popen(
                 [
                     sys.executable,
                     "scripts/blank_training_run.py",
@@ -1359,17 +1359,17 @@ class AresLauncher:
 
             # Read output in real-time
             while True:
-                output = process.stdout.readline()
-                if output == "" and process.poll() is not None:
+                output=process.stdout.readline()
+                if output== "" and process.poll() is not None:
                     break
                 if output:
                     print(output.strip())  # Print to terminal in real-time
                     self.logger.info(output.strip())  # Also log it
 
             # Get the final return code
-            return_code = process.poll()
+            return_code=process.poll()
 
-            if return_code == 0:
+            if return_code== 0:
                 self.logger.info("✅ Blank training completed successfully")
                 print("✅ Blank training completed successfully")
                 return True
@@ -1394,9 +1394,9 @@ class AresLauncher:
         self,
         symbol: str,
         exchange: str,
-        start_step: str = "step2_processing_labeling_feature_engineering",
-        force_rerun: bool = False,
-        with_gui: bool = False,
+        start_step: str="step2_processing_labeling_feature_engineering",
+        force_rerun: bool=False,
+        with_gui: bool=False,
     ):
         """Run enhanced 16-step training pipeline using the step orchestrator."""
         self.logger.info(
@@ -1420,9 +1420,9 @@ class AresLauncher:
         self,
         symbol: str,
         exchange: str,
-        start_step: str = "step2_processing_labeling_feature_engineering",
-        force_rerun: bool = False,
-        with_gui: bool = False,
+        start_step: str="step2_processing_labeling_feature_engineering",
+        force_rerun: bool=False,
+        with_gui: bool=False,
     ):
         """Run step-based full training starting from a specific step with full parameters."""
         self.logger.info(
@@ -1450,9 +1450,9 @@ class AresLauncher:
         symbol: str,
         exchange: str,
         start_step: str,
-        training_mode: str = "blank",
-        force_rerun: bool = False,
-        with_gui: bool = False,
+        training_mode: str="blank",
+        force_rerun: bool=False,
+        with_gui: bool=False,
     ):
         """Run step-based training with comprehensive validation of previous steps."""
         self.logger.info(
@@ -1462,7 +1462,7 @@ class AresLauncher:
         self.logger.info(f"🎯 Training mode: {training_mode}")
         
         # Validate previous steps before proceeding
-        validation_success = await self._validate_previous_steps(symbol, exchange, start_step)
+        validation_success=await self._validate_previous_steps(symbol, exchange, start_step)
         if not validation_success:
             self.logger.error(f"❌ Cannot start from {start_step} - previous step validation failed")
             return False
@@ -1486,9 +1486,9 @@ class AresLauncher:
         self,
         symbol: str,
         exchange: str,
-        start_step: str = "step2_feature_engineering",
-        force_rerun: bool = False,
-        with_gui: bool = False,
+        start_step: str="step2_feature_engineering",
+        force_rerun: bool=False,
+        with_gui: bool=False,
     ):
         """Run step2 with existing data from step1 and step1_5 without triggering new downloads."""
         self.logger.info(
@@ -1503,10 +1503,10 @@ class AresLauncher:
             from src.utils.validator_orchestrator import ValidatorOrchestrator
             
             # Create validator orchestrator
-            validator_orchestrator = ValidatorOrchestrator()
+            validator_orchestrator=ValidatorOrchestrator()
             
             # Prepare training input for validation
-            training_input = {
+            training_input={
                 "symbol": symbol,
                 "exchange": exchange,
                 "timeframe": "1m",
@@ -1514,16 +1514,16 @@ class AresLauncher:
             }
             
             # Empty pipeline state since we're checking existing data
-            pipeline_state = {}
+            pipeline_state={}
             
             # Validate step1 and step1_5 using existing validators
             self.logger.info("🔍 Validating step1_data_collection using existing validator")
-            step1_result = await validator_orchestrator.run_step_validator(
+            step1_result=await validator_orchestrator.run_step_validator(
                 "step1_data_collection", training_input, pipeline_state, CONFIG
             )
             
             self.logger.info("🔍 Validating step1_5_data_converter using existing validator")
-            step1_5_result = await validator_orchestrator.run_step_validator(
+            step1_5_result=await validator_orchestrator.run_step_validator(
                 "step1_5_data_converter", training_input, pipeline_state, CONFIG
             )
             
@@ -1531,9 +1531,9 @@ class AresLauncher:
             self._print_step2_validation_report(step1_result, step1_5_result, symbol, exchange)
             
             # Check if we can proceed
-            step1_passed = step1_result.get("validation_passed", False)
-            step1_5_passed = step1_5_result.get("validation_passed", False)
-            can_start = step1_passed and step1_5_passed
+            step1_passed=step1_result.get("validation_passed", False)
+            step1_5_passed=step1_5_result.get("validation_passed", False)
+            can_start=step1_passed and step1_5_passed
             
             if not can_start:
                 self.logger.error("❌ Cannot start from step2 - data validation failed")
@@ -1541,9 +1541,9 @@ class AresLauncher:
                 return False
             
             # Log warnings if any issues found
-            step1_warnings = step1_result.get("warnings", [])
-            step1_5_warnings = step1_5_result.get("warnings", [])
-            total_warnings = len(step1_warnings) + len(step1_5_warnings)
+            step1_warnings=step1_result.get("warnings", [])
+            step1_5_warnings=step1_5_result.get("warnings", [])
+            total_warnings=len(step1_warnings) + len(step1_5_warnings)
             
             if total_warnings > 0:
                 self.logger.warning(f"⚠️ Data validation found {total_warnings} warnings - proceeding with existing data")
@@ -1559,7 +1559,7 @@ class AresLauncher:
             self.logger.warning("Proceeding with basic file existence check")
             
             # Fallback to basic check
-            consolidated_file = (
+            consolidated_file=(
                 f"data_cache/aggtrades_{exchange}_{symbol}_consolidated.parquet"
             )
             if not os.path.exists(consolidated_file):
@@ -1590,11 +1590,11 @@ class AresLauncher:
             from src.utils.step_dependency_validator import StepDependencyValidator
             
             # Create validator orchestrator and dependency validator
-            validator_orchestrator = ValidatorOrchestrator()
-            dependency_validator = StepDependencyValidator()
+            validator_orchestrator=ValidatorOrchestrator()
+            dependency_validator=StepDependencyValidator()
             
             # Prepare training input for validation
-            training_input = {
+            training_input={
                 "symbol": symbol,
                 "exchange": exchange,
                 "timeframe": "1m",
@@ -1602,7 +1602,7 @@ class AresLauncher:
             }
             
             # Get step dependencies
-            step_dependencies = dependency_validator.step_dependencies
+            step_dependencies=dependency_validator.step_dependencies
             
             # Find all steps that need to be validated
             steps_to_validate = self._get_required_steps(start_step, step_dependencies)
@@ -1614,13 +1614,13 @@ class AresLauncher:
             self.logger.info(f"🔍 Validating {len(steps_to_validate)} previous steps: {steps_to_validate}")
             
             # Validate each required step
-            validation_results = {}
+            validation_results={}
             all_passed = True
             
             for step in steps_to_validate:
                 self.logger.info(f"🔍 Validating {step}...")
                 try:
-                    result = await validator_orchestrator.run_step_validator(
+                    result=await validator_orchestrator.run_step_validator(
                         step, training_input, {}, CONFIG
                     )
                     validation_results[step] = result
@@ -1629,12 +1629,12 @@ class AresLauncher:
                         self.logger.info(f"✅ {step} validation passed")
                     else:
                         self.logger.error(f"❌ {step} validation failed: {result.get('error', 'Unknown error')}")
-                        all_passed = False
+                        all_passed=False
                         
                 except Exception as e:
                     self.logger.error(f"❌ Error validating {step}: {e}")
                     validation_results[step] = {"validation_passed": False, "error": str(e)}
-                    all_passed = False
+                    all_passed=False
             
             # Print validation report
             self._print_validation_report(validation_results, symbol, exchange, start_step)
@@ -1647,7 +1647,7 @@ class AresLauncher:
 
     def _get_required_steps(self, start_step: str, step_dependencies: dict) -> list:
         """Get all steps that need to be validated before starting from a specific step."""
-        required_steps = []
+        required_steps=[]
         
         # Use a simple approach: validate all steps that come before the start step
         step_order = [
@@ -1680,8 +1680,8 @@ class AresLauncher:
         ]
         
         try:
-            start_index = step_order.index(start_step)
-            required_steps = step_order[:start_index]
+            start_index=step_order.index(start_step)
+            required_steps=step_order[:start_index]
         except ValueError:
             self.logger.warning(f"⚠️ Unknown step {start_step}, skipping validation")
             return []
@@ -1697,14 +1697,14 @@ class AresLauncher:
         print(f"🚀 Starting from: {start_step}")
         print("="*80)
         
-        all_passed = True
+        all_passed=True
         for step, result in validation_results.items():
-            passed = result.get("validation_passed", False)
-            status = "✅ PASSED" if passed else "❌ FAILED"
+            passed=result.get("validation_passed", False)
+            status="✅ PASSED" if passed else "❌ FAILED"
             print(f"{step:<35} {status}")
             
             if not passed:
-                all_passed = False
+                all_passed=False
                 error = result.get("error", "Unknown error")
                 print(f"   Error: {error}")
         
@@ -1724,8 +1724,8 @@ class AresLauncher:
         print("="*80)
         
         # Step1 status
-        step1_passed = step1_result.get("validation_passed", False)
-        step1_status = "✅ PASSED" if step1_passed else "❌ FAILED"
+        step1_passed=step1_result.get("validation_passed", False)
+        step1_status="✅ PASSED" if step1_passed else "❌ FAILED"
         step1_warnings = step1_result.get("warnings", [])
         print(f"📁 Step1 Data Collection: {step1_status}")
         if step1_warnings:
@@ -1734,8 +1734,8 @@ class AresLauncher:
                 print(f"     • {warning}")
         
         # Step1_5 status
-        step1_5_passed = step1_5_result.get("validation_passed", False)
-        step1_5_status = "✅ PASSED" if step1_5_passed else "❌ FAILED"
+        step1_5_passed=step1_5_result.get("validation_passed", False)
+        step1_5_status="✅ PASSED" if step1_5_passed else "❌ FAILED"
         step1_5_warnings = step1_5_result.get("warnings", [])
         print(f"🔄 Step1_5 Data Converter: {step1_5_status}")
         if step1_5_warnings:
@@ -1750,7 +1750,7 @@ class AresLauncher:
             print(f"   📋 Step1_5 Details: {step1_5_result['details']}")
         
         # Overall assessment
-        can_start = step1_passed and step1_5_passed
+        can_start=step1_passed and step1_5_passed
         if can_start:
             print(f"\n✅ READY TO START FROM STEP2")
             print(f"   Proceeding with existing data...")
@@ -1769,7 +1769,7 @@ class AresLauncher:
         self,
         symbol: str,
         exchange: str,
-        lookback_days: int = FULL_TRAINING_LOOKBACK_DAYS,
+        lookback_days: int=FULL_TRAINING_LOOKBACK_DAYS,
     ) -> bool:
         """Run data loading and consolidation for the specified symbol and exchange."""
         try:
@@ -1782,14 +1782,14 @@ class AresLauncher:
 
             # Step 1: Download data using optimized downloader
             self.logger.info("📥 Step 1: Downloading data...")
-            download_script = "backtesting/ares_data_downloader_optimized.py"
+            download_script="backtesting/ares_data_downloader_optimized.py"
 
             if not os.path.exists(download_script):
                 self.logger.error(f"❌ Download script not found: {download_script}")
                 return False
 
             # Run the download script
-            download_cmd = [
+            download_cmd=[
                 sys.executable,
                 download_script,
                 "--symbol",
@@ -1802,9 +1802,9 @@ class AresLauncher:
 
             self.logger.info(f"🔧 Running download command: {' '.join(download_cmd)}")
             # Pass environment with BLANK_TRAINING_MODE set
-            env = os.environ.copy()
+            env=os.environ.copy()
             env["BLANK_TRAINING_MODE"] = "1"
-            download_result = subprocess.run(
+            download_result=subprocess.run(
                 download_cmd,
                 env=env,
                 check=False,
@@ -1818,7 +1818,7 @@ class AresLauncher:
 
             # Step 2: Consolidate data using step1_data_collection
             self.logger.info("🔄 Step 2: Consolidating data...")
-            consolidate_script = "src/training/steps/step1_data_collection.py"
+            consolidate_script="src/training/steps/step1_data_collection.py"
 
             if not os.path.exists(consolidate_script):
                 self.logger.error(
@@ -1827,7 +1827,7 @@ class AresLauncher:
                 return False
 
             # Run the consolidation script
-            consolidate_cmd = [
+            consolidate_cmd=[
                 sys.executable,
                 consolidate_script,
                 symbol,
@@ -1845,7 +1845,7 @@ class AresLauncher:
             )
             # Pass environment with BLANK_TRAINING_MODE set
             self.logger.info("🔄 Starting consolidation subprocess...")
-            consolidate_result = subprocess.run(
+            consolidate_result=subprocess.run(
                 consolidate_cmd,
                 env=env,
                 check=False,
@@ -1864,13 +1864,13 @@ class AresLauncher:
             self.logger.info("✅ Data consolidation completed successfully")
 
             # Step 3: Convert consolidated data to ETHUSDT_1h.csv format
-            if symbol == "ETHUSDT" and exchange == "BINANCE":
+            if symbol== "ETHUSDT" and exchange == "BINANCE":
                 self.logger.info(
                     "🔄 Step 3: Converting data to ETHUSDT_1h.csv format..."
                 )
                 from src.analyst.data_utils import create_ethusdt_1h_csv
 
-                conversion_success = create_ethusdt_1h_csv()
+                conversion_success=create_ethusdt_1h_csv()
                 if conversion_success:
                     self.logger.info("✅ Data conversion completed successfully")
                 else:
@@ -1896,7 +1896,7 @@ class AresLauncher:
         symbol: str,
         exchange: str,
         subcommand: str,
-        with_gui: bool = False,
+        with_gui: bool=False,
     ):
         """Run regime operations (HMM labeling or ML training) with optional GUI."""
         self.logger.info(f"🧠 Running regime operations for {symbol} on {exchange}")
@@ -1920,16 +1920,16 @@ class AresLauncher:
 
             self.logger.info("🔧 Initializing unified regime classifier...")
             # Initialize unified regime classifier
-            regime_classifier = UnifiedRegimeClassifier(CONFIG, exchange, symbol)
+            regime_classifier=UnifiedRegimeClassifier(CONFIG, exchange, symbol)
             self.logger.info("✅ Unified regime classifier initialized successfully")
 
-            if subcommand == "load":
+            if subcommand== "load":
                 print(
                     f"🚀 Starting unified regime classifier training for {symbol} on {exchange}...",
                 )
 
                 # Load historical data from data directory
-                data_file = f"data/{symbol}_1h.csv"
+                data_file=f"data/{symbol}_1h.csv"
                 if not os.path.exists(data_file):
                     self.logger.error(f"❌ Data file not found: {data_file}")
                     print(f"❌ Data file not found: {data_file}")
@@ -1940,7 +1940,7 @@ class AresLauncher:
 
                 from src.analyst.data_utils import load_klines_data
 
-                historical_data = load_klines_data(data_file)
+                historical_data=load_klines_data(data_file)
 
                 if historical_data is None or historical_data.empty:
                     self.logger.error("❌ Failed to load historical data")
@@ -1948,7 +1948,7 @@ class AresLauncher:
                     return False
 
                 # Train unified regime classifier
-                success = await regime_classifier.train_complete_system(historical_data)
+                success=await regime_classifier.train_complete_system(historical_data)
 
                 if success:
                     self.logger.info(
@@ -1962,7 +1962,7 @@ class AresLauncher:
                 print("❌ Unified regime classifier training failed")
                 return False
 
-            if subcommand == "train":
+            if subcommand== "train":
                 self.logger.info(
                     f"🚀 Starting unified regime classifier training for {symbol} on {exchange} (2 years data)...",
                 )
@@ -1976,7 +1976,7 @@ class AresLauncher:
                 )
 
                 # Load historical data from data directory
-                data_file = f"data/{symbol}_1h.csv"
+                data_file=f"data/{symbol}_1h.csv"
                 if not os.path.exists(data_file):
                     self.logger.error(f"❌ Data file not found: {data_file}")
                     print(f"❌ Data file not found: {data_file}")
@@ -1987,7 +1987,7 @@ class AresLauncher:
 
                 from src.analyst.data_utils import load_klines_data
 
-                historical_data = load_klines_data(data_file)
+                historical_data=load_klines_data(data_file)
 
                 if historical_data is None or historical_data.empty:
                     self.logger.error("❌ Failed to load historical data")
@@ -1995,7 +1995,7 @@ class AresLauncher:
                     return False
 
                 # Train unified regime classifier
-                success = await regime_classifier.train_complete_system(historical_data)
+                success=await regime_classifier.train_complete_system(historical_data)
 
                 if success:
                     self.logger.info(
@@ -2009,7 +2009,7 @@ class AresLauncher:
                 print("❌ Unified regime classifier training failed")
                 return False
 
-            if subcommand == "train_blank":
+            if subcommand== "train_blank":
                 print(
                     f"🚀 Starting unified regime classifier training for {symbol} on {exchange} (30 days data)...",
                 )
@@ -2018,7 +2018,7 @@ class AresLauncher:
                 from src.analyst.data_utils import load_klines_data
 
                 # Load 30 days of data for quick training
-                historical_data = await load_klines_data(
+                historical_data=await load_klines_data(
                     symbol,
                     exchange,
                     lookback_days=60,
@@ -2030,7 +2030,7 @@ class AresLauncher:
                     return False
 
                 # Train unified regime classifier
-                success = await regime_classifier.train_complete_system(historical_data)
+                success=await regime_classifier.train_complete_system(historical_data)
 
                 if success:
                     self.logger.info(
@@ -2064,7 +2064,7 @@ class AresLauncher:
     ) -> bool:
         """Common implementation for step-based training (blank/full) to reduce duplication."""
         # Normalize and log step
-        start_step = self._normalize_step_name(start_step)
+        start_step=self._normalize_step_name(start_step)
         self.logger.info(f"Starting from step: {start_step}")
 
         import os
@@ -2072,21 +2072,21 @@ class AresLauncher:
         from src.config import CONFIG
 
         # Set training mode environment
-        if training_mode == "light":
+        if training_mode== "light":
             os.environ["LIGHT_TRAINING_MODE"] = "1"
             os.environ["BLANK_TRAINING_MODE"] = "0"
             os.environ["FULL_TRAINING_MODE"] = "0"
             self.logger.info(
                 "💡 LIGHT TRAINING MODE: Set LIGHT_TRAINING_MODE=1 for step-based training (30 days)"
             )
-        elif training_mode == "blank":
+        elif training_mode== "blank":
             os.environ["BLANK_TRAINING_MODE"] = "1"
             os.environ["LIGHT_TRAINING_MODE"] = "0"
             os.environ["FULL_TRAINING_MODE"] = "0"
             self.logger.info(
                 "🧪 BLANK TRAINING MODE: Set BLANK_TRAINING_MODE=1 for step-based training (180 days)"
             )
-        elif training_mode == "full":
+        elif training_mode== "full":
             os.environ["FULL_TRAINING_MODE"] = "1"
             os.environ["LIGHT_TRAINING_MODE"] = "0"
             os.environ["BLANK_TRAINING_MODE"] = "0"
@@ -2095,7 +2095,7 @@ class AresLauncher:
             )
 
         # Prevent blank mode with step1 data collection
-        if training_mode == "blank" and start_step == "step1_data_collection":
+        if training_mode== "blank" and start_step == "step1_data_collection":
             self.logger.error("❌ Cannot use blank mode with step1_data_collection")
             self.logger.error(
                 "Blank mode is designed for quick testing with limited data"
@@ -2118,7 +2118,7 @@ class AresLauncher:
 
         try:
             # Initialize step orchestrator
-            orchestrator = StepOrchestrator(symbol, exchange)
+            orchestrator=StepOrchestrator(symbol, exchange)
 
             # When forcing, set env flags and clear progress/checkpoints from the start step
             if force_rerun:
@@ -2133,7 +2133,7 @@ class AresLauncher:
             # Run the step-based training using the orchestrator
             import asyncio
 
-            success = asyncio.run(
+            success=asyncio.run(
                 orchestrator.execute_from_step(
                     start_step=start_step, config=CONFIG, force_rerun=force_rerun
                 )
@@ -2155,7 +2155,7 @@ class AresLauncher:
 
 def parse_arguments() -> argparse.Namespace:
     """Parse and validate command line arguments."""
-    parser = argparse.ArgumentParser(
+    parser=argparse.ArgumentParser(
         description="Ares Trading Bot Launcher",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
@@ -2352,23 +2352,23 @@ Examples:
 
 def validate_arguments(args: argparse.Namespace) -> None:
     """Validate parsed arguments."""
-    if args.command == "gui" and args.mode:
+    if args.command== "gui" and args.mode:
         if not args.symbol or not args.exchange:
             raise ValueError(
                 "Symbol and exchange are required when using gui with mode",
             )
 
     # Validate that force flag is not used with load command
-    force_flag = bool(
+    force_flag=bool(
         getattr(args, "force", False) or getattr(args, "force_rerun", False)
     )
-    if args.command == "load" and force_flag:
+    if args.command== "load" and force_flag:
         raise ValueError(
             "The --force flag is not available for the 'load' command. "
             "The load command is designed to be safe and only downloads missing data."
         )
 
-    commands_requiring_symbol = [
+    commands_requiring_symbol=[
         "paper",
         "challenger",
         "backtest",
@@ -2393,8 +2393,8 @@ def validate_arguments(args: argparse.Namespace) -> None:
 
 def initialize_launcher() -> tuple[AresLauncher, object]:
     """Initialize launcher with signal handling."""
-    signal_handler = setup_signal_handlers()
-    launcher = AresLauncher()
+    signal_handler=setup_signal_handlers()
+    launcher=AresLauncher()
     launcher.setup_logging()
 
     # Add cleanup callback to signal handler
@@ -2409,12 +2409,12 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
     print(f"🔍 DEBUG: Symbol: {args.symbol}, Exchange: {args.exchange}")
 
     # Normalize input step name to current naming, and collapse force flags
-    normalized_step = launcher._normalize_step_name(getattr(args, "step", None))
-    force_flag = bool(
+    normalized_step=launcher._normalize_step_name(getattr(args, "step", None))
+    force_flag=bool(
         getattr(args, "force", False) or getattr(args, "force_rerun", False)
     )
 
-    command_handlers = {
+    command_handlers={
         "backtest": lambda: launcher.run_backtesting(
             args.symbol,
             args.exchange,
@@ -2761,7 +2761,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
 
     if args.command in command_handlers:
         print(f"🔍 DEBUG: Found command handler for '{args.command}'")
-        success = command_handlers[args.command]()
+        success=command_handlers[args.command]()
         print(f"🔍 DEBUG: Command execution result: {success}")
         if not success:
             return False
@@ -2769,7 +2769,7 @@ def execute_command(launcher: AresLauncher, args: argparse.Namespace) -> bool:
             launcher.wait_for_user_input()
         return True
 
-    if args.command == "gui":
+    if args.command== "gui":
         return execute_gui_command(launcher, args)
 
     print(f"❌ ERROR: Unknown command: {args.command}")
@@ -2784,12 +2784,12 @@ def execute_gui_command(launcher: AresLauncher, args: argparse.Namespace) -> boo
                 "❌ Symbol and exchange are required when mode is specified",
             )
             return False
-        success = launcher.run_gui_with_mode(args.mode, args.symbol, args.exchange)
+        success=launcher.run_gui_with_mode(args.mode, args.symbol, args.exchange)
         if not success:
             return False
         launcher.wait_for_user_input()
         return True
-    success = launcher.run_gui_only()
+    success=launcher.run_gui_only()
     if not success:
         return False
     launcher.wait_for_user_input()
@@ -2801,14 +2801,14 @@ def main():
     """Main entry point for the Ares launcher."""
     try:
         # Parse and validate arguments
-        args = parse_arguments()
+        args=parse_arguments()
         validate_arguments(args)
 
         # Initialize launcher (this sets up comprehensive logging)
-        launcher, signal_handler = initialize_launcher()
+        launcher, signal_handler=initialize_launcher()
 
         # Log command execution
-        command_info = f"Command: {args.command}"
+        command_info=f"Command: {args.command}"
         if hasattr(args, "symbol") and args.symbol:
             command_info += f" - Symbol: {args.symbol}"
         if hasattr(args, "exchange") and args.exchange:
@@ -2821,7 +2821,7 @@ def main():
         )
 
         # Execute the requested command
-        success = execute_command(launcher, args)
+        success=execute_command(launcher, args)
 
         if success:
             launcher.comprehensive_logger.log_launcher_end(0)
@@ -2849,5 +2849,5 @@ def main():
             launcher.cleanup()
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     main()

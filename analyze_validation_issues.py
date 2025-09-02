@@ -14,7 +14,7 @@ import argparse
 def extract_validation_details_from_logs(log_file_path: str) -> Dict[str, Any]:
     """Extract validation details from log files"""
 
-    validation_data = {
+    validation_data={
         "timeframes": {},
         "issue_types": defaultdict(list),
         "feature_issues": defaultdict(list),
@@ -26,20 +26,20 @@ def extract_validation_details_from_logs(log_file_path: str) -> Dict[str, Any]:
             try:
                 # Parse JSON log entries
                 if line.strip().startswith("{"):
-                    log_entry = json.loads(line.strip())
-                    message = log_entry.get("message", "")
+                    log_entry=json.loads(line.strip())
+                    message=log_entry.get("message", "")
 
                     # Extract validation summary
                     if (
                         "Feature validation for" in message
                         and "issues found" in message
                     ):
-                        match = re.search(
+                        match=re.search(
                             r"Feature validation for (\w+): (\d+) issues found", message
                         )
                         if match:
-                            timeframe = match.group(1)
-                            issue_count = int(match.group(2))
+                            timeframe=match.group(1)
+                            issue_count=int(match.group(2))
                             validation_data["timeframes"][timeframe] = issue_count
 
                     # Extract specific issue details
@@ -56,7 +56,7 @@ def extract_validation_details_from_logs(log_file_path: str) -> Dict[str, Any]:
 def analyze_feature_validation_config() -> Dict[str, Any]:
     """Analyze the validation configuration to understand thresholds"""
 
-    config_analysis = {
+    config_analysis={
         "correlation_threshold": 0.95,  # Default from code
         "nan_threshold": 0.1,  # 10% missing values
         "infinite_threshold": 0.01,  # 1% infinite values
@@ -79,10 +79,10 @@ def generate_detailed_validation_report(log_file_path: str) -> str:
     """Generate a detailed validation report"""
 
     # Extract data from logs
-    validation_data = extract_validation_details_from_logs(log_file_path)
-    config = analyze_feature_validation_config()
+    validation_data=extract_validation_details_from_logs(log_file_path)
+    config=analyze_feature_validation_config()
 
-    report = []
+    report=[]
     report.append("=" * 80)
     report.append("DETAILED FEATURE VALIDATION ANALYSIS")
     report.append("=" * 80)
@@ -178,7 +178,7 @@ def generate_detailed_validation_report(log_file_path: str) -> str:
 def create_feature_analysis_script() -> str:
     """Create a script to analyze specific features"""
 
-    script = '''
+    script='''
 #!/usr/bin/env python3
 """
 Feature-Specific Validation Analysis
@@ -192,7 +192,7 @@ from pathlib import Path
 def analyze_specific_features(features_df: pd.DataFrame, feature_names: List[str]) -> Dict[str, Any]:
     """Analyze specific features in detail"""
     
-    results = {}
+    results={}
     
     for feature in feature_names:
         if feature not in features_df.columns:
@@ -210,7 +210,7 @@ def analyze_specific_features(features_df: pd.DataFrame, feature_names: List[str
             "variance": series.var() if np.issubdtype(series.dtype, np.number) else None,
             "unique_values": series.nunique(),
             "most_common_value": series.mode().iloc[0] if len(series.mode()) > 0 else None,
-            "most_common_count": (series == series.mode().iloc[0]).sum() if len(series.mode()) > 0 else 0,
+            "most_common_count": (series== series.mode().iloc[0]).sum() if len(series.mode()) > 0 else 0,
             "min_value": series.min() if np.issubdtype(series.dtype, np.number) else None,
             "max_value": series.max() if np.issubdtype(series.dtype, np.number) else None,
             "extreme_values": (series.abs() > 1e6).sum() if np.issubdtype(series.dtype, np.number) else 0
@@ -246,7 +246,7 @@ def print_feature_analysis(results: Dict[str, Any]):
             print(f"  Extreme Values (>1M): {analysis['extreme_values']:,}")
         
         # Issue classification
-        issues = []
+        issues=[]
         if analysis['missing_percentage'] > 50:
             issues.append("CRITICAL: >50% missing values")
         elif analysis['missing_percentage'] > 10:
@@ -271,24 +271,24 @@ def print_feature_analysis(results: Dict[str, Any]):
             print(f"  ✅ No major issues detected")
 
 # Usage example:
-# features_df = pd.read_parquet('path/to/features.parquet')
-# problematic_features = ['feature1', 'feature2', 'feature3']
-# results = analyze_specific_features(features_df, problematic_features)
+# features_df=pd.read_parquet('path/to/features.parquet')
+# problematic_features=['feature1', 'feature2', 'feature3']
+# results=analyze_specific_features(features_df, problematic_features)
 # print_feature_analysis(results)
 '''
 
     return script
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     parser = argparse.ArgumentParser(description="Analyze validation issues from logs")
     parser.add_argument("log_file", help="Path to the log file to analyze")
     parser.add_argument("--output", help="Output file for the report")
 
-    args = parser.parse_args()
+    args=parser.parse_args()
 
     # Generate report
-    report = generate_detailed_validation_report(args.log_file)
+    report=generate_detailed_validation_report(args.log_file)
 
     # Print to console
     print(report)
@@ -300,7 +300,7 @@ if __name__ == "__main__":
         print(f"\nReport saved to: {args.output}")
 
     # Create feature analysis script
-    script = create_feature_analysis_script()
+    script=create_feature_analysis_script()
     with open("feature_analysis_script.py", "w") as f:
         f.write(script)
     print("\nFeature analysis script created: feature_analysis_script.py")

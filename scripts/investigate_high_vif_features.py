@@ -101,7 +101,7 @@ def analyze_high_vif_features() -> bool:
 	print("-" * 60)
 
 	for feature, info in high_vif_features.items():
-		print(f"   {feature}: VIF = {float(info['vif']):.2f}")
+		print(f"   {feature}: VIF={float(info['vif']):.2f}")
 		print(f"      Issue: {info['issue']}")
 		print(f"      Fix: {info['fix']}")
 		print()
@@ -133,7 +133,7 @@ def analyze_high_vif_features() -> bool:
 				print(f"   - {feature}: {high_vif_features[feature]['fix']}")
 
 	# Proposed fixes
-	fixes = {
+	fixes={
 		"Moving Averages": {
 			"problem": "SMA and EMA are highly correlated with price",
 			"solution": "Use price differences, ratios, or different windows",
@@ -189,7 +189,7 @@ def analyze_high_vif_features() -> bool:
 
 	# Create sample data
 	np.random.seed(42)
-	n_samples = 1000
+	n_samples=1000
 
 	# Simulate price data
 	price_data = pd.DataFrame(
@@ -204,26 +204,26 @@ def analyze_high_vif_features() -> bool:
 
 	# 1. Moving Averages Fix
 	print("\n📊 Moving Averages Fix Test:")
-	close = price_data["close"]
+	close=price_data["close"]
 
 	# Original features
 	sma_20_orig = close.rolling(20).mean()
-	ema_20_orig = close.ewm(span=20).mean()
+	ema_20_orig=close.ewm(span=20).mean()
 
 	# Fixed features
-	sma_20_fixed = (close - sma_20_orig) / sma_20_orig  # Price deviation from MA
-	ema_20_fixed = close.diff().ewm(span=20).mean()  # Price acceleration
+	sma_20_fixed=(close - sma_20_orig) / sma_20_orig  # Price deviation from MA
+	ema_20_fixed=close.diff().ewm(span=20).mean()  # Price acceleration
 
 	# Calculate correlation (ensure same length)
-	sma_clean = sma_20_orig.dropna()
-	ema_clean = ema_20_orig.dropna()
-	min_len = min(len(sma_clean), len(ema_clean))
-	corr_orig = float(np.corrcoef(sma_clean.iloc[-min_len:], ema_clean.iloc[-min_len:])[0, 1])
+	sma_clean=sma_20_orig.dropna()
+	ema_clean=ema_20_orig.dropna()
+	min_len=min(len(sma_clean), len(ema_clean))
+	corr_orig=float(np.corrcoef(sma_clean.iloc[-min_len:], ema_clean.iloc[-min_len:])[0, 1])
 
-	sma_fixed_clean = sma_20_fixed.dropna()
-	ema_fixed_clean = ema_20_fixed.dropna()
-	min_len_fixed = min(len(sma_fixed_clean), len(ema_fixed_clean))
-	corr_fixed = float(
+	sma_fixed_clean=sma_20_fixed.dropna()
+	ema_fixed_clean=ema_20_fixed.dropna()
+	min_len_fixed=min(len(sma_fixed_clean), len(ema_fixed_clean))
+	corr_fixed=float(
 		np.corrcoef(
 			sma_fixed_clean.iloc[-min_len_fixed:],
 			ema_fixed_clean.iloc[-min_len_fixed:],
@@ -245,30 +245,30 @@ def analyze_high_vif_features() -> bool:
 	print("\n📊 Momentum Indicators Fix Test:")
 
 	# Original features
-	momentum_5_orig = close.pct_change(5)
-	momentum_10_orig = close.pct_change(10)
+	momentum_5_orig=close.pct_change(5)
+	momentum_10_orig=close.pct_change(10)
 
 	# Fixed features
-	momentum_3_fixed = close.pct_change(3)  # Different window
-	momentum_7_fixed = close.pct_change(7)  # Different window
-	accel_5 = momentum_5_orig.diff()  # Momentum acceleration (not used in corr)
-	_ = accel_5  # keep variable to avoid linter warning
+	momentum_3_fixed=close.pct_change(3)  # Different window
+	momentum_7_fixed=close.pct_change(7)  # Different window
+	accel_5=momentum_5_orig.diff()  # Momentum acceleration (not used in corr)
+	_=accel_5  # keep variable to avoid linter warning
 
 	# Calculate correlations (ensure same length)
-	mom5_clean = momentum_5_orig.dropna()
-	mom10_clean = momentum_10_orig.dropna()
-	min_len_mom = min(len(mom5_clean), len(mom10_clean))
-	corr_mom_orig = float(
+	mom5_clean=momentum_5_orig.dropna()
+	mom10_clean=momentum_10_orig.dropna()
+	min_len_mom=min(len(mom5_clean), len(mom10_clean))
+	corr_mom_orig=float(
 		np.corrcoef(
 			mom5_clean.iloc[-min_len_mom:],
 			mom10_clean.iloc[-min_len_mom:],
 		)[0, 1]
 	)
 
-	mom3_clean = momentum_3_fixed.dropna()
-	mom7_clean = momentum_7_fixed.dropna()
-	min_len_mom_fixed = min(len(mom3_clean), len(mom7_clean))
-	corr_mom_fixed = float(
+	mom3_clean=momentum_3_fixed.dropna()
+	mom7_clean=momentum_7_fixed.dropna()
+	min_len_mom_fixed=min(len(mom3_clean), len(mom7_clean))
+	corr_mom_fixed=float(
 		np.corrcoef(
 			mom3_clean.iloc[-min_len_mom_fixed:],
 			mom7_clean.iloc[-min_len_mom_fixed:],
@@ -289,26 +289,26 @@ def analyze_high_vif_features() -> bool:
 	print("\n📊 Volatility Indicators Fix Test:")
 
 	# Original features
-	realized_vol_orig = close.pct_change().rolling(20).std()
-	price_vol_orig = close.rolling(20).std()
+	realized_vol_orig=close.pct_change().rolling(20).std()
+	price_vol_orig=close.rolling(20).std()
 
 	# Fixed features (different estimators)
-	garman_klass = np.sqrt(
+	garman_klass=np.sqrt(
 		0.5 * np.log(price_data["high"] / price_data["low"]) ** 2
 		- (2 * np.log(2) - 1) * np.log(price_data["close"] / price_data["open"]) ** 2,
 	)
-	garman_klass = garman_klass.rolling(20).mean()
+	garman_klass=garman_klass.rolling(20).mean()
 
-	parkinson = np.sqrt(
+	parkinson=np.sqrt(
 		np.log(price_data["high"] / price_data["low"]) ** 2 / (4 * np.log(2)),
 	)
-	parkinson = parkinson.rolling(20).mean()
+	parkinson=parkinson.rolling(20).mean()
 
 	# Calculate correlations
-	corr_vol_orig = float(
+	corr_vol_orig=float(
 		np.corrcoef(realized_vol_orig.dropna(), price_vol_orig.dropna())[0, 1]
 	)
-	corr_vol_fixed = float(np.corrcoef(garman_klass.dropna(), parkinson.dropna())[0, 1])
+	corr_vol_fixed=float(np.corrcoef(garman_klass.dropna(), parkinson.dropna())[0, 1])
 
 	print(f"   Original volatility correlation: {corr_vol_orig:.3f}")
 	print(f"   Fixed volatility correlation: {corr_vol_fixed:.3f}")
@@ -325,9 +325,9 @@ def analyze_high_vif_features() -> bool:
 	print("SUMMARY OF FIXES:")
 	print("=" * 80)
 
-	total_improvement = 0.0
+	total_improvement=0.0
 	for group, results in test_results.items():
-		improvement = float(results["improvement"])  # ensure numeric
+		improvement=float(results["improvement"])  # ensure numeric
 		total_improvement += improvement
 		print(f"   {group}: {improvement:.3f} correlation reduction")
 
@@ -348,6 +348,6 @@ def analyze_high_vif_features() -> bool:
 	return bool(total_improvement > 0.5)
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
 	success = analyze_high_vif_features()
 	sys.exit(0 if success else 1)

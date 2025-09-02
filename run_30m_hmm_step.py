@@ -4,25 +4,27 @@ Script to run step1_7_hmm_regime_discovery specifically for 30m timeframe.
 This uses the existing step orchestrator infrastructure with enhanced artifact validation.
 """
 
-            from src.training.steps.step3_hmm_regime_discovery import (import traceback, import traceback
+            from src.training.steps.step3_hmm_regime_discovery import (import traceback
+import traceback
 from pathlib import Path
 from src.training.steps.step3_hmm_regime_discovery import run_step
-from src.utils.logger import system_logger, import asyncio
+from src.utils.logger import system_logger
+import asyncio
 import sys)
 # Add the project root to the path)
-project_root , Path(__file__).parent
+project_root, Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 async def run_30m_hmm_step():
     """Run step1_7_hmm_regime_discovery for 30m timeframe with artifact validation."""
-    logger = system_logger.getChild("Run30mHMMStep")
+    logger=system_logger.getChild("Run30mHMMStep")
 
     logger.info(
         "🔧 Starting step1_7_hmm_regime_discovery for 30m timeframe with artifact validation...",
     )
 
     # Parameters
-    symbol = "ETHUSDT"
+    symbol="ETHUSDT"
     exchange = "BINANCE"
     data_dir = "data/training"
     timeframe = "30m"  # Focus on 30m timeframe
@@ -34,10 +36,10 @@ async def run_30m_hmm_step():
 
     try:
         # Run the enhanced step1_7 with artifact validation
-        success = await run_step(
-            symbol, symbol = exchange=exchange,
-            data_dir, data_dir = timeframe=timeframe,
-            lookback_days, lookback_days = )
+        success=await run_step(
+            symbol, symbol=exchange=exchange,
+            data_dir, data_dir=timeframe=timeframe,
+            lookback_days, lookback_days=lookback_days)
 
         if success:
             logger.info(
@@ -51,17 +53,17 @@ async def run_30m_hmm_step():
                 validate_required_artifacts,
             )
 
-            artifact_status = validate_required_artifacts(
+            artifact_status=validate_required_artifacts(
                 symbol = exchange,
-                data_dir = timeframe,
+                data_dir=timeframe,
             )
-            all_present = all(artifact_status.values())
+            all_present=all(artifact_status.values())
 
             if all_present:
                 logger.info("✅ All required artifacts created successfully")
                 print("✅ All required artifacts created successfully")
             else:
-                missing = [
+                missing=[
                     name for name, exists in artifact_status.items() if not exists
                 ]
                 logger.error(f"❌ Missing artifacts: {', '.join(missing)}")
@@ -86,7 +88,7 @@ async def run_30m_hmm_step():
 
     return True
 
-if __name__ == "__main__":
+if __name__== "__main__":
     try:
         success = asyncio.run(run_30m_hmm_step())
         if success:

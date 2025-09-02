@@ -24,8 +24,8 @@ import numpy as np
 import pandas as pd
 
 # Add the src directory to the Python path
-current_dir = Path(__file__).parent
-src_dir = current_dir.parent / "src"
+current_dir=Path(__file__).parent
+src_dir=current_dir.parent / "src"
 sys.path.insert(0, str(src_dir))
 
 from src.utils.advanced_decorators import performance_monitor, PerformanceLevel
@@ -39,10 +39,10 @@ class EnhancedDataQualityAnalyzer:
     """
 
     def __init__(self):
-        self.logger = system_logger.getChild("EnhancedDataQualityAnalyzer")
+        self.logger=system_logger.getChild("EnhancedDataQualityAnalyzer")
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
-    def analyze_multicollinearity(self, data: pd.DataFrame, vif_threshold: float = 5.0) -> dict[str, Any]:
+    def analyze_multicollinearity(self, data: pd.DataFrame, vif_threshold: float=5.0) -> dict[str, Any]:
         """
         Analyze multicollinearity using VIF and correlation analysis.
 
@@ -56,10 +56,10 @@ class EnhancedDataQualityAnalyzer:
         self.logger.info("🔍 Analyzing multicollinearity...")
 
         # Remove non-numeric columns
-        numeric_data = data.select_dtypes(include=[np.number])
+        numeric_data=data.select_dtypes(include=[np.number])
 
         # Remove potential label columns
-        potential_label_columns = [
+        potential_label_columns=[
             "label",
             "target",
             "y",
@@ -69,18 +69,18 @@ class EnhancedDataQualityAnalyzer:
             "Y",
             "Class",
         ]
-        actual_label_columns = [
+        actual_label_columns=[
             col for col in numeric_data.columns if col in potential_label_columns
         ]
         if actual_label_columns:
             self.logger.warning(
                 f"⚠️ Removing label columns from multicollinearity analysis: {actual_label_columns}",
             )
-            numeric_data = numeric_data.drop(columns=actual_label_columns)
+            numeric_data=numeric_data.drop(columns=actual_label_columns)
 
         # Handle NaN values
-        imputer = SimpleImputer(strategy="median")
-        data_imputed = pd.DataFrame(
+        imputer=SimpleImputer(strategy="median")
+        data_imputed=pd.DataFrame(
             imputer.fit_transform(numeric_data),
             columns=numeric_data.columns,
             index=numeric_data.index,
@@ -91,35 +91,35 @@ class EnhancedDataQualityAnalyzer:
         high_vif_features: list[str] = []
 
         for i, col in enumerate(data_imputed.columns):
-            other_cols = [c for c in data_imputed.columns if c != col]
+            other_cols=[c for c in data_imputed.columns if c != col]
             if len(other_cols) > 0:
-                X = data_imputed[other_cols]
+                X=data_imputed[other_cols]
                 y = data_imputed[col]
 
                 reg = LinearRegression()
                 reg.fit(X, y)
 
                 # Calculate R-squared
-                y_pred = reg.predict(X)
-                ss_res = np.sum((y - y_pred) ** 2)
-                ss_tot = np.sum((y - np.mean(y)) ** 2)
-                r_squared = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+                y_pred=reg.predict(X)
+                ss_res=np.sum((y - y_pred) ** 2)
+                ss_tot=np.sum((y - np.mean(y)) ** 2)
+                r_squared=1 - (ss_res / ss_tot) if ss_tot != 0 else 0
 
                 # Calculate VIF
-                vif = 1 / (1 - r_squared) if r_squared < 1 else float("inf")
+                vif=1 / (1 - r_squared) if r_squared < 1 else float("inf")
                 vif_scores[col] = vif
 
                 if vif > vif_threshold:
                     high_vif_features.append(col)
 
         # Calculate correlation matrix
-        correlation_matrix = data_imputed.corr()
+        correlation_matrix=data_imputed.corr()
 
         # Find highly correlated pairs
-        high_correlation_pairs = []
+        high_correlation_pairs=[]
         for i in range(len(correlation_matrix.columns)):
             for j in range(i + 1, len(correlation_matrix.columns)):
-                corr_value = correlation_matrix.iloc[i, j]
+                corr_value=correlation_matrix.iloc[i, j]
                 if abs(corr_value) > 0.8:
                     high_correlation_pairs.append(
                         (correlation_matrix.columns[i], correlation_matrix.columns[j], corr_value)
@@ -150,7 +150,7 @@ class EnhancedDataQualityAnalyzer:
         self.logger.info("🔍 Analyzing label distribution...")
 
         # Find label column
-        label_columns = [
+        label_columns=[
             "label",
             "target",
             "y",
@@ -159,7 +159,7 @@ class EnhancedDataQualityAnalyzer:
             "Target",
             "Y",
         ]
-        label_col = None
+        label_col=None
         for col in label_columns:
             if col in data.columns:
                 label_col = col
@@ -171,24 +171,24 @@ class EnhancedDataQualityAnalyzer:
         labels = data[label_col]
 
         # Analyze label distribution
-        unique_labels, counts = np.unique(labels, return_counts=True)
-        label_distribution = dict(zip(unique_labels, counts, strict=False))
+        unique_labels, counts=np.unique(labels, return_counts=True)
+        label_distribution=dict(zip(unique_labels, counts, strict=False))
 
         # Calculate imbalance metrics
-        total_samples = len(labels)
-        class_ratios = {
+        total_samples=len(labels)
+        class_ratios={
             label: count / total_samples
             for label, count in label_distribution.items()
         }
 
         # Identify issues
-        issues = []
+        issues=[]
         recommendations = []
 
         # Check for extreme imbalance
         min_class_count = min(counts)
-        max_class_count = max(counts)
-        imbalance_ratio = (
+        max_class_count=max(counts)
+        imbalance_ratio=(
             max_class_count / min_class_count
             if min_class_count > 0
             else float("inf")
@@ -205,7 +205,7 @@ class EnhancedDataQualityAnalyzer:
             recommendations.append("Use class weights or resampling techniques")
 
         # Check for single-class dominance
-        dominant_class_ratio = max(class_ratios.values())
+        dominant_class_ratio=max(class_ratios.values())
         if dominant_class_ratio > 0.9:
             issues.append(
                 f"DOMINANT: One class represents {dominant_class_ratio:.1%} of data",
@@ -213,8 +213,8 @@ class EnhancedDataQualityAnalyzer:
             recommendations.append("Consider different labeling strategy")
 
         # Check for HOLD class issues
-        hold_labels = [0, "HOLD", "hold"]
-        hold_count = sum(label_distribution.get(label, 0) for label in hold_labels)
+        hold_labels=[0, "HOLD", "hold"]
+        hold_count=sum(label_distribution.get(label, 0) for label in hold_labels)
         if hold_count < 100:
             issues.append(f"HOLD_CLASS: Only {hold_count} HOLD samples")
             recommendations.append("Switch to binary classification (BUY vs SELL)")
@@ -246,32 +246,32 @@ class EnhancedDataQualityAnalyzer:
         self.logger.info("🔍 Analyzing feature redundancy...")
 
         # Remove non-numeric columns
-        numeric_data = data.select_dtypes(include=[np.number])
+        numeric_data=data.select_dtypes(include=[np.number])
 
         # Calculate correlation matrix
-        correlation_matrix = numeric_data.corr()
+        correlation_matrix=numeric_data.corr()
 
         # Find redundant features (correlation > 0.95)
-        redundant_features = []
+        redundant_features=[]
         feature_groups = []
 
         for i in range(len(correlation_matrix.columns)):
             for j in range(i + 1, len(correlation_matrix.columns)):
-                corr_value = correlation_matrix.iloc[i, j]
+                corr_value=correlation_matrix.iloc[i, j]
                 if abs(corr_value) > 0.95:
-                    feature1 = correlation_matrix.columns[i]
+                    feature1=correlation_matrix.columns[i]
                     feature2 = correlation_matrix.columns[j]
                     redundant_features.append((feature1, feature2, corr_value))
 
                     # Group redundant features
-                    found_group = False
+                    found_group=False
                     for group in feature_groups:
                         if feature1 in group or feature2 in group:
                             if feature1 not in group:
                                 group.append(feature1)
                             if feature2 not in group:
                                 group.append(feature2)
-                            found_group = True
+                            found_group=True
                             break
                     if not found_group:
                         feature_groups.append([feature1, feature2])
@@ -296,14 +296,14 @@ class EnhancedDataQualityAnalyzer:
         """
         self.logger.info("🚀 Starting comprehensive data quality analysis...")
 
-        results = {
+        results={
             "multicollinearity": self.analyze_multicollinearity(data),
             "label_distribution": self.analyze_label_distribution(data),
             "feature_redundancy": self.analyze_feature_redundancy(data),
         }
 
         # Generate summary
-        summary = {
+        summary={
             "total_features": len(data.columns),
             "total_samples": len(data),
             "critical_issues": [],
@@ -340,7 +340,7 @@ class EnhancedDataQualityAnalyzer:
 
 async def main():
     """Main function for data quality assessment."""
-    parser = argparse.ArgumentParser(
+    parser=argparse.ArgumentParser(
         description="Enhanced Data Quality Assessment Tool"
     )
     parser.add_argument(
@@ -368,33 +368,33 @@ async def main():
         help="Output directory for reports",
     )
 
-    args = parser.parse_args()
+    args=parser.parse_args()
 
     # Create output directory
-    output_dir = Path(args.output_dir)
+    output_dir=Path(args.output_dir)
     output_dir.mkdir(exist_ok=True)
 
     # Load data
-    data_path = Path(args.data_path)
-    if data_path.suffix == ".csv":
+    data_path=Path(args.data_path)
+    if data_path.suffix== ".csv":
         data = pd.read_csv(data_path)
-    elif data_path.suffix == ".parquet":
+    elif data_path.suffix== ".parquet":
         data = pd.read_parquet(data_path)
-    elif data_path.suffix == ".pkl":
+    elif data_path.suffix== ".pkl":
         data = pd.read_pickle(data_path)
     else:
         print(f"Unsupported file format: {data_path.suffix}")
         return
 
     # Initialize analyzer
-    analyzer = EnhancedDataQualityAnalyzer()
+    analyzer=EnhancedDataQualityAnalyzer()
 
     # Perform comprehensive analysis
-    results = analyzer.comprehensive_analysis(data)
+    results=analyzer.comprehensive_analysis(data)
 
     # Save results
-    timestamp = pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
-    output_file = output_dir / f"data_quality_report_{args.symbol}_{args.exchange}_{timestamp}.json"
+    timestamp=pd.Timestamp.now().strftime("%Y%m%d_%H%M%S")
+    output_file=output_dir / f"data_quality_report_{args.symbol}_{args.exchange}_{timestamp}.json"
 
     # Convert numpy types to native Python types for JSON serialization
     def convert_numpy_types(obj):
@@ -417,7 +417,7 @@ async def main():
     print(f"✅ Data quality report saved to: {output_file}")
 
     # Print summary
-    summary = results["summary"]
+    summary=results["summary"]
     print(f"\n📊 Data Quality Summary:")
     print(f"Total features: {summary['total_features']}")
     print(f"Total samples: {summary['total_samples']}")
@@ -440,5 +440,5 @@ async def main():
             print(f"  - {rec}")
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
     asyncio.run(main())

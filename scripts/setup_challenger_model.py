@@ -18,7 +18,7 @@ import argparse
 import sys
 
 # Ensure project root on path
-project_root = Path(__file__).parent.parent
+project_root=Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.config import CONFIG  # noqa: E402
@@ -28,27 +28,27 @@ from src.utils.warning_symbols import error, missing  # noqa: E402
 try:
 	import mlflow  # type: ignore
 except Exception as e:  # noqa: BLE001
-	mlflow = None  # type: ignore
+	mlflow=None  # type: ignore
 	system_logger.warning(f"MLflow not available: {e}")
 
 
 def setup_challenger_model(run_id: str) -> bool:
 	"""Set up a challenger model run ID."""
 	setup_logging()
-	logger = system_logger.getChild("SetupChallengerModel")
+	logger=system_logger.getChild("SetupChallengerModel")
 
 	try:
 		# Initialize state manager (with default config)
-		state_manager = StateManager({})
+		state_manager=StateManager({})
 
 		# Verify the run ID exists in MLflow
 		if mlflow is None:
 			print(error("MLflow is not installed or not available"))
 			return False
 
-		client = mlflow.tracking.MlflowClient()
+		client=mlflow.tracking.MlflowClient()
 		try:
-			run = client.get_run(run_id)
+			run=client.get_run(run_id)
 		except Exception as e:  # noqa: BLE001
 			print(error(f"Could not find MLflow run {run_id}: {e}"))
 			return False
@@ -70,26 +70,26 @@ def setup_challenger_model(run_id: str) -> bool:
 def list_available_models() -> bool:
 	"""List available models from MLflow."""
 	setup_logging()
-	logger = system_logger.getChild("ListModels")
+	logger=system_logger.getChild("ListModels")
 
 	try:
 		if mlflow is None:
 			print(error("MLflow is not installed or not available"))
 			return False
 
-		client = mlflow.tracking.MlflowClient()
+		client=mlflow.tracking.MlflowClient()
 
 		# Get the experiment name from config
-		experiment_name = CONFIG.get("MLFLOW_EXPERIMENT_NAME", "ares_trading")
+		experiment_name=CONFIG.get("MLFLOW_EXPERIMENT_NAME", "ares_trading")
 
 		# Find the experiment
-		experiment = client.get_experiment_by_name(experiment_name)
+		experiment=client.get_experiment_by_name(experiment_name)
 		if not experiment:
 			print(missing(f"Experiment '{experiment_name}' not found"))
 			return False
 
 		# Search for runs
-		runs = client.search_runs(
+		runs=client.search_runs(
 			experiment_ids=[experiment.experiment_id],
 			order_by=["start_time DESC"],
 			max_results=20,
@@ -99,11 +99,11 @@ def list_available_models() -> bool:
 		logger.info("=" * 80)
 
 		for run in runs:
-			run_id = run.info.run_id
+			run_id=run.info.run_id
 			run_name = run.data.tags.get("mlflow.runName", "N/A")
-			status = run.data.tags.get("model_status", run.info.status)
-			accuracy = run.data.metrics.get("accuracy", 0.0)
-			timestamp = run.info.start_time
+			status=run.data.tags.get("model_status", run.info.status)
+			accuracy=run.data.metrics.get("accuracy", 0.0)
+			timestamp=run.info.start_time
 
 			logger.info(f"Run ID: {run_id}")
 			logger.info(f"Name: {run_name}")
@@ -121,11 +121,11 @@ def list_available_models() -> bool:
 def clear_challenger_model() -> bool:
 	"""Clear the challenger model run ID."""
 	setup_logging()
-	logger = system_logger.getChild("ClearChallengerModel")
+	logger=system_logger.getChild("ClearChallengerModel")
 
 	try:
 		# Initialize state manager
-		state_manager = StateManager({})
+		state_manager=StateManager({})
 
 		# Clear the challenger model run ID
 		state_manager.set_state("challenger_model_run_id", None)
@@ -139,7 +139,7 @@ def clear_challenger_model() -> bool:
 
 def build_parser() -> argparse.ArgumentParser:
 	"""Create and configure the argparse parser."""
-	parser = argparse.ArgumentParser(
+	parser=argparse.ArgumentParser(
 		description="Setup Challenger Model Utility",
 		formatter_class=argparse.RawDescriptionHelpFormatter,
 		epilog="""
@@ -170,16 +170,16 @@ Examples:
 
 def main() -> None:
 	"""Main entry point."""
-	parser = build_parser()
-	args = parser.parse_args()
+	parser=build_parser()
+	args=parser.parse_args()
 
 	success: Optional[bool] = None
 	if args.list_models:
-		success = list_available_models()
+		success=list_available_models()
 	elif args.clear:
-		success = clear_challenger_model()
+		success=clear_challenger_model()
 	elif args.run_id:
-		success = setup_challenger_model(args.run_id)
+		success=setup_challenger_model(args.run_id)
 	else:
 		parser.print_help()
 		sys.exit(1)
@@ -188,5 +188,5 @@ def main() -> None:
 		sys.exit(1)
 
 
-if __name__ == "__main__":
+if __name__== "__main__":
 	main()

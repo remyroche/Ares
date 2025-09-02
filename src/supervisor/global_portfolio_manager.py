@@ -245,10 +245,11 @@ class GlobalPortfolioManager:
         """Initialize risk management module."""
         try:
             # Initialize risk management components
-                    self.risk_management_components = {
-            "stop_loss_management": True,
-            "correlation_management": True , "volatility_management": True,
-        }
+            self.risk_management_components = {
+                "stop_loss_management": True,
+                "correlation_management": True,
+                "volatility_management": True,
+            }
 
             self.logger.info("Risk management module initialized")
 

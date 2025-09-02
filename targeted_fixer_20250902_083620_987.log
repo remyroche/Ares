@@ -1,0 +1,23 @@
+2025-09-02 08:36:20,990 - INFO - Processing file: src/utils/config_loader.py
+2025-09-02 08:36:20,990 - INFO - Performing semantic analysis...
+2025-09-02 08:36:20,990 - INFO - Code quality score: 0.00
+2025-09-02 08:36:20,990 - WARNING - Syntax errors found: 1
+2025-09-02 08:36:20,990 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:36:20,992 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:20,993 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:20,993 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:20,994 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:20,995 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:20,996 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:20,997 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:20,997 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:20,998 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:20,999 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:21,000 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:21,001 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:21,003 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:21,006 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:21,006 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:36:21,006 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:36:21,008 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:36:21,009 - INFO - No fixes needed for: src/utils/config_loader.py

@@ -17,7 +17,7 @@ import ast
 from datetime import datetime
 
 # Set up logging
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]  # Include milliseconds (3 digits)
 log_filename = f"targeted_fixer_{timestamp}.log"
 
 logging.basicConfig(

@@ -11,22 +11,40 @@ from .core.config import (
     load_config
 )
 
-from .fixers.auto_fixer import AutoFixer
-from .fixers.sequential_fixer import SequentialFixer
+# Delayed imports for optional components to avoid heavy dependencies at import time
 
-from .analyzers.linter_analyzer import LinterAnalyzer
-from .analyzers.syntax_validator import SyntaxValidator
-from .analyzers.call_graph_analyzer import CallGraphAnalyzer
-from .analyzers.dependency_analyzer import DependencyAnalyzer
-from .analyzers.import_analyzer import ImportAnalyzer, ImportIssue
-from .analyzers.signature_analyzer import SignatureAnalyzer, SignatureIssue, FunctionSignature, FunctionCall
-from .analyzers.complexity_analyzer import ComplexityAnalyzer, ModuleComplexity, FunctionComplexity, ClassComplexity, ComplexityMetrics
-from .analyzers.dead_code_analyzer import DeadCodeAnalyzer, DeadCodeIssue, DeadCodeReport
+def _lazy_import_fixers():
+    from .fixers.auto_fixer import AutoFixer  # noqa: F401
+    from .fixers.sequential_fixer import SequentialFixer  # noqa: F401
+    return AutoFixer, SequentialFixer
 
-from .reporters.quality_reporter import QualityReporter
-from .reporters.error_reporter import ErrorReporter, ErrorReport, ErrorSummary, ErrorCategory, FileErrorSummary
-from .reporters.html_reporter import HTMLReporter, HTMLReportConfig
-from .reporters.trend_reporter import TrendReporter, TrendReport, TrendPoint, TrendAnalysis
+
+def _lazy_import_analyzers():
+    from .analyzers.linter_analyzer import LinterAnalyzer  # noqa: F401
+    from .analyzers.syntax_validator import SyntaxValidator  # noqa: F401
+    from .analyzers.call_graph_analyzer import CallGraphAnalyzer  # noqa: F401
+    from .analyzers.dependency_analyzer import DependencyAnalyzer  # noqa: F401
+    from .analyzers.import_analyzer import ImportAnalyzer, ImportIssue  # noqa: F401
+    from .analyzers.signature_analyzer import (
+        SignatureAnalyzer, SignatureIssue, FunctionSignature, FunctionCall  # noqa: F401
+    )
+    from .analyzers.complexity_analyzer import (
+        ComplexityAnalyzer, ModuleComplexity, FunctionComplexity, ClassComplexity, ComplexityMetrics  # noqa: F401
+    )
+    from .analyzers.dead_code_analyzer import (
+        DeadCodeAnalyzer, DeadCodeIssue, DeadCodeReport  # noqa: F401
+    )
+    return locals()
+
+
+def _lazy_import_reporters():
+    from .reporters.quality_reporter import QualityReporter  # noqa: F401
+    from .reporters.error_reporter import (
+        ErrorReporter, ErrorReport, ErrorSummary, ErrorCategory, FileErrorSummary  # noqa: F401
+    )
+    from .reporters.html_reporter import HTMLReporter, HTMLReportConfig  # noqa: F401
+    from .reporters.trend_reporter import TrendReporter, TrendReport, TrendPoint, TrendAnalysis  # noqa: F401
+    return locals()
 
 from .utils.file_utils import (
     find_python_files,
@@ -52,66 +70,6 @@ __all__ = [
     "get_default_config",
     "load_config",
     
-    # Fixers
-    "AutoFixer",
-    "SequentialFixer",
-    
-    # Analyzers
-    "LinterAnalyzer",
-    "SyntaxValidator",
-    "CallGraphAnalyzer",
-    "DependencyAnalyzer",
-    "ImportAnalyzer",
-    "SignatureAnalyzer",
-    "ComplexityAnalyzer",
-    "DeadCodeAnalyzer",
-    
-    # Issue classes
-    "ImportIssue",
-    "SignatureIssue",
-    "FunctionSignature",
-    "FunctionCall",
-    
-    # Complexity analysis classes
-    "ModuleComplexity",
-    "FunctionComplexity", 
-    "ClassComplexity",
-    "ComplexityMetrics",
-    
-    # Dead code analysis classes
-    "DeadCodeIssue",
-    "DeadCodeReport",
-    
-    # Reporters
-    "QualityReporter",
-    "ErrorReporter",
-    "HTMLReporter",
-    "TrendReporter",
-    
-    # Error reporting classes
-    "ErrorReport",
-    "ErrorSummary",
-    "ErrorCategory",
-    "FileErrorSummary",
-    
-    # HTML reporting classes
-    "HTMLReportConfig",
-    
-    # Trend reporting classes
-    "TrendReport",
-    "TrendPoint",
-    "TrendAnalysis",
-    
-    # Utilities
-    "find_python_files",
-    "is_valid_python_file",
-    "get_file_info",
-    "get_directory_stats",
-    "backup_file",
-    "restore_file",
-    "get_file_dependencies",
-    "find_unused_imports",
-    
     # Quick access functions
     "auto_fix",
     "sequential_fix",
@@ -126,6 +84,8 @@ __all__ = [
 
 
 # Quick access functions
+import os
+
 def auto_fix(target: str, config: CodeQualityConfig = None) -> dict:
     """
     Quick auto-fix for Python code.
@@ -138,6 +98,7 @@ def auto_fix(target: str, config: CodeQualityConfig = None) -> dict:
         Fix results
     """
     config = config or get_default_config()
+    AutoFixer, _SequentialFixer = _lazy_import_fixers()
     fixer = AutoFixer(config)
     
     if os.path.isfile(target):
@@ -157,6 +118,7 @@ def sequential_fix(target: str, output_dir: str = None) -> dict:
     Returns:
         Pipeline results
     """
+    _AutoFixer, SequentialFixer = _lazy_import_fixers()
     fixer = SequentialFixer()
     return fixer.run_pipeline(target=target, output_dir=output_dir)
 
@@ -173,12 +135,12 @@ def analyze_imports(target: str, config: CodeQualityConfig = None) -> dict:
         Import analysis results
     """
     config = config or get_default_config()
-    analyzer = ImportAnalyzer(config)
+    ImportAnalyzer = _lazy_import_analyzers()["ImportAnalyzer"]
     
     if os.path.isfile(target):
-        return analyzer.analyze_files([target])
+        return ImportAnalyzer(config).analyze_files([target])
     else:
-        return analyzer.analyze_directory(target)
+        return ImportAnalyzer(config).analyze_directory(target)
 
 
 def analyze_signatures(target: str, config: CodeQualityConfig = None) -> dict:
@@ -193,12 +155,12 @@ def analyze_signatures(target: str, config: CodeQualityConfig = None) -> dict:
         Signature analysis results
     """
     config = config or get_default_config()
-    analyzer = SignatureAnalyzer(config)
+    SignatureAnalyzer = _lazy_import_analyzers()["SignatureAnalyzer"]
     
     if os.path.isfile(target):
-        return analyzer.analyze_files([target])
+        return SignatureAnalyzer(config).analyze_files([target])
     else:
-        return analyzer.analyze_directory(target)
+        return SignatureAnalyzer(config).analyze_directory(target)
 
 
 def analyze_complexity(target: str, config: CodeQualityConfig = None) -> dict:
@@ -213,12 +175,12 @@ def analyze_complexity(target: str, config: CodeQualityConfig = None) -> dict:
         Complexity analysis results
     """
     config = config or get_default_config()
-    analyzer = ComplexityAnalyzer(config)
+    ComplexityAnalyzer = _lazy_import_analyzers()["ComplexityAnalyzer"]
     
     if os.path.isfile(target):
-        return analyzer.analyze_file(target)
+        return ComplexityAnalyzer(config).analyze_file(target)
     else:
-        return analyzer.analyze_directory(target)
+        return ComplexityAnalyzer(config).analyze_directory(target)
 
 
 def analyze_dead_code(target: str, config: CodeQualityConfig = None) -> dict:
@@ -233,15 +195,15 @@ def analyze_dead_code(target: str, config: CodeQualityConfig = None) -> dict:
         Dead code analysis results
     """
     config = config or get_default_config()
-    analyzer = DeadCodeAnalyzer(config)
+    DeadCodeAnalyzer = _lazy_import_analyzers()["DeadCodeAnalyzer"]
     
     if os.path.isfile(target):
-        return analyzer.analyze_file(target)
+        return DeadCodeAnalyzer(config).analyze_file(target)
     else:
-        return analyzer.analyze_directory(target)
+        return DeadCodeAnalyzer(config).analyze_directory(target)
 
 
-def generate_error_report(analyzers_results: dict, config: CodeQualityConfig = None) -> ErrorReport:
+def generate_error_report(analyzers_results: dict, config: CodeQualityConfig = None):
     """
     Generate comprehensive error report from analyzer results.
     
@@ -253,6 +215,8 @@ def generate_error_report(analyzers_results: dict, config: CodeQualityConfig = N
         ErrorReport object
     """
     config = config or get_default_config()
+    ErrorReporter = _lazy_import_reporters()["ErrorReporter"]
+    
     reporter = ErrorReporter(config)
     
     # Add results from different analyzers
@@ -278,6 +242,7 @@ def generate_html_report(analyzers_results: dict, title: str = "Code Quality Rep
     Returns:
         HTML string
     """
+    HTMLReporter = _lazy_import_reporters()["HTMLReporter"]
     reporter = HTMLReporter()
     return reporter.generate_from_analyzer_results(analyzers_results, title)
 
@@ -290,9 +255,6 @@ def track_quality_trends(metrics: dict, project_name: str = "default") -> None:
         metrics: Current quality metrics
         project_name: Name of the project
     """
+    TrendReporter = _lazy_import_reporters()["TrendReporter"]
     reporter = TrendReporter()
     reporter.add_data_point(metrics, project_name)
-
-
-# Add missing import
-import os

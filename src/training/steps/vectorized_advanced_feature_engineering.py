@@ -5156,7 +5156,7 @@ class VectorizedAdvancedFeatureEngineering:
         context="difference and acceleration feature engineering"
     )
     async def _engineer_difference_and_acceleration_features(
-        self, features: dict[str, Any], price_data: pd.DataFrame, ) -> dict[str, Any]:
+        self, features: dict[str, Any], price_data: pd.DataFrame) -> dict[str, Any]:
         """Engineer difference and acceleration features with proper normalization and interaction features.
 
         Args:
@@ -5170,66 +5170,66 @@ class VectorizedAdvancedFeatureEngineering:
         try:
             enhanced_features = {}
 
-        # Define lookback periods for different timeframes
+            # Define lookback periods for different timeframes
 
-        # Features that benefit from difference calculations
+            # Features that benefit from difference calculations
             difference_candidates = {
-        # RSI features
+                # RSI features
                 "rsi": {"priority": "high", "timeframes": ["1m", "5m", "15m", "30m"]},
                 "rsi_20": {"priority": "high", "timeframes": ["1m", "5m", "15m", "30m"]},
                 "adaptive_rsi": {"priority": "high", "timeframes": ["1m", "5m", "15m", "30m"]},
 
-        # MACD features
+                # MACD features
                 "macd": {"priority": "high", "timeframes": ["5m", "15m", "30m"]},
                 "macd_signal": {"priority": "high", "timeframes": ["5m", "15m", "30m"]},
                 "macd_histogram": {"priority": "high", "timeframes": ["5m", "15m", "30m"]},
 
-        # Bollinger Bands
+                # Bollinger Bands
                 "bb_position": {"priority": "medium", "timeframes": ["1m", "5m", "15m", "30m"]},
                 "bb_zscore_20": {"priority": "medium", "timeframes": ["1m", "5m", "15m", "30m"]},
 
-        # Price momentum
+                # Price momentum
                 "price_momentum_5": {"priority": "high", "timeframes": ["1m", "5m", "15m"]},
                 "price_momentum_20": {"priority": "high", "timeframes": ["15m", "30m"]},
                 "volume_weighted_momentum_5": {"priority": "high", "timeframes": ["1m", "5m", "15m"]},
                 "volume_weighted_momentum_10": {"priority": "high", "timeframes": ["5m", "15m", "30m"]},
 
-        # Volume features
+                # Volume features
                 "volume_momentum": {"priority": "high", "timeframes": ["1m", "5m", "15m"]},
                 "volume_ma_5": {"priority": "medium", "timeframes": ["1m", "5m", "15m"]},
                 "volume_ma_20": {"priority": "medium", "timeframes": ["5m", "15m", "30m"]},
 
-        # Volatility features
+                # Volatility features
                 "volatility_5": {"priority": "high", "timeframes": ["1m", "5m", "15m"]},
                 "volatility_20": {"priority": "high", "timeframes": ["15m", "30m"]},
                 "volatility_persistence": {"priority": "medium", "timeframes": ["15m", "30m"]},
                 "volatility_of_volatility": {"priority": "medium", "timeframes": ["15m", "30m"]},
 
-        # Technical indicators
+                # Technical indicators
                 "cci": {"priority": "medium", "timeframes": ["5m", "15m", "30m"]},
                 "roc": {"priority": "high", "timeframes": ["5m", "15m", "30m"]},
                 "mfi": {"priority": "medium", "timeframes": ["5m", "15m", "30m"]},
 
-        # Microstructure features
+                # Microstructure features
                 "order_flow_imbalance": {"priority": "high", "timeframes": ["1m", "5m", "15m"]},
 
-        # Adaptive features
+                # Adaptive features
                 "adaptive_sma": {"priority": "medium", "timeframes": ["15m", "30m"]},
-                "adaptive_sma_slope": {"priority": "medium", "timeframes": ["15m", "30m"]},
+                "adaptive_sma_slope": {"priority": "medium", "timeframes": ["5m", "15m", "30m"]},
 
-        # Moving averages
+                # Moving averages
                 "sma_5": {"priority": "low", "timeframes": ["1m", "5m", "15m"]},
                 "sma_20": {"priority": "low", "timeframes": ["5m", "15m", "30m"]},
                 "ema_12": {"priority": "low", "timeframes": ["1m", "5m", "15m"]},
                 "ema20_slope": {"priority": "medium", "timeframes": ["5m", "15m", "30m"]},
             }
 
-        # Features that benefit from acceleration (second difference)
+            # Features that benefit from acceleration (second difference)
             acceleration_candidates = {
                 "rsi": {"priority": "high", "timeframes": ["5m", "15m", "30m"]},
                 "rsi_14": {"priority": "high", "timeframes": ["5m", "15m", "30m"]},
                 "macd": {"priority": "high", "timeframes": ["15m", "30m"]},
-                "macd_signal": {"priority": "high", "timeframes": ["15m", "30m"]},
+                "macd_signal": {"priority": "high", "timeframes": ["5m", "15m", "30m"]},
                 "price_momentum_5": {"priority": "high", "timeframes": ["1m", "5m", "15m"]},
                 "price_momentum_20": {"priority": "high", "timeframes": ["15m", "30m"]},
                 "volume_momentum": {"priority": "high", "timeframes": ["1m", "5m", "15m"]},
@@ -5238,7 +5238,7 @@ class VectorizedAdvancedFeatureEngineering:
                 "stoch_k": {"priority": "medium", "timeframes": ["1m", "5m", "15m"]},
             }
 
-        # Exclude features that are already difference-based or should be treated as data
+            # Exclude features that are already difference-based or should be treated as data
             exclude_features = {
                 "close_returns", "price_impact", "bid_ask_spread_returns",
                 "market_depth_change", "market_depth_returns", "volume_ratio_change",
@@ -5247,151 +5247,151 @@ class VectorizedAdvancedFeatureEngineering:
                 "weighted_mid_price_change", "trade_to_order_ratio",
             }
 
-        # Process difference features
-        for feature_name, feature_value in features.items():
-        if feature_name in exclude_features:
+            # Process difference features
+            for feature_name, feature_value in features.items():
+                if feature_name in exclude_features:
                     continue
 
-        if feature_name not in difference_candidates:
+                if feature_name not in difference_candidates:
                     continue
 
-        if not isinstance(feature_value, pd.Series | np.ndarray | list):
+                if not isinstance(feature_value, (pd.Series, np.ndarray, list)):
                     continue
 
-        # Convert to pandas Series for processing
-        if isinstance(feature_value, np.ndarray | list):
+                # Convert to pandas Series for processing
+                if isinstance(feature_value, (np.ndarray, list)):
                     feature_series = pd.Series(feature_value, index=price_data.index)
                 else:
                     feature_series = feature_value
 
-        # Get candidate info
+                # Get candidate info
                 candidate_info = difference_candidates[feature_name]
                 priority = candidate_info["priority"]
                 timeframes = candidate_info["timeframes"]
 
-        # Select lookback periods based on priority (tightened to reduce feature count)
-        if priority == "high":
+                # Select lookback periods based on priority (tightened to reduce feature count)
+                if priority == "high":
                     periods = [1, 3, 5]
                 elif priority == "medium":
                     periods = [1, 3]
                 else:  # low priority
                     periods = [1]
 
-        # Generate difference features
-        for period in periods:
-        if len(feature_series) > period:
-        # Calculate difference
+                # Generate difference features
+                for period in periods:
+                    if len(feature_series) > period:
+                        # Calculate difference
                         diff_series = feature_series.diff(period)
 
-        # Handle NaN values - fill with 0 for "no change"
+                        # Handle NaN values - fill with 0 for "no change"
                         diff_series = diff_series.fillna(0)
 
-        # Normalize with rolling Z-score for consistent scale
+                        # Normalize with rolling Z-score for consistent scale
                         diff_normalized = self._normalize_with_rolling_zscore(diff_series, window=20)
 
-        # Store both raw and normalized differences
+                        # Store both raw and normalized differences
                         enhanced_features[f"{feature_name}_diff_{period}"] = diff_series
                         enhanced_features[f"{feature_name}_diff_{period}_norm"] = diff_normalized
 
-        # Generate acceleration features for high-priority candidates
-        if feature_name in acceleration_candidates and priority in ["high", "medium"]:
-        if period in (1, 3) and len(diff_series) > 1:
-        # Calculate acceleration (second difference) for limited periods only
+                        # Generate acceleration features for high-priority candidates
+                        if feature_name in acceleration_candidates and priority in ["high", "medium"]:
+                            if period in (1, 3) and len(diff_series) > 1:
+                                # Calculate acceleration (second difference) for limited periods only
                                 accel_series = diff_series.diff(1).fillna(0)
                                 accel_normalized = self._normalize_with_rolling_zscore(accel_series, window=20)
                                 enhanced_features[f"{feature_name}_accel_{period}"] = accel_series
                                 enhanced_features[f"{feature_name}_accel_{period}_norm"] = accel_normalized
 
-        # Validate that enhanced_features doesn't contain coroutines before generating interactions
+            # Validate that enhanced_features doesn't contain coroutines before generating interactions
             valid_enhanced_features = {}
-        for key, value in enhanced_features.items():
-        if hasattr(value, "__await__"):
-        self.logger.warning(f"⚠️ Skipping coroutine feature in enhanced_features: {key}")
+            for key, value in enhanced_features.items():
+                if hasattr(value, "__await__"):
+                    self.logger.warning(f"⚠️ Skipping coroutine feature in enhanced_features: {key}")
                     continue
                 valid_enhanced_features[key] = value
 
-        # Generate interaction features for high-priority combinations
-        try:
-            interaction_features = await self._generate_interaction_features(valid_enhanced_features, features, price_data)
-            if isinstance(interaction_features, dict):
-                # Filter out any coroutine features from interaction_features before updating
-                valid_interaction_features = {}
-                coroutine_count = 0
-                for key, value in interaction_features.items():
-                    if hasattr(value, "__await__"):
-                        self.logger.warning(f"⚠️ Skipping coroutine feature from interaction generation: {key}")
-                        coroutine_count += 1
-                        continue
-                    valid_interaction_features[key] = value
+            # Generate interaction features for high-priority combinations
+            try:
+                interaction_features = await self._generate_interaction_features(valid_enhanced_features, features, price_data)
+                if isinstance(interaction_features, dict):
+                    # Filter out any coroutine features from interaction_features before updating
+                    valid_interaction_features = {}
+                    coroutine_count = 0
+                    for key, value in interaction_features.items():
+                        if hasattr(value, "__await__"):
+                            self.logger.warning(f"⚠️ Skipping coroutine feature from interaction generation: {key}")
+                            coroutine_count += 1
+                            continue
+                        valid_interaction_features[key] = value
 
-                if coroutine_count > 0:
-                    self.logger.info(f"⚠️ Filtered out {coroutine_count} coroutine features from interaction generation")
+                    if coroutine_count > 0:
+                        self.logger.info(f"⚠️ Filtered out {coroutine_count} coroutine features from interaction generation")
 
-                enhanced_features.update(valid_interaction_features)
-            else:
-                self.logger.warning(f"⚠️ Interaction features not a dict: {type(interaction_features)}")
-        except Exception as e:
-            self.logger.warning(f"⚠️ Failed to generate interaction features: {e}")
-            interaction_features = {}
+                    enhanced_features.update(valid_interaction_features)
+                else:
+                    self.logger.warning(f"⚠️ Interaction features not a dict: {type(interaction_features)}")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to generate interaction features: {e}")
+                interaction_features = {}
 
-        # Validate that features doesn't contain coroutines before generating cross-timeframe features
+            # Validate that features doesn't contain coroutines before generating cross-timeframe features
             valid_features = {}
-        for key, value in features.items():
-        if hasattr(value, "__await__"):
-        self.logger.warning(f"⚠️ Skipping coroutine feature in features: {key}")
+            for key, value in features.items():
+                if hasattr(value, "__await__"):
+                    self.logger.warning(f"⚠️ Skipping coroutine feature in features: {key}")
                     continue
                 valid_features[key] = value
 
-        # Generate cross-timeframe difference features
+            # Generate cross-timeframe difference features
             cross_timeframe_features = await self._generate_cross_timeframe_features(valid_features, price_data)
-        if isinstance(cross_timeframe_features, dict):
-        # Filter out any coroutine features from cross_timeframe_features before updating
+            if isinstance(cross_timeframe_features, dict):
+                # Filter out any coroutine features from cross_timeframe_features before updating
                 valid_cross_timeframe_features = {}
                 coroutine_count = 0
-        for key, value in cross_timeframe_features.items():
-        if hasattr(value, "__await__"):
-        self.logger.warning(f"⚠️ Skipping coroutine feature from cross-timeframe generation: {key}")
+                for key, value in cross_timeframe_features.items():
+                    if hasattr(value, "__await__"):
+                        self.logger.warning(f"⚠️ Skipping coroutine feature from cross-timeframe generation: {key}")
                         coroutine_count += 1
                         continue
                     valid_cross_timeframe_features[key] = value
 
-        if coroutine_count > 0:
-        self.logger.info(f"⚠️ Filtered out {coroutine_count} coroutine features from cross-timeframe generation")
+                if coroutine_count > 0:
+                    self.logger.info(f"⚠️ Filtered out {coroutine_count} coroutine features from cross-timeframe generation")
 
                 enhanced_features.update(valid_cross_timeframe_features)
             else:
-        self.logger.warning(f"⚠️ Cross-timeframe features not a dict: {type(cross_timeframe_features)}")
+                self.logger.warning(f"⚠️ Cross-timeframe features not a dict: {type(cross_timeframe_features)}")
 
-        # Final validation: ensure no coroutine features in the final output
+            # Final validation: ensure no coroutine features in the final output
             final_enhanced_features = {}
             coroutine_count = 0
-        for key, value in enhanced_features.items():
-        if hasattr(value, "__await__"):
-        self.logger.warning(f"⚠️ Skipping coroutine feature in final output: {key}")
+            for key, value in enhanced_features.items():
+                if hasattr(value, "__await__"):
+                    self.logger.warning(f"⚠️ Skipping coroutine feature in final output: {key}")
                     coroutine_count += 1
                     continue
                 final_enhanced_features[key] = value
 
-        if coroutine_count > 0:
-        self.logger.info(f"⚠️ Filtered out {coroutine_count} coroutine features from final output")
+            if coroutine_count > 0:
+                self.logger.info(f"⚠️ Filtered out {coroutine_count} coroutine features from final output")
 
-        # Apply caps to control feature explosion
-        try:
+            # Apply caps to control feature explosion
+            try:
                 pre_total = len(final_enhanced_features)
-        # Identify RAW-only keys in each category (normalized variants handled separately)
+                # Identify RAW-only keys in each category (normalized variants handled separately)
                 accel_raw = [k for k in final_enhanced_features if "_accel_" in k and not k.endswith("_norm")]
-        # Cross-timeframe raw diff features (e.g., rsi_diff_5m_1m)
+                # Cross-timeframe raw diff features (e.g., rsi_diff_5m_1m)
                 cross_time_raw = [
                     k for k in final_enhanced_features
-        if "_diff_" in k and not k.endswith("_norm") and ("m_" in k or "h_" in k)
+                    if "_diff_" in k and not k.endswith("_norm") and ("m_" in k or "h_" in k)
                 ]
-        # Non-cross-time raw difference features (exclude acceleration)
+                # Non-cross-time raw difference features (exclude acceleration)
                 diff_raw = [
                     k for k in final_enhanced_features
-        if "_diff_" in k and not k.endswith("_norm") and "_accel_" not in k and not ("m_" in k or "h_" in k)
+                    if "_diff_" in k and not k.endswith("_norm") and "_accel_" not in k and not ("m_" in k or "h_" in k)
                 ]
 
-        # Priority patterns (keep strongest first)
+                # Priority patterns (keep strongest first)
                 accel_priority = [
                     "rsi_accel", "macd_histogram_accel", "macd_accel", "price_momentum_", "volatility_20_accel",
                 ]
@@ -5405,17 +5405,17 @@ class VectorizedAdvancedFeatureEngineering:
 
                 def rank_keys(keys, patterns):
                     def score(k: str) -> int:
-        for idx, p in enumerate(patterns):
-        if p in k:
-        return idx
-        return len(patterns) + 1
-        return sorted(keys, key=score)
+                        for idx, p in enumerate(patterns):
+                            if p in k:
+                                return idx
+                        return len(patterns) + 1
+                    return sorted(keys, key=score)
 
-                accel_ranked, rank_keys(accel_raw, accel_priority)
-                diff_ranked, rank_keys(diff_raw, diff_priority)
-                cross_ranked, rank_keys(cross_time_raw, cross_priority)
+                accel_ranked = rank_keys(accel_raw, accel_priority)
+                diff_ranked = rank_keys(diff_raw, diff_priority)
+                cross_ranked = rank_keys(cross_time_raw, cross_priority)
 
-        # Caps (tightened further to meet target totals)
+                # Caps (tightened further to meet target totals)
                 max_accel = 10   # ~20 with norms
                 max_diff = 25    # ~50 with norms
                 max_cross_time = 50  # ~100 with norms
@@ -5424,54 +5424,54 @@ class VectorizedAdvancedFeatureEngineering:
                 kept_cross_raw = set(cross_ranked[:max_cross_time])
                 kept_diff_raw = set(diff_ranked[:max_diff])
 
-        # Include normalized counterparts for kept raw keys (do not count against caps)
+                # Include normalized counterparts for kept raw keys (do not count against caps)
                 kept_keys = set()
-        for raw_key in list(kept_accel_raw) + list(kept_cross_raw) + list(kept_diff_raw):
+                for raw_key in list(kept_accel_raw) + list(kept_cross_raw) + list(kept_diff_raw):
                     kept_keys.add(raw_key)
                     norm_key = f"{raw_key}_norm"
-        if norm_key in final_enhanced_features:
+                    if norm_key in final_enhanced_features:
                         kept_keys.add(norm_key)
 
-        # Rebuild final features with caps applied
-                capped_features: dict[str = Any] = {}
-        for k, v in final_enhanced_features.items():
-        # Keep capped categories (raw+their norms)
-        if k in kept_keys:
+                # Rebuild final features with caps applied
+                capped_features: dict[str, Any] = {}
+                for k, v in final_enhanced_features.items():
+                    # Keep capped categories (raw+their norms)
+                    if k in kept_keys:
                         capped_features[k] = v
                         continue
-        # Pass-through for non-targeted categories (e.g., interactions) untouched
+                    # Pass-through for non-targeted categories (e.g., interactions) untouched
                     is_accel = "_accel_" in k
                     is_diff = "_diff_" in k
                     is_cross = is_diff and ("m_" in k or "h_" in k)
-        # If not accel/diff/cross-timeframe, keep
-        if not is_accel and not is_diff and not is_cross:
+                    # If not accel/diff/cross-timeframe, keep
+                    if not is_accel and not is_diff and not is_cross:
                         capped_features[k] = v
 
                 post_total = len(capped_features)
-        self.logger.info(
+                self.logger.info(
                     f"🔧 Applied feature caps (pre={pre_total}, post={post_total}): "
                     f"accel<=%d, diff<=%d, cross-time<=%d (priority-aware)" % (max_accel, max_diff, max_cross_time)
                 )
-        except Exception as cap_e:
-        self.logger.warning(f"⚠️ Failed to apply feature caps: {cap_e}")
+            except Exception as cap_e:
+                self.logger.warning(f"⚠️ Failed to apply feature caps: {cap_e}")
                 capped_features = final_enhanced_features
 
-        self.logger.info(f"✅ Generated {len(capped_features)} difference and acceleration features (after caps)")
-        return capped_features
+            self.logger.info(f"✅ Generated {len(capped_features)} difference and acceleration features (after caps)")
+            return capped_features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error engineering difference and acceleration features: {e}")
-        return {}
+            self.logger.exception(f"🚨 Error engineering difference and acceleration features: {e}")
+            return {}
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError)
-        default_return=pd.Series()
+        exceptions=(ValueError, AttributeError),
+        default_return=pd.Series(),
         context="rolling z-score normalization"
     )
     @memory_efficient(
-        chunk_size=1000
-        streaming_processing=False
-        memory_pool=True
+        chunk_size=1000,
+        streaming_processing=False,
+        memory_pool=True,
         cleanup_frequency=10
     )
     def _normalize_with_rolling_zscore(self, series: pd.Series, window: int = 20) -> pd.Series:
@@ -5486,49 +5486,49 @@ class VectorizedAdvancedFeatureEngineering:
 
         """
         try:
-        if len(series) < window:
-        return series
+            if len(series) < window:
+                return series
 
-        # Calculate rolling mean and std
-            rolling_mean, series.rolling(window=window, min_periods=1).mean()
-            rolling_std, series.rolling(window=window, min_periods=1).std()
+            # Calculate rolling mean and std
+            rolling_mean = series.rolling(window=window, min_periods=1).mean()
+            rolling_std = series.rolling(window=window, min_periods=1).std()
 
-        # Avoid division by zero
-            rolling_std, rolling_std.replace(0, 1)
+            # Avoid division by zero
+            rolling_std = rolling_std.replace(0, 1)
 
-        # Calculate Z-score
+            # Calculate Z-score
             z_score = (series - rolling_mean) / rolling_std
 
-        # Clip extreme values to prevent outliers from dominating
-            z_score, z_score.clip(-3, 3)
+            # Clip extreme values to prevent outliers from dominating
+            z_score = z_score.clip(-3, 3)
 
-        # Fill NaN values
-        return z_score.fillna(0)
+            # Fill NaN values
+            return z_score.fillna(0)
 
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error in rolling Z-score normalization: {e}")
-        return series.fillna(0)
+            self.logger.exception(f"🚨 Error in rolling Z-score normalization: {e}")
+            return series.fillna(0)
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError, MemoryError)
-        default_return={}
+        exceptions=(ValueError, AttributeError, MemoryError),
+        default_return={},
         context="interaction feature generation"
     )
     @memory_efficient(
-        chunk_size=2000
-        streaming_processing=True
-        memory_pool=True
+        chunk_size=2000,
+        streaming_processing=True,
+        memory_pool=True,
         cleanup_frequency=15
     )
     @debug_training_step(
-        log_intermediate_results=True
-        save_debug_artifacts=False
-        performance_profiling=True
+        log_intermediate_results=True,
+        save_debug_artifacts=False,
+        performance_profiling=True,
         error_context_preservation=True
     )
     async def _generate_interaction_features(
-        self = enhanced_features: dict[str, Any], original_features: dict[str, Any], price_data: pd.DataFrame, ) -> dict[str, Any]:
+        self, enhanced_features: dict[str, Any], original_features: dict[str, Any], price_data: pd.DataFrame) -> dict[str, Any]:
         """Generate comprehensive interaction features between difference/acceleration features.
 
         Args:
@@ -5542,27 +5542,27 @@ class VectorizedAdvancedFeatureEngineering:
         try:
             interaction_features = {}
 
-        # Validate that enhanced_features contains actual data, not coroutines
-        if not isinstance(enhanced_features, dict):
-        self.logger.error(f"🚨 Enhanced features is not a dict: {type(enhanced_features)}")
-        return {}
+            # Validate that enhanced_features contains actual data, not coroutines
+            if not isinstance(enhanced_features, dict):
+                self.logger.error(f"🚨 Enhanced features is not a dict: {type(enhanced_features)}")
+                return {}
 
-        # Filter out any coroutine objects from enhanced_features
+            # Filter out any coroutine objects from enhanced_features
             valid_features = {}
-        for key, value in enhanced_features.items():
-        if hasattr(value, "__await__"):
-        self.logger.warning(f"⚠️ Skipping coroutine feature: {key}")
+            for key, value in enhanced_features.items():
+                if hasattr(value, "__await__"):
+                    self.logger.warning(f"⚠️ Skipping coroutine feature: {key}")
                     continue
                 valid_features[key] = value
 
-        if not valid_features:
-        self.logger.warning("⚠️ No valid features found for interaction generation")
-        return {}
+            if not valid_features:
+                self.logger.warning("⚠️ No valid features found for interaction generation")
+                return {}
 
-        # Get all available feature names from valid features only
+            # Get all available feature names from valid features only
             all_feature_names = list(valid_features.keys())
 
-        # Define feature categories for intelligent interaction generation
+            # Define feature categories for intelligent interaction generation
             momentum_features = [f for f in all_feature_names if "momentum" in f.lower()]
             volume_features = [f for f in all_feature_names if "volume" in f.lower()]
             volatility_features = [f for f in all_feature_names if "volatility" in f.lower()]
@@ -5570,67 +5570,67 @@ class VectorizedAdvancedFeatureEngineering:
             macd_features = [f for f in all_feature_names if "macd" in f.lower()]
             bb_features = [f for f in all_feature_names if "bb" in f.lower() or "bollinger" in f.lower()]
             stoch_features = [f for f in all_feature_names if "stoch" in f.lower()]
-            [f for f in all_feature_names if "price" in f.lower()]
+            price_features = [f for f in all_feature_names if "price" in f.lower()]
             diff_features = [f for f in all_feature_names if "diff" in f.lower()]
             accel_features = [f for f in all_feature_names if "accel" in f.lower()]
 
-        # 1. High-value interaction combinations (50+ features)
+            # 1. High-value interaction combinations (50+ features)
             high_value_combinations = [
-        # RSI + Volume interactions (10+ features)
+                # RSI + Volume interactions (10+ features)
                 *[(f1, f2) for f1 in rsi_features[:3] for f2 in volume_features[:3]],
 
-        # Price momentum + Volume interactions (15+ features)
+                # Price momentum + Volume interactions (15+ features)
                 *[(f1, f2) for f1 in momentum_features[:5] for f2 in volume_features[:3]],
 
-        # MACD + Volume interactions (8+ features)
+                # MACD + Volume interactions (8+ features)
                 *[(f1, f2) for f1 in macd_features[:2] for f2 in volume_features[:4]],
 
-        # Volatility + Volume interactions (10+ features)
+                # Volatility + Volume interactions (10+ features)
                 *[(f1, f2) for f1 in volatility_features[:5] for f2 in volume_features[:2]],
 
-        # RSI + Price momentum interactions (12+ features)
+                # RSI + Price momentum interactions (12+ features)
                 *[(f1, f2) for f1 in rsi_features[:3] for f2 in momentum_features[:4]],
 
-        # MACD + Price momentum interactions (8+ features)
+                # MACD + Price momentum interactions (8+ features)
                 *[(f1, f2) for f1 in macd_features[:2] for f2 in momentum_features[:4]],
 
-        # Bollinger Bands + Volume interactions (6+ features)
+                # Bollinger Bands + Volume interactions (6+ features)
                 *[(f1, f2) for f1 in bb_features[:3] for f2 in volume_features[:2]],
 
-        # Stochastic + Volume interactions (6+ features)
+                # Stochastic + Volume interactions (6+ features)
                 *[(f1, f2) for f1 in stoch_features[:3] for f2 in volume_features[:2]],
 
-        # Difference + Acceleration interactions (20+ features)
+                # Difference + Acceleration interactions (20+ features)
                 *[(f1, f2) for f1 in diff_features[:5] for f2 in accel_features[:4]],
             ]
 
-        # 2. Cross-timeframe interaction combinations (30+ features)
+            # 2. Cross-timeframe interaction combinations (30+ features)
             cross_timeframe_combinations = []
-        for tf1 in ["5m", "15m", "30m"]:
-        for tf2 in ["15m", "30m"]:
-        if tf1 != tf2:
-        # Find features for each timeframe
+            for tf1 in ["5m", "15m", "30m"]:
+                for tf2 in ["15m", "30m"]:
+                    if tf1 != tf2:
+                        # Find features for each timeframe
                         tf1_features = [f for f in all_feature_names if tf1 in f]
                         tf2_features = [f for f in all_feature_names if tf2 in f]
 
-        # Create cross-timeframe interactions
-        for f1 in tf1_features[:2]:  # Limit to avoid too many combinations
-        for f2 in tf2_features[:2]:
+                        # Create cross-timeframe interactions
+                        for f1 in tf1_features[:2]:  # Limit to avoid too many combinations
+                            for f2 in tf2_features[:2]:
                                 cross_timeframe_combinations.append((f1, f2))
 
-        # 3. Polynomial interaction features (20+ features)
+            # 3. Polynomial interaction features (20+ features)
             polynomial_combinations = []
-        for feature_name in all_feature_names[:10]:  # Use first 10 features for polynomial
-        if feature_name in valid_features:
+            for feature_name in all_feature_names[:10]:  # Use first 10 features for polynomial
+                if feature_name in valid_features:
                     polynomial_combinations.append((feature_name, feature_name))  # Self-interaction
 
-        # 4. Volatility regime interactions (15+ features)
+            # 4. Volatility regime interactions (15+ features)
             volatility_regime_combinations = []
-        for vol_feat in volatility_features[:5]:
-        for other_feat in momentum_features[:3]:
+            for vol_feat in volatility_features[:5]:
+                for other_feat in momentum_features[:3]:
                     volatility_regime_combinations.append((vol_feat, other_feat))
 
-        # Combine all interaction combinations with stricter caps
+            # Combine all interaction combinations with stricter caps
             all_combinations = (
                 high_value_combinations +
                 cross_timeframe_combinations[:8] +  # further limited
@@ -5638,78 +5638,78 @@ class VectorizedAdvancedFeatureEngineering:
                 volatility_regime_combinations[:6]
             )
 
-        # Strict cap on total interaction pairs to control explosion
+            # Strict cap on total interaction pairs to control explosion
             MAX_INTERACTION_PAIRS = 5
             selected_combinations = all_combinations[:MAX_INTERACTION_PAIRS]
 
-        # Generate interactions
-        for feat1_name, feat2_name in selected_combinations:
-        if feat1_name in valid_features and feat2_name in valid_features:
+            # Generate interactions
+            for feat1_name, feat2_name in selected_combinations:
+                if feat1_name in valid_features and feat2_name in valid_features:
                     feat1 = valid_features[feat1_name]
                     feat2 = valid_features[feat2_name]
 
-        # Additional validation to ensure features are not coroutines
-        if hasattr(feat1, "__await__") or hasattr(feat2, "__await__"):
-        self.logger.warning(f"⚠️ Skipping interaction for coroutine features: {feat1_name}, {feat2_name}")
+                    # Additional validation to ensure features are not coroutines
+                    if hasattr(feat1, "__await__") or hasattr(feat2, "__await__"):
+                        self.logger.warning(f"⚠️ Skipping interaction for coroutine features: {feat1_name}, {feat2_name}")
                         continue
 
-        # Convert to pandas Series if needed
-        if isinstance(feat1, np.ndarray | list):
-                        feat1_series, pd.Series(feat1, index=price_data.index)
+                    # Convert to pandas Series if needed
+                    if isinstance(feat1, (np.ndarray, list)):
+                        feat1_series = pd.Series(feat1, index=price_data.index)
                     else:
                         feat1_series = feat1
 
-        if isinstance(feat2, np.ndarray | list):
-                        feat2_series, pd.Series(feat2, index=price_data.index)
+                    if isinstance(feat2, (np.ndarray, list)):
+                        feat2_series = pd.Series(feat2, index=price_data.index)
                     else:
                         feat2_series = feat2
 
-        # Ensure same length
-                    min_len, min(len(feat1_series), len(feat2_series))
-        if min_len > 0:
+                    # Ensure same length
+                    min_len = min(len(feat1_series), len(feat2_series))
+                    if min_len > 0:
                         feat1_series = feat1_series.iloc[-min_len:]
                         feat2_series = feat2_series.iloc[-min_len:]
 
-        # Create multiple types of interactions
+                    # Create multiple types of interactions
 
-        # 1. Multiplication interaction
-                        interaction_mult = feat1_series * feat2_series
-                        interaction_name = f"{feat1_name}_x_{feat2_name}"
-                        interaction_features[interaction_name] = interaction_mult
-                        interaction_features[f"{interaction_name}_norm"] = self._normalize_with_rolling_zscore(interaction_mult, window=20)
+                    # 1. Multiplication interaction
+                    interaction_mult = feat1_series * feat2_series
+                    interaction_name = f"{feat1_name}_x_{feat2_name}"
+                    interaction_features[interaction_name] = interaction_mult
+                    interaction_features[f"{interaction_name}_norm"] = self._normalize_with_rolling_zscore(interaction_mult, window=20)
 
-        # 2. Division interaction (with safety check)
-        if (feat2_series != 0).any():
-                            interaction_div = feat1_series / (feat2_series + 1e-8)
-                            interaction_features[f"{interaction_name}_div"] = interaction_div
-                            interaction_features[f"{interaction_name}_div_norm"] = self._normalize_with_rolling_zscore(interaction_div, window=20)
+                    # 2. Division interaction (with safety check)
+                    if (feat2_series != 0).any():
+                        interaction_div = feat1_series / (feat2_series + 1e-8)
+                        interaction_features[f"{interaction_name}_div"] = interaction_div
+                        interaction_features[f"{interaction_name}_div_norm"] = self._normalize_with_rolling_zscore(interaction_div, window=20)
 
-        self.logger.info(f"✅ Generated {len(interaction_features)} comprehensive interaction features (capped to {MAX_INTERACTION_PAIRS} pairs)")
-        return interaction_features
+            self.logger.info(f"✅ Generated {len(interaction_features)} comprehensive interaction features (capped to {MAX_INTERACTION_PAIRS} pairs)")
+            return interaction_features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error generating interaction features: {e}")
-        return {}
+            self.logger.exception(f"🚨 Error generating interaction features: {e}")
+            return {}
 
     @handle_errors(
-        exceptions=(ValueError, AttributeError, MemoryError)
-        default_return={}
+        exceptions=(ValueError, AttributeError, MemoryError),
+        default_return={},
         context="cross-timeframe feature generation"
     )
     @memory_efficient(
-        chunk_size=2000
-        streaming_processing=True
-        memory_pool=True
+        chunk_size=2000,
+        streaming_processing=True,
+        memory_pool=True,
         cleanup_frequency=15
     )
     @debug_training_step(
-        log_intermediate_results=True
-        save_debug_artifacts=False
-        performance_profiling=True
+        log_intermediate_results=True,
+        save_debug_artifacts=False,
+        performance_profiling=True,
         error_context_preservation=True
     )
     async def _generate_cross_timeframe_features(
-        self = features: dict[str, Any], price_data: pd.DataFrame, ) -> dict[str, Any]:
+        self, features: dict[str, Any], price_data: pd.DataFrame) -> dict[str, Any]:
         """Generate cross-timeframe difference features.
 
         Args:
@@ -5723,116 +5723,116 @@ class VectorizedAdvancedFeatureEngineering:
         try:
             cross_timeframe_features = {}
 
-        # Validate that features contains actual data, not coroutines
-        if not isinstance(features, dict):
-        self.logger.error(f"🚨 Features is not a dict: {type(features)}")
-        return {}
+            # Validate that features contains actual data, not coroutines
+            if not isinstance(features, dict):
+                self.logger.error(f"🚨 Features is not a dict: {type(features)}")
+                return {}
 
-        # Filter out any coroutine objects from features
+            # Filter out any coroutine objects from features
             valid_features = {}
             coroutine_count = 0
-        for key, value in features.items():
-        if hasattr(value, "__await__"):
-        self.logger.warning(f"⚠️ Skipping coroutine feature in cross-timeframe: {key}")
+            for key, value in features.items():
+                if hasattr(value, "__await__"):
+                    self.logger.warning(f"⚠️ Skipping coroutine feature in cross-timeframe: {key}")
                     coroutine_count += 1
                     continue
                 valid_features[key] = value
 
-        if coroutine_count > 0:
-        self.logger.info(f"⚠️ Filtered out {coroutine_count} coroutine features from cross-timeframe generation")
+            if coroutine_count > 0:
+                self.logger.info(f"⚠️ Filtered out {coroutine_count} coroutine features from cross-timeframe generation")
 
-        if not valid_features:
-        self.logger.warning("⚠️ No valid features found for cross-timeframe generation")
-        return {}
+            if not valid_features:
+                self.logger.warning("⚠️ No valid features found for cross-timeframe generation")
+                return {}
 
         # For now, we'll create cross-timeframe features based on different lookback periods
         # simulating different timeframes with the same data
 
-        # Define cross-timeframe combinations
+            # Define cross-timeframe combinations
             cross_combinations = [
-        # RSI cross-timeframe differences
+                # RSI cross-timeframe differences
                 ("rsi", 3, 1, "rsi_diff_3m_1m"),
                 ("rsi", 5, 1, "rsi_diff_5m_1m"),
                 ("rsi", 10, 3, "rsi_diff_10m_3m"),
 
-        # Price momentum cross-timeframe differences
+                # Price momentum cross-timeframe differences
                 ("price_momentum_5", 3, 1, "momentum_5_diff_3m_1m"),
                 ("price_momentum_10", 5, 1, "momentum_10_diff_5m_1m"),
                 ("price_momentum_20", 10, 3, "momentum_20_diff_10m_3m"),
 
-        # Volume momentum cross-timeframe differences
+                # Volume momentum cross-timeframe differences
                 ("volume_momentum", 3, 1, "volume_momentum_diff_3m_1m"),
                 ("volume_momentum", 5, 1, "volume_momentum_diff_5m_1m"),
 
-        # Volatility cross-timeframe differences
+                # Volatility cross-timeframe differences
                 ("volatility_20", 10, 3, "volatility_20_diff_10m_3m"),
                 ("volatility_10", 5, 1, "volatility_10_diff_5m_1m"),
 
-        # MACD cross-timeframe differences
+                # MACD cross-timeframe differences
                 ("macd", 5, 1, "macd_diff_5m_1m"),
                 ("macd_signal", 5, 1, "macd_signal_diff_5m_1m"),
             ]
 
-        for feature_name, long_period, short_period, output_name in cross_combinations:
-        if feature_name in valid_features:
+            for feature_name, long_period, short_period, output_name in cross_combinations:
+                if feature_name in valid_features:
                     feature_value = valid_features[feature_name]
 
-        # Additional validation to ensure feature is not a coroutine
-        if hasattr(feature_value, "__await__"):
-        self.logger.warning(f"⚠️ Skipping coroutine feature for cross-timeframe: {feature_name}")
+                    # Additional validation to ensure feature is not a coroutine
+                    if hasattr(feature_value, "__await__"):
+                        self.logger.warning(f"⚠️ Skipping coroutine feature for cross-timeframe: {feature_name}")
                         continue
 
-        if not isinstance(feature_value, pd.Series | np.ndarray | list):
+                    if not isinstance(feature_value, (pd.Series, np.ndarray, list)):
                         continue
 
-        # Convert to pandas Series
-        if isinstance(feature_value, np.ndarray | list):
-                        feature_series, pd.Series(feature_value, index=price_data.index)
+                    # Convert to pandas Series
+                    if isinstance(feature_value, (np.ndarray, list)):
+                        feature_series = pd.Series(feature_value, index=price_data.index)
                     else:
                         feature_series = feature_value
 
-        if len(feature_series) > max(long_period, short_period):
-        # Calculate differences at different periods
+                    if len(feature_series) > max(long_period, short_period):
+                        # Calculate differences at different periods
                         long_diff = feature_series.diff(long_period).fillna(0)
                         short_diff = feature_series.diff(short_period).fillna(0)
 
-        # Cross-timeframe difference
+                        # Cross-timeframe difference
                         cross_diff = long_diff - short_diff
 
-        # Normalize
-                        cross_diff_norm, self._normalize_with_rolling_zscore(cross_diff, window=20)
+                        # Normalize
+                        cross_diff_norm = self._normalize_with_rolling_zscore(cross_diff, window=20)
 
-        # Additional validation to ensure normalized feature is not a coroutine
-        if hasattr(cross_diff_norm, "__await__"):
-        self.logger.warning(f"⚠️ Skipping coroutine normalized feature for cross-timeframe: {output_name}")
+                        # Additional validation to ensure normalized feature is not a coroutine
+                        if hasattr(cross_diff_norm, "__await__"):
+                            self.logger.warning(f"⚠️ Skipping coroutine normalized feature for cross-timeframe: {output_name}")
                             continue
 
-        # Store features
+                        # Store features
                         cross_timeframe_features[output_name] = cross_diff
                         cross_timeframe_features[f"{output_name}_norm"] = cross_diff_norm
 
-        # Final validation: ensure no coroutine features in the output
+            # Final validation: ensure no coroutine features in the output
             final_cross_timeframe_features = {}
             coroutine_count = 0
-        for key, value in cross_timeframe_features.items():
-        if hasattr(value, "__await__"):
-        self.logger.warning(f"⚠️ Skipping coroutine feature in final cross-timeframe output: {key}")
+            for key, value in cross_timeframe_features.items():
+                if hasattr(value, "__await__"):
+                    self.logger.warning(f"⚠️ Skipping coroutine feature in final cross-timeframe output: {key}")
                     coroutine_count += 1
                     continue
                 final_cross_timeframe_features[key] = value
 
-        if coroutine_count > 0:
-        self.logger.info(f"⚠️ Filtered out {coroutine_count} coroutine features from final cross-timeframe output")
+            if coroutine_count > 0:
+                self.logger.info(f"⚠️ Filtered out {coroutine_count} coroutine features from final cross-timeframe output")
 
-        self.logger.info(f"✅ Generated {len(final_cross_timeframe_features)} cross-timeframe features")
-        return final_cross_timeframe_features
+            self.logger.info(f"✅ Generated {len(final_cross_timeframe_features)} cross-timeframe features")
+            return final_cross_timeframe_features
 
         except Exception as e:
-        self.logger.exception(f"🚨 Error generating cross-timeframe features: {e}")
-        return {}
+            self.logger.exception(f"🚨 Error generating cross-timeframe features: {e}")
+            return {}
 
     def _validate_difference_engineering_inputs(
-        self = features: dict[str, Any], price_data: pd.DataFrame, ) -> None:
+        self, features: dict[str, Any], price_data: pd.DataFrame) -> None:
         """Validate inputs before difference and acceleration feature engineering.
 
         Args:
@@ -5841,36 +5841,36 @@ class VectorizedAdvancedFeatureEngineering:
 
         """
         try:
-        # Validate price data
-        if price_data.empty:
+            # Validate price data
+            if price_data.empty:
                 msg = "Price data is empty"
                 raise ValueError(msg)
 
             required_cols = ["open", "high", "low", "close", "volume"]
             missing_cols = [col for col in required_cols if col not in price_data.columns]
-        if missing_cols:
+            if missing_cols:
                 msg = f"Missing required columns in price data: {missing_cols}"
                 raise ValueError(msg)
 
-        # Validate features
-        if not features:
+            # Validate features
+            if not features:
                 msg = "No features provided for enhancement"
                 raise ValueError(msg)
 
-        # Check for minimum data length
-        if len(price_data) < 100:
-                msg, f"Insufficient data length: {len(price_data)} < 100"
+            # Check for minimum data length
+            if len(price_data) < 100:
+                msg = f"Insufficient data length: {len(price_data)} < 100"
                 raise ValueError(msg)
 
-        # Validate feature types
-        for feature_name, feature_value in features.items():
-        if not isinstance(feature_value, pd.Series | np.ndarray | list):
-        self.logger.warning(f"Feature {feature_name} is not a supported type: {type(feature_value)}")
+            # Validate feature types
+            for feature_name, feature_value in features.items():
+                if not isinstance(feature_value, (pd.Series, np.ndarray, list)):
+                    self.logger.warning(f"Feature {feature_name} is not a supported type: {type(feature_value)}")
 
-        self.logger.info(f"✅ Validated {len(features)} features for difference engineering")
+            self.logger.info(f"✅ Validated {len(features)} features for difference engineering")
 
         except Exception as e:
-        self.logger.exception(f"❌ Validation failed for difference engineering inputs: {e}")
+            self.logger.exception(f"❌ Validation failed for difference engineering inputs: {e}")
             raise
 
     def _validate_enhanced_features(self, enhanced_features: dict[str, Any]) -> None:
@@ -5881,58 +5881,58 @@ class VectorizedAdvancedFeatureEngineering:
 
         """
         try:
-        if not enhanced_features:
-        self.logger.warning("⚠️ No enhanced features generated")
+            if not enhanced_features:
+                self.logger.warning("⚠️ No enhanced features generated")
                 return
 
-        # Filter out coroutine objects before validation
+            # Filter out coroutine objects before validation
             valid_features = {}
-        for key, value in enhanced_features.items():
-        if hasattr(value, "__await__"):
-        self.logger.warning(f"⚠️ Skipping coroutine feature in validation: {key}")
+            for key, value in enhanced_features.items():
+                if hasattr(value, "__await__"):
+                    self.logger.warning(f"⚠️ Skipping coroutine feature in validation: {key}")
                     continue
                 valid_features[key] = value
 
-        # Count feature types
+            # Count feature types
             diff_features = [f for f in valid_features if "_diff_" in f]
             accel_features = [f for f in valid_features if "_accel_" in f]
             norm_features = [f for f in valid_features if "_norm" in f]
             interaction_features = [f for f in valid_features if "_x_" in f]
             cross_timeframe_features = [f for f in valid_features if "diff_" in f and ("m_" in f or "h_" in f)]
 
-        # Validate feature counts
-        if len(diff_features) == 0:
-        self.logger.warning("⚠️ No difference features generated")
+            # Validate feature counts
+            if len(diff_features) == 0:
+                self.logger.warning("⚠️ No difference features generated")
 
-        if len(accel_features) == 0:
-        self.logger.warning("⚠️ No acceleration features generated")
+            if len(accel_features) == 0:
+                self.logger.warning("⚠️ No acceleration features generated")
 
-        # Validate feature quality
-        for feature_name, feature_value in valid_features.items():
-        if isinstance(feature_value, pd.Series):
-        # Check for excessive NaN values
+            # Validate feature quality
+            for feature_name, feature_value in valid_features.items():
+                if isinstance(feature_value, pd.Series):
+                    # Check for excessive NaN values
                     nan_ratio = feature_value.isna().sum() / len(feature_value)
-        if nan_ratio > 0.1:  # More than 10% NaN
-        self.logger.warning(f"⚠️ Feature {feature_name} has {nan_ratio:.2%} NaN values")
+                    if nan_ratio > 0.1:  # More than 10% NaN
+                        self.logger.warning(f"⚠️ Feature {feature_name} has {nan_ratio:.2%} NaN values")
 
-        # Check for infinite values
+                    # Check for infinite values
                     inf_count = np.isinf(feature_value).sum()
-        if inf_count > 0:
-        self.logger.warning(f"⚠️ Feature {feature_name} has {inf_count} infinite values")
+                    if inf_count > 0:
+                        self.logger.warning(f"⚠️ Feature {feature_name} has {inf_count} infinite values")
 
-        self.logger.info(f"✅ Validated {len(valid_features)} enhanced features")
-        self.logger.info(f"  - Difference features: {len(diff_features)}")
-        self.logger.info(f"  - Acceleration features: {len(accel_features)}")
-        self.logger.info(f"  - Normalized features: {len(norm_features)}")
-        self.logger.info(f"  - Interaction features: {len(interaction_features)}")
-        self.logger.info(f"  - Cross-timeframe features: {len(cross_timeframe_features)}")
+            self.logger.info(f"✅ Validated {len(valid_features)} enhanced features")
+            self.logger.info(f"  - Difference features: {len(diff_features)}")
+            self.logger.info(f"  - Acceleration features: {len(accel_features)}")
+            self.logger.info(f"  - Normalized features: {len(norm_features)}")
+            self.logger.info(f"  - Interaction features: {len(interaction_features)}")
+            self.logger.info(f"  - Cross-timeframe features: {len(cross_timeframe_features)}")
 
         except Exception as e:
-        self.logger.exception(f"❌ Validation failed for enhanced features: {e}")
+            self.logger.exception(f"❌ Validation failed for enhanced features: {e}")
             raise
 
     def _log_feature_engineering_summary(
-        self = all_features: dict[str, Any], enhanced_features: dict[str, Any], ) -> None:
+        self, all_features: dict[str, Any], enhanced_features: dict[str, Any]) -> None:
         """Log a summary of the feature engineering process.
 
         Args:
@@ -5941,18 +5941,18 @@ class VectorizedAdvancedFeatureEngineering:
 
         """
         try:
-        # Filter out coroutine objects before logging
+            # Filter out coroutine objects before logging
             valid_all_features = {}
-        for key, value in all_features.items():
-        if hasattr(value, "__await__"):
-        self.logger.warning(f"⚠️ Skipping coroutine feature in all_features: {key}")
+            for key, value in all_features.items():
+                if hasattr(value, "__await__"):
+                    self.logger.warning(f"⚠️ Skipping coroutine feature in all_features: {key}")
                     continue
                 valid_all_features[key] = value
 
             valid_enhanced_features = {}
-        for key, value in enhanced_features.items():
-        if hasattr(value, "__await__"):
-        self.logger.warning(f"⚠️ Skipping coroutine feature in enhanced_features: {key}")
+            for key, value in enhanced_features.items():
+                if hasattr(value, "__await__"):
+                    self.logger.warning(f"⚠️ Skipping coroutine feature in enhanced_features: {key}")
                     continue
                 valid_enhanced_features[key] = value
 
@@ -5960,51 +5960,51 @@ class VectorizedAdvancedFeatureEngineering:
             enhanced_count = len(valid_enhanced_features)
             original_count = total_features - enhanced_count
 
-        # Categorize enhanced features
+            # Categorize enhanced features
             diff_features = [f for f in valid_enhanced_features if "_diff_" in f]
             accel_features = [f for f in valid_enhanced_features if "_accel_" in f]
             norm_features = [f for f in valid_enhanced_features if "_norm" in f]
             interaction_features = [f for f in valid_enhanced_features if "_x_" in f]
             cross_timeframe_features = [f for f in valid_enhanced_features if "diff_" in f and ("m_" in f or "h_" in f)]
 
-        self.logger.info("📊 Feature Engineering Summary:")
-        self.logger.info(f"  - Original features: {original_count}")
-        self.logger.info(f"  - Enhanced features: {enhanced_count}")
-        self.logger.info(f"  - Total features: {total_features}")
-        self.logger.info(f"  - Difference features: {len(diff_features)}")
-        self.logger.info(f"  - Acceleration features: {len(accel_features)}")
-        self.logger.info(f"  - Normalized features: {len(norm_features)}")
-        self.logger.info(f"  - Interaction features: {len(interaction_features)}")
-        self.logger.info(f"  - Cross-timeframe features: {len(cross_timeframe_features)}")
+            self.logger.info("📊 Feature Engineering Summary:")
+            self.logger.info(f"  - Original features: {original_count}")
+            self.logger.info(f"  - Enhanced features: {enhanced_count}")
+            self.logger.info(f"  - Total features: {total_features}")
+            self.logger.info(f"  - Difference features: {len(diff_features)}")
+            self.logger.info(f"  - Acceleration features: {len(accel_features)}")
+            self.logger.info(f"  - Normalized features: {len(norm_features)}")
+            self.logger.info(f"  - Interaction features: {len(interaction_features)}")
+            self.logger.info(f"  - Cross-timeframe features: {len(cross_timeframe_features)}")
 
-        # Also log post-cap counts if caps were applied earlier
-        try:
-            # If caps were applied, we likely have logging from the cap step; here just echo thresholds
-        self.logger.info("📏 Caps: acceleration<=10, difference<=25, cross-timeframe<=50 (priority-aware)")
-        except Exception:
+            # Also log post-cap counts if caps were applied earlier
+            try:
+                # If caps were applied, we likely have logging from the cap step; here just echo thresholds
+                self.logger.info("📏 Caps: acceleration<=10, difference<=25, cross-timeframe<=50 (priority-aware)")
+            except Exception:
                 pass
 
-        # Log memory usage
-        try:
+            # Log memory usage
+            try:
                 import psutil
                 memory_usage = psutil.Process().memory_info().rss / 1024 / 1024  # MB
-        self.logger.info(f"  - Memory usage: {memory_usage:.1f} MB")
-        except ImportError:
-        self.logger.debug("ℹ️ psutil not available, skipping memory usage logging")
-        except Exception as e:
-        self.logger.debug(f"⚠️ Error logging memory usage: {e}")
+                self.logger.info(f"  - Memory usage: {memory_usage:.1f} MB")
+            except ImportError:
+                self.logger.debug("ℹ️ psutil not available, skipping memory usage logging")
+            except Exception as e:
+                self.logger.debug(f"⚠️ Error logging memory usage: {e}")
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Failed to log feature engineering summary: {e}")
+            self.logger.warning(f"⚠️ Failed to log feature engineering summary: {e}")
 
     def _generate_sr_levels(self, price_data: pd.DataFrame) -> dict[str, Any]:
         """Generate support/resistance levels from price data."""
         try:
-        if price_data.empty or "close" not in price_data.columns:
-        self.logger.warning("⚠️ Invalid price data for S/R level generation")
-        return {}
+            if price_data.empty or "close" not in price_data.columns:
+                self.logger.warning("⚠️ Invalid price data for S/R level generation")
+                return {}
 
-        # Calculate daily data for SR levels
+            # Calculate daily data for SR levels
             daily_data = price_data.resample("D").agg({
                 "open": "first",
                 "high": "max",
@@ -6013,20 +6013,20 @@ class VectorizedAdvancedFeatureEngineering:
                 "volume": "sum",
             }).dropna()
 
-        if daily_data.empty:
-        self.logger.warning("⚠️ No daily data available for S/R level generation")
-        return {}
+            if daily_data.empty:
+                self.logger.warning("⚠️ No daily data available for S/R level generation")
+                return {}
 
-        # Calculate support and resistance levels
+            # Calculate support and resistance levels
             support_levels = []
             resistance_levels = []
 
-        # Simple approach: use recent highs and lows
+            # Simple approach: use recent highs and lows
             recent_high = daily_data["high"].tail(20).max()
             recent_low = daily_data["low"].tail(20).min()
             current_price = price_data["close"].iloc[-1]
 
-        # Add multiple support levels
+            # Add multiple support levels
             support_levels.extend([
                 recent_low * 0.95,  # 5% below recent low
                 recent_low * 0.98,  # 2% below recent low
@@ -6034,7 +6034,7 @@ class VectorizedAdvancedFeatureEngineering:
                 current_price * 0.95,  # 5% below current price
             ])
 
-        # Add multiple resistance levels
+            # Add multiple resistance levels
             resistance_levels.extend([
                 current_price * 1.02,  # 2% above current price
                 current_price * 1.05,  # 5% above current price
@@ -6043,7 +6043,7 @@ class VectorizedAdvancedFeatureEngineering:
                 recent_high * 1.05,    # 5% above recent high
             ])
 
-        # Remove duplicates and sort
+            # Remove duplicates and sort
             support_levels = sorted({level for level in support_levels if level > 0})
             resistance_levels = sorted({level for level in resistance_levels if level > 0})
 
@@ -6052,8 +6052,8 @@ class VectorizedAdvancedFeatureEngineering:
                 "resistance": resistance_levels,
             }
 
-        self.logger.info(f"✅ Generated {len(support_levels)} support levels and {len(resistance_levels)} resistance levels")
-        return sr_levels
+            self.logger.info(f"✅ Generated {len(support_levels)} support levels and {len(resistance_levels)} resistance levels")
+            return sr_levels
 
         except Exception as e:
             self.logger.exception(f"❌ Error generating S/R levels: {e}")

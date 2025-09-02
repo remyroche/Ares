@@ -55,11 +55,62 @@ class AutoFixer:
                     self._run_autopep8(python_files)
                 elif tool == "yapf":
                     self._run_yapf(python_files)
+                elif tool == "ruff":
+                    self._run_ruff(python_files)
                 else:
                     print(f"Warning: Unknown tool '{tool}' configured.")
             
             # Validate fixes
             self._validate_fixes(python_files)
+            
+        except Exception as e:
+            print(f"Error during fixing: {e}")
+            self._restore_backups()
+            raise
+        
+        return self.fix_results
+    
+    def fix_file(self, file_path: str) -> Dict[str, Any]:
+        """
+        Fix a single Python file using configured tools.
+        
+        Args:
+            file_path: Path to the Python file to fix
+            
+        Returns:
+            Dictionary containing fix results
+        """
+        if not self.config.auto_fix.enabled:
+            print("Auto-fixing is disabled in configuration.")
+            return {}
+        
+        if not file_path.endswith('.py'):
+            print(f"Warning: {file_path} is not a Python file.")
+            return {}
+        
+        print(f"Fixing single file: {file_path}")
+        
+        # Create backup
+        self._create_backups([file_path])
+        
+        try:
+            # Run all configured fixers
+            for tool in self.config.auto_fix.tools:
+                if tool == "black":
+                    self._run_black([file_path])
+                elif tool == "isort":
+                    self._run_isort([file_path])
+                elif tool == "autopep8":
+                    self._run_autopep8([file_path])
+                elif tool == "yapf":
+                    self._run_yapf([file_path])
+                elif tool == "ruff":
+                    self._run_ruff([file_path])
+                else:
+                    print(f"Warning: Unknown tool '{tool}' configured.")
+            
+            # Validate fixes
+            self._validate_fixes([file_path])
             
         except Exception as e:
             print(f"Error during fixing: {e}")
@@ -209,6 +260,75 @@ USE_TABS = False
             print(f"Error running yapf: {e}")
             self.fix_results["yapf"] = {"status": "error", "error": str(e)}
     
+    def _run_ruff(self, files: List[str]) -> None:
+        """Run Ruff linter and formatter."""
+        print("Running Ruff...")
+        try:
+            # First, check if ruff is available
+            try:
+                subprocess.run([sys.executable, "-m", "ruff", "--version"], 
+                             capture_output=True, check=True)
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                print("Warning: Ruff not available, skipping...")
+                self.fix_results["ruff"] = {"status": "skipped", "error": "Ruff not installed"}
+                return
+            
+            # Run ruff format
+            format_cmd = [
+                sys.executable, "-m", "ruff", "format",
+                "--line-length", str(self.config.auto_fix.max_line_length)
+            ]
+            
+            format_cmd.extend(files)
+            
+            format_result = subprocess.run(format_cmd, capture_output=True, text=True)
+            
+            if format_result.returncode == 0:
+                print("Ruff formatting completed successfully.")
+                format_status = "success"
+            else:
+                print(f"Ruff formatting failed: {format_result.stderr}")
+                format_status = "failed"
+            
+            # Run ruff check and auto-fix
+            check_cmd = [
+                sys.executable, "-m", "ruff", "check",
+                "--fix",
+                "--line-length", str(self.config.auto_fix.max_line_length)
+            ]
+            
+            check_cmd.extend(files)
+            
+            check_result = subprocess.run(check_cmd, capture_output=True, text=True)
+            
+            if check_result.returncode in [0, 1]:  # ruff returns 1 when issues are found and fixed
+                print("Ruff checking and auto-fixing completed successfully.")
+                check_status = "success"
+            else:
+                print(f"Ruff checking failed: {check_result.stderr}")
+                check_status = "failed"
+            
+            # Overall ruff status
+            if format_status == "success" and check_status == "success":
+                overall_status = "success"
+            elif format_status == "failed" or check_status == "failed":
+                overall_status = "failed"
+            else:
+                overall_status = "partial"
+            
+            self.fix_results["ruff"] = {
+                "status": overall_status,
+                "files_processed": len(files),
+                "format_status": format_status,
+                "check_status": check_status,
+                "format_output": format_result.stdout,
+                "check_output": check_result.stdout
+            }
+                
+        except Exception as e:
+            print(f"Error running Ruff: {e}")
+            self.fix_results["ruff"] = {"status": "error", "error": str(e)}
+    
     def _validate_fixes(self, files: List[str]) -> None:
         """Validate that fixes didn't break syntax."""
         print("Validating fixes...")
@@ -270,7 +390,7 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description="Auto-fix Python code issues")
-    parser.add_argument("--path", required=True, help="Path to directory containing Python files")
+    parser.add_argument("--path", required=True, help="Path to directory or file containing Python code")
     parser.add_argument("--config", help="Path to configuration file")
     parser.add_argument("--max-line-length", type=int, default=88, help="Maximum line length")
     parser.add_argument("--aggressive", action="store_true", help="Enable aggressive fixing")
@@ -290,7 +410,12 @@ def main():
     
     # Run auto-fixer
     fixer = AutoFixer(config)
-    results = fixer.fix_all(args.path)
+    
+    # Check if path is a file or directory
+    if os.path.isfile(args.path):
+        results = fixer.fix_file(args.path)
+    else:
+        results = fixer.fix_all(args.path)
     
     # Print summary
     summary = fixer.get_fix_summary()

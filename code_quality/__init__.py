@@ -21,6 +21,7 @@ from .core import (
 )
 
 from .fixers.auto_fixer import AutoFixer
+from .fixers.sequential_fixer import SequentialFixer
 from .analyzers.linter_analyzer import LinterAnalyzer, LinterResult
 from .analyzers.call_graph_analyzer import CallGraphAnalyzer, CallNode
 from .analyzers.dependency_analyzer import DependencyAnalyzer, DependencyInfo
@@ -52,6 +53,7 @@ __all__ = [
     
     # Main tools
     "AutoFixer",
+    "SequentialFixer",
     "LinterAnalyzer",
     "CallGraphAnalyzer", 
     "DependencyAnalyzer",
@@ -103,6 +105,20 @@ def auto_fix(directory: str) -> dict:
     """
     fixer = AutoFixer()
     return fixer.fix_all(directory)
+
+def sequential_fix(target: str, output_dir: str = None) -> dict:
+    """
+    Run the sequential auto-fix pipeline on a target.
+    
+    Args:
+        target: File, directory, or comma-separated list of files
+        output_dir: Optional output directory for reports
+        
+    Returns:
+        Pipeline results
+    """
+    fixer = SequentialFixer()
+    return fixer.run_pipeline(target=target, output_dir=output_dir)
 
 def validate_syntax(directory: str) -> dict:
     """

@@ -1,0 +1,24 @@
+2025-09-02 08:35:28,443 - INFO - Processing file: src/utils/hmm_composite_manager.py
+2025-09-02 08:35:28,443 - INFO - Performing semantic analysis...
+2025-09-02 08:35:28,443 - INFO - Code quality score: 0.00
+2025-09-02 08:35:28,444 - WARNING - Syntax errors found: 1
+2025-09-02 08:35:28,444 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:35:28,446 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:28,447 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:28,449 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:28,450 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:28,452 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:28,454 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:28,455 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:28,457 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:28,458 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:28,460 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:28,462 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:28,464 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:28,466 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:28,467 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:28,470 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:28,473 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:35:28,474 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:35:28,477 - WARNING - Skipped unsafe fix: Fix would create unindented control structure
+2025-09-02 08:35:28,480 - INFO - No fixes needed for: src/utils/hmm_composite_manager.py

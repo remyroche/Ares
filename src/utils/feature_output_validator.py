@@ -6,7 +6,7 @@ Detects corrupted, invalid, or problematic feature engineering outputs.
 import warnings
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -16,1273 +16,550 @@ from src.utils.warning_symbols import critical
 
 warnings.filterwarnings("ignore")
 
-class OutputValidationLevel(...):
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="outputvalidationlevel initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="outputvalidationissue initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize OutputValidationIssue."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {cl
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="featureoutputvalidator initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize FeatureOutputValidator."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-ass_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-OutputValidationLevel."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-    pass"""..."""
-    passINFO = "info"
-WARNING = "warning"
-ERROR = "error"
-CRITICAL = "critical"
+class OutputValidationLevel(str, Enum):
+    """Validation levels for feature output issues."""
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    CRITICAL = "critical"
+
 
 @dataclass
-class PlaceholderDataClass:
-    passself.logger.info("Implementation placeholder - needs specific logic")
 class OutputValidationIssue:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class OutputValidationIssue:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class OutputValidationIssue:
-    pass"""Represents a feature output validation issue."""
+    """Represents a feature output validation issue."""
+    feature_name: str
+    issue_type: str
+    level: OutputValidationLevel
+    description: str
+    count: int = 0
+    percentage: float = 0.0
+    details: Optional[Dict[str, Any]] = None
 
-feature_name: str
-issue_type: str
-level: OutputValidationLevel
-description: str
-count: int, 0
-percentage: float, 0.0
-details: dict[str, Any] | None, None
 
 class FeatureOutputValidator:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class FeatureOutputValidator:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class FeatureOutputValidator:
-    pass"""
-Comprehensive validator for feature engineering outputs.
-Detects corrupted, invalid, or problematic feature results.
-"""
-
-def __init__(...):
-    passpassdef __init__(...):
-    passdef __init__(...):
-    passdef __init__(...):
-    passself.logger, system_logger.getChild("FeatureOutputValidator")
-self.config, config or self._get_default_config()
-self.issues: list[OutputValidationIssue] = []
-
-def _get_default_config(...) -> ...:
-    """..."""
-    passreturn {
-# Critical thresholds that indicate corrupted output - made more lenient for financial data
-"critical_thresholds": {
-"max_nan_percentage": 0.3,
-"max_infinite_percentage": 0.05,
-"max_zero_variance_percentage": 0.7,
-"max_constant_percentage": 0.9,
-"max_extreme_values_percentage": 0.1,
-"min_feature_count": 1,
-"max_feature_count": 10000,
-},
-# Warning thresholds - made more lenient for financial data
-"warning_thresholds": {
-"max_nan_percentage": 0.15,
-"max_infinite_percentage": 0.01,
-"max_zero_variance_percentage": 0.5,
-"max_constant_percentage": 0.8,
-"max_extreme_values_percentage": 0.05,
-"max_correlation_threshold": 0.99,
-"max_duplicate_features_percentage": 0.1,
-},
-# Feature type specific thresholds - made more lenient for financial data
-"feature_type_thresholds": {
-"wavelet_features": {
-"max_nan_percentage": 0.4,
-"max_infinite_percentage": 0.1,
-"description": "Wavelet features naturally have edge effects",
-},
-"microstructure_features": {
-"max_nan_percentage": 0.2,
-"max_infinite_percentage": 0.05,
-"description": "Microstructure features should be mostly complete",
-},
-"technical_indicators": {
-"max_nan_percentage": 0.1,
-"max_infinite_percentage": 0.01,
-"description": "Technical indicators should be reliable",
-},
-"price_features": {
-"max_nan_percentage": 0.01,
-"max_infinite_percentage": 0.001,
-"description": "Price - based features should be nearly complete",
-},
-},
-# Validation checks
-"validation_checks": {
-"check_nan_values": True,
-"check_infinite_values": True,
-"check_zero_variance": True,
-"check_constant_values": True,
-"check_extreme_values": True,
-"check_data_types": True,
-"check_feature_correlations": True,
-"check_duplicate_features": True,
-"check_feature_names": True,
-"check_output_structure": True,
-},
-}
-
-def validate_feature_output(...) -> ...:
-    """..."""
-    passprint(f"🔍 [FEATURE OUTPUT VALIDATION] Starting validation for {method_name}")
-self.logger.info(
-f"🔍 [FEATURE OUTPUT VALIDATION] Starting validation for {method_name}",
-)
-
-print(f"   📊 Input data shape: {input_data_shape}")
-print(f"   📊 Features type: {type(features)}")
-self.logger.info(f"   📊 Input data shape: {input_data_shape}")
-self.logger.info(f"   📊 Features type: {type(features)}")
-
-self.issues.clear()
-
-validation_results: dict[str, Any] = {
-"method_name": method_name,
-"validation_passed": True,
-"critical_issues": [],
-"warnings": [],
-"recommendations": [],
-"output_quality_score": 0.0,
-"feature_statistics": {},
-"detailed_analysis": {},
-}
-
-# Convert features to DataFrame if it's a dict
-print(
-f"🔍 [FEATURE OUTPUT VALIDATION] Converting features to DataFrame for {method_name}",
-)
-self.logger.info(
-f"🔍 [FEATURE OUTPUT VALIDATION] Converting features to DataFrame for {method_name}",
-)
-
-features_df, self._convert_features_to_dataframe(features)
-
-if features_df is None or features_df.empty:
-    passpassprint(
-f"❌ [FEATURE OUTPUT VALIDATION] No features generated or empty output for {method_name}",
-)
-self.logger.error(
-f"❌ [FEATURE OUTPUT VALIDATION] No features generated or empty output for {method_name}",
-)
-# For engineer_features method, be more lenient and continue with warnings
-if "engineer_features" in method_name.lower():
-    passpasspassself.logger.warning(
-"⚠️ [FEATURE OUTPUT VALIDATION] Empty output, continuing due to complex financial feature engineering",
-)
-validation_results["warnings"].append(
-"No features generated or empty output",
-)
-validation_results["critical_issues"] = []
-validation_results["validation_passed"] = True
-validation_results["output_quality_score"] = 0.5
-return validation_results
-
-validation_results["critical_issues"].append(
-"No features generated or empty output",
-)
-validation_results["validation_passed"] = False
-validation_results["output_quality_score"] = 0.0
-return validation_results
-
-print(
-f"✅ [FEATURE OUTPUT VALIDATION] Features converted to DataFrame for {method_name}",
-)
-print(f"   📊 DataFrame shape: {features_df.shape}")
-print(f"   📊 DataFrame columns: {list(features_df.columns)}")
-self.logger.info(
-f"✅ [FEATURE OUTPUT VALIDATION] Features converted to DataFrame for {method_name}",
-)
-self.logger.info(f"   📊 DataFrame shape: {features_df.shape}")
-self.logger.info(
-f"   📊 DataFrame columns: {list(features_df.columns)}",
-)
-
-# Basic structure validation
-print(
-f"🔍 [FEATURE OUTPUT VALIDATION] Validating output structure for {method_name}",
-)
-self.logger.info(
-f"🔍 [FEATURE OUTPUT VALIDATION] Validating output structure for {method_name}",
-)
-
-structure_valid, self._validate_output_structure(
-features_df, validation_results,
-)
-if not structure_valid:
-    passpassprint(
-f"❌ [FEATURE OUTPUT VALIDATION] Structure validation failed for {method_name}",
-)
-self.logger.error(
-f"❌ [FEATURE OUTPUT VALIDATION] Structure validation failed for {method_name}",
-)
-# For engineer_features method, be more lenient and continue with warnings
-if "engineer_features" in method_name.lower():
-    passpasspassself.logger.warning(
-f"⚠️ [FEATURE OUTPUT VALIDATION] Structure validation failed for {method_name}, but continuing",
-)
-validation_results["warnings"].extend(
-validation_results["critical_issues"],
-)
-validation_results["critical_issues"] = []
-validation_results["validation_passed"] = True
-else:
-    passpassvalidation_results["validation_passed"] = False
-return validation_results
-
-print(
-f"✅ [FEATURE OUTPUT VALIDATION] Structure validation passed for {method_name}",
-)
-self.logger.info(
-f"✅ [FEATURE OUTPUT VALIDATION] Structure validation passed for {method_name}",
-)
-
-# Data type validation
-print(
-f"🔍 [FEATURE OUTPUT VALIDATION] Validating data types for {method_name}",
-)
-self.logger.info(
-f"🔍 [FEATURE OUTPUT VALIDATION] Validating data types for {method_name}",
-)
-
-dtype_valid, self._validate_data_types(features_df, validation_results)
-if not dtype_valid:
-    passpassprint(
-f"❌ [FEATURE OUTPUT VALIDATION] Data type validation failed for {method_name}",
-)
-self.logger.error(
-f"❌ [FEATURE OUTPUT VALIDATION] Data type validation failed for {method_name}",
-)
-if "engineer_features" in method_name.lower():
-    passpassself.logger.warning(
-f"⚠️ [FEATURE OUTPUT VALIDATION] Data type validation failed for {method_name}, but continuing",
-)
-validation_results["warnings"].extend(
-validation_results["critical_issues"],
-)
-validation_results["critical_issues"] = []
-validation_results["validation_passed"] = True
-else:
-    passpassvalidation_results["validation_passed"] = False
-return validation_results
-
-print(
-f"✅ [FEATURE OUTPUT VALIDATION] Data type validation passed for {method_name}",
-)
-self.logger.info(
-f"✅ [FEATURE OUTPUT VALIDATION] Data type validation passed for {method_name}",
-)
-
-# Value validation
-print(
-f"🔍 [FEATURE OUTPUT VALIDATION] Validating feature values for {method_name}",
-)
-self.logger.info(
-f"🔍 [FEATURE OUTPUT VALIDATION] Validating feature values for {method_name}",
-)
-
-value_valid, self._validate_feature_values(
-features_df, method_name, validation_results,
-)
-if not value_valid:
-    passpassprint(
-f"❌ [FEATURE OUTPUT VALIDATION] Value validation failed for {method_name}",
-)
-self.logger.error(
-f"❌ [FEATURE OUTPUT VALIDATION] Value validation failed for {method_name}",
-)
-if "engineer_features" in method_name.lower():
-    passpassself.logger.warning(
-f"⚠️ [FEATURE OUTPUT VALIDATION] Value validation failed for {method_name}, but continuing",
-)
-validation_results["warnings"].extend(
-validation_results["critical_issues"],
-)
-validation_results["critical_issues"] = []
-validation_results["validation_passed"] = True
-else:
-    passpassvalidation_results["validation_passed"] = False
-return validation_results
-
-print(
-f"✅ [FEATURE OUTPUT VALIDATION] Value validation passed for {method_name}",
-)
-self.logger.info(
-f"✅ [FEATURE OUTPUT VALIDATION] Value validation passed for {method_name}",
-)
-
-# Feature relationship validation
-print(
-f"🔍 [FEATURE OUTPUT VALIDATION] Validating feature relationships for {method_name}",
-)
-self.logger.info(
-f"🔍 [FEATURE OUTPUT VALIDATION] Validating feature relationships for {method_name}",
-)
-
-relationship_valid, self._validate_feature_relationships(
-features_df, validation_results,
-)
-if not relationship_valid:
-    passpassprint(
-f"❌ [FEATURE OUTPUT VALIDATION] Relationship validation failed for {method_name}",
-)
-self.logger.error(
-f"❌ [FEATURE OUTPUT VALIDATION] Relationship validation failed for {method_name}",
-)
-if "engineer_features" in method_name.lower():
-    passpassself.logger.warning(
-f"⚠️ [FEATURE OUTPUT VALIDATION] Relationship validation failed for {method_name}, but continuing",
-)
-validation_results["warnings"].extend(
-validation_results["critical_issues"],
-)
-validation_results["critical_issues"] = []
-validation_results["validation_passed"] = True
-else:
-    passpassvalidation_results["validation_passed"] = False
-return validation_results
-
-print(
-f"✅ [FEATURE OUTPUT VALIDATION] Relationship validation passed for {method_name}",
-)
-self.logger.info(
-f"✅ [FEATURE OUTPUT VALIDATION] Relationship validation passed for {method_name}",
-)
-
-# Input - output consistency validation
-if input_data_shape:
-    passpassprint(
-f"🔍 [FEATURE OUTPUT VALIDATION] Validating input - output consistency for {method_name}",
-)
-self.logger.info(
-f"🔍 [FEATURE OUTPUT VALIDATION] Validating input - output consistency for {method_name}",
-)
-
-consistency_valid, self._validate_input_output_consistency(
-features_df, input_data_shape, validation_results,
-)
-if not consistency_valid:
-    passpassprint(
-f"❌ [FEATURE OUTPUT VALIDATION] Consistency validation failed for {method_name}",
-)
-self.logger.error(
-f"❌ [FEATURE OUTPUT VALIDATION] Consistency validation failed for {method_name}",
-)
-if "engineer_features" in method_name.lower():
-    passpassself.logger.warning(
-f"⚠️ [FEATURE OUTPUT VALIDATION] Consistency validation failed for {method_name}, but continuing",
-)
-validation_results["warnings"].extend(
-validation_results["critical_issues"],
-)
-validation_results["critical_issues"] = []
-validation_results["validation_passed"] = True
-else:
-    passpassvalidation_results["validation_passed"] = False
-return validation_results
-
-print(
-f"✅ [FEATURE OUTPUT VALIDATION] Consistency validation passed for {method_name}",
-)
-self.logger.info(
-f"✅ [FEATURE OUTPUT VALIDATION] Consistency validation passed for {method_name}",
-)
-
-# Downstream compatibility validation
-print(
-f"🔍 [FEATURE OUTPUT VALIDATION] Validating downstream compatibility for {method_name}",
-)
-self.logger.info(
-f"🔍 [FEATURE OUTPUT VALIDATION] Validating downstream compatibility for {method_name}",
-)
-
-downstream_valid, self._validate_downstream_compatibility(
-features_df, method_name, validation_results,
-)
-if not downstream_valid:
-    passpassprint(
-f"❌ [FEATURE OUTPUT VALIDATION] Downstream compatibility validation failed for {method_name}",
-)
-self.logger.error(
-f"❌ [FEATURE OUTPUT VALIDATION] Downstream compatibility validation failed for {method_name}",
-)
-if "engineer_features" in method_name.lower():
-    passpassself.logger.warning(
-f"⚠️ [FEATURE OUTPUT VALIDATION] Downstream compatibility validation failed for {method_name}, but continuing",
-)
-validation_results["warnings"].extend(
-validation_results["critical_issues"],
-)
-validation_results["critical_issues"] = []
-validation_results["validation_passed"] = True
-else:
-    passpassvalidation_results["validation_passed"] = False
-return validation_results
-
-print(
-f"✅ [FEATURE OUTPUT VALIDATION] Downstream compatibility validation passed for {method_name}",
-)
-self.logger.info(
-f"✅ [FEATURE OUTPUT VALIDATION] Downstream compatibility validation passed for {method_name}",
-)
-
-# Calculate overall quality score
-print(
-f"🔍 [FEATURE OUTPUT VALIDATION] Calculating quality score for {method_name}",
-)
-self.logger.info(
-f"🔍 [FEATURE OUTPUT VALIDATION] Calculating quality score for {method_name}",
-)
-
-validation_results["output_quality_score"] = (
-self._calculate_output_quality_score(validation_results)
-)
-
-print(
-f"📊 [FEATURE OUTPUT VALIDATION] Quality score for {method_name}: {validation_results['output_quality_score']:.2f}",
-)
-self.logger.info(
-f"📊 [FEATURE OUTPUT VALIDATION] Quality score for {method_name}: {validation_results['output_quality_score']:.2f}",
-)
-
-# Generate recommendations
-validation_results["recommendations"] = (
-self._generate_output_recommendations(validation_results)
-)
-
-if validation_results["validation_passed"]:
-    passself.logger.info(
-f"✅ Feature output validation passed for {method_name} (Score: {validation_results['output_quality_score']:.2f})",
-)
-else:
-    passself.logger.error(
-f"❌ Feature output validation failed for {method_name}",
-)
-for issue in validation_results["critical_issues"]:
-    passself.logger.error(f"   {critical(issue)}")
-
-return validation_results
-
-def _convert_features_to_dataframe(...) -> ...:
-    """..."""
-    pass# Handle None input
-if features is None:
-    pass# Fallback implementation for features
-self.logger.warning(
-"⚠️ [FEATURE OUTPUT VALIDATION] Features input is None",
-)
-return None
-
-if isinstance(features, pd.DataFrame):
-    passpassreturn features
-
-if isinstance(features, dict):
-    pass# Handle empty dict
-if not features:
-    passself.logger.warning(
-"⚠️ [FEATURE OUTPUT VALIDATION] Features dict is empty",
-)
-return None
-
-try:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-# Handle different feature dict formats
-if all(
-isinstance(v, (pd.Series, pd.DataFrame)) for v in features.values()
-):
-    passpass# Features are Series / DataFrames
-feature_series: list[pd.Series] = []
-for name, series in features.items():
-    passif isinstance(series, pd.Series):
-    passfeature_series.append(series.rename(name))
-elif isinstance(series, pd.DataFrame):
-    passpassfor col in series.columns:
-    passfeature_series.append(
-series[col].rename(f"{name}_{col}"),
-)
-
-if feature_series:
-    passreturn pd.concat(feature_series, axis = 1)
-
-if all(
-isinstance(v, (int, float, np.generic)) for v in features.values()
-):
-    passpass# Features are scalar values
-return pd.DataFrame([features])
-
-if any(isinstance(v, np.ndarray) for v in features.values()):
-    passpass# Handle numpy arrays
-feature_series = []
-for name, value in features.items():
-    passif value is None:
-    pass# Fallback implementation for value
-# Fallback implementation for value
-continue
-if isinstance(value, np.ndarray):
-    passpass# Convert numpy array to pandas Series
-if value.ndim == 1:
-    passfeature_series.append(pd.Series(value, name = name))
-elif value.ndim == 2:
-    passpassif value.shape[1] == 1:
-    passfeature_series.append(
-pd.Series(value.flatten(), name = name),
-)
-else:
-    pass# Take first column for 2D arrays
-feature_series.append(
-pd.Series(value[:, 0], name = name),
-)
-elif isinstance(value, pd.Series):
-    passpassfeature_series.append(value.rename(name))
-elif isinstance(value, pd.DataFrame):
-    passpassfor col in value.columns:
-    passfeature_series.append(
-value[col].rename(f"{name}_{col}"),
-)
-elif isinstance(value, (int, float, np.generic)):
-    passpassfeature_series.append(pd.Series([value], name = name))
-
-if feature_series:
-    pass# Ensure all series have the same length
-max_length, max(len(series) for series in feature_series)
-aligned_series: list[pd.Series] = []
-for series in feature_series:
-    passif len(series) < max_length:
-    pass# Pad shorter series with NaN
-padded_series, pd.Series(
-[np.nan] * max_length, name = series.name,
-)
-padded_series.iloc[: len(series)] = series.values
-aligned_series.append(padded_series)
-else:
-    passaligned_series.append(series)
-
-return pd.concat(aligned_series, axis = 1)
-
-if any(isinstance(v, pd.DataFrame) for v in features.values()):
-    passpass# Mixed format with some DataFrames - extract the main feature DataFrame
-for key, value in features.items():
-    passpassif value is not None and isinstance(value, pd.DataFrame):
-    passself.logger.info(
-f"Found DataFrame in features dict with key: {key}",
-)
-return value
-
-# If no DataFrame found, try to handle as mixed format
-feature_series = []
-for name, value in features.items():
-    passif value is None:
-    pass# Fallback implementation for value
-# Fallback implementation for value
-continue
-if isinstance(value, pd.Series):
-    passpassfeature_series.append(value.rename(name))
-elif isinstance(value, pd.DataFrame):
-    passpassfor col in value.columns:
-    passfeature_series.append(
-value[col].rename(f"{name}_{col}"),
-)
-
-if feature_series:
-    passreturn pd.concat(feature_series, axis = 1)
-
-# If we get here, we couldn't convert the features
-self.logger.warning(
-f"⚠️ [FEATURE OUTPUT VALIDATION] Could not convert features to DataFrame. Type: {type(features)}",
-)
-return None
-
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.exception(
-f"💥 [FEATURE OUTPUT VALIDATION] Error converting features to DataFrame: {e}",
-)
-return None
-
-# Unsupported type
-self.logger.warning(
-f"⚠️ [FEATURE OUTPUT VALIDATION] Unsupported features type: {type(features)}",
-)
-return None
-
-def _validate_output_structure(...) -> ...:
-    """..."""
-    passself.logger.info("Validating output structure...")
-
-# Check minimum feature count
-min_features, self.config["critical_thresholds"]["min_feature_count"]
-max_features, self.config["critical_thresholds"]["max_feature_count"]
-
-if len(features_df.columns) < min_features:
-    passresults["warnings"].append(
-f"Insufficient features generated: {len(features_df.columns)} (minimum: {min_features})",
-)
-
-if len(features_df.columns) > max_features:
-    passresults["warnings"].append(
-f"Large number of features: {len(features_df.columns)} (maximum: {max_features})",
-)
-
-# Check for empty features
-empty_features, features_df.columns[features_df.isnull().all()].tolist()
-if empty_features:
-    passpassresults["warnings"].append(f"Empty features detected: {empty_features}")
-
-# Check feature names
-if self.config["validation_checks"]["check_feature_names"]:
-    passinvalid_names: list[str] = []
-for col in features_df.columns:
-    passif not isinstance(col, str) or len(col) == 0 or str(col).startswith("_"):
-    passinvalid_names.append(str(col))
-
-if invalid_names:
-    passresults["warnings"].append(
-f"Invalid feature names detected: {invalid_names}",
-)
-
-results["feature_statistics"]["total_features"] = len(features_df.columns)
-results["feature_statistics"]["total_rows"] = len(features_df)
-results["feature_statistics"]["feature_names"] = list(features_df.columns)
-
-return True
-
-def _validate_data_types(...) -> ...:
-    """..."""
-    passself.logger.info("Validating data types...")
-
-if not self.config["validation_checks"]["check_data_types"]:
-    passreturn True
-
-# Check for non - numeric features
-non_numeric_features: list[str] = []
-for col in features_df.columns:
-    passif not pd.api.types.is_numeric_dtype(features_df[col].dtype):
-    passnon_numeric_features.append(str(col))
-
-if non_numeric_features:
-    passresults["warnings"].append(
-f"Non - numeric features detected: {non_numeric_features}",
-)
-
-# Check for object dtype (potential issues)
-object_features: list[str] = []
-for col in features_df.columns:
-    passif features_df[col].dtype == "object":
-    passobject_features.append(str(col))
-
-if object_features:
-    passresults["warnings"].append(
-f"Object dtype features detected: {object_features}",
-)
-
-results["detailed_analysis"]["data_types"] = {
-str(col): str(features_df[col].dtype) for col in features_df.columns
-}
-
-return True
-
-def _get_method_specific_thresholds(...) -> ...:
-    pass"""..."""
-    passmethod_lower, method_name.lower()
-
-# Special handling for engineer_features method - use more lenient thresholds
-if "engineer_features" in method_lower:
-    passpassreturn {
-"max_nan_percentage": 0.4,
-"max_infinite_percentage": 0.1,
-"max_zero_variance_percentage": 0.8,
-"max_constant_percentage": 0.95,
-"max_extreme_values_percentage": 0.15,
-"description": "Complex financial feature engineering can produce varied outputs",
-}
-
-for feature_type, thresholds in self.config["feature_type_thresholds"].items():
-    passif feature_type in method_lower:
-    passreturn thresholds
-
-return {}
-
-def _validate_feature_values(...) -> ...:
-    """..."""
-    passself.logger.info("Validating feature values...")
-
-# Get method - specific thresholds
-method_thresholds, self._get_method_specific_thresholds(method_name)
-
-for col in features_df.columns:
-    passseries, features_df[col]
-
-# Check NaN values
-if self.config["validation_checks"]["check_nan_values"]:
-    passnan_percentage, float(series.isna().sum()) / max(len(series), 1)
-max_nan, method_thresholds.get(
-"max_nan_percentage",
-self.config["critical_thresholds"]["max_nan_percentage"],
-)
-
-if nan_percentage > max_nan:
-    passself.logger.warning(
-f"High NaN percentage in {col}: {nan_percentage:.3f} (threshold: {max_nan})",
-)
-results["critical_issues"].append(
-f"High NaN percentage in {col}: {nan_percentage:.3f} (threshold: {max_nan})",
-)
-return False
-if (
-nan_percentage
-> self.config["warning_thresholds"]["max_nan_percentage"]
-):
-    passresults["warnings"].append(
-f"Moderate NaN percentage in {col}: {nan_percentage:.3f}",
-)
-
-# Check infinite values
-if self.config["validation_checks"]["check_infinite_values"]:
-    passinf_percentage, float(np.isinf(series)).sum() / max(len(series), 1)
-max_inf, method_thresholds.get(
-"max_infinite_percentage",
-self.config["critical_thresholds"]["max_infinite_percentage"],
-)
-
-if inf_percentage > max_inf:
-    passself.logger.warning(
-f"High infinite percentage in {col}: {inf_percentage:.3f} (threshold: {max_inf})",
-)
-results["critical_issues"].append(
-f"High infinite percentage in {col}: {inf_percentage:.3f} (threshold: {max_inf})",
-)
-return False
-if (
-inf_percentage
-> self.config["warning_thresholds"]["max_infinite_percentage"]
-):
-    passresults["warnings"].append(
-f"Moderate infinite percentage in {col}: {inf_percentage:.3f}",
-)
-
-# Check zero variance - only for numeric columns
-if self.config["validation_checks"]["check_zero_variance"]:
-    passpassif pd.api.types.is_numeric_dtype(series.dtype):
-    passif float(series.var()) == 0.0:
-    passresults["warnings"].append(
-f"Zero variance feature detected: {col}",
-)
-# For categorical columns, check if all values are the same
-elif series.nunique() <= 1:
-    passpassresults["warnings"].append(
-f"Constant categorical feature detected: {col}",
-)
-
-# Check constant values
-if self.config["validation_checks"]["check_constant_values"]:
-    passconstant_percentage = (
-(series == series.mode().iloc[0]).sum() / float(len(series))
-if len(series.mode()) > 0
-else 0.0
-)
-max_constant, self.config["critical_thresholds"][
-"max_constant_percentage"
-]
-
-if constant_percentage > max_constant:
-    passresults["critical_issues"].append(
-f"High constant percentage in {col}: {constant_percentage:.3f} (threshold: {max_constant})",
-)
-return False
-
-# Check extreme values - made more lenient for financial data
-if self.config["validation_checks"]["check_extreme_values"]:
-    passpass# Use interquartile range (IQR) method for extreme value detection
-q75, float(series.quantile(0.75))
-q25, float(series.quantile(0.25))
-iqr, q75 - q25
-
-# Define extreme values as those beyond 3 * IQR from the quartiles
-upper_bound, q75 + 3 * iqr
-lower_bound, q25 - 3 * iqr
-
-extreme_count, int(((series > upper_bound) | (series < lower_bound)).sum())
-extreme_percentage, extreme_count / max(len(series), 1)
-
-if (
-extreme_percentage
-> self.config["critical_thresholds"][
-"max_extreme_values_percentage"
-]
-):
-    passpassself.logger.warning(
-f"High extreme values in {col}: {extreme_percentage:.3f}",
-)
-results["critical_issues"].append(
-f"High extreme values in {col}: {extreme_percentage:.3f}",
-)
-return False
-
-return True
-
-def _validate_feature_relationships(...) -> ...:
-    """..."""
-    passself.logger.info("Validating feature relationships...")
-
-# Check for perfect correlations (duplicate features)
-if self.config["validation_checks"]["check_feature_correlations"]:
-    passpasscorr_matrix, features_df.corr().abs()
-perfect_correlations: list[tuple[tuple[str, str], float]] = []
-
-for i in range(len(corr_matrix.columns)):
-    passfor j in range(i + 1, len(corr_matrix.columns)):
-    passcorr_val, float(corr_matrix.iloc[i, j])
-if (
-corr_val
-> self.config["warning_thresholds"]["max_correlation_threshold"]
-):
-    passcol_pair = (
-str(corr_matrix.columns[i]),
-str(corr_matrix.columns[j]),
-)
-perfect_correlations.append((col_pair, corr_val))
-
-if perfect_correlations:
-    passresults["warnings"].append(
-f"Highly correlated features detected: {perfect_correlations[:5]}",
-)  # Show first 5
-
-# Check for duplicate features
-if self.config["validation_checks"]["check_duplicate_features"]:
-    passpassduplicate_features: list[tuple[str, str]] = []
-for i, col1 in enumerate(features_df.columns):
-    passfor j, col2 in enumerate(features_df.columns[i + 1 :], i + 1):
-        if features_df[col1].equals(features_df[col2]):
-    passduplicate_features.append((str(col1), str(col2)))
-
-if duplicate_features:
-    passresults["warnings"].append(
-f"Duplicate features detected: {duplicate_features}",
-)
-
-return True
-
-def _validate_input_output_consistency(...) -> ...:
-    """..."""
-    passself.logger.info("Validating input - output consistency...")
-
-input_rows, int(input_shape[0])
-output_rows, int(len(features_df))
-
-if output_rows != input_rows:
-    passresults["warnings"].append(
-f"Row count mismatch: input={input_rows}, output={output_rows}",
-)
-
-# Check for reasonable feature count relative to input
-input_cols, int(input_shape[1])
-output_cols, int(len(features_df.columns))
-
-if output_cols > input_cols * 100:  # More than 100x input columns
-results["warnings"].append(
-f"Large feature expansion: input={input_cols}, output={output_cols}",
-)
-
-return True
-
-def _validate_downstream_compatibility(...) -> ...:
-    """..."""
-    passself.logger.info("Validating downstream compatibility...")
-
-# Check compatibility with sklearn preprocessing
-sklearn_compatible, self._validate_sklearn_compatibility(features_df, results)
-if not sklearn_compatible:
-    passpassreturn False
-
-# Check compatibility with model training
-model_compatible, self._validate_model_training_compatibility(
-features_df, results,
-)
-if not model_compatible:
-    passpassreturn False
-
-# Check compatibility with feature selection
-selection_compatible, self._validate_feature_selection_compatibility(
-features_df, results,
-)
-if not selection_compatible:
-    passpassreturn False
-
-# Check compatibility with regime - specific requirements
-return self._validate_regime_compatibility(
-features_df, method_name, results,
-)
-
-def _validate_sklearn_compatibility(...) -> ...:
-    pass"""..."""
-    pass# Check for sklearn - compatible data types
-sklearn_incompatible: list[str] = []
-for col in features_df.columns:
-    passdtype, features_df[col].dtype
-
-# sklearn expects numeric types
-if not pd.api.types.is_numeric_dtype(dtype):
-    passsklearn_incompatible.append(str(col))
-
-# Check for object dtype (problematic for sklearn)
-if dtype == "object":
-    passpasssklearn_incompatible.append(str(col))
-
-if sklearn_incompatible:
-    passresults["warnings"].append(
-f"Features incompatible with sklearn: {sklearn_incompatible}",
-)
-
-# Check for features that would cause StandardScaler issues
-scaler_problematic: list[str] = []
-for col in features_df.columns:
-    passseries, features_df[col]
-
-# Check for zero variance (causes division by zero in StandardScaler) - only for numeric columns
-if pd.api.types.is_numeric_dtype(series.dtype) and float(series.var()) == 0.0:
-    passpassscaler_problematic.append(str(col))
-
-# Check for constant features (causes issues in many sklearn estimators)
-if series.nunique() == 1:
-    passpassscaler_problematic.append(str(col))
-
-if scaler_problematic:
-    passresults["warnings"].append(
-f"Features may cause sklearn scaling issues: {scaler_problematic}",
-)
-
-# Check for features with extreme values that could affect scaling
-extreme_features: list[str] = []
-for col in features_df.columns:
-    passseries, features_df[col]
-q99, float(series.quantile(0.99))
-q01, float(series.quantile(0.01))
-
-# Check for extreme outliers that could affect scaling
-if abs(q99 - q01) > 1e6:
-    passpassextreme_features.append(str(col))
-
-if extreme_features:
-    passresults["warnings"].append(
-f"Features with extreme values may affect scaling: {extreme_features}",
-)
-
-return True
-
-def _validate_model_training_compatibility(...) -> ...:
-    """..."""
-    pass# Check for sufficient non - zero variance features
-zero_var_features: list[str] = []
-for col in features_df.columns:
-    passseries, features_df[col]
-if pd.api.types.is_numeric_dtype(series.dtype) and float(series.var()) == 0.0:
-    passzero_var_features.append(str(col))
-
-zero_var_percentage = (
-len(zero_var_features) / max(len(features_df.columns), 1)
-)
-if zero_var_percentage > 0.5:  # More than 50% zero variance
-results["warnings"].append(
-f"Too many zero - variance features: {zero_var_percentage:.2f}",
-)
-
-# Check for features with too many unique values (potential overfitting)
-high_cardinality_features: list[str] = []
-for col in features_df.columns:
-    passunique_ratio, features_df[col].nunique() / max(len(features_df), 1)
-if unique_ratio > 0.8:  # More than 80% unique values
-high_cardinality_features.append(str(col))
-
-if high_cardinality_features:
-    passresults["warnings"].append(
-f"High cardinality features detected: {high_cardinality_features}",
-)
-
-# Check for features that are perfectly correlated (redundant)
-corr_matrix, features_df.corr().abs()
-perfect_correlations: list[tuple[tuple[str, str], float]] = []
-
-for i in range(len(corr_matrix.columns)):
-    passfor j in range(i + 1, len(corr_matrix.columns)):
-    passif float(corr_matrix.iloc[i, j]) > 0.999:  # Perfect correlation
-col_pair = (
-str(corr_matrix.columns[i]),
-str(corr_matrix.columns[j]),
-)
-perfect_correlations.append((col_pair, float(corr_matrix.iloc[i, j])))
-
-if perfect_correlations:
-    passresults["warnings"].append(
-f"Perfectly correlated features (redundant): {perfect_correlations[:5]}",
-)
-
-return True
-
-def _validate_feature_selection_compatibility(...) -> ...:
-    """..."""
-    pass# Check for minimum number of features for selection
-min_features_for_selection, 5
-if len(features_df.columns) < min_features_for_selection:
-    passpassresults["warnings"].append(
-f"Few features available for selection: {len(features_df.columns)} (minimum: {min_features_for_selection})",
-)
-
-# Check for features with sufficient variance for selection
-low_variance_features: list[str] = []
-for col in features_df.columns:
-    pass# Only calculate variance for numeric columns
-if pd.api.types.is_numeric_dtype(features_df[col].dtype):
-    passpassvariance, float(features_df[col].var())
-else:
-    passvariance, 0.0  # For categorical columns treat as zero variance
-if variance < 1e - 8:  # Very low variance
-low_variance_features.append(str(col))
-
-if low_variance_features:
-    passresults["warnings"].append(
-f"Low variance features may be filtered out: {low_variance_features}",
-)
-
-# Check for features with sufficient non - zero values for mutual information
-sparse_features: list[str] = []
-for col in features_df.columns:
-    passnon_zero_ratio = (features_df[col] != 0).sum() / max(len(features_df), 1)
-if non_zero_ratio < 0.1:  # Less than 10% non - zero values
-sparse_features.append(str(col))
-
-if sparse_features:
-    passresults["warnings"].append(
-f"Sparse features may have limited selection value: {sparse_features}",
-)
-
-return True
-
-def _validate_regime_compatibility(...) -> ...:
-    """..."""
-    pass# Check for regime - specific feature requirements
-if "regime" in method_name.lower() or "hmm" in method_name.lower():
-    passpass# Regime models need features that can capture state transitions
-
-# Check for temporal features
-temporal_features = [
-str(col)
-for col in features_df.columns
-if any(
-keyword in str(col).lower()
-for keyword in [
-"lag",
-"diff",
-"pct_change",
-"rolling",
-"momentum",
-"trend",
-"volatility",
-]
-)
-]
-
-if not temporal_features:
-    passpassresults["warnings"].append(
-"No temporal features detected for regime analysis",
-)
-
-# Check for volatility features
-volatility_features = [
-str(col)
-for col in features_df.columns
-if any(
-keyword in str(col).lower()
-for keyword in ["volatility", "std", "variance", "atr", "bbands"]
-)
-]
-
-if not volatility_features:
-    passpassresults["warnings"].append(
-"No volatility features detected for regime analysis",
-)
-
-# Check for microstructure features if method suggests it
-if "microstructure" in method_name.lower():
-    passpassmicrostructure_features = [
-str(col)
-for col in features_df.columns
-if any(
-keyword in str(col).lower()
-for keyword in ["volume", "trade", "bid", "ask", "spread", "impact"]
-)
-]
-
-if not microstructure_features:
-    passpassresults["warnings"].append(
-"No microstructure features detected for microstructure analysis",
-)
-
-# Check for wavelet features if method suggests it
-if "wavelet" in method_name.lower():
-    passpasswavelet_features = [
-str(col)
-for col in features_df.columns
-if any(
-keyword in str(col).lower()
-for keyword in ["wavelet", "cwt", "db", "haar", "sym"]
-)
-]
-
-if not wavelet_features:
-    passpassresults["warnings"].append(
-"No wavelet features detected for wavelet analysis",
-)
-
-return True
-
-def _calculate_output_quality_score(...) -> ...:
-    pass"""..."""
-    passscore, 1.0
-
-# Deduct for critical issues
-score -= len(results["critical_issues"]) * 0.3
-
-# Deduct for warnings
-score -= len(results["warnings"]) * 0.05
-
-# Deduct for feature count issues
-if "feature_statistics" in results:
-    passpasstotal_features, results["feature_statistics"].get("total_features", 0)
-if total_features == 0:
-    passscore -= 0.5
-elif total_features > 1000:
-    passpassscore -= 0.1
-
-# Deduct for downstream compatibility issues
-downstream_warnings = [
-w
-for w in results["warnings"]
-if any(
-keyword in w.lower()
-for keyword in [
-"sklearn",
-"scaling",
-"model",
-"selection",
-"regime",
-"temporal",
-"volatility",
-]
-)
-]
-score -= len(downstream_warnings) * 0.02
-
-return float(max(0.0, min(1.0, score)))
-
-def _generate_output_recommendations(...) -> ...:
-    passpass"""..."""
-    passrecommendations: list[str] = []
-
-if results["output_quality_score"] < 0.8:
-    passrecommendations.append("Consider reviewing feature engineering logic")
-
-if results["warnings"]:
-    passrecommendations.append("Review warnings before using features")
-
-if "feature_statistics" in results:
-    passtotal_features, results["feature_statistics"].get("total_features", 0)
-if total_features > 1000:
-    passrecommendations.append(
-"Consider feature selection to reduce dimensionality",
-)
-
-# Downstream compatibility recommendations
-sklearn_warnings = [w for w in results["warnings"] if "sklearn" in w.lower()]
-if sklearn_warnings:
-    passpassrecommendations.append(
-"Fix sklearn compatibility issues before model training",
-)
-
-scaling_warnings = [w for w in results["warnings"] if "scaling" in w.lower()]
-if scaling_warnings:
-    passpassrecommendations.append(
-"Address scaling issues to prevent StandardScaler problems",
-)
-
-model_warnings = [w for w in results["warnings"] if "model" in w.lower()]
-if model_warnings:
-    passpassrecommendations.append("Review model training compatibility issues")
-
-selection_warnings = [
-w for w in results["warnings"] if "selection" in w.lower()
-]
-if selection_warnings:
-    passpassrecommendations.append(
-"Consider feature engineering improvements for better selection",
-)
-
-regime_warnings = [w for w in results["warnings"] if "regime" in w.lower()]
-if regime_warnings:
-    passpassrecommendations.append(
-"Add regime - specific features for better model performance",
-)
-
-temporal_warnings = [w for w in results["warnings"] if "temporal" in w.lower()]
-if temporal_warnings:
-    passpassrecommendations.append("Include temporal features for time series analysis")
-
-volatility_warnings = [
-w for w in results["warnings"] if "volatility" in w.lower()
-]
-if volatility_warnings:
-    passpassrecommendations.append("Add volatility features for regime detection")
-
-return recommendations
+    """
+    Comprehensive validator for feature engineering outputs.
+    Detects corrupted, invalid, or problematic feature results.
+    """
+
+    def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+        """Initialize the validator with configuration."""
+        self.logger = system_logger.getChild("FeatureOutputValidator")
+        self.config = config or self._get_default_config()
+        self.issues: List[OutputValidationIssue] = []
+
+    def _get_default_config(self) -> Dict[str, Any]:
+        """Get default configuration for validation thresholds."""
+        return {
+            # Critical thresholds that indicate corrupted output - made more lenient for financial data
+            "critical_thresholds": {
+                "max_nan_percentage": 0.3,
+                "max_infinite_percentage": 0.05,
+                "max_zero_variance_percentage": 0.7,
+                "max_constant_percentage": 0.9,
+                "max_extreme_values_percentage": 0.1,
+                "min_feature_count": 1,
+                "max_feature_count": 10000,
+            },
+            # Warning thresholds - made more lenient for financial data
+            "warning_thresholds": {
+                "max_nan_percentage": 0.15,
+                "max_infinite_percentage": 0.01,
+                "max_zero_variance_percentage": 0.5,
+                "max_constant_percentage": 0.8,
+                "max_extreme_values_percentage": 0.05,
+                "max_correlation_threshold": 0.99,
+                "max_duplicate_features_percentage": 0.1,
+            },
+            # Feature type specific thresholds - made more lenient for financial data
+            "feature_type_thresholds": {
+                "wavelet_features": {
+                    "max_nan_percentage": 0.4,
+                    "max_infinite_percentage": 0.1,
+                    "description": "Wavelet features naturally have edge effects",
+                },
+                "microstructure_features": {
+                    "max_nan_percentage": 0.2,
+                    "max_infinite_percentage": 0.05,
+                    "description": "Microstructure features should be mostly complete",
+                },
+                "technical_indicators": {
+                    "max_nan_percentage": 0.1,
+                    "max_infinite_percentage": 0.01,
+                    "description": "Technical indicators should be reliable",
+                },
+                "price_features": {
+                    "max_nan_percentage": 0.01,
+                    "max_infinite_percentage": 0.001,
+                    "description": "Price-based features should be nearly complete",
+                },
+            },
+            # Validation checks
+            "validation_checks": {
+                "check_nan_values": True,
+                "check_infinite_values": True,
+                "check_zero_variance": True,
+                "check_constant_values": True,
+                "check_extreme_values": True,
+                "check_data_types": True,
+                "check_feature_correlations": True,
+                "check_duplicate_features": True,
+                "check_feature_names": True,
+                "check_output_structure": True,
+            },
+        }
+
+    def validate_feature_output(
+        self,
+        features: Union[pd.DataFrame, Dict[str, Any], np.ndarray],
+        method_name: str,
+        input_data_shape: Optional[Tuple[int, ...]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Validate feature engineering output for quality and compatibility.
+        
+        Args:
+            features: Feature output to validate
+            method_name: Name of the feature engineering method
+            input_data_shape: Shape of input data for consistency checks
+            
+        Returns:
+            Dictionary with validation results and recommendations
+        """
+        print(f"🔍 [FEATURE OUTPUT VALIDATION] Starting validation for {method_name}")
+        self.logger.info(
+            f"🔍 [FEATURE OUTPUT VALIDATION] Starting validation for {method_name}",
+        )
+
+        if input_data_shape:
+            print(f"   📊 Input data shape: {input_data_shape}")
+            self.logger.info(f"   📊 Input data shape: {input_data_shape}")
+        
+        print(f"   📊 Features type: {type(features)}")
+        self.logger.info(f"   📊 Features type: {type(features)}")
+
+        self.issues.clear()
+
+        validation_results: Dict[str, Any] = {
+            "method_name": method_name,
+            "validation_passed": True,
+            "critical_issues": [],
+            "warnings": [],
+            "recommendations": [],
+            "output_quality_score": 0.0,
+            "feature_statistics": {},
+            "detailed_analysis": {},
+        }
+
+        # Convert features to DataFrame if it's a dict
+        print(
+            f"🔍 [FEATURE OUTPUT VALIDATION] Converting features to DataFrame for {method_name}",
+        )
+        self.logger.info(
+            f"🔍 [FEATURE OUTPUT VALIDATION] Converting features to DataFrame for {method_name}",
+        )
+
+        try:
+            features_df = self._convert_features_to_dataframe(features)
+            if features_df is None:
+                validation_results["validation_passed"] = False
+                validation_results["critical_issues"].append("Failed to convert features to DataFrame")
+                return validation_results
+
+            # Basic structure validation
+            if not self._validate_output_structure(features_df, method_name):
+                validation_results["validation_passed"] = False
+                validation_results["critical_issues"].append("Output structure validation failed")
+
+            # Data type validation
+            if not self._validate_data_types(features_df):
+                validation_results["validation_passed"] = False
+                validation_results["critical_issues"].append("Data type validation failed")
+
+            # Get method-specific thresholds
+            thresholds = self._get_method_specific_thresholds(method_name)
+
+            # Feature value validation
+            value_issues = self._validate_feature_values(features_df, thresholds)
+            if value_issues:
+                validation_results["warnings"].extend(value_issues)
+
+            # Feature relationship validation
+            if not self._validate_feature_relationships(features_df, thresholds):
+                validation_results["warnings"].append("Feature relationship validation failed")
+
+            # Input-output consistency validation
+            if input_data_shape and not self._validate_input_output_consistency(
+                features_df, input_data_shape
+            ):
+                validation_results["warnings"].append("Input-output consistency validation failed")
+
+            # Downstream compatibility validation
+            if not self._validate_downstream_compatibility(features_df):
+                validation_results["warnings"].append("Downstream compatibility validation failed")
+
+            # Calculate quality score
+            validation_results["output_quality_score"] = self._calculate_quality_score(
+                validation_results
+            )
+
+            # Generate recommendations
+            validation_results["recommendations"] = self._generate_output_recommendations(
+                validation_results
+            )
+
+            # Final validation status
+            validation_results["validation_passed"] = (
+                len(validation_results["critical_issues"]) == 0
+                and validation_results["output_quality_score"] >= 0.7
+            )
+
+            print(f"✅ [FEATURE OUTPUT VALIDATION] Validation completed for {method_name}")
+            self.logger.info(f"✅ [FEATURE OUTPUT VALIDATION] Validation completed for {method_name}")
+
+        except Exception as e:
+            error_msg = f"Validation failed with error: {str(e)}"
+            print(f"❌ [FEATURE OUTPUT VALIDATION] {error_msg}")
+            self.logger.exception(f"❌ [FEATURE OUTPUT VALIDATION] {error_msg}")
+            validation_results["validation_passed"] = False
+            validation_results["critical_issues"].append(error_msg)
+
+        return validation_results
+
+    def _convert_features_to_dataframe(
+        self, features: Union[pd.DataFrame, Dict[str, Any], np.ndarray]
+    ) -> Optional[pd.DataFrame]:
+        """Convert various feature formats to DataFrame."""
+        # Handle None input
+        if features is None:
+            self.logger.error("Features input is None")
+            return None
+
+        try:
+            if isinstance(features, pd.DataFrame):
+                return features.copy()
+            elif isinstance(features, dict):
+                # Convert dict to DataFrame
+                if all(isinstance(v, (pd.Series, np.ndarray)) for v in features.values()):
+                    return pd.DataFrame(features)
+                else:
+                    # Try to create DataFrame from dict values
+                    return pd.DataFrame.from_dict(features, orient='index').T
+            elif isinstance(features, np.ndarray):
+                return pd.DataFrame(features)
+            else:
+                self.logger.error(f"Unsupported features type: {type(features)}")
+                return None
+        except Exception as e:
+            self.logger.exception(f"Error converting features to DataFrame: {e}")
+            return None
+
+    def _validate_output_structure(
+        self, features_df: pd.DataFrame, method_name: str
+    ) -> bool:
+        """Validate the structure of feature output."""
+        self.logger.info("Validating output structure...")
+        
+        try:
+            # Check if DataFrame is empty
+            if features_df.empty:
+                self.logger.warning("Feature DataFrame is empty")
+                return False
+
+            # Check for required columns
+            if features_df.columns.empty:
+                self.logger.warning("Feature DataFrame has no columns")
+                return False
+
+            # Check for reasonable number of features
+            feature_count = len(features_df.columns)
+            if feature_count < self.config["critical_thresholds"]["min_feature_count"]:
+                self.logger.warning(f"Too few features: {feature_count}")
+                return False
+
+            if feature_count > self.config["critical_thresholds"]["max_feature_count"]:
+                self.logger.warning(f"Too many features: {feature_count}")
+                return False
+
+            # Check for reasonable number of samples
+            sample_count = len(features_df)
+            if sample_count == 0:
+                self.logger.warning("No samples in feature DataFrame")
+                return False
+
+            self.logger.info(f"Output structure validation passed: {feature_count} features, {sample_count} samples")
+            return True
+
+        except Exception as e:
+            self.logger.exception(f"Error in output structure validation: {e}")
+            return False
+
+    def _validate_data_types(self, features_df: pd.DataFrame) -> bool:
+        """Validate data types of features."""
+        self.logger.info("Validating data types...")
+        
+        try:
+            # Check for non-numeric columns
+            non_numeric_cols = []
+            for col in features_df.columns:
+                if not pd.api.types.is_numeric_dtype(features_df[col]):
+                    non_numeric_cols.append(col)
+
+            if non_numeric_cols:
+                self.logger.warning(f"Non-numeric columns found: {non_numeric_cols}")
+                # This is a warning, not critical for financial features
+
+            # Check for object columns that should be numeric
+            object_cols = features_df.select_dtypes(include=['object']).columns
+            if len(object_cols) > 0:
+                self.logger.warning(f"Object columns found: {list(object_cols)}")
+
+            self.logger.info("Data type validation completed")
+            return True
+
+        except Exception as e:
+            self.logger.exception(f"Error in data type validation: {e}")
+            return False
+
+    def _get_method_specific_thresholds(self, method_name: str) -> Dict[str, Any]:
+        """Get method-specific validation thresholds."""
+        method_lower = method_name.lower()
+        
+        # Default to general thresholds
+        thresholds = self.config["warning_thresholds"].copy()
+        
+        # Apply method-specific thresholds
+        for feature_type, type_config in self.config["feature_type_thresholds"].items():
+            if feature_type in method_lower:
+                thresholds.update(type_config)
+                break
+        
+        return thresholds
+
+    def _validate_feature_values(
+        self, features_df: pd.DataFrame, thresholds: Dict[str, Any]
+    ) -> List[str]:
+        """Validate individual feature values."""
+        self.logger.info("Validating feature values...")
+        
+        issues = []
+        
+        try:
+            for col in features_df.columns:
+                col_data = features_df[col]
+                
+                # Check for NaN values
+                nan_percentage = col_data.isna().sum() / len(col_data)
+                if nan_percentage > thresholds.get("max_nan_percentage", 0.15):
+                    issues.append(f"High NaN percentage in {col}: {nan_percentage:.2%}")
+
+                # Check for infinite values
+                inf_count = np.isinf(col_data).sum()
+                if inf_count > 0:
+                    inf_percentage = inf_count / len(col_data)
+                    if inf_percentage > thresholds.get("max_infinite_percentage", 0.01):
+                        issues.append(f"High infinite values in {col}: {inf_percentage:.2%}")
+
+                # Check for zero variance
+                if col_data.std() == 0:
+                    issues.append(f"Zero variance in feature {col}")
+
+                # Check for constant values
+                unique_ratio = col_data.nunique() / len(col_data)
+                if unique_ratio < (1 - thresholds.get("max_constant_percentage", 0.8)):
+                    issues.append(f"Low variance in feature {col}: {unique_ratio:.2%}")
+
+        except Exception as e:
+            self.logger.exception(f"Error in feature value validation: {e}")
+            issues.append(f"Feature value validation error: {str(e)}")
+
+        return issues
+
+    def _validate_feature_relationships(
+        self, features_df: pd.DataFrame, thresholds: Dict[str, Any]
+    ) -> bool:
+        """Validate relationships between features."""
+        self.logger.info("Validating feature relationships...")
+        
+        try:
+            # Check for highly correlated features
+            corr_matrix = features_df.corr()
+            high_corr_pairs = []
+            
+            for i in range(len(corr_matrix.columns)):
+                for j in range(i + 1, len(corr_matrix.columns)):
+                    corr_value = abs(corr_matrix.iloc[i, j])
+                    if corr_value > thresholds.get("max_correlation_threshold", 0.99):
+                        col1, col2 = corr_matrix.columns[i], corr_matrix.columns[j]
+                        high_corr_pairs.append(f"{col1} <-> {col2} ({corr_value:.3f})")
+
+            if high_corr_pairs:
+                self.logger.warning(f"High correlation pairs found: {high_corr_pairs}")
+
+            # Check for duplicate features
+            duplicate_features = features_df.columns[features_df.columns.duplicated()].tolist()
+            if duplicate_features:
+                self.logger.warning(f"Duplicate feature names found: {duplicate_features}")
+
+            return True
+
+        except Exception as e:
+            self.logger.exception(f"Error in feature relationship validation: {e}")
+            return False
+
+    def _validate_input_output_consistency(
+        self, features_df: pd.DataFrame, input_data_shape: Tuple[int, ...]
+    ) -> bool:
+        """Validate consistency between input and output."""
+        self.logger.info("Validating input-output consistency...")
+        
+        try:
+            # Check if number of samples matches
+            if len(features_df) != input_data_shape[0]:
+                self.logger.warning(
+                    f"Sample count mismatch: input has {input_data_shape[0]}, "
+                    f"output has {len(features_df)}"
+                )
+                return False
+
+            return True
+
+        except Exception as e:
+            self.logger.exception(f"Error in input-output consistency validation: {e}")
+            return False
+
+    def _validate_downstream_compatibility(self, features_df: pd.DataFrame) -> bool:
+        """Validate compatibility with downstream ML operations."""
+        self.logger.info("Validating downstream compatibility...")
+        
+        try:
+            # Check for sklearn compatibility
+            try:
+                from sklearn.preprocessing import StandardScaler
+                scaler = StandardScaler()
+                scaler.fit(features_df)
+                scaler.transform(features_df)
+            except Exception as e:
+                self.logger.warning(f"Sklearn compatibility issue: {e}")
+                return False
+
+            # Check for reasonable feature names
+            invalid_names = []
+            for col in features_df.columns:
+                if not isinstance(col, str) or len(col) == 0:
+                    invalid_names.append(col)
+
+            if invalid_names:
+                self.logger.warning(f"Invalid feature names found: {invalid_names}")
+
+            return True
+
+        except Exception as e:
+            self.logger.exception(f"Error in downstream compatibility validation: {e}")
+            return False
+
+    def _calculate_quality_score(self, results: Dict[str, Any]) -> float:
+        """Calculate overall quality score."""
+        score = 1.0
+
+        # Deduct for critical issues
+        score -= len(results["critical_issues"]) * 0.3
+
+        # Deduct for warnings
+        score -= len(results["warnings"]) * 0.05
+
+        # Deduct for feature count issues
+        if "feature_statistics" in results:
+            total_features = results["feature_statistics"].get("total_features", 0)
+            if total_features == 0:
+                score -= 0.5
+            elif total_features > 1000:
+                score -= 0.1
+
+        # Deduct for downstream compatibility issues
+        downstream_warnings = [
+            w for w in results["warnings"]
+            if any(
+                keyword in w.lower()
+                for keyword in [
+                    "sklearn", "scaling", "model", "selection",
+                    "regime", "temporal", "volatility",
+                ]
+            )
+        ]
+        score -= len(downstream_warnings) * 0.02
+
+        return float(max(0.0, min(1.0, score)))
+
+    def _generate_output_recommendations(self, results: Dict[str, Any]) -> List[str]:
+        """Generate recommendations based on validation results."""
+        recommendations: List[str] = []
+
+        if results["output_quality_score"] < 0.8:
+            recommendations.append("Consider reviewing feature engineering logic")
+
+        if results["warnings"]:
+            recommendations.append("Review warnings before using features")
+
+        if "feature_statistics" in results:
+            total_features = results["feature_statistics"].get("total_features", 0)
+            if total_features > 1000:
+                recommendations.append(
+                    "Consider feature selection to reduce dimensionality"
+                )
+
+        # Downstream compatibility recommendations
+        sklearn_warnings = [w for w in results["warnings"] if "sklearn" in w.lower()]
+        if sklearn_warnings:
+            recommendations.append(
+                "Fix sklearn compatibility issues before model training"
+            )
+
+        scaling_warnings = [w for w in results["warnings"] if "scaling" in w.lower()]
+        if scaling_warnings:
+            recommendations.append(
+                "Address scaling issues to prevent StandardScaler problems"
+            )
+
+        model_warnings = [w for w in results["warnings"] if "model" in w.lower()]
+        if model_warnings:
+            recommendations.append("Review model training compatibility issues")
+
+        selection_warnings = [
+            w for w in results["warnings"] if "selection" in w.lower()
+        ]
+        if selection_warnings:
+            recommendations.append(
+                "Consider feature engineering improvements for better selection"
+            )
+
+        regime_warnings = [w for w in results["warnings"] if "regime" in w.lower()]
+        if regime_warnings:
+            recommendations.append(
+                "Add regime-specific features for better model performance"
+            )
+
+        temporal_warnings = [w for w in results["warnings"] if "temporal" in w.lower()]
+        if temporal_warnings:
+            recommendations.append("Include temporal features for time series analysis")
+
+        volatility_warnings = [
+            w for w in results["warnings"] if "volatility" in w.lower()
+        ]
+        if volatility_warnings:
+            recommendations.append("Add volatility features for regime detection")
+
+        return recommendations
+
 
 # Convenience function for easy integration
-
-def validate_feature_output(...) -> ...:
-    pass"""..."""
-    passvalidator, FeatureOutputValidator(config)
-return validator.validate_feature_output(features, method_name, input_data_shape)
+def validate_feature_output(
+    features: Union[pd.DataFrame, Dict[str, Any], np.ndarray],
+    method_name: str,
+    input_data_shape: Optional[Tuple[int, ...]] = None,
+    config: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Convenience function to validate feature output."""
+    validator = FeatureOutputValidator(config)
+    return validator.validate_feature_output(features, method_name, input_data_shape)

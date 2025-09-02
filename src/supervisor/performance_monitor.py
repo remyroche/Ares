@@ -7,10 +7,12 @@ to provide holistic performance insights.
 """
 
 import asyncio
+import json
 from datetime import datetime
 from typing import Any
 
 import numpy as np
+import yaml
 from scipy import stats
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
@@ -84,8 +86,12 @@ class PerformanceMonitor:
                 "✅ Performance Monitor initialization completed successfully",
             )
             return True
+        except (ValueError, AttributeError, KeyError) as e:
+            self.print(failed(f"❌ Performance Monitor initialization failed: {type(e).__name__}: {e}"))
+            return False
         except Exception as e:
-            self.print(failed(f"❌ Performance Monitor initialization failed: {e}"))
+            self.logger.exception("Unexpected error during initialization")
+            self.print(failed(f"❌ Performance Monitor initialization failed with unexpected error: {e}"))
             return False
 
     @handle_errors(
@@ -100,8 +106,15 @@ class PerformanceMonitor:
             self.monitor_interval = self.monitor_config["monitor_interval"]
             self.max_history = self.monitor_config["max_history"]
             self.logger.info("Performance monitor configuration loaded successfully")
+        except FileNotFoundError:
+            self.logger.warning("Monitor configuration file not found, using defaults")
+            self.monitor_config = {"monitor_interval": 60, "max_history": 100}
+        except (json.JSONDecodeError, yaml.YAMLError) as e:
+            self.print(error(f"Error parsing monitor configuration: {e}"))
+            self.monitor_config = {"monitor_interval": 60, "max_history": 100}
         except Exception as e:
-            self.print(error(f"Error loading monitor configuration: {e}"))
+            self.print(error(f"Unexpected error loading monitor configuration: {e}"))
+            self.monitor_config = {"monitor_interval": 60, "max_history": 100}
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),

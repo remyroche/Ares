@@ -6,7 +6,9 @@ weighting methods. It supports regime-aware and uncertainty-aware weighting
 for optimal model combination.
 """
 
+from collections import deque
 from datetime import datetime
+from functools import lru_cache
 from typing import Any
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
@@ -56,7 +58,7 @@ class DynamicWeighter:
 
         # Ensemble weighting state
         self.model_weights: dict[str, float] = {}
-        self.model_performances: dict[str, list] = {}
+        self.model_performances: dict[str, deque] = {}  # Using deque for O(1) append/popleft
         self.regime_performances: dict[str, dict[str, float]] = {}
         self.uncertainty_metrics: dict[str, float] = {}
 
@@ -1116,7 +1118,7 @@ class DynamicWeighter:
 
                 # Initialize performance history if not exists
                 if model_name not in self.model_performances:
-                    self.model_performances[model_name] = []
+                    self.model_performances[model_name] = deque(maxlen=self.performance_window)
 
                 # Store performance data
                 performance_data = {
@@ -1125,13 +1127,7 @@ class DynamicWeighter:
                     "error": error,
                     "timestamp": timestamp or datetime.now(),
                 }
-                self.model_performances[model_name].append(performance_data)
-
-                # Maintain performance window
-                if len(self.model_performances[model_name]) > self.performance_window:
-                    self.model_performances[model_name] = self.model_performances[model_name][
-                        -self.performance_window:
-                    ]
+                self.model_performances[model_name].append(performance_data)  # O(1) with automatic size limit
 
                 # Update weight using gradient descent
                 # Inverse relationship: higher error = lower weight

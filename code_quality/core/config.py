@@ -186,3 +186,10 @@ def get_default_config() -> CodeQualityConfig:
 def load_config(config_path: str) -> CodeQualityConfig:
     """Load configuration from file."""
     return ConfigManager(config_path).get_config()
+
+
+def save_config(config: CodeQualityConfig, path: str) -> None:
+    """Save configuration to file."""
+    config_manager = ConfigManager()
+    config_manager.config = config
+    config_manager.save_config(path)

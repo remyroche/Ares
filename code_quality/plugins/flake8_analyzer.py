@@ -7,7 +7,7 @@ import sys
 import json
 from pathlib import Path
 from typing import Dict, Any, List
-from ..core.plugins import BaseCodeAnalyzer
+from code_quality.core.plugins import BaseCodeAnalyzer
 
 
 class Flake8Analyzer(BaseCodeAnalyzer):

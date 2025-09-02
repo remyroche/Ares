@@ -10,11 +10,11 @@ from src.utils.logger import system_logger
 from typing import Any
 import contextlib
 
-from src.config_optuna import get_parameter_value
 from src.utils.confidence import normalize_dual_confidence
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import error, initialization_error, missing
 from src.utils.centralized_decorators import validate_data_quality
+from kelly_criterion_fix import calculate_correct_kelly_position_size
 
 
 class PositionSizer:
@@ -283,26 +283,19 @@ class PositionSizer:
             self.print(error(f"Error calculating position size: {e}"))
             return None
 
-def _calculate_kelly_position_size(
+    def _calculate_kelly_position_size(
         self,
         price_target_confidences: dict[str, float],
         adversarial_confidences: dict[str, float],
     ) -> float:
         """Calculate position size using Kelly criterion based on ML confidence scores."""
         try:
-            # Use the new Kelly criterion formula module
-            kelly_multiplier = calculate_kelly_multiplier(
+            kelly_position_size = calculate_correct_kelly_position_size(
                 price_target_confidences=price_target_confidences,
                 adversarial_confidences=adversarial_confidences,
                 kelly_multiplier=self.kelly_multiplier,
-)
-
-            # The Kelly multiplier is already scaled by the conservative multiplier
-            # and normalized to 0-1 range, so we can use it directly
-            # Scale it to our position size range
-            kelly_position_size = (
-                self.min_position_size
-                + (self.max_position_size - self.min_position_size) * kelly_multiplier
+                min_position_size=self.min_position_size,
+                max_position_size=self.max_position_size,
             )
 
             # Ensure within bounds
@@ -317,7 +310,7 @@ def _calculate_kelly_position_size(
             self.logger.exception(f"Division by zero in Kelly calculation: {e}")
             return self.min_position_size
 
-def _calculate_ml_position_size(
+    def _calculate_ml_position_size(
         self,
         price_target_confidences: dict[str, float],
         adversarial_confidences: dict[str, float],
@@ -376,7 +369,7 @@ def _calculate_ml_position_size(
             self.logger.exception(f"Division by zero in ML position calculation: {e}")
             return self.min_position_size
 
-def _calculate_weighted_position_size(
+    def _calculate_weighted_position_size(
         self,
         kelly_position_size: float,
         ml_position_size: float,
@@ -403,7 +396,7 @@ def _calculate_weighted_position_size(
             self.print(error(f"Error calculating weighted position size: {e}"))
             return max(self.min_position_size, min(self.max_position_size, kelly_position_size))
 
-def _apply_position_size_modifiers(
+    def _apply_position_size_modifiers(
         self,
         base_size: float,
         *,
@@ -474,7 +467,7 @@ def _apply_position_size_modifiers(
             self.print(error(f"Error applying size modifiers: {e}"))
             return max(self.min_position_size, min(self.max_position_size, base_size))
 
-def _generate_sizing_reason(
+    def _generate_sizing_reason(
         self,
         final_position_size: float,
         kelly_position_size: float,
@@ -522,7 +515,7 @@ def _generate_sizing_reason(
             self.print(error(f"Error generating sizing reason: {e}"))
             return "Position size calculated using ML intelligence and Kelly criterion"
 
-def _generate_dual_confidence_sizing_reason(
+    def _generate_dual_confidence_sizing_reason(
         self,
         final_position_size: float,
         final_confidence: float,
@@ -571,9 +564,9 @@ def _generate_dual_confidence_sizing_reason(
             payoff = (avg_win / max(avg_loss, 1e-9)) if avg_loss else 1.5
 
             # Conservative shrinkage towards priors
-alpha = min(1.0, num_trades / 200.0)  # confidence weight up to 200 trades
-p_avg = (1 - alpha) * 0.5 + alpha * win_rate
-b_avg = (1 - alpha) * 1.5 + alpha * payoff
+            alpha = min(1.0, num_trades / 200.0)  # confidence weight up to 200 trades
+            p_avg = (1 - alpha) * 0.5 + alpha * win_rate
+            b_avg = (1 - alpha) * 1.5 + alpha * payoff
 
             # Clamp to reasonable bounds
             p_avg = max(0.3, min(0.7, p_avg))

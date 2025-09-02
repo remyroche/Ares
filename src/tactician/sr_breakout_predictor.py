@@ -1020,7 +1020,7 @@ class SRBreakoutPredictor:
             self.logger.error("SR breakout predictor not initialized")
             return {}
 
-try:
+        try:
             self.logger.info("Predicting SR breakouts...")
 
             # Detect support and resistance levels
@@ -1101,11 +1101,11 @@ try:
         Returns:
             dict[str, Any]: S/R context information
 """
-if not self.is_initialized:
+        if not self.is_initialized:
             self.logger.error("SR breakout predictor not initialized")
-return {}
+            return {}
 
-try:
+        try:
             # Detect support and resistance levels
             support_levels = await self._detect_support_levels(market_data)
             resistance_levels = await self._detect_resistance_levels(market_data)
@@ -1123,43 +1123,43 @@ try:
             enhanced_strength_support = await self.calculate_comprehensive_strength(market_data, clustered_support)
             enhanced_strength_resistance = await self.calculate_comprehensive_strength(market_data, clustered_resistance)
 
-# Update levels with enhanced strength
-for level in clustered_support:
+            # Update levels with enhanced strength
+            for level in clustered_support:
                 level_id = f"{level['price']:.4f}"
-if level_id in enhanced_strength_support:
+                if level_id in enhanced_strength_support:
                     level['enhanced_strength'] = enhanced_strength_support[level_id]['comprehensive_strength']
-level['strength_factors'] = enhanced_strength_support[level_id]['factors']
-else:
+                    level['strength_factors'] = enhanced_strength_support[level_id]['factors']
+                else:
                     level['enhanced_strength'] = level.get('strength', 0.5)
-level['strength_factors'] = {}
+                    level['strength_factors'] = {}
 
-for level in clustered_resistance:
+            for level in clustered_resistance:
                 level_id = f"{level['price']:.4f}"
-if level_id in enhanced_strength_resistance:
+                if level_id in enhanced_strength_resistance:
                     level['enhanced_strength'] = enhanced_strength_resistance[level_id]['comprehensive_strength']
-level['strength_factors'] = enhanced_strength_resistance[level_id]['factors']
-else:
+                    level['strength_factors'] = enhanced_strength_resistance[level_id]['factors']
+                else:
                     level['enhanced_strength'] = level.get('strength', 0.5)
-level['strength_factors'] = {}
+                    level['strength_factors'] = {}
 
-# Find nearest levels using enhanced strength
-nearest_support = self._find_nearest_level(current_price, clustered_support, "support")
-nearest_resistance = self._find_nearest_level(current_price, clustered_resistance, "resistance")
+            # Find nearest levels using enhanced strength
+            nearest_support = self._find_nearest_level(current_price, clustered_support, "support")
+            nearest_resistance = self._find_nearest_level(current_price, clustered_resistance, "resistance")
 
-# Calculate proximity metrics
-support_proximity = self._calculate_proximity(current_price, nearest_support)
-resistance_proximity = self._calculate_proximity(current_price, nearest_resistance)
+            # Calculate proximity metrics
+            support_proximity = self._calculate_proximity(current_price, nearest_support)
+            resistance_proximity = self._calculate_proximity(current_price, nearest_resistance)
 
-# Get pivot levels
-pivot_levels = self._calculate_pivot_levels(market_data)
+            # Get pivot levels
+            pivot_levels = self._calculate_pivot_levels(market_data)
 
-# Get advanced S/R analysis
-fibonacci_levels = await self.calculate_fibonacci_levels(market_data)
-elliott_wave_levels = await self.detect_elliott_wave_levels(market_data)
-order_flow_analysis = await self.analyze_order_flow_levels(market_data)
+            # Get advanced S/R analysis
+            fibonacci_levels = await self.calculate_fibonacci_levels(market_data)
+            elliott_wave_levels = await self.detect_elliott_wave_levels(market_data)
+            order_flow_analysis = await self.analyze_order_flow_levels(market_data)
 
-# Create context
-context = {
+            # Create context
+            context = {
 "current_price": current_price,
 "nearest_support": nearest_support.get("price", current_price) if nearest_support else current_price,
 "nearest_resistance": nearest_resistance.get("price", current_price) if nearest_resistance else current_price,

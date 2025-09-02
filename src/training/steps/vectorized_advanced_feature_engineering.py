@@ -6062,8 +6062,8 @@ class VectorizedAdvancedFeatureEngineering:
         return sr_levels
 
         except Exception as e:
-        self.logger.exception(f"❌ Error generating S/R levels: {e}")
-        return {}
+            self.logger.exception(f"❌ Error generating S/R levels: {e}")
+            return {}
 
     def _handle_irregular_time_intervals(self, data: pd.DataFrame, timeframe: str) -> pd.DataFrame:
         """Handle irregular time intervals gracefully for multi-timeframe feature generation.
@@ -6077,89 +6077,124 @@ class VectorizedAdvancedFeatureEngineering:
 
         """
         try:
-        if data.empty:
-        return data
+            if data.empty:
+                return data
 
-        # Check if we have a DatetimeIndex
-        if not isinstance(data.index, pd.DatetimeIndex):
-        self.logger.warning(f"⚠️ Data does not have DatetimeIndex for {timeframe} timeframe")
-        return data
+            # Check if we have a DatetimeIndex
+            if not isinstance(data.index, pd.DatetimeIndex):
+                self.logger.warning(f"⚠️ Data does not have DatetimeIndex for {timeframe} timeframe")
+                return data
 
-        # Calculate time differences
+            # Calculate time differences
             time_diffs = data.index.to_series().diff().dropna()
 
-        if len(time_diffs) == 0:
-        return data
+            if len(time_diffs) == 0:
+                return data
 
-        # Calculate expected interval for the timeframe
+            # Calculate expected interval for the timeframe
             timeframe_map = {
-                "1m": pd.Timedelta(minutes=1)
-                "5m": pd.Timedelta(minutes=5)
-                "15m": pd.Timedelta(minutes=15)
-                "30m": pd.Timedelta(minutes=30)
+                "1m": pd.Timedelta(minutes=1),
+                "5m": pd.Timedelta(minutes=5),
+                "15m": pd.Timedelta(minutes=15),
+                "30m": pd.Timedelta(minutes=30),
                 "1h": pd.Timedelta(hours=1)
             }
 
             expected_interval = timeframe_map.get(timeframe, pd.Timedelta(minutes=1))
 
-        # Calculate irregularity metrics
+            # Calculate irregularity metrics
             irregular_intervals = time_diffs[abs(time_diffs - expected_interval) > pd.Timedelta(seconds=30)]
             irregular_ratio = len(irregular_intervals) / len(time_diffs)
 
-        # If irregularity is low, no action needed
-        if irregular_ratio < 0.05:  # Less than 5% irregular
-        return data
+            # If irregularity is low, no action needed
+            if irregular_ratio < 0.05:  # Less than 5% irregular
+                return data
 
-        self.logger.info(f"🔧 Handling irregular time intervals for {timeframe} timeframe (irregularity: {irregular_ratio:.3f})")
+            self.logger.info(f"🔧 Handling irregular time intervals for {timeframe} timeframe (irregularity: {irregular_ratio:.3f})")
 
-        # Strategy 1: Forward fill small gaps
-        if irregular_ratio < 0.15:  # Less than 15% irregular
-        # Use forward fill for small gaps
+            # Strategy 1: Forward fill small gaps
+            if irregular_ratio < 0.15:  # Less than 15% irregular
+                # Use forward fill for small gaps
                 regularized_data = data.copy()
-        # Forward fill any missing values that might have been created by irregular intervals
-                regularized_data, regularized_data.fillna(method="ffill").fillna(method="bfill")
-        self.logger.debug(f"🔧 Applied forward fill for {timeframe} timeframe")
-        return regularized_data
+                # Forward fill any missing values that might have been created by irregular intervals
+                regularized_data = regularized_data.fillna(method="ffill").fillna(method="bfill")
+                self.logger.debug(f"🔧 Applied forward fill for {timeframe} timeframe")
+                return regularized_data
 
-        # Strategy 2: Resample to regular intervals for higher irregularity
-        # Resample to regular intervals using only available columns
+            # Strategy 2: Resample to regular intervals for higher irregularity
+            # Resample to regular intervals using only available columns
             available_columns = set(data.columns)
             aggregation_map = {}
-        if "open" in available_columns:
+            if "open" in available_columns:
                 aggregation_map["open"] = "first"
-        if "high" in available_columns:
+            if "high" in available_columns:
                 aggregation_map["high"] = "max"
-        if "low" in available_columns:
+            if "low" in available_columns:
                 aggregation_map["low"] = "min"
-        if "close" in available_columns:
+            if "close" in available_columns:
                 aggregation_map["close"] = "last"
-        if "volume" in available_columns:
+            if "volume" in available_columns:
                 aggregation_map["volume"] = "sum"
 
-        if aggregation_map:
+            if aggregation_map:
                 resampled_data = data.resample(timeframe).agg(aggregation_map).dropna()
-            else: # Fallback: if no recognized columns = use last observation
+            else:  # Fallback: if no recognized columns = use last observation
                 resampled_data = data.resample(timeframe).last().dropna()
 
-        # Forward fill any remaining gaps
+            # Forward fill any remaining gaps
             resampled_data = resampled_data.fillna(method="ffill").fillna(method="bfill")
 
-        self.logger.debug(f"🔧 Applied resampling for {timeframe} timeframe (shape: {resampled_data.shape})")
-        return resampled_data
+            self.logger.debug(f"🔧 Applied resampling for {timeframe} timeframe (shape: {resampled_data.shape})")
+            return resampled_data
 
         except Exception as e:
-        self.logger.warning(f"⚠️ Error handling irregular time intervals for {timeframe}: {e}")
-        return data
+            self.logger.warning(f"⚠️ Error handling irregular time intervals for {timeframe}: {e}")
+            return data
 
+    def _validate_input_data(self, data: pd.DataFrame, min_records: int = 10) -> Optional[str]:
+        """Validate input data quality and return error message if validation fails."""
+        try:
+            if data.empty:
+                return "Input data is empty"
+            
+            if len(data) < min_records:
+                return f"Insufficient data: {len(data)} records (minimum: {min_records})"
+            
+            # Check for required columns
+            required_columns = ["open", "high", "low", "close"]
+            missing_columns = [col for col in required_columns if col not in data.columns]
+            if missing_columns:
+                return f"Missing required columns: {missing_columns}"
+            
+            # Check for price data quality
+            price_data = data[required_columns].dropna()
+            if len(price_data) < min_records:
+                return f"Insufficient price data: {len(price_data)} records (minimum: {min_records})"
+            
+            # Check for volume data if available
+            if "volume" in data.columns:
+                volume_data = data["volume"].dropna()
+                if len(volume_data) < min_records:
+                    return f"Insufficient volume data: {len(volume_data)} records (minimum: {min_records})"
+            
+            self.logger.info("✅ Input data validation passed")
+            return None
+            
+        except Exception as e:
+            return f"Validation error: {e}"
 
-        self.logger.exception(f"❌ Insufficient price data: {len(price_data)} records (minimum: 10)")
-        return {}
-
-        if len(volume_data) < 10:
-        self.logger.error(f"❌ Insufficient volume data: {len(volume_data)} records (minimum: 10)")
-        return {}
-
-        self.logger.info("✅ Input data validation passed")
-        return None
-
-        # Initialize features dictionary
+    def _initialize_features_dictionary(self) -> Dict[str, Any]:
+        """Initialize the features dictionary with proper structure."""
+        return {
+            "momentum_features": {},
+            "volatility_features": {},
+            "volume_features": {},
+            "range_features": {},
+            "regime_features": {},
+            "cross_timeframe_features": {},
+            "metadata": {
+                "generation_timestamp": pd.Timestamp.now(),
+                "total_features": 0,
+                "feature_types": []
+            }
+        }

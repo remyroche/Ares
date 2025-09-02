@@ -1,0 +1,15 @@
+2025-09-02 08:21:12,792 - INFO - Processing file: src/supervisor/main.py
+2025-09-02 08:21:12,792 - INFO - Performing semantic analysis...
+2025-09-02 08:21:12,793 - INFO - Code quality score: 0.00
+2025-09-02 08:21:12,793 - WARNING - Syntax errors found: 1
+2025-09-02 08:21:12,793 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:21:12,795 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:12,796 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:12,798 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:12,799 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:21:12,800 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:21:12,804 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:12,804 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:12,804 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:21:12,807 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:21:12,810 - INFO - No fixes needed for: src/supervisor/main.py

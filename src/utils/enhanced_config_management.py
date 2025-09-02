@@ -12,551 +12,438 @@ from typing import Any, Dict, List, Optional, Union
 import logging
 
 try:
-    passpassself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-from src.utils.logger import system_logger
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+    from src.utils.logger import system_logger
+    from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 except ImportError:
-    passpasssystem_logger, logging.getLogger("EnhancedConfigManagement")
+    system_logger = logging.getLogger("EnhancedConfigManagement")
+
 
 @dataclass
 class PlaceholderDataClass:
+    """Placeholder data class for configuration management."""
+    
+    def __init__(self):
+        self.is_initialized = False
+        self.logger = logging.getLogger(__name__)
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="placeholderdataclass initialization",
-    )
-    async def initialize(self) -> b
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step1config initialization",
-    )
     async def initialize(self) -> bool:
-        """Initialize Step1Config."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-ool:
         """Initialize PlaceholderDataClass."""
         try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
+            self.logger.info(f"🚀 Initializing {self.__class__.__name__}...")
             self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
+            self.logger.info(f"✅ {self.__class__.__name__} initialized successfully")
             return True
         except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+            self.logger.exception(f"❌ Error initializing {self.__class__.__name__}: {e}")
             return False
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class Step1Config:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class Step1Config:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class Step1Config:
-    pass"""Enhanced configuration for Step1 data collection."""
 
-# Basic parameters
-symbol: str = "ETHUSDT"
-exchange: str = "BINANCE"
-timeframe: str = "1m"
-lookback_days: int, 1095
-
-# Performance parameters
-max_retries: int, 3
-retry_backoff_factor: float, 2.0
-chunk_size: int, 10000
-max_memory_mb: int, 1024
-max_workers: int, 4
-
-# Quality thresholds
-max_nan_ratio: float, 0.0  # Zero tolerance for NaN
-max_infinite_count: int, 0  # Zero tolerance for infinite values
-min_unique_values: int, 2
-max_gap_hours: int, 48
-price_tolerance: float, 0.001
-volume_tolerance: float, 0.001
-
-# Data directories
-data_dir: str = "data_cache"
-backup_dir: str = "data_cache / backup"
-temp_dir: str = "data_cache / temp"
-
-# Error ha
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="placeholderdataclass initialization",
-    )
-    async def initialize(self) -> bool:
- 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="step1_5config initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize Step1_5Config."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-       """Initialize PlaceholderDataClass."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-ndling
-enable_circuit_breaker: bool, True
-circuit_breaker_failure_threshold: int, 5
-circuit_breaker_recovery_timeout: float, 60.0
-
-def validate(...) -> ...:
-    """..."""
-    passissues = []
-
-if self.lookback_days <= 0:
-    passissues.append("lookback_days must be positive")
-if self.chunk_size <= 0:
-    passissues.append("chunk_size must be positive")
-if self.max_memory_mb <= 0:
-    passissues.append("max_memory_mb must be positive")
-if self.max_retries < 0:
-    passissues.append("max_retries must be non - negative")
-if self.max_nan_ratio < 0 or self.max_nan_ratio > 1:
-    passissues.append("max_nan_ratio must be between 0 and 1")
-if self.max_infinite_count < 0:
-    passissues.append("max_infinite_count must be non - negative")
-if self.price_tolerance < 0:
-    passissues.append("price_tolerance must be non - negative")
-if self.volume_tolerance < 0:
-    passissues.append("volume_tolerance must be non - negative")
-
-return issues
-
-def to_dict(...) -> ...:
-    """..."""
-    passreturn asdict(self)
-
-@classmethod
-def from_dict(...) -> ...:
-    """..."""
-    passreturn cls(**config_dict)
 
 @dataclass
-class PlaceholderDataC
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="placeholderdataclass initialization",
-    )
-    async def initialize(self) -> bool:
+class Step1Config:
+    """Enhanced configuration for Step1 data collection."""
+
+    # Basic parameters
+    symbol: str = "ETHUSDT"
+    exchange: str = "BINANCE"
+    timeframe: str = "1m"
+    lookback_days: int = 1095
+
+    # Performance parameters
+    max_retries: int = 3
+    retry_backoff_factor: float = 2.0
+    chunk_size: int = 10000
+    max_memory_mb: int = 1024
+    max_workers: int = 4
+
+    # Quality thresholds
+    max_nan_ratio: float = 0.0  # Zero tolerance for NaN
+    max_infinite_count: int = 0  # Zero tolerance for infinite values
+    min_unique_values: int = 2
+    max_gap_hours: int = 48
+    price_tolerance: float = 0.001
+    volume_tolerance: float = 0.001
+
+    # Data directories
+    data_dir: str = "data_cache"
+    backup_dir: str = "data_cache/backup"
+    temp_dir: str = "data_cache/temp"
+
+    # Error handling
+    enable_retry: bool = True
+    enable_fallback: bool = True
+    log_level: str = "INFO"
     
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="pipelineconfig initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize PipelineConfig."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+    # Validation settings
+    validate_data_quality: bool = True
+    validate_schema: bool = True
+    strict_mode: bool = False
+    
+    # Caching settings
+    enable_cache: bool = True
+    cache_ttl_seconds: int = 3600
+    cache_max_size: int = 1000
+    
+    # Monitoring settings
+    enable_metrics: bool = True
+    enable_tracing: bool = True
+    performance_threshold_ms: int = 5000
+
+    def __post_init__(self):
+        """Post-initialization validation and setup."""
+        self._validate_config()
+        self._setup_directories()
+        self._setup_logging()
+
+    def _validate_config(self):
+        """Validate configuration parameters."""
+        if self.lookback_days <= 0:
+            raise ValueError("lookback_days must be positive")
+        if self.max_retries < 0:
+            raise ValueError("max_retries must be non-negative")
+        if self.chunk_size <= 0:
+            raise ValueError("chunk_size must be positive")
+        if self.max_memory_mb <= 0:
+            raise ValueError("max_memory_mb must be positive")
+        if self.max_workers <= 0:
+            raise ValueError("max_workers must be positive")
+        if not 0 <= self.max_nan_ratio <= 1:
+            raise ValueError("max_nan_ratio must be between 0 and 1")
+        if self.price_tolerance <= 0:
+            raise ValueError("price_tolerance must be positive")
+        if self.volume_tolerance <= 0:
+            raise ValueError("volume_tolerance must be positive")
+
+    def _setup_directories(self):
+        """Create necessary directories if they don't exist."""
+        for directory in [self.data_dir, self.backup_dir, self.temp_dir]:
+            Path(directory).mkdir(parents=True, exist_ok=True)
+
+    def _setup_logging(self):
+        """Setup logging configuration."""
+        logging.basicConfig(
+            level=getattr(logging, self.log_level.upper()),
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert configuration to dictionary."""
+        return asdict(self)
+
+    def to_json(self) -> str:
+        """Convert configuration to JSON string."""
+        return json.dumps(self.to_dict(), indent=2)
+
+    def save_to_file(self, file_path: str):
+        """Save configuration to file."""
+        with open(file_path, 'w') as f:
+            f.write(self.to_json())
+
+    @classmethod
+    def load_from_file(cls, file_path: str) -> 'Step1Config':
+        """Load configuration from file."""
+        with open(file_path, 'r') as f:
+            config_data = json.load(f)
+        return cls(**config_data)
+
+    def update(self, **kwargs):
+        """Update configuration with new values."""
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+            else:
+                raise ValueError(f"Unknown configuration key: {key}")
+        self._validate_config()
+
+    def get_data_path(self, filename: str) -> str:
+        """Get full path for data file."""
+        return os.path.join(self.data_dir, filename)
+
+    def get_backup_path(self, filename: str) -> str:
+        """Get full path for backup file."""
+        return os.path.join(self.backup_dir, filename)
+
+    def get_temp_path(self, filename: str) -> str:
+        """Get full path for temporary file."""
+        return os.path.join(self.temp_dir, filename)
+
+    def is_valid_symbol(self, symbol: str) -> bool:
+        """Check if symbol is valid for the exchange."""
+        # Basic validation - could be enhanced with exchange-specific logic
+        return isinstance(symbol, str) and len(symbol) > 0 and '/' in symbol
+
+    def is_valid_timeframe(self, timeframe: str) -> bool:
+        """Check if timeframe is valid."""
+        valid_timeframes = ['1m', '5m', '15m', '30m', '1h', '4h', '1d', '1w']
+        return timeframe in valid_timeframes
+
+    def get_chunk_size_for_memory(self, available_memory_mb: int) -> int:
+        """Calculate optimal chunk size based on available memory."""
+        # Reserve 20% of memory for other operations
+        usable_memory = int(available_memory_mb * 0.8)
+        # Estimate memory per row (conservative estimate)
+        memory_per_row = 0.001  # MB per row
+        optimal_chunk_size = int(usable_memory / memory_per_row)
+        return min(optimal_chunk_size, self.chunk_size)
+
+    def get_retry_delay(self, attempt: int) -> float:
+        """Calculate retry delay using exponential backoff."""
+        if attempt <= 0:
+            return 0
+        return min(self.retry_backoff_factor ** attempt, 60)  # Cap at 60 seconds
+
+    def should_retry(self, attempt: int, error: Exception) -> bool:
+        """Determine if operation should be retried."""
+        if not self.enable_retry:
             return False
-    """Initialize PlaceholderDataClass."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
-            return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
+        if attempt >= self.max_retries:
             return False
-lass:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class Step1_5Config:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class Step1_5Config:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class Step1_5Config:
-    pass"""Enhanced configuration for Step1_5 data converter."""
+        # Add specific error type checks here if needed
+        return True
 
-# Basic parameters
-symbol: str = "ETHUSDT"
-exchange: str = "BINANCE"
-timeframe: str = "1m"
+    def get_quality_thresholds(self) -> Dict[str, Any]:
+        """Get data quality thresholds."""
+        return {
+            'max_nan_ratio': self.max_nan_ratio,
+            'max_infinite_count': self.max_infinite_count,
+            'min_unique_values': self.min_unique_values,
+            'max_gap_hours': self.max_gap_hours,
+            'price_tolerance': self.price_tolerance,
+            'volume_tolerance': self.volume_tolerance
+        }
 
-# Performance parameters
-max_retries: int, 3
-retry_backoff_factor: float, 2.0
-chunk_size: int, 10000
-max_memory_mb: int, 1024
-max_workers: int, 4
-batch_size: int, 262144
+    def get_performance_settings(self) -> Dict[str, Any]:
+        """Get performance-related settings."""
+        return {
+            'chunk_size': self.chunk_size,
+            'max_memory_mb': self.max_memory_mb,
+            'max_workers': self.max_workers,
+            'enable_cache': self.enable_cache,
+            'cache_ttl_seconds': self.cache_ttl_seconds,
+            'cache_max_size': self.cache_max_size
+        }
 
-# Quality thresholds
-max_nan_ratio: float, 0.0  # Zero tolerance for NaN
-max_infinite_count: int, 0  # Zero tolerance for infinite values
-min_unique_values: int, 2
-max_gap_hours: int, 48
-price_tolerance: float, 0.001
-volume_tolerance: float, 0.001
+    def get_monitoring_settings(self) -> Dict[str, Any]:
+        """Get monitoring and observability settings."""
+        return {
+            'enable_metrics': self.enable_metrics,
+            'enable_tracing': self.enable_tracing,
+            'performance_threshold_ms': self.performance_threshold_ms,
+            'log_level': self.log_level
+        }
 
-# Data directories
-data_dir: str = "data_cache"
-unified_dir: str = "data_cache / unified"
-backup_dir: str = "data_cache / backup_pre_unified"
-temp_dir: str = "data_cache / temp"
-
-# Processing options
-force_rerun: bool, False
-enable_incremental: bool, True
-auto_add_date_columns: bool, True
-compression: str = "snappy"
-use_dictionary: bool, True
-min_rows_per_group: int, 50000
-max_rows_per_file: int, 5_000_000
-
-# Error handling
-enable_circuit_breaker: bool, True
-circuit_breaker_failure_th
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="configmanager initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize ConfigManager."""
-        try:
-            self.logger.info(f"🚀 Initializing {class_name}...")
-            self.is_initialized = True
-            self.logger.info(f"✅ {class_name} initialized successfully")
+    def validate_data_quality(self, data: Any) -> bool:
+        """Validate data quality against configured thresholds."""
+        if not self.validate_data_quality:
             return True
-        except Exception as e:
-            self.logger.exception(f"❌ Error initializing {class_name}: {e}")
-            return False
-reshold: int, 5
-circuit_breaker_recovery_timeout: float, 60.0
+        
+        # This is a placeholder implementation
+        # In a real implementation, you would check the actual data
+        # against the quality thresholds
+        return True
 
-def validate(...) -> ...:
-    """..."""
-    passissues = []
+    def validate_schema(self, data: Any) -> bool:
+        """Validate data schema against expected structure."""
+        if not self.validate_schema:
+            return True
+        
+        # This is a placeholder implementation
+        # In a real implementation, you would check the actual data
+        # against the expected schema
+        return True
 
-if self.chunk_size <= 0:
-    passissues.append("chunk_size must be positive")
-if self.max_memory_mb <= 0:
-    passissues.append("max_memory_mb must be positive")
-if self.max_retries < 0:
-    passissues.append("max_retries must be non - negative")
-if self.max_nan_ratio < 0 or self.max_nan_ratio > 1:
-    passissues.append("max_nan_ratio must be between 0 and 1")
-if self.min_rows_per_group >= self.max_rows_per_file:
-    passissues.append("min_rows_per_group must be less than max_rows_per_file")
-if self.price_tolerance < 0:
-    passissues.append("price_tolerance must be non - negative")
-if self.volume_tolerance < 0:
-    passissues.append("volume_tolerance must be non - negative")
+    def get_fallback_config(self) -> 'Step1Config':
+        """Get fallback configuration with conservative settings."""
+        fallback = Step1Config()
+        fallback.chunk_size = min(self.chunk_size, 1000)
+        fallback.max_workers = min(self.max_workers, 2)
+        fallback.max_memory_mb = min(self.max_memory_mb, 512)
+        fallback.strict_mode = False
+        fallback.enable_retry = True
+        fallback.max_retries = 5
+        return fallback
 
-return issues
+    def __str__(self) -> str:
+        """String representation of configuration."""
+        return f"Step1Config(symbol={self.symbol}, exchange={self.exchange}, timeframe={self.timeframe})"
 
-def to_dict(...) -> ...:
-    """..."""
-    passreturn asdict(self)
+    def __repr__(self) -> str:
+        """Detailed string representation of configuration."""
+        return f"Step1Config({self.to_dict()})"
 
-@classmethod
-def from_dict(...) -> ...:
-    """..."""
-    passreturn cls(**config_dict)
 
 @dataclass
-class PlaceholderDataClass:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class PipelineConfig:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class PipelineConfig:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class PipelineConfig:
-    pass"""Configuration for the entire pipeline."""
+class EnhancedConfigManager:
+    """Enhanced configuration manager with validation and fallback support."""
+    
+    primary_config: Step1Config
+    fallback_config: Optional[Step1Config] = None
+    config_history: List[Dict[str, Any]] = field(default_factory=list)
+    validation_enabled: bool = True
+    auto_fallback: bool = True
+    
+    def __post_init__(self):
+        """Post-initialization setup."""
+        if self.fallback_config is None:
+            self.fallback_config = self.primary_config.get_fallback_config()
+        
+        # Initialize logging
+        self.logger = logging.getLogger(__name__)
+        self.logger.setLevel(self.primary_config.log_level)
 
-# Step configurations
-step1: Step1Config, field(default_factory = Step1Config)
-step01_5: Step1_5Config, field(default_factory = Step1_5Config)
+    def get_config(self, use_fallback: bool = False) -> Step1Config:
+        """Get configuration, optionally using fallback."""
+        if use_fallback and self.fallback_config:
+            self.logger.warning("Using fallback configuration")
+            return self.fallback_config
+        return self.primary_config
 
-# Global settings
-environment: str = "development"
-log_level: str = "INFO"
-enable_metrics: bool, True
-enable_profiling: bool, False
+    def validate_config(self, config: Step1Config) -> bool:
+        """Validate configuration."""
+        if not self.validation_enabled:
+            return True
+        
+        try:
+            config._validate_config()
+            return True
+        except Exception as e:
+            self.logger.error(f"Configuration validation failed: {e}")
+            return False
 
-# Data settings
-default_symbol: str = "ETHUSDT"
-default_exchange: str = "BINANCE"
-default_timeframe: str = "1m"
+    def update_config(self, **kwargs) -> bool:
+        """Update configuration with validation."""
+        try:
+            # Store current config in history
+            self.config_history.append({
+                'timestamp': self._get_timestamp(),
+                'config': self.primary_config.to_dict()
+            })
+            
+            # Update configuration
+            self.primary_config.update(**kwargs)
+            
+            # Validate updated configuration
+            if not self.validate_config(self.primary_config):
+                # Rollback to previous configuration
+                self._rollback_config()
+                return False
+            
+            self.logger.info("Configuration updated successfully")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to update configuration: {e}")
+            return False
 
-def validate(...) -> ...:
-    """..."""
-    passissues = []
+    def _rollback_config(self):
+        """Rollback to previous configuration."""
+        if self.config_history:
+            previous_config = self.config_history.pop()
+            self.primary_config = Step1Config(**previous_config['config'])
+            self.logger.info("Configuration rolled back to previous state")
 
-# Validate individual step configurations
-step01_issues, self.step1.validate()
-issues.extend([f"step1.{issue}" for issue in step01_issues])
+    def _get_timestamp(self) -> str:
+        """Get current timestamp string."""
+        from datetime import datetime
+        return datetime.now().isoformat()
 
-step01_5_issues, self.step01_5.validate()
-issues.extend([f"step01_5.{issue}" for issue in step01_5_issues])
+    def export_config(self, file_path: str) -> bool:
+        """Export current configuration to file."""
+        try:
+            self.primary_config.save_to_file(file_path)
+            self.logger.info(f"Configuration exported to {file_path}")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to export configuration: {e}")
+            return False
 
-# Validate global settings
-if self.environment not in ["development", "staging", "production"]:
-    passpassissues.append("environment must be one of: development, staging, production")
+    def import_config(self, file_path: str) -> bool:
+        """Import configuration from file."""
+        try:
+            new_config = Step1Config.load_from_file(file_path)
+            if self.validate_config(new_config):
+                self.primary_config = new_config
+                self.logger.info(f"Configuration imported from {file_path}")
+                return True
+            else:
+                self.logger.error("Imported configuration validation failed")
+                return False
+        except Exception as e:
+            self.logger.error(f"Failed to import configuration: {e}")
+            return False
 
-if self.log_level not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
-    passissues.append("log_level must be a valid logging level")
+    def get_config_summary(self) -> Dict[str, Any]:
+        """Get configuration summary."""
+        return {
+            'primary_config': self.primary_config.to_dict(),
+            'fallback_config': self.fallback_config.to_dict() if self.fallback_config else None,
+            'validation_enabled': self.validation_enabled,
+            'auto_fallback': self.auto_fallback,
+            'config_history_count': len(self.config_history),
+            'last_updated': self.config_history[-1]['timestamp'] if self.config_history else None
+        }
 
-return issues
+    def reset_to_defaults(self) -> bool:
+        """Reset configuration to default values."""
+        try:
+            self.primary_config = Step1Config()
+            self.logger.info("Configuration reset to defaults")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to reset configuration: {e}")
+            return False
 
-def to_dict(...) -> ...:
-    """..."""
-    passreturn {
-"step1": self.step1.to_dict(),
-"step01_5": self.step01_5.to_dict(),
-"environment": self.environment,
-"log_level": self.log_level,
-"enable_metrics": self.enable_metrics,
-"enable_profiling": self.enable_profiling,
-"default_symbol": self.default_symbol,
-"default_exchange": self.default_exchange,
-"default_timeframe": self.default_timeframe,
-}
+    def get_environment_overrides(self) -> Dict[str, Any]:
+        """Get configuration overrides from environment variables."""
+        overrides = {}
+        env_mapping = {
+            'SYMBOL': 'symbol',
+            'EXCHANGE': 'exchange',
+            'TIMEFRAME': 'timeframe',
+            'LOOKBACK_DAYS': 'lookback_days',
+            'MAX_RETRIES': 'max_retries',
+            'CHUNK_SIZE': 'chunk_size',
+            'MAX_MEMORY_MB': 'max_memory_mb',
+            'MAX_WORKERS': 'max_workers'
+        }
+        
+        for env_var, config_key in env_mapping.items():
+            env_value = os.getenv(env_var)
+            if env_value is not None:
+                try:
+                    # Try to convert to appropriate type
+                    if config_key in ['lookback_days', 'max_retries', 'chunk_size', 'max_memory_mb', 'max_workers']:
+                        overrides[config_key] = int(env_value)
+                    elif config_key in ['retry_backoff_factor', 'max_nan_ratio', 'price_tolerance', 'volume_tolerance']:
+                        overrides[config_key] = float(env_value)
+                    else:
+                        overrides[config_key] = env_value
+                except ValueError:
+                    self.logger.warning(f"Invalid environment variable value for {env_var}: {env_value}")
+        
+        return overrides
 
-@classmethod
-def from_dict(...) -> ...:
-    """..."""
-    passstep01_config, Step1Config.from_dict(config_dict.get("step1", {}))
-step01_5_config, Step1_5Config.from_dict(config_dict.get("step01_5", {}))
+    def apply_environment_overrides(self) -> bool:
+        """Apply configuration overrides from environment variables."""
+        overrides = self.get_environment_overrides()
+        if overrides:
+            return self.update_config(**overrides)
+        return True
 
-return cls(
-step1 = step01_config,
-step01_5 = step01_5_config,
-environment = config_dict.get("environment", "development"),
-log_level = config_dict.get("log_level", "INFO"),
-enable_metrics = config_dict.get("enable_metrics", True),
-enable_profiling = config_dict.get("enable_profiling", False),
-default_symbol = config_dict.get("default_symbol", "ETHUSDT"),
-default_exchange = config_dict.get("default_exchange", "BINANCE"),
-default_timeframe = config_dict.get("default_timeframe", "1m"),
+
+# Default configuration instance
+default_config = Step1Config()
+
+# Enhanced configuration manager instance
+config_manager = EnhancedConfigManager(
+    primary_config=default_config,
+    validation_enabled=True,
+    auto_fallback=True
 )
 
-class ConfigManager:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class ConfigManager:
-    passself.logger.info("Implementation placeholder - needs specific logic")
-class ConfigManager:
-    pass"""Manager for configuration loading, validation, and saving."""
-
-def __init__(...):
-    passpassdef __init__(...):
-    passdef __init__(...):
-    passdef __init__(...):
-    passself.config_dir, Path(config_dir)
-self.config_dir.mkdir(exist_ok = True)
-self.logger, system_logger.getChild("ConfigManager")
-
-def load_config(...) -> ...:
-    """..."""
-    passconfig_path, self.config_dir / config_name
-
-if config_path.exists():
-    passtry:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-with open(config_path, 'r') as f:
-    passconfig_dict, json.load(f)
-
-config, PipelineConfig.from_dict(config_dict)
-self.logger.info(f"Loaded configuration from {config_path}")
-return config
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.warning(f"Error loading configuration from {config_path}: {e}")
-self.logger.info("Using default configuration")
-
-# Return default configuration
-return PipelineConfig()
-
-def save_config(...):
-    passdef save_config(...):
-    passdef save_config(...):
-    passdef save_config(...):
-    pass"""Save configuration to file."""
-config_path, self.config_dir / config_name
-
-try:
-    passself.logger.error(f"Error in {file_path}: {{e}}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error in {file_path}: {{e}}")
-config_dict, config.to_dict()
-with open(config_path, 'w') as f:
-    passjson.dump(config_dict, f, indent = 2)
-
-self.logger.info(f"Saved configuration to {config_path}")
-except Exception as e:
-    passpasspasspasspasspasspassself.logger.error(f"Error saving configuration to {config_path}: {e}")
-
-def validate_config(...) -> ...:
-    """..."""
-    passissues, config.validate()
-
-if issues:
-    passself.logger.error("Configuration validation failed:")
-for issue in issues:
-    passself.logger.error(f"  - {issue}")
-return False
-else:
-    passself.logger.info("Configuration validation passed")
-return True
-
-def create_environment_config(...) -> ...:
-    """..."""
-    passbase_config, PipelineConfig()
-
-if environment == "development":
-    passbase_config.environment = "development"
-base_config.log_level = "DEBUG"
-base_config.enable_profiling, True
-base_config.step1.max_memory_mb, 512
-base_config.step01_5.max_memory_mb, 512
-base_config.step1.chunk_size, 5000
-base_config.step01_5.chunk_size, 5000
-
-elif environment == "staging":
-    passpassbase_config.environment = "staging"
-base_config.log_level = "INFO"
-base_config.enable_profiling, False
-base_config.step1.max_memory_mb, 2048
-base_config.step01_5.max_memory_mb, 2048
-
-elif environment == "production":
-    passpassbase_config.environment = "production"
-base_config.log_level = "WARNING"
-base_config.enable_profiling, False
-base_config.step1.max_memory_mb, 4096
-base_config.step01_5.max_memory_mb, 4096
-base_config.step1.max_retries, 5
-base_config.step01_5.max_retries, 5
-
-return base_config
-
-def load_environment_config(...) -> ...:
-    """..."""
-    passconfig_name, f"pipeline_config_{environment}.json"
-config, self.load_config(config_name)
-
-if config.environment != environment:
-    pass# Create new environment - specific config
-config, self.create_environment_config(environment)
-self.save_config(config, config_name)
-
-return config
-
-# Convenience functions
-def get_default_step1_config(...) -> ...:
-    """..."""
-    passreturn Step1Config()
-
-def get_default_step1_5_config(...) -> ...:
-    """..."""
-    passreturn Step1_5Config()
-
-def get_default_pipeline_config(...) -> ...:
-    """..."""
-    passreturn PipelineConfig()
-
-def load_pipeline_config(...) -> ...:
-    """..."""
-    passconfig_manager, ConfigManager()
-return config_manager.load_environment_config(environment)
-
-def validate_and_save_config(...):
-    passdef validate_and_save_config(...):
-    passdef validate_and_save_config(...):
-    passdef validate_and_save_config(...):
-    pass"""Validate and save configuration."""
-config_manager, ConfigManager()
-
-if config_manager.validate_config(config):
-    passconfig_manager.save_config(config, config_name)
-return True
-else:
-    passreturn False
-
-# Environment - specific configuration presets
-DEVELOPMENT_CONFIG = {
-"step1": {
-"max_memory_mb": 512,
-"chunk_size": 5000,
-"max_retries": 2,
-"log_level": "DEBUG"
-},
-"step01_5": {
-"max_memory_mb": 512,
-"chunk_size": 5000,
-"max_retries": 2,
-"enable_incremental": True
-},
-"environment": "development",
-"log_level": "DEBUG",
-"enable_profiling": True
-}
-
-STAGING_CONFIG = {
-"step1": {
-"max_memory_mb": 2048,
-"chunk_size": 10000,
-"max_retries": 3
-},
-"step01_5": {
-"max_memory_mb": 2048,
-"chunk_size": 10000,
-"max_retries": 3,
-"enable_incremental": True
-},
-"environment": "staging",
-"log_level": "INFO",
-"enable_profiling": False
-}
-
-PRODUCTION_CONFIG = {
-"step1": {
-"max_memory_mb": 4096,
-"chunk_size": 20000,
-"max_retries": 5,
-"circuit_breaker_failure_threshold": 3
-},
-"step01_5": {
-"max_memory_mb": 4096,
-"chunk_size": 20000,
-"max_retries": 5,
-"enable_incremental": True,
-"circuit_breaker_failure_threshold": 3
-},
-"environment": "production",
-"log_level": "WARNING",
-"enable_profiling": False
-}
+# Export main classes and instances
+__all__ = [
+    'Step1Config',
+    'EnhancedConfigManager',
+    'default_config',
+    'config_manager'
+]

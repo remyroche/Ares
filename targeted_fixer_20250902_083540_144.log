@@ -1,0 +1,27 @@
+2025-09-02 08:35:40,147 - INFO - Processing file: src/utils/async_utils.py
+2025-09-02 08:35:40,148 - INFO - Performing semantic analysis...
+2025-09-02 08:35:40,148 - INFO - Code quality score: 0.00
+2025-09-02 08:35:40,148 - WARNING - Syntax errors found: 1
+2025-09-02 08:35:40,148 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:35:40,149 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:40,150 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:40,150 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:40,151 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:40,151 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:40,152 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:40,153 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:40,153 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:40,154 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:40,155 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:40,155 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:40,156 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:40,157 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:40,158 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:35:40,159 - WARNING - Skipped unsafe fix: Fix would create unbalanced brackets/parentheses
+2025-09-02 08:35:40,160 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:40,161 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:40,163 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:40,164 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:35:40,164 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:35:40,166 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:40,169 - INFO - No fixes needed for: src/utils/async_utils.py

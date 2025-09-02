@@ -1,0 +1,25 @@
+2025-09-02 08:35:54,715 - INFO - Processing file: src/utils/base_validator.py
+2025-09-02 08:35:54,716 - INFO - Performing semantic analysis...
+2025-09-02 08:35:54,717 - INFO - Code quality score: 0.00
+2025-09-02 08:35:54,717 - WARNING - Syntax errors found: 1
+2025-09-02 08:35:54,717 - INFO - Attempting to fix syntax errors - this is the primary purpose of the fixer!
+2025-09-02 08:35:54,719 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:54,720 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:54,721 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:54,722 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:54,724 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:54,725 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:54,726 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:54,728 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:54,729 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:54,731 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:54,732 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:54,733 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:54,735 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:54,739 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:54,741 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:54,742 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:54,746 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:35:54,746 - WARNING - Skipped unsafe fix: Fix would create dangerous pattern: ^\s*:\s*$
+2025-09-02 08:35:54,750 - WARNING - Skipped unsafe fix: Fix would create double equals assignment
+2025-09-02 08:35:54,754 - INFO - No fixes needed for: src/utils/base_validator.py

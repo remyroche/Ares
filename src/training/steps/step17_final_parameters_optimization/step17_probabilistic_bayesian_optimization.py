@@ -27,11 +27,11 @@ warnings.filterwarnings('ignore')
 
 # Import the probabilistic Bayesian optimizer
 try:
-    from src.training.probabilistic_bayesian_optimizer import (
+    from ..probabilistic_bayesian_optimizer import (
         ProbabilisticBayesianOptimizer,
         ProbabilisticOptimizationConfig
     )
-    from src.training.probabilistic_model_integration import ProbabilisticModelIntegrator
+    from ..probabilistic_model_integration import ProbabilisticModelIntegrator
 except ImportError:
     # Fallback for testing
     pass

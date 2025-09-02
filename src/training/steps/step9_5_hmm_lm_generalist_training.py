@@ -262,7 +262,6 @@ class HMMLMGeneralistTrainingStep:
                     "hmm_lm_training_success": True,
                     "vocabulary_size": len(self.regime_change_vocab) if hasattr(self, 'regime_change_vocab') else 0,
                     "hmm_states": self.hmm_states if hasattr(self, 'hmm_states') else 0,
-                ,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
                     "project_version": self.config.get("project_version", "1.0.0"),
@@ -280,11 +279,10 @@ class HMMLMGeneralistTrainingStep:
                     additional_metadata={
                         "model_trained": True,
                         "vocabulary_size": len(self.regime_change_vocab) if hasattr(self, 'regime_change_vocab') else 0,
-                    ,
-                    "asset": symbol,
-                    "lookback_period": self.config.get("lookback_days", 1095),
-                    "project_version": self.config.get("project_version", "1.0.0"),
-                }
+                        "asset": symbol,
+                        "lookback_period": self.config.get("lookback_days", 1095),
+                        "project_version": self.config.get("project_version", "1.0.0"),
+                    }
                 )
                 self.logger.info(f"✅ Logged HMM-LM model result: {model_report_name}")
             
@@ -295,7 +293,6 @@ class HMMLMGeneralistTrainingStep:
                 metrics=metrics_calculated,
                 additional_metadata={
                     "metrics_type": "hmm_lm_generalist_training_performance",
-                ,
                     "asset": symbol,
                     "lookback_period": self.config.get("lookback_days", 1095),
                     "project_version": self.config.get("project_version", "1.0.0"),
@@ -1350,11 +1347,7 @@ async def run_step(
             "data_dir": data_dir,
             "force_rerun": force_rerun,
             **kwargs,
-        ,
-                "asset": symbol,  # Use symbol as asset
-                "lookback_period": self.config.get("lookback_days", 1095),  # Default to 3 years
-                "project_version": self.config.get("project_version", "1.0.0"),  # Default version
-            }
+        }
 
         pipeline_state: dict[str, Any] = {}
         result = await step.execute(training_input, pipeline_state)

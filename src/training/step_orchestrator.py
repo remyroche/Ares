@@ -294,13 +294,13 @@ class StepOrchestrator:
         # Prepare training input for enhanced training manager
         # Use proper lookback_days based on training mode
         from src.config.constants import (
-    BLANK_TRAINING_LOOKBACK_DAYS,
-    FULL_TRAINING_LOOKBACK_DAYS,
-)
-from src.config.training_modes import (
-    get_step_specific_parameters,
-    apply_mode_parameters_to_config,
-)
+            BLANK_TRAINING_LOOKBACK_DAYS,
+            FULL_TRAINING_LOOKBACK_DAYS,
+        )
+        from src.config.training_modes import (
+            get_step_specific_parameters,
+            apply_mode_parameters_to_config,
+        )
 
         # Determine training mode and apply mode-specific parameters
         training_mode = "blank" if os.getenv("BLANK_TRAINING_MODE", "0") == "1" else "full"

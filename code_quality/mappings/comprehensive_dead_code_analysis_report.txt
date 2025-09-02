@@ -1,0 +1,75 @@
+================================================================================
+COMPREHENSIVE DEAD CODE ANALYSIS REPORT
+================================================================================
+Analysis Date: 2025-09-02 08:25:14
+Target Directory: ../../src/utils
+Tools Used: tool_1, tool_2, tool_3
+
+📊 EXECUTIVE SUMMARY
+----------------------------------------
+Total Functions Analyzed: 263
+Truly Unused Functions: 55
+High Risk Functions: 59
+
+🛡️  SAFETY ASSESSMENT
+----------------------------------------
+Safe To Remove: 55 functions
+  These functions can be safely removed:
+    • Unknown in Unknown
+    • Unknown in Unknown
+    • Unknown in Unknown
+    • Unknown in Unknown
+    • Unknown in Unknown
+    • Unknown in Unknown
+    • Unknown in Unknown
+    • Unknown in Unknown
+    • Unknown in Unknown
+    • Unknown in Unknown
+    ... and 45 more
+
+High Risk: 42 functions
+
+Critical Risk: 17 functions
+
+Requires Manual Review: 204 functions
+
+💡 RECOMMENDATIONS
+----------------------------------------
+✅ IMMEDIATE ACTIONS:
+  • Remove truly unused functions (marked as 'safe_to_remove')
+  • These functions have no dependencies and can be safely deleted
+
+⚠️  CAUTION REQUIRED:
+  • Review high-risk functions before removal
+  • Check for hidden dependencies or dynamic usage
+
+🔧 GENERAL GUIDELINES:
+  • Always test after removing functions
+  • Remove functions in small batches
+  • Keep backup of original code
+
+🔍 TOOL-SPECIFIC FINDINGS
+----------------------------------------
+Tool: tool_1
+  Total Files Analyzed: 55
+  Total Functions Found: 363
+  Files With Syntax Errors: 0
+  Test Files: 1
+  Config Files: 6
+
+Tool: tool_2
+  Total Functions: 263
+  Total Dependencies: 2711
+  Files With Syntax Errors: 0
+  Test Files: 1
+  Config Files: 6
+  Export Files: 1
+
+Tool: tool_3
+  Total Functions: 263
+  Truly Unused: 0
+  Used Functions: 263
+  Files With Syntax Errors: 0
+  Validation Complete: True
+
+================================================================================

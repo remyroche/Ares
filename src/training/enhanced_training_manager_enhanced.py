@@ -407,14 +407,6 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                             summary.append(f"      - {feature}")
                         if len(zero_var_features) > 10:
                             summary.append(f"      ... and {len(zero_var_features) - 10} more")
-                    
-                    zero_var_features = quality_issues.get('zero_variance_features', [])
-                    summary.append(f"    Zero Variance Features ({len(zero_var_features)}):")
-                    if zero_var_features:
-                        for feature in zero_var_features[:10]:
-                            summary.append(f"      - {feature}")
-                        if len(zero_var_features) > 10:
-                            summary.append(f"      ... and {len(zero_var_features) - 10} more")
             
             elif step_name == "step3_hmm_regime_discovery":
                 if "regime_analysis" in quality_metrics:
@@ -448,6 +440,98 @@ class EnhancedTrainingManagerWithReporting(EnhancedTrainingManager):
                     summary.append(f"    Test Samples: {distribution.get('test_samples', 'N/A')}")
                     summary.append(f"    Validation Samples: {distribution.get('validation_samples', 'N/A')}")
                 
+                if "quality_validation" in quality_metrics:
+                    validation = quality_metrics["quality_validation"]
+                    summary.append("  Quality Validation:")
+                    summary.append(f"    No Data Leakage: {validation.get('no_data_leakage', 'N/A')}")
+                    summary.append(f"    Temporal Consistency: {validation.get('temporal_consistency', 'N/A')}")
+                    
+                    if "regime_representation" in validation:
+                        regime_rep = validation["regime_representation"]
+                        summary.append(f"    All Regimes Represented: {regime_rep.get('all_regimes_represented', 'N/A')}")
+                        if not regime_rep.get('all_regimes_represented', True):
+                            missing = regime_rep.get('missing_regimes_in_test', [])
+                            summary.append(f"    Missing Regimes in Test: {missing}")
+            
+            elif step_name == "step5_triple_barrier_method":
+                if "barrier_analysis" in quality_metrics:
+                    barrier = quality_metrics["barrier_analysis"]
+                    summary.append("  Barrier Analysis:")
+                    summary.append(f"    Total Labels: {barrier.get('total_labels', 'N/A')}")
+                    
+                    if "barrier_parameters" in barrier:
+                        params = barrier["barrier_parameters"]
+                        summary.append(f"    Upper Barrier: {params.get('upper_barrier', 'N/A')}")
+                        summary.append(f"    Lower Barrier: {params.get('lower_barrier', 'N/A')}")
+                        summary.append(f"    Time Horizon: {params.get('time_horizon', 'N/A')}")
+                
+                if "label_quality" in quality_metrics:
+                    label_quality = quality_metrics["label_quality"]
+                    summary.append("  Label Quality:")
+                    summary.append(f"    Label Consistency: {label_quality.get('label_consistency', 'N/A')}")
+                    summary.append(f"    No Label Leakage: {label_quality.get('no_label_leakage', 'N/A')}")
+                    
+                    if "balanced_labels" in label_quality:
+                        balance = label_quality["balanced_labels"]
+                        summary.append(f"    Labels Balanced: {balance.get('is_balanced', 'N/A')}")
+                        if not balance.get('is_balanced', True):
+                            summary.append(f"    Majority Class: {balance.get('majority_class', 'N/A')}")
+                            summary.append(f"    Minority Class: {balance.get('minority_class', 'N/A')}")
+            
+            elif step_name == "step6_hmm_based_training":
+                if "training_analysis" in quality_metrics:
+                    training = quality_metrics["training_analysis"]
+                    summary.append("  Training Analysis:")
+                    summary.append(f"    Model Type: {training.get('model_type', 'N/A')}")
+                    summary.append(f"    Training Samples: {training.get('training_samples', 'N/A')}")
+                    summary.append(f"    Validation Samples: {training.get('validation_samples', 'N/A')}")
+                    summary.append(f"    Training Epochs: {training.get('training_epochs', 'N/A')}")
+                    summary.append(f"    Convergence Status: {training.get('convergence_status', 'N/A')}")
+                
+                if "model_performance" in quality_metrics:
+                    performance = quality_metrics["model_performance"]
+                    summary.append("  Model Performance:")
+                    summary.append(f"    Training Accuracy: {performance.get('training_accuracy', 'N/A'):.4f}" if isinstance(performance.get('training_accuracy'), (int, float)) else f"    Training Accuracy: {performance.get('training_accuracy', 'N/A')}")
+                    summary.append(f"    Validation Accuracy: {performance.get('validation_accuracy', 'N/A'):.4f}" if isinstance(performance.get('validation_accuracy'), (int, float)) else f"    Validation Accuracy: {performance.get('validation_accuracy', 'N/A')}")
+                    summary.append(f"    Training Loss: {performance.get('training_loss', 'N/A'):.4f}" if isinstance(performance.get('training_loss'), (int, float)) else f"    Training Loss: {performance.get('training_loss', 'N/A')}")
+                    summary.append(f"    Validation Loss: {performance.get('validation_loss', 'N/A'):.4f}" if isinstance(performance.get('validation_loss'), (int, float)) else f"    Validation Loss: {performance.get('validation_loss', 'N/A')}")
+                    
+                    if "overfitting_score" in performance:
+                        overfitting = performance["overfitting_score"]
+                        summary.append(f"    Overfitting Gap: {overfitting.get('overfitting_gap', 'N/A'):.4f}" if isinstance(overfitting.get('overfitting_gap'), (int, float)) else f"    Overfitting Gap: {overfitting.get('overfitting_gap', 'N/A')}")
+                        summary.append(f"    Overfitting Severity: {overfitting.get('overfitting_severity', 'N/A')}")
+                
+                if "model_quality" in quality_metrics:
+                    quality = quality_metrics["model_quality"]
+                    summary.append("  Model Quality:")
+                    summary.append(f"    Model Complexity: {quality.get('model_complexity', 'N/A')}")
+                    summary.append(f"    Training Time: {quality.get('training_time', 'N/A')}")
+                    summary.append(f"    Memory Usage: {quality.get('memory_usage', 'N/A')}")
+            
+            elif step_name == "step7_analyst_enhancement":
+                if "enhancement_analysis" in quality_metrics:
+                    enhancement = quality_metrics["enhancement_analysis"]
+                    summary.append("  Enhancement Analysis:")
+                    summary.append(f"    Enhancement Type: {enhancement.get('enhancement_type', 'N/A')}")
+                    summary.append(f"    Original Features: {enhancement.get('original_features', 'N/A')}")
+                    summary.append(f"    Enhanced Features: {enhancement.get('enhanced_features', 'N/A')}")
+                    summary.append(f"    Feature Increase: {enhancement.get('feature_increase', 'N/A')}")
+                
+                if "enhancement_quality" in quality_metrics:
+                    quality = quality_metrics["enhancement_quality"]
+                    summary.append("  Enhancement Quality:")
+                    summary.append(f"    Feature Relevance: {quality.get('feature_relevance', 'N/A'):.4f}" if isinstance(quality.get('feature_relevance'), (int, float)) else f"    Feature Relevance: {quality.get('feature_relevance', 'N/A')}")
+                    summary.append(f"    Information Gain: {quality.get('information_gain', 'N/A'):.4f}" if isinstance(quality.get('information_gain'), (int, float)) else f"    Information Gain: {quality.get('information_growth', 'N/A')}")
+                    summary.append(f"    Enhancement Effectiveness: {quality.get('enhancement_effectiveness', 'N/A'):.4f}" if isinstance(quality.get('enhancement_effectiveness'), (int, float)) else f"    Enhancement Effectiveness: {quality.get('enhancement_effectiveness', 'N/A')}")
+                
+                if "performance_impact" in quality_metrics:
+                    impact = quality_metrics["performance_impact"]
+                    summary.append("  Performance Impact:")
+                    summary.append(f"    Pre-Enhancement Accuracy: {impact.get('pre_enhancement_accuracy', 'N/A'):.4f}" if isinstance(impact.get('pre_enhancement_accuracy'), (int, float)) else f"    Pre-Enhancement Accuracy: {impact.get('pre_enhancement_accuracy', 'N/A')}")
+                    summary.append(f"    Post-Enhancement Accuracy: {impact.get('post_enhancement_accuracy', 'N/A'):.4f}" if isinstance(impact.get('post_enhancement_accuracy'), (int, float)) else f"    Post-Enhancement Accuracy: {impact.get('post_enhancement_accuracy', 'N/A')}")
+                    summary.append(f"    Accuracy Improvement: {impact.get('accuracy_improvement', 'N/A'):.4f}" if isinstance(impact.get('accuracy_improvement'), (int, float)) else f"    Accuracy Improvement: {impact.get('accuracy_improvement', 'N/A')}")
+                    summary.append(f"    Enhancement Cost: {impact.get('enhancement_cost', 'N/A')}")
+            
                 if "time_distribution" in quality_metrics:
                     time_dist = quality_metrics["time_distribution"]
                     summary.append("  Time Distribution:")

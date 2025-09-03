@@ -18,7 +18,12 @@ from src.core.decorators import (
     handles_errors,
 )
 from src.core.decorators import validates as validate_data_quality
+from src.core.decorators import traced
 from src.core.domain import handle_specific_errors
+try:
+    from src.analyst.ml_confidence_predictor import MLConfidencePredictor
+except Exception:  # pragma: no cover - optional at runtime
+    MLConfidencePredictor = None  # type: ignore
 
 # Import dual model system and other components
 from src.utils.logger import system_logger
@@ -65,6 +70,10 @@ class Analyst:
         self.enable_technical_analysis: bool = self.analyst_config.get(
             "enable_technical_analysis",
             True,
+        )
+        self.enable_risk_analysis: bool = self.analyst_config.get(
+            "enable_risk_analysis",
+            False,
         )
 
         # Dual Model System integration
@@ -262,9 +271,9 @@ class Analyst:
             else:
                 self.logger.error(failed("❌ Failed to initialize Dual Model System"))
 
-        except Exception:
-            self.print(
-                initialization_error("Error initializing Dual Model System: {e}"),
+        except Exception as e:
+            self.logger.error(
+                initialization_error(f"Error initializing Dual Model System: {e}"),
             )
 
     @handles_errors(
@@ -285,9 +294,11 @@ class Analyst:
             else:
                 self.logger.error(failed("❌ Failed to initialize Market Health Analyzer"))
 
-        except Exception:
-            self.print(
-                initialization_error("Error initializing Market Health Analyzer: {e}"),
+        except Exception as e:
+            self.logger.error(
+                initialization_error(
+                    f"Error initializing Market Health Analyzer: {e}",
+                ),
             )
 
     @handles_errors(
@@ -347,8 +358,14 @@ class Analyst:
     async def _initialize_ml_confidence_predictor(self) -> None:
         """Initialize ML Confidence Predictor."""
         self.logger.info("Initializing ML Confidence Predictor...")
-        # ML confidence predictor initialization logic here
-        self.logger.info("ML Confidence Predictor initialized successfully")
+        try:
+            if MLConfidencePredictor is not None:
+                self.ml_confidence_predictor = MLConfidencePredictor(self.config)
+                self.logger.info("ML Confidence Predictor initialized successfully")
+            else:
+                self.logger.warning("MLConfidencePredictor not available; using fallback probabilities")
+        except Exception as e:
+            self.logger.warning(f"Failed to initialize MLConfidencePredictor: {e}")
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
@@ -426,6 +443,17 @@ class Analyst:
                     self.market_health_analyzer.get_analysis_results()
                 )
 
+            # 2b. Compute probabilities to hit price targets (upside and downside)
+            price_target_probabilities = {}
+            if self.enable_ml_predictions and features_df is not None:
+                try:
+                    price_target_probabilities = await self._get_price_target_probabilities(
+                        features_df,
+                        current_price,
+                    )
+                except Exception:
+                    price_target_probabilities = {}
+
             # 3. Perform liquidation risk analysis
             liquidation_risk_results = {}
             if self.liquidation_risk_model and self.ml_confidence_predictor:
@@ -482,6 +510,7 @@ class Analyst:
                 "liquidation_risk": liquidation_risk_results,
                 "trading_decision": trading_decision,
                 "enhanced_predictions": enhanced_predictions,
+                "price_target_probabilities": price_target_probabilities,
                 "features_shape": features_df.shape
                 if features_df is not None
                 else None,
@@ -523,6 +552,74 @@ class Analyst:
             "confidence": 0.5,
             "increase_probabilities": {0.1: 0.3, 0.2: 0.2, 0.3: 0.1},
             "decrease_probabilities": {0.1: 0.3, 0.2: 0.2, 0.3: 0.1},
+        }
+
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return={},
+        context="price target probabilities",
+    )
+    async def _get_price_target_probabilities(
+        self,
+        features_df: pd.DataFrame,
+        current_price: float,
+    ) -> dict[str, Any]:
+        """Compute probabilities to hit specific price targets up and down.
+
+        Returns structure:
+            {
+                "upside": {"0.1%": p, ...},
+                "downside": {"0.1%": p, ...},
+                "best_targets": {
+                    "upside": {"target": "x%", "probability": p},
+                    "downside": {"target": "y%", "probability": q}
+                }
+            }
+        """
+        # Prefer ML predictor if available
+        if self.ml_confidence_predictor:
+            table = await self.ml_confidence_predictor.predict_confidence_table(
+                features_df,
+                current_price,
+            )
+            if table:
+                upside = table.get("price_target_confidences", {}) or {}
+                downside = table.get("adversarial_confidences", {}) or {}
+                best_up = max(upside.items(), key=lambda kv: kv[1]) if upside else (None, 0.0)
+                best_dn = max(downside.items(), key=lambda kv: kv[1]) if downside else (None, 0.0)
+                return {
+                    "upside": upside,
+                    "downside": downside,
+                    "best_targets": {
+                        "upside": {"target": best_up[0], "probability": best_up[1]},
+                        "downside": {"target": best_dn[0], "probability": best_dn[1]},
+                    },
+                }
+
+        # Fallback: derive naive probabilities from volatility
+        if "close" in features_df.columns and len(features_df) > 50:
+            returns = features_df["close"].pct_change().dropna()
+            vol = float(returns.rolling(window=20).std().iloc[-1] or 0.0)
+        else:
+            vol = 0.01
+        # Define default target ladder (percent values as strings)
+        targets = [f"{x/10:.1f}%" for x in range(1, 21)]  # 0.1% .. 2.0%
+        # Simple mapping: higher vol => higher chance to hit further targets, but cap at 1
+        def prob_for(level_str: str) -> float:
+            level = float(level_str.replace("%", "")) / 100.0
+            base = min(1.0, max(0.05, (vol * 5) / max(level, 1e-6)))
+            return float(np.clip(base, 0.0, 1.0))
+        upside = {t: prob_for(t) for t in targets}
+        downside = {t: prob_for(t) for t in targets}
+        best_up = max(upside.items(), key=lambda kv: kv[1]) if upside else (None, 0.0)
+        best_dn = max(downside.items(), key=lambda kv: kv[1]) if downside else (None, 0.0)
+        return {
+            "upside": upside,
+            "downside": downside,
+            "best_targets": {
+                "upside": {"target": best_up[0], "probability": best_up[1]},
+                "downside": {"target": best_dn[0], "probability": best_dn[1]},
+            },
         }
 
     @handles_errors(

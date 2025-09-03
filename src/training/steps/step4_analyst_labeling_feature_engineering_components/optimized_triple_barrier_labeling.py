@@ -3,13 +3,15 @@
 import contextlib
 from typing import Any
 
+from src.core.decorators import handles_errors, traced
+
 import numpy as np
 import pandas as pd
 
-from src.utils.centralized_decorators import (
+from src.core.domain import (
     guard_dataframe_nulls,
     handle_errors,
-    with_tracing_span,
+    with_tracing_span
 )
 from src.utils.logger import get_logger
 
@@ -124,13 +126,13 @@ class OptimizedTripleBarrierLabeling:
                 "   → Consider using binary_classification=True for better results"
             )
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=pd.DataFrame(),
         context="optimized_triple_barrier_labeling.vectorized"
     )
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
-    @with_tracing_span("TripleBarrier.apply_vectorized", log_args=False)
+    # @guard_dataframe_nulls - removed, handled by validatesmode="warn", arg_index=1)
+    @traced(span_name="TripleBarrier.apply_vectorized")
     def apply_triple_barrier_labeling_vectorized(
         self, 
         data: pd.DataFrame,
@@ -364,7 +366,7 @@ class OptimizedTripleBarrierLabeling:
         )
         return labeled_data
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=pd.DataFrame(),
         context="optimized_triple_barrier_labeling.parallel"
@@ -386,7 +388,7 @@ class OptimizedTripleBarrierLabeling:
         # Disabled due to boundary lookahead correctness issues.
         return self.apply_triple_barrier_labeling_vectorized(data)
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=pd.DataFrame(),
         context="optimized_triple_barrier_labeling.process_chunk"
@@ -417,8 +419,8 @@ class OptimizedTripleBarrierLabeling:
         return labeled_data['label']
 
 
-@with_tracing_span("benchmark_triple_barrier_methods", log_args=False)
-@handle_errors(exceptions=(Exception,), default_return={}, context="benchmark_triple_barrier")
+@traced(span_name="benchmark_triple_barrier_methods")
+@handles_errors(exceptions=(Exception,), default_return={}, context="benchmark_triple_barrier")
 def benchmark_triple_barrier_methods(data: pd.DataFrame) -> dict[str, float]:
     """Benchmark different triple barrier labeling methods."
 

@@ -10,24 +10,24 @@ The pipeline ensures all ML models are trained on the complete feature set
 including extensive SR features and optimized SR levels.
 """
 
-import json
-from datetime import datetime
+from src.core.decorators import (
+    cached,
+    handles_errors,
+    log_execution_time,
+    validate_dataframe
+)
+from src.core.domain import (
+    comprehensive_validation,
+    secure_data_processing
+)
 from pathlib import Path
 from typing import Any
-
-import pandas as pd
-
-from src.core.decorators import handles_errors
 from src.training.multi_output_model_trainer import (
     MultiOutputModelConfig,
-    MultiOutputModelTrainer,
-)
-from src.utils.centralized_decorators import (
-    memory_efficient,
-    performance_monitor,
+    MultiOutputModelTrainer
 )
 from src.utils.logger import system_logger
-
+from datetime import datetime
 
 class ComprehensiveSRTrainingPipeline:
     """Comprehensive training pipeline with full SR feature integration."""
@@ -52,8 +52,8 @@ class ComprehensiveSRTrainingPipeline:
         self.logger.info("🔧 Comprehensive SR Training Pipeline initialized")
 
     @handles_errors(fallback=False)
-    @performance_monitor
-    @memory_efficient
+    @log_execution_time
+    @cached
     async def execute_comprehensive_training(
         self,
         training_data: pd.DataFrame,

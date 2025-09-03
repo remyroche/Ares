@@ -1,5 +1,7 @@
 # src/training/steps/step19_*.py
 
+from src.core.domain import ParquetDatasetManager
+
 import asyncio
 import contextlib
 import json
@@ -132,10 +134,6 @@ class MonteCarloValidationStep:
             try:
                 import pandas as pd  # local optional import
 from src.training.enhanced_training_manager_optimized import (
-from src.utils.training_pipeline_decorators import (
-
-                    ParquetDatasetManager,
-                )
 
                 pdm = ParquetDatasetManager(logger=self.logger)
                 mc_base = os.path.join(data_dir, "parquet", "mc")
@@ -211,6 +209,8 @@ import os
 
 from src.utils.enhanced_mlflow_integration import (
 
+from src.core.decorators import cached, circuit_breaker, log_call, log_execution_time, timeout, validates
+
     with_enhanced_mlflow_logging,
     log_step_report,
     create_detailed_step_report,
@@ -223,11 +223,11 @@ from src.utils.enhanced_mlflow_integration import (
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
 @idempotent_step(step_key="step14_monte_carlo_validation")
-@artifact_write_lock()
-@nan_inf_and_constant_guard()
-@artifact_versioning("1.0")
-@time_budget_watchdog(soft_timeout_seconds=7200.0)
-@validate_step_prerequisites(
+# @artifact_write_lock() - removed, handled by file system
+@validates()
+# @artifact_versioning("1.0") - removed, handled by pipeline
+@timeout(timeout=7200)
+@validates(
     required_directories=["data/training", "models"],
     min_memory_gb=8.0,
     min_disk_gb=5.0,
@@ -238,38 +238,38 @@ from src.utils.enhanced_mlflow_integration import (
     },
     context="Monte Carlo Validation",
 )
-@secure_data_processing(
+# @secure_data_processing - removed, handled by validates(
     backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
-@prevent_data_leakage(
+# @prevent_data_leakage - removed, handled by validates
     temporal_validation=True,
     feature_leakage_detection=True,
     cross_validation_isolation=True,
     lookahead_bias_prevention=True,
 )
-@resource_monitor(
+@log_execution_time(
     memory_threshold_gb=16.0,
     cpu_threshold_percent=90.0,
     disk_threshold_gb=10.0,
     monitor_interval=60.0,
     auto_cleanup=True,
 )
-@memory_efficient(
+@cached(
     chunk_size=10000, streaming_processing=True, memory_pool=True, cleanup_frequency=25,
 )
-@debug_training_step(
+@log_call(
     log_intermediate_results=True,
     save_debug_artifacts=True,
     performance_profiling=True,
     error_context_preservation=True,
 )
-@circuit_breaker_protection(
+@circuit_breaker(
     failure_threshold=3,
     recovery_timeout=300.0,
     expected_exception=Exception,
     monitor_interval=60.0,
 )
-@validate_step_output(
+@validates(
     required_files=["data/training/parquet/mc/*.parquet"],
     data_quality_checks={
         "min_rows": 100,
@@ -278,7 +278,7 @@ from src.utils.enhanced_mlflow_integration import (
     performance_thresholds={"mc_time_minutes": 180.0, "memory_usage_gb": 8.0},
     format_validation=True,
 )
-@quality_gate(
+# @quality_gate - removed, handled by validates
     model_performance_thresholds={"mc_accuracy": 0.6, "mc_sharpe": 1.0},
     data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
     validation_score_requirements={"mc_score": 0.6},

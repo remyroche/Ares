@@ -5,6 +5,8 @@ This module provides comprehensive profit-based feature engineering capabilities
 for financial time series data, leveraging profit percentage information from
 triple barrier labeling to create rich feature sets for machine learning models.
 """
+from src.core.decorators import handles_errors
+
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 import warnings
@@ -13,7 +15,6 @@ import numpy as np
 import pandas as pd
 
 # Import essential decorators
-from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 
 # Import Numba for performance optimization
@@ -154,7 +155,7 @@ class ProfitBasedFeatureEngineering:
         else:
             self.logger.info("🐍 Using Python vectorized operations")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, TypeError, MemoryError),
         default_return=pd.DataFrame(),
         context="profit_feature_engineering.apply_all_features"
@@ -249,7 +250,7 @@ class ProfitBasedFeatureEngineering:
         
         return result_data
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, TypeError),
         default_return=pd.DataFrame(),
         context="basic_profit_features"
@@ -272,7 +273,7 @@ class ProfitBasedFeatureEngineering:
         
         return data
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, TypeError),
         default_return=pd.DataFrame(),
         context="categorical_features"
@@ -309,7 +310,7 @@ class ProfitBasedFeatureEngineering:
         
         return data
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, TypeError),
         default_return=pd.DataFrame(),
         context="risk_reward_features"
@@ -352,7 +353,7 @@ class ProfitBasedFeatureEngineering:
         
         return data
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, TypeError),
         default_return=pd.DataFrame(),
         context="momentum_features"
@@ -391,7 +392,7 @@ class ProfitBasedFeatureEngineering:
         
         return data
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, TypeError),
         default_return=pd.DataFrame(),
         context="volatility_features"
@@ -435,7 +436,7 @@ class ProfitBasedFeatureEngineering:
         
         return data
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, TypeError),
         default_return=pd.DataFrame(),
         context="volume_features"
@@ -476,7 +477,7 @@ class ProfitBasedFeatureEngineering:
         
         return data
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, TypeError),
         default_return=pd.DataFrame(),
         context="rolling_features"
@@ -662,7 +663,7 @@ class ProfitBasedFeatureEngineering:
         return selected
 
 
-@handle_errors(exceptions=(Exception,), default_return={}, context="benchmark_profit_features")
+@handles_errors(exceptions=(Exception,), default_return={}, context="benchmark_profit_features")
 def benchmark_profit_feature_engineering(data: pd.DataFrame) -> Dict[str, float]:
     """Benchmark profit-based feature engineering performance."
     

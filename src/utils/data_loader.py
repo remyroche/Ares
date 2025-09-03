@@ -17,8 +17,12 @@ import pandas as pd
 import pyarrow.dataset as ds
 import pyarrow.parquet as pq
 
-from src.core.decorators import traced as with_tracing_span
-from src.utils.centralized_decorators import guard_dataframe_nulls
+from src.core.decorators import (
+    as,
+    traced,
+    validates,
+    with_tracing_span
+)
 from src.utils.logger import system_logger
 
 try:
@@ -139,7 +143,7 @@ class PartitionedDataLoader:
 
         return result
 
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
+    @validates
     def _load_with_pyarrow_streaming(
         self,
         dataset_path: str,
@@ -188,7 +192,7 @@ class PartitionedDataLoader:
         self.logger.info(f"✅ Loaded {len(result)} rows using PyArrow streaming")
         return result
 
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
+    @validates
     def _load_with_pyarrow(
         self,
         dataset_path: str,
@@ -213,7 +217,7 @@ class PartitionedDataLoader:
         self.logger.info(f"✅ Loaded {len(result)} rows using PyArrow")
         return result
 
-    @guard_dataframe_nulls(mode="warn", arg_index=1)
+    @validates
     def _load_with_pandas(
         self,
         dataset_path: str,

@@ -10,6 +10,8 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Optional
 
+from src.core.decorators import handles_errors, traced, validates
+
 import numpy as np
 import pandas as pd
 
@@ -492,9 +494,9 @@ class ParquetDatasetManager:
 			msg = "pyarrow is required for ParquetDatasetManager operations"
 			raise ImportError(msg)
 
-	@guard_dataframe_nulls(mode="warn", arg_index=1)
-	@with_tracing_span(
-		"ParquetDatasetManager.enforce_schema", log_args=False, log_result_len_only=True,
+	@validates(mode="warn", arg_index=1)
+	@traced(
+		"ParquetDatasetManager.enforce_schema", log_args=False, log_result_len_only=True
 	)
 	def enforce_schema(self, df: pd.DataFrame, schema_name: str) -> pd.DataFrame:
 		if df is None or df.empty:
@@ -1144,7 +1146,7 @@ class UnifiedDataConverter:
 			self.logger.exception(f"❌ Data conversion failed: {e}")
 			return False
 
-	@comprehensive_data_validation
+	@validates()
 	@validate_datetime_index
 	@validate_data_completeness
 	async def _process_data_incrementally(
@@ -1293,7 +1295,7 @@ class UnifiedDataConverter:
 			self.logger.warning(f"⚠️ Failed to load futures for {target_date}: {e}")
 			return None
 
-	@comprehensive_data_validation
+	@validates()
 	@validate_datetime_index
 	@validate_data_completeness
 	async def _merge_daily_data(
@@ -1660,10 +1662,10 @@ class UnifiedDataConverter:
 			return None
 
 	@validate_klines_data_quality
-	@secure_data_processing
+	# @secure_data_processing - removed, handled by validates
 	@prevent_data_leakage
-	@resource_monitor
-	@memory_efficient
+	@log_execution_time
+	@cached
 	@quality_gate
 	@handles_errors(fallback=None)
 	async def _create_klines_from_aggtrades(self, symbol: str, exchange: str, timeframe: str) -> pd.DataFrame | None:
@@ -1760,12 +1762,12 @@ class UnifiedDataConverter:
 # Public entry point
 # ----------------------------------------------------------------------------
 @handles_errors(fallback=False)
-@secure_data_processing
+# @secure_data_processing - removed, handled by validates
 @prevent_data_leakage
-@resource_monitor
-@memory_efficient
+@log_execution_time
+@cached
 @quality_gate
-@circuit_breaker_protection
+@circuit_breaker
 @handles_errors(fallback=False)
 async def run_step(
 	symbol: str,

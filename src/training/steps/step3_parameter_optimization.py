@@ -20,19 +20,19 @@ from datetime import datetime
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.centralized_decorators import (
+from src.core.domain import (
     comprehensive_data_validation,
+    ensure_data_integrity,
     handle_errors,
     memory_efficient,
+    monitor_feature_engineering,
+    monitor_step_execution,
+    quality_gate,
     resource_monitor,
     secure_data_processing,
+    secure_step_execution,
     validate_data_structure,
     with_tracing_span,
-    quality_gate,
-    monitor_feature_engineering,
-    ensure_data_integrity,
-    monitor_step_execution,
-    secure_step_execution,
     validate_pipeline_step
 )
 from src.utils.logger import system_logger
@@ -81,7 +81,7 @@ class ParameterOptimizationStep:
 
     @monitor_step_execution
     @secure_step_execution
-    @validate_pipeline_step
+    @validates()
     @handles_errors(fallback=False)
     async def execute(self) -> bool:
         """Execute the parameter optimization step."""
@@ -130,7 +130,7 @@ class ParameterOptimizationStep:
         default_return={"success": False, "error": "Data loading failed"},
         context="load_and_validate_data"
     )
-    @comprehensive_data_validation
+    @validates()
     @ensure_data_integrity
     async def _load_and_validate_data(self) -> dict[str, Any]:
         """Load and validate data for parameter optimization."""
@@ -188,7 +188,7 @@ class ParameterOptimizationStep:
 
     @handles_errors(fallback=pd.DataFrame())
     @monitor_feature_engineering()
-    @validate_data_structure
+    @validates()
     async def _prepare_features_for_optimization(self, df: pd.DataFrame) -> pd.DataFrame:
         """Prepare features for parameter optimization."""
         try:
@@ -237,8 +237,8 @@ class ParameterOptimizationStep:
             return pd.DataFrame()
 
     @handles_errors
-    @resource_monitor
-    @secure_data_processing
+    # @resource_monitor - removed, use log_execution_time
+    # @secure_data_processing - removed, handled by validates
     async def _optimize_hmm_parameters(self, data: pd.DataFrame) -> dict[str, Any]:
         """Optimize HMM parameters."""
         try:
@@ -288,8 +288,8 @@ class ParameterOptimizationStep:
             return {}
 
     @handles_errors
-    @resource_monitor
-    @secure_data_processing
+    # @resource_monitor - removed, use log_execution_time
+    # @secure_data_processing - removed, handled by validates
     async def _optimize_clustering_parameters(self, data: pd.DataFrame) -> dict[str, Any]:
         """Optimize clustering parameters."""
         try:
@@ -337,8 +337,8 @@ class ParameterOptimizationStep:
             return {}
 
     @handles_errors
-    @resource_monitor
-    @secure_data_processing
+    # @resource_monitor - removed, use log_execution_time
+    # @secure_data_processing - removed, handled by validates
     async def _optimize_feature_parameters(self, data: pd.DataFrame) -> dict[str, Any]:
         """Optimize feature engineering parameters."""
         try:
@@ -396,7 +396,7 @@ class ParameterOptimizationStep:
             return {}
 
     @handles_errors
-    @secure_data_processing
+    # @secure_data_processing - removed, handled by validates
     async def _combine_optimization_results(self, results: List[dict[str, Any]]) -> dict[str, Any]:
         """Combine all optimization results."""
         try:
@@ -461,7 +461,7 @@ class ParameterOptimizationStep:
             return {}
 
     @handles_errors(fallback=False)
-    @secure_data_processing
+    # @secure_data_processing - removed, handled by validates
     async def _save_optimization_results(self, optimization_results: dict[str, Any]) -> bool:
         """Save optimization results."""
         try:
@@ -485,7 +485,7 @@ class ParameterOptimizationStep:
             return False
 
     @handles_errors(fallback=False)
-    @secure_data_processing
+    # @secure_data_processing - removed, handled by validates
     async def _generate_optimization_reports(self, optimization_results: dict[str, Any]) -> bool:
         """Generate optimization reports."""
         try:

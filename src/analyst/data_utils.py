@@ -1,4 +1,8 @@
 # src/analyst/data_utils.py
+from src.core.decorators import handles_errors
+
+from src.core.domain import handle_specific_errors
+
 import os
 from datetime import datetime
 from typing import Any
@@ -9,10 +13,6 @@ from scipy.signal import find_peaks  # For volume profile peaks
 import logging
 import asyncio
 
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
 from src.utils.logger import system_logger
 import copy
 from src.utils.warning_symbols import (
@@ -107,7 +107,7 @@ class DataUtils:
 
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="data utils configuration loading",
@@ -140,7 +140,7 @@ class DataUtils:
             self.logger.error("Error loading data utils configuration: {e}")
 
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -187,7 +187,7 @@ class DataUtils:
 
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="data utils modules initialization",
@@ -219,7 +219,7 @@ class DataUtils:
                 initialization_error("Error initializing data utils modules: {e}"),
             )
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="data cleaning initialization",
@@ -242,7 +242,7 @@ class DataUtils:
             self.logger.error(f"Error initializing data cleaning: {e}")
 
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="data validation initialization",
@@ -265,7 +265,7 @@ class DataUtils:
             self.logger.error(f"Error initializing data validation: {e}")
 
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="data transformation initialization",
@@ -289,7 +289,7 @@ class DataUtils:
                 initialization_error("Error initializing data transformation: {e}"),
             )
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="data aggregation initialization",
@@ -378,7 +378,7 @@ class DataUtils:
             self.is_processing = False
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="processing inputs validation",
@@ -422,7 +422,7 @@ class DataUtils:
 
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="data cleaning",
@@ -476,7 +476,7 @@ class DataUtils:
 
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="data validation",
@@ -530,7 +530,7 @@ class DataUtils:
 
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="data transformation",
@@ -587,7 +587,7 @@ class DataUtils:
 
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="data aggregation",
@@ -965,7 +965,7 @@ class DataUtils:
 
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="processing results storage",
@@ -990,7 +990,7 @@ class DataUtils:
             self.logger.error("Error storing processing results: {e}")
 
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="processing results getting",
@@ -1019,7 +1019,7 @@ class DataUtils:
 
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="processing history getting",
@@ -1072,7 +1072,7 @@ class DataUtils:
             "processing_history_count": len(self.processing_history),
         }
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="data utils cleanup",
@@ -1098,12 +1098,11 @@ class DataUtils:
             self.logger.error("Error stopping data utils: {e}")
 
 
-
 # Global data utils instance
 data_utils: DataUtils | None = None
 
 
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="data utils setup",

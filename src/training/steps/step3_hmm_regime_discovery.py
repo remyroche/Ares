@@ -173,7 +173,7 @@ class HMMRegimeDiscoveryStep:
         self.step_timings[step_name] = elapsed
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
-    @validate_pipeline_step(
+    @validates()(
         step_name="hmm_regime_discovery",
         validation_level="CRITICAL",
         enable_rollback=True,
@@ -195,13 +195,13 @@ class HMMRegimeDiscoveryStep:
         data_validation=True,
         resource_cleanup=True
     )
-    @with_tracing_span("execute_hmm_regime_discovery")
-    @quality_gate(
+    @traced(span_name="execute_hmm_regime_discovery")
+    # @quality_gate - removed, handled by validates
         min_quality_score=0.7,
         max_correlation=0.95,
         required_grade="C"
     )
-    @with_enhanced_mlflow_logging("step3_hmm_regime_discovery")
+    # @with_enhanced_mlflow_logging - removed, use traced"step3_hmm_regime_discovery")
     @handles_errors
         default_return={"success": False, "regimes": [], "error": "HMM discovery failed"},
         context="hmm_regime_discovery.execute"
@@ -533,8 +533,8 @@ class HMMRegimeDiscoveryStep:
                 for to_regime, prob in to_regimes.items():
                     self.logger.info(f"     → {to_regime}: {prob:.3f}")
 
-    @with_tracing_span("ensure_data_quality")
-    @secure_data_processing
+    @traced(span_name="ensure_data_quality")
+    # @secure_data_processing - removed, handled by validates
     @handles_errors(fallback=False)
     async def _ensure_data_quality(self, training_input: dict[str, Any]) -> bool:
         """Ensure data quality and readiness for HMM regime discovery."""
@@ -593,7 +593,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f"❌ Error ensuring data quality: {e}")
             return False
 
-    @with_tracing_span("fix_missing_data")
+    @traced(span_name="fix_missing_data")
     @handles_errors
         default_return={"success": False, "error": "Data fix failed"},
         context="fix_missing_data"
@@ -668,9 +668,9 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f"❌ Error fixing missing data: {e}")
             return {"success": False, "error": str(e)}
 
-    @with_tracing_span("load_and_prepare_data")
-    @memory_efficient
-    @comprehensive_data_validation
+    @traced(span_name="load_and_prepare_data")
+    @cached
+    @validates()
     @handles_errors
         default_return={"success": False, "error": "Data loading failed"},
         context="load_and_prepare_data"
@@ -772,8 +772,8 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f"❌ Error loading and preparing data: {e}")
             return {"success": False, "error": str(e)}
 
-    @with_tracing_span("prepare_hmm_features")
-    @validate_data_structure
+    @traced(span_name="prepare_hmm_features")
+    @validates()
     @monitor_feature_engineering()
     @handles_errors(fallback=pd.DataFrame())
     async def _prepare_hmm_features(self, df: Any) -> Any:
@@ -1110,8 +1110,8 @@ class HMMRegimeDiscoveryStep:
         except Exception as e:
             self.logger.warning(f"Could not log feature categories: {e}")
 
-    @with_tracing_span("perform_hmm_regime_discovery")
-    @resource_monitor
+    @traced(span_name="perform_hmm_regime_discovery")
+    @log_execution_time
     @handles_errors
         default_return={"success": False, "error": "HMM regime discovery failed"},
         context="perform_hmm_regime_discovery"
@@ -1163,7 +1163,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f"❌ Error performing HMM regime discovery: {e}")
             return {"success": False, "error": str(e)}
 
-    @with_tracing_span("perform_hmmlearn_regime_discovery")
+    @traced(span_name="perform_hmmlearn_regime_discovery")
     @handles_errors
         default_return={"success": False, "error": "HMMLearn regime discovery failed"},
         context="perform_hmmlearn_regime_discovery"
@@ -1328,7 +1328,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f"❌ Error in composite HMM regime discovery: {e}")
             return {"success": False, "error": str(e)}
 
-    @with_tracing_span("perform_simple_regime_discovery")
+    @traced(span_name="perform_simple_regime_discovery")
     @handles_errors
         default_return={"success": False, "error": "Simple regime discovery failed"},
         context="perform_simple_regime_discovery"
@@ -3261,6 +3261,6 @@ import copy
 import numpy as np
 import os.path
 import pandas as pd
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors, traced
 
 gc.collect()

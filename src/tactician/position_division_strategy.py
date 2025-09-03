@@ -1,5 +1,7 @@
 # src/tactician/position_division_strategy.py
 
+from src.core.decorators import handles_errors
+
 """
 Position Division Strategy for tactical position management.
 Defines strategies for multiple positions, take profit, stop loss, and position closure.
@@ -7,9 +9,12 @@ Defines strategies for multiple positions, take profit, stop loss, and position 
 from datetime import datetime
 from typing import Any
 
+<<<<<<< HEAD
+=======
 from src.utils.error_handler import (
     handle_errors,
 )
+>>>>>>> origin/main
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
@@ -49,7 +54,7 @@ class PositionDivisionStrategy:
         self.position_history: list[dict[str, Any]] = []
         self.strategy_performance: dict[str, Any] = {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="position division strategy initialization",
@@ -111,7 +116,7 @@ class PositionDivisionStrategy:
             self.logger.exception(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="position division calculation",
@@ -279,7 +284,7 @@ class PositionDivisionStrategy:
                 "stop_loss": [self.stop_loss_pct] * self.max_positions,
             }
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="position management",
@@ -319,7 +324,7 @@ class PositionDivisionStrategy:
             self.logger.exception(failed(f"❌ Error adding position: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="position closure",

@@ -16,13 +16,13 @@ from src.utils.common_operations import ensure_directory
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors, traced
 
-from src.utils.centralized_decorators import (
+from src.core.domain import (
     handle_errors,
     optimize_memory_usage,
     validate_data_structure,
-    with_tracing_span,
+    with_tracing_span
 )
 
 logger = system_logger.getChild("AggtradesValidator")
@@ -56,7 +56,7 @@ class AggtradesValidator:
         self.data_cache_path = Path(data_cache_path)
         ensure_directory(self.data_cache_path)
 
-    @with_tracing_span("get_aggtrades_files")
+    @traced(span_name="get_aggtrades_files")
     def get_aggtrades_files(self, symbol: str, exchange: str) -> list[Path]:
         """Get all aggtrades files for a symbol and exchange."""
         pattern = f"aggtrades_{exchange}_{symbol}_*.csv"
@@ -68,8 +68,8 @@ class AggtradesValidator:
 
         return sorted(csv_files + parquet_files)
 
-    @validate_data_structure
-    @with_tracing_span("validate_file_format")
+    @validates()
+    @traced(span_name="validate_file_format")
     @handles_errors
         default_return={
             "valid": False,
@@ -162,9 +162,9 @@ class AggtradesValidator:
 
         return result
 
-    @validate_data_structure
-    @optimize_memory_usage
-    @with_tracing_span("fix_file_format")
+    @validates()
+    # @optimize_memory_usage - removed
+    @traced(span_name="fix_file_format")
     @handles_errors(fallback=False)
     def fix_file_format(self, file_path: Path) -> bool:
         """Fix file format if needed.
@@ -242,7 +242,7 @@ class AggtradesValidator:
             logger.exception(f"❌ Error fixing {file_path.name}: {e}")
             return False
 
-    @with_tracing_span("validate_all_aggtrades")
+    @traced(span_name="validate_all_aggtrades")
     @handles_errors
         default_return={
             "total_files": 0,
@@ -335,7 +335,7 @@ class AggtradesValidator:
 
         return validation_result
 
-    @with_tracing_span("convert_to_parquet")
+    @traced(span_name="convert_to_parquet")
     @handles_errors
         default_return={
             "converted_files": 0,
@@ -395,7 +395,7 @@ class AggtradesValidator:
 
         return conversion_result
 
-    @with_tracing_span("generate_validation_report")
+    @traced(span_name="generate_validation_report")
     def generate_validation_report(self, symbol: str, exchange: str) -> str:
         """Generate a validation report for aggtrades files.
 

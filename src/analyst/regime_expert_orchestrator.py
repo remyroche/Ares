@@ -1,5 +1,7 @@
 # src/analyst/regime_expert_orchestrator.py
 
+from src.core.decorators import handles_errors
+
 from __future__ import annotations
 
 import asyncio
@@ -9,109 +11,9 @@ from typing import Any
 
 import pandas as pd
 
-from src.analyst.predictive_ensembles.ensemble_orchestrator import (
-    RegimePredictiveEnsembles,
-)
-from src.analyst.regime_runtime import get_current_regime_info
-from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
-
-# TransitionRegimeHandler and TransitionAnalysis have been removed
-# as they were part of the deprecated bull/bear/sideways market classification
-
-
-class RegimeExpertOrchestrator:
-    """
-    Orchestrates regime detection and expert selection using composite_cluster_id.
-    Integrates with Step 9.5 (HMM-LM Generalist) and Step 10 (Event Transition Modeling).
-    """
-    def __init__(self, config: dict[str, Any]):
-        self.logger = logging.getLogger(self.__class__.__name__)
-        self.config = config
-        self.logger = system_logger.getChild("RegimeExpertOrchestrator")
-
-        # Initialize regime ensembles
-        self.regime_ensembles = RegimePredictiveEnsembles(config)
-
-        # Configuration for cluster to regime mapping
-        self.cluster_mapping = config.get(
-            "regime_mapping",
-            {
-                # Rare/Transition Conditions (-1)
-                -1: "RARE_MARKET_CONDITIONS",
-                # Core Trend Regimes (0-4)
-                0: "STRONG_BULL_TREND",
-                1: "MODERATE_BULL_TREND",
-                2: "WEAK_BULL_TREND",
-                3: "STRONG_BEAR_TREND",
-                4: "MODERATE_BEAR_TREND",
-                # Sideways/Range Regimes (5-8)
-                5: "TIGHT_SIDEWAYS_RANGE",
-                6: "WIDE_SIDEWAYS_RANGE",
-                7: "ASCENDING_SIDEWAYS",
-                8: "DESCENDING_SIDEWAYS",
-                # Volatility Regimes (9-12)
-                9: "HIGH_VOLATILITY_BULL",
-                10: "HIGH_VOLATILITY_BEAR",
-                11: "LOW_VOLATILITY_RANGE",
-                12: "EXTREME_VOLATILITY",
-                # Transition Regimes (13-16)
-                13: "BULL_TO_BEAR_TRANSITION",
-                14: "BEAR_TO_BULL_TRANSITION",
-                15: "TREND_TO_SIDEWAYS",
-                16: "SIDEWAYS_TO_TREND",
-                # Specialized Regimes (17-19)
-                17: "ACCUMULATION_PHASE",
-                18: "DISTRIBUTION_PHASE",
-                19: "BREAKOUT_PREPARATION",
-            },
-        )
-
-        # Confidence thresholds
-        self.min_regime_confidence = config.get("min_regime_confidence", 0.6)
-        self.min_expert_confidence = config.get("min_expert_confidence", 0.5)
-
-        # Integration flags
-        self.use_step9_5 = config.get("use_step9_5", True)
-        self.use_step10 = config.get("use_step10", True)
-
-        # Transition handler removed - using advanced HMM categorization instead
-
-        # Cache for regime predictions
-        self.regime_cache = {}
-        self.last_regime_update = None
-        self.cache_ttl = 300  # 5 minutes
-
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="regime expert initialization",
-    )
-    async def initialize(self) -> bool:
-        """Initialize the regime expert orchestrator."""
-        try:
-            self.logger.info("Initializing Regime Expert Orchestrator...")
-
-            # Load regime ensembles
-            # Note: This would typically load the trained models from Step 5
-            self.logger.info("Regime Expert Orchestrator initialized successfully")
-            return True
-
-        except Exception as e:
-            self.logger.exception(f"Failed to initialize Regime Expert Orchestrator: {e}")
-            return False
-
-    def get_current_regime_from_cluster(self, cluster_id: int) -> str:
-        """Map composite_cluster_id to regime name."""
-        return self.cluster_mapping.get(cluster_id, "UNKNOWN")
-
-    def get_regime_expert(self, cluster_id: int) -> Any | None:
-        """Get the appropriate regime expert for the given cluster ID."""
-        self.get_current_regime_from_cluster(cluster_id)
-        return self.regime_ensembles.get_regime_expert(cluster_id)
-
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="current regime detection",
+from src.analyst.predictive_ensembles.ensemble_orchestrator import RegimePredictiveEnsembles
+from src.analyst.regime_runtime import get_current_regime_info
     )
     async def get_current_regime_info(
         self, exchange: str, symbol: str, timeframe: str,
@@ -150,8 +52,8 @@ class RegimeExpertOrchestrator:
             self.logger.exception(f"Error getting current regime info: {e}")
             return None
 
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="regime expert prediction",
+    @handles_errors(
+        exceptions=(Exception,), default_return=None, context="regime expert prediction"
     )
     async def get_regime_expert_prediction(
         self, current_features: pd.DataFrame, regime_info: dict[str, Any],
@@ -314,8 +216,8 @@ class RegimeExpertOrchestrator:
                 return cluster_id
         return None
 
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="step9_5 integration",
+    @handles_errors(
+        exceptions=(Exception,), default_return=None, context="step9_5 integration"
     )
     async def integrate_step9_5_prediction(
         self, regime_info: dict[str, Any], step9_5_prediction: dict[str, Any],
@@ -361,8 +263,8 @@ class RegimeExpertOrchestrator:
             self.logger.exception(f"Error integrating Step 9.5 prediction: {e}")
             return None
 
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="step10 integration",
+    @handles_errors(
+        exceptions=(Exception,), default_return=None, context="step10 integration"
     )
     async def integrate_step10_prediction(
         self, regime_info: dict[str, Any], step10_prediction: dict[str, Any],
@@ -407,8 +309,8 @@ class RegimeExpertOrchestrator:
             self.logger.exception(f"Error integrating Step 10 prediction: {e}")
             return None
 
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="two-tier decision system",
+    @handles_errors(
+        exceptions=(Exception,), default_return=None, context="two-tier decision system"
     )
     async def get_two_tier_decision(
         self,
@@ -520,8 +422,8 @@ class RegimeExpertOrchestrator:
 
         return final_decision
 
-    @handle_errors(
-        exceptions=(Exception,), default_return=False, context="continuous monitoring",
+    @handles_errors(
+        exceptions=(Exception,), default_return=False, context="continuous monitoring"
     )
     async def start_continuous_monitoring(
         self, exchange: str, symbol: str, timeframe: str,

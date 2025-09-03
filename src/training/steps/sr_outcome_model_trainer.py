@@ -1,5 +1,7 @@
 # src/training/steps/sr_outcome_model_trainer.py
 
+from src.core.decorators import handles_errors
+
 """S/R Outcome Model Trainer."
 
 Trains ML models to predict S/R outcomes (breakout/rebounce/consolidation)
@@ -25,10 +27,7 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.utils.class_weight import compute_class_weight
 
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
-from src.utils.centralized_decorators import (
-    validate_feature_engineering_with_lookahead_bias_detection,
-)
-from src.utils.error_handler import handle_errors
+from src.core.domain import validate_feature_engineering_with_lookahead_bias_detection
 from src.utils.logger import system_logger
 
 warnings.filterwarnings("ignore")
@@ -89,7 +88,7 @@ class SROutcomeModelTrainer:
         self.ensemble_model = None
         self.feature_names = []
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="S/R outcome model initialization",
@@ -114,7 +113,7 @@ class SROutcomeModelTrainer:
             self.logger.exception(f"Failed to initialize S/R Outcome Model Trainer: {e}")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="S/R outcome model training",
@@ -412,7 +411,7 @@ class SROutcomeModelTrainer:
             self.logger.exception(f"Error balancing classes: {e}")
             return data
 
-    @validate_feature_engineering_with_lookahead_bias_detection
+    @validates()
     async def _engineer_features(
         self, data: pd.DataFrame,
     ) -> tuple[np.ndarray | None, np.ndarray | None]:

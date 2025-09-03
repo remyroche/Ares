@@ -1,21 +1,17 @@
 # src/training/training_orchestrator.py
 
+from src.core.decorators import handles_errors
+
 from datetime import datetime
 from typing import Any
 import asyncio
 
-from src.utils.error_handler import (
-
-    handle_errors,
-    handle_specific_errors,
-)
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
     invalid,
     missing,
 )
-
 
 class TrainingOrchestrator:
     """Training orchestrator responsible for coordinating the overall training pipeline."
@@ -42,7 +38,7 @@ class TrainingOrchestrator:
         self.ensemble_manager = None
         self.calibration_manager = None
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid training orchestrator configuration"),
             AttributeError: (False, "Missing required training components"),
@@ -81,7 +77,7 @@ class TrainingOrchestrator:
             )
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="validation framework initialization",
@@ -385,7 +381,7 @@ class TrainingOrchestrator:
         
         return recommendations
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="component managers initialization",
@@ -428,7 +424,7 @@ await self.calibration_manager.initialize()
             self.print(failed(error_msg))
             raise
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -470,7 +466,7 @@ await self.calibration_manager.initialize()
             self.print(failed(error_msg))
             return False
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid training parameters"),
             AttributeError: (False, "Missing training components"),
@@ -520,7 +516,7 @@ await self.calibration_manager.initialize()
             self.is_training = False
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="training input validation",
@@ -556,7 +552,7 @@ await self.calibration_manager.initialize()
             self.print(failed("Training input validation failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="training pipeline execution",
@@ -631,7 +627,7 @@ await self.calibration_manager.initialize()
             self.print(failed("❌ Training pipeline execution failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="training results storage",
@@ -678,7 +674,7 @@ await self.calibration_manager.initialize()
         """
         return self.training_results.copy()
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="training orchestrator cleanup",
@@ -704,8 +700,7 @@ await self.calibration_manager.initialize()
         except Exception:
             self.print(failed("❌ Failed to stop Training Orchestrator: {e}"))
 
-
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="training orchestrator setup",

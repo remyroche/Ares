@@ -6,12 +6,15 @@ This module provides the Strategist class which is responsible for:
 - Market Analysis Integration: Combine analyst and tactician inputs
 - Strategy History Management: Track and store strategy performance
 """
+from src.core.decorators import handles_errors
+
+from src.core.domain import handle_specific_errors
+
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 
 # Import Pydantic models and utilities
@@ -406,7 +409,7 @@ class Strategist:
         """Get strategy history."""
         return self.strategy_history.copy()
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="strategist stop",

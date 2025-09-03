@@ -1,5 +1,25 @@
 # src/training/steps/step10_unified_regime_intelligence.py
 
+from src.core.decorators import (
+    cached,
+    circuit_breaker,
+    log_call,
+    log_execution_time,
+    validates
+)
+
+from src.core.domain import (
+    artifact_versioning,
+    artifact_write_lock,
+    deterministic_seed,
+    idempotent_step,
+    nan_inf_and_constant_guard,
+    prevent_data_leakage,
+    quality_gate,
+    secure_data_processing,
+    time_budget_watchdog
+)
+
 """Step 10: Unified Regime Intelligence System with Standardized Data Quality Management."
 
 This unified step consolidates:
@@ -343,7 +363,7 @@ class UnifiedRegimeIntelligenceStep:
             self.logger.exception(error(f"Error checking device availability: {ex}, using CPU"))
             return "cpu"
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="unified regime intelligence initialization",
@@ -379,7 +399,7 @@ class UnifiedRegimeIntelligenceStep:
             )
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="unified regime intelligence training",
@@ -1727,7 +1747,7 @@ class UnifiedRegimeIntelligenceStep:
                 "confidence": confidence_score,
             }
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return={},
         context="unified prediction with S/R integration",
@@ -1954,38 +1974,16 @@ class UnifiedRegimeIntelligenceStep:
                 "risk_level": "MEDIUM",
             }
 
-
-import os
-
-import numpy as np
-import pandas as pd
-
-from src.utils.training_pipeline_decorators import (
-    artifact_versioning,
-    artifact_write_lock,
-    circuit_breaker_protection,
-    debug_training_step,
-    deterministic_seed,
-    idempotent_step,
-    memory_efficient,
-    nan_inf_and_constant_guard,
-    prevent_data_leakage,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    time_budget_watchdog,
-    validate_step_output,
-    validate_step_prerequisites,
 )
 
 
 @deterministic_seed(42)
 @idempotent_step(step_key="step5_5_unified_regime_intelligence")
-@artifact_write_lock()
-@nan_inf_and_constant_guard()
-@artifact_versioning("1.0")
-@time_budget_watchdog(soft_timeout_seconds=3600.0)
-@validate_step_prerequisites(
+# @artifact_write_lock() - removed, handled by file system
+@validates()
+# @artifact_versioning("1.0") - removed, handled by pipeline
+@timeout(timeout=3600)
+@validates(
     required_directories=["data/training"],
     min_memory_gb=6.0,
     min_disk_gb=3.0,
@@ -1996,42 +1994,42 @@ from src.utils.training_pipeline_decorators import (
     },
     context="Unified Regime Intelligence",
 )
-@secure_data_processing(
+# @secure_data_processing - removed, handled by validates(
     backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
 )
-@prevent_data_leakage(
+# @prevent_data_leakage - removed, handled by validates
     temporal_validation=True,
     feature_leakage_detection=True,
     cross_validation_isolation=True,
     lookahead_bias_prevention=True,
 )
-@resource_monitor(
+@log_execution_time(
     memory_threshold_gb=16.0,
     cpu_threshold_percent=90.0,
     disk_threshold_gb=10.0,
     monitor_interval=60.0,
     auto_cleanup=True,
 )
-@memory_efficient(
+@cached(
     chunk_size=20000, streaming_processing=True, memory_pool=True, cleanup_frequency=50,
 )
-@debug_training_step(
+@log_call(
     log_intermediate_results=True,
     save_debug_artifacts=True,
     performance_profiling=True,
     error_context_preservation=True,
 )
-@circuit_breaker_protection(
+@circuit_breaker(
     failure_threshold=3,
     recovery_timeout=300.0,
     expected_exception=Exception,
     monitor_interval=60.0,
 )
-@validate_step_output(
+@validates(
     required_files=[],
     data_quality_checks={"min_rows": 100},
 )
-@quality_gate(
+# @quality_gate - removed, handled by validates
     model_performance_thresholds={"accuracy": 0.55},
     data_quality_metrics={"completeness": 0.85},
 )

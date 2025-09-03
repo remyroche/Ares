@@ -5,7 +5,6 @@ from typing import Any, Dict
 import numpy as np
 import pandas as pd
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import failed, invalid, missing
 from copy import copy
@@ -13,6 +12,8 @@ import asyncio
 
 class Tactician:
     """
+from src.core.decorators import handles_errors
+
 Refactored Tactician component with modular architecture and enhanced scenario-based predictions.
 This module orchestrates the tactics pipeline using specialized managers and integrates
 fractal scenario analysis with comprehensive technical indicators.
@@ -96,7 +97,7 @@ self.is_initialized = False
 self.current_position = None
 self.position_history = []
 
-@handle_specific_errors(
+@handles_errors(
 error_handlers={
 ValueError: (False, "Invalid tactician configuration"),
 AttributeError: (False, "Missing required tactician parameters"),
@@ -133,7 +134,7 @@ async def initialize(self) -> bool:
             True,
         )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid tactician configuration"),
             AttributeError: (False, "Missing required tactician parameters"),
@@ -169,7 +170,7 @@ except Exception as e:
     self.logger.error(failed(f"❌ Refactored Tactician initialization failed: {e}"))
 return False
 
-@handle_errors(
+@handles_errors(
 exceptions=(ValueError, AttributeError),
 default_return=None,
 context="component managers initialization",
@@ -214,7 +215,7 @@ except Exception as e:
     self.logger.error(failed(f"❌ Failed to initialize component managers: {e}"))
 raise
 
-@handle_errors(
+@handles_errors(
 exceptions=(ValueError, AttributeError),
 default_return=False,
 context="configuration validation",
@@ -255,7 +256,7 @@ except Exception as e:
     self.logger.error(failed(f"Configuration validation failed: {e}"))
 return False
 
-@handle_specific_errors(
+@handles_errors(
 error_handlers={
 ValueError: (False, "Invalid tactics parameters"),
 AttributeError: (False, "Missing tactics components"),
@@ -293,7 +294,7 @@ if not self._validate_tactics_input(tactics_input):
             self.logger.error(failed(f"❌ Refactored Tactician initialization failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="component managers initialization",
@@ -330,7 +331,7 @@ if not self._validate_tactics_input(tactics_input):
             self.logger.error(failed(f"❌ Failed to initialize component managers: {e}"))
             raise
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -368,7 +369,7 @@ if not self._validate_tactics_input(tactics_input):
             self.logger.error(failed(f"Configuration validation failed: {e}"))
             return False
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid tactics parameters"),
             AttributeError: (False, "Missing tactics components"),
@@ -411,7 +412,7 @@ if not self._validate_tactics_input(tactics_input):
             self.logger.error(failed(f"❌ Tactics execution failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="tactics input validation",
@@ -445,7 +446,7 @@ if not self._validate_tactics_input(tactics_input):
             self.logger.error(failed(f"Tactics input validation failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="tactics results storage",
@@ -480,7 +481,7 @@ if not self._validate_tactics_input(tactics_input):
         except Exception as e:
             self.logger.error(failed(f"❌ Failed to store tactics results: {e}"))
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             Exception: (False, "Tactician run failed"),
         },
@@ -563,7 +564,7 @@ return {
 "scenario_predictor": self.scenario_predictor is not None,
 }
 
-@handle_specific_errors(
+@handles_errors(
 error_handlers={
 ValueError: (None, "Invalid prediction parameters"),
 AttributeError: (None, "Missing prediction components"),
@@ -1056,7 +1057,7 @@ return {
 "is_initialized": self.is_initialized
 }
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="tactician stop",
@@ -1086,7 +1087,7 @@ if self.scenario_predictor:
         except Exception as e:
             self.logger.error(failed(f"❌ Failed to stop Tactician: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="tactician cleanup",
@@ -1120,7 +1121,7 @@ if self.scenario_predictor:
         except Exception as e:
             self.logger.error(failed(f"❌ Failed to cleanup Tactician: {e}"))
 
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="tactician setup",

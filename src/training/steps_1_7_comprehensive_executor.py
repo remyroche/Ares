@@ -61,7 +61,6 @@ from src.utils.enhanced_mlflow_integration import (
 )
 from src.utils.logger import system_logger
 
-
 class Steps1To7ComprehensiveExecutor:
     """
     Comprehensive executor for steps 1-7 with enhanced data quality management.
@@ -603,7 +602,6 @@ class Steps1To7ComprehensiveExecutor:
         except Exception as e:
             self.logger.exception(f"❌ Failed to log pipeline report: {e}")
 
-
 async def main():
     """Main execution function."""
     # Example configuration
@@ -648,7 +646,6 @@ async def main():
         print("\nErrors:")
         for error in result["errors_encountered"]:
             print(f"  - {error}")
-
 
 if __name__ == "__main__":
     asyncio.run( main())

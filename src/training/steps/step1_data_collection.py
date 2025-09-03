@@ -10,6 +10,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from src.core.decorators import handles_errors
+
 # Add the project root to the Python path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
@@ -110,7 +112,7 @@ class DataCollectionStep:
         self.logger.info("Initializing Data Collection Step...")
         self.logger.info("Data Collection Step initialized successfully")
 
-    @with_enhanced_mlflow_logging("step1_data_collection")
+    # @with_enhanced_mlflow_logging - removed, use traced"step1_data_collection")
     async def execute(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any],
     ) -> dict[str, Any]:

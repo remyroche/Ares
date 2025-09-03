@@ -1,4 +1,15 @@
 # src/analyst/liquidation_risk_model.py
+<<<<<<< HEAD
+from src.core.decorators import handles_errors
+
+from src.core.domain import handle_specific_errors
+
+from src.utils.logger import system_logger
+from typing import Any
+import pandas as pd
+import logging
+=======
+>>>>>>> origin/main
 import datetime as datetime
 import logging
 from typing import Any
@@ -101,7 +112,7 @@ class LiquidationRiskModel:
             self.logger.exception(f"Failed to initialize Liquidation Risk Model: {e}")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="risk configuration loading",
@@ -113,7 +124,7 @@ class LiquidationRiskModel:
         # Additional configuration can be loaded here
         self.logger.info("Risk model configuration loaded successfully")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -205,7 +216,7 @@ class LiquidationRiskModel:
             return None
 
     @validate_data_quality(validation_level="WARNING")
-    @with_tracing_span("adverse_risk_extraction")
+    @traced("adverse_risk_extraction")
     def _extract_adverse_risk(
         self, ml_predictions: dict[str, Any], target_direction: str = "long",
     ) -> float:
@@ -410,7 +421,7 @@ class LiquidationRiskModel:
             "max_adverse_risk": self.max_adverse_risk,
         }
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="liquidation risk model cleanup",

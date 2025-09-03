@@ -1,5 +1,7 @@
 # src/analyst/advanced_feature_engineering.py
 
+from src.core.decorators import handles_errors
+
 """
 Advanced Feature Engineering for enhanced financial performance.
 Implements sophisticated market microstructure features, regime detection,
@@ -16,9 +18,6 @@ import pywt
 from src.config import CONFIG
 import logging
 import asyncio
-from src.utils.error_handler import (
-    handle_errors,
-)
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -52,7 +51,7 @@ class CandlestickPatternAnalyzer:
 
         self.is_initialized = False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="candlestick pattern analyzer initialization",
@@ -70,7 +69,7 @@ class CandlestickPatternAnalyzer:
             )
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return={},
         context="candlestick pattern analysis",
@@ -760,7 +759,7 @@ class FeatureInteractionEngine:
 
         self.is_initialized = False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="feature interaction engine initialization",
@@ -778,7 +777,7 @@ class FeatureInteractionEngine:
             )
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return={},
         context="feature interaction generation",
@@ -1246,7 +1245,7 @@ class AdvancedFeatureEngineering:
 
         self.is_initialized = False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="advanced feature engineering initialization",
@@ -1304,7 +1303,7 @@ await self.meta_labeling_system.initialize()
             )
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="advanced feature engineering",

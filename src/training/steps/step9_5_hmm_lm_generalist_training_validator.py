@@ -1,14 +1,16 @@
 # src/training/steps/step9_5_hmm_lm_generalist_training_validator.py
 
+from src.core.domain import (
+
+from src.core.decorators import validates
+    validate_dataframe_operation,
+    validate_file_operation,
+    validate_step2_operation
+)
 from pathlib import Path
 from typing import Any
-
 from src.utils.common_operations import safe_json_load
 from src.utils.logger import system_logger
-from src.utils.validation_decorators import (
-    validate_file_operation,
-    validate_step2_operation,
-)
 
 logger = system_logger.getChild("Step9_5HMMLMGeneralistTrainingValidator")
 
@@ -20,7 +22,7 @@ class Step9_5HMMLMGeneralistTrainingValidator:
         self.config = config
         self.logger = logger
 
-    @validate_step2_operation
+    @validates()
     def validate_step9_5_hmm_lm_generalist_training(
         self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any],
     ) -> bool:
@@ -74,7 +76,7 @@ class Step9_5HMMLMGeneralistTrainingValidator:
             self.logger.exception(f"❌ Step 9.5 validation failed: {e}")
             return False
 
-    @validate_file_operation
+    @validates()
     def _validate_model_file(self, model_file: Path) -> bool:
         """Validate an HMM LM generalist model file."""
         try:
@@ -104,7 +106,7 @@ class Step9_5HMMLMGeneralistTrainingValidator:
             self.logger.exception(f"❌ Error validating model file {model_file}: {e}")
             return False
 
-    @validate_file_operation
+    @validates()
     def _validate_metadata_file(self, metadata_file: Path) -> bool:
         """Validate an HMM LM training metadata file."""
         try:
@@ -161,7 +163,7 @@ class Step9_5HMMLMGeneralistTrainingValidator:
             return False
 
 
-@validate_step2_operation
+@validates()
 def step9_5_hmm_lm_generalist_training_validator(
     symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any], config: dict[str, Any],
 ) -> bool:

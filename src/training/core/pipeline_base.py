@@ -3,13 +3,13 @@
 This module defines the core interfaces and base classes that all pipeline
 stages must implement.
 """
+from src.core.decorators import handles_errors
+
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-
 
 @dataclass
 class StageContext:
@@ -44,7 +44,6 @@ class StageContext:
         """Get metadata from the context."""
         return self.metadata.get(key, default)
 
-
 class PipelineStage:
     """Pipeline stage with comprehensive error handling and type safety."""
 
@@ -76,7 +75,7 @@ class PipelineStage:
             True,
         )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid pipeline stage configuration"),
             AttributeError: (False, "Missing required pipeline stage parameters"),
@@ -113,7 +112,7 @@ class PipelineStage:
             self.logger.exception(f"❌ Pipeline Stage initialization failed: {e}")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="stage configuration loading",
@@ -140,7 +139,7 @@ class PipelineStage:
         except Exception as e:
             self.logger.exception(f"Error loading stage configuration: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -181,7 +180,7 @@ class PipelineStage:
             self.logger.exception(f"Error validating configuration: {e}")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="stage modules initialization",
@@ -210,7 +209,7 @@ class PipelineStage:
         except Exception as e:
             self.logger.exception(f"Error initializing stage modules: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="stage execution initialization",
@@ -231,7 +230,7 @@ class PipelineStage:
         except Exception as e:
             self.logger.exception(f"Error initializing stage execution: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="stage validation initialization",
@@ -252,7 +251,7 @@ class PipelineStage:
         except Exception as e:
             self.logger.exception(f"Error initializing stage validation: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="stage monitoring initialization",
@@ -273,7 +272,7 @@ class PipelineStage:
         except Exception as e:
             self.logger.exception(f"Error initializing stage monitoring: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="stage reporting initialization",
@@ -294,7 +293,7 @@ class PipelineStage:
         except Exception as e:
             self.logger.exception(f"Error initializing stage reporting: {e}")
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid stage parameters"),
             AttributeError: (False, "Missing stage components"),
@@ -352,7 +351,7 @@ class PipelineStage:
             self.is_running = False
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="stage inputs validation",
@@ -390,7 +389,7 @@ class PipelineStage:
             self.logger.exception(f"Error validating stage inputs: {e}")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="stage execution",
@@ -442,7 +441,7 @@ class PipelineStage:
             self.logger.exception(f"Error performing stage execution: {e}")
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="stage validation",
@@ -494,7 +493,7 @@ class PipelineStage:
             self.logger.exception(f"Error performing stage validation: {e}")
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="stage monitoring",
@@ -546,7 +545,7 @@ class PipelineStage:
             self.logger.exception(f"Error performing stage monitoring: {e}")
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="stage reporting",
@@ -857,7 +856,7 @@ class PipelineStage:
             self.logger.exception(f"Error performing report archiving: {e}")
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="stage results storage",
@@ -880,7 +879,7 @@ class PipelineStage:
         except Exception as e:
             self.logger.exception(f"Error storing stage results: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="stage results getting",
@@ -904,7 +903,7 @@ class PipelineStage:
             self.logger.exception(f"Error getting stage results: {e}")
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="stage history getting",
@@ -955,7 +954,7 @@ class PipelineStage:
             "stage_history_count": len(self.stage_history),
         }
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="pipeline stage cleanup",
@@ -979,12 +978,10 @@ class PipelineStage:
         except Exception as e:
             self.logger.exception(f"Error stopping pipeline stage: {e}")
 
-
 # Global pipeline stage instance
 pipeline_stage: PipelineStage | None = None
 
-
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="pipeline stage setup",

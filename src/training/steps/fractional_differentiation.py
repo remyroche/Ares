@@ -11,9 +11,7 @@ import numpy as np
 import pandas as pd
 from statsmodels.tsa.stattools import adfuller
 
-from src.core.decorators import handles_errors
-from src.utils.centralized_decorators import (
-    with_tracing_span,
+from src.core.decorators import handles_errors, traced
 )
 from src.utils.logger import get_logger
 
@@ -239,7 +237,7 @@ class FractionalFeatureGenerator:
         self.logger = get_logger("FractionalFeatureGenerator")
 
     @handles_errors(fallback=pd.DataFrame())
-    @with_tracing_span("FractionalFeatureGenerator.generate_features", log_args=False)
+    @traced(span_name="FractionalFeatureGenerator.generate_features")
     def generate_features(
         self,
         data: pd.DataFrame,

@@ -1,5 +1,20 @@
 # src/training/unified_data_orchestrator.py
 
+from src.core.decorators import (
+    cached,
+    circuit_breaker,
+    handles_errors,
+    log_call,
+    log_execution_time,
+    validates
+)
+
+from src.core.domain import (
+    prevent_data_leakage,
+    quality_gate,
+    secure_data_processing
+)
+
 """Unified Data Orchestrator - Single Source of Truth for Data Operations."
 
 This module provides a centralized, unified approach to all data operations including:
@@ -32,19 +47,8 @@ from src.training.data_sharing_manager import DataSharingManager
 
 # Import existing components
 from src.training.steps.unified_data_loader import UnifiedDataLoader
-from src.utils.error_handler import handle_errors
+
 from src.utils.logger import system_logger
-from src.utils.training_pipeline_decorators import (
-    circuit_breaker_protection,
-    debug_training_step,
-    memory_efficient,
-    prevent_data_leakage,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    validate_step_output,
-    validate_step_prerequisites,
-)
 
 
 class UnifiedDataOrchestrator:
@@ -133,7 +137,7 @@ class UnifiedDataOrchestrator:
         )
         self.logger.info(f"Memory usage at {context}: {memory_mb:.2f} MB")
 
-    @validate_step_prerequisites(
+    @validates(
         required_directories=["data_cache", "data/training"],
         min_memory_gb=1.0,
         min_disk_gb=0.5,
@@ -146,26 +150,26 @@ class UnifiedDataOrchestrator:
         memory_cleanup=True,
         data_validation=False,
     )
-    @resource_monitor(
+    @log_execution_time(
         memory_threshold_gb=2.0,
         cpu_threshold_percent=50.0,
         disk_threshold_gb=1.0,
         monitor_interval=10.0,
         auto_cleanup=True,
     )
-    @debug_training_step(
+    @log_call(
         log_intermediate_results=True,
         save_debug_artifacts=True,
         performance_profiling=True,
         error_context_preservation=True,
     )
-    @circuit_breaker_protection(
+    @circuit_breaker(
         failure_threshold=3,
         recovery_timeout=60.0,
         expected_exception=Exception,
         monitor_interval=10.0,
     )
-    @validate_step_output(
+    @validates(
         data_quality_checks={},
         performance_thresholds={"initialization_time_seconds": 30.0},
         format_validation=False,
@@ -174,7 +178,7 @@ class UnifiedDataOrchestrator:
         data_quality_metrics={},
         validation_score_requirements={"initialization_success": 1.0},
     )
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="orchestrator initialization",
@@ -209,7 +213,7 @@ class UnifiedDataOrchestrator:
             self.logger.exception(f"❌ Failed to initialize Unified Data Orchestrator: {e}")
             return False
 
-    @validate_step_prerequisites(
+    @validates(
         required_packages=["asyncio", "gc"], context="Orchestrator Cleanup",
     )
     @secure_data_processing(
@@ -218,25 +222,25 @@ class UnifiedDataOrchestrator:
         memory_cleanup=True,
         data_validation=False,
     )
-    @resource_monitor(
+    @log_execution_time(
         memory_threshold_gb=1.0,
         cpu_threshold_percent=30.0,
         monitor_interval=5.0,
         auto_cleanup=True,
     )
-    @debug_training_step(
+    @log_call(
         log_intermediate_results=True,
         save_debug_artifacts=True,
         performance_profiling=True,
         error_context_preservation=True,
     )
-    @circuit_breaker_protection(
+    @circuit_breaker(
         failure_threshold=5,
         recovery_timeout=30.0,
         expected_exception=Exception,
         monitor_interval=5.0,
     )
-    @validate_step_output(
+    @validates(
         data_quality_checks={},
         performance_thresholds={"cleanup_time_seconds": 10.0},
         format_validation=False,
@@ -244,7 +248,7 @@ class UnifiedDataOrchestrator:
     @quality_gate(
         data_quality_metrics={}, validation_score_requirements={"cleanup_success": 1.0},
     )
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,), default_return=None, context="orchestrator cleanup",
     )
     async def cleanup(self) -> None:
@@ -275,7 +279,7 @@ class UnifiedDataOrchestrator:
             cleanup_time = time.time() - start_time
             self.logger.exception(f"❌ Error during cleanup: {e}")
 
-    @validate_step_prerequisites(
+    @validates(
         required_directories=["data_cache", "data/training"],
         min_memory_gb=2.0,
         min_disk_gb=1.0,
@@ -298,32 +302,32 @@ class UnifiedDataOrchestrator:
         cross_validation_isolation=True,
         lookahead_bias_prevention=True,
     )
-    @resource_monitor(
+    @log_execution_time(
         memory_threshold_gb=4.0,
         cpu_threshold_percent=70.0,
         disk_threshold_gb=2.0,
         monitor_interval=30.0,
         auto_cleanup=True,
     )
-    @memory_efficient(
+    @cached(
         chunk_size=50000,
         streaming_processing=True,
         memory_pool=True,
         cleanup_frequency=100,
     )
-    @debug_training_step(
+    @log_call(
         log_intermediate_results=True,
         save_debug_artifacts=True,
         performance_profiling=True,
         error_context_preservation=True,
     )
-    @circuit_breaker_protection(
+    @circuit_breaker(
         failure_threshold=3,
         recovery_timeout=120.0,
         expected_exception=Exception,
         monitor_interval=30.0,
     )
-    @validate_step_output(
+    @validates(
         data_quality_checks={
             "no_nan_values": False,
             "min_rows": 100,
@@ -336,7 +340,7 @@ class UnifiedDataOrchestrator:
         data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
         validation_score_requirements={"data_integrity": 0.7},
     )
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,), default_return=None, context="unified data loading",
     )
     async def get_unified_data(
@@ -496,7 +500,7 @@ class UnifiedDataOrchestrator:
             self._log_memory_usage(f"data_load_exception_{request_id}")
             return None
 
-    @validate_step_prerequisites(
+    @validates(
         required_directories=["data_cache", "data/training"],
         min_memory_gb=4.0,
         min_disk_gb=2.0,
@@ -519,32 +523,32 @@ class UnifiedDataOrchestrator:
         cross_validation_isolation=True,
         lookahead_bias_prevention=True,
     )
-    @resource_monitor(
+    @log_execution_time(
         memory_threshold_gb=8.0,
         cpu_threshold_percent=80.0,
         disk_threshold_gb=5.0,
         monitor_interval=30.0,
         auto_cleanup=True,
     )
-    @memory_efficient(
+    @cached(
         chunk_size=25000,
         streaming_processing=True,
         memory_pool=True,
         cleanup_frequency=50,
     )
-    @debug_training_step(
+    @log_call(
         log_intermediate_results=True,
         save_debug_artifacts=True,
         performance_profiling=True,
         error_context_preservation=True,
     )
-    @circuit_breaker_protection(
+    @circuit_breaker(
         failure_threshold=2,
         recovery_timeout=180.0,
         expected_exception=Exception,
         monitor_interval=30.0,
     )
-    @validate_step_output(
+    @validates(
         data_quality_checks={
             "no_nan_values": False,
             "min_rows": 100,
@@ -560,7 +564,7 @@ class UnifiedDataOrchestrator:
             "timeframe_alignment": 0.8,
         },
     )
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="multi-timeframe data loading",
@@ -727,7 +731,7 @@ class UnifiedDataOrchestrator:
             self._log_memory_usage(f"multi_tf_exception_{request_id}")
             return {}
 
-    @validate_step_prerequisites(
+    @validates(
         required_packages=["pandas", "numpy"],
         data_quality_checks={
             "min_rows": 50,
@@ -742,31 +746,31 @@ class UnifiedDataOrchestrator:
         data_validation=True,
     )
     @prevent_data_leakage(temporal_validation=True, lookahead_bias_prevention=True)
-    @resource_monitor(
+    @log_execution_time(
         memory_threshold_gb=2.0,
         cpu_threshold_percent=60.0,
         monitor_interval=15.0,
         auto_cleanup=True,
     )
-    @memory_efficient(
+    @cached(
         chunk_size=10000,
         streaming_processing=True,
         memory_pool=True,
         cleanup_frequency=25,
     )
-    @debug_training_step(
+    @log_call(
         log_intermediate_results=True,
         save_debug_artifacts=True,
         performance_profiling=True,
         error_context_preservation=True,
     )
-    @circuit_breaker_protection(
+    @circuit_breaker(
         failure_threshold=5,
         recovery_timeout=60.0,
         expected_exception=Exception,
         monitor_interval=15.0,
     )
-    @validate_step_output(
+    @validates(
         data_quality_checks={
             "no_nan_values": False,
             "min_rows": 10,
@@ -779,7 +783,7 @@ class UnifiedDataOrchestrator:
         data_quality_metrics={"completeness": 0.8, "consistency": 0.7},
         validation_score_requirements={"resampling_accuracy": 0.9},
     )
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,), default_return=None, context="data resampling",
     )
     async def _resample_data(
@@ -965,7 +969,7 @@ class UnifiedDataOrchestrator:
             self.logger.exception(f"❌ Error upsampling data: {e}")
             return None
 
-    @validate_step_prerequisites(
+    @validates(
         required_packages=["pandas", "numpy"],
         data_quality_checks={"min_rows": 10},
         context="Data Validation and Repair",
@@ -977,31 +981,31 @@ class UnifiedDataOrchestrator:
         data_validation=True,
     )
     @prevent_data_leakage(temporal_validation=True, feature_leakage_detection=True)
-    @resource_monitor(
+    @log_execution_time(
         memory_threshold_gb=1.0,
         cpu_threshold_percent=50.0,
         monitor_interval=10.0,
         auto_cleanup=True,
     )
-    @memory_efficient(
+    @cached(
         chunk_size=5000,
         streaming_processing=True,
         memory_pool=True,
         cleanup_frequency=20,
     )
-    @debug_training_step(
+    @log_call(
         log_intermediate_results=True,
         save_debug_artifacts=True,
         performance_profiling=True,
         error_context_preservation=True,
     )
-    @circuit_breaker_protection(
+    @circuit_breaker(
         failure_threshold=10,
         recovery_timeout=30.0,
         expected_exception=Exception,
         monitor_interval=10.0,
     )
-    @validate_step_output(
+    @validates(
         data_quality_checks={"no_nan_values": False, "min_rows": 5},
         performance_thresholds={"validation_time_seconds": 15.0},
         format_validation=True,
@@ -1010,7 +1014,7 @@ class UnifiedDataOrchestrator:
         data_quality_metrics={"completeness": 0.7, "consistency": 0.6},
         validation_score_requirements={"data_quality": 0.8},
     )
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="data validation and repair",
@@ -1184,7 +1188,7 @@ class UnifiedDataOrchestrator:
             self.logger.exception(f"❌ Error repairing price anomalies: {e}")
             return data
 
-    @validate_step_prerequisites(
+    @validates(
         required_directories=["data_cache"],
         min_memory_gb=1.0,
         min_disk_gb=0.5,
@@ -1199,32 +1203,32 @@ class UnifiedDataOrchestrator:
         data_validation=True,
     )
     @prevent_data_leakage(temporal_validation=True, lookahead_bias_prevention=True)
-    @resource_monitor(
+    @log_execution_time(
         memory_threshold_gb=2.0,
         cpu_threshold_percent=60.0,
         disk_threshold_gb=1.0,
         monitor_interval=20.0,
         auto_cleanup=True,
     )
-    @memory_efficient(
+    @cached(
         chunk_size=10000,
         streaming_processing=True,
         memory_pool=True,
         cleanup_frequency=30,
     )
-    @debug_training_step(
+    @log_call(
         log_intermediate_results=True,
         save_debug_artifacts=True,
         performance_profiling=True,
         error_context_preservation=True,
     )
-    @circuit_breaker_protection(
+    @circuit_breaker(
         failure_threshold=5,
         recovery_timeout=90.0,
         expected_exception=Exception,
         monitor_interval=20.0,
     )
-    @validate_step_output(
+    @validates(
         data_quality_checks={
             "no_nan_values": False,
             "min_rows": 10,
@@ -1237,7 +1241,7 @@ class UnifiedDataOrchestrator:
         data_quality_metrics={"completeness": 0.8, "consistency": 0.7},
         validation_score_requirements={"conversion_accuracy": 0.9},
     )
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="raw data loading and conversion",
@@ -1521,7 +1525,6 @@ class UnifiedDataOrchestrator:
 # Global instance
 _unified_data_orchestrator: UnifiedDataOrchestrator | None = None
 
-
 def get_unified_data_orchestrator(config: dict[str, Any]) -> UnifiedDataOrchestrator:
     """Get or create the global unified data orchestrator instance."""
     global _unified_data_orchestrator
@@ -1532,7 +1535,6 @@ def get_unified_data_orchestrator(config: dict[str, Any]) -> UnifiedDataOrchestr
         _unified_data_orchestrator.config = config
 
     return _unified_data_orchestrator
-
 
 async def initialize_unified_data_orchestrator(config: dict[str, Any]) -> bool:
     """Initialize the global unified data orchestrator."""
@@ -1549,7 +1551,6 @@ async def initialize_unified_data_orchestrator(config: dict[str, Any]) -> bool:
         system_logger.getChild("UnifiedDataOrchestrator").error("Initialization failed")
 
     return success
-
 
 async def cleanup_unified_data_orchestrator() -> None:
     """Cleanup the global unified data orchestrator."""

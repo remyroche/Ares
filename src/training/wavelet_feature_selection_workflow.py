@@ -13,6 +13,8 @@ The workflow:
 6. Train Production Model on lean dataset
 7. Create optimized live trading configurations
 """
+from src.core.decorators import handles_errors
+
 import pickle
 import time
 from dataclasses import dataclass
@@ -31,14 +33,13 @@ from src.training.steps.precompute_wavelet_features import WaveletFeaturePrecomp
 from src.training.steps.vectorized_advanced_feature_engineering import (
     VectorizedAdvancedFeatureEngineering,
 )
-from src.utils.error_handler import handle_errors
+
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     failed,
     initialization_error,
 )
-
 
 @dataclass
 class FeatureImportanceResult:
@@ -50,7 +51,6 @@ class FeatureImportanceResult:
     combined_score: float
     feature_type: str  # 'wavelet', 'technical', 'other'
     computation_cost: float  # Estimated computation time in ms
-
 
 class WaveletFeatureSelectionWorkflow:
     """Comprehensive workflow for wavelet feature selection using two-model strategy."
@@ -130,7 +130,7 @@ class WaveletFeatureSelectionWorkflow:
         self.discovery_model: Any | None = None
         self.production_model: Any | None = None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="wavelet feature selection workflow initialization",
@@ -171,7 +171,7 @@ class WaveletFeatureSelectionWorkflow:
             self.print(initialization_error(error_msg))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="full wavelet analysis execution",
@@ -226,7 +226,7 @@ class WaveletFeatureSelectionWorkflow:
             self.print(error(error_msg))
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="discovery model training",
@@ -352,7 +352,7 @@ class WaveletFeatureSelectionWorkflow:
             self.print(error(error_msg))
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="feature importance analysis",
@@ -477,7 +477,7 @@ class WaveletFeatureSelectionWorkflow:
             return 1.0  # Technical indicators are fast
         return 5.0  # Other features are moderate
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="winner feature identification",
@@ -541,7 +541,7 @@ class WaveletFeatureSelectionWorkflow:
             self.print(error(error_msg))
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="lean dataset creation",
@@ -603,7 +603,7 @@ class WaveletFeatureSelectionWorkflow:
             self.print(error(error_msg))
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="production model training",
@@ -715,7 +715,7 @@ class WaveletFeatureSelectionWorkflow:
             self.print(error(error_msg))
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="live configuration creation",

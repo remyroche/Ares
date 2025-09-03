@@ -1,5 +1,21 @@
 # src/training/model_trainer.py
 
+from src.core.decorators import (
+    cached,
+    circuit_breaker,
+    handles_errors,
+    log_call,
+    log_execution_time,
+    traced,
+    validates
+)
+
+from src.core.domain import (
+    prevent_data_leakage,
+    quality_gate,
+    secure_data_processing
+)
+
 import json
 import os
 import tempfile
@@ -21,33 +37,15 @@ from sklearn.preprocessing import StandardScaler
 from src.training.data_cleaning import handle_missing_data
 from src.training.feature_engineering import FeatureGenerator
 from src.training.multi_output_model_trainer import create_multi_output_trainer, MultiOutputModelConfig
-from src.utils.decorators import (
-    guard_dataframe_nulls,
-    validate_call_or_runtime_types,
-    with_tracing_span,
-)
 
 # Avoid importing heavy optional dependencies (e.g., xgboost) at module import time.
 # Import HPO manager lazily inside the method when HPO is actually used.
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
+
 from src.utils.logger import system_logger
 from src.utils.mlflow_utils import log_training_metadata_to_mlflow
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
-from src.utils.training_pipeline_decorators import (
-    circuit_breaker_protection,
-    debug_training_step,
-    memory_efficient,
-    prevent_data_leakage,
-    quality_gate,
-    resource_monitor,
-    secure_data_processing,
-    validate_step_output,
-    validate_step_prerequisites,
-)
+
 from src.utils.warning_symbols import (
     error,
     failed,
@@ -64,7 +62,6 @@ from src.utils.warning_symbols import (
 #     get_trade_tracker
 # )
 
-
 @dataclass
 class ModelConfig:
     """Configuration for model training."""
@@ -78,7 +75,6 @@ class ModelConfig:
     n_estimators: int = 100
     max_depth: int = 10
 
-
 @dataclass
 class TrainingData:
     """Container for training data."""
@@ -88,7 +84,6 @@ class TrainingData:
     timeframe: str
     model_type: str
     data_info: dict[str, Any]
-
 
 class RayModelTrainer:
     """Ray-based model trainer for distributed model training and data processing."
@@ -142,7 +137,7 @@ class RayModelTrainer:
         # Initialize Ray
         self._initialize_ray()
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid Ray configuration"),
             RuntimeError: (False, "Ray initialization failed"),
@@ -173,7 +168,7 @@ class RayModelTrainer:
             self.logger.error(f"❌ Ray initialization failed: {e}")
             return False
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid model trainer configuration"),
             AttributeError: (False, "Missing required model trainer parameters"),
@@ -207,7 +202,7 @@ class RayModelTrainer:
             self.logger.error(f"❌ Ray Model Trainer initialization failed: {e}")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -247,7 +242,7 @@ class RayModelTrainer:
             self.logger.error(f"Configuration validation failed: {e}")
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="model storage initialization",
@@ -271,14 +266,14 @@ class RayModelTrainer:
             self.logger.error(f"❌ Failed to initialize model storage: {e}")
             raise
 
-    @validate_step_prerequisites
+    @validates
     @secure_data_processing
     @prevent_data_leakage
-    @resource_monitor
-    @memory_efficient
-    @debug_training_step
-    @circuit_breaker_protection
-    @validate_step_output
+    @log_execution_time
+    @cached
+    @log_call
+    @circuit_breaker
+    @validates
     @quality_gate
     def train_models(
         self,
@@ -467,7 +462,7 @@ import os.path
             self.is_training = False
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="training input validation",
@@ -501,9 +496,9 @@ import os.path
             self.logger.error(f"Training input validation failed: {e}")
             return False
 
-    @guard_dataframe_nulls(mode="warn", arg_index=2)
-    @with_tracing_span("RayModelTrainer._prepare_training_data", log_args=False)
-    @handle_errors(
+    @validates(mode="warn", arg_index=2)
+    @traced("RayModelTrainer._prepare_training_data", log_args=False)
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="training data preparation",
@@ -814,7 +809,7 @@ if os.path.exists(labeled_path):
         except Exception as e:
             self.logger.error(f"❌ Failed to store model: {e}")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="trained models storage",
@@ -983,7 +978,7 @@ if os.path.exists(labeled_path):
             )
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="model trainer cleanup",
@@ -1003,10 +998,9 @@ if os.path.exists(labeled_path):
         except Exception as e:
             self.logger.error(f"❌ Failed to stop Ray Model Trainer: {e}")
 
-
-@validate_call_or_runtime_types
-@with_tracing_span("setup_model_trainer", log_args=False)
-@handle_errors(
+@validates
+@traced("setup_model_trainer", log_args=False)
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="model trainer setup",
@@ -1032,7 +1026,6 @@ def setup_model_trainer(
     except Exception as e:
         system_logger.exception(f"Failed to setup Ray model trainer: {e}")
         return None
-
 
 # Example usage and testing
 if __name__ == "__main__":

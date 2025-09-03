@@ -5,6 +5,19 @@ This module manages the loading, serving, and hot-swapping of trading models, pa
 and their versions. This allows for updating the strategy without restarting the bot,
 with full version tracking. Now uses async operations for better performance.
 """
+from src.core.decorators import handles_errors
+
+from src.core.domain import (
+    error,
+    failed,
+    handle_file_operations,
+    handle_specific_errors,
+    initialization_error,
+    invalid,
+    missing,
+    warning as eh_warning
+)
+
 import json
 import os
 import pickle
@@ -21,18 +34,6 @@ from src.utils.common_operations import (
     get_current_datetime, format_datetime, ensure_directory,
     safe_json_dump, safe_json_load, safe_copy
 )
-from src.utils.error_handler import (
-
-    error,
-    failed,
-    handle_errors,
-    handle_file_operations,
-    handle_specific_errors,
-    initialization_error,
-    invalid,
-    missing,
-)
-from src.utils.error_handler import warning as eh_warning
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import _warn_symbol as _warn_symbol
@@ -178,7 +179,7 @@ class ModelManager:
         self.logger.info("✅ Model Manager initialization completed successfully")
         return True
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="model configuration loading",
@@ -204,7 +205,7 @@ class ModelManager:
 
         self.logger.info("Model configuration loaded successfully")
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -370,7 +371,7 @@ class ModelManager:
         self.logger.info(f"Model {model_name} registered successfully")
         return True
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="model loading",
@@ -409,7 +410,7 @@ class ModelManager:
         self.logger.info(f"Model {model_name} loaded successfully")
         return model
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="model saving",
@@ -467,7 +468,7 @@ class ModelManager:
         self.logger.info(f"Model {model_name} saved successfully")
         return True
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="active model setting",
@@ -496,7 +497,7 @@ class ModelManager:
         self.logger.info(f"Active model set to: {model_name}")
         return True
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="active model getting",
@@ -574,7 +575,7 @@ class ModelManager:
             "last_updated": self.model_metadata.get("last_updated"),
         }
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="model manager cleanup",
@@ -593,7 +594,7 @@ class ModelManager:
 model_manager: ModelManager | None = None
 
 
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="model manager setup",

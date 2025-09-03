@@ -1,5 +1,7 @@
 # src/tactician/sr_weight_optimizer.py
 
+from src.core.decorators import handles_errors
+
 """
 SR Weight Optimizer for optimizing support/resistance breakout prediction weights.
 """
@@ -11,12 +13,11 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from src.utils.logger import system_logger
 from src.tactician.sr_breakout_predictor import (
     ensure_optimized_sr_config,
-    setup_sr_breakout_predictor,
+    setup_sr_breakout_predictor
 )
-from src.utils.error_handler import handle_errors
-from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
     invalid,
@@ -73,7 +74,7 @@ class SRWeightOptimizer:
         self.best_weights: dict[str, float] | None = None
         self.optimization_history: list[dict[str, Any]] = []
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="SR weight optimizer initialization",
@@ -135,7 +136,7 @@ class SRWeightOptimizer:
             self.logger.exception(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="weight optimization",

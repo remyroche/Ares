@@ -13,6 +13,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from src.core.decorators import handles_errors, validates, traced
+
 import pandas as pd
 
 from src.utils.logger import system_logger
@@ -22,8 +24,7 @@ project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 import copy
 
-from src.utils.centralized_decorators import (
-
+from src.core.domain import (
     ValidationLevel,
     comprehensive_data_validation,
     guard_dataframe_nulls,
@@ -31,7 +32,7 @@ from src.utils.centralized_decorators import (
     optimize_memory_usage,
     validate_data_quality,
     validate_data_structure,
-    with_tracing_span,
+    with_tracing_span
 )
 
 logger = system_logger.getChild("DataPreparation")
@@ -70,7 +71,7 @@ class DataPreparation:
         self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok=True)
 
-    @with_tracing_span("get_klines_files")
+    @traced(span_name="get_klines_files")
     def get_klines_files(
         self, symbol: str, exchange: str, interval: str = "1m"
     ) -> list[Path]:
@@ -84,10 +85,10 @@ class DataPreparation:
 
         return sorted(csv_files + parquet_files)
 
-    @validate_data_quality()
-    @guard_dataframe_nulls(mode="warn", arg_index=0)
-    @with_tracing_span("load_klines_data")
-    @handle_errors(
+    @validates()
+    # @guard_dataframe_nulls - removed, handled by validatesmode="warn", arg_index=0)
+    @traced(span_name="load_klines_data")
+    @handles_errors(
         exceptions=(
             OSError,
             ValueError,
@@ -166,9 +167,9 @@ class DataPreparation:
 
         return combined_df
 
-    @validate_data_structure
-    @with_tracing_span("prepare_for_step1_5")
-    @handle_errors(
+    @validates()
+    @traced(span_name="prepare_for_step1_5")
+    @handles_errors(
         exceptions=(
             OSError,
             ValueError,
@@ -251,9 +252,9 @@ class DataPreparation:
 
         return preparation_result
 
-    @optimize_memory_usage
-    @with_tracing_span("save_resampled_data")
-    @handle_errors(
+    # @optimize_memory_usage - removed
+    @traced(span_name="save_resampled_data")
+    @handles_errors(
         exceptions=(
             OSError,
             ValueError,
@@ -332,9 +333,9 @@ class DataPreparation:
             logger.exception(f"❌ Error saving {timeframe} data: {e}")
             return None
 
-    @optimize_memory_usage
-    @with_tracing_span("create_partitioned_dataset")
-    @handle_errors(
+    # @optimize_memory_usage - removed
+    @traced(span_name="create_partitioned_dataset")
+    @handles_errors(
         exceptions=(OSError, ValueError, TypeError, KeyError, FileNotFoundError, PermissionError),
         default_return=None,
         context="data_resampler.create_partitioned_dataset"
@@ -387,10 +388,10 @@ class DataPreparation:
             logger.exception(f"❌ Error creating partitioned dataset: {e}")
             return None
 
-    @comprehensive_data_validation
-    @optimize_memory_usage
-    @with_tracing_span("resample_all_timeframes")
-    @handle_errors(
+    @validates()
+    # @optimize_memory_usage - removed
+    @traced(span_name="resample_all_timeframes")
+    @handles_errors(
         exceptions=(
             OSError,
             ValueError,
@@ -532,10 +533,10 @@ class DataPreparation:
         
         return results
 
-    @validate_data_quality()
-    @guard_dataframe_nulls(mode="warn", arg_index=0)
-    @with_tracing_span("validate_resampled_data")
-    @handle_errors(
+    @validates()
+    # @guard_dataframe_nulls - removed, handled by validatesmode="warn", arg_index=0)
+    @traced(span_name="validate_resampled_data")
+    @handles_errors(
         exceptions=(
             OSError,
             ValueError,
@@ -643,10 +644,10 @@ class DataPreparation:
         except Exception as e:
             return {"valid": False, "error": f"Error reading file: {e}"}
 
-    @validate_data_quality()
-    @guard_dataframe_nulls(mode="warn", arg_index=0)
-    @with_tracing_span("resample_to_timeframe")
-    @handle_errors(
+    @validates()
+    # @guard_dataframe_nulls - removed, handled by validatesmode="warn", arg_index=0)
+    @traced(span_name="resample_to_timeframe")
+    @handles_errors(
         exceptions=(ValueError, TypeError, KeyError, pd.errors.EmptyDataError),
         default_return=pd.DataFrame(),
         context="data_resampler.resample_to_timeframe"
@@ -708,9 +709,9 @@ class DataPreparation:
             logger.exception(f"❌ Error resampling to {timeframe}: {e}")
             return pd.DataFrame()
 
-    @validate_data_quality()
-    @with_tracing_span("validate_resampled_data_quality")
-    @handle_errors(
+    @validates()
+    @traced(span_name="validate_resampled_data_quality")
+    @handles_errors(
         exceptions=(ValueError, TypeError, KeyError),
         default_return={"valid": False, "issues": ["Validation failed"], "warnings": [], "row_count": 0, "timeframe": "unknown"},
         context="data_resampler.validate_resampled_data_quality"
@@ -817,8 +818,8 @@ for timeframe in self.SUPPORTED_TIMEFRAMES:
 """
 return report
 
-    @with_tracing_span("create_1m_consolidated_data")
-    @handle_errors(
+    @traced(span_name="create_1m_consolidated_data")
+    @handles_errors(
         exceptions=(
             OSError,
             ValueError,

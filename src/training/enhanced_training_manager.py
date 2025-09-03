@@ -193,8 +193,9 @@ class TrainingManager:
             "step04_regime_data_splitting",     # Regime data splitting
             "step5_triple_barrier_method",     # Apply triple barrier method
             "step6_feature_generation",        # Feature generation
-            "step7_matrix_feature_selection",  # Matrix feature selection
-            "step8_tactician_labeling",        # Tactician labeling
+            "step07_enhanced_matrix_operations",  # Matrix operations and initial filtering
+            "step08_advanced_feature_selection",  # Advanced feature selection
+            "step14_tactician_labeling",        # Tactician labeling (was step8)
             "step9_tactician_specialist_training", # Tactician specialist training
             "step10_confidence_calibration",   # Confidence calibration
             "step11_final_parameters_optimization", # Final parameters optimization
@@ -248,10 +249,21 @@ class TrainingManager:
             "step6_5_unified_regime_intelligence": [
                 "data/training/{exchange}_{symbol}_{timeframe}_unified_intelligence.parquet",
             ],
-            "step7_analyst_enhancement": [
-                "data/training/{exchange}_{symbol}_{timeframe}_analyst_models.pkl",
+            "step07_enhanced_matrix_operations": [
+                "data/matrix_operations/{exchange}_{symbol}_{timeframe}_matrix_operations_results.json",
+                "data/training/{exchange}_{symbol}_{timeframe}_features_filtered_train.parquet",
+                "data/training/{exchange}_{symbol}_{timeframe}_features_filtered_val.parquet",
             ],
-            "step8_tactician_labeling": [
+            "step08_advanced_feature_selection": [
+                "data/selected_features/{exchange}_{symbol}_{timeframe}_top100_train.parquet",
+                "data/selected_features/{exchange}_{symbol}_{timeframe}_top100_val.parquet",
+                "data/selected_features/{exchange}_{symbol}_{timeframe}_top80_train.parquet",
+                "data/selected_features/{exchange}_{symbol}_{timeframe}_top80_val.parquet",
+                "data/selected_features/{exchange}_{symbol}_{timeframe}_top60_train.parquet",
+                "data/selected_features/{exchange}_{symbol}_{timeframe}_top60_val.parquet",
+                "data/selected_features/{exchange}_{symbol}_{timeframe}_interpretability_report.json",
+            ],
+            "step14_tactician_labeling": [
                 "data/training/{exchange}_{symbol}_{timeframe}_tactician_labels.parquet",
             ],
             "step9_tactician_specialist_training": [
@@ -894,8 +906,9 @@ class TrainingManager:
                 "step5_regime_data_splitting": 2,
                 "step6_hmm_based_training": 10,
                 "step6_5_unified_regime_intelligence": 8,
-                "step7_analyst_enhancement": 8,
-                "step8_tactician_labeling": 5,
+                "step07_enhanced_matrix_operations": 8,
+                "step08_advanced_feature_selection": 10,
+                "step14_tactician_labeling": 5,
                 "step9_tactician_specialist_training": 10,
                 "step10_confidence_calibration": 3,
                 "step11_final_parameters_optimization": 15,
@@ -919,8 +932,9 @@ class TrainingManager:
             "step5_regime_data_splitting": 5,
             "step6_hmm_based_training": 30,
             "step6_5_unified_regime_intelligence": 25,
-            "step7_analyst_enhancement": 25,
-            "step8_tactician_labeling": 15,
+            "step07_enhanced_matrix_operations": 25,
+            "step08_advanced_feature_selection": 30,
+            "step14_tactician_labeling": 15,
             "step9_tactician_specialist_training": 30,
             "step10_confidence_calibration": 10,
             "step11_final_parameters_optimization": 240,

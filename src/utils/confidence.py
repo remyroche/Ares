@@ -78,7 +78,147 @@ def aggregate_directional_confidences(models: Iterable[dict[str, Any]]) -> dict[
     final_confidence = _clamp01(abs(signed_avg))
     return {'direction': final_direction, 'confidence': final_confidence, 'signed_value': signed_avg, 'count': count_active}
 
-def calculate_multi_output_confidence(direction_probability: float, direction_prediction: int, profit_prediction: float, current_price: float, predicted_price: float, direction_threshold: float=0.6, profit_threshold: float=0.001, price_threshold: float=0.005, min_ensemble_confidence: float=0.7) -> dict[str, Any]:
+    return {
+        "direction": final_direction,
+        "confidence": final_confidence,
+        "signed_value": signed_avg,
+        "count": count_active,
+    }
+
+
+def aggregate_weighted_signals_step17(
+    signals: Iterable[dict[str, Any]],
+    step17_weights: dict[str, float] = None,
+    use_multiplicative: bool = True,
+    logger=None
+) -> dict[str, Any]:
+    """
+    Enhanced weighted signal aggregation with step17 optimization support.
+    
+    Uses multiplicative weighting for same-direction signals and subtractive
+    for opposite-direction signals, with weights optimized by step17.
+    
+    Args:
+        signals: Iterable of signal dicts with "source", "direction", "confidence"
+        step17_weights: Optimized weights from step17 (e.g., {"analyst": 0.6, "tactician": 0.4})
+        use_multiplicative: If True, use multiplicative aggregation for aligned signals
+        logger: Optional logger for debugging
+        
+    Returns:
+        dict with aggregated signal information
+    """
+    if step17_weights is None:
+        # Default weights if step17 optimization not available
+        step17_weights = {
+            "analyst": 0.5,
+            "tactician": 0.5,
+            "scenario": 0.3,
+            "sr_breakout": 0.2
+        }
+    
+    # Group signals by direction
+    long_signals = []
+    short_signals = []
+    
+    for signal in signals:
+        if not isinstance(signal, dict):
+            continue
+            
+        direction = signal.get("direction", "HOLD")
+        confidence = _clamp01(float(signal.get("confidence", 0.0)))
+        source = signal.get("source", "unknown")
+        weight = step17_weights.get(source, 0.1)
+        
+        if direction in ["LONG", "BUY", "UP", "BULL", "BULLISH"]:
+            long_signals.append({"confidence": confidence, "weight": weight, "source": source})
+        elif direction in ["SHORT", "SELL", "DOWN", "BEAR", "BEARISH"]:
+            short_signals.append({"confidence": confidence, "weight": weight, "source": source})
+    
+    # Calculate weighted scores for each direction
+    long_score = 0.0
+    short_score = 0.0
+    
+    if use_multiplicative:
+        # Multiplicative aggregation for aligned signals
+        if long_signals:
+            long_product = 1.0
+            long_weight_sum = 0.0
+            for sig in long_signals:
+                # Weighted geometric mean approach
+                long_product *= (1 + sig["confidence"]) ** sig["weight"]
+                long_weight_sum += sig["weight"]
+            if long_weight_sum > 0:
+                long_score = (long_product ** (1.0 / long_weight_sum)) - 1
+                
+        if short_signals:
+            short_product = 1.0
+            short_weight_sum = 0.0
+            for sig in short_signals:
+                short_product *= (1 + sig["confidence"]) ** sig["weight"]
+                short_weight_sum += sig["weight"]
+            if short_weight_sum > 0:
+                short_score = (short_product ** (1.0 / short_weight_sum)) - 1
+    else:
+        # Additive aggregation (original approach)
+        for sig in long_signals:
+            long_score += sig["confidence"] * sig["weight"]
+        for sig in short_signals:
+            short_score += sig["confidence"] * sig["weight"]
+    
+    # Determine final direction and confidence
+    if long_score > short_score:
+        final_direction = "LONG"
+        final_confidence = long_score / (long_score + short_score) if (long_score + short_score) > 0 else long_score
+        opposing_score = short_score
+    elif short_score > long_score:
+        final_direction = "SHORT"
+        final_confidence = short_score / (long_score + short_score) if (long_score + short_score) > 0 else short_score
+        opposing_score = long_score
+    else:
+        final_direction = "HOLD"
+        final_confidence = 0.0
+        opposing_score = 0.0
+    
+    # Apply penalty for conflicting signals
+    if opposing_score > 0 and final_confidence > 0:
+        conflict_ratio = opposing_score / (final_confidence + opposing_score)
+        final_confidence *= (1 - conflict_ratio * 0.5)  # Reduce confidence based on conflict
+    
+    # Ensure confidence is in valid range
+    final_confidence = _clamp01(final_confidence)
+    
+    result = {
+        "direction": final_direction,
+        "confidence": final_confidence,
+        "long_score": float(long_score),
+        "short_score": float(short_score),
+        "signal_count": len(long_signals) + len(short_signals),
+        "weights_used": step17_weights,
+        "aggregation_method": "multiplicative" if use_multiplicative else "additive"
+    }
+    
+    if logger:
+        logger.info({
+            "msg": "weighted_signal_aggregation",
+            "result": result,
+            "long_signals": len(long_signals),
+            "short_signals": len(short_signals)
+        })
+    
+    return result
+
+
+def calculate_multi_output_confidence(
+    direction_probability: float,
+    direction_prediction: int,
+    profit_prediction: float,
+    current_price: float,
+    predicted_price: float,
+    direction_threshold: float = 0.6,
+    profit_threshold: float = 0.001,
+    price_threshold: float = 0.005,
+    min_ensemble_confidence: float = 0.7,
+) -> dict[str, Any]:
     """Calculate simplified confidence score for multi-output predictions.
 
     Since all predictions come from the same model, uses simple average

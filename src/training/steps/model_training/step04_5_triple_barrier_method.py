@@ -5,6 +5,7 @@ This module applies the triple barrier method to create trading signals and labe
 It uses the optimized triple barrier labeling component and integrates with the pipeline.
 """
 import asyncio
+import copy
 import sys
 from pathlib import Path
 from src.utils.common_operations import ensure_directory
@@ -50,8 +51,9 @@ class TripleBarrierMethodStep:
         """Initialize triple barrier method components."""
         self.logger.info('🔧 Initializing triple barrier method components...')
         try:
-            import copy
-            from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
+            from .step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import (
+                OptimizedTripleBarrierLabeling
+            )
             self.triple_barrier_labeler = OptimizedTripleBarrierLabeling()
             self.logger.info('✅ Optimized triple barrier labeler initialized successfully')
         except ImportError as e:
@@ -76,8 +78,12 @@ class TripleBarrierMethodStep:
         self.step_timings[step_name] = elapsed
         self.logger.info(f'⏱️ {step_name} completed in {elapsed:.2f} seconds')
 
-    @traced(span_name='execute_triple_barrier_method')
-    @validates()
+    @traced(span_name="execute_triple_barrier_method")
+    @validates(
+        min_quality_score=0.7,
+        max_correlation=0.95,
+        required_grade="C"
+    )
     @handles_errors
     @validates()
     async def execute_triple_barrier_method(self, symbol: str, exchange: str, timeframe: str, data_dir: str='data_cache', force_rerun: bool=False) -> bool:
@@ -152,12 +158,24 @@ class TripleBarrierMethodStep:
     async def _apply_optimized_triple_barrier(self, data: pd.DataFrame) -> Optional[pd.DataFrame]:
         """Apply optimized triple barrier labeling with profit tracking."""
         try:
-            profit_take_multiplier = self.config.get('triple_barrier', {}).get('profit_take_multiplier', 0.002)
-            stop_loss_multiplier = self.config.get('triple_barrier', {}).get('stop_loss_multiplier', 0.001)
-            time_barrier_minutes = self.config.get('triple_barrier', {}).get('time_barrier_minutes', 30)
-            max_lookahead = self.config.get('triple_barrier', {}).get('max_lookahead', 100)
-            from src.training.steps.step4_analyst_labeling_feature_engineering_components.optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
-            labeler = OptimizedTripleBarrierLabeling(profit_take_multiplier=profit_take_multiplier, stop_loss_multiplier=stop_loss_multiplier, time_barrier_minutes=time_barrier_minutes, max_lookahead=max_lookahead, binary_classification=True)
+            # Configure triple barrier parameters
+            profit_take_multiplier = self.config.get("triple_barrier", {}).get("profit_take_multiplier", 0.002)
+            stop_loss_multiplier = self.config.get("triple_barrier", {}).get("stop_loss_multiplier", 0.001)
+            time_barrier_minutes = self.config.get("triple_barrier", {}).get("time_barrier_minutes", 30)
+            max_lookahead = self.config.get("triple_barrier", {}).get("max_lookahead", 100)
+
+            # Create triple barrier labeler with configuration
+            from src.labeling.optimized_triple_barrier import OptimizedTripleBarrierLabeling
+            
+            labeler = OptimizedTripleBarrierLabeling(
+                profit_take_multiplier=profit_take_multiplier,
+                stop_loss_multiplier=stop_loss_multiplier,
+                time_barrier_minutes=time_barrier_minutes,
+                max_lookahead=max_lookahead,
+                binary_classification=True
+            )
+
+            # Apply triple barrier labeling with profit tracking
             labeled_data = labeler.apply_triple_barrier_labeling_vectorized(data)
             labels = labeled_data['label']
             profit_pcts = labeled_data['potential_profit_pct']

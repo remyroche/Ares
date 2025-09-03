@@ -21,7 +21,7 @@ class TrainingOrchestrator:
     This module handles the high-level coordination between different training components.
     """
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize training orchestrator."
+        """Initialize training orchestrator."""
 
         Args:
             config: Configuration dictionary
@@ -51,7 +51,7 @@ class TrainingOrchestrator:
         context="training orchestrator initialization",
     )
     async def initialize(self) -> bool:
-        """Initialize training orchestrator and all component managers."
+        """Initialize training orchestrator and all component managers."""
 
         Returns:
             bool: True if initialization successful, False otherwise
@@ -430,7 +430,7 @@ class TrainingOrchestrator:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """Validate training orchestrator configuration."
+        """Validate training orchestrator configuration."""
 
         Returns:
             bool: True if configuration is valid, False otherwise
@@ -479,7 +479,7 @@ class TrainingOrchestrator:
         self,
         training_input: dict[str, Any],
     ) -> bool:
-        """Execute the complete training pipeline."
+        """Execute the complete training pipeline."""
 
         Args:
             training_input: Training input parameters
@@ -522,7 +522,7 @@ class TrainingOrchestrator:
         context="training input validation",
     )
     def _validate_training_input(self, training_input: dict[str, Any]) -> bool:
-        """Validate training input parameters."
+        """Validate training input parameters."""
 
         Args:
             training_input: Training input parameters
@@ -561,7 +561,7 @@ class TrainingOrchestrator:
         self,
         training_input: dict[str, Any],
     ) -> bool:
-        """Execute the main training pipeline."
+        """Execute the main training pipeline."""
 
         Args:
             training_input: Training input parameters
@@ -633,7 +633,7 @@ class TrainingOrchestrator:
         context="training results storage",
     )
     async def _store_training_results(self, training_input: dict[str, Any]) -> None:
-        """Store training results for later retrieval."
+        """Store training results for later retrieval."""
 
         Args:
             training_input: Training input parameters
@@ -650,7 +650,7 @@ class TrainingOrchestrator:
             self.logger.error(failed(f"❌ Failed to store training results: {e}"))
 
     def get_training_status(self) -> dict[str, Any]:
-        """Get current training status."
+        """Get current training status."""
 
         Returns:
             dict: Training status information
@@ -666,7 +666,7 @@ class TrainingOrchestrator:
         }
 
     def get_training_results(self) -> dict[str, Any]:
-        """Get the latest training results."
+        """Get the latest training results."""
 
         Returns:
             dict: Training results
@@ -708,7 +708,7 @@ class TrainingOrchestrator:
 async def setup_training_orchestrator(
     config: dict[str, Any] | None = None,
 ) -> TrainingOrchestrator | None:
-    """Setup and return a configured TrainingOrchestrator instance."
+    """Setup and return a configured TrainingOrchestrator instance."""
 
     Args:
         config: Configuration dictionary

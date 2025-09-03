@@ -1,0 +1,11 @@
+{
+  "dry_run": true,
+  "files_with_errors": 13,
+  "error_types": {
+    "unindent does not match any outer indentation level": 1,
+    "unexpected indent": 3,
+    "unterminated string literal (detected at line 229)": 1,
+    "invalid syntax": 4,
+    "unmatched ')'": 4
+  }
+}

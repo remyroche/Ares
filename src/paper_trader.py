@@ -14,6 +14,8 @@ from copy import copy
 import asyncio
 
 import numpy as np
+from copy import copy
+import asyncio
 
 from src.config.constants import (
     DEFAULT_COMMISSION_RATE,

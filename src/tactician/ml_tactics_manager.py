@@ -3,7 +3,8 @@
 
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional, List
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -13,6 +14,18 @@ from src.utils.logger import system_logger
 from src.utils.warning_symbols import invalid, warning
 from copy import copy
 import asyncio
+
+# Optional: use the training serializer/version manager if available for loading persisted models
+try:
+    from src.training.steps.model_persistence_components.model_serializer import (
+        ModelSerializer,
+    )
+    from src.training.steps.model_persistence_components.version_manager import (
+        VersionManager,
+    )
+    _PERSISTENCE_AVAILABLE = True
+except Exception:
+    _PERSISTENCE_AVAILABLE = False
 
 
 class MLTacticsManager:
@@ -105,6 +118,46 @@ class MLTacticsManager:
             "fifty_percent_5m_weight": ml_tactics_optimization.get("fifty_percent_5m_weight", 0.2),
             "twenty_five_percent_5m_weight": ml_tactics_optimization.get("twenty_five_percent_5m_weight", 0.1),
         }
+
+        # Model storage settings
+        self.model_storage_dir: str = self.config.get("model_storage_dir", "models")
+
+    class ProbabilityAveragingEnsemble:
+        """Simple ensemble that averages predict_proba outputs across models."""
+
+        def __init__(self, models: List[Any]) -> None:
+            self.models = [m for m in models if hasattr(m, "predict_proba")]
+
+        def predict_proba(self, X) -> Any:
+            import numpy as np
+
+            if not self.models:
+                # Return neutral probability if no models
+                if hasattr(X, "shape") and len(getattr(X, "shape", [])) > 0:
+                    n = X.shape[0]
+                else:
+                    n = 1
+                return np.tile(np.array([[0.5, 0.5]]), (n, 1))
+
+            probs: List[np.ndarray] = []
+            for model in self.models:
+                try:
+                    proba = model.predict_proba(X)
+                    # Normalize to (n, 2) binary format if needed
+                    if proba.ndim == 1:
+                        proba = np.vstack([1 - proba, proba]).T
+                    probs.append(proba)
+                except Exception:
+                    continue
+
+            if not probs:
+                if hasattr(X, "shape") and len(getattr(X, "shape", [])) > 0:
+                    n = X.shape[0]
+                else:
+                    n = 1
+                return np.tile(np.array([[0.5, 0.5]]), (n, 1))
+
+            return np.mean(probs, axis=0)
 
     @core_handles_errors(
         error_handlers={
@@ -314,10 +367,66 @@ class MLTacticsManager:
             bool: True if models loaded successfully, False otherwise
         """
         try:
-            # This would load actual trained models from disk
-            # For now, we'll use fallback models
-            self.logger.info("Loading pre-trained models (fallback mode)")
-            return False
+            # Attempt to load persisted models via model registry/versioning
+            if not _PERSISTENCE_AVAILABLE:
+                self.logger.warning("Model persistence components unavailable - using fallback")
+                return False
+
+            # Determine latest version (optionally filtered by symbol/exchange)
+            version_manager = VersionManager({"versioning": {"base_dir": self.model_storage_dir}})
+            symbol = self.config.get("symbol")
+            exchange = self.config.get("exchange")
+            latest = await version_manager.get_latest_version(symbol=symbol, exchange=exchange)
+            if not latest:
+                self.logger.warning("No versions found in model registry - using fallback")
+                return False
+
+            version_dir = Path(self.model_storage_dir) / latest["version"] / "models"
+            # Prefer calibrated models (already probability-calibrated)
+            loaded_models: List[Any] = []
+
+            # Helper to scan and load from a subdir
+            async def _scan_and_load(subdir: str) -> None:
+                nonlocal loaded_models
+                model_dir = version_dir / subdir
+                if not model_dir.exists():
+                    return
+                for fp in sorted(model_dir.glob("*.pkl")):
+                    model = await ModelSerializer({"serialization": {"base_dir": self.model_storage_dir}}).load_model(str(fp))
+                    if model is not None:
+                        loaded_models.append(model)
+                for fp in sorted(model_dir.glob("*.joblib")):
+                    model = await ModelSerializer({"serialization": {"base_dir": self.model_storage_dir}}).load_model(str(fp))
+                    if model is not None:
+                        loaded_models.append(model)
+
+            # Load calibrated models first
+            await _scan_and_load("pickle")
+            await _scan_and_load("joblib")
+
+            if not loaded_models:
+                self.logger.warning("No persisted models found under latest version - using fallback")
+                return False
+
+            # Build a simple averaging ensemble from all loaded models
+            ensemble = self.ProbabilityAveragingEnsemble(loaded_models)
+
+            # Assign the same calibrated ensemble across barrier types (until barrier-specific models are produced)
+            for barrier_type in [
+                "fifty_percent",
+                "twenty_five_percent",
+                "fifty_percent_5m",
+                "twenty_five_percent_5m",
+            ]:
+                self.multi_output_models[barrier_type]["model"] = ensemble
+                self.multi_output_models[barrier_type]["calibrator"] = None
+                self.multi_output_models[barrier_type]["is_trained"] = True
+
+            self.is_trained = True
+            self.logger.info(
+                f"✅ Loaded {len(loaded_models)} persisted model(s) from version {latest['version']}"
+            )
+            return True
 
         except Exception as e:
             self.logger.exception(failed(f"❌ Failed to load pre-trained models: {e}"))
@@ -1103,9 +1212,7 @@ class MLTacticsManager:
                 confidence = self._predict_with_model(barrier_type, features)
                 direction = self._determine_direction(features)
 
-            # Apply calibration if available
-            if self.multi_output_models[barrier_type]["calibrator"]:
-                confidence = self._calibrate_prediction(barrier_type, confidence)
+            # Note: if a calibrator is available, _predict_with_model will use it directly
 
             # Validate confidence
             confidence = np.clip(confidence, 0.0, 1.0)
@@ -1276,8 +1383,35 @@ class MLTacticsManager:
             float: Confidence score
         """
         try:
-            # This would use the actual trained model
-            # For now, return fallback confidence
+            model_entry = self.multi_output_models.get(barrier_type, {})
+            model = model_entry.get("model")
+            calibrator = model_entry.get("calibrator")
+
+            # Prefer calibrator if available (it should wrap the base estimator)
+            target = calibrator or model
+            if target is None:
+                return self._generate_fallback_confidence(barrier_type, features)
+
+            if hasattr(target, "predict_proba"):
+                proba = target.predict_proba(features.reshape(1, -1))
+                # Use positive class probability when available
+                if proba.ndim == 2 and proba.shape[1] > 1:
+                    return float(proba[0, 1])
+                return float(np.clip(proba.ravel()[0], 0.0, 1.0))
+
+            # Fallback to decision_function/predict if necessary
+            if hasattr(target, "decision_function"):
+                score = float(target.decision_function(features.reshape(1, -1))[0])
+                # Map to [0,1]
+                import math
+                return float(1.0 / (1.0 + math.exp(-score)))
+            if hasattr(target, "predict"):
+                pred = target.predict(features.reshape(1, -1))
+                try:
+                    return float(np.clip(float(pred[0]), 0.0, 1.0))
+                except Exception:
+                    return self._generate_fallback_confidence(barrier_type, features)
+
             return self._generate_fallback_confidence(barrier_type, features)
 
         except Exception as e:
@@ -1296,8 +1430,7 @@ class MLTacticsManager:
             float: Calibrated confidence
         """
         try:
-            # This would use the actual calibrator
-            # For now, return original confidence
+            # Kept for backward compatibility; direct calibrator usage is handled in _predict_with_model
             return confidence
 
         except Exception as e:

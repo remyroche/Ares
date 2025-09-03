@@ -53,12 +53,22 @@ class ConfidenceCalibrationStep(BaseValidationStep):
             self.logger.warning('No validation data available for calibration')
             return pipeline_state
         models = self._get_models_for_validation(pipeline_state)
+        
+        # Calibrate each model using time-aware CV (TimeSeriesSplit)
+        from sklearn.model_selection import TimeSeriesSplit
+        tscv = TimeSeriesSplit(n_splits=max(2, int(self.calibration_config["cv_folds"])) )
         for model_name, model in models.items():
             if not hasattr(model, 'predict_proba'):
                 self.logger.info(f'Skipping {model_name} - no probability prediction')
                 continue
-            self.logger.info(f'Calibrating {model_name}...')
-            calibrated_model, metrics = await self._calibrate_model(model, X_val, y_val, model_name)
+            
+            self.logger.info(f"Calibrating {model_name}...")
+            
+            # Apply calibration
+            calibrated_model, metrics = await self._calibrate_model(
+                model, X_val, y_val, model_name, tscv
+            )
+            
             if calibrated_model is not None:
                 self.calibrated_models[model_name] = calibrated_model
                 self.calibration_metrics[model_name] = metrics
@@ -71,8 +81,15 @@ class ConfidenceCalibrationStep(BaseValidationStep):
         result[f'{self.full_step_name}_results'] = {'calibration_metrics': self.calibration_metrics, 'models_calibrated': len(self.calibrated_models), 'calibration_method': self.calibration_config['method']}
         result[f'{self.full_step_name}_summary'] = self._create_validation_summary({'model_results': self.calibration_metrics, 'overall_metrics': self._calculate_overall_calibration_metrics()})
         return result
-
-    async def _calibrate_model(self, model: Any, X: pd.DataFrame, y: pd.Series, model_name: str) -> Tuple[Optional[Any], Dict[str, float]]:
+    
+    async def _calibrate_model(
+        self,
+        model: Any,
+        X: pd.DataFrame,
+        y: pd.Series,
+        model_name: str,
+        tscv=None
+    ) -> Tuple[Optional[Any], Dict[str, float]]:
         """Calibrate a single model.
         
         Args:
@@ -87,17 +104,46 @@ class ConfidenceCalibrationStep(BaseValidationStep):
         metrics = {}
         try:
             y_pred_proba = model.predict_proba(X)[:, 1]
-            metrics['pre_calibration_brier'] = brier_score_loss(y, y_pred_proba)
-            metrics['pre_calibration_log_loss'] = log_loss(y, y_pred_proba)
-            calibrated = CalibratedClassifierCV(model, method=self.calibration_config['method'], cv=self.calibration_config['cv_folds'])
+            metrics["pre_calibration_brier"] = brier_score_loss(y, y_pred_proba)
+            metrics["pre_calibration_log_loss"] = log_loss(y, y_pred_proba)
+            
+            # Apply calibration using time-aware CV
+            calibrated = CalibratedClassifierCV(
+                model,
+                method=self.calibration_config["method"],
+                cv=tscv if tscv is not None else self.calibration_config["cv_folds"]
+            )
+            
             calibrated.fit(X, y)
-            y_cal_proba = calibrated.predict_proba(X)[:, 1]
-            metrics['post_calibration_brier'] = brier_score_loss(y, y_cal_proba)
-            metrics['post_calibration_log_loss'] = log_loss(y, y_cal_proba)
-            metrics['brier_improvement'] = (metrics['pre_calibration_brier'] - metrics['post_calibration_brier']) / metrics['pre_calibration_brier']
-            metrics['log_loss_improvement'] = (metrics['pre_calibration_log_loss'] - metrics['post_calibration_log_loss']) / metrics['pre_calibration_log_loss']
-            self.logger.info(f"  Calibrated {model_name}: Brier improvement: {metrics['brier_improvement']:.2%}, Log loss improvement: {metrics['log_loss_improvement']:.2%}")
-            return (calibrated, metrics)
+            
+            # Calculate post-calibration metrics
+            # Evaluate on a holdout tail slice to avoid train reuse
+            holdout_frac = 0.2
+            n = len(X)
+            split_idx = int(n * (1.0 - holdout_frac))
+            X_holdout = X.iloc[split_idx:]
+            y_holdout = y.iloc[split_idx:]
+            y_cal_proba = calibrated.predict_proba(X_holdout)[:, 1]
+            metrics["post_calibration_brier"] = brier_score_loss(y_holdout, y_cal_proba)
+            metrics["post_calibration_log_loss"] = log_loss(y_holdout, y_cal_proba)
+            
+            # Calculate improvement
+            metrics["brier_improvement"] = (
+                metrics["pre_calibration_brier"] - metrics["post_calibration_brier"]
+            ) / metrics["pre_calibration_brier"]
+            
+            metrics["log_loss_improvement"] = (
+                metrics["pre_calibration_log_loss"] - metrics["post_calibration_log_loss"]
+            ) / metrics["pre_calibration_log_loss"]
+            
+            self.logger.info(
+                f"  Calibrated {model_name}: "
+                f"Brier improvement: {metrics['brier_improvement']:.2%}, "
+                f"Log loss improvement: {metrics['log_loss_improvement']:.2%}"
+            )
+            
+            return calibrated, metrics
+            
         except Exception as e:
             self.logger.error(f'Failed to calibrate {model_name}: {str(e)}')
             return (None, {'error': str(e)})

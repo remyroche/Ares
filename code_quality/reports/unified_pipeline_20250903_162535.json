@@ -1,0 +1,1944 @@
+{
+  "syntax_imports": {
+    "syntax_fixer": {
+      "tool": "syntax_fixer",
+      "description": "Advanced Syntax Fixes",
+      "success": true,
+      "return_code": 0,
+      "execution_time": 0.9810969829559326,
+      "stdout": "Checking 608 Python files for syntax errors...\nFound 13 files with syntax errors\n\nError types found:\n  invalid syntax: 4 files\n  unmatched ')': 4 files\n  unexpected indent: 3 files\n  unindent does not match any outer indentation level: 1 files\n  unterminated string literal (detected at line 229): 1 files\n\nSample files with errors:\n  model_trainer.py: unindent does not match any outer indentation level (line 532)\n  step_orchestrator.py: unexpected indent (line 85)\n  integration_guide.py: unterminated string literal (detected at line 229) (line 229)\n  binance.py: invalid syntax (line 62)\n  model_manager.py: invalid syntax (line 234)\n  step18_walk_forward_validation_validator.py: invalid syntax (line 11)\n  step19_monte_carlo_validation_validator.py: invalid syntax (line 120)\n  step21_saving.py: unexpected indent (line 248)\n  step03_5_final_regime_clustering.py: unexpected indent (line 881)\n  step04_5_triple_barrier_method.py: unmatched ')' (line 340)\n\nReport saved to: /workspace/code_quality/reports/syntax_fixes_report_20250903_162536.json\n",
+      "stderr": "",
+      "report_data": {
+        "dry_run": true,
+        "files_with_errors": 13,
+        "error_types": {
+          "unindent does not match any outer indentation level": 1,
+          "unexpected indent": 3,
+          "unterminated string literal (detected at line 229)": 1,
+          "invalid syntax": 4,
+          "unmatched ')'": 4
+        }
+      }
+    },
+    "import_fixer": {
+      "tool": "import_fixer",
+      "description": "Import Fixes",
+      "success": true,
+      "return_code": 0,
+      "execution_time": 0.14118671417236328,
+      "stdout": "Found 608 Python files to analyze\n\nDRY RUN MODE - No files will be modified\n\nFiles that would be fixed: 11\n\nconfig.py:\n  + import asyncio\n  + from copy import copy\n\npaper_trader.py:\n  + import numpy as np\n  + import asyncio\n  + from copy import copy\n\nerror_detection_system.py:\n  + import asyncio\n\ntracking_system.py:\n  + import asyncio\n\ncorrelation_manager.py:\n  + import datetime\n  + import asyncio\n\nReport saved to: /workspace/code_quality/reports/safe_import_fixes_report_20250903_162536.json\n",
+      "stderr": "",
+      "report_data": {
+        "total_files": 347,
+        "imports_by_file": {
+          "/workspace/src/ares_pipeline.py": [
+            "import datetime as datetime",
+            "import argparse",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/config.py": [
+            "import copy"
+          ],
+          "/workspace/src/paper_trader.py": [
+            "import copy",
+            "import numpy as np"
+          ],
+          "/workspace/src/monitoring/correlation_manager.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/monitoring/fractional_system_monitor.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/monitoring/surrogate_optimization_monitor.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import pandas as pd",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/monitoring/metrics_dashboard.py": [
+            "import asyncio"
+          ],
+          "/workspace/src/monitoring/fractional_performance_tracker.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/monitoring/csv_exporter.py": [
+            "import json",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/monitoring/advanced_tracer.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/launcher/enhanced_trading_launcher.py": [
+            "import datetime as datetime",
+            "import os.path"
+          ],
+          "/workspace/src/components/modular_analyst.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/components/modular_tactician.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/components/modular_supervisor.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/components/modular_strategist.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/interfaces/event_bus.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import asyncio"
+          ],
+          "/workspace/src/interfaces/enhanced_event_bus.py": [
+            "import json",
+            "import datetime as datetime",
+            "import copy",
+            "import asyncio"
+          ],
+          "/workspace/src/trading/live_wavelet_analyzer.py": [
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/trading/live_wavelet_demo.py": [
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/trading/live_wavelet_integration.py": [
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/trading/sr_trading_intelligence.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/supervisor/performance_monitor.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import copy",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/supervisor/global_portfolio_manager.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/supervisor/performance_reporter.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import copy",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/supervisor/dynamic_weighter.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/supervisor/exchange_volume_adapter.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/supervisor/monitoring.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import asyncio"
+          ],
+          "/workspace/src/supervisor/main.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import asyncio"
+          ],
+          "/workspace/src/supervisor/risk_allocator.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/supervisor/pnl_loss_functions.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/supervisor/supervisor.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/supervisor/model_behavior_tracker.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/supervisor/optimizer.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import asyncio"
+          ],
+          "/workspace/src/pipelines/improved_pipeline_executor.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/pipelines/base_pipeline.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/sentinel/sentinel.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import asyncio"
+          ],
+          "/workspace/src/transition/seq2seq_trainer.py": [
+            "import os.path",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/transition/combined_features_builder.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/transition/baseline_rf.py": [
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/transition/inference_combiner.py": [
+            "import os.path"
+          ],
+          "/workspace/src/transition/rolling_inference.py": [
+            "import pandas as pd"
+          ],
+          "/workspace/src/transition/event_trigger_indexer.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/transition/multitask_rf.py": [
+            "import os.path",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/transition/rolling_window_dataset.py": [
+            "import copy"
+          ],
+          "/workspace/src/transition/state_sequence_builder.py": [
+            "import os.path",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/transition/event_window_dataset.py": [
+            "import copy",
+            "import os.path",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/custom_types/validation.py": [
+            "import logging"
+          ],
+          "/workspace/src/integration/paper_trading_integration.py": [
+            "import datetime as datetime",
+            "import os.path"
+          ],
+          "/workspace/src/tactician/position_sizer.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/tactician/sr_weight_optimizer.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/tactician/position_closing.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/tactician/ml_target_updater.py": [
+            "import datetime as datetime",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/tactician/position_division_strategy.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/tactician/enhanced_prediction_integrator.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/tactician/tactician.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/tactician/comprehensive_enhanced_scenario_predictor.py": [
+            "import numpy as np",
+            "import logging"
+          ],
+          "/workspace/src/tactician/enhanced_execution_manager.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/tactician/tactics_orchestrator.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import asyncio"
+          ],
+          "/workspace/src/tactician/position_monitor.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import asyncio"
+          ],
+          "/workspace/src/tactician/enhanced_order_manager.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/tactician/sr_data_integration.py": [
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/tactician/scenario_based_predictor.py": [
+            "import numpy as np",
+            "import datetime as datetime",
+            "import logging"
+          ],
+          "/workspace/src/tactician/leverage_sizer.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/tactician/sr_levels_manager.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/tactician/step17_optimized_tactician.py": [
+            "import numpy as np",
+            "import datetime as datetime",
+            "import logging",
+            "import os.path"
+          ],
+          "/workspace/src/tactician/enhanced_scenario_based_predictor.py": [
+            "import numpy as np",
+            "import datetime as datetime",
+            "import logging"
+          ],
+          "/workspace/src/tactician/sr_detection_optimization.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/tactician/ml_target_validator.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/tactician/async_order_executor.py": [
+            "import copy",
+            "import asyncio"
+          ],
+          "/workspace/src/tactician/ml_tactics_manager.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/tactician/fully_migrated_tactician.py": [
+            "import datetime as datetime",
+            "import logging",
+            "import os.path"
+          ],
+          "/workspace/src/tracking/trade_tracker.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/model_trainer.py": [
+            "import datetime as datetime",
+            "import json",
+            "import os.path",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/enhanced_training_manager.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/data_cleaning.py": [
+            "import numpy as np",
+            "import logging"
+          ],
+          "/workspace/src/training/enhanced_training_manager_enhanced.py": [
+            "import datetime as datetime",
+            "import os.path"
+          ],
+          "/workspace/src/training/enhanced_dynamic_feature_selection.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/multi_output_probability_trainer.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/regularization.py": [
+            "import numpy as np"
+          ],
+          "/workspace/src/training/feature_engineering_optimizer.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/feature_integration.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/feature_engineering.py": [
+            "import os.path",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/wavelet_integration_demo.py": [
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/enhanced_feature_engineering_optimizer.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/enhanced_matrix_operations.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/model_saving_utils.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import logging",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/probabilistic_model_integration.py": [
+            "import numpy as np",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/enhanced_lm_optimizer.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/training/step_orchestrator.py": [
+            "import copy"
+          ],
+          "/workspace/src/training/enhanced_training_manager_optimized.py": [
+            "import json",
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/early_stage_optimization.py": [
+            "import datetime as datetime",
+            "import logging"
+          ],
+          "/workspace/src/training/multi_objective_optimizer.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/bayesian_optimizer.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/memory_profiler.py": [
+            "import asyncio",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import os.path"
+          ],
+          "/workspace/src/training/integration_guide.py": [
+            "import copy"
+          ],
+          "/workspace/src/training/matrix_diverse_lookback_optimizer.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/unified_data_orchestrator.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/timeframe_relevance_analyzer.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/comprehensive_sr_training_pipeline.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/dual_model_system.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/performance_comparison.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps_1_7_comprehensive_executor.py": [
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/enhanced_training_manager_backup.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/adaptive_optimizer.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/demo_pipeline_execution.py": [
+            "import datetime as datetime",
+            "import asyncio"
+          ],
+          "/workspace/src/training/launcher_integration_patch.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/optimized_feature_selection_manager.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/feature_selection_manager.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/progress_manager.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/comprehensive_pipeline_executor.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/wavelet_feature_selection_demo.py": [
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/multi_output_model_trainer.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/calibration_manager.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/model_probability_generator.py": [
+            "import datetime as datetime",
+            "import logging"
+          ],
+          "/workspace/src/training/training_orchestrator.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/advanced_neural_models.py": [
+            "import numpy as np",
+            "import logging"
+          ],
+          "/workspace/src/training/comprehensive_feature_optimizer.py": [
+            "import numpy as np",
+            "import logging",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/model_specific_pruning.py": [
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/matrix_enhancement_manager.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/factory.py": [
+            "import copy"
+          ],
+          "/workspace/src/training/training_manager.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/enhanced_matrix_gpu_integration.py": [
+            "import copy",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/enhanced_coarse_optimizer.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/hmm_regime_barrier_optimizer.py": [
+            "import numpy as np",
+            "import datetime as datetime",
+            "import logging"
+          ],
+          "/workspace/src/training/ensemble_manager.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/data_quality_monitor.py": [
+            "import json",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/model_training_integrator.py": [
+            "import os.path",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/di_training_manager.py": [
+            "import os.path"
+          ],
+          "/workspace/src/training/probability_calculators.py": [
+            "import numpy as np",
+            "import logging"
+          ],
+          "/workspace/src/training/wavelet_feature_selection_workflow.py": [
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/data_efficiency_optimizer.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/optimization_manager.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/validator.py": [
+            "import copy"
+          ],
+          "/workspace/src/training/tpsl_optimizer.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/vectorized_training_pipeline.py": [
+            "import copy",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/enhanced_optimization_orchestrator.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/enhanced_multi_timeframe_optimizer.py": [
+            "import numpy as np",
+            "import copy",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/data_manager.py": [
+            "import copy",
+            "import os.path",
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/probabilistic_bayesian_optimizer.py": [
+            "import numpy as np",
+            "import logging"
+          ],
+          "/workspace/src/training/diverse_lookback_optimizer.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/wavelet_caching_workflow.py": [
+            "import copy",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/optimization/cached_optimizer.py": [
+            "import json",
+            "import os.path",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/optimization/transfer_learning_system.py": [
+            "import json",
+            "import os.path",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/optimization/progressive_optimizer.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/optimization/problem_specific_strategies.py": [
+            "import numpy as np"
+          ],
+          "/workspace/src/training/optimization/parallel_optimizer.py": [
+            "import asyncio"
+          ],
+          "/workspace/src/training/optimization/rollback_manager.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/optimization/computational_optimization_manager.py": [
+            "import json",
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/optimization/advanced_surrogate_models.py": [
+            "import copy",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/optimization/adaptive_trial_allocator.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/multi_timeframe_hmm_ensemble.py": [
+            "import copy",
+            "import os.path",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/fractional_feature_selector.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step13_analyst_ensemble_creation_validator.py": [
+            "import os.path"
+          ],
+          "/workspace/src/training/steps/step9_5_hmm_lm_generalist_training.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step20_ab_testing_validator.py": [
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step2_5_sr_optimization.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step14_tactician_labeling_validator.py": [
+            "import os.path",
+            "import numpy as np",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step5_hmm_based_training_validator.py": [
+            "import os.path",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step10_unified_regime_intelligence.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import logging",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step18_walk_forward_validation_validator.py": [
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step14_tactician_labeling.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step4_triple_barrier_method.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step5_labeling.py": [
+            "import datetime as datetime",
+            "import logging",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/hmm_feature_enhancer.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step1_5_data_converter.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import logging",
+            "import copy",
+            "import argparse",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step4_regime_data_splitting_validator.py": [
+            "import json",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/steps/step2_data_reading.py": [
+            "import datetime as datetime",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step20_ab_testing.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization_new.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/steps/enhanced_step1_data_collection.py": [
+            "import json",
+            "import os.path",
+            "import logging",
+            "import pandas as pd",
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step19_monte_carlo_validation_validator.py": [
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step9_hmm_based_training.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import logging",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step3_parameter_optimization.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step16_confidence_calibration.py": [
+            "import copy",
+            "import os.path",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step21_saving.py": [
+            "import datetime as datetime",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step3_parameter_optimization_validator.py": [
+            "import json",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/steps/step1_5_data_converter_validator.py": [
+            "import os.path",
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step3_5_final_regime_clustering.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/combined_fractional_system.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step6_feature_interaction_engineering.py": [
+            "import numpy as np",
+            "import datetime as datetime",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step5_labeling_validator.py": [
+            "import json",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/steps/step3_hmm_regime_discovery.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import logging",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step10_unified_regime_intelligence_validator.py": [
+            "import os.path",
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/vectorized_advanced_feature_engineering.py": [
+            "import datetime as datetime",
+            "import json",
+            "import os.path",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/precompute_wavelet_features.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step6_feature_engineering.py": [
+            "import datetime as datetime",
+            "import logging",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step1_data_collection_validator.py": [
+            "import os.path",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step21_saving_validator.py": [
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step6_feature_engineering_validator.py": [
+            "import json",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/steps/step2_data_reading_validator.py": [
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step2_feature_engineering_validator.py": [
+            "import numpy as np",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step19_monte_carlo_validation.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/unified_data_loader.py": [
+            "import os.path",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step11_analyst_creation.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import copy",
+            "import pandas as pd",
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step12_analyst_enhancement_validator.py": [
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step9_5_multi_timeframe_hmm_ensemble.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import os.path",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/vectorized_labelling_orchestrator.py": [
+            "import datetime as datetime",
+            "import json",
+            "import os.path",
+            "import logging",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/integrated_data_quality_pipeline.py": [
+            "import os.path"
+          ],
+          "/workspace/src/training/steps/step9_hmm_based_training_enhanced.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/enhanced_step1_5_data_converter.py": [
+            "import json",
+            "import os.path",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/sr_outcome_model_trainer.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step1_data_collection.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import logging",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step12_analyst_enhancement.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/raw_data_quality_checker.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization_validator.py": [
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step3_5_final_regime_clustering_validator.py": [
+            "import json",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/steps/step18_walk_forward_validation.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step15_tactician_specialist_training.py": [
+            "import datetime as datetime",
+            "import logging",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step15_tactician_specialist_training_validator.py": [
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step5_regime_data_splitting_validator.py": [
+            "import os.path"
+          ],
+          "/workspace/src/training/steps/fractional_differentiation.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step4_regime_data_splitting.py": [
+            "import numpy as np",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step13_analyst_ensemble_creation.py": [
+            "import copy",
+            "import os.path",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/steps/step8_regime_data_splitting.py": [
+            "import numpy as np",
+            "import datetime as datetime",
+            "import logging",
+            "import os.path"
+          ],
+          "/workspace/src/training/steps/step7_enhanced_matrix_operations.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import logging",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization/evaluation_engine.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization/advanced_optimization_engine.py": [
+            "import numpy as np",
+            "import copy",
+            "import logging"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization_enhanced.py": [
+            "import numpy as np",
+            "import logging"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization.py": [
+            "import numpy as np",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization/optimized_step17_implementation.py": [
+            "import numpy as np",
+            "import datetime as datetime",
+            "import copy",
+            "import logging"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization/comprehensive_parameter_integration.py": [
+            "import datetime as datetime",
+            "import logging",
+            "import os.path"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization/sr_optuna_optimization.py": [
+            "import numpy as np",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization/efficiency_optimizer.py": [
+            "import os.path",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization/step17_probabilistic_bayesian_optimization.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import logging",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py": [
+            "import copy",
+            "import numpy as np",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step1/missing_data_downloader_and_gap_filler.py": [
+            "import datetime as datetime",
+            "import logging",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step1/data_quality_dashboard.py": [
+            "import json",
+            "import datetime as datetime",
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step1/validate_and_fix_aggtrades_format.py": [
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step1/comprehensive_gap_filler.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step1/aggtrades_validator.py": [
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step1/step1_orchestrator.py": [
+            "import datetime as datetime",
+            "import os.path"
+          ],
+          "/workspace/src/training/steps/step1/data_resampler.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step1/run_step1.py": [
+            "import datetime as datetime",
+            "import argparse"
+          ],
+          "/workspace/src/training/steps/step1/gap_filler_pipeline.py": [
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step1/data_gap_detector.py": [
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step1/data_quality_monitor.py": [
+            "import datetime as datetime",
+            "import json",
+            "import os.path",
+            "import copy",
+            "import pandas as pd",
+            "import asyncio"
+          ],
+          "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py": [
+            "import copy",
+            "import numpy as np",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_specific_triple_barrier_optimizer.py": [
+            "import datetime as datetime",
+            "import logging"
+          ],
+          "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_aware_triple_barrier_labeling.py": [
+            "import copy",
+            "import numpy as np",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/fractional_triple_barrier_labeling.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/profit_based_feature_engineering.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/training/steps/multi_timeframe_training/multi_timeframe_training_manager.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/steps/analyst_training_components/regime_specific_tpsl_optimizer.py": [
+            "import os.path",
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/training/steps/data_preparation_components/aggtrades_data_formatting.py": [
+            "import os.path"
+          ],
+          "/workspace/src/training/steps/data_preparation_components/training_validation_config.py": [
+            "import os.path"
+          ],
+          "/workspace/src/training/core/checkpoint_manager.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/core/stage_context.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/core/pipeline_base.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/training/core/pipeline_orchestrator.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/core/generic_base.py": [
+            "import copy"
+          ],
+          "/workspace/src/core/config_service.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import os.path"
+          ],
+          "/workspace/src/config/training_modes.py": [
+            "import copy"
+          ],
+          "/workspace/src/config/computational_optimization_config.py": [
+            "import copy"
+          ],
+          "/workspace/src/config/environment.py": [
+            "import os.path"
+          ],
+          "/workspace/src/config/config_manager.py": [
+            "import copy"
+          ],
+          "/workspace/src/config/typed_config.py": [
+            "import logging"
+          ],
+          "/workspace/src/config/enhanced_prediction_service_config.py": [
+            "import copy"
+          ],
+          "/workspace/src/utils/observability.py": [
+            "import logging"
+          ],
+          "/workspace/src/utils/data_quality_framework.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/vif_calculator.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/model_performance_monitor.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/utils/state_manager.py": [
+            "import asyncio"
+          ],
+          "/workspace/src/utils/statistical_distribution_validation.py": [
+            "import numpy as np"
+          ],
+          "/workspace/src/utils/async_utils.py": [
+            "import json",
+            "import asyncio"
+          ],
+          "/workspace/src/utils/vif_validation_decorators.py": [
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/enhanced_config_management.py": [
+            "import logging"
+          ],
+          "/workspace/src/utils/time_utils.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/data_preprocessing.py": [
+            "import copy",
+            "import logging"
+          ],
+          "/workspace/src/utils/feature_output_validator.py": [
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/intelligent_feature_cache.py": [
+            "import json",
+            "import logging"
+          ],
+          "/workspace/src/utils/parallel_processing_optimizer.py": [
+            "import copy",
+            "import numpy as np",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/decorators.py": [
+            "import copy",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/data_loader.py": [
+            "import os.path",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/enhanced_memory_management.py": [
+            "import copy",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/standardized_model_manager.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/advanced_decorators.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/training_pipeline_decorators.py": [
+            "import os.path",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/enhanced_decorators.py": [
+            "import os.path",
+            "import datetime as datetime",
+            "import logging",
+            "import asyncio"
+          ],
+          "/workspace/src/utils/standardized_config_manager.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/enhanced_mlflow_integration.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/purged_kfold.py": [
+            "import numpy as np"
+          ],
+          "/workspace/src/utils/centralized_decorators.py": [
+            "import numpy as np",
+            "import copy",
+            "import logging"
+          ],
+          "/workspace/src/utils/config_loader.py": [
+            "import os.path"
+          ],
+          "/workspace/src/utils/centralized_decorators_v2.py": [
+            "import logging"
+          ],
+          "/workspace/src/utils/enhanced_pipeline_decorators.py": [
+            "import datetime as datetime",
+            "import os.path"
+          ],
+          "/workspace/src/utils/error_handler.py": [
+            "import logging",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/data_validation.py": [
+            "import copy",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/standardized_error_handler.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/validator_orchestrator.py": [
+            "import os.path"
+          ],
+          "/workspace/src/utils/hmm_composite_manager.py": [
+            "import os.path"
+          ],
+          "/workspace/src/utils/data_optimizer.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/configuration_security.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/security_framework.py": [
+            "import json",
+            "import datetime as datetime",
+            "import copy",
+            "import logging"
+          ],
+          "/workspace/src/utils/enhanced_missing_value_handler.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/trading_decorators.py": [
+            "import copy"
+          ],
+          "/workspace/src/utils/data_formatting_framework.py": [
+            "import copy",
+            "import os.path",
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/enhanced_data_quality_validator.py": [
+            "import numpy as np",
+            "import datetime as datetime",
+            "import logging",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/quality_alert_system.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import os.path"
+          ],
+          "/workspace/src/utils/mlflow_utils.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/base_validator.py": [
+            "import os.path",
+            "import logging"
+          ],
+          "/workspace/src/utils/feature_engineering_validation.py": [
+            "import numpy as np"
+          ],
+          "/workspace/src/utils/pipeline_standards.py": [
+            "import datetime as datetime",
+            "import logging",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/utils/enhanced_error_handling.py": [
+            "import logging",
+            "import asyncio"
+          ],
+          "/workspace/src/utils/prometheus_metrics.py": [
+            "import logging"
+          ],
+          "/workspace/src/utils/decorator_registry.py": [
+            "import datetime as datetime",
+            "import logging"
+          ],
+          "/workspace/src/utils/steps_1_7_compatibility_framework.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/model_manager.py": [
+            "import os.path",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/database_security.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/utils/enhanced_outlier_handler.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/utils/enhanced_error_handler.py": [
+            "import copy",
+            "import os.path",
+            "import logging"
+          ],
+          "/workspace/src/utils/logger.py": [
+            "import datetime as datetime",
+            "import logging",
+            "import os.path"
+          ],
+          "/workspace/src/utils/lookahead_bias_detector.py": [
+            "import copy",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/cross_step_validation.py": [
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/utils/data_type_optimizer.py": [
+            "import copy",
+            "import logging"
+          ],
+          "/workspace/src/strategist/strategist_backup.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/strategist/strategist.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/strategist/utils.py": [
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/validation/critical_path_validators.py": [
+            "import copy",
+            "import logging"
+          ],
+          "/workspace/src/analyst/order_book_analyzer.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/analyst/advanced_feature_engineering.py": [
+            "import copy",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/analyst/feature_engineering_orchestrator.py": [
+            "import copy",
+            "import os.path",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/analyst/meta_labeling_system.py": [
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/analyst/autoencoder_feature_generator.py": [
+            "import os.path",
+            "import logging",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/analyst/enhanced_prediction_integrator.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/analyst/predictive_ensembles.py": [
+            "import copy",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/analyst/regime_runtime.py": [
+            "import os.path",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/analyst/liquidation_risk_model.py": [
+            "import datetime as datetime"
+          ],
+          "/workspace/src/analyst/multi_timeframe_feature_engineering.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/analyst/dynamic_regime_mapper.py": [
+            "import os.path",
+            "import datetime as datetime"
+          ],
+          "/workspace/src/analyst/enhanced_regime_predictor.py": [
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/analyst/decision_aggregator.py": [
+            "import numpy as np"
+          ],
+          "/workspace/src/analyst/data_utils.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/analyst/regime_expert_orchestrator.py": [
+            "import datetime as datetime",
+            "import asyncio",
+            "import pandas as pd"
+          ],
+          "/workspace/src/analyst/meta_label_relevance.py": [
+            "import copy",
+            "import os.path",
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/analyst/ml_confidence_predictor.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/analyst/unified_regime_classifier.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np",
+            "import asyncio"
+          ],
+          "/workspace/src/analyst/analyst.py": [
+            "import copy",
+            "import datetime as datetime",
+            "import numpy as np"
+          ],
+          "/workspace/src/analyst/predictive_ensembles/multi_timeframe_ensemble.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/analyst/predictive_ensembles/ensemble_orchestrator.py": [
+            "import copy",
+            "import os.path",
+            "import pandas as pd"
+          ],
+          "/workspace/src/analyst/predictive_ensembles/regime_ensembles/volatile_regime_ensemble.py": [
+            "import numpy as np",
+            "import pandas as pd"
+          ],
+          "/workspace/src/analyst/predictive_ensembles/regime_ensembles/base_ensemble.py": [
+            "import datetime as datetime",
+            "import os.path",
+            "import logging",
+            "import copy",
+            "import pandas as pd",
+            "import numpy as np"
+          ],
+          "/workspace/src/database/efficient_features_database.py": [
+            "import copy",
+            "import os.path",
+            "import datetime as datetime",
+            "import pandas as pd"
+          ],
+          "/workspace/src/database/influxdb_manager.py": [
+            "import copy",
+            "import pandas as pd"
+          ],
+          "/workspace/src/database/precomputed_features_manager.py": [
+            "import datetime as datetime",
+            "import json",
+            "import os.path",
+            "import copy",
+            "import pandas as pd"
+          ],
+          "/workspace/src/database/migration_utils.py": [
+            "import json",
+            "import datetime as datetime",
+            "import os.path"
+          ],
+          "/workspace/src/database/sqlite_manager.py": [
+            "import json",
+            "import datetime as datetime",
+            "import asyncio"
+          ]
+        },
+        "summary": {
+          "datetime": 208,
+          "argparse": 3,
+          "asyncio": 61,
+          "pandas": 146,
+          "copy": 161,
+          "numpy": 162,
+          "os.path": 90,
+          "json": 25,
+          "logging": 72
+        }
+      }
+    },
+    "circular_imports": {
+      "tool": "circular_imports",
+      "description": "Circular Import Detection",
+      "success": true,
+      "return_code": 0,
+      "execution_time": 1.661757469177246,
+      "stdout": "Analyzing circular imports...\n============================================================\nBuilding import graph...\nError analyzing /workspace/src/config.py: invalid syntax (<unknown>, line 14)\nError analyzing /workspace/src/paper_trader.py: invalid syntax (<unknown>, line 17)\nError analyzing /workspace/src/training/model_trainer.py: unindent does not match any outer indentation level (<unknown>, line 532)\nError analyzing /workspace/src/training/step_orchestrator.py: unexpected indent (<unknown>, line 85)\nError analyzing /workspace/src/training/integration_guide.py: unterminated string literal (detected at line 229) (<unknown>, line 229)\nError analyzing /workspace/src/exchange/binance.py: invalid syntax (<unknown>, line 62)\nError analyzing /workspace/src/utils/model_manager.py: invalid syntax (<unknown>, line 234)\nError analyzing /workspace/src/training/steps/step18_walk_forward_validation_validator.py: invalid syntax (<unknown>, line 11)\nError analyzing /workspace/src/training/steps/step19_monte_carlo_validation_validator.py: invalid syntax (<unknown>, line 120)\nError analyzing /workspace/src/training/steps/step21_saving.py: unexpected indent (<unknown>, line 248)\nError analyzing /workspace/src/training/steps/market_analysis/step03_5_final_regime_clustering.py: unexpected indent (<unknown>, line 881)\nError analyzing /workspace/src/training/steps/model_training/step04_5_triple_barrier_method.py: unmatched ')' (<unknown>, line 340)\nError analyzing /workspace/src/training/steps/validation/step19_monte_carlo_validation.py: unmatched ')' (<unknown>, line 243)\nError analyzing /workspace/src/training/steps/validation/step17_final_parameters_optimization.py: unmatched ')' (<unknown>, line 1686)\nError analyzing /workspace/src/training/steps/validation/step18_walk_forward_validation.py: unmatched ')' (<unknown>, line 196)\n\nTotal modules analyzed: 606\nTotal import relationships: 1503\nCircular imports found: 0\n\nFull report saved to: /workspace/code_quality/reports/circular_imports_report_20250903_162536.json\n",
+      "stderr": "",
+      "report_data": {
+        "total_modules": 606,
+        "total_imports": 1503,
+        "circular_imports": {
+          "count": 0,
+          "cycles": []
+        },
+        "import_depths": {
+          "max_depth": 4,
+          "average_depth": 0.7240963855421687,
+          "deep_modules": []
+        },
+        "highly_imported": [
+          {
+            "module": "src.utils.logger",
+            "imported_by_count": 368,
+            "imported_by": [
+              "training.optimization.computational_optimization_manager",
+              "utils.feature_engineering_validation",
+              "database.firestore_manager",
+              "training.steps.data_preparation.step02_5_sr_optimization",
+              "pipelines.live_trading_pipeline"
+            ]
+          },
+          {
+            "module": "src.core.decorators",
+            "imported_by_count": 223,
+            "imported_by": [
+              "training.optimization.computational_optimization_manager",
+              "training.steps.migration_templates.step17_final_parameters_optimization_template",
+              "training.steps.step1.data_gap_detector",
+              "utils.vif_calculator",
+              "training.steps.analyst_ensemble_components.ensemble_aggregator"
+            ]
+          },
+          {
+            "module": "src.utils.warning_symbols",
+            "imported_by_count": 108,
+            "imported_by": [
+              "components.modular_supervisor",
+              "training.optimization.computational_optimization_manager",
+              "training.optimization",
+              "database.firestore_manager",
+              "training.steps.step12_analyst_enhancement_validator"
+            ]
+          },
+          {
+            "module": "src.core.domain",
+            "imported_by_count": 62,
+            "imported_by": [
+              "training.optimization.computational_optimization_manager",
+              "training.steps.step03_5_final_regime_clustering_validator",
+              "pipelines.components.monitoring_manager",
+              "training.steps.step1.data_gap_detector",
+              "training.steps.step1.data_quality_monitor"
+            ]
+          },
+          {
+            "module": "src.training.base_step",
+            "imported_by_count": 46,
+            "imported_by": [
+              "training.tests.test_pipeline_integration",
+              "training.steps.migration_templates.step17_final_parameters_optimization_template",
+              "training.steps.migration_templates.step15_tactician_specialist_training_template",
+              "training.steps.migration_templates.step01_5_data_converter_template",
+              "training.steps.migration_templates.step01_data_collection_template"
+            ]
+          },
+          {
+            "module": "src.utils.common_operations",
+            "imported_by_count": 39,
+            "imported_by": [
+              "training.steps.step03_5_final_regime_clustering_validator",
+              "training.steps.validation.step20_ab_testing",
+              "training.steps.step13_analyst_ensemble_creation_validator",
+              "training.steps.step09_5_hmm_lm_generalist_training",
+              "training.steps.step02_5_sr_optimization_validator"
+            ]
+          },
+          {
+            "module": "core.decorators.logging",
+            "imported_by_count": 35,
+            "imported_by": [
+              "training.steps.vectorized_labelling_orchestrator",
+              "training.steps.step17_final_parameters_optimization.comprehensive_parameter_integration",
+              "training.steps.step17_final_parameters_optimization.step17_probabilistic_bayesian_optimization",
+              "training.steps.step1.missing_data_downloader_and_gap_filler",
+              "training.steps.enhanced_step1_data_collection"
+            ]
+          },
+          {
+            "module": "src.config",
+            "imported_by_count": 32,
+            "imported_by": [
+              "database.efficient_features_database",
+              "database.influxdb_manager",
+              "analyst.predictive_ensembles.ensemble_orchestrator",
+              "training.steps.step11_analyst_creation",
+              "database.firestore_manager"
+            ]
+          },
+          {
+            "module": "src.utils.pipeline_standards",
+            "imported_by_count": 26,
+            "imported_by": [
+              "utils.feature_engineering_validation",
+              "utils.vif_calculator",
+              "training.steps.model_training.step10_unified_regime_intelligence",
+              "training.steps.step11_analyst_creation",
+              "training.steps.step04_regime_data_splitting"
+            ]
+          },
+          {
+            "module": "src.utils.base_validator",
+            "imported_by_count": 12,
+            "imported_by": [
+              "training.steps.step03_5_final_regime_clustering_validator",
+              "training.steps.step05_labeling_validator",
+              "training.steps.step15_tactician_specialist_training_validator",
+              "training.steps.step04_regime_data_splitting_validator",
+              "training.steps.step06_feature_engineering_validator"
+            ]
+          }
+        ],
+        "highly_importing": [
+          {
+            "module": "training.enhanced_training_manager",
+            "imports_count": 20,
+            "imports": [
+              "src.training.steps",
+              "src.utils.statistical_distribution_validation",
+              "src.training.steps.step15_tactician_specialist_training",
+              "src.utils.cross_step_validation",
+              "src.training.enhanced_training_manager_optimized"
+            ]
+          },
+          {
+            "module": "ares_pipeline",
+            "imports_count": 19,
+            "imports": [
+              "src.config",
+              "src.strategist.strategist",
+              "src.supervisor.supervisor",
+              "src.utils.logger",
+              "src.interfaces.base_interfaces"
+            ]
+          },
+          {
+            "module": "training.steps_1_7_comprehensive_executor",
+            "imports_count": 19,
+            "imports": [
+              "src.training.steps.data_preparation.step01_data_collection",
+              "src.training.steps.step01_5_data_converter_validator",
+              "src.training.steps.market_analysis.step03_hmm_regime_discovery",
+              "src.training.steps.step05_labeling_validator",
+              "src.training.steps.model_training.step05_labeling"
+            ]
+          },
+          {
+            "module": "analyst.ml_confidence_predictor",
+            "imports_count": 11,
+            "imports": [
+              "src.core.decorators",
+              "src.analyst.feature_engineering_orchestrator",
+              "src.analyst.advanced_feature_engineering",
+              "src.config_optuna",
+              "src.utils.logger"
+            ]
+          },
+          {
+            "module": "training.training_orchestrator",
+            "imports_count": 10,
+            "imports": [
+              "src.training.optimization_manager",
+              "src.core.decorators",
+              "src.utils.validator_orchestrator",
+              "src.utils.logger",
+              "src.training.calibration_manager"
+            ]
+          },
+          {
+            "module": "training.steps.step12_analyst_enhancement",
+            "imports_count": 10,
+            "imports": [
+              "src.utils.vif_calculator",
+              "src.training.steps.unified_data_loader",
+              "src.core.decorators",
+              "src.utils.pipeline_standards",
+              "src.config"
+            ]
+          },
+          {
+            "module": "supervisor.coordinator.system_coordinator",
+            "imports_count": 10,
+            "imports": [
+              "src.core.decorators",
+              "supervisor.coordinator.health_monitor",
+              "supervisor.coordinator.circuit_breaker",
+              "supervisor.coordinator.online_learning_manager",
+              "src.utils.logger"
+            ]
+          },
+          {
+            "module": "supervisor.main",
+            "imports_count": 9,
+            "imports": [
+              "src.supervisor.ab_tester",
+              "src.utils.model_manager",
+              "src.supervisor.dependency_container",
+              "src.config",
+              "src.utils.logger"
+            ]
+          },
+          {
+            "module": "tactician.tactics_orchestrator",
+            "imports_count": 9,
+            "imports": [
+              "src.tactician.position_sizer",
+              "src.tactician.position_monitor",
+              "src.tactician.leverage_sizer",
+              "src.utils.logger",
+              "src.tactician.sr_breakout_predictor"
+            ]
+          },
+          {
+            "module": "analyst.di_analyst",
+            "imports_count": 9,
+            "imports": [
+              "src.training.dual_model_system",
+              "src.core.decorators",
+              "src.analyst.feature_engineering_orchestrator",
+              "src.core.injectable_base",
+              "src.interfaces.base_interfaces"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "summary": {
+    "timestamp": "20250903_162535",
+    "project_root": "/workspace/src",
+    "categories_run": [
+      "syntax_imports"
+    ],
+    "tools_summary": {
+      "syntax_fixer": {
+        "success": true,
+        "execution_time": 0.9810969829559326,
+        "error": null
+      },
+      "import_fixer": {
+        "success": true,
+        "execution_time": 0.14118671417236328,
+        "error": null
+      },
+      "circular_imports": {
+        "success": true,
+        "execution_time": 1.661757469177246,
+        "error": null
+      }
+    },
+    "total_execution_time": 2.784041166305542,
+    "successful_tools": 3,
+    "failed_tools": 0
+  }
+}

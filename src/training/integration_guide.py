@@ -103,9 +103,51 @@ async def run_integration_example() -> None:
 
 def show_migration_steps() -> None:
     """Show step-by-step migration from existing to optimized system."""
-    logger = system_logger.getChild('MigrationGuide')
-    logger.info('📋 Migration Steps from Existing to Optimized Training:')
-    steps = ['1. Install additional dependencies (already in pyproject.toml):', '   - pyarrow (for efficient data storage)', '   - psutil (for memory monitoring)', '', '2. Update configuration to include optimization settings:', '   - Add computational_optimization section to config', '   - Set parallelization.max_workers based on CPU cores', '   - Configure memory_management.memory_threshold', '', '3. Replace training manager import:', '   OLD: from src.training.core.training_manager import create_training_manager', '   NEW: from src.training.enhanced_training_manager_optimized import EnhancedTrainingManagerOptimized', '', '4. Use factory for easier component creation:', '   from src.training.factory import create_optimized_training_system', '   system = create_optimized_training_system(config)', '', '5. Add memory monitoring (optional but recommended):', "   profiler = system['memory_profiler']", "   profiler.take_snapshot('training_start')", '', '6. Update training execution calls:', '   OLD: manager.execute_enhanced_training(symbol, exchange, timeframe)', '   NEW: manager.execute_optimized_training(symbol, exchange, timeframe)', '', '7. Add cleanup calls:', '   await manager.cleanup()', '   profiler.stop_continuous_monitoring()', '', '8. Monitor performance improvements:', '   - Check execution statistics', '   - Monitor memory usage', '   - Verify cache hit ratios', '', '9. Fine-tune optimization settings based on results:', '   - Adjust parallelization workers', '   - Modify memory thresholds', '   - Configure cache sizes']
+    logger = system_logger.getChild("MigrationGuide")
+
+    logger.info("📋 Migration Steps from Existing to Optimized Training:")
+
+    steps = [
+        "1. Install additional dependencies (already in pyproject.toml):",
+        "   - pyarrow (for efficient data storage)",
+        "   - psutil (for memory monitoring)",
+        "",
+        "2. Update configuration to include optimization settings:",
+        "   - Add computational_optimization section to config",
+        "   - Set parallelization.max_workers based on CPU cores",
+        "   - Configure memory_management.memory_threshold",
+        "",
+        "3. Replace training manager import:",
+        "   OLD: from src.training.core.training_manager import create_training_manager",
+        "   NEW: from src.training.enhanced_training_manager_optimized import EnhancedTrainingManagerOptimized",
+        "",
+        "4. Use factory for easier component creation:",
+        "   from src.training.factory import create_optimized_training_system",
+        "   system = create_optimized_training_system(config)",
+        "",
+        "5. Add memory monitoring (optional but recommended):",
+        "   profiler = system['memory_profiler']",
+        "   profiler.take_snapshot('training_start')",
+        "",
+        "6. Update training execution calls:",
+        "   OLD: manager.execute_enhanced_training(symbol, exchange, timeframe)",
+        "   NEW: manager.execute_optimized_training(symbol, exchange, timeframe)",
+        "",
+        "7. Add cleanup calls:",
+        "   await manager.cleanup()",
+        "   profiler.stop_continuous_monitoring()",
+        "",
+        "8. Monitor performance improvements:",
+        "   - Check execution statistics",
+        "   - Monitor memory usage",
+        "   - Verify cache hit ratios",
+        "",
+        "9. Fine-tune optimization settings based on results:",
+        "   - Adjust parallelization workers",
+        "   - Modify memory thresholds",
+        "   - Configure cache sizes",
+    ]
+
     for step in steps:
         if step.startswith(('OLD:', 'NEW:')):
             logger.info(f'     {step}')

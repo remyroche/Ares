@@ -197,7 +197,8 @@ class FinalParametersOptimizationStepNew:
                 "technical_indicators",
                 "system_monitoring",
                 "training_optimization",
-                "regime_transitions"
+                "regime_transitions",
+                "signal_aggregation"
             ]
 
             for category in categories:
@@ -373,6 +374,9 @@ class FinalParametersOptimizationStepNew:
             elif category == "regime_transitions":
                 # Regime transition parameters
                 base_score = self._evaluate_regime_transitions_params(params, calibration_results)
+            elif category == "signal_aggregation":
+                # Signal aggregation parameters
+                base_score = self._evaluate_signal_aggregation_params(params, calibration_results)
             
             return base_score
 
@@ -697,6 +701,65 @@ class FinalParametersOptimizationStepNew:
                 score += 0.1
         
         return score
+    
+    def _evaluate_signal_aggregation_params(self, params: dict[str, Any], calibration_results: dict[str, Any]) -> float:
+        """Evaluate signal aggregation parameters."""
+        score = 0.0
+        
+        # Check weight balance
+        if all(key in params for key in ["analyst_weight", "tactician_weight", "scenario_weight", "sr_breakout_weight", "regime_weight"]):
+            total_weight = (
+                params["analyst_weight"] + 
+                params["tactician_weight"] + 
+                params["scenario_weight"] + 
+                params["sr_breakout_weight"] + 
+                params["regime_weight"]
+            )
+            # Weights should be reasonable
+            if 1.0 <= total_weight <= 2.5:
+                score += 0.2
+                
+                # Analyst and tactician should have significant weights
+                if params["analyst_weight"] >= 0.3 and params["tactician_weight"] >= 0.3:
+                    score += 0.1
+            else:
+                score += 0.1
+        
+        # Conflict penalty should be moderate
+        if "conflict_penalty_factor" in params:
+            penalty = params["conflict_penalty_factor"]
+            if 0.4 <= penalty <= 0.6:
+                score += 0.2
+            else:
+                score += 0.1
+        
+        # Minimum weights should prevent signal suppression
+        if "min_source_weight" in params:
+            min_weight = params["min_source_weight"]
+            if 0.05 <= min_weight <= 0.15:
+                score += 0.1
+        
+        # Confidence thresholds
+        if "min_signal_confidence" in params and "min_aggregated_confidence" in params:
+            signal_conf = params["min_signal_confidence"]
+            agg_conf = params["min_aggregated_confidence"]
+            if signal_conf < agg_conf and 0.2 <= signal_conf <= 0.4 and 0.4 <= agg_conf <= 0.6:
+                score += 0.2
+            else:
+                score += 0.1
+        
+        # Alignment bonuses should be moderate
+        if "regime_alignment_bonus" in params and "multi_signal_alignment_bonus" in params:
+            regime_bonus = params["regime_alignment_bonus"]
+            multi_bonus = params["multi_signal_alignment_bonus"]
+            if 0.1 <= regime_bonus <= 0.25 and 0.05 <= multi_bonus <= 0.15:
+                score += 0.1
+        
+        # Use multiplicative aggregation for better signal combination
+        if "use_multiplicative" in params and params["use_multiplicative"]:
+            score += 0.1
+        
+        return score
 
     async def _load_calibration_results(
         self, symbol: str, exchange: str, data_dir: str, ) -> dict[str, Any] | None:
@@ -748,7 +811,8 @@ class FinalParametersOptimizationStepNew:
                 "technical_indicators",
                 "system_monitoring",
                 "training_optimization",
-                "regime_transitions"
+                "regime_transitions",
+                "signal_aggregation"
             ]
             for category in expected_categories:
                 if category not in optimization_results:

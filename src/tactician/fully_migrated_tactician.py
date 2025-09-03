@@ -117,13 +117,49 @@ class FullyMigratedTactician:
             if not self.is_initialized:
                 self.logger.error('Tactician not initialized')
                 return self._generate_error_predictions(symbol, timeframe)
-            features = self.scenario_predictor.extract_comprehensive_features(market_data)
-            features = features.reshape(1, -1)
-            scenario_predictions = await self.scenario_predictor.predict_scenarios(features, market_data)
-            trading_decisions = self._make_trading_decisions(scenario_predictions, analyst_confidence, market_data)
-            position_management = self._calculate_position_management(scenario_predictions, trading_decisions, analyst_barriers)
-            result = {'scenario_predictions': scenario_predictions, 'trading_decisions': trading_decisions, 'position_management': position_management, 'metadata': {'symbol': symbol, 'timeframe': timeframe, 'generation_timestamp': datetime.now().isoformat(), 'model_type': 'fully_migrated_tactician', 'analyst_confidence': analyst_confidence, 'n_scenarios': len(self.scenario_predictor.scenarios)}}
-            self.logger.info(f'Generated fully migrated predictions for {symbol}')
+
+            # Extract comprehensive features
+            features = self.scenario_predictor.extract_comprehensive_features(
+                market_data
+            )
+            features = features.reshape(1, -1)  # Reshape for single prediction
+
+            # Generate scenario predictions
+            scenario_predictions = await self.scenario_predictor.predict_scenarios(
+                features,
+                market_data,
+            )
+
+            # Make trading decisions
+            trading_decisions = self._make_trading_decisions(
+                scenario_predictions,
+                analyst_confidence,
+                market_data,
+            )
+
+            # Calculate position sizing and leverage
+            position_management = self._calculate_position_management(
+                scenario_predictions,
+                trading_decisions,
+                analyst_barriers,
+            )
+
+            result = {
+                "scenario_predictions": scenario_predictions,
+                "trading_decisions": trading_decisions,
+                "position_management": position_management,
+                "metadata": {
+                    "symbol": symbol,
+                    "timeframe": timeframe,
+                    "generation_timestamp": datetime.now().isoformat(),
+                    "model_type": "fully_migrated_tactician",
+                    "active_tactician_path": "fully_migrated_scenario_tactician",
+                    "analyst_confidence": analyst_confidence,
+                    "n_scenarios": len(self.scenario_predictor.scenarios),
+                },
+            }
+
+            self.logger.info(f"Generated fully migrated predictions for {symbol}")
             return result
         except Exception as e:
             self.logger.exception(f'❌ Prediction generation failed: {e}')

@@ -323,22 +323,47 @@ class SRDetectionOptimizer:
     async def _calculate_enhanced_performance_score(self, sr_context: dict[str, Any], market_data: pd.DataFrame, target_data: pd.Series | None, target_timeframe: str) -> float:
         """Calculate enhanced performance score with comprehensive S/R validation."""
         try:
-            from src.tactician.sr_backtesting_validator import setup_sr_backtesting_validator
-            validator = await setup_sr_backtesting_validator(self.config)
-            if not validator:
-                self.logger.warning('Backtesting validator not available, using fallback scoring')
-                return self._calculate_fallback_score(sr_context, market_data, target_data)
-            support_levels = sr_context.get('support_levels', [])
-            resistance_levels = sr_context.get('resistance_levels', [])
+            # Import parameter optimizer
+            from src.tactician.sr_parameter_optimizer import (
+                setup_sr_parameter_optimizer,
+            )
+
+            # Initialize parameter optimizer
+            optimizer = await setup_sr_parameter_optimizer(self.config)
+            if not optimizer:
+                self.logger.warning(
+                    "Parameter optimizer not available, using fallback scoring"
+                )
+                return self._calculate_fallback_score(
+                    sr_context, market_data, target_data
+                )
+
+            # Extract S/R levels from context
+            support_levels = sr_context.get("support_levels", [])
+            resistance_levels = sr_context.get("resistance_levels", [])
             all_levels = support_levels + resistance_levels
             if not all_levels:
                 return 0.0
-            current_price = market_data['close'].iloc[-1]
-            backtest_result = await validator.validate_sr_levels(market_data=market_data, sr_levels=all_levels, current_price=current_price)
-            if not backtest_result:
+
+            # Get current price
+            current_price = market_data["close"].iloc[-1]
+
+            # Optimize S/R parameters through backtesting
+            optimization_result = await optimizer.optimize_parameters(
+                market_data=market_data,
+                sr_levels=all_levels,
+            )
+
+            if not optimization_result:
                 return 0.0
-            performance_score = self._calculate_timeframe_specific_score(backtest_result, target_timeframe)
-            if not hasattr(self, 'backtest_results'):
+
+            # Calculate enhanced performance score
+            performance_score = self._calculate_timeframe_specific_score(
+                optimization_result, target_timeframe
+            )
+
+            # Store backtesting results for analysis
+            if not hasattr(self, "backtest_results"):
                 self.backtest_results = []
             self.backtest_results.append({'backtest_result': backtest_result, 'sr_context': sr_context, 'target_timeframe': target_timeframe, 'timestamp': pd.Timestamp.now()})
             return performance_score

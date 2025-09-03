@@ -374,7 +374,7 @@ if __name__ == "__main__":
             "optimized_method_weights": {"fractal": 0.8, "volume": 0.6},
             "optimized_strength_weights": {"volume": 0.7, "price": 0.3},
             "optimized_dbscan_params": {"eps": 0.1, "min_samples": 5},
-            "optimized_timeframe_weights": {"1m": 0.4, "5m": 0.6},
+            "optimized_timeframe_weights": {"15m": 0.3, "1h": 0.3, "4h": 0.25, "1d": 0.15},
             "optimized_advanced_params": {"fibonacci_sensitivity": 0.8}
         }
     }

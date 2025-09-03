@@ -1,9 +1,9 @@
 # src/tactician/position_division_strategy.py
 
-""""
+"""
 Position Division Strategy for tactical position management.
 Defines strategies for multiple positions, take profit, stop loss, and position closure.
-""""
+"""
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -18,7 +18,7 @@ import copy
 )
 
 class PositionDivisionStrategy:
-    """"
+    """
     Position Division Strategy for managing multiple positions and their lifecycle.
 
     Features:
@@ -26,15 +26,15 @@ class PositionDivisionStrategy:
     - Take profit and stop loss strategies
     - Position closure logic
     - Risk management rules
-    """"
+    """
 
     def __init__(self, config: Dict[str, Any]) -> None:
-        """"
+        """
         Initialize the position division strategy.
 
         Args:
             config: Configuration dictionary
-        """"
+        """
         self.config = config
         self.logger = system_logger.getChild("PositionDivisionStrategy")
 
@@ -52,12 +52,12 @@ class PositionDivisionStrategy:
 
     @handles_errors(fallback=False)
     async def initialize(self) -> bool:
-        """"
+        """
         Initialize the position division strategy.
 
         Returns:
             bool: True if initialization successful
-        """"
+        """
         try:
             self.logger.info("Initializing Position Division Strategy...")
 
@@ -79,12 +79,12 @@ class PositionDivisionStrategy:
             return False
 
     def _validate_configuration(self) -> bool:
-        """"
+        """
         Validate position division strategy configuration.
 
         Returns:
             bool: True if configuration is valid
-        """"
+        """
         try:
             if self.max_positions <= 0:
                 self.logger.error(invalid("Max positions must be positive"))
@@ -115,7 +115,7 @@ class PositionDivisionStrategy:
         confidence_score: float,
         market_conditions: Dict[str, Any]
     ) -> Optional[Dict[str, Any]]:
-        """"
+        """
         Calculate position division strategy.
 
         Args:
@@ -125,7 +125,7 @@ class PositionDivisionStrategy:
 
         Returns:
             Dict: Position division strategy or None if failed
-        """"
+        """
         try:
             self.logger.info("Calculating position division strategy...")
 
@@ -157,7 +157,7 @@ class PositionDivisionStrategy:
             return None
 
     def _calculate_num_positions(self, confidence_score: float) -> int:
-        """"
+        """
         Calculate number of positions based on confidence score.
 
         Args:
@@ -165,7 +165,7 @@ class PositionDivisionStrategy:
 
         Returns:
             int: Number of positions
-        """"
+        """
         try:
             # Higher confidence = fewer positions (more concentrated)
             # Lower confidence = more positions (more diversified)
@@ -191,7 +191,7 @@ class PositionDivisionStrategy:
         num_positions: int,
         confidence_score: float
     ) -> List[float]:
-        """"
+        """
         Calculate position sizes for each position.
 
         Args:
@@ -201,7 +201,7 @@ class PositionDivisionStrategy:
 
         Returns:
             List[float]: Position sizes
-        """"
+        """
         try:
             position_sizes = []
 
@@ -232,7 +232,7 @@ class PositionDivisionStrategy:
             return [total_capital * 0.1]  # Fallback to 10%
 
     def _calculate_tp_sl_levels(self, market_conditions: Dict[str, Any]) -> Dict[str, List[float]]:
-        """"
+        """
         Calculate take profit and stop loss levels.
 
         Args:
@@ -240,7 +240,7 @@ class PositionDivisionStrategy:
 
         Returns:
             Dict: Take profit and stop loss levels
-        """"
+        """
         try:
             # Get market volatility
             volatility = market_conditions.get("volatility", 0.02)  # Default 2%
@@ -279,7 +279,7 @@ class PositionDivisionStrategy:
         position_id: str,
         position_data: Dict[str, Any]
     ) -> bool:
-        """"
+        """
         Add a new position to the strategy.
 
         Args:
@@ -288,7 +288,7 @@ class PositionDivisionStrategy:
 
         Returns:
             bool: True if position added successfully
-        """"
+        """
         try:
             # Check if we can add more positions
             if len(self.active_positions) >= self.max_positions:
@@ -316,7 +316,7 @@ class PositionDivisionStrategy:
         close_reason: str,
         pnl: float
     ) -> bool:
-        """"
+        """
         Close a position and record its performance.
 
         Args:
@@ -326,7 +326,7 @@ class PositionDivisionStrategy:
 
         Returns:
             bool: True if position closed successfully
-        """"
+        """
         try:
             if position_id not in self.active_positions:
                 self.logger.warning(warning(f"Position {position_id} not found"))
@@ -367,7 +367,7 @@ class PositionDivisionStrategy:
             return False
 
     def _calculate_hold_time(self, entry_time: str) -> float:
-        """"
+        """
         Calculate position hold time in seconds.
 
         Args:
@@ -375,7 +375,7 @@ class PositionDivisionStrategy:
 
         Returns:
             float: Hold time in seconds
-        """"
+        """
         try:
             if not entry_time:
                 return 0.0
@@ -389,12 +389,12 @@ class PositionDivisionStrategy:
             return 0.0
 
     def _update_performance_metrics(self, closure_record: Dict[str, Any]) -> None:
-        """"
+        """
         Update performance metrics based on closed position.
 
         Args:
             closure_record: Position closure record
-        """"
+        """
         try:
             # Update basic metrics
             total_positions = len(self.position_history)
@@ -415,16 +415,16 @@ class PositionDivisionStrategy:
             self.logger.error(failed(f"❌ Error updating performance metrics: {e}"))
 
     def get_active_positions(self) -> Dict[str, Dict[str, Any]]:
-        """"
+        """
         Get all active positions.
 
         Returns:
             Dict[str, Dict[str, Any]]: Active positions
-        """"
+        """
         return self.active_positions.copy()
 
     def get_position_history(self, limit: Optional[int] = None) -> List[Dict[str, Any]]:
-        """"
+        """
         Get position history.
 
         Args:
@@ -432,7 +432,7 @@ class PositionDivisionStrategy:
 
         Returns:
             List[Dict[str, Any]]: Position history
-        """"
+        """
         try:
             if limit:
                 return self.position_history[-limit:]
@@ -443,21 +443,21 @@ class PositionDivisionStrategy:
             return []
 
     def get_performance_metrics(self) -> Dict[str, Any]:
-        """"
+        """
         Get performance metrics.
 
         Returns:
             Dict[str, Any]: Performance metrics
-        """"
+        """
         return self.strategy_performance.copy()
 
     def get_strategy_summary(self) -> Dict[str, Any]:
-        """"
+        """
         Get strategy summary.
 
         Returns:
             Dict[str, Any]: Strategy summary
-        """"
+        """
         try:
             return {
                 "active_positions": len(self.active_positions),
@@ -474,9 +474,9 @@ class PositionDivisionStrategy:
             return {}
 
     async def cleanup(self) -> None:
-        """"
+        """
         Cleanup resources.
-        """"
+        """
         try:
             self.logger.info("Cleaning up Position Division Strategy...")
 

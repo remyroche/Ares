@@ -4,7 +4,7 @@
 This module provides comprehensive profit-based feature engineering capabilities
 for financial time series data, leveraging profit percentage information from
 triple barrier labeling to create rich feature sets for machine learning models.
-""""
+"""
 
 import time
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -98,7 +98,7 @@ class ProfitBasedFeatureEngineering:
     This class provides extensive feature engineering capabilities based on profit
     percentage data from triple barrier labeling. It includes multiple feature
     categories with performance optimizations and comprehensive validation.
-    """"
+    """
 
     def __init__(
         self,
@@ -116,7 +116,7 @@ class ProfitBasedFeatureEngineering:
             price_column: Name of the price column
             use_numba: Whether to use Numba acceleration
             memory_efficient: Whether to use memory-efficient operations
-        """"
+        """
         self.profit_column = profit_column
         self.volume_column = volume_column
         self.price_column = price_column
@@ -169,7 +169,7 @@ class ProfitBasedFeatureEngineering:
             
         Returns:
             DataFrame with all profit-based features added
-        """"
+        """
         start_time = time.time()
         
         # Generate unique correlation ID for tracking
@@ -251,7 +251,7 @@ class ProfitBasedFeatureEngineering:
         """Apply basic profit features."
         
         Features: profit, profit², profit³, profit_abs
-        """"
+        """
         profit_pcts = data[self.profit_column].values
         
         # Basic profit features
@@ -270,7 +270,7 @@ class ProfitBasedFeatureEngineering:
         """Apply categorical profit features."
         
         Features: profit_bins, profit_sign, profit_magnitude
-        """"
+        """
         profit_pcts = data[self.profit_column].values
         
         # Profit sign (positive/negative)
@@ -303,7 +303,7 @@ class ProfitBasedFeatureEngineering:
         """Apply risk-reward features."
         
         Features: profit_sharpe, profit_sortino, profit_risk_adjusted
-        """"
+        """
         profit_pcts = data[self.profit_column].values
         
         # Calculate rolling statistics for risk-reward metrics
@@ -342,7 +342,7 @@ class ProfitBasedFeatureEngineering:
         """Apply momentum features."
         
         Features: profit_momentum, profit_acceleration
-        """"
+        """
         profit_pcts = data[self.profit_column].values
         
         # Momentum features for different windows
@@ -377,7 +377,7 @@ class ProfitBasedFeatureEngineering:
         """Apply volatility features."
         
         Features: profit_volatility, profit_volatility_ratio
-        """"
+        """
         profit_pcts = data[self.profit_column].values
         
         # Volatility features for different windows
@@ -417,7 +417,7 @@ class ProfitBasedFeatureEngineering:
         """Apply volume-based profit features."
         
         Features: profit_volume_weighted, profit_volume_correlation
-        """"
+        """
         profit_pcts = data[self.profit_column].values
         
         # Volume-weighted profit
@@ -454,7 +454,7 @@ class ProfitBasedFeatureEngineering:
         """Apply rolling profit features."
         
         Features: profit_rolling_mean, profit_rolling_std, profit_rolling_max
-        """"
+        """
         profit_pcts = data[self.profit_column].values
         
         # Rolling features for different windows
@@ -504,7 +504,7 @@ class ProfitBasedFeatureEngineering:
             
         Returns:
             Dictionary with feature summary information
-        """"
+        """
         profit_features = [col for col in data.columns if self.profit_column in col and col != self.profit_column]
         
         # Categorize features
@@ -557,7 +557,7 @@ class ProfitBasedFeatureEngineering:
             
         Returns:
             List of selected feature names
-        """"
+        """
         profit_features = [col for col in data.columns if self.profit_column in col and col != self.profit_column]
         
         if method == "correlation":
@@ -639,7 +639,7 @@ def benchmark_profit_feature_engineering(data: pd.DataFrame) -> Dict[str, float]
         
     Returns:
         Dictionary with benchmark results
-    """"
+    """
     # Test with Numba
     start_time = time.time()
     feature_eng_numba = ProfitBasedFeatureEngineering(use_numba=True)
@@ -669,7 +669,7 @@ if __name__ == "__main__":
 import copy
     
     # Create sample data
-    dates = pd.date_range("2024-01-01", periods=1000, freq="1min")
+dates = pd.date_range("2024-01-01", periods=1000, freq="1min")
     data = pd.DataFrame({
         'open': np.random.uniform(100, 110, 1000),
         'high': np.random.uniform(105, 115, 1000),

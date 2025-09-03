@@ -3,7 +3,7 @@
 """Step 5.5 Unified Regime Intelligence Validator."
 
 This validator ensures quality insurance for the Unified Regime Intelligence step.
-""""
+"""
 
 import json
 import os
@@ -692,7 +692,7 @@ async def run_step5_5_validation(
 	Returns:
 		bool: True if validation passed, False otherwise
 
-	""""
+	"""
 	try:
 		logger.info(
 			f"Starting validation for Unified Regime Intelligence Step ({exchange}:{symbol})",

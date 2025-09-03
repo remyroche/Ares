@@ -32,7 +32,7 @@ class MultiObjectiveOptimizer:
     - Risk-adjusted returns (Sharpe, Sortino, Calmar ratios)
     - Risk metrics (Max drawdown, VaR, CVaR)
     - Profitability metrics (Total return, Win rate, Profit factor)
-    """"
+    """
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -66,6 +66,7 @@ self.optimized_backtester = OptimizedBacktester(
                 config["market_data"],
                 config.get("computational_optimization", {}),
             )
+
 
     @handles_errors(fallback=None)
     def objective(self, trial: optuna.trial.Trial) -> tuple[float, float, float]:

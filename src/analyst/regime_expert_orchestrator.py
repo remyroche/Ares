@@ -22,10 +22,10 @@ from src.analyst.regime_runtime import get_current_regime_info
 # as they were part of the deprecated bull/bear/sideways market classification
 
 class RegimeExpertOrchestrator:
-    """"
+    """
     Orchestrates regime detection and expert selection using composite_cluster_id.
     Integrates with Step 9.5 (HMM-LM Generalist) and Step 10 (Event Transition Modeling).
-    """"
+    """
 
     def __init__(self, config: dict[str, Any]):
         self.logger = logging.getLogger(self.__class__.__name__)

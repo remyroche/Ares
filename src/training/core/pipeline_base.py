@@ -2,7 +2,7 @@
 
 This module defines the core interfaces and base classes that all pipeline
 stages must implement.
-""""
+"""
 
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -29,7 +29,7 @@ class StageContext:
 
     This class contains all the data and configuration that flows through
     the pipeline, allowing stages to share information and results.
-    """"
+    """
 
     symbol: str
     exchange: str
@@ -66,7 +66,7 @@ class PipelineStage:
         Args:
             config: Configuration dictionary
 
-        """"
+        """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("PipelineStage")
 
@@ -103,7 +103,7 @@ class PipelineStage:
         Returns:
             bool: True if initialization successful, False otherwise
 
-        """"
+        """
         try:
             self.logger.info("Initializing Pipeline Stage...")
 
@@ -155,7 +155,7 @@ class PipelineStage:
         Returns:
             bool: True if configuration is valid, False otherwise
 
-        """"
+        """
         try:
             # Validate stage interval
             if self.stage_interval <= 0:
@@ -296,7 +296,7 @@ class PipelineStage:
         Returns:
             bool: True if successful, False otherwise
 
-        """"
+        """
         try:
             if not self._validate_stage_inputs(stage_input):
                 return False
@@ -346,7 +346,7 @@ class PipelineStage:
         Returns:
             bool: True if valid, False otherwise
 
-        """"
+        """
         try:
             # Check required stage input fields
             required_fields = ["stage_type", "stage_name", "timestamp"]
@@ -383,7 +383,7 @@ class PipelineStage:
         Returns:
             dict[str, Any]: Stage execution results
 
-        """"
+        """
         try:
             results = {}
 
@@ -431,7 +431,7 @@ class PipelineStage:
         Returns:
             dict[str, Any]: Stage validation results
 
-        """"
+        """
         try:
             results = {}
 
@@ -479,7 +479,7 @@ class PipelineStage:
         Returns:
             dict[str, Any]: Stage monitoring results
 
-        """"
+        """
         try:
             results = {}
 
@@ -527,7 +527,7 @@ class PipelineStage:
         Returns:
             dict[str, Any]: Stage reporting results
 
-        """"
+        """
         try:
             results = {}
 
@@ -850,7 +850,7 @@ class PipelineStage:
         Returns:
             dict[str, Any]: Stage results
 
-        """"
+        """
         try:
             if stage_type:
                 return self.stage_results.get(stage_type, {})
@@ -870,7 +870,7 @@ class PipelineStage:
         Returns:
             list[dict[str, Any]]: Stage history
 
-        """"
+        """
         try:
             history = self.stage_history.copy()
 
@@ -889,7 +889,7 @@ class PipelineStage:
         Returns:
             dict[str, Any]: Stage status
 
-        """"
+        """
         return {
             "is_running": self.is_running,
             "stage_interval": self.stage_interval,
@@ -942,7 +942,7 @@ async def setup_pipeline_stage(
     Returns:
         PipelineStage | None: Global pipeline stage instance
 
-    """"
+    """
     try:
         global pipeline_stage
 

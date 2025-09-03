@@ -1,11 +1,11 @@
 # src/analyst/predictive_ensembles/multi_timeframe_ensemble.py
 
-""""
+"""
 Multi-Timeframe Ensemble Integration
 
 This integrates multi-timeframe training into the existing ensemble system,
 making each individual model (XGBoost, LSTM, etc.) a multi-timeframe ensemble.
-""""
+"""
 
 import os
 import time
@@ -31,11 +31,11 @@ from src.utils.warning_symbols import (
 
 
 class MultiTimeframeEnsemble:
-    """"
+    """
     Multi-timeframe ensemble that integrates into existing ensemble system.
 
     Each individual model (XGBoost, LSTM, etc.) becomes a multi-timeframe ensemble.
-    """"
+    """
 
     def __init__(
         self.logger = logging.getLogger(self.__class__.__name__)
@@ -82,7 +82,7 @@ class MultiTimeframeEnsemble:
         prepared_data: dict[str, pd.DataFrame],
         model_type: str = "xgboost",
     ) -> bool:
-        """"
+        """
         Train multi-timeframe ensemble for this specific model type.
 
         Args:
@@ -91,7 +91,7 @@ class MultiTimeframeEnsemble:
 
         Returns:
             bool: Success status
-        """"
+        """
         start_time = time.time()
 
         try:
@@ -333,7 +333,7 @@ class MultiTimeframeEnsemble:
         except Exception as e:
             pass  # TODO: Handle exception properly
 import copy
-import os.path
+import os
 
 model = MLPClassifier(
                 hidden_layer_sizes=(100, 50),
@@ -628,7 +628,7 @@ model = MLPClassifier(
         current_features: pd.DataFrame,
         **kwargs,
     ) -> dict[str, Any]:
-        """"
+        """
         Get prediction from multi-timeframe ensemble.
 
         Args:
@@ -637,7 +637,7 @@ model = MLPClassifier(
 
         Returns:
             Dict with prediction, confidence, and timeframe details
-        """"
+        """
         try:
             if not self.trained:
                 self.logger.warning("⚠️ Multi-timeframe ensemble not trained")

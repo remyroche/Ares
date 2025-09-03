@@ -4,7 +4,7 @@
 
 This module provides a training manager that uses proper dependency injection
 patterns for managing the training pipeline and its components.
-""""
+"""
 
 from typing import Any
 
@@ -27,7 +27,7 @@ class DITrainingManager(InjectableBase):
 
     This training manager uses proper dependency injection patterns
     for creating and managing training pipeline components.
-    """"
+    """
 
     def __init__(
         self,
@@ -108,7 +108,7 @@ class DITrainingManager(InjectableBase):
                 from src.training.core.pipeline_base import TrainingPipeline
         except Exception as e:
             pass  # TODO: Handle exception properly
-import os.path
+import os
 
 self.training_pipeline = TrainingPipeline(self.training_config)
 
@@ -211,7 +211,7 @@ self.training_pipeline = TrainingPipeline(self.training_config)
         Returns:
             True if training completed successfully
 
-        """"
+        """
         if self.is_training:
             self.print(warning("Training already in progress"))
             return False

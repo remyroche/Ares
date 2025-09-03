@@ -34,19 +34,19 @@ if TYPE_CHECKING:
     from src.training.dual_model_system import DualModelSystem
 
 class Analyst:
-    """"
+    """
     Analyst with comprehensive error handling and type safety.
     Determines IF we should enter a trade & which direction (short/long).
     Passes market health, volatility, and liquidation risk information to tactician.
-    """"
+    """
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """"
+        """
         Initialize analyst with enhanced type safety.
 
         Args:
             config: Configuration dictionary
-        """"
+        """
         self.config: dict[str, Any] = config
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger = system_logger.getChild("Analyst")
@@ -128,12 +128,12 @@ class Analyst:
         context="analyst initialization",
     )
     async def initialize(self) -> bool:
-        """"
+        """
         Initialize analyst with enhanced error handling.
 
         Returns:
             bool: True if initialization successful, False otherwise
-        """"
+        """
         self.logger.info("Initializing Analyst...")
 
         # Load analyst configuration
@@ -328,7 +328,7 @@ class Analyst:
         context="analysis execution",
     )
     async def execute_analysis(self, analysis_input: dict[str, Any]) -> bool:
-        """"
+        """
         Execute comprehensive analysis with dual model system integration.
 
         Args:
@@ -336,7 +336,7 @@ class Analyst:
 
         Returns:
             bool: True if analysis successful, False otherwise
-        """"
+        """
         try:
             if not self._validate_analysis_inputs(analysis_input):
                 self.logger.error("Invalid analysis inputs")
@@ -491,7 +491,7 @@ class Analyst:
         self,
         analysis_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """"
+        """
         Perform technical analysis.
 
         Args:
@@ -499,7 +499,7 @@ class Analyst:
 
         Returns:
             dict: Technical analysis results
-        """"
+        """
         analysis_input.get("market_data")
         analysis_input.get("current_price")
 
@@ -721,7 +721,7 @@ class Analyst:
         self,
         analysis_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """"
+        """
         Perform ML predictions.
 
         Args:
@@ -729,7 +729,7 @@ class Analyst:
 
         Returns:
             dict: ML prediction results
-        """"
+        """
         try:
             market_data = analysis_input.get("market_data")
             current_price = analysis_input.get("current_price")
@@ -763,7 +763,7 @@ class Analyst:
         self,
         analysis_input: dict[str, Any],
     ) -> dict[str, Any]:
-        """"
+        """
         Perform regime and location classification.
 
         Args:
@@ -771,7 +771,7 @@ class Analyst:
 
         Returns:
             dict: Regime and location classification results
-        """"
+        """
         try:
             market_data = analysis_input.get("market_data")
             analysis_input.get("current_price")
@@ -839,7 +839,7 @@ class Analyst:
 
     @handles_errors(fallback=None)
     def get_analysis_results(self, analysis_type: str | None = None) -> dict[str, Any]:
-        """"
+        """
         Get analysis results.
 
         Args:
@@ -847,7 +847,7 @@ class Analyst:
 
         Returns:
             dict: Analysis results
-        """"
+        """
         try:
             if analysis_type is None:
                 return self.analysis_results
@@ -860,7 +860,7 @@ class Analyst:
 
     @handles_errors(fallback=None)
     def get_analysis_history(self, limit: int | None = None) -> list[dict[str, Any]]:
-        """"
+        """
         Get analysis history.
 
         Args:
@@ -868,7 +868,7 @@ class Analyst:
 
         Returns:
             list: Analysis history
-        """"
+        """
         try:
             if limit is None:
                 return self.analysis_history
@@ -923,7 +923,7 @@ class Analyst:
 
 @handles_errors(fallback=None)
 async def setup_analyst(config: dict[str, Any] | None = None) -> Analyst | None:
-    """"
+    """
     Setup and initialize Analyst.
 
     Args:
@@ -931,7 +931,7 @@ async def setup_analyst(config: dict[str, Any] | None = None) -> Analyst | None:
 
     Returns:
         Analyst: Initialized analyst or None if failed
-    """"
+    """
     try:
         if config is None:
             config = {}

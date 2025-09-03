@@ -31,7 +31,7 @@ class OptimizedFeatureSelectionManager:
     3. Balanced feature mix (50-100 features) across categories
     4. Model-specific optimization for different architectures
     5. Computational efficiency with vectorized operations
-    """"
+    """
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -118,7 +118,7 @@ class OptimizedFeatureSelectionManager:
         Returns:
             Tuple of (selected_features_df, selection_metadata)
 
-        """"
+        """
         start_time = time.time()
         self.logger.info(f"🚀 Starting optimized feature selection for {model_type} in {step_name}")
 
@@ -297,7 +297,7 @@ class OptimizedFeatureSelectionManager:
 import copy
 
 vif_scores = []
-        for i, _col in enumerate(features_df.columns):
+for i, _col in enumerate(features_df.columns):
             try:
                 vif = variance_inflation_factor(features_df.values, i)
                 vif_scores.append(vif)
@@ -779,7 +779,7 @@ vif_scores = []
         Returns:
             Processed features DataFrame with vectorized operations
 
-        """"
+        """
         try:
             start_time = time.time()
             self.logger.info("🔄 Applying vectorized operations for feature processing...")
@@ -860,7 +860,7 @@ vif_scores = []
         Returns:
             Processed features DataFrame with matrix operations
 
-        """"
+        """
         try:
             start_time = time.time()
             self.logger.info("🔄 Applying matrix operations for feature processing...")

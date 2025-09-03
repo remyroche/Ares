@@ -14,7 +14,7 @@ from src.utils.warning_symbols import (
 class TrainingOrchestrator:
     """Training orchestrator responsible for coordinating the overall training pipeline."
     This module handles the high-level coordination between different training components.
-    """"
+    """
 
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize training orchestrator."
@@ -22,7 +22,7 @@ class TrainingOrchestrator:
         Args:
             config: Configuration dictionary
 
-        """"
+        """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("TrainingOrchestrator")
 
@@ -52,7 +52,7 @@ class TrainingOrchestrator:
         Returns:
             bool: True if initialization successful, False otherwise
 
-        """"
+        """
         try:
             self.logger.info("Initializing Training Orchestrator...")
 
@@ -105,7 +105,7 @@ class TrainingOrchestrator:
         pipeline_config: dict[str, Any],
         validation_level: str = "CRITICAL",
     ) -> dict[str, Any]:
-        """"
+        """
         Validate the entire training pipeline configuration and dependencies.
         
         Args:
@@ -114,7 +114,7 @@ class TrainingOrchestrator:
             
         Returns:
             Validation result dictionary
-        """"
+        """
         try:
             self.logger.info(f"🔍 Validating training pipeline with {validation_level} level")
             
@@ -181,7 +181,7 @@ class TrainingOrchestrator:
         self,
         pipeline_config: dict[str, Any],
     ) -> dict[str, Any]:
-        """"
+        """
         Validate pipeline configuration.
         
         Args:
@@ -189,7 +189,7 @@ class TrainingOrchestrator:
             
         Returns:
             Validation result dictionary
-        """"
+        """
         try:
             validation_result = {
                 "valid": True,
@@ -229,7 +229,7 @@ class TrainingOrchestrator:
         self,
         pipeline_config: dict[str, Any],
     ) -> dict[str, Any]:
-        """"
+        """
         Validate component dependencies.
         
         Args:
@@ -237,7 +237,7 @@ class TrainingOrchestrator:
             
         Returns:
             Validation result dictionary
-        """"
+        """
         try:
             validation_result = {
                 "valid": True,
@@ -270,7 +270,7 @@ class TrainingOrchestrator:
         self,
         pipeline_config: dict[str, Any],
     ) -> dict[str, Any]:
-        """"
+        """
         Validate component health and readiness.
         
         Args:
@@ -278,7 +278,7 @@ class TrainingOrchestrator:
             
         Returns:
             Validation result dictionary
-        """"
+        """
         try:
             validation_result = {
                 "valid": True,
@@ -341,7 +341,7 @@ class TrainingOrchestrator:
         validation_results: dict[str, Any],
         validation_level: str,
     ) -> list[str]:
-        """"
+        """
         Generate recommendations based on validation results.
         
         Args:
@@ -350,7 +350,7 @@ class TrainingOrchestrator:
             
         Returns:
             List of recommendations
-        """"
+        """
         recommendations = []
         
         # Configuration recommendations
@@ -422,7 +422,7 @@ self.calibration_manager = CalibrationManager(self.config)
         Returns:
             bool: True if configuration is valid, False otherwise
 
-        """"
+        """
         try:
             # Validate required configuration sections
             required_sections = [
@@ -474,7 +474,7 @@ self.calibration_manager = CalibrationManager(self.config)
         Returns:
             bool: True if training successful, False otherwise
 
-        """"
+        """
         try:
             self.logger.info("🚀 Starting training pipeline execution...")
             self.training_start_time = datetime.now()
@@ -513,7 +513,7 @@ self.calibration_manager = CalibrationManager(self.config)
         Returns:
             bool: True if input is valid, False otherwise
 
-        """"
+        """
         try:
             required_fields = ["symbol", "exchange", "timeframe", "lookback_days"]
 
@@ -548,7 +548,7 @@ self.calibration_manager = CalibrationManager(self.config)
         Returns:
             bool: True if pipeline successful, False otherwise
 
-        """"
+        """
         try:
             self.logger.info("📊 Executing training pipeline...")
 
@@ -613,7 +613,7 @@ self.calibration_manager = CalibrationManager(self.config)
         Args:
             training_input: Training input parameters
 
-        """"
+        """
         try:
             # Store results in a format that can be retrieved later
             results_key = f"{training_input['symbol']}_{training_input['exchange']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -630,7 +630,7 @@ self.calibration_manager = CalibrationManager(self.config)
         Returns:
             dict: Training status information
 
-        """"
+        """
         return {
             "is_training": self.is_training,
             "training_start_time": self.training_start_time,
@@ -646,7 +646,7 @@ self.calibration_manager = CalibrationManager(self.config)
         Returns:
             dict: Training results
 
-        """"
+        """
         return self.training_results.copy()
 
     @handles_errors(fallback=None)
@@ -683,7 +683,7 @@ async def setup_training_orchestrator(
     Returns:
         TrainingOrchestrator: Configured training orchestrator instance
 
-    """"
+    """
     try:
         orchestrator = TrainingOrchestrator(config or {})
         if await orchestrator.initialize():

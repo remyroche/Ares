@@ -20,7 +20,7 @@ except Exception as e:
 import copy
 import os.path
 
-    INFLUXDB_AVAILABLE = True
+INFLUXDB_AVAILABLE = True
 except Exception:
     InfluxDBManager = None  # type: ignore
     INFLUXDB_AVAILABLE = False

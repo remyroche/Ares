@@ -10,7 +10,7 @@ Enhanced for high precision completion of Analyst signals with:
 - Per-regime precision thresholds
 - Regime-specific quality filters
 - Regime-aware multi-outcome prediction structure
-""""
+"""
 
 import asyncio
 import contextlib
@@ -804,7 +804,7 @@ class TacticianLabelingStep:
     def _get_market_regime(self, data: pd.DataFrame) -> pd.Series:
         """Placeholder for your market regime detection logic."
         This should be consistent with the logic from step4_regime_specific_training.
-        """"
+        """
         # Example: Simple regime based on volatility percentile
         # NOTE: Volatility is calculated here because the Analyst models need it for regime detection.
         # It is NOT used by the Tactician's labeler.'
@@ -1023,7 +1023,7 @@ async def run_step(
 
     Returns:
         bool: True if successful, False otherwise
-    """"
+    """
     try:
         # Create step instance
         config: dict[str, Any] = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}

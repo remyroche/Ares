@@ -34,7 +34,7 @@ class DataEfficiencyOptimizer:
     4. Progressive data processing
     5. Database-backed feature storage
     6. Checkpoint and resume capabilities
-    """"
+    """
 
     def __init__(
         self,
@@ -75,7 +75,7 @@ class DataEfficiencyOptimizer:
         with self.engine.connect() as conn:
             # Raw data table with partitioning by date
             conn.execute(
-                text(""""
+                text("""
                 CREATE TABLE IF NOT EXISTS raw_data (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp DATETIME NOT NULL,
@@ -92,13 +92,13 @@ class DataEfficiencyOptimizer:
 
             # Create indexes for efficient querying
             conn.execute(
-                text(""""
+                text("""
                 CREATE INDEX IF NOT EXISTS idx_raw_data_timestamp
                 ON raw_data(timestamp)
             """),"
             )
             conn.execute(
-                text(""""
+                text("""
                 CREATE INDEX IF NOT EXISTS idx_raw_data_type
                 ON raw_data(data_type)
             """),"
@@ -106,7 +106,7 @@ class DataEfficiencyOptimizer:
 
             # Feature cache table (legacy format)
             conn.execute(
-                text(""""
+                text("""
                 CREATE TABLE IF NOT EXISTS feature_cache (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp DATETIME NOT NULL,
@@ -120,7 +120,7 @@ class DataEfficiencyOptimizer:
 
             # Feature cache table (wide format)
             conn.execute(
-                text(""""
+                text("""
                 CREATE TABLE IF NOT EXISTS feature_cache_wide (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp DATETIME NOT NULL,
@@ -134,13 +134,13 @@ class DataEfficiencyOptimizer:
 
             # Create indexes for feature cache
             conn.execute(
-                text(""""
+                text("""
                 CREATE INDEX IF NOT EXISTS idx_feature_cache_timestamp
                 ON feature_cache(timestamp)
             """),"
             )
             conn.execute(
-                text(""""
+                text("""
                 CREATE INDEX IF NOT EXISTS idx_feature_cache_name
                 ON feature_cache(feature_name)
             """),"
@@ -148,13 +148,13 @@ class DataEfficiencyOptimizer:
 
             # Create indexes for wide format feature cache
             conn.execute(
-                text(""""
+                text("""
                 CREATE INDEX IF NOT EXISTS idx_feature_cache_wide_timestamp
                 ON feature_cache_wide(timestamp)
             """),"
             )
             conn.execute(
-                text(""""
+                text("""
                 CREATE INDEX IF NOT EXISTS idx_feature_cache_wide_type
                 ON feature_cache_wide(feature_type)
             """),"
@@ -162,7 +162,7 @@ class DataEfficiencyOptimizer:
 
             # Processing checkpoints
             conn.execute(
-                text(""""
+                text("""
                 CREATE TABLE IF NOT EXISTS processing_checkpoints (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     checkpoint_name TEXT NOT NULL,
@@ -212,7 +212,7 @@ class DataEfficiencyOptimizer:
         Returns:
             Dictionary containing klines, agg_trades, and futures DataFrames
 
-        """"
+        """
         cache_key = f"{self.exchange}_{self.symbol}_{self.timeframe}_{lookback_days}"
         cache_dir = self.cache_dir / f"{cache_key}_cached_data"
 
@@ -375,13 +375,13 @@ class DataEfficiencyOptimizer:
                 self.logger.info("Attempting to load from database...")
                 try:
                     # Query the database for klines data
-                    klines_query = f""""
+                    klines_query = f"""
                     SELECT * FROM klines
                     WHERE symbol = '{self.symbol}'
                     AND exchange = '{self.exchange}'
                     AND timestamp BETWEEN '{start_date.isoformat()}' AND '{end_date.isoformat()}'
                     ORDER BY timestamp
-                    """"
+                    """
 
                     with self.db_manager.get_session() as session:
                         result = session.execute(text(klines_query))
@@ -393,13 +393,13 @@ class DataEfficiencyOptimizer:
                                 )
 
                     # Query for aggregated trades
-                    trades_query = f""""
+                    trades_query = f"""
                     SELECT * FROM agg_trades
                     WHERE symbol = '{self.symbol}'
                     AND exchange = '{self.exchange}'
                     AND timestamp BETWEEN '{start_date.isoformat()}' AND '{end_date.isoformat()}'
                     ORDER BY timestamp
-                    """"
+                    """
 
                     with self.db_manager.get_session() as session:
                         result = session.execute(text(trades_query))
@@ -515,7 +515,7 @@ class DataEfficiencyOptimizer:
         Returns:
             List of tuples: (start_date, end_date, segment_data)
 
-        """"
+        """
         if data.empty:
             return []
 
@@ -560,7 +560,7 @@ class DataEfficiencyOptimizer:
         Returns:
             Processed DataFrame
 
-        """"
+        """
         if chunk_size is None:
             chunk_size = self.chunk_size
 
@@ -661,7 +661,7 @@ class DataEfficiencyOptimizer:
             features: DataFrame with features (timestamp index + feature columns)
             feature_type: Type of features ('technical', 'price', 'volume', 'regime')
 
-        """"
+        """
         if features.empty:
             return
 
@@ -694,7 +694,7 @@ class DataEfficiencyOptimizer:
 
                 # Insert the wide-format record
                 session.execute(
-                    text(""""
+                    text("""
                     INSERT INTO feature_cache_wide (timestamp, feature_type, feature_data)
                     VALUES (:timestamp, :feature_type, :feature_data)
                     ON CONFLICT(timestamp, feature_type)
@@ -729,10 +729,10 @@ class DataEfficiencyOptimizer:
         Returns:
             DataFrame with features in wide format
 
-        """"
+        """
         with self.Session() as session:
             # Try wide format first (more efficient)
-            query = text(""""
+            query = text("""
                 SELECT timestamp, feature_type, feature_data
                 FROM feature_cache_wide
                 WHERE timestamp BETWEEN :start_date AND :end_date
@@ -798,14 +798,14 @@ class DataEfficiencyOptimizer:
 
             # Fallback to legacy format if wide format is empty
             self.logger.info("Wide format empty, trying legacy format...")
-            query = text(""""
+            query = text("""
                 SELECT timestamp, feature_name, feature_value
                 FROM feature_cache
                 WHERE timestamp BETWEEN :start_date AND :end_date
             """)"
 
             if feature_names:
-                query = text(""""
+                query = text("""
                     SELECT timestamp, feature_name, feature_value
                     FROM feature_cache
                     WHERE timestamp BETWEEN :start_date AND :end_date
@@ -843,7 +843,7 @@ class DataEfficiencyOptimizer:
         """Create a processing checkpoint for resume capability."""
         with self.Session() as session:
             session.execute(
-                text(""""
+                text("""
                 INSERT INTO processing_checkpoints (checkpoint_name, timestamp, status, metadata)
                 VALUES (:checkpoint_name, :timestamp, 'completed', :metadata)
             """),"
@@ -861,7 +861,7 @@ class DataEfficiencyOptimizer:
         """Get the latest checkpoint for resume capability."""
         with self.Session() as session:
             result = session.execute(
-                text(""""
+                text("""
                 SELECT timestamp, metadata
                 FROM processing_checkpoints
                 WHERE checkpoint_name = :checkpoint_name
@@ -886,7 +886,7 @@ class DataEfficiencyOptimizer:
         Returns:
             Memory-optimized DataFrame
 
-        """"
+        """
         # Check if input is actually a DataFrame
         if not isinstance(df, pd.DataFrame):
             self.logger.warning(
@@ -940,7 +940,7 @@ class DataEfficiencyOptimizer:
                 text("SELECT COUNT(*) FROM feature_cache"),
             ).scalar()
             feature_types = session.execute(
-                text(""""
+                text("""
                 SELECT feature_type, COUNT(*) as count
                 FROM feature_cache
                 GROUP BY feature_type
@@ -952,7 +952,7 @@ class DataEfficiencyOptimizer:
                 text("SELECT COUNT(*) FROM feature_cache_wide"),
             ).scalar()
             feature_types_wide = session.execute(
-                text(""""
+                text("""
                 SELECT feature_type, COUNT(*) as count
                 FROM feature_cache_wide
                 GROUP BY feature_type
@@ -988,7 +988,7 @@ class DataEfficiencyOptimizer:
         Returns:
             True if migration was successful, False otherwise
 
-        """"
+        """
         try:
             self.logger.info(f"Migrating pickle file to Parquet: {pickle_file_path}")
 
@@ -1047,7 +1047,7 @@ with open(pickle_file_path, "rb") as f:
         with self.Session() as session:
             # Clean up old raw data
             deleted_raw = session.execute(
-                text(""""
+                text("""
                 DELETE FROM raw_data
                 WHERE timestamp < :cutoff_date
             """),"
@@ -1056,7 +1056,7 @@ with open(pickle_file_path, "rb") as f:
 
             # Clean up old feature cache (legacy format)
             deleted_features = session.execute(
-                text(""""
+                text("""
                 DELETE FROM feature_cache
                 WHERE timestamp < :cutoff_date
             """),"
@@ -1065,7 +1065,7 @@ with open(pickle_file_path, "rb") as f:
 
             # Clean up old feature cache (wide format)
             deleted_features_wide = session.execute(
-                text(""""
+                text("""
                 DELETE FROM feature_cache_wide
                 WHERE timestamp < :cutoff_date
             """),"

@@ -2,7 +2,7 @@
 """Validator for Step 4: Regime Data Splitting."
 
 This module validates the regime data splitting step outputs with support for 10+ regimes.
-""""
+"""
 
 import json
 import os
@@ -43,7 +43,7 @@ class Step4RegimeDataSplittingValidator(BaseValidator):
 
         Returns:
             bool: True if validation passes
-        """"
+        """
         self.logger.info("🔍 Starting Step 4: Regime Data Splitting validation")
 
         try:
@@ -300,7 +300,7 @@ async def run_validator(
 
     Returns:
         Dictionary containing validation results
-    """"
+    """
     logger.info("🔍 Validating Step 4: Regime Data Splitting")
     
     try:
@@ -365,7 +365,7 @@ if __name__ == "__main__":
     import asyncio
 import datetime as datetime
     
-    test_input = {
+test_input = {
         "symbol": "ETHUSDT",
         "exchange": "BINANCE", 
         "timeframe": "1m",

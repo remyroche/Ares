@@ -1,236 +1,231 @@
 #!/usr/bin/env python3
 """
-Custom script to fix specific syntax errors in the codebase.
-Targets the common patterns found in the syntax error reports.
+Comprehensive syntax error fixer for Python files.
+Addresses common syntax errors found in the codebase.
 """
 
 import os
 import re
+import json
+import shutil
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Dict, Any, Tuple
 
-def fix_nested_imports(content: str) -> str:
-    """Fix nested import statements (import inside another import)."""
-    # Pattern to find imports inside parentheses with another import
-    pattern = r'from\s+[\w.]+\s+import\s+\(\s*\nfrom\s+[\w.]+\s+import\s+[\w,\s]+\n'
+
+class SyntaxErrorFixer:
+    """Fixes common syntax errors in Python files."""
     
-    # Find all matches
-    matches = list(re.finditer(pattern, content, re.MULTILINE))
-    
-    if not matches:
-        return content
-    
-    # Process from end to start to maintain positions
-    for match in reversed(matches):
-        start, end = match.span()
-        matched_text = match.group()
+    def __init__(self):
+        self.fixes_applied = []
+        self.backup_dir = Path("syntax_fix_backups")
+        self.backup_dir.mkdir(exist_ok=True)
         
-        # Extract the inner import
-        inner_import_match = re.search(r'from\s+([\w.]+)\s+import\s+([\w,\s]+)\n', matched_text[matched_text.find('\nfrom'):])
-        if inner_import_match:
-            inner_module = inner_import_match.group(1)
-            inner_items = inner_import_match.group(2).strip()
+    def backup_file(self, file_path: str) -> str:
+        """Create a backup of the file before modifying."""
+        backup_path = self.backup_dir / Path(file_path).name
+        shutil.copy2(file_path, backup_path)
+        return str(backup_path)
+        
+    def fix_unterminated_string_literal(self, content: str) -> Tuple[str, bool]:
+        """Fix unterminated string literals (e.g., quadruple quotes to triple quotes)."""
+        fixed = False
+        
+        # Fix quadruple quotes to triple quotes
+        if '""""' in content:
+            content = content.replace('""""', '"""')
+            fixed = True
             
-            # Move the inner import before the outer import
-            outer_start = content.rfind('\n', 0, start) + 1
-            new_import = f"from {inner_module} import {inner_items}\n"
+        # Fix standalone quadruple quotes on separate lines
+        lines = content.split('\n')
+        for i, line in enumerate(lines):
+            if line.strip() == '""""':
+                lines[i] = line.replace('""""', '"""')
+                fixed = True
+                
+        if fixed:
+            content = '\n'.join(lines)
             
-            # Remove the inner import from the parentheses
-            fixed_text = matched_text.replace(inner_import_match.group(), '')
+        return content, fixed
+        
+    def fix_invalid_regex_patterns(self, content: str) -> Tuple[str, bool]:
+        """Fix invalid regex patterns in re.sub calls."""
+        fixed = False
+        
+        # Common pattern fixes
+        replacements = [
+            # Fix unclosed parentheses in regex patterns
+            (r"re\.sub\(r'(\w+)'\)([^,]*?)', r'", r"re.sub(r'\1\2', r'"),
+            # Fix improper escaping
+            (r"re\.sub\(r'([^']*?)(\w+)'([^']*?)\)", r"re.sub(r'\1\2\3)"),
+            # Fix assignment in regex replacement
+            (r"= (\w+) = (\w+)", r", \1, \2"),
+        ]
+        
+        for pattern, replacement in replacements:
+            if re.search(pattern, content):
+                content = re.sub(pattern, replacement, content)
+                fixed = True
+                
+        return content, fixed
+        
+    def fix_assignment_in_expressions(self, content: str) -> Tuple[str, bool]:
+        """Fix assignments used in expressions where comparison was intended."""
+        fixed = False
+        
+        # Fix assignment in function arguments
+        pattern = r'(with open\([^,]+)="([^"]+)"\)'
+        if re.search(pattern, content):
+            content = re.sub(pattern, r'\1, "\2")', content)
+            fixed = True
             
-            # Replace in content
-            content = content[:start] + fixed_text + content[end:]
-            content = content[:outer_start] + new_import + content[outer_start:]
-    
-    return content
-
-
-def fix_missing_colons(content: str) -> str:
-    """Add missing colons after function/class definitions."""
-    lines = content.split('\n')
-    fixed_lines = []
-    
-    for i, line in enumerate(lines):
-        # Check for function or class definition without colon
-        if re.match(r'^\s*(def|class)\s+\w+.*\)$', line) and not line.endswith(':'):
-            line += ':'
-        fixed_lines.append(line)
-    
-    return '\n'.join(fixed_lines)
-
-
-def fix_try_blocks(content: str) -> str:
-    """Fix try blocks without except or finally."""
-    lines = content.split('\n')
-    fixed_lines = []
-    in_try_block = False
-    try_indent = 0
-    
-    for i, line in enumerate(lines):
-        stripped = line.strip()
+        # Fix assignment in except clauses
+        pattern = r'except \((\w+) = (\w+)\):'
+        if re.search(pattern, content):
+            content = re.sub(pattern, r'except (\1, \2):', content)
+            fixed = True
+            
+        # Fix assignment in list append
+        pattern = r'\.append\(\(i=([^)]+)\)\)'
+        if re.search(pattern, content):
+            content = re.sub(pattern, r'.append((\1))', content)
+            fixed = True
+            
+        return content, fixed
         
-        # Detect try block
-        if stripped.startswith('try:'):
-            in_try_block = True
-            try_indent = len(line) - len(line.lstrip())
-            fixed_lines.append(line)
-            continue
+    def fix_syntax_errors_in_function_definitions(self, content: str) -> Tuple[str, bool]:
+        """Fix syntax errors in function definitions."""
+        fixed = False
         
-        # If we're in a try block and hit a line with same or less indentation
-        if in_try_block and line.strip() and len(line) - len(line.lstrip()) <= try_indent:
-            # Check if it's except or finally
-            if not stripped.startswith(('except', 'finally')):
-                # Add a generic except block
-                fixed_lines.append(' ' * try_indent + 'except Exception as e:')
-                fixed_lines.append(' ' * (try_indent + 4) + 'pass  # TODO: Handle exception properly')
-            in_try_block = False
+        # Fix quoted parameter names
+        pattern = r'def (\w+)\([^,)]*,\s*"(\w+)"'
+        if re.search(pattern, content):
+            content = re.sub(pattern, r'def \1(\2', content)
+            fixed = True
+            
+        # Fix parameter type annotations
+        pattern = r': (\w+)\[str=Any\]'
+        if re.search(pattern, content):
+            content = re.sub(pattern, r': \1[str, Any]', content)
+            fixed = True
+            
+        return content, fixed
         
-        fixed_lines.append(line)
-    
-    # Handle case where try block is at end of file
-    if in_try_block:
-        fixed_lines.append(' ' * try_indent + 'except Exception as e:')
-        fixed_lines.append(' ' * (try_indent + 4) + 'pass  # TODO: Handle exception properly')
-    
-    return '\n'.join(fixed_lines)
-
-
-def fix_indentation_errors(content: str) -> str:
-    """Fix common indentation errors."""
-    lines = content.split('\n')
-    fixed_lines = []
-    expected_indent = 0
-    
-    for i, line in enumerate(lines):
-        stripped = line.strip()
-        
-        if not stripped:  # Empty line
-            fixed_lines.append(line)
-            continue
-        
-        current_indent = len(line) - len(line.lstrip())
-        
-        # Fix unexpected indentation
-        if current_indent > expected_indent + 4:
-            # Likely an indentation error, adjust to expected
-            line = ' ' * expected_indent + stripped
-        
-        fixed_lines.append(line)
-        
-        # Update expected indentation for next line
-        if stripped.endswith(':'):
-            expected_indent = current_indent + 4
-        elif stripped in ('pass', 'return', 'break', 'continue'):
-            expected_indent = max(0, current_indent - 4)
-        else:
-            expected_indent = current_indent
-    
-    return '\n'.join(fixed_lines)
-
-
-def fix_unterminated_strings(content: str) -> str:
-    """Fix unterminated string literals."""
-    # Pattern to find unterminated strings
-    lines = content.split('\n')
-    fixed_lines = []
-    
-    for line in lines:
-        # Count quotes
-        single_quotes = line.count("'") - line.count("\\'")
-        double_quotes = line.count('"') - line.count('\\"')
-        
-        # If odd number of quotes, likely unterminated
-        if single_quotes % 2 == 1:
-            line += "'"
-        elif double_quotes % 2 == 1:
-            line += '"'
-        
-        fixed_lines.append(line)
-    
-    return '\n'.join(fixed_lines)
-
-
-def fix_python_file(filepath: Path) -> bool:
-    """Fix syntax errors in a Python file."""
-    try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            content = f.read()
-        
-        original_content = content
-        
-        # Apply fixes in order
-        content = fix_nested_imports(content)
-        content = fix_missing_colons(content)
-        content = fix_try_blocks(content)
-        content = fix_indentation_errors(content)
-        content = fix_unterminated_strings(content)
-        
-        # Only write if changes were made
-        if content != original_content:
-            with open(filepath, 'w', encoding='utf-8') as f:
-                f.write(content)
-            return True
-        
+    def fix_file(self, file_path: str, errors: List[Dict[str, Any]]) -> bool:
+        """Fix syntax errors in a single file."""
+        try:
+            # Read file content
+            with open(file_path, 'r', encoding='utf-8') as f:
+                content = f.read()
+                
+            original_content = content
+            any_fixed = False
+            
+            # Apply fixes based on error types
+            for error in errors:
+                error_msg = error.get('message', '')
+                
+                if 'unterminated string literal' in error_msg:
+                    content, fixed = self.fix_unterminated_string_literal(content)
+                    any_fixed |= fixed
+                    
+                elif 'invalid syntax' in error_msg:
+                    content, fixed = self.fix_invalid_regex_patterns(content)
+                    any_fixed |= fixed
+                    content, fixed = self.fix_syntax_errors_in_function_definitions(content)
+                    any_fixed |= fixed
+                    
+                elif 'cannot assign to function call' in error_msg:
+                    content, fixed = self.fix_assignment_in_expressions(content)
+                    any_fixed |= fixed
+                    
+            # Write fixed content if changes were made
+            if any_fixed and content != original_content:
+                # Create backup
+                backup_path = self.backup_file(file_path)
+                
+                # Write fixed content
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                    
+                self.fixes_applied.append({
+                    'file': file_path,
+                    'backup': backup_path,
+                    'errors_fixed': len(errors)
+                })
+                
+                return True
+                
+        except Exception as e:
+            print(f"Error fixing {file_path}: {str(e)}")
+            
         return False
-    except Exception as e:
-        print(f"Error processing {filepath}: {e}")
-        return False
+        
+    def fix_from_results_file(self, results_file: str) -> Dict[str, Any]:
+        """Fix syntax errors based on results from syntax checker."""
+        with open(results_file, 'r') as f:
+            results = json.load(f)
+            
+        files_to_fix = [
+            r for r in results['results'] 
+            if not r['valid'] and r['errors']
+        ]
+        
+        print(f"Found {len(files_to_fix)} files with syntax errors to fix")
+        
+        fixed_count = 0
+        for file_info in files_to_fix:
+            file_path = file_info['file']
+            errors = file_info['errors']
+            
+            # Skip certain fix scripts that might have complex regex patterns
+            if any(skip in file_path for skip in ['fix_', 'fixer.py', 'comprehensive_fix']):
+                continue
+                
+            if self.fix_file(file_path, errors):
+                fixed_count += 1
+                print(f"✓ Fixed {file_path}")
+                
+        return {
+            'total_files_with_errors': len(files_to_fix),
+            'files_fixed': fixed_count,
+            'fixes_applied': self.fixes_applied
+        }
 
 
 def main():
-    """Main function to fix syntax errors in the codebase."""
-    project_root = Path('/workspace/src')
-    fixed_count = 0
-    error_count = 0
+    """Main function to run the syntax error fixer."""
+    import argparse
     
-    print("Fixing syntax errors in Python files...")
-    print("=" * 60)
+    parser = argparse.ArgumentParser(description='Fix syntax errors in Python files')
+    parser.add_argument('--results-file', default='syntax_check_results.json',
+                       help='Path to syntax check results JSON file')
+    parser.add_argument('--dry-run', action='store_true',
+                       help='Show what would be fixed without making changes')
     
-    # Find all Python files
-    python_files = list(project_root.rglob('*.py'))
-    total_files = len(python_files)
+    args = parser.parse_args()
     
-    for i, filepath in enumerate(python_files, 1):
-        if i % 50 == 0:
-            print(f"Progress: {i}/{total_files} files processed...")
+    if not os.path.exists(args.results_file):
+        print(f"Error: Results file '{args.results_file}' not found")
+        print("Please run the syntax checker first")
+        return 1
         
-        # Try to compile the file first to check for syntax errors
-        try:
-            compile(open(filepath).read(), filepath, 'exec')
-        except SyntaxError:
-            # File has syntax error, try to fix it
-            if fix_python_file(filepath):
-                fixed_count += 1
-                print(f"Fixed: {filepath}")
-            else:
-                error_count += 1
-        except Exception:
-            error_count += 1
+    fixer = SyntaxErrorFixer()
+    results = fixer.fix_from_results_file(args.results_file)
     
-    print("\n" + "=" * 60)
-    print(f"Total files processed: {total_files}")
-    print(f"Files fixed: {fixed_count}")
-    print(f"Files with errors: {error_count}")
-    print("=" * 60)
+    print(f"\n{'='*60}")
+    print("SYNTAX FIX SUMMARY")
+    print(f"{'='*60}")
+    print(f"Total files with errors: {results['total_files_with_errors']}")
+    print(f"Files fixed: {results['files_fixed']}")
+    print(f"Backup directory: {fixer.backup_dir}")
     
-    # Run the advanced syntax fixer again to catch remaining issues
-    print("\nRunning advanced syntax fixer for remaining issues...")
-    os.system('python3 /workspace/code_quality/scripts/advanced_syntax_fixer.py --project-root /workspace/src --fix')
+    if results['files_fixed'] > 0:
+        print(f"\n✅ Successfully fixed {results['files_fixed']} files")
+        print("Run the syntax checker again to verify all errors are resolved")
     
-    # Run import fixer
-    print("\nRunning import fixer...")
-    os.system('python3 /workspace/code_quality/scripts/safe_import_fixer.py --project-root /workspace/src --fix')
-    
-    # Run async fixer
-    print("\nRunning async/await fixer...")
-    os.system('python3 /workspace/code_quality/scripts/robust_async_fixer.py --project-root /workspace/src --fix')
-    
-    # Run type hint enhancer
-    print("\nEnhancing type hints...")
-    os.system('python3 /workspace/code_quality/scripts/enhanced_type_hints.py --project-root /workspace/src --target 0.9')
-    
-    print("\nCode quality fixes completed!")
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    import sys
+    sys.exit(main())

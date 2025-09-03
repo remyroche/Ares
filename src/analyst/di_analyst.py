@@ -1,11 +1,11 @@
 # src/analyst/di_analyst.py
 
-""""
+"""
 Dependency injection-aware Analyst implementation.
 
 This module provides an Analyst implementation that properly supports
 dependency injection patterns and modern architectural practices.
-""""
+"""
 
 from datetime import datetime
 from typing import Any
@@ -34,12 +34,12 @@ from src.utils.warning_symbols import (
 )
 
 class DIAnalyst(AnalystBase, IAnalyst):
-    """"
+    """
     Dependency injection-aware Analyst implementation.
 
     This analyst implementation properly supports dependency injection,
     configuration management, and modern architectural patterns.
-    """"
+    """
 
     def __init__(
         self.logger = logging.getLogger(self.__class__.__name__)

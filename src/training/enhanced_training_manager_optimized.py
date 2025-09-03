@@ -33,7 +33,7 @@ from src.utils.logger import system_logger
 def _make_hashable(obj: Any) -> Any:
     """Recursively convert potentially unhashable objects (lists, dicts, arrays) into hashable tuples."
     This is used to generate robust cache keys.
-    """"
+    """
     if isinstance(obj, dict):
         return tuple(sorted((k, _make_hashable(v)) for k, v in obj.items()))
     if isinstance(obj, set):
@@ -343,7 +343,7 @@ class StreamingDataProcessor:
     def process_data_stream(self, data_path: str):
         """Yield data chunks for streaming processing."
         Returns an iterator of pandas DataFrame chunks.
-        """"
+        """
         try:
             if data_path.endswith(".parquet"):
                 yield from self._iter_parquet_chunks(data_path)
@@ -388,7 +388,7 @@ class StreamingDataProcessor:
     ) -> None:
         """Write DataFrame chunks incrementally to Parquet (append mode)."
         If pyarrow is not available, fall back to concatenating in bounded windows.
-        """"
+        """
         try:
             target = Path(target_path)
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -420,7 +420,7 @@ import json
 from src.core.decorators import handles_errors
 
 writer = None
-            for df in chunks_iter:
+for df in chunks_iter:
                 table = pa.Table.from_pandas(df)
                 if writer is None:
                     writer = pq_mod.ParquetWriter(
@@ -704,7 +704,7 @@ class EnhancedTrainingManagerOptimized:
     6. Adaptive sampling to focus on promising regions
     7. Memory-efficient data structures
     8. Memory profiling and leak detection
-    """"
+    """
 
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize enhanced training manager with optimizations."""

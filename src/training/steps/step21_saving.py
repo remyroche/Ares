@@ -4,7 +4,7 @@
 
 This step handles saving of all training results using standardized
 data quality management patterns.
-""""
+"""
 
 import asyncio
 import json
@@ -86,7 +86,7 @@ class SavingStep:
         Returns:
             Dict containing saving results
 
-        """"
+        """
         self.logger.info("🔄 Executing Saving...")
 
         # Extract parameters
@@ -523,7 +523,7 @@ async def run_step(
     Returns:
         bool: True if successful, False otherwise
 
-    """"
+    """
     try:
         # Create step instance
         config = {"symbol": symbol, "exchange": exchange, "data_dir": data_dir}

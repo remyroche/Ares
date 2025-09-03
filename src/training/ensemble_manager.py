@@ -19,7 +19,7 @@ from src.utils.warning_symbols import (
 class EnsembleManager:
     """Ensemble manager responsible for creating and managing model ensembles."
     This module handles ensemble creation, optimization, and management.
-    """"
+    """
 
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize ensemble manager."
@@ -27,7 +27,7 @@ class EnsembleManager:
         Args:
             config: Configuration dictionary
 
-        """"
+        """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("EnsembleManager")
 
@@ -68,7 +68,7 @@ class EnsembleManager:
         Returns:
             bool: True if initialization successful, False otherwise
 
-        """"
+        """
         try:
             self.logger.info("Initializing Ensemble Manager...")
 
@@ -96,7 +96,7 @@ class EnsembleManager:
         Returns:
             bool: True if configuration is valid, False otherwise
 
-        """"
+        """
         try:
             # Validate ensemble manager specific settings
             if not any(
@@ -164,7 +164,7 @@ self.ensemble_creator = EnsembleCreator(self.config)
         Returns:
             dict: Ensemble creation results
 
-        """"
+        """
         try:
             self.logger.info("🎯 Starting ensemble creation...")
             self.is_creating_ensembles = True
@@ -239,7 +239,7 @@ self.ensemble_creator = EnsembleCreator(self.config)
         Returns:
             bool: True if inputs are valid, False otherwise
 
-        """"
+        """
         try:
             # Validate optimization results
             if not optimization_results:
@@ -279,7 +279,7 @@ self.ensemble_creator = EnsembleCreator(self.config)
         Returns:
             dict: Analyst ensemble creation results
 
-        """"
+        """
         try:
             self.logger.info("🧠 Creating analyst ensembles...")
 
@@ -341,7 +341,7 @@ self.ensemble_creator = EnsembleCreator(self.config)
         Returns:
             dict: Tactician ensemble creation results
 
-        """"
+        """
         try:
             self.logger.info("🎯 Creating tactician ensembles...")
 
@@ -391,7 +391,7 @@ self.ensemble_creator = EnsembleCreator(self.config)
         Returns:
             dict: Multi-timeframe ensemble result
 
-        """"
+        """
         try:
             self.logger.info("🧠 Creating multi-timeframe analyst ensemble...")
 
@@ -437,7 +437,7 @@ self.ensemble_creator = EnsembleCreator(self.config)
         Returns:
             dict: Timeframe ensemble result
 
-        """"
+        """
         try:
             self.logger.info(f"🧠 Creating {timeframe} timeframe ensemble...")
 
@@ -481,7 +481,7 @@ self.ensemble_creator = EnsembleCreator(self.config)
         Returns:
             dict: Tactician ensemble result
 
-        """"
+        """
         try:
             self.logger.info("🎯 Creating tactician single ensemble...")
 
@@ -525,7 +525,7 @@ self.ensemble_creator = EnsembleCreator(self.config)
         Returns:
             dict: Optimized ensembles
 
-        """"
+        """
         try:
             self.logger.info(f"🔧 Optimizing {ensemble_type} ensembles...")
 
@@ -568,7 +568,7 @@ self.ensemble_creator = EnsembleCreator(self.config)
         Returns:
             dict: Optimized ensemble
 
-        """"
+        """
         try:
             self.logger.info(f"🔧 Optimizing {ensemble_type} ensemble: {ensemble_name}")
 
@@ -597,7 +597,7 @@ self.ensemble_creator = EnsembleCreator(self.config)
         Args:
             ensemble_results: Ensemble results to store
 
-        """"
+        """
         try:
             self.logger.info("📁 Storing ensemble results...")
 
@@ -618,7 +618,7 @@ self.ensemble_creator = EnsembleCreator(self.config)
         Returns:
             dict: Ensemble status information
 
-        """"
+        """
         return {
             "is_creating_ensembles": self.is_creating_ensembles,
             "has_ensemble_results": bool(self.ensemble_results),
@@ -633,7 +633,7 @@ self.ensemble_creator = EnsembleCreator(self.config)
         Returns:
             dict: Ensemble results
 
-        """"
+        """
         return self.ensemble_results.copy()
 
     @handles_errors(fallback=None)
@@ -660,7 +660,7 @@ async def setup_ensemble_manager(
     Returns:
         EnsembleManager: Configured ensemble manager instance
 
-    """"
+    """
     try:
         manager = EnsembleManager(config or {})
         if await manager.initialize():

@@ -23,7 +23,7 @@ class StageContext:
         Args:
             config: Configuration dictionary
 
-        """"
+        """
         self.config: dict[str, Any] = config
         self.logger = system_logger.getChild("StageContext")
 
@@ -63,7 +63,7 @@ class StageContext:
         Returns:
             bool: True if initialization successful, False otherwise
 
-        """"
+        """
         try:
             self.logger.info("Initializing Stage Context...")
 
@@ -119,7 +119,7 @@ class StageContext:
         Returns:
             bool: True if configuration is valid, False otherwise
 
-        """"
+        """
         try:
             # Validate context interval
             if self.context_interval <= 0:
@@ -261,7 +261,7 @@ class StageContext:
         Returns:
             bool: True if successful, False otherwise
 
-        """"
+        """
         try:
             if not self._validate_context_inputs(context_input):
                 return False
@@ -317,7 +317,7 @@ class StageContext:
         Returns:
             bool: True if valid, False otherwise
 
-        """"
+        """
         try:
             # Check required context input fields
             required_fields = ["context_type", "context_name", "timestamp"]
@@ -354,7 +354,7 @@ class StageContext:
         Returns:
             dict[str, Any]: Context management results
 
-        """"
+        """
         try:
             results = {}
 
@@ -402,7 +402,7 @@ class StageContext:
         Returns:
             dict[str, Any]: Context validation results
 
-        """"
+        """
         try:
             results = {}
 
@@ -450,7 +450,7 @@ class StageContext:
         Returns:
             dict[str, Any]: Context monitoring results
 
-        """"
+        """
         try:
             results = {}
 
@@ -498,7 +498,7 @@ class StageContext:
         Returns:
             dict[str, Any]: Context reporting results
 
-        """"
+        """
         try:
             results = {}
 
@@ -832,7 +832,7 @@ class StageContext:
         Returns:
             dict[str, Any]: Context results
 
-        """"
+        """
         try:
             if context_type:
                 return self.context_results.get(context_type, {})
@@ -852,7 +852,7 @@ class StageContext:
         Returns:
             list[dict[str, Any]]: Context history
 
-        """"
+        """
         try:
             history = self.context_history.copy()
 
@@ -871,7 +871,7 @@ class StageContext:
         Returns:
             dict[str, Any]: Context status
 
-        """"
+        """
         return {
             "is_active": self.is_active,
             "context_interval": self.context_interval,
@@ -924,7 +924,7 @@ async def setup_stage_context(
     Returns:
         StageContext | None: Global stage context instance
 
-    """"
+    """
     try:
         global stage_context
 

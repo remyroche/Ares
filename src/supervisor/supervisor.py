@@ -130,7 +130,7 @@ class OnlineLearningManager:
         return {k: v.copy() for k, v in self.model_performances.items()}
 
 class Supervisor:
-    """"
+    """
     System-Level Supervisor component responsible for:
     - System Health Monitoring: Monitor all component health and performance
     - Circuit Breaker Management: Handle failures and recovery across all components
@@ -139,7 +139,7 @@ class Supervisor:
     - Performance Tracking: System-wide performance monitoring and reporting
     - Online Learning: Model weighting based on system performance
     - Recovery Management: Automatic recovery and fallback mechanisms
-    """"
+    """
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
@@ -347,11 +347,11 @@ class Supervisor:
         exchange: str,
         timeframe: str = "1h",
     ) -> Dict[str, Any]:
-        """"
+        """
         Get Analyst predictions using calibrated confidence scores from ML models.
 
         The Analyst decides if we enter a position based on calibrated confidence scores.
-        """"
+        """
         try:
             if not self.is_initialized:
                 self.logger.error(error("❌ Supervisor not initialized"))
@@ -403,12 +403,12 @@ class Supervisor:
         exchange: str,
         timeframe: str = "1m",
     ) -> Dict[str, Any]:
-        """"
+        """
         Get Tactician predictions using calibrated confidence scores from ML models.
 
         The Tactician decides when, how much, and with what leverage based on calibrated confidence scores.
         Must agree with Analyst on trade direction.
-        """"
+        """
         try:
             if not self.is_initialized:
                 self.logger.error(error("❌ Supervisor not initialized"))
@@ -459,9 +459,9 @@ class Supervisor:
         symbol: str,
         exchange: str,
     ) -> Dict[str, Any]:
-        """"
+        """
         Analyst decides if we enter a position and determines trade direction based on Analyst ML models.
-        """"
+        """
         try:
             # Calculate aggregate Analyst confidence
             if not analyst_confidence_scores:
@@ -553,11 +553,11 @@ class Supervisor:
         symbol: str,
         exchange: str,
     ) -> Dict[str, Any]:
-        """"
+        """
         Tactician decides when, how much, and what leverage based on Tactician ML models.
         Must agree with Analyst on trade direction.
         Enhanced with high precision triple barrier completion.
-        """"
+        """
         try:
             # Import enhanced execution manager
             from src.tactician.enhanced_execution_manager import EnhancedExecutionManager
@@ -695,7 +695,7 @@ import numpy as np
         symbol: str,
         exchange: str,
     ) -> dict[str, Any]:
-        """"
+        """
         Integrate ML profit predictions with existing Analyst components.
 
         This function enhances the Analyst's decision-making by incorporating:'
@@ -703,7 +703,7 @@ import numpy as np
         2. Enhanced confidence scores with barrier analysis
         3. Risk-reward metrics
         4. Directional probability assessments
-        """"
+        """
         try:
             integrated_predictions = {
                 "ml_profit_integration": ml_profit_predictions,
@@ -753,7 +753,7 @@ import numpy as np
         symbol: str,
         exchange: str,
     ) -> dict[str, Any]:
-        """"
+        """
         Integrate ML profit predictions with existing Tactician components.
 
         This function enhances the Tactician's execution by providing:'
@@ -761,7 +761,7 @@ import numpy as np
         2. Enhanced confidence scores for leverage decisions
         3. Barrier analysis for stop-loss placement
         4. Position decision signals (but NOT position sizing - that's Tactician's job)
-        """"
+        """
         try:
             integrated_predictions = {
                 "ml_profit_integration": ml_profit_predictions,
@@ -947,12 +947,12 @@ import numpy as np
         enhanced_confidence: dict[str, Any],
         barrier_analysis: dict[str, Any],
     ) -> dict[str, Any]:
-        """"
+        """
         Generate position decision signals (should we take a position?).
 
         This provides signals to the Tactician about whether to take positions,
         but does NOT calculate position sizing - that's the Tactician's responsibility.
-        """"
+        """
         try:
             position_decisions = {
                 "position_recommendations": {},
@@ -1042,12 +1042,12 @@ import numpy as np
         enhanced_confidence: dict[str, Any],
         barrier_analysis: dict[str, Any],
     ) -> dict[str, Any]:
-        """"
+        """
         Generate leverage inputs for the Tactician.
 
         This provides confidence and probability data to help the Tactician
         make leverage decisions, but does NOT calculate leverage itself.
-        """"
+        """
         try:
             leverage_inputs = {
                 "confidence_inputs": {},
@@ -1397,12 +1397,12 @@ import numpy as np
 
     @handles_errors(fallback=None)
     async def _coordinate_components(self) -> None:
-        """"
+        """
         Coordinate components with clear separation of responsibilities:
         - Strategist: Provides trading strategies and market analysis
         - Tactician: Handles position sizing and execution tactics
         - Supervisor: Orchestrates communication and system-level coordination
-        """"
+        """
         try:
             # Coordinate Analyst-Strategist
             await self._coordinate_analyst_strategist()
@@ -1443,14 +1443,14 @@ import numpy as np
 
     @handles_errors(fallback=None)
     async def _coordinate_strategist_tactician(self) -> None:
-        """"
+        """
         Coordinate Strategist and Tactician components.
 
         Strategy Coordination:
         - Strategist provides trading strategies and market analysis
         - Tactician handles position sizing and execution tactics
         - Supervisor orchestrates communication between the two
-        """"
+        """
         try:
             strategist = self.components["strategist"]
             tactician = self.components["tactician"]

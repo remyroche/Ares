@@ -12,7 +12,7 @@ The workflow:
 5. Create lean dataset with only winning features
 6. Train Production Model on lean dataset
 7. Create optimized live trading configurations
-""""
+"""
 
 import pickle
 import time
@@ -64,7 +64,7 @@ class WaveletFeatureSelectionWorkflow:
     5. Creates lean dataset with only winning features
     6. Trains Production Model on lean dataset
     7. Creates optimized live trading configurations
-    """"
+    """
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -184,7 +184,7 @@ class WaveletFeatureSelectionWorkflow:
         Returns:
             Dictionary containing all wavelet features
 
-        """"
+        """
         try:
             self.logger.info("📊 Step 1: Running full wavelet analysis...")
             start_time = time.time()
@@ -235,7 +235,7 @@ class WaveletFeatureSelectionWorkflow:
         Returns:
             Dictionary containing trained discovery model and performance metrics
 
-        """"
+        """
         try:
             self.logger.info("🔍 Step 2: Training Discovery Model...")
 
@@ -355,7 +355,7 @@ class WaveletFeatureSelectionWorkflow:
         Returns:
             List of feature importance results
 
-        """"
+        """
         try:
             self.logger.info("🔍 Step 3: Performing feature selection...")
 
@@ -470,7 +470,7 @@ class WaveletFeatureSelectionWorkflow:
         Returns:
             List of winner features optimized for live trading
 
-        """"
+        """
         try:
             self.logger.info("🏆 Step 4: Identifying winner features...")
 
@@ -540,7 +540,7 @@ class WaveletFeatureSelectionWorkflow:
         Returns:
             Dictionary containing lean dataset
 
-        """"
+        """
         try:
             self.logger.info("📊 Step 5: Creating lean dataset...")
 
@@ -594,7 +594,7 @@ class WaveletFeatureSelectionWorkflow:
         Returns:
             Dictionary containing trained production model and performance metrics
 
-        """"
+        """
         try:
             self.logger.info("🚀 Step 6: Training Production Model...")
 
@@ -704,7 +704,7 @@ class WaveletFeatureSelectionWorkflow:
         Returns:
             Dictionary containing optimized configurations
 
-        """"
+        """
         try:
             self.logger.info("⚡ Step 7: Creating live configurations...")
 
@@ -908,7 +908,7 @@ class WaveletFeatureSelectionWorkflow:
         Returns:
             Complete workflow results
 
-        """"
+        """
         try:
             self.logger.info(
                 "🚀 Starting complete wavelet feature selection workflow...",

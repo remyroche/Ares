@@ -26,6 +26,7 @@ from src.config import CONFIG
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error
+import logging
 import copy
 import asyncio
 
@@ -48,6 +49,7 @@ class MultiTimeframeFeatureEngineering:
 
         """
         self.config = config
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.logger = system_logger.getChild("MultiTimeframeFeatureEngineering")
 
         # Initialize base feature engineering engine
@@ -837,7 +839,8 @@ class MultiTimeframeFeatureEngineering:
 
                         if (current_time - cache_time) > self.cache_duration:
                             keys_to_remove.append(key)
-                    except:
+                    except (KeyError, TypeError, ValueError) as e:
+                        self.logger.warning(f"Error checking cache entry {key}: {e}")
                         keys_to_remove.append(key)
 
                 for key in keys_to_remove:

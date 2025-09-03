@@ -12,8 +12,8 @@ from src.analyst.advanced_feature_engineering import AdvancedFeatureEngineering
 from src.analyst.autoencoder_feature_generator import AutoencoderFeatureGenerator
 from src.config import CONFIG
 from src.utils.error_handler import (
+import logging
 import asyncio
-
     handle_data_processing_errors,
     handle_errors,
     handle_file_operations,
@@ -39,6 +39,7 @@ class FeatureEngineeringOrchestrator:
             config: Configuration dictionary
         """
         self.config = config
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.logger = system_logger.getChild("FeatureEngineeringOrchestrator")
 
         # Initialize sub-components
@@ -110,7 +111,8 @@ class FeatureEngineeringOrchestrator:
         )
 
         if klines_df.empty:
-            self.print(warning("Empty klines data provided, returning empty DataFrame"))
+            self.logger.warning("Empty klines data provided, returning empty DataFrame")
+
             return pd.DataFrame()
 
         try:
@@ -197,7 +199,8 @@ class FeatureEngineeringOrchestrator:
             return features_df
 
         except Exception:
-            self.print(error("❌ Error in feature generation orchestration: {e}"))
+            self.logger.error("❌ Error in feature generation orchestration: {e}")
+
             return klines_df.copy()
 
     @handle_data_processing_errors(
@@ -243,7 +246,8 @@ class FeatureEngineeringOrchestrator:
             return self._calculate_ml_enhanced_features(features_df)
 
         except Exception:
-            self.print(error("Error generating legacy features: {e}"))
+            self.logger.error("Error generating legacy features: {e}")
+
             return features_df
 
     @handle_errors(
@@ -280,7 +284,8 @@ class FeatureEngineeringOrchestrator:
             return pd.DataFrame([multi_timeframe_features])
 
         except Exception:
-            self.print(error("Error calculating multi-timeframe features: {e}"))
+            self.logger.error("Error calculating multi-timeframe features: {e}")
+
             return pd.DataFrame()
 
     @handle_errors(
@@ -321,7 +326,8 @@ class FeatureEngineeringOrchestrator:
             return pd.DataFrame([all_labels])
 
         except Exception:
-            self.print(error("Error calculating meta-labeling features: {e}"))
+            self.logger.error("Error calculating meta-labeling features: {e}")
+
             return pd.DataFrame()
 
     @handle_data_processing_errors(
@@ -383,7 +389,8 @@ import os.path
             return df
 
         except Exception:
-            self.print(error("Error calculating standard indicators: {e}"))
+            self.logger.error("Error calculating standard indicators: {e}")
+
             return df
 
     @handle_data_processing_errors(
@@ -418,7 +425,8 @@ import os.path
             return df
 
         except Exception:
-            self.print(error("Error calculating time features: {e}"))
+            self.logger.error("Error calculating time features: {e}")
+
             return df
 
     @handle_data_processing_errors(
@@ -534,7 +542,8 @@ import os.path
             return df
 
         except Exception:
-            self.print(error("Error calculating ML enhanced features: {e}"))
+            self.logger.error("Error calculating ML enhanced features: {e}")
+
             return df
 
     @handle_data_processing_errors(
@@ -561,7 +570,8 @@ import os.path
             return df
 
         except Exception:
-            self.print(error("Error in feature cleanup: {e}"))
+            self.logger.error("Error in feature cleanup: {e}")
+
             return df
 
     @handle_errors(
@@ -587,7 +597,8 @@ import os.path
                 "config": self.orchestrator_config,
             }
         except Exception:
-            self.print(error("Error getting orchestrator info: {e}"))
+            self.logger.error("Error getting orchestrator info: {e}")
+
             return {}
 
     @handle_errors(
@@ -611,7 +622,8 @@ import os.path
                 "orchestrator_config": self.orchestrator_config,
             }
         except Exception:
-            self.print(error("Error getting feature summary: {e}"))
+            self.logger.error("Error getting feature summary: {e}")
+
             return {}
 
 
@@ -678,7 +690,8 @@ class FeatureEngineeringEngine:
         try:
             return pywt.wavedec(data, wavelet, level=level)
         except Exception:
-            self.print(error("Error applying wavelet transforms: {e}"))
+            self.logger.error("Error applying wavelet transforms: {e}")
+
             return None
 
     @handle_file_operations(default_return=False, context="train_autoencoder")
@@ -690,7 +703,8 @@ class FeatureEngineeringEngine:
                 self.orchestrator.autoencoder_generator.pipeline.autoencoder is not None
             )
         except Exception:
-            self.print(error("Error training autoencoder: {e}"))
+            self.logger.error("Error training autoencoder: {e}")
+
             return False
 
     @handle_data_processing_errors(
@@ -702,7 +716,8 @@ class FeatureEngineeringEngine:
         try:
             return self.orchestrator.autoencoder_generator.generate_features(data)
         except Exception:
-            self.print(error("Error applying autoencoders: {e}"))
+            self.logger.error("Error applying autoencoders: {e}")
+
             return data
 
     @handle_file_operations(default_return=False, context="load_autoencoder")
@@ -712,5 +727,6 @@ class FeatureEngineeringEngine:
             # This is handled by the orchestrator now
             return True
         except Exception:
-            self.print(error("Error loading autoencoder: {e}"))
+            self.logger.error("Error loading autoencoder: {e}")
+
             return False

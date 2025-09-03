@@ -11,6 +11,7 @@ import pandas as pd
 
 from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
+import logging
 
 
 @handle_errors(
@@ -165,6 +166,7 @@ class MetaLabelRelevanceEvaluator:
     """
 
     def __init__(
+        self.logger = logging.getLogger(self.__class__.__name__)
         self,
         artifacts_dir: str,
         mi_threshold: float = 0.01,

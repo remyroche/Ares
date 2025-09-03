@@ -20,12 +20,14 @@ from sklearn.metrics import silhouette_score
 
 from src.utils.logger import system_logger
 from src.utils.centralized_decorators import handle_errors, with_tracing_span
+import logging
 
 
 class EnhancedRegimePredictor:
     """Enhanced regime predictor with advanced change detection capabilities."""
     
     def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.config = config or {}
         self.logger = system_logger.getChild("EnhancedRegimePredictor")
         

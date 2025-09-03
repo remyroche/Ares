@@ -980,7 +980,20 @@ class BaseEnsemble:
             return False
 
     def _train_base_models(self, aligned_data: pd.DataFrame, y_encoded: np.ndarray):
-        raise NotImplementedError
+        """
+        Abstract method to train base models for the ensemble.
+        Must be implemented by child classes.
+        
+        Args:
+            aligned_data: DataFrame with aligned features
+            y_encoded: Encoded target labels
+            
+        Raises:
+            NotImplementedError: This is an abstract method
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement _train_base_models method"
+        )
 
     # SR context features were moved to step04 unified S/R system.
 
@@ -1340,7 +1353,24 @@ class BaseEnsemble:
     def _get_meta_features(
         self, df: pd.DataFrame,
         is_live: bool = False, **kwargs: Any) -> pd.DataFrame | dict:
-        raise NotImplementedError
+        """
+        Abstract method to extract meta-features for the ensemble.
+        Must be implemented by child classes based on their specific needs.
+        
+        Args:
+            df: Input DataFrame with features
+            is_live: Whether this is for live trading or backtesting
+            **kwargs: Additional keyword arguments
+            
+        Returns:
+            DataFrame or dict of meta-features
+            
+        Raises:
+            NotImplementedError: This is an abstract method
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement _get_meta_features method"
+        )
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),

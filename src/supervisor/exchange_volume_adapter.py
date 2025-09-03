@@ -7,12 +7,13 @@ This module handles the adaptation of models trained on high-volume exchanges
 """
 
 from datetime import datetime
-from src.utils.logger import system_logger
 from typing import Any
+
 from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.utils.logger import system_logger
+from src.utils.warning_symbols import error, execution_error, initialization_error, warning
 from src.utils.warning_symbols import (
 import asyncio
-
     error,
     execution_error,
     initialization_error,
@@ -68,14 +69,8 @@ class ExchangeVolumeAdapter:
             "exchange_volume_adapter",
             {},
         )
-        self.enable_volume_adaptation: bool = self.adapter_config.get(
-            "enable_volume_adaptation",
-            True
-        )
-        self.enable_dynamic_adjustment: bool = self.adapter_config.get(
-            "enable_dynamic_adjustment",
-            True
-        )
+        self.enable_volume_adaptation: bool = self.adapter_config.get("enable_volume_adaptation", True)
+        self.enable_dynamic_adjustment: bool = self.adapter_config.get("enable_dynamic_adjustment", True)
         self.volume_history_window: int = self.adapter_config.get(
             "volume_history_window",
             24,
@@ -245,7 +240,7 @@ class ExchangeVolumeAdapter:
 
             # Apply maximum reduction limit
             max_reduction = self.adapter_config.get("max_position_size_reduction", 0.8)
-            adjustment = max(adjustment = max_reduction)
+            adjustment = max(adjustment=max_reduction)
 
             adjusted_size = base_position_size * adjustment
 
@@ -273,9 +268,7 @@ class ExchangeVolumeAdapter:
             self.print(error("Error calculating spread adjustment: {e}"))
             return base_spread * 2.0  # Conservative fallback
 
-    def calculate_slippage_adjustment(
-        self, exchange: str,
-        base_slippage: float = None) -> float:
+    def calculate_slippage_adjustment(self, exchange: str, base_slippage: float = None) -> float:
         """Calculate slippage adjustment based on exchange characteristics."""
         try:
             profile = self.get_volume_profile(exchange)
@@ -287,8 +280,11 @@ class ExchangeVolumeAdapter:
             return base_slippage * 2.5  # Conservative fallback
 
     def adjust_model_confidence(
-        self, exchange: str,
-        base_confidence: float = None, data_quality_metrics: dict[str, Any] = None) -> float:
+        self,
+        exchange: str,
+        base_confidence: float = None,
+        data_quality_metrics: dict[str, Any] = None,
+    ) -> float:
         """
         Adjust model confidence based on exchange data quality.
 
@@ -388,34 +384,34 @@ class ExchangeVolumeAdapter:
             if exchange_upper not in self.volume_profiles:
                 self.logger.warning(f"No volume profile for exchange: {exchange}")
                 return 1.0
-            
+
             profile = self.volume_profiles[exchange_upper]
-            
+
             # Base adaptation factor from volume profile
             base_factor = profile["position_size_multiplier"]
-            
+
             # Apply dynamic adjustments if enabled
             if self.enable_dynamic_adjustment and exchange_upper in self.current_volume_metrics:
                 metrics = self.current_volume_metrics[exchange_upper]
-                
+
                 # Adjust based on current volume vs average
                 if metrics.get("current_volume") and profile.get("avg_daily_volume"):
                     volume_ratio = metrics["current_volume"] / profile["avg_daily_volume"]
                     volume_adjustment = min(1.5, max(0.5, volume_ratio))
                     base_factor *= volume_adjustment
-                
+
                 # Adjust based on spread
                 if metrics.get("spread_adjustment"):
                     spread_factor = 1.0 / (1.0 + metrics["spread_adjustment"])
                     base_factor *= spread_factor
-            
+
             return max(0.1, min(2.0, base_factor))  # Clamp between 0.1 and 2.0
-            
+
         except Exception as e:
             self.logger.error(f"Error getting adaptation factor for {exchange}: {e}")
             return 1.0
 
-    def get_adaptation_summary(self) -> dict[str , Any]:
+    def get_adaptation_summary(self) -> dict[str, Any]:
         """Get summary of current volume adaptations."""
         try:
             return {
@@ -431,9 +427,12 @@ class ExchangeVolumeAdapter:
             return {"error": str(e)}
 
     async def update_volume_metrics(
-        self, exchange: str,
-        current_volume: float = None, spread: float = None,
-        slippage: float = None) -> None:
+        self,
+        exchange: str,
+        current_volume: float = None,
+        spread: float = None,
+        slippage: float = None,
+    ) -> None:
         """Update volume metrics for an exchange."""
         try:
             if exchange.upper() not in self.current_volume_metrics:
@@ -452,9 +451,12 @@ class ExchangeVolumeAdapter:
             # Store in history
             self.adaptation_history.append(
                 {
-                    "exchange": exchange , "timestamp": datetime.now(),
-                    "volume": current_volume , "spread": spread,
-                    "slippage": slippage},
+                    "exchange": exchange,
+                    "timestamp": datetime.now(),
+                    "volume": current_volume,
+                    "spread": spread,
+                    "slippage": slippage,
+                },
             )
 
             # Keep history within limits
@@ -477,12 +479,14 @@ class ExchangeVolumeAdapter:
         except Exception:
             self.print(error("Error during cleanup: {e}"))
 
+
 @handle_errors(
     exceptions=(Exception,),
-    default_return=None, context="exchange volume adapter setup",
+    default_return=None,
+    context="exchange volume adapter setup",
 )
 async def setup_exchange_volume_adapter(
-    config: dict[str , Any] | None = None,
+    config: dict[str, Any] | None = None,
 ) -> ExchangeVolumeAdapter | None:
     """Setup exchange volume adapter."""
     try:

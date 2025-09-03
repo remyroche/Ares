@@ -1,0 +1,15 @@
+src/supervisor/dynamic_weighter.py - B
+src/supervisor/enhanced_model_monitor.py - A
+src/supervisor/enhanced_prediction_service.py - A
+src/supervisor/exchange_volume_adapter.py - A
+src/supervisor/global_portfolio_manager.py - A
+src/supervisor/__init__.py - A
+src/supervisor/main.py - A
+src/supervisor/model_behavior_tracker.py - A
+src/supervisor/monitoring.py - A
+src/supervisor/optimizer.py - A
+src/supervisor/performance_monitor.py - A
+src/supervisor/performance_reporter.py - B
+src/supervisor/pnl_loss_functions.py - A
+src/supervisor/risk_allocator.py - A
+src/supervisor/supervisor.py - C

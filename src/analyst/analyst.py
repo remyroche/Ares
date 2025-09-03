@@ -2,8 +2,8 @@
 
 from datetime import datetime
 from typing import (
+import logging
 import asyncio
-
     TYPE_CHECKING,
     Any,
 )
@@ -51,6 +51,7 @@ class Analyst:
             config: Configuration dictionary
         """
         self.config: dict[str, Any] = config
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.logger = system_logger.getChild("Analyst")
 
         # Analyst state
@@ -263,7 +264,8 @@ class Analyst:
             if self.dual_model_system:
                 self.logger.info("✅ Dual Model System initialized successfully")
             else:
-                self.print(failed("❌ Failed to initialize Dual Model System"))
+                self.logger.error(failed("❌ Failed to initialize Dual Model System"))
+
         except Exception:
             self.print(
                 initialization_error("Error initializing Dual Model System: {e}"),
@@ -285,7 +287,8 @@ class Analyst:
             if self.market_health_analyzer:
                 self.logger.info("✅ Market Health Analyzer initialized successfully")
             else:
-                self.print(failed("❌ Failed to initialize Market Health Analyzer"))
+                self.logger.error(failed("❌ Failed to initialize Market Health Analyzer"))
+
         except Exception:
             self.print(
                 initialization_error("Error initializing Market Health Analyzer: {e}"),
@@ -309,7 +312,8 @@ import numpy as np
             if self.liquidation_risk_model:
                 self.logger.info("✅ Liquidation Risk Model initialized successfully")
             else:
-                self.print(failed("❌ Failed to initialize Liquidation Risk Model"))
+                self.logger.error(failed("❌ Failed to initialize Liquidation Risk Model"))
+
         except Exception:
             self.print(
                 initialization_error("Error initializing Liquidation Risk Model: {e}"),
@@ -481,7 +485,8 @@ import numpy as np
 
         except Exception:
             self.is_analyzing = False
-            self.print(failed("❌ Analysis failed: {e}"))
+            self.logger.error(failed("❌ Analysis failed: {e}"))
+
             return False
 
     @handle_errors(
@@ -597,7 +602,8 @@ import numpy as np
             }
 
         except Exception:
-            self.print(error("Error performing price analysis: {e}"))
+            self.logger.error("Error performing price analysis: {e}")
+
             return {}
 
     @validate_data_quality(validation_level="WARNING")
@@ -625,7 +631,8 @@ import numpy as np
             }
 
         except Exception:
-            self.print(error("Error performing volume analysis: {e}"))
+            self.logger.error("Error performing volume analysis: {e}")
+
             return {}
 
     @validate_data_quality(validation_level="WARNING")
@@ -658,7 +665,8 @@ import numpy as np
             }
 
         except Exception:
-            self.print(error("Error performing indicator analysis: {e}"))
+            self.logger.error("Error performing indicator analysis: {e}")
+
             return {}
 
     @validate_data_quality(validation_level="WARNING")
@@ -676,7 +684,8 @@ import numpy as np
             }
 
         except Exception:
-            self.print(error("Error performing pattern analysis: {e}"))
+            self.logger.error("Error performing pattern analysis: {e}")
+
             return {}
 
     @validate_data_quality(validation_level="WARNING")
@@ -702,7 +711,8 @@ import numpy as np
             }
 
         except Exception:
-            self.print(error("Error performing volatility analysis: {e}"))
+            self.logger.error("Error performing volatility analysis: {e}")
+
             return {}
 
     @validate_data_quality(validation_level="WARNING")
@@ -720,7 +730,8 @@ import numpy as np
             }
 
         except Exception:
-            self.print(error("Error performing correlation analysis: {e}"))
+            self.logger.error("Error performing correlation analysis: {e}")
+
             return {}
 
     @validate_data_quality(validation_level="WARNING")
@@ -744,7 +755,8 @@ import numpy as np
             }
 
         except Exception:
-            self.print(error("Error performing drawdown analysis: {e}"))
+            self.logger.error("Error performing drawdown analysis: {e}")
+
             return {}
 
     @validate_data_quality(validation_level="WARNING")
@@ -760,7 +772,8 @@ import numpy as np
             }
 
         except Exception:
-            self.print(error("Error performing risk scoring: {e}"))
+            self.logger.error("Error performing risk scoring: {e}")
+
             return {}
 
     @handle_errors(
@@ -804,7 +817,8 @@ import numpy as np
             return ml_results
 
         except Exception:
-            self.print(error("Error performing ML predictions: {e}"))
+            self.logger.error("Error performing ML predictions: {e}")
+
             return {}
 
     @handle_errors(
@@ -874,7 +888,8 @@ import numpy as np
             return regime_results
 
         except Exception:
-            self.print(error("Error performing regime classification: {e}"))
+            self.logger.error("Error performing regime classification: {e}")
+
             return {}
 
     @handle_errors(
@@ -896,7 +911,8 @@ import numpy as np
 
             self.logger.info("Analysis results stored successfully")
         except Exception:
-            self.print(error("Error storing analysis results: {e}"))
+            self.logger.error("Error storing analysis results: {e}")
+
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
@@ -919,7 +935,8 @@ import numpy as np
             return self.analysis_results.get(analysis_type, {})
 
         except Exception:
-            self.print(error("Error getting analysis results: {e}"))
+            self.logger.error("Error getting analysis results: {e}")
+
             return {}
 
     @handle_errors(
@@ -943,7 +960,8 @@ import numpy as np
             return self.analysis_history[-limit:]
 
         except Exception:
-            self.print(error("Error getting analysis history: {e}"))
+            self.logger.error("Error getting analysis history: {e}")
+
             return []
 
     def get_analysis_status(self) -> dict[str, Any]:
@@ -990,7 +1008,8 @@ import numpy as np
 
             self.logger.info("✅ Analyst stopped successfully")
         except Exception:
-            self.print(error("❌ Error stopping Analyst: {e}"))
+            self.logger.error("❌ Error stopping Analyst: {e}")
+
 
 
 @handle_errors(

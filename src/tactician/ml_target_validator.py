@@ -10,11 +10,7 @@ ML Target Validator for validating machine learning targets and predictions.
 from datetime import datetime
 from typing import Any
 
-<<<<<<< HEAD
-=======
-from src.utils.centralized_decorators import validate_data_quality
-from src.utils.error_handler import handle_errors
->>>>>>> origin/main
+from src.core.decorators import handles_errors, validates
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
@@ -126,7 +122,7 @@ class MLTargetValidator:
             self.logger.exception(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
-    @validate_data_quality(
+    @validates(
         required_columns=None,  # This method validates dict input, not DataFrame
         min_rows=1,
         max_null_ratio=0.0,
@@ -229,7 +225,7 @@ class MLTargetValidator:
             self._add_to_history(validation_record)
             return False
 
-    @validate_data_quality(
+    @validates(
         required_columns=None,  # This method validates dict input, not DataFrame
         min_rows=1,
         max_null_ratio=0.0,

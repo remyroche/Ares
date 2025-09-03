@@ -4,8 +4,7 @@ import asyncio
 from typing import Any
 
 from src.utils.logger import system_logger
-from src.core.decorators import handles_errors
-from src.utils.trading_decorators import performance_monitor
+from src.core.decorators import handles_errors, log_execution_time
 import copy
 from src.utils.warning_symbols import (
 
@@ -157,7 +156,7 @@ class Sentinel:
         return True
 
     @handles_errors(fallback=None)
-    @performance_monitor
+    @log_execution_time()
     async def _monitoring_loop(self) -> None:
         """Main monitoring loop."""
         while self.is_monitoring:
@@ -165,7 +164,7 @@ class Sentinel:
             await asyncio.sleep(self.monitoring_interval)
 
     @handles_errors(fallback=None)
-    @performance_monitor
+    @log_execution_time()
     async def _perform_monitoring_checks(self) -> None:
         """Perform all monitoring checks configured."""
         if "performance" in self.monitoring_rules:
@@ -178,7 +177,7 @@ class Sentinel:
             await self._check_system_metrics()
 
     @handles_errors(fallback=None)
-    @performance_monitor
+    @log_execution_time()
     async def _check_performance_metrics(self) -> None:
         """Check performance metrics (simulated)."""
         cpu_usage = 0.6
@@ -205,7 +204,7 @@ class Sentinel:
             )
 
     @handles_errors(fallback=None)
-    @performance_monitor
+    @log_execution_time()
     async def _check_error_metrics(self) -> None:
         """Check error metrics (simulated)."""
         error_rate = 0.05
@@ -232,7 +231,7 @@ class Sentinel:
             )
 
     @handles_errors(fallback=None)
-    @performance_monitor
+    @log_execution_time()
     async def _check_system_metrics(self) -> None:
         """Check system metrics (simulated)."""
         uptime = 0.995

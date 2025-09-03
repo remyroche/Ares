@@ -1,16 +1,18 @@
 # src/training/ensemble_manager.py
 
-from src.core.decorators import handles_errors
+from src.core.decorators import (
+    handles_errors,
+    retry,
+    log_execution_time,
+    traced,
+)
 
 from datetime import datetime
 from typing import Any
 import asyncio
 
 from src.utils.logger import system_logger
-from src.utils.trading_decorators import (
-    comprehensive_model_decorator,
-    get_trade_tracker,
-)
+# Removed trading_decorators imports - using core decorators instead
 from src.utils.warning_symbols import (
     error,
     failed,
@@ -147,18 +149,10 @@ await self.ensemble_creator.initialize()
             self.print(failed(error_msg))
             raise
 
-    @comprehensive_model_decorator(
-        enable_error_handling=True,
-        enable_tracking=True,
-        enable_performance_monitoring=True,
-        enable_retry=True,
-        model_name="EnsembleManager",
-        capture_predictions=True,
-        capture_feature_importance=True,
-        capture_confidence=True,
-        retry_attempts=3,
-        alert_threshold_ms=20000.0,  # 20 seconds for ensemble creation
-    )
+    @handles_errors(fallback=None)
+    @retry(max_attempts=3, delay=1.0, exponential_backoff=True)
+    @log_execution_time()
+    @traced(span_name="create_ensembles")
     async def create_ensembles(
         self,
         optimization_results: dict[str, Any],

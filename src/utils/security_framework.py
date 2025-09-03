@@ -27,11 +27,10 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-from .error_handler import handle_errors
+from src.core.decorators import handles_errors
 from .logger import system_logger
 from .pipeline_standards import PipelineStandards, pipeline_standards
 import copy
-
 
 class SecurityLevel(Enum):
     """Security levels for different operations."""
@@ -41,12 +40,10 @@ class SecurityLevel(Enum):
     HIGH = "high"
     CRITICAL = "critical"
 
-
 class SecurityViolation(Exception):
     """Custom exception for security violations."""
 
     pass
-
 
 class CredentialManager:
     """Manages API credentials and sensitive data securely."""
@@ -200,7 +197,6 @@ class CredentialManager:
             self.logger.error(f"Error rotating credential {service}:{key}: {e}")
             return False
 
-
 class DataEncryption:
     """Handles data encryption and decryption."""
 
@@ -333,7 +329,6 @@ class DataEncryption:
             self.logger.error(f"Error decrypting file {file_path}: {e}")
             raise SecurityViolation(f"File decryption failed: {e}")
 
-
 class AccessControl:
     """Manages access control and authentication."""
 
@@ -424,7 +419,6 @@ class AccessControl:
             return True
         return False
 
-
 class AuditLogger:
     """Handles security audit logging."""
 
@@ -500,7 +494,6 @@ class AuditLogger:
         """Get user agent (placeholder for web applications)."""
         return "unknown"
 
-
 class SecurityFramework:
     """Comprehensive security framework."""
 
@@ -529,7 +522,7 @@ class SecurityFramework:
             "audit_logging": True,
         }
 
-    @handle_errors(exceptions=(SecurityViolation,), default_return=False, context="security validation")
+    @handles_errors(fallback=False)
     def validate_security_configuration(self) -> bool:
         """Validate security configuration.
 
@@ -651,7 +644,6 @@ class SecurityFramework:
         }
 
         return report
-
 
 # Global security framework instance
 security_framework = SecurityFramework()

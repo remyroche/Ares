@@ -15,9 +15,10 @@ from .base import (
     AuthenticationError,
     AuthorizationError,
     NotFoundError,
-    TimeoutError,
+    TimeoutError as AppTimeoutError,
     ServiceUnavailableError,
     DataIntegrityError,
+    RateLimitError,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ class ErrorMapper:
             ConnectionError: lambda e: ServiceUnavailableError(
                 "Connection failed", service_name="external"
             ),
-            TimeoutError: lambda e: TimeoutError(str(e)),
+            TimeoutError: lambda e: AppTimeoutError(str(e)),
             OSError: lambda e: AppError(
                 f"System error: {e}",
                 code=ErrorCode.INTERNAL_ERROR,

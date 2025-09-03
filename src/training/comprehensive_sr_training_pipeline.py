@@ -23,6 +23,7 @@ import pandas as pd
 from src.training.multi_output_model_trainer import MultiOutputModelTrainer, MultiOutputModelConfig
 from src.utils.logger import system_logger
 from src.utils.centralized_decorators import (
+from src.core.decorators import handles_errors
     handle_errors,
     comprehensive_validation,
     performance_monitor,
@@ -30,7 +31,6 @@ from src.utils.centralized_decorators import (
     memory_efficient,
     secure_data_processing,
 )
-
 
 class ComprehensiveSRTrainingPipeline:
     """Comprehensive training pipeline with full SR feature integration."""
@@ -54,11 +54,7 @@ class ComprehensiveSRTrainingPipeline:
         
         self.logger.info("🔧 Comprehensive SR Training Pipeline initialized")
 
-    @handle_errors(
-        exceptions=(ValueError, FileNotFoundError, json.JSONDecodeError),
-        default_return=False,
-        context="comprehensive_sr_training_pipeline"
-    )
+    @handles_errors(fallback=False)
     @performance_monitor
     @memory_efficient
     async def execute_comprehensive_training(
@@ -330,7 +326,6 @@ class ComprehensiveSRTrainingPipeline:
         except Exception as e:
             self.logger.error(f"❌ Error getting feature summary: {e}")
             return {"error": str(e)}
-
 
 # Convenience function for easy usage
 async def run_comprehensive_sr_training(

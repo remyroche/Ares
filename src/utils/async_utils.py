@@ -9,19 +9,9 @@ from typing import Any
 
 import aiofiles
 
-from src.utils.error_handler import (
-    error,
-    failed,
-    handle_errors,
-    handle_file_operations,
-    handle_specific_errors,
-    invalid,
-    missing,
-    warning,
-)
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-
 
 class AsyncFileManager:
     """
@@ -49,7 +39,7 @@ class AsyncFileManager:
         self.cache_enabled = bool(self.file_config.get("cache_enabled", True))
         self.default_encoding: str = str(self.file_config.get("default_encoding", "utf-8"))
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid async file manager configuration"),
             AttributeError: (False, "Missing required file parameters"),
@@ -78,11 +68,7 @@ class AsyncFileManager:
         self.logger.info("✅ Async File Manager initialization completed successfully")
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="file configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_file_configuration(self) -> None:
         """Load file configuration."""
         # Set default file parameters
@@ -99,11 +85,7 @@ class AsyncFileManager:
 
         self.logger.info("File configuration loaded successfully")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         """
         Validate file configuration.
@@ -124,7 +106,7 @@ class AsyncFileManager:
         self.logger.info("Configuration validation successful")
         return True
 
-    @handle_file_operations(
+    @handles_errors(
         default_return=None,
         context="file reading",
     )
@@ -156,7 +138,7 @@ class AsyncFileManager:
         self.logger.info(f"Read file: {file_path}")
         return content
 
-    @handle_file_operations(
+    @handles_errors(
         default_return=False,
         context="file writing",
     )
@@ -187,7 +169,7 @@ class AsyncFileManager:
         self.logger.info(f"Wrote file: {file_path}")
         return True
 
-    @handle_file_operations(
+    @handles_errors(
         default_return=None,
         context="JSON file reading",
     )
@@ -210,7 +192,7 @@ class AsyncFileManager:
         self.logger.info(f"Read JSON file: {file_path}")
         return data
 
-    @handle_file_operations(
+    @handles_errors(
         default_return=False,
         context="JSON file writing",
     )
@@ -232,11 +214,7 @@ class AsyncFileManager:
             self.logger.info(f"Wrote JSON file: {file_path}")
         return success
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="cache management",
-    )
+    @handles_errors(fallback=None)
     def _add_to_cache(self, file_path: str, content: str) -> None:
         """
         Add file content to cache.
@@ -255,11 +233,7 @@ class AsyncFileManager:
         self.file_cache[file_path] = content
         self.logger.debug(f"Added {file_path} to cache")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="cache clearing",
-    )
+    @handles_errors(fallback=None)
     def clear_cache(self) -> None:
         """Clear the file cache."""
         cache_size = len(self.file_cache)
@@ -280,17 +254,12 @@ class AsyncFileManager:
             "cached_files": list(self.file_cache.keys()),
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="async file manager cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the async file manager."""
         self.logger.info("🛑 Stopping Async File Manager...")
         self.clear_cache()
         self.logger.info("✅ Async File Manager stopped successfully")
-
 
 class AsyncTaskManager:
     """
@@ -317,7 +286,7 @@ class AsyncTaskManager:
         self.max_concurrent_tasks = int(self.task_config.get("max_concurrent_tasks", 10))
         self.task_timeout: int = int(self.task_config.get("task_timeout", 300))
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid async task manager configuration"),
             AttributeError: (False, "Missing required task parameters"),
@@ -346,11 +315,7 @@ class AsyncTaskManager:
         self.logger.info("✅ Async Task Manager initialization completed successfully")
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="task configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_task_configuration(self) -> None:
         """Load task configuration."""
         # Set default task parameters
@@ -365,11 +330,7 @@ class AsyncTaskManager:
 
         self.logger.info("Task configuration loaded successfully")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         """
         Validate task configuration.
@@ -390,11 +351,7 @@ class AsyncTaskManager:
         self.logger.info("Configuration validation successful")
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="task execution",
-    )
+    @handles_errors(fallback=None)
     async def execute_task(
         self,
         task_name: str,
@@ -444,11 +401,7 @@ class AsyncTaskManager:
             if task_name in self.active_tasks:
                 del self.active_tasks[task_name]
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="task cancellation",
-    )
+    @handles_errors(fallback=False)
     async def cancel_task(self, task_name: str) -> bool:
         """
         Cancel a running task.
@@ -473,11 +426,7 @@ class AsyncTaskManager:
         self.logger.info(f"Cancelled task: {task_name}")
         return True
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="all tasks cancellation",
-    )
+    @handles_errors(fallback=None)
     async def cancel_all_tasks(self) -> None:
         """Cancel all running tasks."""
         if not self.active_tasks:
@@ -509,11 +458,7 @@ class AsyncTaskManager:
             "completed_tasks_count": len(self.task_results),
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="async task manager cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the async task manager."""
         self.logger.info("🛑 Stopping Async Task Manager...")
@@ -521,17 +466,11 @@ class AsyncTaskManager:
         self.task_results.clear()
         self.logger.info("✅ Async Task Manager stopped successfully")
 
-
 # Global instances
 async_file_manager: AsyncFileManager | None = None
 async_task_manager: AsyncTaskManager | None = None
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="async utils setup",
-)
+@handles_errors(fallback=None)
 async def setup_async_utils(
     config: dict[str, Any] | None = None,
 ) -> tuple[AsyncFileManager | None, AsyncTaskManager | None]:
@@ -575,7 +514,6 @@ async def setup_async_utils(
     if file_success and task_success:
         return async_file_manager, async_task_manager
     return None, None
-
 
 class AsyncProcessesManager:
     """
@@ -649,7 +587,6 @@ class AsyncProcessesManager:
                 name: {"pid": proc.pid, "returncode": proc.returncode} for name, proc in self.processes.items()
             },
         }
-
 
 # Create a global instance for backward compatibility
 async_processes_manager = AsyncProcessesManager()

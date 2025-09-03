@@ -7,10 +7,9 @@ import numpy as np
 import optuna
 import pandas as pd
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 import datetime as datetime
-
 
 class AdvancedHyperparameterOptimizer:
     """Advanced hyperparameter optimization with decomposed search spaces and proper constraints.
@@ -47,11 +46,7 @@ class AdvancedHyperparameterOptimizer:
         self.model_optimization_results = None
         self.trading_strategy_results = None
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="hyperparameter optimization setup",
-    )
+    @handles_errors(fallback=None)
     def create_study(self, direction: str = "maximize") -> optuna.Study:
         """Create an Optuna study with advanced configuration."""
         # Choose sampler based on configuration
@@ -263,11 +258,7 @@ class AdvancedHyperparameterOptimizer:
             msg = "Risk-reward ratio too low"
             raise optuna.TrialPruned(msg)
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="objective function evaluation",
-    )
+    @handles_errors(fallback=None)
     def feature_engineering_objective(self, trial: optuna.trial.Trial) -> Number:
         """Objective function for feature engineering optimization."""
         # Suggest feature engineering parameters
@@ -292,11 +283,7 @@ class AdvancedHyperparameterOptimizer:
 
         return score
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="objective function evaluation",
-    )
+    @handles_errors(fallback=None)
     def model_optimization_objective(self, trial: optuna.trial.Trial) -> Number:
         """Objective function for model optimization."""
         # Suggest model parameters
@@ -325,11 +312,7 @@ class AdvancedHyperparameterOptimizer:
 
         return score
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="objective function evaluation",
-    )
+    @handles_errors(fallback=None)
     def trading_strategy_objective(self, trial: optuna.trial.Trial) -> Number:
         """Objective function for trading strategy optimization."""
         # Suggest trading parameters
@@ -417,11 +400,7 @@ class AdvancedHyperparameterOptimizer:
 
         return max(0, min(1, final_score))
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="hyperparameter optimization execution",
-    )
+    @handles_errors(fallback=None)
     def run_decomposed_optimization(
         self,
         objective_func: Callable | None = None,

@@ -30,8 +30,7 @@ from optuna.samplers import TPESampler
 from optuna.pruners import MedianPruner
 
 from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors
-
+from src.core.decorators import handles_errors
 
 class EnhancedFeatureEngineeringOptimizer:
     """
@@ -134,7 +133,7 @@ class EnhancedFeatureEngineeringOptimizer:
             }
         }
     
-    @handle_errors(exceptions=(Exception,), default_return={})
+    @handles_errors(fallback={})
     async def optimize_feature_parameters_enhanced(
         self,
         data: pd.DataFrame,

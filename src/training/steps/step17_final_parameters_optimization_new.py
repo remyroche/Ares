@@ -18,14 +18,13 @@ from src.config.config_manager import (
     get_search_space,
     update_optimizable_config,
 )
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     failed,
     missing,
 )
-
 
 class FinalParametersOptimizationStepNew:
     """Step 12: Final Parameters Optimization using new categorized configuration structure."""
@@ -36,11 +35,7 @@ class FinalParametersOptimizationStepNew:
         self.config_manager = get_config_manager()
         self.optimizable_params = get_optimizable_parameters()
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="final parameters optimization step initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> None:
         """Initialize the final parameters optimization step."""
         self.logger.info("🚀 Initializing Final Parameters Optimization Step (New)...")
@@ -58,8 +53,7 @@ class FinalParametersOptimizationStepNew:
             "✅ Final Parameters Optimization Step initialized successfully",
         )
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="final parameters optimization step execution",
     )

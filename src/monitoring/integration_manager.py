@@ -11,13 +11,12 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.centralized_decorators import (
     performance_monitor,
     PerformanceLevel,
 )
 from src.utils.logger import system_logger
-
 
 @dataclass
 class MonitoringComponents:
@@ -27,7 +26,6 @@ class MonitoringComponents:
     ml_monitor: Optional["MLMonitor"] = None
     report_scheduler: Optional["ReportScheduler"] = None
     tracking_system: Optional["TrackingSystem"] = None
-
 
 class MonitoringIntegrationManager:
     """Unified monitoring integration manager."""
@@ -41,7 +39,7 @@ class MonitoringIntegrationManager:
         self.integration_task: Optional[asyncio.Task] = None
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid integration configuration"),
             AttributeError: (False, "Missing integration parameters"),

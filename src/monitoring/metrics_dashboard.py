@@ -13,9 +13,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-
 
 class MetricType(Enum):
     """Metric types for categorization."""
@@ -26,7 +25,6 @@ class MetricType(Enum):
     TRADING_ANALYTICS = "trading_analytics"
     RISK_METRICS = "risk_metrics"
     ENSEMBLE_METRICS = "ensemble_metrics"
-
 
 @dataclass
 class DashboardMetric:
@@ -39,7 +37,6 @@ class DashboardMetric:
     last_updated: datetime
     metadata: Dict[str, Any]
     unit: Optional[str]
-
 
 class MetricsDashboard:
     """Real-time metrics dashboard."""
@@ -61,7 +58,7 @@ class MetricsDashboard:
         self.metrics: List[DashboardMetric] = []
         self.update_interval: int = int(self.dashboard_config["update_interval_seconds"])  # type: ignore[index]
 
-    @handle_errors(exceptions=(Exception,), default_return=False, context="metrics_dashboard.initialize")
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         self.logger.info("📊 Initializing Metrics Dashboard ...")
         self.metrics.clear()

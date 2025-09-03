@@ -21,7 +21,7 @@ except Exception:  # pragma: no cover
     numba = None  # type: ignore
 
 if "numba" in globals() and numba is not None:
-    pass  # TODO: Add proper implementation
+    # TODO: Add proper implementation
     @numba.jit(nopython=True, cache=True)
     def _numba_triple_barrier_labels(
         close: np.ndarray, 
@@ -131,7 +131,6 @@ class OptimizedTripleBarrierLabeling:
         default_return=pd.DataFrame(),
         context="optimized_triple_barrier_labeling.vectorized"
     )
-    # @guard_dataframe_nulls - removed, handled by validatesmode="warn", arg_index=1)
     @traced(span_name="TripleBarrier.apply_vectorized")
     def apply_triple_barrier_labeling_vectorized(
         self, 
@@ -461,8 +460,8 @@ def benchmark_triple_barrier_methods(data: pd.DataFrame) -> dict[str, float]:
 if __name__ == "__main__":
     # Example usage
     import numpy as np
-import asyncio
-import copy
+    import asyncio
+    import copy
 
     # Create sample data
     dates = pd.date_range("2024-01-01", periods=1000, freq="1min")

@@ -36,7 +36,7 @@ except Exception:  # pragma: no cover
     numba = None  # type: ignore
 
 if "numba" in globals() and numba is not None:
-    pass  # TODO: Add proper implementation
+    # TODO: Add proper implementation
     @numba.jit(nopython=True, cache=True)
     def _numba_regime_aware_triple_barrier_labels(
         close: np.ndarray, 
@@ -101,6 +101,9 @@ if "numba" in globals() and numba is not None:
             profit_pcts[i] = profit_pct
             
         return labels, profit_pcts
+
+
+from dataclasses import dataclass
 
 
 @dataclass
@@ -265,7 +268,6 @@ class RegimeAwareTripleBarrierLabeling:
         default_return=pd.DataFrame(),
         context="regime_aware_triple_barrier_labeling.vectorized"
     )
-    # @guard_dataframe_nulls - removed, handled by validatesmode="warn", arg_index=1)
     @traced(span_name="RegimeAwareTripleBarrier.apply_vectorized")
     def apply_regime_aware_triple_barrier_labeling(
         self, 
@@ -516,7 +518,7 @@ class RegimeAwareTripleBarrierLabeling:
         data: pd.DataFrame, 
         regime_column: str
     ) -> pd.DataFrame:
-        """Add regime-specific TPSL information to the data."
+        """Add regime-specific TPSL information to the data.
 
         Args:
             data: DataFrame with labels and regime information
@@ -555,7 +557,7 @@ class RegimeAwareTripleBarrierLabeling:
         return data
 
     def _calculate_atr(self, data: pd.DataFrame, period: int = 14) -> pd.Series:
-        """Calculate Average True Range."
+        """Calculate Average True Range.
 
         Args:
             data: DataFrame with OHLC data
@@ -576,14 +578,14 @@ class RegimeAwareTripleBarrierLabeling:
             tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
             atr = tr.rolling(window=period).mean()
             
-            return atr.fillna(method='bfill')
+            return atr.bfill()
             
         except Exception:
             # Fallback to simple volatility
             return data['close'].pct_change().rolling(window=period).std().fillna(0.01)
 
     def _apply_default_labeling(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply default triple barrier labeling when regime information is not available."
+        """Apply default triple barrier labeling when regime information is not available.
 
         Args:
             data: DataFrame with OHLCV data
@@ -607,7 +609,7 @@ class RegimeAwareTripleBarrierLabeling:
         return labeler.apply_triple_barrier_labeling_vectorized(data)
 
     def get_regime_performance_summary(self, data: pd.DataFrame, regime_column: str = "composite_cluster_id") -> Dict[str, Dict[str, float]]:
-        """Get performance summary for each regime."
+        """Get performance summary for each regime.
 
         Args:
             data: DataFrame with labels and regime information
@@ -657,7 +659,7 @@ class RegimeAwareTripleBarrierLabeling:
 def create_regime_aware_labeler_from_optimization_results(
     optimization_results: Dict[str, Any]
 ) -> RegimeAwareTripleBarrierLabeling:
-    """Create a regime-aware labeler from optimization results."
+    """Create a regime-aware labeler from optimization results.
 
     Args:
         optimization_results: Results from regime-specific optimization
@@ -691,7 +693,7 @@ def apply_regime_aware_triple_barrier_labeling(
     regime_column: str = "composite_cluster_id",
     binary_classification: bool = True
 ) -> pd.DataFrame:
-    """Apply regime-aware triple barrier labeling to data."
+    """Apply regime-aware triple barrier labeling to data.
 
     Args:
         data: DataFrame with OHLCV and regime data
@@ -793,12 +795,12 @@ def apply_regime_aware_triple_barrier_labeling_with_barriers(
     except Exception as e:
         # Log error and return original data with error indicator
         import logging
-import copy
-
-logger = logging.getLogger(__name__)
-logger.error(f"❌ Error in regime-aware triple barrier labeling with barriers: {e}")
+        import copy
         
-# Return data with error indicator
+        logger = logging.getLogger(__name__)
+        logger.error(f"❌ Error in regime-aware triple barrier labeling with barriers: {e}")
+        
+        # Return data with error indicator
         data_copy = data.copy()
         data_copy['label'] = 0  # Default to HOLD
         data_copy['labeling_method'] = 'error_fallback'

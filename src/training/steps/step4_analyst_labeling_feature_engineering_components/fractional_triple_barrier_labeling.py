@@ -1,19 +1,19 @@
 # src/training/steps/step4_analyst_labeling_feature_engineering_components/fractional_triple_barrier_labeling.py
 
 """Fractional Triple Barrier Labeling for enhanced model training.
-from typing import Any
-from .optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
+
 Implements continuous labeling instead of binary classification for better
 gradient flow and more nuanced risk management.
 """
 
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
 from src.core.decorators import handles_errors, traced
-)
 from src.utils.logger import get_logger
+from .optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling
 
 
 
@@ -68,7 +68,6 @@ class FractionalTripleBarrierLabeling:
         self.logger = get_logger("FractionalTripleBarrierLabeling")
 
     @handles_errors(fallback=pd.DataFrame())
-    # @guard_dataframe_nulls - removed, handled by validatesmode="warn", arg_index=1)
     @traced(span_name="FractionalTripleBarrier.apply")
     def apply_fractional_triple_barrier_labeling(
         self,

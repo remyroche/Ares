@@ -1,8 +1,7 @@
 from src.core.decorators import handles_errors
-
-from src.core.domain import (
 from copy import copy
 
+from src.core.domain import (
     handle_file_operations,
     handle_specific_errors
 )
@@ -10,6 +9,7 @@ from src.config_optuna import get_parameter_value
 
 import contextlib
 import os
+import pickle
 from datetime import datetime
 from typing import Any
 
@@ -441,6 +441,98 @@ class MLConfidencePredictor:
             return self._predict_single_target(features, model_key, model_type)
         return fallback_func(target_level)
 
+    def _get_fallback_confidence(self, target_level: float) -> float:
+        """
+        Generate fallback confidence for price target based on target level.
+        
+        Uses exponential decay - smaller targets have higher probability.
+        
+        Args:
+            target_level: Price target level as percentage
+            
+        Returns:
+            float: Fallback confidence value
+        """
+        # Base confidence decreases exponentially with target size
+        # 0.5% target: ~0.45 confidence
+        # 1.0% target: ~0.35 confidence  
+        # 2.0% target: ~0.20 confidence
+        base = 0.5
+        decay_rate = 0.3
+        confidence = base * np.exp(-decay_rate * target_level)
+        return float(np.clip(confidence, 0.1, 0.9))
+
+    def _get_fallback_decrease_probability(self, target_level: float) -> float:
+        """
+        Generate fallback probability for adverse movement based on target level.
+        
+        Uses inverse relationship - larger targets have lower adverse probability.
+        
+        Args:
+            target_level: Adverse movement level as percentage
+            
+        Returns:
+            float: Fallback adverse probability
+        """
+        # Adverse probability increases slightly with target size
+        # But stays relatively conservative
+        # 0.5% adverse: ~0.35 probability
+        # 1.0% adverse: ~0.40 probability
+        # 2.0% adverse: ~0.45 probability
+        base = 0.3
+        increase_rate = 0.08
+        probability = base + (increase_rate * target_level)
+        return float(np.clip(probability, 0.2, 0.6))
+
+    def _predict_single_target(
+        self,
+        features: pd.DataFrame,
+        model_key: str,
+        model_type: str,
+    ) -> float:
+        """
+        Make prediction using a single target model.
+        
+        Args:
+            features: Prepared features for prediction
+            model_key: Key to identify the model
+            model_type: Type of model (price_target or adversarial)
+            
+        Returns:
+            float: Prediction confidence/probability
+        """
+        try:
+            if model_type == "price_target":
+                model = self.price_target_models.get(model_key)
+            else:
+                model = self.adversarial_models.get(model_key)
+            
+            if model is None:
+                return 0.5
+            
+            # Handle different model types
+            if hasattr(model, 'predict_proba'):
+                # Probabilistic model - get probability of positive class
+                proba = model.predict_proba(features)
+                if len(proba.shape) == 2 and proba.shape[1] >= 2:
+                    # Binary classification - return positive class probability
+                    return float(proba[-1, 1])
+                else:
+                    # Single output - return as is
+                    return float(np.clip(proba[-1], 0.0, 1.0))
+            elif hasattr(model, 'predict'):
+                # Regression or other model - normalize output to [0, 1]
+                prediction = model.predict(features)
+                # Assume output is already in [0, 1] range or normalize it
+                return float(np.clip(prediction[-1], 0.0, 1.0))
+            else:
+                self.logger.warning(f"Model {model_key} has no predict method")
+                return 0.5
+                
+        except Exception as e:
+            self.logger.error(f"Error predicting with model {model_key}: {e}")
+            return 0.5
+
     @handles_errors(
         exceptions=(Exception,),
         default_return={},
@@ -462,6 +554,120 @@ class MLConfidencePredictor:
         if self.ensemble_models:
             return await self._generate_ensemble_predictions(features)
         return {}
+
+    def _generate_directional_confidence_analysis(
+        self,
+        price_target_confidences: dict[str, float],
+        adversarial_confidences: dict[str, float],
+        current_price: float,
+    ) -> dict[str, Any]:
+        """
+        Analyze price target and adversarial confidences to determine overall market direction.
+        
+        This method calculates the probability of bullish, bearish, or neutral movements
+        based on the confidence levels for various price targets.
+        
+        Args:
+            price_target_confidences: Confidences for hitting upward price targets
+            adversarial_confidences: Confidences for adverse/downward movements
+            current_price: Current market price
+            
+        Returns:
+            dict: Directional analysis with probabilities and assessments
+        """
+        try:
+            # Calculate weighted averages for different target ranges
+            # Near-term targets (0.1% - 0.5%)
+            near_targets = {k: v for k, v in price_target_confidences.items() 
+                          if 0.1 <= float(k.replace("%", "")) <= 0.5}
+            near_avg = np.mean(list(near_targets.values())) if near_targets else 0.5
+            
+            # Mid-term targets (0.6% - 1.0%)
+            mid_targets = {k: v for k, v in price_target_confidences.items() 
+                         if 0.6 <= float(k.replace("%", "")) <= 1.0}
+            mid_avg = np.mean(list(mid_targets.values())) if mid_targets else 0.4
+            
+            # Far-term targets (> 1.0%)
+            far_targets = {k: v for k, v in price_target_confidences.items() 
+                         if float(k.replace("%", "")) > 1.0}
+            far_avg = np.mean(list(far_targets.values())) if far_targets else 0.3
+            
+            # Calculate adversarial average
+            adv_avg = np.mean(list(adversarial_confidences.values())) if adversarial_confidences else 0.5
+            
+            # Calculate directional probabilities
+            # Bullish probability: weighted combination of target confidences
+            bullish_prob = (0.5 * near_avg + 0.3 * mid_avg + 0.2 * far_avg)
+            
+            # Bearish probability: based on adversarial confidences
+            bearish_prob = adv_avg
+            
+            # Normalize probabilities
+            total_prob = bullish_prob + bearish_prob
+            if total_prob > 0:
+                bullish_prob = bullish_prob / total_prob
+                bearish_prob = bearish_prob / total_prob
+            
+            # Determine primary direction
+            if bullish_prob > 0.6:
+                primary_direction = "BULLISH"
+                direction_confidence = bullish_prob
+            elif bearish_prob > 0.6:
+                primary_direction = "BEARISH"
+                direction_confidence = bearish_prob
+            else:
+                primary_direction = "NEUTRAL"
+                direction_confidence = 1.0 - abs(bullish_prob - bearish_prob)
+            
+            # Calculate volatility assessment based on confidence spread
+            confidence_values = list(price_target_confidences.values())
+            if confidence_values:
+                confidence_std = np.std(confidence_values)
+                if confidence_std < 0.1:
+                    volatility_assessment = "LOW"
+                elif confidence_std < 0.2:
+                    volatility_assessment = "MODERATE"
+                else:
+                    volatility_assessment = "HIGH"
+            else:
+                volatility_assessment = "UNKNOWN"
+            
+            # Calculate trend strength (0-1)
+            trend_strength = abs(bullish_prob - bearish_prob)
+            
+            # Calculate momentum score (-1 to 1)
+            momentum_score = bullish_prob - bearish_prob
+            
+            return {
+                "primary_direction": primary_direction,
+                "direction_confidence": float(direction_confidence),
+                "bullish_probability": float(bullish_prob),
+                "bearish_probability": float(bearish_prob),
+                "neutral_probability": float(1.0 - bullish_prob - bearish_prob) if (1.0 - bullish_prob - bearish_prob) > 0 else 0.0,
+                "volatility_assessment": volatility_assessment,
+                "trend_strength": float(trend_strength),
+                "momentum_score": float(momentum_score),
+                "near_term_confidence": float(near_avg),
+                "mid_term_confidence": float(mid_avg),
+                "far_term_confidence": float(far_avg),
+                "adversarial_average": float(adv_avg),
+                "analysis_timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error in directional confidence analysis: {e}")
+            # Return neutral analysis on error
+            return {
+                "primary_direction": "NEUTRAL",
+                "direction_confidence": 0.5,
+                "bullish_probability": 0.33,
+                "bearish_probability": 0.33,
+                "neutral_probability": 0.34,
+                "volatility_assessment": "UNKNOWN",
+                "trend_strength": 0.0,
+                "momentum_score": 0.0,
+                "error": str(e)
+            }
 
     def _build_prediction_result(
         self,
@@ -679,6 +885,110 @@ class MLConfidencePredictor:
                 f"Error refreshing models from enhanced training manager: {e}",
             )
             return False
+
+    def _generate_fallback_predictions(self, current_price: float) -> dict[str, Any]:
+        """
+        Generate fallback predictions when models are not available.
+        
+        This method provides reasonable default predictions with proper probability
+        distributions for price targets when ML models are not trained or available.
+        
+        Args:
+            current_price: Current market price
+            
+        Returns:
+            dict: Fallback predictions with price target probabilities
+        """
+        try:
+            # Generate default price target confidences with decreasing probability
+            # for larger price movements (more conservative)
+            price_target_confidences = {}
+            adversarial_confidences = {}
+            
+            # Create a normal distribution-like pattern for price targets
+            # Higher confidence for smaller movements, lower for larger movements
+            base_confidence = 0.5  # Start with neutral confidence
+            decay_factor = 0.85  # How quickly confidence decreases with larger targets
+            
+            for i, target in enumerate(self.price_movement_levels):
+                # Calculate confidence based on target size with exponential decay
+                # Smaller targets have higher probability of being hit
+                confidence = base_confidence * (decay_factor ** i)
+                price_target_confidences[f"{target:.1f}%"] = float(np.clip(confidence, 0.1, 0.9))
+                
+                # Adversarial confidence (risk of opposite movement) increases slightly
+                # with larger targets
+                adversarial_confidence = 0.3 + (0.02 * i)  # Gradual increase
+                adversarial_confidences[f"{target:.1f}%"] = float(np.clip(adversarial_confidence, 0.1, 0.7))
+            
+            # Generate directional analysis with neutral bias
+            directional_analysis = {
+                "primary_direction": "NEUTRAL",
+                "direction_confidence": 0.5,
+                "bullish_probability": 0.5,
+                "bearish_probability": 0.5,
+                "neutral_probability": 0.0,
+                "volatility_assessment": "MODERATE",
+                "trend_strength": 0.0,
+                "momentum_score": 0.0
+            }
+            
+            # Build the complete fallback result
+            result = {
+                "price_target_confidences": price_target_confidences,
+                "adversarial_confidences": adversarial_confidences,
+                "directional_analysis": directional_analysis,
+                "ensemble_predictions": {},
+                "timestamp": datetime.now().isoformat(),
+                "current_price": current_price,
+                "model_status": "fallback",
+                "model_info": {
+                    "status": "Models not available - using statistical fallback",
+                    "reason": "No trained models or enhanced training manager unavailable"
+                },
+                "availability_status": {
+                    "price_target_models": False,
+                    "adversarial_models": False,
+                    "ensemble_models": False,
+                    "is_fallback": True
+                },
+                # Add legacy format for backward compatibility
+                "increase_probabilities": {
+                    float(k.replace("%", "")): v 
+                    for k, v in price_target_confidences.items()
+                    if float(k.replace("%", "")) <= 2.0
+                },
+                "decrease_probabilities": {
+                    float(k.replace("%", "")): v 
+                    for k, v in adversarial_confidences.items()
+                    if float(k.replace("%", "")) <= 1.0
+                },
+                "confidence": 0.5,  # Overall neutral confidence
+                "prediction": "neutral"
+            }
+            
+            self.logger.info(
+                f"Generated fallback predictions for {len(price_target_confidences)} price targets"
+            )
+            return result
+            
+        except Exception as e:
+            self.logger.error(f"Error generating fallback predictions: {e}")
+            # Return minimal fallback if even fallback generation fails
+            return {
+                "price_target_confidences": {"0.5%": 0.5, "1.0%": 0.3, "1.5%": 0.2},
+                "adversarial_confidences": {"0.5%": 0.3, "1.0%": 0.4, "1.5%": 0.5},
+                "directional_analysis": {
+                    "primary_direction": "NEUTRAL",
+                    "direction_confidence": 0.5
+                },
+                "ensemble_predictions": {},
+                "timestamp": datetime.now().isoformat(),
+                "current_price": current_price,
+                "model_status": "minimal_fallback",
+                "confidence": 0.5,
+                "prediction": "neutral"
+            }
 
     def get_enhanced_training_model_info(self) -> dict[str, Any]:
         """Get information about models from enhanced training manager."""

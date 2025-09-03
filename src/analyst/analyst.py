@@ -38,6 +38,13 @@ class Analyst:
     Analyst with comprehensive error handling and type safety.
     Determines IF we should enter a trade & which direction (short/long).
     Passes market health, volatility, and liquidation risk information to tactician.
+    
+    The Analyst outputs probabilities for hitting specific price targets:
+    - price_target_confidences: Probability of hitting upward price movements (0.1% to 2.0%)
+    - adversarial_confidences: Probability of adverse/downward movements
+    - directional_analysis: Overall market direction assessment with bullish/bearish probabilities
+    
+    These probabilities are used by the DualModelSystem to make trading decisions.
     """
     def __init__(self, config: dict[str, Any]) -> None:
         """
@@ -475,13 +482,25 @@ class Analyst:
                     features_df, regime_info, symbol, exchange, timeframe
                 )
 
-            # 6. Compile comprehensive analysis results
+            # 6. Get ML predictions for price targets if not already included
+            ml_predictions = {}
+            if self.ml_confidence_predictor and not trading_decision.get("price_target_confidences"):
+                ml_predictions = await self._get_ml_predictions(
+                    features_df,
+                    current_price,
+                )
+            
+            # 7. Compile comprehensive analysis results
             self.analysis_results = {
                 "timestamp": datetime.now().isoformat(),
                 "market_health": market_health_results,
                 "liquidation_risk": liquidation_risk_results,
                 "trading_decision": trading_decision,
                 "enhanced_predictions": enhanced_predictions,
+                "ml_predictions": ml_predictions,
+                "price_target_probabilities": self._extract_price_target_probabilities(
+                    trading_decision, ml_predictions, enhanced_predictions
+                ),
                 "features_shape": features_df.shape
                 if features_df is not None
                 else None,
@@ -501,6 +520,126 @@ class Analyst:
             self.logger.error(failed("❌ Analysis failed: {e}"))
 
             return False
+
+    def _extract_price_target_probabilities(
+        self,
+        trading_decision: dict[str, Any],
+        ml_predictions: dict[str, Any],
+        enhanced_predictions: dict[str, Any],
+    ) -> dict[str, Any]:
+        """
+        Extract and consolidate price target probabilities from various sources.
+        
+        This method ensures consistent output format for price target probabilities
+        regardless of the source (trading decision, ML predictions, or enhanced predictions).
+        
+        Args:
+            trading_decision: Trading decision from dual model system
+            ml_predictions: Direct ML predictions
+            enhanced_predictions: Enhanced predictions from supervisor
+            
+        Returns:
+            dict: Consolidated price target probabilities
+        """
+        try:
+            # Priority order: trading_decision > ml_predictions > enhanced_predictions
+            
+            # Check trading decision first
+            if trading_decision and "price_target_confidences" in trading_decision:
+                price_targets = trading_decision["price_target_confidences"]
+                adversarial = trading_decision.get("adversarial_confidences", {})
+                directional = trading_decision.get("directional_analysis", {})
+            # Check ML predictions
+            elif ml_predictions and "price_target_confidences" in ml_predictions:
+                price_targets = ml_predictions["price_target_confidences"]
+                adversarial = ml_predictions.get("adversarial_confidences", {})
+                directional = ml_predictions.get("directional_analysis", {})
+            # Check enhanced predictions
+            elif enhanced_predictions and "price_targets" in enhanced_predictions:
+                price_targets = enhanced_predictions["price_targets"]
+                adversarial = enhanced_predictions.get("adversarial", {})
+                directional = enhanced_predictions.get("direction", {})
+            else:
+                # No predictions available - return empty structure
+                return {
+                    "price_targets": {},
+                    "adversarial_risks": {},
+                    "direction": {
+                        "primary": "UNKNOWN",
+                        "confidence": 0.0
+                    },
+                    "summary": "No price target probabilities available"
+                }
+            
+            # Ensure all values are floats and in valid range
+            clean_targets = {}
+            for target, prob in price_targets.items():
+                try:
+                    # Extract numeric value from string keys like "0.5%"
+                    if isinstance(target, str) and target.endswith("%"):
+                        target_val = float(target.replace("%", ""))
+                        clean_targets[f"{target_val}%"] = float(np.clip(prob, 0.0, 1.0))
+                    else:
+                        clean_targets[str(target)] = float(np.clip(prob, 0.0, 1.0))
+                except (ValueError, TypeError):
+                    continue
+            
+            # Process adversarial risks similarly
+            clean_adversarial = {}
+            for risk, prob in adversarial.items():
+                try:
+                    if isinstance(risk, str) and risk.endswith("%"):
+                        risk_val = float(risk.replace("%", ""))
+                        clean_adversarial[f"{risk_val}%"] = float(np.clip(prob, 0.0, 1.0))
+                    else:
+                        clean_adversarial[str(risk)] = float(np.clip(prob, 0.0, 1.0))
+                except (ValueError, TypeError):
+                    continue
+            
+            # Extract directional info
+            if isinstance(directional, dict):
+                primary_direction = directional.get("primary_direction", "NEUTRAL")
+                direction_confidence = directional.get("direction_confidence", 0.5)
+                bullish_prob = directional.get("bullish_probability", 0.33)
+                bearish_prob = directional.get("bearish_probability", 0.33)
+            else:
+                primary_direction = "NEUTRAL"
+                direction_confidence = 0.5
+                bullish_prob = 0.33
+                bearish_prob = 0.33
+            
+            # Generate summary
+            if clean_targets:
+                highest_prob_target = max(clean_targets.items(), key=lambda x: x[1])
+                summary = f"Highest probability target: {highest_prob_target[0]} ({highest_prob_target[1]:.2%}), Direction: {primary_direction}"
+            else:
+                summary = "No specific price targets identified"
+            
+            return {
+                "price_targets": clean_targets,
+                "adversarial_risks": clean_adversarial,
+                "direction": {
+                    "primary": primary_direction,
+                    "confidence": float(direction_confidence),
+                    "bullish_probability": float(bullish_prob),
+                    "bearish_probability": float(bearish_prob),
+                    "neutral_probability": float(1.0 - bullish_prob - bearish_prob)
+                },
+                "summary": summary,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            self.logger.error(f"Error extracting price target probabilities: {e}")
+            return {
+                "price_targets": {},
+                "adversarial_risks": {},
+                "direction": {
+                    "primary": "ERROR",
+                    "confidence": 0.0
+                },
+                "summary": f"Error: {str(e)}"
+            }
 
     @handles_errors(
         exceptions=(Exception,),

@@ -10,10 +10,9 @@ timeouts, and cascading failures.
 import asyncio
 import random
 import time
-from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
+from typing import A, Callableny
 
 from src.core.errors.base import ServiceUnavailableError
 from src.core.errors.base import TimeoutError as AppTimeoutError

@@ -24,7 +24,7 @@ import shap
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
 
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 from src.utils.logger import system_logger
 
 

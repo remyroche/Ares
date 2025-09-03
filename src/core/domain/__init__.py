@@ -9,7 +9,7 @@ for easy importing.
 """
 
 # Additional composite decorators
-from src.core.decorators import cached, compose, handles_errors, traced, validates
+from src.core.decorators import cached as cached_src_core_decorators, compose, handles_errors, traced, validates
 
 # Import all decorators from domain_decorators module
 from .decorators import (  # Enums; Data Quality; Monitoring and Performance; Security and Processing; Pipeline Management; Utilities
@@ -95,7 +95,7 @@ def time_budget_watchdog(
     fail_on_timeout: bool = True,
 ) -> callable:
     """Monitor execution time against a budget."""
-    from src.core.decorators import timeout
+    from src.core.decorators import timeout as timeout_src_core_decorators
 
     decorators = []
 

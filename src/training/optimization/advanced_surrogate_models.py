@@ -10,7 +10,7 @@ This module provides advanced surrogate models including:
 - Transfer learning capabilities
 """
 
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 
 import numpy as np
 import pandas as pd

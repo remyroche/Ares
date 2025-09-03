@@ -6,9 +6,8 @@ from __future__ import annotations
 Generic base classes with proper type constraints for reusable components.
 """
 from abc import ABC, abstractmethod
-from collections.abc import Callable
 from typing import (
-    AsyncContextManager,
+    Asy, CallablencContextManager,
     Generic,
     Protocol,
     TypeVar,

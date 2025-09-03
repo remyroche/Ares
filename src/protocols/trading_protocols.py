@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:
     from src.custom_types.base_types import Symbol, Timestamp
-    from src.custom_types.ml_types import ModelInput, PredictionResult
+    from src.custom_types.ml_types import ModelInput as ModelInput_src_custom_types_ml_types, PredictionResult
     from src.custom_types.trading_types import (
         PositionInfo,
         RegimeClassification,

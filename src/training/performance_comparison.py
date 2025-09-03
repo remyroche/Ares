@@ -20,7 +20,7 @@ from typing import Any, Number
 import numpy as np
 import pandas as pd
 
-from src.utils.comprehensive_logger import get_logger
+from src.utils.comprehensive_logger import get_logger as get_logger_src_utils_comprehensive_logger
 from src.utils.warning_symbols import (
     error,
     initialization_error,

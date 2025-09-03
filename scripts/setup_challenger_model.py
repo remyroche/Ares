@@ -23,7 +23,7 @@ sys.path.insert(0, str(project_root))
 
 from src.config import CONFIG  # noqa: E402
 from src.utils.state_manager import StateManager  # noqa: E402
-from src.utils.warning_symbols import error, missing  # noqa: E402
+from src.utils.warning_symbols import error as error_src_utils_warning_symbols, missing  # noqa: E402
 
 try:
 	import mlflow  # type: ignore

@@ -33,7 +33,7 @@ sys.path.insert(0, str(project_root))
 from src.database.migration_utils import DatabaseMigrationUtils  # noqa: E402
 from src.database.sqlite_manager import SQLiteManager  # noqa: E402
 from src.utils.logger import setup_logging, system_logger  # noqa: E402
-from src.utils.warning_symbols import failed, warning  # noqa: E402
+from src.utils.warning_symbols import failed as failed_src_utils_warning_symbols, warning  # noqa: E402
 
 
 async def export_database(db_path: str="data/ares_local_db.sqlite") -> None:

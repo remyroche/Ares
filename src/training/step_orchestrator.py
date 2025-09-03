@@ -12,7 +12,7 @@ import inspect
 import os
 from typing import Any
 
-from src.training.progress_manager import ProgressManager
+from src.training.progress_manager import ProgressManager as ProgressManager_src_training_progress_manager
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,

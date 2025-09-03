@@ -13,7 +13,7 @@ from typing import Any, Optional
 import numpy as np
 import pandas as pd
 
-from src.core.decorators import handles_errors, traced, validates
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators, traced, validates
 
 # src/training/steps/step1_5_data_converter.py
 
@@ -23,7 +23,7 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import pipeline standards
-from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+from src.utils.pipeline_standards import PipelineStandards as PipelineStandards_src_utils_pipeline_standards, pipeline_standards
 
 # Standardized import management
 REQUIRED_MODULES = [

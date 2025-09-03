@@ -7,10 +7,9 @@ Utility functions and common patterns for the Strategist module.
 import asyncio
 import functools
 import logging
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
-from typing import Any, TypeVar
+from typing import A, Callableny, TypeVar
 
 import numpy as np
 import pandas as pd

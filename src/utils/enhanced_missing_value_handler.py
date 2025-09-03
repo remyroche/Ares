@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 
-from .error_handler import handle_errors
+from .error_handler import handles_errors
 from .logger import system_logger
 from .pipeline_standards import PipelineStandards, pipeline_standards
 
@@ -78,7 +78,7 @@ class EnhancedMissingValueHandler:
             GapType.CRITICAL: "manual_intervention",
         }
 
-    @handles_errors(Exception,, fallback=None, context="missing value handling")
+    @handles_errors(Exception, fallback=None, context="missing value handling")
     def handle_missing_values_intelligently(
         self,
         data: pd.DataFrame,
@@ -314,15 +314,12 @@ class EnhancedMissingValueHandler:
             # Import exchange-specific downloader
             if exchange.lower() == "binance":
                 from src.training.steps.data_downloader import DataDownloader
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import copy
+                
+                downloader = DataDownloader()
 
-downloader = DataDownloader()
-
-# Download klines data
+                # Download klines data
                 downloaded_data = downloader.download_klines(
-                symbol=symbol, interval=timeframe, start_time=start_dt, end_time=end_dt
+                    symbol=symbol, interval=timeframe, start_time=start_dt, end_time=end_dt
                 )
 
                 if downloaded_data is not None and len(downloaded_data) > 0:

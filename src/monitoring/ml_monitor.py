@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""
+""""
 Machine Learning Monitor
 
 Provides ML monitoring including drift detection scaffolding and performance tracking.
-"""
+""""
 
 from __future__ import annotations
 
@@ -74,9 +74,9 @@ class ModelPerformance:
 
 
 class MLMonitor:
-    """
+    """"
     ML Monitor with drift detection scaffolding and performance tracking.
-    """
+    """"
 
     def __init__(self, config: Dict[str, Any]) -> None:
         self.config = config

@@ -1,9 +1,9 @@
 # src/training/feature_integration.py
 
-"""Feature Integration Module for ML Training Pipeline.
+"""Feature Integration Module for ML Training Pipeline."
 Ensures liquidity features from advanced feature engineering are properly integrated
 into the ML model training process.
-"""
+""""
 
 from typing import Any
 
@@ -23,9 +23,9 @@ import asyncio
 
 
 class FeatureIntegrationManager:
-    """Manages integration of advanced features (including liquidity features)
+    """Manages integration of advanced features (including liquidity features)"
     into the ML training pipeline.
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -66,9 +66,11 @@ class FeatureIntegrationManager:
             # Initialize advanced feature engineering
             if self.enable_advanced_features:
                 from src.analyst.advanced_feature_engineering import (
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import copy
 
-                    AdvancedFeatureEngineering,
+AdvancedFeatureEngineering,
                 )
 
                 self.advanced_feature_engineering = AdvancedFeatureEngineering(
@@ -97,7 +99,7 @@ import copy
         market_data: pd.DataFrame,
         order_flow_data: pd.DataFrame | None = None,
     ) -> pd.DataFrame:
-        """Integrate advanced features (including liquidity features) into training data.
+        """Integrate advanced features (including liquidity features) into training data."
 
         Args:
             historical_data: Historical price and volume data
@@ -107,7 +109,7 @@ import copy
         Returns:
             DataFrame with integrated features
 
-        """
+        """"
         try:
             if not self.is_initialized:
                 self.print(
@@ -218,7 +220,7 @@ import copy
                 liquidity_features["amihud_illiquidity"].rolling(20).mean()
             )
 
-            # Kyle's lambda
+            # Kyle's lambda'
             liquidity_features["kyle_lambda"] = (
                 np.abs(price_changes).rolling(50).mean() / volume.rolling(50).mean()
             )

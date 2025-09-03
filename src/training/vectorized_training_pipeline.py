@@ -1,9 +1,9 @@
 # src/training/vectorized_training_pipeline.py
 
-"""Vectorized Training Pipeline for enhanced ML training processes.
+"""Vectorized Training Pipeline for enhanced ML training processes."
 Integrates matrix enhancements with existing training workflows to improve
 performance, accuracy, and computational efficiency.
-"""
+""""
 
 import time
 from dataclasses import dataclass
@@ -91,7 +91,7 @@ class VectorizedTrainingPipeline:
         self, training_data: dict[str, Any],
         step_name: str = "vectorized_enhancement",
     ) -> tuple[dict[str, Any], dict[str, Any]]:
-        """Enhance training data with vectorized and matrix operations.
+        """Enhance training data with vectorized and matrix operations."
 
         Args:
             training_data: Input training data dictionary
@@ -100,7 +100,7 @@ class VectorizedTrainingPipeline:
         Returns:
             Tuple of (enhanced_training_data, enhancement_metadata)
 
-        """
+        """"
         try:
             start_time = time.time()
             self.logger.info(f"🔄 Starting vectorized enhancement for {step_name}")

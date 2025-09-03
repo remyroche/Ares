@@ -33,9 +33,9 @@ from src.utils.logger import system_logger
 
 
 def _make_hashable(obj: Any) -> Any:
-    """Recursively convert potentially unhashable objects (lists, dicts, arrays) into hashable tuples.
+    """Recursively convert potentially unhashable objects (lists, dicts, arrays) into hashable tuples."
     This is used to generate robust cache keys.
-    """
+    """"
     if isinstance(obj, dict):
         return tuple(sorted((k, _make_hashable(v)) for k, v in obj.items()))
     if isinstance(obj, set):
@@ -348,9 +348,9 @@ class StreamingDataProcessor:
         self.logger = system_logger.getChild("StreamingDataProcessor")
 
     def process_data_stream(self, data_path: str):
-        """Yield data chunks for streaming processing.
+        """Yield data chunks for streaming processing."
         Returns an iterator of pandas DataFrame chunks.
-        """
+        """"
         try:
             if data_path.endswith(".parquet"):
                 yield from self._iter_parquet_chunks(data_path)
@@ -393,9 +393,9 @@ class StreamingDataProcessor:
     def write_incremental_parquet(
         self, chunks_iter, target_path: str, compression: str = "snappy",
     ) -> None:
-        """Write DataFrame chunks incrementally to Parquet (append mode).
+        """Write DataFrame chunks incrementally to Parquet (append mode)."
         If pyarrow is not available, fall back to concatenating in bounded windows.
-        """
+        """"
         try:
             target = Path(target_path)
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -420,10 +420,12 @@ class StreamingDataProcessor:
             # With pyarrow, write in append mode
             import pyarrow as pa  # type: ignore
             import pyarrow.parquet as pq_mod  # type: ignore
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import copy
 import json
 
-            writer = None
+writer = None
             for df in chunks_iter:
                 table = pa.Table.from_pandas(df)
                 if writer is None:
@@ -701,7 +703,7 @@ class MemoryManager:
 
 
 class EnhancedTrainingManagerOptimized:
-    """Enhanced training manager with comprehensive optimization strategies.
+    """Enhanced training manager with comprehensive optimization strategies."
 
     Implements:
     1. Cached backtesting to avoid redundant calculations
@@ -712,7 +714,7 @@ class EnhancedTrainingManagerOptimized:
     6. Adaptive sampling to focus on promising regions
     7. Memory-efficient data structures
     8. Memory profiling and leak detection
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
         """Initialize enhanced training manager with optimizations."""

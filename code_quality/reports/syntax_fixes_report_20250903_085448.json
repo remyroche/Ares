@@ -1,0 +1,13 @@
+{
+  "fixed": 0,
+  "failed": 180,
+  "fixed_files": [],
+  "error_patterns": {
+    "invalid syntax": 105,
+    "unterminated string literal (detected at line 585)": 1,
+    "expected 'except' or 'finally' block": 44,
+    "unexpected indent": 28,
+    "expected an indented block after 'except' statement on line 165": 1,
+    "unmatched ')'": 1
+  }
+}

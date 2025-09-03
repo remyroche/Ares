@@ -151,10 +151,12 @@ class RegimeDataSplittingStep:
             self.logger.info("🔄 Loading unified data for HMM composite regime data creation...")
             data_loader = get_unified_data_loader(self.config)
             from src.config.constants import (
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import numpy as np
 import os.path
 
-                BLANK_TRAINING_LOOKBACK_DAYS,
+BLANK_TRAINING_LOOKBACK_DAYS,
             )
 
             # Use lookback_days from config (should be passed from enhanced training manager)
@@ -347,7 +349,7 @@ import os.path
             
         except Exception as e:
             self.logger.error(f"❌ Failed to log step 8 artifacts and reports: {e}")
-            # Don't fail the step if MLflow logging fails
+            # Don't fail the step if MLflow logging fails'
 
     @with_tracing_span("step8_regime_splitting._save_unified_regime_dataset", log_args=False)
     @handle_errors(exceptions=(Exception,), default_return=False, context="save_unified_regime_dataset")

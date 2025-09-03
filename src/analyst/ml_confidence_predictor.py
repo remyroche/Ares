@@ -31,19 +31,19 @@ from src.utils.warning_symbols import (
 
 
 class MLConfidencePredictor:
-    """
+    """"
     ML Confidence Predictor that generates predictions with confidence scores
     for price increases and expected price decreases in table format.
     Integrates with enhanced training manager to use properly trained models.
-    """
+    """"
 
     def __init__(self, config: dict[str, Any]) -> None:
-        """
+        """"
         Initialize ML Confidence Predictor with enhanced type safety.
 
         Args:
             config: Configuration dictionary
-        """
+        """"
         self.config: dict[str, Any] = config
         self.logger = logging.getLogger(self.__class__.__name__)
         self.logger = system_logger.getChild("MLConfidencePredictor")
@@ -206,12 +206,12 @@ class MLConfidencePredictor:
         self.label_timeframes: list[str] = ["30m", "15m", "5m", "1m"]
 
     def is_enhanced_training_available(self) -> bool:
-        """
+        """"
         Check if enhanced training manager is available and has trained models.
 
         Returns:
             bool: True if enhanced training manager is available and has models
-        """
+        """"
         return (
             self.enhanced_training_manager is not None
             and hasattr(self.enhanced_training_manager, "get_enhanced_training_status")
@@ -233,7 +233,7 @@ class MLConfidencePredictor:
         market_data: pd.DataFrame,
         current_price: float,
     ) -> dict[str, Any] | None:
-        """
+        """"
         Predict confidence scores for price movements (direction-neutral) and adverse movement risks.
         Always returns predictions, even if model is not fully trained.
 
@@ -243,7 +243,7 @@ class MLConfidencePredictor:
 
         Returns:
             Optional[Dict[str, Any]]: Prediction table with direction-neutral analysis
-        """
+        """"
         try:
             self.logger.info("Generating price target confidence predictions...")
 
@@ -301,12 +301,12 @@ class MLConfidencePredictor:
         context="prediction preparation",
     )
     async def _prepare_for_prediction(self) -> bool:
-        """
+        """"
         Prepare the predictor for making predictions.
 
         Returns:
             bool: True if ready for prediction, False otherwise
-        """
+        """"
         # Check if enhanced training manager is available and has models
         if not self.is_enhanced_training_available():
             self.logger.warning(
@@ -331,12 +331,12 @@ class MLConfidencePredictor:
         return True
 
     def _has_trained_models(self) -> bool:
-        """
+        """"
         Check if trained models are available.
 
         Returns:
             bool: True if trained models are available
-        """
+        """"
         return self.is_trained and (
             self.price_target_models
             or self.adversarial_models
@@ -354,7 +354,7 @@ class MLConfidencePredictor:
         self,
         features: pd.DataFrame,
     ) -> dict[str, float]:
-        """
+        """"
         Generate price target confidence predictions.
 
         Args:
@@ -362,7 +362,7 @@ class MLConfidencePredictor:
 
         Returns:
             dict: Price target confidence predictions
-        """
+        """"
         price_target_confidences = {}
 
         for target in self.price_movement_levels:
@@ -386,7 +386,7 @@ class MLConfidencePredictor:
         self,
         features: pd.DataFrame,
     ) -> dict[str, float]:
-        """
+        """"
         Generate adversarial confidence predictions.
 
         Args:
@@ -394,7 +394,7 @@ class MLConfidencePredictor:
 
         Returns:
             dict: Adversarial confidence predictions
-        """
+        """"
         adversarial_confidences = {}
 
         for level in self.adversarial_movement_levels:
@@ -416,7 +416,7 @@ class MLConfidencePredictor:
         model_type: str,
         target_level: float,
     ) -> float:
-        """
+        """"
         Get prediction for a specific target level.
 
         Args:
@@ -427,7 +427,7 @@ class MLConfidencePredictor:
 
         Returns:
             float: Prediction confidence
-        """
+        """"
         if model_type == "price_target":
             models = self.price_target_models
             fallback_func = self._get_fallback_confidence
@@ -448,7 +448,7 @@ class MLConfidencePredictor:
         self,
         features: pd.DataFrame,
     ) -> dict[str, Any]:
-        """
+        """"
         Generate ensemble predictions if available.
 
         Args:
@@ -456,7 +456,7 @@ class MLConfidencePredictor:
 
         Returns:
             dict: Ensemble predictions
-        """
+        """"
         if self.ensemble_models:
             return await self._generate_ensemble_predictions(features)
         return {}
@@ -469,7 +469,7 @@ class MLConfidencePredictor:
         ensemble_predictions: dict[str, Any],
         current_price: float,
     ) -> dict[str, Any]:
-        """
+        """"
         Build the final prediction result.
 
         Args:
@@ -481,7 +481,7 @@ class MLConfidencePredictor:
 
         Returns:
             dict: Complete prediction result
-        """
+        """"
         return {
             "price_target_confidences": price_target_confidences,
             "adversarial_confidences": adversarial_confidences,
@@ -500,7 +500,7 @@ class MLConfidencePredictor:
         current_price: float,
         model_type: str = "analyst",  # "analyst" or "tactician"
     ) -> dict[str, Any] | None:
-        """
+        """"
         Generate predictions with meta-labeling integration.
 
         Args:
@@ -510,7 +510,7 @@ class MLConfidencePredictor:
 
         Returns:
             Dictionary containing predictions with meta-labels
-        """
+        """"
         try:
             if not self.meta_labeling_system:
                 self.logger.warning("Meta-labeling system not available")
@@ -948,7 +948,7 @@ class MLConfidencePredictor:
         market_data: pd.DataFrame,
         timeframes: list[str] = None,
     ) -> dict[str, Any]:
-        """
+        """"
         Generate analyst meta-labels for multiple timeframes.
 
         Args:
@@ -957,7 +957,7 @@ class MLConfidencePredictor:
 
         Returns:
             Dict containing analyst meta-labels
-        """
+        """"
         try:
             if not self.meta_labeling_system:
                 return {}
@@ -993,7 +993,7 @@ class MLConfidencePredictor:
         market_data: pd.DataFrame,
         timeframe: str = "1m",
     ) -> dict[str, Any]:
-        """
+        """"
         Generate tactician meta-labels for entry optimization.
 
         Args:
@@ -1002,7 +1002,7 @@ class MLConfidencePredictor:
 
         Returns:
             Dict containing tactician meta-labels
-        """
+        """"
         try:
             if not self.meta_labeling_system:
                 return {}
@@ -1347,12 +1347,12 @@ class MLConfidencePredictor:
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
-        """
+        """"
         Validate predictor configuration.
 
         Returns:
             bool: True if configuration is valid, False otherwise
-        """
+        """"
         try:
             # Validate required parameters
             required_params = [
@@ -1389,7 +1389,7 @@ class MLConfidencePredictor:
         ensemble_models: dict[str, Any],
         ensemble_weights: dict[str, float] = None,
     ) -> dict[str, Any] | None:
-        """
+        """"
         Generate ensemble-specific confidence predictions.
 
         Args:
@@ -1400,7 +1400,7 @@ class MLConfidencePredictor:
 
         Returns:
             Dict with ensemble predictions
-        """
+        """"
         try:
             self.logger.info("🎯 Generating ensemble confidence predictions")
 
@@ -1422,7 +1422,7 @@ class MLConfidencePredictor:
                 try:
                     # Generate predictions for this model
                     if hasattr(model, "predict_proba"):
-                        # Use model's predict_proba method
+                        # Use model's predict_proba method'
                         features = self._prepare_features_for_prediction(market_data)
                         predictions = model.predict_proba(features)
                         confidence = (
@@ -1590,7 +1590,7 @@ class MLConfidencePredictor:
         market_data: pd.DataFrame,
         current_price: float,
     ) -> dict[str, Any] | None:
-        """
+        """"
         Predict price direction with adversarial analysis.
 
         First determines the most likely price direction change,
@@ -1602,7 +1602,7 @@ class MLConfidencePredictor:
 
         Returns:
             Dictionary containing directional prediction and adversarial analysis
-        """
+        """"
         try:
             self.logger.info(
                 "Generating directional prediction with adversarial analysis...",
@@ -1649,7 +1649,7 @@ class MLConfidencePredictor:
         market_data: pd.DataFrame,
         current_price: float,
     ) -> dict[str, Any]:
-        """
+        """"
         Predict the most likely price direction and magnitude.
 
         Args:
@@ -1658,7 +1658,7 @@ class MLConfidencePredictor:
 
         Returns:
             Dictionary with primary direction prediction
-        """
+        """"
         # Get base confidence predictions
         base_predictions = await self.predict_confidence_table(
             market_data,
@@ -1719,7 +1719,7 @@ class MLConfidencePredictor:
         market_data: pd.DataFrame,
         current_price: float,
     ) -> dict[str, Any]:
-        """
+        """"
         Calculate adversarial probabilities for each increment in the primary direction.
 
         Args:
@@ -1729,7 +1729,7 @@ class MLConfidencePredictor:
 
         Returns:
             Dictionary with adversarial analysis for each increment
-        """
+        """"
         try:
             primary_direction = directional_prediction["direction"]
             magnitude_levels = directional_prediction["magnitude_levels"]
@@ -1776,7 +1776,7 @@ class MLConfidencePredictor:
         market_data: pd.DataFrame,
         current_price: float,
     ) -> float:
-        """
+        """"
         Calculate probability of adverse price movement at specific level.
 
         Args:
@@ -1788,7 +1788,7 @@ class MLConfidencePredictor:
 
         Returns:
             Probability of adverse movement
-        """
+        """"
         # Get base predictions
         base_predictions = await self.predict_confidence_table(
             market_data,
@@ -1840,7 +1840,7 @@ class MLConfidencePredictor:
         predictions: dict[str, float],
         direction: str,
     ) -> float:
-        """
+        """"
         Calculate weighted average confidence for a direction.
 
         Args:
@@ -1849,7 +1849,7 @@ class MLConfidencePredictor:
 
         Returns:
             Weighted average confidence
-        """
+        """"
         try:
             if not predictions:
                 return 0.0
@@ -1877,7 +1877,7 @@ class MLConfidencePredictor:
         predictions: dict[str, float],
         direction: str,
     ) -> list[float]:
-        """
+        """"
         Get magnitude levels for a direction from predictions.
 
         Args:
@@ -1886,7 +1886,7 @@ class MLConfidencePredictor:
 
         Returns:
             List of magnitude levels
-        """
+        """"
         if not predictions:
             msg = f"No predictions available for {direction} direction"
             raise ValueError(msg)
@@ -1908,7 +1908,7 @@ class MLConfidencePredictor:
         return sorted(levels)
 
     def _calculate_risk_score(self, adverse_probabilities: dict[str, float]) -> float:
-        """
+        """"
         Calculate overall risk score based on adverse probabilities.
 
         Args:
@@ -1916,7 +1916,7 @@ class MLConfidencePredictor:
 
         Returns:
             Risk score (0-1, higher = more risky)
-        """
+        """"
         if not adverse_probabilities:
             msg = "No adverse probabilities provided for risk calculation"
             raise ValueError(msg)
@@ -1943,7 +1943,7 @@ class MLConfidencePredictor:
         primary_magnitude: float,
         adverse_probabilities: dict[str, float],
     ) -> float:
-        """
+        """"
         Calculate recommended stop loss based on adverse probabilities.
 
         Args:
@@ -1952,7 +1952,7 @@ class MLConfidencePredictor:
 
         Returns:
             Recommended stop loss level
-        """
+        """"
         if not adverse_probabilities:
             msg = "No adverse probabilities provided for stop loss calculation"
             raise ValueError(
@@ -1972,7 +1972,7 @@ class MLConfidencePredictor:
         directional_prediction: dict[str, Any],
         adversarial_analysis: dict[str, Any],
     ) -> dict[str, Any]:
-        """
+        """"
         Calculate comprehensive risk assessment.
 
         Args:
@@ -1981,7 +1981,7 @@ class MLConfidencePredictor:
 
         Returns:
             Risk assessment dictionary
-        """
+        """"
         if not adversarial_analysis:
             msg = "No adversarial analysis data provided for risk assessment"
             raise ValueError(
@@ -2028,7 +2028,7 @@ class MLConfidencePredictor:
         directional_prediction: dict[str, Any],
         risk_score: float,
     ) -> str:
-        """
+        """"
         Generate trading recommendation based on risk assessment.
 
         Args:
@@ -2037,7 +2037,7 @@ class MLConfidencePredictor:
 
         Returns:
             Trading recommendation
-        """
+        """"
         direction = directional_prediction["direction"]
         confidence = directional_prediction["confidence"]
 
@@ -2124,7 +2124,7 @@ class MLConfidencePredictor:
         strategy_id: str | None = None,
         **kwargs,
     ) -> dict[str, Any]:
-        """
+        """"
         Execute CHASE_MICRO_BREAKOUT strategy with stop-limit order placement.
 
         Args:
@@ -2138,7 +2138,7 @@ class MLConfidencePredictor:
 
         Returns:
             Dictionary containing execution results
-        """
+        """"
         try:
             if not self.enhanced_order_manager:
                 return {
@@ -2195,7 +2195,7 @@ class MLConfidencePredictor:
         strategy_id: str | None = None,
         **kwargs,
     ) -> dict[str, Any]:
-        """
+        """"
         Execute LIMIT_ORDER_RETURN strategy with leveraged limit order placement.
 
         Args:
@@ -2209,7 +2209,7 @@ class MLConfidencePredictor:
 
         Returns:
             Dictionary containing execution results
-        """
+        """"
         try:
             if not self.enhanced_order_manager:
                 return {
@@ -2344,7 +2344,7 @@ class MLConfidencePredictor:
         strategy_id: str | None = None,
         **kwargs,
     ) -> dict[str, Any]:
-        """
+        """"
         Execute order with specified strategy using async order executor.
 
         Args:
@@ -2359,7 +2359,7 @@ class MLConfidencePredictor:
 
         Returns:
             Dictionary containing execution results
-        """
+        """"
         try:
             if not self.async_order_executor:
                 return {
@@ -2370,10 +2370,12 @@ class MLConfidencePredictor:
 
             # Import required components
             from src.tactician.async_order_executor import (
+        except Exception as e:
+            pass  # TODO: Handle exception properly
 import copy
 import os.path
 
-                ExecutionRequest,
+ExecutionRequest,
                 ExecutionStrategy,
                 OrderSide,
                 OrderType,
@@ -2479,7 +2481,7 @@ import os.path
         training_type: str = "continuous",
         force_training: bool = False,
     ) -> dict[str, Any]:
-        """
+        """"
         Trigger model training based on conditions or force.
 
         Args:
@@ -2489,7 +2491,7 @@ import os.path
 
         Returns:
             Dictionary containing training results
-        """
+        """"
         try:
             if not self.enhanced_training_manager:
                 return {
@@ -2697,10 +2699,10 @@ import os.path
         performance_history: dict[str, float] = None,
         regime: str = None,
     ):
-        """
+        """"
         Dynamically update ensemble weights based on recent performance, regime, or meta-model.
         If a meta-model is available, use it for weighting; otherwise, use recent accuracy.
-        """
+        """"
         if performance_history:
             total = sum(performance_history.values())
             if total > 0:
@@ -2746,10 +2748,10 @@ import os.path
         self.logger.info(f"Updated ensemble weights: {self.ensemble_weights}")
 
     def ablation_study(self, features: pd.DataFrame, y_true: np.ndarray) -> dict:
-        """
+        """"
         Perform ablation study: remove each ensemble member in turn and measure performance drop.
         Returns a dict of member: performance_with_removal.
-        """
+        """"
         results = {}
         for member in self.ensemble_models:
             others = {k: v for k, v in self.ensemble_models.items() if k != member}
@@ -2771,14 +2773,14 @@ import os.path
         market_data: pd.DataFrame,
         timeframe: str | None = None,
     ) -> dict[str, float]:
-        """Predict per-label confidences using label-specific MoE models.
+        """Predict per-label confidences using label-specific MoE models."
 
         Returns a dict mapping label name -> confidence in [0,1]. Falls back to 0.5 if model unavailable.
-        """
+        """"
         # Ensure models are ready
         if not await self._prepare_for_prediction():
             return {label: 0.5 for label in self.analyst_labels}
-        # Build features according to predictor's schema
+        # Build features according to predictor's schema'
         features = await self._prepare_prediction_features(market_data)
         if features is None or features.empty:
             return {label: 0.5 for label in self.analyst_labels}
@@ -2906,11 +2908,11 @@ import os.path
         market_data: pd.DataFrame,
         timeframes: list[str] | None = None,
     ) -> dict[str, float]:
-        """Predict timeframe-aware label confidences.
+        """Predict timeframe-aware label confidences."
 
         Returns a flat dict mapping "<tf>_<LABEL>" -> confidence.
         Defaults to self.analyst_timeframes if timeframes not provided.
-        """
+        """"
         tf_list = timeframes or list(self.analyst_timeframes)
         all_conf: dict[str, float] = {}
         for tf in tf_list:
@@ -2929,10 +2931,10 @@ import os.path
         market_data: pd.DataFrame,
         timeframe: str | None = None,
     ) -> dict[str, float]:
-        """Predict per-label confidences for tactician (1m) labels.
+        """Predict per-label confidences for tactician (1m) labels."
 
         Uses label-specific MoE models if available; falls back to 0.5 per label.
-        """
+        """"
         if not await self._prepare_for_prediction():
             return {label: 0.5 for label in self.tactician_labels}
         features = await self._prepare_prediction_features(market_data)
@@ -3030,7 +3032,7 @@ import os.path
 async def setup_ml_confidence_predictor(
     config: dict[str, Any] | None = None,
 ) -> MLConfidencePredictor | None:
-    """
+    """"
     Setup ML Confidence Predictor.
 
     Args:
@@ -3038,7 +3040,7 @@ async def setup_ml_confidence_predictor(
 
     Returns:
         Optional[MLConfidencePredictor]: Initialized predictor or None
-    """
+    """"
     try:
         if config is None:
             config = {}

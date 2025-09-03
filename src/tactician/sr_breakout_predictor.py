@@ -478,6 +478,93 @@ class SRBreakoutPredictor:
         }
     
     @handles_errors(
+        exceptions=(ValueError, AttributeError),
+        default_return={},
+        context="predict SR outcome"
+    )
+    async def predict_sr_outcome(
+        self,
+        market_data: pd.DataFrame,
+        current_price: float,
+        sr_context: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Predict S/R interaction outcome using optimized parameters.
+        
+        Args:
+            market_data: Market data DataFrame
+            current_price: Current price
+            sr_context: S/R context
+            
+        Returns:
+            Dictionary containing outcome prediction with probabilities
+        """
+        try:
+            if not self.is_initialized:
+                self.logger.error("SR breakout predictor not initialized")
+                return self._get_default_outcome()
+            
+            # Use the optimized probability calculator
+            from .sr_modules.sr_probability_calculator import SRProbabilityCalculator
+            prob_calculator = SRProbabilityCalculator(self.config)
+            
+            # Calculate probabilities using optimized parameters
+            probabilities = prob_calculator.calculate_probabilities(
+                market_data, current_price, sr_context
+            )
+            
+            # Determine most likely outcome
+            outcome_map = {
+                "breakout": "breakout",
+                "rebounce": "rebounce", 
+                "consolidation": "consolidation"
+            }
+            
+            predicted_outcome = max(probabilities, key=lambda x: probabilities.get(x, 0))
+            confidence = probabilities[predicted_outcome]
+            
+            # Build outcome prediction
+            outcome = {
+                "outcome": outcome_map.get(predicted_outcome, "consolidation"),
+                "confidence": confidence,
+                "probabilities": {
+                    "breakout": probabilities["breakout"],
+                    "rebounce": probabilities["rebounce"],
+                    "consolidation": probabilities["consolidation"]
+                },
+                "is_near_sr_level": self._check_near_sr_level(current_price, sr_context),
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            # Update performance tracking
+            self.performance_metrics["predictions_made"] += 1
+            
+            return outcome
+            
+        except Exception as e:
+            self.logger.error(f"Error predicting SR outcome: {e}")
+            return self._get_default_outcome()
+    
+    def _check_near_sr_level(self, current_price: float, sr_context: dict[str, Any]) -> bool:
+        """Check if price is near any S/R level."""
+        all_levels = sr_context.get("support", []) + sr_context.get("resistance", [])
+        return self.is_near_sr_level(current_price, all_levels)
+    
+    def _get_default_outcome(self) -> dict[str, Any]:
+        """Get default outcome prediction."""
+        return {
+            "outcome": "consolidation",
+            "confidence": 0.33,
+            "probabilities": {
+                "breakout": 0.33,
+                "rebounce": 0.33,
+                "consolidation": 0.34
+            },
+            "is_near_sr_level": False,
+            "timestamp": datetime.now().isoformat()
+        }
+    
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="SR breakout stop"

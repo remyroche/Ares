@@ -391,28 +391,33 @@ class SROptimizationStep:
         try:
             self.logger.info("🔍 Performing comprehensive S/R detection optimization...")
             
-            # Run multi-method ensemble optimization
+            # Step 1: Optimize S/R probability calculation parameters
+            self.logger.info("🎯 Optimizing S/R probability calculation parameters...")
+            param_optimization_result = await self._optimize_sr_probability_parameters()
+            
+            # Step 2: Run multi-method ensemble optimization
             self.logger.info("📊 Running multi-method ensemble optimization...")
             ensemble_result = await self.optimizer.optimize_multi_method_ensemble()
             
-            # Run advanced strength scoring optimization
+            # Step 3: Run advanced strength scoring optimization
             self.logger.info("⚖️ Running advanced strength scoring optimization...")
             strength_result = await self.optimizer.optimize_advanced_strength_scoring()
             
-            # Run multi-timeframe confluence optimization
+            # Step 4: Run multi-timeframe confluence optimization
             self.logger.info("🕐 Running multi-timeframe confluence optimization...")
             timeframe_result = await self.optimizer.optimize_multi_timeframe_confluence()
             
-            # Run advanced S/R method optimization
+            # Step 5: Run advanced S/R method optimization
             self.logger.info("🔬 Running advanced S/R method optimization...")
             advanced_result = await self.optimizer.optimize_advanced_sr_methods()
             
-            # Run DBSCAN clustering optimization
+            # Step 6: Run DBSCAN clustering optimization
             self.logger.info("🎯 Running DBSCAN clustering optimization...")
             dbscan_result = await self.optimizer.optimize_dbscan_clustering()
             
             # Combine all optimization results
             combined_result = await self._combine_optimization_results([
+                param_optimization_result,
                 ensemble_result,
                 strength_result,
                 timeframe_result,
@@ -426,6 +431,103 @@ class SROptimizationStep:
         except Exception as e:
             self.logger.error(f"Failed to perform S/R optimization: {e}")
             return None
+    
+    @handles_errors(
+        exceptions=(Exception,),
+        default_return=None,
+        context="sr_probability_parameter_optimization"
+    )
+    async def _optimize_sr_probability_parameters(self) -> Optional[Dict[str, Any]]:
+        """Optimize S/R probability calculation parameters."""
+        try:
+            self.logger.info("🔧 Optimizing S/R probability calculation parameters...")
+            
+            # Import the parameter optimizer
+            from src.tactician.sr_parameter_optimizer import SRParameterOptimizer
+            
+            # Initialize parameter optimizer
+            param_optimizer = SRParameterOptimizer(self.config)
+            
+            # Get market data for optimization
+            market_data = await self._get_market_data_for_sr_calculation()
+            if market_data is None:
+                self.logger.error("No market data available for parameter optimization")
+                return None
+            
+            # Get S/R levels for optimization
+            sr_levels = []
+            if self.sr_levels_manager:
+                try:
+                    sr_result = await self.sr_levels_manager.calculate_sr_levels_from_backtest(
+                        market_data, timeframe="1m"
+                    )
+                    sr_levels = (
+                        sr_result.get("support_levels", []) + 
+                        sr_result.get("resistance_levels", [])
+                    )
+                except Exception as e:
+                    self.logger.warning(f"Failed to get S/R levels: {e}")
+            
+            # Split data into training and validation sets
+            split_idx = int(len(market_data) * 0.8)
+            train_data = market_data.iloc[:split_idx]
+            validation_data = market_data.iloc[split_idx:]
+            
+            # Run parameter optimization
+            optimization_result = await param_optimizer.optimize_parameters(
+                market_data=train_data,
+                sr_levels=sr_levels,
+                validation_data=validation_data
+            )
+            
+            if optimization_result:
+                self.logger.info("✅ S/R probability parameters optimized successfully")
+                
+                # Save optimized parameters for later use
+                param_file = os.path.join(
+                    self.config.get("model_save_path", "models"),
+                    "optimized_sr_parameters.json"
+                )
+                os.makedirs(os.path.dirname(param_file), exist_ok=True)
+                param_optimizer.save_optimized_parameters(param_file)
+                
+                # Update global configuration with optimized parameters
+                self._update_global_sr_parameters(optimization_result.best_parameters)
+                
+                return {
+                    "optimization_score": optimization_result.optimization_score,
+                    "backtest_metrics": optimization_result.backtest_metrics,
+                    "n_trials": optimization_result.n_trials,
+                    "parameters": optimization_result.best_parameters.__dict__
+                }
+            else:
+                self.logger.error("Failed to optimize S/R probability parameters")
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"Error optimizing S/R probability parameters: {e}")
+            return None
+    
+    def _update_global_sr_parameters(self, optimized_params) -> None:
+        """Update global S/R configuration with optimized parameters."""
+        try:
+            # Update configuration for S/R modules
+            sr_config = self.config.setdefault("sr_probability_calculation", {})
+            
+            # Update all parameter values
+            param_dict = optimized_params.__dict__
+            for param_name, param_value in param_dict.items():
+                sr_config[param_name] = param_value
+            
+            # Also update sr_breakout_predictor config
+            sr_predictor_config = self.config.setdefault("sr_breakout_predictor", {})
+            sr_predictor_config["optimized_parameters"] = param_dict
+            sr_predictor_config["use_optimized_params"] = True
+            
+            self.logger.info("✅ Global S/R configuration updated with optimized parameters")
+            
+        except Exception as e:
+            self.logger.error(f"Error updating global S/R parameters: {e}")
 
     @handles_errors(
         exceptions=(Exception,),

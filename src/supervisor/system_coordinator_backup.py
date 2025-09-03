@@ -144,9 +144,9 @@ class OnlineLearningManager:
         return {k: v.copy() for k, v in self.model_performances.items()}
 
 
-class Supervisor:
+class SystemCoordinator:
     """
-    System-Level Supervisor component responsible for:
+    System-Level Coordinator component responsible for:
     - System Health Monitoring: Monitor all component health and performance
     - Circuit Breaker Management: Handle failures and recovery across all components
     - Component Coordination: Orchestrate communication between components
@@ -157,7 +157,7 @@ class Supervisor:
     """
     def __init__(self, config: dict[str, Any]) -> None:
         self.config: dict[str, Any] = config
-        self.logger = system_logger.getChild("Supervisor")
+        self.logger = system_logger.getChild("SystemCoordinator")
         self.is_running: bool = False
         self.status: dict[str, Any] = {}
         self.history: list[dict[str, Any]] = []

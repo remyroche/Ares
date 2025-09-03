@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Unified Code Quality Pipeline - Integrated Version
+Unified Code Quality Pipeline - Enhanced Version with Unified Reporting
 
-This version directly imports and uses the code quality modules for
-better performance and integration.
+This version provides comprehensive unified reporting with per-file and
+per-directory information using the ReportAggregator.
 """
 
 import sys
@@ -12,6 +12,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 import time
+import ast
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -28,8 +29,8 @@ from scripts.simple_interaction_mapper import extract_interactions, generate_rep
 from utils.report_aggregator import ReportAggregator
 
 
-class UnifiedIntegratedPipeline:
-    """Unified pipeline that directly uses imported code quality modules."""
+class UnifiedEnhancedPipeline:
+    """Enhanced unified pipeline with comprehensive reporting."""
     
     def __init__(self, project_root: str = '/workspace/src'):
         self.project_root = Path(project_root)
@@ -63,7 +64,10 @@ class UnifiedIntegratedPipeline:
             'execution_time': time.time() - start_time
         }
         
-        # Save report
+        # Add to aggregator
+        self.report_aggregator.add_syntax_results(result)
+        
+        # Save individual report
         report_path = self.reports_dir / f"syntax_fixes_{self.timestamp}.json"
         with open(report_path, 'w') as f:
             json.dump(result, f, indent=2)
@@ -89,7 +93,10 @@ class UnifiedIntegratedPipeline:
             'execution_time': time.time() - start_time
         }
         
-        # Save report
+        # Add to aggregator
+        self.report_aggregator.add_import_results(result)
+        
+        # Save individual report
         report_path = self.reports_dir / f"import_fixes_{self.timestamp}.json"
         with open(report_path, 'w') as f:
             json.dump(result, f, indent=2)
@@ -116,7 +123,10 @@ class UnifiedIntegratedPipeline:
             'execution_time': time.time() - start_time
         }
         
-        # Save report
+        # Add to aggregator
+        self.report_aggregator.add_circular_import_results(result)
+        
+        # Save individual report
         report_path = self.reports_dir / f"circular_imports_{self.timestamp}.json"
         with open(report_path, 'w') as f:
             json.dump(result, f, indent=2)
@@ -141,7 +151,10 @@ class UnifiedIntegratedPipeline:
             'execution_time': time.time() - start_time
         }
         
-        # Save report
+        # Add to aggregator
+        self.report_aggregator.add_async_results(result)
+        
+        # Save individual report
         report_path = self.reports_dir / f"async_fixes_{self.timestamp}.json"
         with open(report_path, 'w') as f:
             json.dump(result, f, indent=2)
@@ -156,13 +169,85 @@ class UnifiedIntegratedPipeline:
         
         start_time = time.time()
         
-        # This would need to be implemented properly
-        # For now, return a placeholder
+        # Get all Python files
+        python_files = []
+        for pattern in ['**/*.py']:
+            python_files.extend(self.project_root.glob(pattern))
+        
+        fixed_files = []
+        failed_files = []
+        
+        for file_path in python_files:
+            try:
+                enhancer = TypeHintEnhancer()
+                
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                # Parse and transform
+                tree = ast.parse(content)
+                new_tree = enhancer.visit(tree)
+                
+                if enhancer.changes_made:
+                    # Generate new code
+                    new_content = ast.unparse(new_tree)
+                    
+                    # Add necessary imports
+                    if enhancer.imports_needed:
+                        import_lines = []
+                        if any('Path' in imp for imp in enhancer.imports_needed):
+                            import_lines.append('from pathlib import Path')
+                        if any('Union' in imp or 'Dict' in imp or 'List' in imp or 'Optional' in imp or 'Any' in imp or 'Tuple' in imp 
+                               for imp in enhancer.imports_needed):
+                            import_lines.append('from typing import Dict, List, Optional, Union, Any, Tuple')
+                        
+                        # Insert imports after module docstring and other imports
+                        lines = new_content.split('\n')
+                        insert_pos = 0
+                        for i, line in enumerate(lines):
+                            if line.strip() and not line.strip().startswith('"""') and not line.strip().startswith('#'):
+                                if line.startswith('import ') or line.startswith('from '):
+                                    insert_pos = i + 1
+                                else:
+                                    break
+                        
+                        for imp in import_lines:
+                            lines.insert(insert_pos, imp)
+                            insert_pos += 1
+                        
+                        new_content = '\n'.join(lines)
+                    
+                    # Write back
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        f.write(new_content)
+                    
+                    fixed_files.append({
+                        'file': str(file_path),
+                        'changes': enhancer.changes_made
+                    })
+                    
+            except Exception as e:
+                failed_files.append({
+                    'file': str(file_path),
+                    'error': str(e)
+                })
+        
         result = {
-            'message': 'Type hints enhancement needs AST implementation',
+            'fixed_files': fixed_files,
+            'failed_files': failed_files,
+            'total_fixed': len(fixed_files),
+            'total_failed': len(failed_files),
             'execution_time': time.time() - start_time
         }
         
+        # Add to aggregator
+        self.report_aggregator.add_type_results(result)
+        
+        # Save individual report
+        report_path = self.reports_dir / f"type_hints_{self.timestamp}.json"
+        with open(report_path, 'w') as f:
+            json.dump(result, f, indent=2)
+            
         return result
         
     def run_function_validation(self) -> Dict[str, Any]:
@@ -184,7 +269,10 @@ class UnifiedIntegratedPipeline:
             'execution_time': time.time() - start_time
         }
         
-        # Save report
+        # Add to aggregator
+        self.report_aggregator.add_function_validation_results(result)
+        
+        # Save individual report
         report_path = self.reports_dir / f"function_validation_{self.timestamp}.json"
         with open(report_path, 'w') as f:
             json.dump(result, f, indent=2)
@@ -212,7 +300,10 @@ class UnifiedIntegratedPipeline:
             'execution_time': time.time() - start_time
         }
         
-        # Save report
+        # Add to aggregator
+        self.report_aggregator.add_comprehensive_review_results(result)
+        
+        # Save individual report
         report_path = self.reports_dir / f"comprehensive_review_{self.timestamp}.json"
         with open(report_path, 'w') as f:
             json.dump(result, f, indent=2)
@@ -259,9 +350,9 @@ class UnifiedIntegratedPipeline:
         return result
         
     def run_all(self) -> Dict[str, Any]:
-        """Run all code quality tools."""
+        """Run all code quality tools with unified reporting."""
         print(f"\n{'='*80}")
-        print("UNIFIED CODE QUALITY PIPELINE - INTEGRATED")
+        print("UNIFIED CODE QUALITY PIPELINE - ENHANCED")
         print(f"{'='*80}")
         print(f"Project root: {self.project_root}")
         print(f"Timestamp: {self.timestamp}")
@@ -291,13 +382,30 @@ class UnifiedIntegratedPipeline:
         # Generate summary
         self.results['summary'] = self._generate_summary(time.time() - total_start)
         
-        # Save comprehensive report
-        report_path = self.reports_dir / f"unified_integrated_pipeline_{self.timestamp}.json"
+        # Save individual pipeline report
+        report_path = self.reports_dir / f"unified_pipeline_{self.timestamp}.json"
         with open(report_path, 'w') as f:
             json.dump(self.results, f, indent=2)
             
+        # Generate and save unified reports
+        print("\n" + "="*60)
+        print("Generating Unified Reports")
+        print("="*60)
+        
+        json_report, md_report = self.report_aggregator.save_reports(
+            self.reports_dir,
+            "unified_code_quality_report"
+        )
+        
+        print(f"\nUnified reports saved:")
+        print(f"  JSON: {json_report}")
+        print(f"  Markdown: {md_report}")
+        
         # Print summary
         self._print_summary()
+        
+        # Print aggregated summary
+        self._print_aggregated_summary()
         
         return self.results
         
@@ -333,7 +441,7 @@ class UnifiedIntegratedPipeline:
         summary = self.results['summary']
         
         print(f"\n{'='*80}")
-        print("PIPELINE SUMMARY")
+        print("PIPELINE EXECUTION SUMMARY")
         print(f"{'='*80}")
         print(f"Total execution time: {summary['total_execution_time']:.2f} seconds")
         
@@ -349,6 +457,30 @@ class UnifiedIntegratedPipeline:
                 if info['files_processed']:
                     print(f"    Files processed: {info['files_processed']}")
                     
+    def _print_aggregated_summary(self):
+        """Print aggregated report summary."""
+        report = self.report_aggregator.generate_unified_report()
+        summary = report['overall_summary']
+        
+        print(f"\n{'='*80}")
+        print("UNIFIED CODE QUALITY SUMMARY")
+        print(f"{'='*80}")
+        print(f"Total Files Analyzed: {summary['total_files']}")
+        print(f"Total Directories: {summary['total_directories']}")
+        print(f"Total Issues Found: {summary['total_issues']}")
+        print(f"Issues Fixed: {summary['fixed_issues']}")
+        
+        print("\nIssue Breakdown:")
+        for issue_type, count in summary['issue_breakdown'].items():
+            print(f"  {issue_type.replace('_', ' ').title()}: {count}")
+            
+        if summary['critical_files']:
+            print("\nTop Files with Issues:")
+            for i, file_info in enumerate(summary['critical_files'][:5]):
+                file_name = Path(file_info['file']).name
+                print(f"  {i+1}. {file_name}: {file_info['issues']} issues ({file_info['fixed']} fixed)")
+                
+        print(f"\nClean Files: {len(summary['clean_files'])}")
         print(f"\nReports saved to: {self.reports_dir}")
 
 
@@ -357,7 +489,7 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(
-        description='Run unified code quality pipeline (integrated version)'
+        description='Run unified code quality pipeline with enhanced reporting'
     )
     parser.add_argument('--project-root', default='/workspace/src',
                         help='Project root directory')
@@ -370,7 +502,7 @@ def main():
     
     args = parser.parse_args()
     
-    pipeline = UnifiedIntegratedPipeline(args.project_root)
+    pipeline = UnifiedEnhancedPipeline(args.project_root)
     
     # You could implement selective running based on args
     # For now, just run all

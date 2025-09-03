@@ -262,7 +262,7 @@ def traced(
             # End span
             span.end()
     
-    return uniform_wrapper(f"traced({name})", sync_handler, async_handler)
+    return uniform_wrapper(f"traced({span_name or 'auto'})", sync_handler, async_handler)
 
 
 def span_event(name: str, attributes: Dict[str, Any] = None) -> None:

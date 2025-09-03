@@ -428,4 +428,4 @@ def audit_log(
             )
             raise
     
-    return uniform_wrapper(f"audit_log({audit_action})", sync_handler, async_handler)
+    return uniform_wrapper(f"audit_log({action or 'auto'})", sync_handler, async_handler)

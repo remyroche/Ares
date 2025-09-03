@@ -15,7 +15,7 @@ import aiohttp
 
 <<<<<<< HEAD
 =======
-from src.utils.error_handler import (
+from src.core.decorators import handles_errors, retry, timeout
     handle_errors,
     handle_network_operations,
     handle_specific_errors,
@@ -62,7 +62,7 @@ class BinanceExchange:
         self.timeout: int = self.exchange_config.get("timeout", 30)
         self.max_retries: int = self.exchange_config.get("max_retries", 3)
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid Binance exchange configuration"),
             AttributeError: (False, "Missing required exchange parameters"),
@@ -96,9 +96,7 @@ class BinanceExchange:
         )
         return True
 
-    @handles_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
+    @handles_errors(ValueError, AttributeError, fallback=None,
         context="exchange configuration loading",
     )
     async def _load_exchange_configuration(self) -> None:
@@ -120,9 +118,7 @@ class BinanceExchange:
 
         self.logger.info("Exchange configuration loaded successfully")
 
-    @handles_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
+    @handles_errors(ValueError, AttributeError, fallback=False,
         context="configuration validation",
     )
     def _validate_configuration(self) -> bool:
@@ -150,7 +146,7 @@ class BinanceExchange:
         self.logger.info("Configuration validation successful")
         return True
 
-    @handle_network_operations(
+    @retry(
         max_retries=3,
         default_return=False,
     )
@@ -182,7 +178,7 @@ class BinanceExchange:
             self.print(connection_error("Error initializing connection: {e}"))
             return False
 
-    @handle_network_operations(
+    @retry(
         max_retries=3,
         default_return=None,
     )
@@ -241,7 +237,7 @@ class BinanceExchange:
             self.print(error("Error generating signature: {e}"))
             return ""
 
-    @handle_network_operations(
+    @retry(
         max_retries=3,
         default_return=None,
     )
@@ -288,7 +284,7 @@ class BinanceExchange:
             self.print(error("Error getting account info: {e}"))
             return None
 
-    @handle_network_operations(
+    @retry(
         max_retries=3,
         default_return=None,
     )
@@ -345,7 +341,7 @@ class BinanceExchange:
             self.print(error("Error getting position risk: {e}"))
             return None
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid order parameters"),
             AttributeError: (False, "Missing order components"),
@@ -496,7 +492,7 @@ class BinanceExchange:
             self.print(connection_error("Network error calling {path}: {e}"))
             return None
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid cancel parameters"),
             AttributeError: (False, "Missing cancel components"),
@@ -563,7 +559,7 @@ class BinanceExchange:
         except Exception:
             return False
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (None, "Invalid status parameters"),
             AttributeError: (None, "Missing status components"),
@@ -584,7 +580,7 @@ class BinanceExchange:
             params={"symbol": symbol, "orderId": order_id},
         )
 
-    @handle_network_operations(
+    @retry(
         max_retries=3,
         default_return=None,
     )
@@ -630,7 +626,7 @@ class BinanceExchange:
             self.print(error("Error getting klines: {e}"))
             return None
 
-    @handle_network_operations(
+    @retry(
         max_retries=3,
         default_return=None,
     )
@@ -667,7 +663,7 @@ class BinanceExchange:
             self.print(error("Error getting ticker: {e}"))
             return None
 
-    @handle_network_operations(
+    @retry(
         max_retries=3,
         default_return=None,
     )
@@ -709,7 +705,7 @@ class BinanceExchange:
             self.print(error("Error getting order book: {e}"))
             return None
 
-    @handle_network_operations(
+    @retry(
         max_retries=3,
         default_return=None,
     )
@@ -752,7 +748,7 @@ class BinanceExchange:
             self.print(error("Error getting aggregate trades: {e}"))
             return None
 
-    @handle_network_operations(
+    @retry(
         max_retries=3,
         default_return=None,
     )
@@ -805,7 +801,7 @@ class BinanceExchange:
             self.print(error("Error getting aggregated trades: {e}"))
             return None
 
-    @handle_network_operations(
+    @retry(
         max_retries=3,
         default_return=None,
     )
@@ -863,9 +859,7 @@ class BinanceExchange:
             "api_secret_configured": bool(self.api_secret),
         }
 
-    @handles_errors(
-        exceptions=(Exception,),
-        default_return=None,
+    @handles_errors(Exception,, fallback=None,
         context="Binance exchange cleanup",
     )
     async def stop(self) -> None:
@@ -888,9 +882,7 @@ class BinanceExchange:
 binance_exchange: BinanceExchange | None = None
 
 
-@handles_errors(
-    exceptions=(Exception,),
-    default_return=None,
+@handles_errors(Exception,, fallback=None,
     context="Binance exchange setup",
 )
 async def setup_binance_exchange(

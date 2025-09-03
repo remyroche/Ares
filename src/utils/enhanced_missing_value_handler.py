@@ -78,7 +78,7 @@ class EnhancedMissingValueHandler:
             GapType.CRITICAL: "manual_intervention",
         }
 
-    @handle_errors(exceptions=(Exception,), default_return=None, context="missing value handling")
+    @handles_errors(Exception,, fallback=None, context="missing value handling")
     def handle_missing_values_intelligently(
         self,
         data: pd.DataFrame,

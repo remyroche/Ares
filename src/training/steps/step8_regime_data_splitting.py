@@ -33,7 +33,7 @@ REQUIRED_MODULES = [
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 
 # Safe imports with fallbacks
-centralized_decorators = PipelineStandards.safe_import("src.utils.centralized_decorators", None)
+centralized_decorators = PipelineStandards.safe_import("src.core.decorators", None)
 unified_data_loader = PipelineStandards.safe_import("src.training.steps.unified_data_loader", None)
 system_logger = PipelineStandards.safe_import("src.utils.logger", None)
 enhanced_mlflow = PipelineStandards.safe_import("src.utils.enhanced_mlflow_integration", None)

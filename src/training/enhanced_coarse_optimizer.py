@@ -457,6 +457,8 @@ class EnhancedCoarseOptimizer:
                     from shap.explainers import TreeExplainer
                 except ImportError:
                     from shap import TreeExplainer
+            except Exception as e:
+                pass  # TODO: Handle exception
 import copy
 
 explainer = TreeExplainer(model)

@@ -1,10 +1,10 @@
 """
+import functools
 Enhanced Memory Management Utilities
 
 This module provides memory monitoring and optimization capabilities for the training pipeline.
 """
 
-import functools
 
 
 

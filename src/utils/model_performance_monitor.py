@@ -367,6 +367,8 @@ class ModelPerformanceMonitor:
             }
 
         except Exception as e:
+            pass  # TODO: Handle exception
+        except Exception as e:
             self.logger.warning(f"⚠️ Error calculating confidence metrics: {e}")
             return {"confidence_mean": 0.0, "confidence_std": 0.0, "calibration_error": float("inf"), "error": str(e)}
 

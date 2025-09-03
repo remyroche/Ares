@@ -67,14 +67,14 @@ class CodeAnalyzer:
             # Check for debug statements
             for i, line in enumerate(lines, 1):
                 for pattern in self.debug_patterns:
-                    if re.search(pattern=line, re.IGNORECASE):
-                        issues["debug_statements"].append((i=line.strip()))
+                    if re.search(pattern, line, re.IGNORECASE):
+                        issues["debug_statements"].append((i, line.strip()))
                         break
 
                 # Check for type ignore comments
                 for pattern in self.type_ignore_patterns:
-                    if re.search(pattern=line):
-                        issues["type_ignores"].append((i=line.strip()))
+                    if re.search(pattern, line):
+                        issues["type_ignores"].append((i, line.strip()))
                         break
 
                 # Check for broad exception handling

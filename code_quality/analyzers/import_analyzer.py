@@ -8,9 +8,21 @@ import sys
 from pathlib import Path
 from typing import Dict, List, Set, Any, Optional, Tuple
 from collections import defaultdict, deque
-import networkx as nx
+try:
+    import networkx as nx  # type: ignore
+    HAS_NETWORKX = True
+except Exception:
+    nx = None  # type: ignore
+    HAS_NETWORKX = False
 
 from ..core.config import CodeQualityConfig
+
+try:
+    import matplotlib.pyplot as plt  # type: ignore
+    HAS_MATPLOTLIB = True
+except Exception:
+    plt = None  # type: ignore
+    HAS_MATPLOTLIB = False
 
 
 class ImportIssue:
@@ -31,7 +43,7 @@ class ImportAnalyzer:
     
     def __init__(self, config: CodeQualityConfig):
         self.config = config
-        self.import_graph = nx.DiGraph()
+        self.import_graph = nx.DiGraph() if HAS_NETWORKX else defaultdict(list)
         self.imports_by_file = defaultdict(list)
         self.duplicate_imports = []
         self.circular_dependencies = []
@@ -64,7 +76,8 @@ class ImportAnalyzer:
         
         # Second pass: detect issues
         self._detect_duplicate_imports()
-        self._detect_circular_dependencies()
+        if HAS_NETWORKX:
+            self._detect_circular_dependencies()
         self._detect_unused_imports()
         self._detect_conflicting_imports()
         
@@ -96,7 +109,8 @@ class ImportAnalyzer:
                         })
                         
                         # Add to import graph
-                        self.import_graph.add_edge(file_path, import_name)
+                        if HAS_NETWORKX:
+                            self.import_graph.add_edge(file_path, import_name)
                         
                 elif isinstance(node, ast.ImportFrom):
                     module = node.module or ''
@@ -115,7 +129,7 @@ class ImportAnalyzer:
                         })
                         
                         # Add to import graph
-                        if module:
+                        if module and HAS_NETWORKX:
                             self.import_graph.add_edge(file_path, module)
             
             self.imports_by_file[file_path] = file_imports
@@ -290,6 +304,29 @@ class ImportAnalyzer:
                        len(self.circular_dependencies) + 
                        len(self.conflicting_imports))
         
+        def _sanitize_details(details: Dict[str, Any]) -> Dict[str, Any]:
+            """Make issue details JSON-serializable by removing AST nodes."""
+            if not isinstance(details, dict):
+                return {}
+            sanitized = {}
+            for k, v in details.items():
+                if k == 'import_info' and isinstance(v, dict):
+                    # Drop non-serializable fields like AST nodes
+                    allowed_keys = ['type', 'module', 'name', 'full_name', 'as_name', 'line']
+                    sanitized['import_info'] = {ak: v.get(ak) for ak in allowed_keys if ak in v}
+                else:
+                    # Keep only primitives and simple containers
+                    if isinstance(v, (str, int, float, bool)) or v is None:
+                        sanitized[k] = v
+                    elif isinstance(v, (list, tuple)):
+                        sanitized[k] = [item for item in v if isinstance(item, (str, int, float, bool))]
+                    elif isinstance(v, dict):
+                        sanitized[k] = {sk: sv for sk, sv in v.items() if isinstance(sv, (str, int, float, bool))}
+                    else:
+                        # Fallback to string representation
+                        sanitized[k] = str(v)
+            return sanitized
+
         return {
             "summary": {
                 "total_files_analyzed": len(self.imports_by_file),
@@ -307,7 +344,7 @@ class ImportAnalyzer:
                         "type": issue.issue_type,
                         "message": issue.message,
                         "severity": issue.severity,
-                        "details": issue.details
+                        "details": _sanitize_details(issue.details)
                     }
                     for issue in self.duplicate_imports
                 ],
@@ -318,7 +355,7 @@ class ImportAnalyzer:
                         "type": issue.issue_type,
                         "message": issue.message,
                         "severity": issue.severity,
-                        "details": issue.details
+                        "details": _sanitize_details(issue.details)
                     }
                     for issue in self.circular_dependencies if hasattr(issue, 'file_path')
                 ],
@@ -329,16 +366,18 @@ class ImportAnalyzer:
                         "type": issue.issue_type,
                         "message": issue.message,
                         "severity": issue.severity,
-                        "details": issue.details
+                        "details": _sanitize_details(issue.details)
                     }
                     for issue in self.conflicting_imports
                 ]
             },
-            "import_graph": {
-                "nodes": list(self.import_graph.nodes()),
-                "edges": list(self.import_graph.edges()),
-                "has_cycles": len(list(nx.simple_cycles(self.import_graph))) > 0
-            },
+            "import_graph": (
+                {
+                    "nodes": list(self.import_graph.nodes()),
+                    "edges": list(self.import_graph.edges()),
+                    "has_cycles": len(list(nx.simple_cycles(self.import_graph))) > 0
+                } if HAS_NETWORKX else {"nodes": [], "edges": [], "has_cycles": False}
+            ),
             "files": {
                 file_path: {
                     "total_imports": len(imports),
@@ -351,15 +390,20 @@ class ImportAnalyzer:
             }
         }
     
-    def get_import_graph(self) -> nx.DiGraph:
+    def get_import_graph(self) -> Any:
         """Get the import dependency graph."""
         return self.import_graph
     
     def visualize_import_graph(self, output_path: str = None) -> None:
         """Visualize the import dependency graph."""
         try:
-            import matplotlib.pyplot as plt
-            
+            if not HAS_MATPLOTLIB:
+                print("matplotlib not available for graph visualization")
+                return
+            if not HAS_NETWORKX:
+                print("NetworkX not available; cannot visualize import graph.")
+                return
+
             plt.figure(figsize=(12, 8))
             pos = nx.spring_layout(self.import_graph)
             

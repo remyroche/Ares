@@ -4,16 +4,13 @@ Diagnostic script to verify data processing upstream for regime classification.
 This script will analyze the data flow and identify potential issues with BEAR regime detection.
 """
 
-                                import re
-                        import glob
-                import glob
-        import traceback
-        import traceback
+import re
+import glob
+import traceback
 from src.analyst.unified_regime_classifier import UnifiedRegimeClassifier
 import os
 import sys
-
-                    import pickle
+import pickle
 from src.config import CONFIG
 import numpy as np
 import pandas as pd

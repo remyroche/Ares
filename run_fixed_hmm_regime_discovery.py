@@ -15,7 +15,7 @@ import sys
 from src.config.constants import DEFAULT_LOOKBACK_DAYS
 
 # Add the project root to the Python path
-project_root, Path(__file__).parent
+project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 
@@ -33,12 +33,12 @@ async def main():
 
     try:
         # Run the HMM regime discovery step with fixed parameters
-        success=await run_step(
+        success = await run_step(
             symbol="ETHUSDT",
             exchange="BINANCE",
             data_dir="data/training",
-            timeframe="1m",  # Start with 1m=will process all timeframes
-            lookback_days, DEFAULT_LOOKBACK_DAYS=# Use exactly 180 days
+            timeframe="1m",  # Start with 1m; will process all timeframes
+            lookback_days=DEFAULT_LOOKBACK_DAYS,  # Use exactly 180 days
             force_reload=False,  # Use cache if available
         )
 

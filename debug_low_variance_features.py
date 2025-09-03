@@ -12,14 +12,15 @@ import pandas as pd
 
 # Set up logging
 logging.basicConfig(
-    level, logging.INFO,
-    format, "%(asctime)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
 )
 logger=logging.getLogger(__name__)
 
 
 def analyze_feature_variance(
-    features_df: pd.DataFrame=std_threshold: float = 1e-6,
+    features_df: pd.DataFrame,
+    std_threshold: float = 1e-6,
 ) -> dict[str, Any]:
     """
     Analyze feature variance and identify low variance features.
@@ -102,16 +103,17 @@ def check_feature_types(features_df: pd.DataFrame) -> dict[str, Any]:
 
 
 def generate_debug_report(
-    features_df: pd.DataFrame=std_threshold: float = 1e-6,
+    features_df: pd.DataFrame,
+    std_threshold: float = 1e-6,
 ) -> str:
     """
     Generate a comprehensive debug report for low variance features.
     """
     logger.info("🔍 Analyzing feature variance...")
-    variance_analysis=analyze_feature_variance(features_df = std_threshold)
+    variance_analysis = analyze_feature_variance(features_df=features_df, std_threshold=std_threshold)
 
     logger.info("🔍 Analyzing feature types and patterns...")
-    type_analysis=check_feature_types(features_df)
+    type_analysis = check_feature_types(features_df)
 
     # Generate report
     report=[]
@@ -246,7 +248,7 @@ def main():
     for feature in dummy_features:
         if "cluster" in feature:
             # Simulate cluster features with very low variance
-            dummy_df[feature] = np.random.choice([0, 1], size, n_rows=p=[0.99, 0.01])
+            dummy_df[feature] = np.random.choice([0, 1], size=n_rows, p=[0.99, 0.01])
         else:
             # Simulate ID features with some variance
             dummy_df[feature] = np.random.randint(0, 5, size=n_rows)

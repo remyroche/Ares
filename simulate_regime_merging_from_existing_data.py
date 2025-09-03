@@ -41,9 +41,12 @@ def analyze_current_data(data):
 
 
 def simulate_merging_with_parameters(
-    counts = centroids,
-    min_frequency=similarity_threshold,
-    max_regimes, None=None):
+    counts: dict,
+    centroids: dict,
+    min_frequency: float,
+    similarity_threshold: float,
+    max_regimes: int | None = None,
+) -> dict | None:
     """Simulate regime merging with given parameters"""
 
     if not centroids:
@@ -53,9 +56,9 @@ def simulate_merging_with_parameters(
     total_samples=sum(counts.values())
 
     # Convert to DataFrame
-    df=pd.DataFrame(
+    df = pd.DataFrame(
         [
-            {"regime_id": k, "count": v, "centroid": centroids.get(k=[])}
+            {"regime_id": k, "count": v, "centroid": centroids.get(k, [])}
             for k, v in counts.items()
         ],
     )
@@ -70,7 +73,8 @@ def simulate_merging_with_parameters(
             "total_regimes": 0,
             "top_20_concentration": 0,
             "merged_regimes": [],
-            "total_samples": total_samples=}
+            "total_samples": total_samples,
+        }
 
     # Sort by frequency (descending)
     df_filtered=df_filtered.sort_values("frequency", ascending=False)

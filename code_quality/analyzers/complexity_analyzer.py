@@ -14,7 +14,7 @@ import radon.metrics as radon_metrics
 from radon.visitors import ComplexityVisitor, HalsteadVisitor
 
 from ..core.config import AnalysisConfig
-from minimal_file_utils import find_python_files
+from ..utils.file_utils import find_python_files
 
 
 @dataclass

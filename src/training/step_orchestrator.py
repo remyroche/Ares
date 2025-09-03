@@ -4,7 +4,7 @@ from __future__ import annotations
 """Step Orchestrator for Training Pipeline."
 
 This module orchestrates the execution of training steps with progress saving
-and resuming capabilities. Now uses EnhancedTrainingManager for 16-step pipeline.
+and resuming capabilities. Now uses TrainingManager for 16-step pipeline.
 """
 import importlib
 import inspect
@@ -20,7 +20,7 @@ from src.utils.warning_symbols import (
 
 
 class StepOrchestrator:
-    """Orchestrates training step execution with progress management using EnhancedTrainingManager."""
+    """Orchestrates training step execution with progress management using TrainingManager."""
 
     def __init__(
         self, symbol: str, exchange: str, data_dir: str = "data/training"
@@ -81,7 +81,7 @@ class StepOrchestrator:
 
         """
         try:
-            from src.training.enhanced_training_manager import (
+            from src.training.core.training_manager import create_training_manager
                 setup_enhanced_training_manager,
             )
 

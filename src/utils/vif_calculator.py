@@ -14,11 +14,11 @@ from sklearn.preprocessing import StandardScaler
 
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
-from src.utils.vif_validation_decorators import (
-    comprehensive_vif_validation,
-    safe_vif_calculation,
-    validate_vif_inputs,
-    validate_vif_outputs,
+from src.core.decorators import (
+    validates as comprehensive_vif_validation,
+    handles_errors as safe_vif_calculation,
+    validates as validate_vif_inputs,
+    validates as validate_vif_outputs,
 )
 
 

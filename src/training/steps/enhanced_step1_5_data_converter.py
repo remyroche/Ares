@@ -30,7 +30,7 @@ from src.utils.logger import system_logger
 import shutil
 import pyarrow as pa
 import pyarrow.parquet as pq
-from src.utils.enhanced_error_handling import (
+from src.core.decorators import handles_errors, error_boundary
 from src.utils.enhanced_memory_management import (
         retry_with_backoff, circuit_breaker, categorize_errors,
         RetryableError, NonRetryableError, DATA_OPERATION_ERRORS

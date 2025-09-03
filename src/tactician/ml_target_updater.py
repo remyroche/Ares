@@ -23,10 +23,6 @@ from src.utils.warning_symbols import (
     warning,
 )
 
-<<<<<<< HEAD
-import copy
-=======
->>>>>>> origin/main
 
 class MLTargetUpdater:
     """

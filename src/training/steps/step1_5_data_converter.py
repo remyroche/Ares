@@ -29,8 +29,8 @@ from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 REQUIRED_MODULES = [
     "pandas",
     "numpy",
-    "src.utils.centralized_decorators",
-    "src.utils.enhanced_data_quality_decorators",
+
+    "src.core.decorators",
     "src.utils.logger",
     "src.training.steps.data_downloader",
     "pyarrow",
@@ -42,12 +42,7 @@ dependency_status = PipelineStandards.validate_environment_dependencies(
 )
 
 # Safe imports with fallbacks
-centralized_decorators = PipelineStandards.safe_import(
-    "src.utils.centralized_decorators", None
-)
-enhanced_decorators = PipelineStandards.safe_import(
-    "src.utils.enhanced_data_quality_decorators", None
-)
+enhanced_decorators = PipelineStandards.safe_import("src.core.decorators", None)
 system_logger = PipelineStandards.safe_import("src.utils.logger", None)
 download_all_data_with_consolidation = PipelineStandards.safe_import(
     "src.training.steps.data_downloader", None

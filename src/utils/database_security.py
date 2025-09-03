@@ -369,7 +369,7 @@ connection_params = {
         except ImportError:
             raise Exception("redis not installed for Redis connections")
 
-    @handle_errors(exceptions=(Exception,), default_return=None, context="secure query execution")
+    @handles_errors(Exception,, fallback=None, context="secure query execution")
     def execute_secure_query(
         self, connection: Any, query: str, parameters: Optional[List[Any]] = None
     ) -> Optional[List[Dict[str, Any]]]:

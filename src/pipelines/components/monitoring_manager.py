@@ -1,25 +1,22 @@
 """
 Monitoring manager for pipeline components (minimal scaffold).
 """
+from __future__ import annotations
+
 from src.core.decorators import (
+    cached,
+    compose,
     handles_errors,
-    log_execution_time
+    log_execution_time,
+    performance_monitor,
+    traced,
+    validates
 )
 
 from src.core.domain import PerformanceLevel
 
-from __future__ import annotations
-
 from typing import Any
 
-<<<<<<< HEAD
-=======
-from src.utils.centralized_decorators import (
-    PerformanceLevel,
-    handle_specific_errors,
-    performance_monitor,
-)
->>>>>>> origin/main
 from src.utils.logger import system_logger
 
 class MonitoringManager:
@@ -35,7 +32,6 @@ class MonitoringManager:
         },
         default_return=False,
         context="monitoring_manager.initialize",
-    )
     async def initialize(self) -> bool:
         self.logger.info("Initializing MonitoringManager ...")
         return True

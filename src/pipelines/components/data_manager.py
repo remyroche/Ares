@@ -1,10 +1,15 @@
 """
 Data manager for pipeline data operations (minimal scaffold).
 """
+from __future__ import annotations
+
 from src.core.decorators import (
     cached,
+    compose,
     handles_errors,
-    log_execution_time
+    log_execution_time,
+    traced,
+    validates
 )
 
 from src.core.domain import (
@@ -13,22 +18,11 @@ from src.core.domain import (
     validate_data_quality
 )
 
-from __future__ import annotations
-
 from typing import Any
-
-<<<<<<< HEAD
-=======
-from src.utils.centralized_decorators import (
-    PerformanceLevel,
-    handle_errors,
     handle_specific_errors,
-    memory_efficient,
     performance_monitor,
     secure_data_processing,
     validate_data_quality,
-)
->>>>>>> origin/main
 from src.utils.logger import system_logger
 
 class DataManager:
@@ -46,14 +40,13 @@ class DataManager:
         },
         default_return=False,
         context="data_manager.initialize",
-    )
     async def initialize(self) -> bool:
         self.logger.info("Initializing DataManager ...")
         return True
 
     @log_execution_time(level=PerformanceLevel.DETAILED)
     @cached()
-    @validate_data_quality(required_columns=None, context="data_manager.process")
-    @handles_errors(exceptions=(Exception,), default_return=None, context="data_manager.process")
+    @validates(required_columns=None, context="data_manager.process")
+    @handles_errors(Exception,, fallback=None, context="data_manager.process")
     async def process(self, data):
         return data

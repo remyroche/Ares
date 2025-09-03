@@ -14,7 +14,8 @@ from src.utils.warning_symbols import (
 )
 
 class CalibrationManager:
-    """Calibration manager responsible for model calibration and confidence estimation."
+    """Calibration manager responsible for model calibration and confidence estimation.
+    
     This module handles model calibration to improve prediction reliability.
     """
     def __init__(self, config: dict[str, Any]) -> None:
@@ -123,12 +124,11 @@ class CalibrationManager:
         try:
             # Initialize ML confidence predictor for calibration
             from src.analyst.ml_confidence_predictor import MLConfidencePredictor
+            self.ml_confidence_predictor = MLConfidencePredictor(self.config)
+            await self.ml_confidence_predictor.initialize()
         except Exception as e:
-            pass  # TODO: Handle exception properly
-import copy
-
-self.ml_confidence_predictor = MLConfidencePredictor(self.config)
-await self.ml_confidence_predictor.initialize()
+            self.logger.exception(f"Failed to initialize ML confidence predictor: {e}")
+            raise
 
             # Initialize calibration methods
             if self.enable_temperature_scaling:

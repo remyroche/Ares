@@ -108,20 +108,12 @@ class DITrainingManager(InjectableBase):
                 from src.training.core.pipeline_base import TrainingPipeline
         except Exception as e:
             pass  # TODO: Handle exception properly
-import os
+        self.training_pipeline = TrainingPipeline(self.training_config)
 
-self.training_pipeline = TrainingPipeline(self.training_config)
+        # Initialize training steps
+        await self._initialize_training_steps()
 
-# Initialize training steps
-            await self._initialize_training_steps()
-
-            self.logger.info("Training components initialized")
-
-        except Exception as e:
-            error_msg = f"Failed to initialize training components: {e}"
-            self.logger.exception(error_msg)
-            self.print(failed(error_msg))
-            raise
+        self.logger.info("Training components initialized")
 
     async def _initialize_training_steps(self) -> None:
         """Initialize training steps with dependency injection."""

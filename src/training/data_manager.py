@@ -8,10 +8,10 @@ from typing import Any
 
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
-import pandas as pd
-import json
     error,
 )
+import pandas as pd
+import json
 
 class UnifiedDataManager:
     """Unified data management system for the training pipeline."
@@ -617,11 +617,8 @@ class UnifiedDataManager:
             msg = f"Metadata file not found: {self.metadata_file}"
             raise FileNotFoundError(msg)
 
-import copy
-import os.path
-
-with open(self.metadata_file) as f:
-    return json.load(f)
+        with open(self.metadata_file) as f:
+            return json.load(f)
 
     def update_data_split(self, split_type: str, updated_data: pd.DataFrame) -> None:
         """Update a specific data split (useful for steps like step 8 that modify data)."
@@ -726,7 +723,7 @@ with open(self.metadata_file) as f:
             total_splits = len(train_data) + len(validation_data) + len(test_data)
             if total_splits != len(full_data):
                 validation_results["issues"].append(
-                    f"Split sizes don't match full dataset: {total_splits} vs {len(full_data)}",'
+                    f"Split sizes don't match full dataset: {total_splits} vs {len(full_data)}"
                 )
 
             # Check temporal ordering

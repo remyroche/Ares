@@ -38,16 +38,16 @@ except ImportError:
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.centralized_decorators import (
+from src.core.domain import (
     comprehensive_data_validation,
     handle_errors,
     memory_efficient,
+    quality_gate,
     resource_monitor,
     secure_data_processing,
     validate_data_structure,
     with_tracing_span,
-    quality_gate,
-    monitor_feature_engineering,
+    monitor_feature_engineering
 )
 from src.utils.logger import system_logger
 

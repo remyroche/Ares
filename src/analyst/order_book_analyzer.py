@@ -24,7 +24,7 @@ class OrderBookAnalyzer:
         self.logger = system_logger.getChild("OrderBookAnalyzer")
 
     @validate_data_quality(validation_level="WARNING")
-    @with_tracing_span("wall_identification")
+    @traced("wall_identification")
     def identify_walls(
         self,
         book_df: pd.DataFrame,
@@ -50,7 +50,7 @@ class OrderBookAnalyzer:
             return pd.DataFrame(columns=["price", "size"])  # empty
 
     @validate_data_quality(validation_level="WARNING")
-    @with_tracing_span("wall_features_computation")
+    @traced("wall_features_computation")
     def compute_wall_features(
         self,
         mid_price: float,

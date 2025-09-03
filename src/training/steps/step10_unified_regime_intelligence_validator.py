@@ -1,5 +1,7 @@
 # src/training/steps/step5_5_unified_regime_intelligence_validator.py
 
+from src.core.decorators import handles_errors
+
 """Step 5.5 Unified Regime Intelligence Validator."
 
 This validator ensures quality insurance for the Unified Regime Intelligence step.
@@ -16,7 +18,6 @@ import pandas as pd
 import torch
 from sklearn.preprocessing import LabelEncoder
 
-from src.utils.error_handler import handle_errors
 from src.utils.logger import system_logger
 import asyncio
 from src.utils.common_operations import ensure_directory, safe_json_dump
@@ -56,7 +57,7 @@ class UnifiedRegimeIntelligenceValidator:
 			"overall_status": "PENDING",
 		}
 
-	@handle_errors(
+	@handles_errors(
 		exceptions=(Exception,),
 		default_return=False,
 		context="validator initialization",
@@ -107,7 +108,7 @@ class UnifiedRegimeIntelligenceValidator:
 			self.logger.exception(f"Configuration validation failed: {e}")
 			return False
 
-	@handle_errors(
+	@handles_errors(
 		exceptions=(Exception,), default_return=False, context="data quality validation",
 	)
 	async def validate_data_quality(self, data: Dict[str, pd.DataFrame]) -> bool:
@@ -205,7 +206,7 @@ class UnifiedRegimeIntelligenceValidator:
 			self.logger.exception(f"Data quality validation failed: {e}")
 			return False
 
-	@handle_errors(
+	@handles_errors(
 		exceptions=(Exception,),
 		default_return=False,
 		context="model architecture validation",
@@ -288,7 +289,7 @@ class UnifiedRegimeIntelligenceValidator:
 			self.logger.exception(f"Model architecture validation failed: {e}")
 			return False
 
-	@handle_errors(
+	@handles_errors(
 		exceptions=(Exception,),
 		default_return=False,
 		context="training process validation",
@@ -366,7 +367,7 @@ class UnifiedRegimeIntelligenceValidator:
 			self.logger.exception(f"Training process validation failed: {e}")
 			return False
 
-	@handle_errors(
+	@handles_errors(
 		exceptions=(Exception,), default_return=False, context="artifacts validation",
 	)
 	async def validate_artifacts(self, artifacts_dir: str) -> bool:
@@ -445,7 +446,7 @@ class UnifiedRegimeIntelligenceValidator:
 			self.logger.exception(f"Artifacts validation failed: {e}")
 			return False
 
-	@handle_errors(
+	@handles_errors(
 		exceptions=(Exception,), default_return=False, context="predictions validation",
 	)
 	async def validate_predictions(self, model: Any, test_data: Dict[str, Any]) -> bool:
@@ -523,7 +524,7 @@ class UnifiedRegimeIntelligenceValidator:
 			self.logger.exception(f"Predictions validation failed: {e}")
 			return False
 
-	@handle_errors(
+	@handles_errors(
 		exceptions=(Exception,),
 		default_return=False,
 		context="S/R integration validation",
@@ -581,7 +582,7 @@ import os.path
 			self.logger.exception(f"S/R integration validation failed: {e}")
 			return False
 
-	@handle_errors(
+	@handles_errors(
 		exceptions=(Exception,),
 		default_return=False,
 		context="comprehensive validation",
@@ -697,7 +698,7 @@ import os.path
 			self.logger.exception(f"Failed to generate validation report: {e}")
 
 
-@handle_errors(
+@handles_errors(
 	exceptions=(Exception,), default_return=False, context="step5_5 validation",
 )
 async def run_step5_5_validation(

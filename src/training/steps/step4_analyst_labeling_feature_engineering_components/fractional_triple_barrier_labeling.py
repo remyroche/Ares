@@ -9,10 +9,10 @@ import numpy as np
 import pandas as pd
 from typing import Any, Dict, Optional, Tuple
 
-from src.utils.centralized_decorators import (
+from src.core.domain import (
     guard_dataframe_nulls,
     handle_errors,
-    with_tracing_span,
+    with_tracing_span
 )
 from src.utils.logger import get_logger
 from .optimized_triple_barrier_labeling import OptimizedTripleBarrierLabeling

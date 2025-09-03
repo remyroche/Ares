@@ -12,8 +12,7 @@ from src.core.decorators import (
     validate_dataframe
 )
 
-# TODO: These decorators need to be migrated to core decorators or removed
-from src.utils.centralized_decorators import (
+from src.core.domain import (
     comprehensive_validation,
     secure_data_processing
 )

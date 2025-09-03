@@ -4,12 +4,15 @@ This module manages portfolio allocation, position sizing, and risk management
 across multiple trading strategies and models. It provides comprehensive
 portfolio optimization, dynamic rebalancing, and risk-adjusted position sizing.
 """
+from src.core.decorators import handles_errors
+
+from src.core.domain import handle_specific_errors
+
 # src/supervisor/global_portfolio_manager.py
 
 from datetime import datetime
 from typing import Any
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, initialization_error, invalid
 import copy
@@ -111,7 +114,7 @@ class GlobalPortfolioManager:
             )
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="portfolio configuration loading",
@@ -142,7 +145,7 @@ class GlobalPortfolioManager:
         except Exception:
             self.print(error("Error loading portfolio configuration: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -185,7 +188,7 @@ class GlobalPortfolioManager:
             self.print(error("Error validating configuration: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="portfolio modules initialization",
@@ -222,7 +225,7 @@ class GlobalPortfolioManager:
                 initialization_error("Error initializing portfolio modules: {e}"),
             )
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="portfolio allocation initialization",
@@ -245,7 +248,7 @@ class GlobalPortfolioManager:
                 initialization_error("Error initializing portfolio allocation: {e}"),
             )
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="risk management initialization",
@@ -265,7 +268,7 @@ class GlobalPortfolioManager:
         except Exception:
             self.print(initialization_error("Error initializing risk management: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="rebalancing initialization",
@@ -286,7 +289,7 @@ class GlobalPortfolioManager:
         except Exception:
             self.print(initialization_error("Error initializing rebalancing: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="performance monitoring initialization",
@@ -309,7 +312,7 @@ class GlobalPortfolioManager:
                 initialization_error("Error initializing performance monitoring: {e}"),
             )
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="optimization initialization",
@@ -398,7 +401,7 @@ class GlobalPortfolioManager:
             self.is_managing = False
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="management inputs validation",
@@ -438,7 +441,7 @@ class GlobalPortfolioManager:
             self.print(error("Error validating management inputs: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="portfolio allocation",
@@ -482,7 +485,7 @@ class GlobalPortfolioManager:
             self.print(error("Error performing portfolio allocation: {e}"))
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="risk management",
@@ -525,7 +528,7 @@ class GlobalPortfolioManager:
             self.print(error("Error performing risk management: {e}"))
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="rebalancing",
@@ -569,7 +572,7 @@ class GlobalPortfolioManager:
             self.print(error("Error performing rebalancing: {e}"))
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="performance monitoring",
@@ -613,7 +616,7 @@ class GlobalPortfolioManager:
             self.print(error("Error performing performance monitoring: {e}"))
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="optimization",
@@ -1042,7 +1045,7 @@ class GlobalPortfolioManager:
             self.print(error("Error performing factor optimization: {e}"))
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="management results storage",
@@ -1065,7 +1068,7 @@ class GlobalPortfolioManager:
         except Exception:
             self.print(error("Error storing management results: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="management results getting",
@@ -1092,7 +1095,7 @@ class GlobalPortfolioManager:
             self.print(error("Error getting management results: {e}"))
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="management history getting",
@@ -1144,7 +1147,7 @@ class GlobalPortfolioManager:
             "management_history_count": len(self.management_history),
         }
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="global portfolio manager cleanup",
@@ -1173,7 +1176,7 @@ class GlobalPortfolioManager:
 global_portfolio_manager: GlobalPortfolioManager | None = None
 
 
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="global portfolio manager setup",

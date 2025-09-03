@@ -5,6 +5,15 @@ Paper Trading Integration Module
 Integrates the `PaperTrader` with the `PaperTradingReporter` and provides
 helper methods to execute trades and generate reports in real time.
 """
+from src.core.decorators import handles_errors
+
+from src.core.domain import (
+    PerformanceLevel,
+    comprehensive_validation,
+    handle_specific_errors,
+    performance_monitor
+)
+
 from datetime import datetime
 from typing import Any, TYPE_CHECKING
 import json
@@ -12,7 +21,6 @@ import os
 
 from src.utils.comprehensive_logger import get_comprehensive_logger
 from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors, handle_specific_errors
 import asyncio
 from src.utils.warning_symbols import (
 
@@ -23,11 +31,6 @@ from src.utils.warning_symbols import (
     warning,
 )
 from src.paper_trader import PaperTrader, setup_paper_trader
-from src.utils.advanced_decorators import (
-    performance_monitor,
-    PerformanceLevel,
-    comprehensive_validation,
-)
 from src.utils.centralized_decorators_simple import secure_data_processing
 
 if TYPE_CHECKING:  # Only for type hints to avoid runtime import of corrupted modules
@@ -132,7 +135,7 @@ setup_paper_trading_reporter as _setup_reporter,
             )
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="integration validation",
@@ -270,7 +273,7 @@ setup_paper_trading_reporter as _setup_reporter,
             return False
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="real-time report generation",
@@ -377,7 +380,7 @@ setup_paper_trading_reporter as _setup_reporter,
             return {}
 
     @performance_monitor(level=PerformanceLevel.BASIC)
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="basic report generation",
@@ -437,7 +440,7 @@ setup_paper_trading_reporter as _setup_reporter,
         }
 
     @performance_monitor(level=PerformanceLevel.BASIC)
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="integration cleanup",
@@ -459,7 +462,7 @@ setup_paper_trading_reporter as _setup_reporter,
         except Exception as e:
             self.logger.error(error(f"Error stopping integration: {e}"))
 
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="paper trading integration setup",

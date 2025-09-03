@@ -15,9 +15,9 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.utils.centralized_decorators import (
+from src.core.domain import (
     handle_errors,
-    with_tracing_span,
+    with_tracing_span
 )
 from src.utils.logger import system_logger
 

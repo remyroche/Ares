@@ -4,8 +4,7 @@ Provides thorough decorators, detailed reports, and consistent storage for all p
 """
 from src.core.decorators import handles_errors
 
-# TODO: These decorators need to be migrated to core decorators or removed
-from src.utils.centralized_decorators import (
+from src.core.domain import (
     PipelineStage,
     PipelineValidationLevel,
     monitor_pipeline_performance,

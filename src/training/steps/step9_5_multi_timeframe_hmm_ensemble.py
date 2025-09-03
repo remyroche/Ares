@@ -1,5 +1,21 @@
 # src/training/steps/step09_5_multi_timeframe_hmm_ensemble.py
 
+from src.core.decorators import (
+    cached,
+    circuit_breaker,
+    handles_errors,
+    log_call,
+    log_execution_time,
+    validates
+)
+
+from src.core.domain import (
+    monitor_feature_engineering,
+    prevent_data_leakage,
+    quality_gate,
+    secure_data_processing
+)
+
 """Step 9.5: Multi-Timeframe HMM Ensemble Training with Regime-Specific Logic."
 
 This step trains a multi-timeframe HMM cluster ensemble system that combines
@@ -32,18 +48,6 @@ from src.config.multi_timeframe_hmm_ensemble_config import (
     get_multi_timeframe_hmm_ensemble_config,
 )
 from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors
-from src.utils.training_pipeline_decorators import (
-    validate_step_prerequisites,
-    secure_data_processing,
-    prevent_data_leakage,
-    resource_monitor,
-    memory_efficient,
-    quality_gate,
-    circuit_breaker_protection,
-    debug_training_step,
-    monitor_feature_engineering,
-)
 from src.utils.enhanced_mlflow_integration import (
     with_enhanced_mlflow_logging,
     log_step_report,
@@ -529,7 +533,7 @@ class RegimeSpecificMultiTimeframeEnsemble:
         # Placeholder for actual regime-specific parameter logic
         return {"regime": regime, "timeframe": timeframe}
 
-@validate_step_prerequisites(
+@validates(
     required_directories=["data/training", "data/regime_forecasting"],
     min_memory_gb=4.0,
     min_disk_gb=2.0,
@@ -548,14 +552,14 @@ class RegimeSpecificMultiTimeframeEnsemble:
     feature_leakage_detection=True,
     lookahead_bias_prevention=True,
 )
-@resource_monitor(
+@log_execution_time(
     memory_threshold_gb=8.0,
     cpu_threshold_percent=80.0,
     disk_threshold_gb=5.0,
     monitor_interval=10.0,
     auto_cleanup=True,
 )
-@memory_efficient(
+@cached(
     chunk_size=5000, streaming_processing=True, memory_pool=True, cleanup_frequency=5,
 )
 @quality_gate(
@@ -564,14 +568,14 @@ class RegimeSpecificMultiTimeframeEnsemble:
     model_quality_threshold=0.7,
     validation_checks=["data_integrity", "feature_quality", "model_performance"],
 )
-@circuit_breaker_protection(
+@circuit_breaker(
     max_execution_time=3600,  # 1 hour
     max_memory_usage_gb=16.0,
     max_cpu_usage_percent=90.0,
     error_threshold=3,
     recovery_timeout=300,
 )
-@debug_training_step(
+@log_call(
     enable_debug_logging=True,
     save_intermediate_results=True,
     enable_profiling=True,
@@ -583,7 +587,7 @@ class RegimeSpecificMultiTimeframeEnsemble:
     track_data_quality=True,
     save_artifacts=True,
 )
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return={"status": "FAILED", "error": "Unknown error"},
     context="multi-timeframe HMM ensemble training",
@@ -762,7 +766,7 @@ async def run_step(
         }
 
 
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return={"status": "FAILED", "error": "Unknown error"},
     context="multi-timeframe HMM ensemble validation",

@@ -193,7 +193,7 @@ from src.training.steps.step4_analyst_labeling_feature_engineering_components.re
         self.step_timings[step_name] = elapsed
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
-    @with_tracing_span("execute_labeling")
+    @traced("execute_labeling")
     @quality_gate(
         min_quality_score=0.7,
         max_correlation=0.95,
@@ -201,9 +201,9 @@ from src.training.steps.step4_analyst_labeling_feature_engineering_components.re
     )
     @with_enhanced_mlflow_logging("step5_labeling")
     @comprehensive_data_validation
-    @handle_errors
-    @memory_efficient
-    @resource_monitor
+    @handles_errors
+    @cached
+    @log_execution_time
     @secure_data_processing
     @validate_data_structure
     async def execute_labeling(
@@ -513,7 +513,6 @@ from src.training.steps.step4_analyst_labeling_feature_engineering_components.re
         except Exception as e:
             self.logger.exception(f"❌ Error generating comprehensive labels: {e}")
             return None
-
 
 
     async def _create_composite_label(self, data: pd.DataFrame) -> pd.Series:

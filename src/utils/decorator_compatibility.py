@@ -86,7 +86,7 @@ def guard_nan_inf(*args, **kwargs):
 def guard_nulls(*args, **kwargs):
     """Deprecated: Use guard_dataframe_nulls instead."""
     _deprecation_warning("guard_nulls", "guard_dataframe_nulls")
-    return guard_dataframe_nulls(*args, **kwargs)
+    return validates(*args, **kwargs)
 
 
 def error_handler(*args, **kwargs):
@@ -98,7 +98,7 @@ def error_handler(*args, **kwargs):
 def tracing(*args, **kwargs):
     """Deprecated: Use with_tracing_span instead."""
     _deprecation_warning("tracing", "with_tracing_span")
-    return with_tracing_span(*args, **kwargs)
+    return traced(*args, **kwargs)
 
 
 # Enhanced decorator aliases for easier access

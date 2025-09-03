@@ -24,8 +24,7 @@ from src.core.decorators import (
     validates
 )
 
-# TODO: These decorators need to be migrated to core decorators or removed
-from src.utils.centralized_decorators import (
+from src.core.domain import (
     ensure_data_integrity,
     monitor_step_execution,
     quality_gate,

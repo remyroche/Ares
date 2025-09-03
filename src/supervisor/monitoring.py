@@ -3,13 +3,16 @@
 This module provides system-wide monitoring capabilities for the trading system,
 including health checks, performance tracking, and alerting functionality.
 """
+from src.core.decorators import handles_errors
+
+from src.core.domain import handle_specific_errors
+
 # src/supervisor/monitoring.py
 
 import asyncio
 from datetime import datetime
 from typing import Any
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, invalid
 import copy
@@ -57,7 +60,7 @@ class Monitoring:
             print(failed("❌ Monitoring initialization failed: {e}"))
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=None,
         context="monitoring configuration loading",
@@ -72,7 +75,7 @@ class Monitoring:
         except Exception:
             print(error("Error loading monitoring configuration: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="configuration validation",
@@ -111,7 +114,7 @@ class Monitoring:
             self.is_running = False
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="monitoring step",
@@ -129,7 +132,7 @@ class Monitoring:
         except Exception:
             print(error("Error in monitoring step: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="system health check",
@@ -148,7 +151,7 @@ class Monitoring:
         except Exception:
             print(error("Error checking system health: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="metrics update",
@@ -162,7 +165,7 @@ class Monitoring:
         except Exception:
             print(error("Error updating metrics: {e}"))
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="monitoring stop",
@@ -195,7 +198,7 @@ class Monitoring:
 monitoring: Monitoring | None = None
 
 
-@handle_errors(
+@handles_errors(
     exceptions=(Exception,),
     default_return=None,
     context="monitoring setup",

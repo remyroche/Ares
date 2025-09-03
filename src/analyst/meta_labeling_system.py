@@ -1,5 +1,7 @@
 # src/analyst/meta_labeling_system.py
 
+from src.core.decorators import handles_errors
+
 import os
 from datetime import datetime
 from typing import Any
@@ -10,9 +12,6 @@ import pandas as pd
 from src.config import CONFIG
 import logging
 import asyncio
-from src.utils.error_handler import (
-    handle_errors,
-)
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -68,7 +67,7 @@ class MetaLabelingSystem:
 
         self.is_initialized = False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=False,
         context="meta labeling system initialization",
@@ -87,7 +86,7 @@ class MetaLabelingSystem:
             )
             return False
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError, KeyError, IndexError),
         default_return={},
         context="pattern features calculation",
@@ -744,7 +743,7 @@ class MetaLabelingSystem:
             return 0
 
     @validate_data_quality(validation_level="WARNING")
-    @with_tracing_span("price_extremes_prediction")
+    @traced("price_extremes_prediction")
     def _predict_price_extremes(
         self,
         data: pd.DataFrame,
@@ -780,7 +779,7 @@ class MetaLabelingSystem:
             }
 
     @validate_data_quality(validation_level="WARNING")
-    @with_tracing_span("order_returns_prediction")
+    @traced("order_returns_prediction")
     def _predict_order_returns(
         self,
         data: pd.DataFrame,
@@ -810,7 +809,7 @@ class MetaLabelingSystem:
             return {"LIMIT_ORDER_RETURN": 0.001, "limit_order_confidence": 0}
 
     @validate_data_quality(validation_level="WARNING")
-    @with_tracing_span("entry_signals_detection")
+    @traced("entry_signals_detection")
     def _detect_entry_signals(
         self,
         data: pd.DataFrame,
@@ -896,7 +895,7 @@ class MetaLabelingSystem:
             }
 
     @validate_data_quality(validation_level="WARNING")
-    @with_tracing_span("adverse_excursion_prediction")
+    @traced("adverse_excursion_prediction")
     def _predict_adverse_excursion(
         self,
         data: pd.DataFrame,
@@ -960,7 +959,7 @@ class MetaLabelingSystem:
 
             return {"ABORT_ENTRY_SIGNAL": 0, "abort_confidence": 0}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return={},
         context="analyst labels generation",
@@ -1057,7 +1056,7 @@ class MetaLabelingSystem:
 
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return={},
         context="tactician labels generation",
@@ -1151,7 +1150,7 @@ class MetaLabelingSystem:
 
             return {}
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(ValueError, AttributeError),
         default_return={},
         context="combined labels generation",
@@ -1229,7 +1228,7 @@ class MetaLabelingSystem:
             "description": "Meta-labeling system for path-dependent trading signals",
         }
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="meta labeling system cleanup",

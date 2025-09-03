@@ -1,5 +1,7 @@
 # src/analyst/regime_expert_orchestrator.py
 
+from src.core.decorators import handles_errors
+
 from __future__ import annotations
 
 import asyncio
@@ -11,7 +13,6 @@ import numpy as np
 import pandas as pd
 
 from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors
 import logging
 from src.analyst.predictive_ensembles.ensemble_orchestrator import (
     RegimePredictiveEnsembles,
@@ -83,7 +84,7 @@ class RegimeExpertOrchestrator:
         self.last_regime_update = None
         self.cache_ttl = 300  # 5 minutes
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,),
         default_return=None,
         context="regime expert initialization",
@@ -111,7 +112,7 @@ class RegimeExpertOrchestrator:
         regime_name = self.get_current_regime_from_cluster(cluster_id)
         return self.regime_ensembles.get_regime_expert(cluster_id)
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,), default_return=None, context="current regime detection"
     )
     async def get_current_regime_info(
@@ -151,7 +152,7 @@ class RegimeExpertOrchestrator:
             self.logger.error(f"Error getting current regime info: {e}")
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,), default_return=None, context="regime expert prediction"
     )
     async def get_regime_expert_prediction(
@@ -315,7 +316,7 @@ class RegimeExpertOrchestrator:
                 return cluster_id
         return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,), default_return=None, context="step9_5 integration"
     )
     async def integrate_step9_5_prediction(
@@ -362,7 +363,7 @@ class RegimeExpertOrchestrator:
             self.logger.error(f"Error integrating Step 9.5 prediction: {e}")
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,), default_return=None, context="step10 integration"
     )
     async def integrate_step10_prediction(
@@ -408,7 +409,7 @@ class RegimeExpertOrchestrator:
             self.logger.error(f"Error integrating Step 10 prediction: {e}")
             return None
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,), default_return=None, context="two-tier decision system"
     )
     async def get_two_tier_decision(
@@ -521,7 +522,7 @@ class RegimeExpertOrchestrator:
 
         return final_decision
 
-    @handle_errors(
+    @handles_errors(
         exceptions=(Exception,), default_return=False, context="continuous monitoring"
     )
     async def start_continuous_monitoring(

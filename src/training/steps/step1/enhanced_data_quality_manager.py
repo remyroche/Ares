@@ -20,7 +20,7 @@ import pandas as pd
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.utils.centralized_decorators import (
+from src.core.domain import (
     comprehensive_data_validation,
     handle_errors,
     memory_efficient,
@@ -29,7 +29,7 @@ from src.utils.centralized_decorators import (
     resource_monitor,
     secure_data_processing,
     validate_data_structure,
-    with_tracing_span,
+    with_tracing_span
 )
 from src.utils.logger import system_logger
 

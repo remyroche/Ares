@@ -1,0 +1,937 @@
+{
+  "total_files": 225,
+  "files_fixed": 0,
+  "files_failed": 155,
+  "fixes_applied": [
+    {
+      "file": "/workspace/src/monitoring/performance_dashboard.py",
+      "original_error": "Line 11: from __future__ imports must occur at the beginning of the file",
+      "final_error": "Line 11: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/monitoring/performance_monitor.py",
+      "original_error": "Line 10: from __future__ imports must occur at the beginning of the file",
+      "final_error": "Line 11: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/launcher/enhanced_trading_launcher.py",
+      "original_error": "Line 81: invalid syntax",
+      "final_error": "Line 6: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/interfaces/enhanced_event_bus.py",
+      "original_error": "Line 29: invalid syntax",
+      "final_error": "Line 868: unterminated triple-quoted string literal (detected at line 891)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/supervisor/enhanced_prediction_service.py",
+      "original_error": "Line 257: expected 'except' or 'finally' block",
+      "final_error": "Line 5: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/supervisor/supervisor.py",
+      "original_error": "Line 630: unexpected indent",
+      "final_error": "Line 39: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/pipelines/live_trading_pipeline.py",
+      "original_error": "Line 18: unexpected indent",
+      "final_error": "Line 5: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/pipelines/improved_pipeline_executor.py",
+      "original_error": "Line 159: unexpected indent",
+      "final_error": "Line 23: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/pipelines/components/monitoring_manager.py",
+      "original_error": "Line 28: '(' was never closed",
+      "final_error": "Line 5: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/pipelines/components/lifecycle_manager.py",
+      "original_error": "Line 18: unexpected indent",
+      "final_error": "Line 5: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/pipelines/components/data_manager.py",
+      "original_error": "Line 22: unexpected indent",
+      "final_error": "Line 5: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/integration/paper_trading_integration.py",
+      "original_error": "Line 15: invalid syntax",
+      "final_error": "Line 6: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/tactician/position_sizer.py",
+      "original_error": "Line 16: invalid syntax",
+      "final_error": "Line 10: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/tactician/position_division_strategy.py",
+      "original_error": "Line 13: unexpected indent",
+      "final_error": "Line 9: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/tactician/tactician.py",
+      "original_error": "Line 1138: unterminated triple-quoted string literal (detected at line 1146)",
+      "final_error": "Line 159: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/tactician/enhanced_execution_manager.py",
+      "original_error": "Line 47: unexpected indent",
+      "final_error": "Line 24: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/tactician/position_monitor.py",
+      "original_error": "Line 590: expected 'except' or 'finally' block",
+      "final_error": "Line 8: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/tactician/sr_data_integration.py",
+      "original_error": "Line 32: expected 'except' or 'finally' block",
+      "final_error": "Line 9: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/tactician/sr_breakout_predictor.py",
+      "original_error": "Line 917: expected 'except' or 'finally' block",
+      "final_error": "Line 35: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/tactician/ml_target_validator.py",
+      "original_error": "Line 3: invalid syntax",
+      "final_error": "Line 3: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/tactician/ml_tactics_manager.py",
+      "original_error": "Line 8: invalid syntax",
+      "final_error": "Line 8: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/model_trainer.py",
+      "original_error": "Line 322: expected an indented block after 'try' statement on line 321",
+      "final_error": "Line 75: unterminated string literal (detected at line 75)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/enhanced_training_manager.py",
+      "original_error": "Line 2542: expected an indented block after 'try' statement on line 2541",
+      "final_error": "Line 98: unterminated string literal (detected at line 98)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/enhanced_training_manager_enhanced.py",
+      "original_error": "Line 3616: unexpected indent",
+      "final_error": "Line 5: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/multi_output_probability_trainer.py",
+      "original_error": "Line 38: unexpected indent",
+      "final_error": "Line 5: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/regularization.py",
+      "original_error": "Line 329: expected 'except' or 'finally' block",
+      "final_error": "Line 36: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/feature_integration.py",
+      "original_error": "Line 66: expected an indented block after 'if' statement on line 65",
+      "final_error": "Line 10: unterminated string literal (detected at line 10)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/feature_engineering.py",
+      "original_error": "Line 8: invalid syntax",
+      "final_error": "Line 8: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/enhanced_matrix_operations.py",
+      "original_error": "Line 1549: unindent does not match any outer indentation level",
+      "final_error": "Line 23: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/enhanced_lm_optimizer.py",
+      "original_error": "Line 1356: unexpected indent",
+      "final_error": "Line 14: unterminated string literal (detected at line 14)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/enhanced_training_manager_optimized.py",
+      "original_error": "Line 431: unindent does not match any outer indentation level",
+      "final_error": "Line 42: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/multi_objective_optimizer.py",
+      "original_error": "Line 70: unexpected indent",
+      "final_error": "Line 20: unterminated string literal (detected at line 20)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/enhanced_training_manager_backup.py",
+      "original_error": "Line 2354: expected an indented block after 'try' statement on line 2353",
+      "final_error": "Line 87: unterminated string literal (detected at line 87)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/optimized_feature_selection_manager.py",
+      "original_error": "Line 308: unindent does not match any outer indentation level",
+      "final_error": "Line 61: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/multi_output_model_trainer.py",
+      "original_error": "Line 54: expected an indented block after 'try' statement on line 53",
+      "final_error": "Line 28: unmatched ')'",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/calibration_manager.py",
+      "original_error": "Line 134: unexpected indent",
+      "final_error": "Line 21: unterminated string literal (detected at line 21)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/training_orchestrator.py",
+      "original_error": "Line 419: unexpected indent",
+      "final_error": "Line 21: unterminated string literal (detected at line 21)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/factory.py",
+      "original_error": "Line 186: unexpected indent",
+      "final_error": "Line 7: unmatched ')'",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/training_manager.py",
+      "original_error": "Line 205: unexpected indent",
+      "final_error": "Line 25: unterminated string literal (detected at line 25)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/enhanced_matrix_gpu_integration.py",
+      "original_error": "Line 17: from __future__ imports must occur at the beginning of the file",
+      "final_error": "Line 17: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/enhanced_coarse_optimizer.py",
+      "original_error": "Line 460: expected 'except' or 'finally' block",
+      "final_error": "Line 65: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/di_training_manager.py",
+      "original_error": "Line 116: unexpected indent",
+      "final_error": "Line 11: unterminated string literal (detected at line 11)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/data_efficiency_optimizer.py",
+      "original_error": "Line 95: unterminated string literal (detected at line 95)",
+      "final_error": "Line 86: unterminated string literal (detected at line 86)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/data_manager.py",
+      "original_error": "Line 729: unterminated string literal (detected at line 729)",
+      "final_error": "Line 57: unterminated string literal (detected at line 57)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/wavelet_caching_workflow.py",
+      "original_error": "Line 238: expected 'except' or 'finally' block",
+      "final_error": "Line 14: unmatched ')'",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/optimization/computational_optimization_manager.py",
+      "original_error": "Line 1747: unexpected indent",
+      "final_error": "Line 15: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/fractional_feature_selector.py",
+      "original_error": "Line 693: unexpected indent",
+      "final_error": "Line 33: unterminated string literal (detected at line 33)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step9_5_hmm_lm_generalist_training.py",
+      "original_error": "Line 124: unexpected indent",
+      "final_error": "Line 81: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step2_5_sr_optimization.py",
+      "original_error": "Line 1516: unexpected indent",
+      "final_error": "Line 14: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step14_tactician_labeling_validator.py",
+      "original_error": "Line 189: expected an indented block after 'try' statement on line 188",
+      "final_error": "Line 3: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step5_hmm_based_training_validator.py",
+      "original_error": "Line 724: unindent does not match any outer indentation level",
+      "final_error": "Line 5: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step10_unified_regime_intelligence.py",
+      "original_error": "Line 1977: unmatched ')'",
+      "final_error": "Line 130: unmatched ')'",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step18_walk_forward_validation_validator.py",
+      "original_error": "Line 124: invalid syntax",
+      "final_error": "Line 3: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step14_tactician_labeling.py",
+      "original_error": "Line 621: expected 'except' or 'finally' block",
+      "final_error": "Line 22: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step4_triple_barrier_method.py",
+      "original_error": "Line 340: unmatched ')'",
+      "final_error": "Line 13: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step5_labeling.py",
+      "original_error": "Line 612: unmatched ')'",
+      "final_error": "Line 100: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/hmm_feature_enhancer.py",
+      "original_error": "Line 4: invalid syntax",
+      "final_error": "Line 4: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step1_5_data_converter.py",
+      "original_error": "Line 2305: 'await' outside function",
+      "final_error": "Line 429: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step4_regime_data_splitting_validator.py",
+      "original_error": "Line 8: invalid syntax",
+      "final_error": "Line 12: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step2_5_sr_optimization_validator.py",
+      "original_error": "Line 94: unexpected indent",
+      "final_error": "Line 18: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step2_data_reading.py",
+      "original_error": "Line 148: unexpected indent",
+      "final_error": "Line 91: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step9_hmm_based_training_validator.py",
+      "original_error": "Line 32: unexpected indent",
+      "final_error": "Line 10: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step11_analyst_creation_validator.py",
+      "original_error": "Line 5: invalid syntax",
+      "final_error": "Line 5: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/enhanced_step1_data_collection.py",
+      "original_error": "Line 26: expected an indented block after 'try' statement on line 25",
+      "final_error": "Line 5: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step19_monte_carlo_validation_validator.py",
+      "original_error": "Line 120: invalid syntax",
+      "final_error": "Line 3: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step9_hmm_based_training.py",
+      "original_error": "Line 260: expected an indented block after 'try' statement on line 259",
+      "final_error": "Line 114: unterminated string literal (detected at line 114)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step3_parameter_optimization.py",
+      "original_error": "Line 130: unexpected indent",
+      "final_error": "Line 20: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step16_confidence_calibration.py",
+      "original_error": "Line 857: unexpected indent",
+      "final_error": "Line 51: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step21_saving.py",
+      "original_error": "Line 242: expected 'except' or 'finally' block",
+      "final_error": "Line 47: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step3_parameter_optimization_validator.py",
+      "original_error": "Line 9: invalid syntax",
+      "final_error": "Line 13: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step1_5_data_converter_validator.py",
+      "original_error": "Line 432: unindent does not match any outer indentation level",
+      "final_error": "Line 3: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step3_5_final_regime_clustering.py",
+      "original_error": "Line 881: unexpected indent",
+      "final_error": "Line 13: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step4_triple_barrier_method_validator.py",
+      "original_error": "Line 32: unexpected indent",
+      "final_error": "Line 10: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/combined_fractional_system.py",
+      "original_error": "Line 466: unexpected indent",
+      "final_error": "Line 22: unterminated string literal (detected at line 22)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step5_labeling_validator.py",
+      "original_error": "Line 8: invalid syntax",
+      "final_error": "Line 12: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step3_hmm_regime_discovery.py",
+      "original_error": "Line 200: unexpected indent",
+      "final_error": "Line 6: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step10_unified_regime_intelligence_validator.py",
+      "original_error": "Line 548: unindent does not match any outer indentation level",
+      "final_error": "Line 17: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/vectorized_advanced_feature_engineering.py",
+      "original_error": "Line 37: unexpected indent",
+      "final_error": "Line 21: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/precompute_wavelet_features.py",
+      "original_error": "Line 162: expected 'except' or 'finally' block",
+      "final_error": "Line 8: unterminated string literal (detected at line 8)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step6_feature_engineering.py",
+      "original_error": "Line 144: unexpected indent",
+      "final_error": "Line 318: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step1_data_collection_validator.py",
+      "original_error": "Line 435: unindent does not match any outer indentation level",
+      "final_error": "Line 3: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step6_feature_engineering_validator.py",
+      "original_error": "Line 5: invalid syntax",
+      "final_error": "Line 35: unterminated string literal (detected at line 35)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step8_regime_data_splitting_validator.py",
+      "original_error": "Line 32: unexpected indent",
+      "final_error": "Line 10: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step2_data_reading_validator.py",
+      "original_error": "Line 35: unexpected indent",
+      "final_error": "Line 26: unterminated string literal (detected at line 26)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step19_monte_carlo_validation.py",
+      "original_error": "Line 243: unmatched ')'",
+      "final_error": "Line 19: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/unified_data_loader.py",
+      "original_error": "Line 29: expected 'except' or 'finally' block",
+      "final_error": "Line 58: unterminated string literal (detected at line 58)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step11_analyst_creation.py",
+      "original_error": "Line 163: unindent does not match any outer indentation level",
+      "final_error": "Line 104: unterminated string literal (detected at line 104)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step9_5_multi_timeframe_hmm_ensemble.py",
+      "original_error": "Line 41: unexpected indent",
+      "final_error": "Line 29: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/vectorized_labelling_orchestrator.py",
+      "original_error": "Line 28: unexpected indent",
+      "final_error": "Line 49: unterminated string literal (detected at line 49)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step9_5_hmm_lm_generalist_training_validator.py",
+      "original_error": "Line 5: invalid syntax",
+      "final_error": "Line 5: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/integrated_data_quality_pipeline.py",
+      "original_error": "Line 54: unexpected indent",
+      "final_error": "Line 23: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step9_hmm_based_training_enhanced.py",
+      "original_error": "Line 1053: unexpected indent",
+      "final_error": "Line 13: unterminated string literal (detected at line 13)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/enhanced_step1_5_data_converter.py",
+      "original_error": "Line 27: expected an indented block after 'try' statement on line 26",
+      "final_error": "Line 5: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization.py",
+      "original_error": "Line 66: unexpected indent",
+      "final_error": "Line 30: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step12_analyst_enhancement.py",
+      "original_error": "Line 3623: unmatched ')'",
+      "final_error": "Line 83: unmatched ']'",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/raw_data_quality_checker.py",
+      "original_error": "Line 544: expected an indented block after 'if' statement on line 542",
+      "final_error": "Line 15: unterminated string literal (detected at line 15)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step3_5_final_regime_clustering_validator.py",
+      "original_error": "Line 447: unexpected indent",
+      "final_error": "Line 13: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step18_walk_forward_validation.py",
+      "original_error": "Line 196: unmatched ')'",
+      "final_error": "Line 13: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step15_tactician_specialist_training.py",
+      "original_error": "Line 1154: unmatched ')'",
+      "final_error": "Line 3: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step5_regime_data_splitting_validator.py",
+      "original_error": "Line 87: unindent does not match any outer indentation level",
+      "final_error": "Line 2: unterminated triple-quoted string literal (detected at line 76)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/fractional_differentiation.py",
+      "original_error": "Line 15: unmatched ')'",
+      "final_error": "Line 7: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step4_regime_data_splitting.py",
+      "original_error": "Line 142: unexpected indent",
+      "final_error": "Line 90: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step13_analyst_ensemble_creation.py",
+      "original_error": "Line 154: expected an indented block after 'try' statement on line 153",
+      "final_error": "Line 42: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step8_regime_data_splitting.py",
+      "original_error": "Line 154: expected 'except' or 'finally' block",
+      "final_error": "Line 132: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step7_enhanced_matrix_operations.py",
+      "original_error": "Line 161: unexpected indent",
+      "final_error": "Line 101: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization/advanced_optimization_engine.py",
+      "original_error": "Line 47: unexpected indent",
+      "final_error": "Line 6: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization/optimized_optuna_optimization_enhanced.py",
+      "original_error": "Line 85: unexpected unindent",
+      "final_error": "Line 6: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization/optimized_step17_implementation.py",
+      "original_error": "Line 42: unexpected indent",
+      "final_error": "Line 6: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization/comprehensive_parameter_integration.py",
+      "original_error": "Line 33: unexpected indent",
+      "final_error": "Line 6: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization/efficiency_optimizer.py",
+      "original_error": "Line 776: unexpected indent",
+      "final_error": "Line 11: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization/step17_probabilistic_bayesian_optimization.py",
+      "original_error": "Line 522: unexpected indent",
+      "final_error": "Line 6: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization/regime_specific_triple_barrier_optimization.py",
+      "original_error": "Line 39: unexpected indent",
+      "final_error": "Line 6: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step1/data_quality_dashboard.py",
+      "original_error": "Line 20: unmatched ')'",
+      "final_error": "Line 43: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step1/comprehensive_gap_filler.py",
+      "original_error": "Line 939: unexpected indent",
+      "final_error": "Line 6: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step1/data_resampler.py",
+      "original_error": "Line 816: unindent does not match any outer indentation level",
+      "final_error": "Line 85: unterminated string literal (detected at line 85)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step1/data_gap_detector.py",
+      "original_error": "Line 63: unmatched ')'",
+      "final_error": "Line 181: unmatched '}'",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step1/data_quality_monitor.py",
+      "original_error": "Line 226: unexpected indent",
+      "final_error": "Line 13: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step1/enhanced_data_quality_manager.py",
+      "original_error": "Line 73: unexpected indent",
+      "final_error": "Line 25: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/optimized_triple_barrier_labeling.py",
+      "original_error": "Line 468: unexpected indent",
+      "final_error": "Line 36: unindent does not match any outer indentation level",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/regime_aware_triple_barrier_labeling.py",
+      "original_error": "Line 802: unexpected indent",
+      "final_error": "Line 19: unindent does not match any outer indentation level",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/fractional_triple_barrier_labeling.py",
+      "original_error": "Line 14: unmatched ')'",
+      "final_error": "Line 7: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/step4_analyst_labeling_feature_engineering_components/profit_based_feature_engineering.py",
+      "original_error": "Line 706: unexpected indent",
+      "final_error": "Line 21: unterminated string literal (detected at line 21)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/analyst_training_components/regime_specific_tpsl_optimizer.py",
+      "original_error": "Line 301: unexpected indent",
+      "final_error": "Line 16: unterminated string literal (detected at line 16)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/steps/data_preparation_components/training_validation_config.py",
+      "original_error": "Line 394: unexpected indent",
+      "final_error": "Line 167: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/core/checkpoint_manager.py",
+      "original_error": "Line 39: invalid syntax",
+      "final_error": "Line 52: unterminated string literal (detected at line 52)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/core/stage_context.py",
+      "original_error": "Line 31: invalid syntax",
+      "final_error": "Line 11: unterminated string literal (detected at line 11)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/training/core/pipeline_orchestrator.py",
+      "original_error": "Line 34: invalid syntax",
+      "final_error": "Line 53: unterminated string literal (detected at line 53)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/exchange/binance.py",
+      "original_error": "Line 14: unexpected indent",
+      "final_error": "Line 14: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/utils/vif_calculator.py",
+      "original_error": "Line 73: unexpected indent",
+      "final_error": "Line 5: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/utils/model_performance_monitor.py",
+      "original_error": "Line 386: expected 'except' or 'finally' block",
+      "final_error": "Line 6: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/utils/data_loader.py",
+      "original_error": "Line 21: invalid syntax",
+      "final_error": "Line 5: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/utils/enhanced_memory_management.py",
+      "original_error": "Line 40: invalid syntax",
+      "final_error": "Line 5: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/utils/data_optimizer.py",
+      "original_error": "Line 98: unmatched ')'",
+      "final_error": "Line 6: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/utils/configuration_security.py",
+      "original_error": "Line 101: invalid syntax",
+      "final_error": "Line 5: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/utils/enhanced_missing_value_handler.py",
+      "original_error": "Line 81: invalid syntax",
+      "final_error": "Line 5: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/utils/data_formatting_framework.py",
+      "original_error": "Line 401: unexpected indent",
+      "final_error": "Line 5: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/utils/quality_alert_system.py",
+      "original_error": "Line 258: expected 'except' or 'finally' block",
+      "final_error": "Line 5: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/utils/base_validator.py",
+      "original_error": "Line 302: expected 'except' or 'finally' block",
+      "final_error": "Line 5: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/utils/model_manager.py",
+      "original_error": "Line 95: unindent does not match any outer indentation level",
+      "final_error": "Line 5: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/utils/database_security.py",
+      "original_error": "Line 358: unexpected indent",
+      "final_error": "Line 5: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/strategist/strategist_backup.py",
+      "original_error": "Line 59: invalid syntax. Perhaps you forgot a comma?",
+      "final_error": "Line 5: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/analyst/advanced_feature_engineering.py",
+      "original_error": "Line 1296: unexpected indent",
+      "final_error": "Line 9: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/analyst/feature_engineering_orchestrator.py",
+      "original_error": "Line 349: unexpected indent",
+      "final_error": "Line 35: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/analyst/autoencoder_feature_generator.py",
+      "original_error": "Line 1921: expected 'except' or 'finally' block",
+      "final_error": "Line 74: invalid syntax",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/analyst/enhanced_prediction_integrator.py",
+      "original_error": "Line 10: unexpected indent",
+      "final_error": "Line 10: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/analyst/liquidation_risk_model.py",
+      "original_error": "Line 9: invalid syntax",
+      "final_error": "Line 338: closing parenthesis '}' does not match opening parenthesis '(' on line 224",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/analyst/regime_expert_orchestrator.py",
+      "original_error": "Line 17: unexpected indent",
+      "final_error": "Line 20: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/analyst/meta_label_relevance.py",
+      "original_error": "Line 114: unexpected indent",
+      "final_error": "Line 30: unindent does not match any outer indentation level",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/analyst/ml_confidence_predictor.py",
+      "original_error": "Line 848: expected an indented block after 'try' statement on line 846",
+      "final_error": "Line 39: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/analyst/di_analyst.py",
+      "original_error": "Line 45: invalid syntax",
+      "final_error": "Line 9: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/analyst/unified_regime_classifier.py",
+      "original_error": "Line 39: invalid syntax",
+      "final_error": "Line 33: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/analyst/analyst.py",
+      "original_error": "Line 313: unexpected indent",
+      "final_error": "Line 43: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/analyst/predictive_ensembles/multi_timeframe_ensemble.py",
+      "original_error": "Line 39: invalid syntax",
+      "final_error": "Line 7: unexpected indent",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/database/precomputed_features_manager.py",
+      "original_error": "Line 24: invalid syntax",
+      "final_error": "Line 223: unterminated string literal (detected at line 223)",
+      "status": "failed"
+    },
+    {
+      "file": "/workspace/src/database/migration_utils.py",
+      "original_error": "Line 412: unexpected indent",
+      "final_error": "Line 34: unexpected indent",
+      "status": "failed"
+    }
+  ]
+}

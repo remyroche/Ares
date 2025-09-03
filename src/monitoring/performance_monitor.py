@@ -1,13 +1,14 @@
+from __future__ import annotations
+
 # src/monitoring/performance_monitor.py
 
-from src.core.decorators import cached as cached_src_core_decorators, handles_errors, log_execution_time
-from src.core.domain import PerformanceLevel as PerformanceLevel_src_core_domain
+from src.core.decorators import cached, handles_errors, log_execution_time
+from src.core.domain import PerformanceLevel
 
 """
 Performance Monitor for Dual Model System
 Comprehensive monitoring of model performance, system metrics, trading performance, and optimization opportunities.
 """
-from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
@@ -45,7 +46,6 @@ class PerformanceMonitor:
     """Comprehensive performance monitoring system."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
         self.logger = system_logger.getChild("PerformanceMonitor")
 
         # Monitoring configuration

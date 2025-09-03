@@ -1,20 +1,21 @@
+from __future__ import annotations
+
 # src/monitoring/performance_dashboard.py
 
-from src.core.decorators import cached as cached_src_core_decorators, log_execution_time
-from src.core.domain import PerformanceLevel as PerformanceLevel_src_core_domain
+from src.core.decorators import cached, log_execution_time
+from src.core.domain import PerformanceLevel
 
 """
 Performance Dashboard for Dual Model System
 Real-time monitoring and visualization of system performance metrics.
 """
 
-from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from src.core.decorators import handles_errors as handles_errors_src_core_decorators
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
 if TYPE_CHECKING:
@@ -39,7 +40,6 @@ class PerformanceDashboard:
     """Real-time performance dashboard."""
 
     def __init__(self, config: dict[str, Any]) -> None:
-        self.config = config
         self.logger = system_logger.getChild("PerformanceDashboard")
 
         # Dashboard configuration

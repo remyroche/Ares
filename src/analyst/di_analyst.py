@@ -10,6 +10,7 @@ dependency injection patterns and modern architectural practices.
 """
 from datetime import datetime
 from typing import Any
+import logging
 
 import pandas as pd
 
@@ -42,7 +43,6 @@ class DIAnalyst(AnalystBase, IAnalyst):
     configuration management, and modern architectural patterns.
     """
     def __init__(
-        self.logger = logging.getLogger(self.__class__.__name__)
         self,
         config: dict[str, Any] | None = None,
         exchange_client: IExchangeClient | None = None,
@@ -50,6 +50,7 @@ class DIAnalyst(AnalystBase, IAnalyst):
         event_bus: IEventBus | None = None,
     ):
         super().__init__(config, exchange_client, state_manager, event_bus)
+        self.logger = logging.getLogger(self.__class__.__name__)
 
         # Analyst state
         self.is_analyzing = False

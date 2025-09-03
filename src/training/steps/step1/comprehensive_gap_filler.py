@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
+
+from __future__ import annotations
+
 """Comprehensive Gap Filler for Pipeline Integration"
 Handles aggtrades, futures, and klines files with gap detection and filling.
 """
-from __future__ import annotations
 
 import asyncio
 import io
@@ -26,7 +28,6 @@ class ComprehensiveGapFiller:
     """Comprehensive gap filler that handles all data types."""
 
     def __init__(self, data_cache_path: str = "data_cache") -> None:
-        self.data_cache_path = Path(data_cache_path)
         self.session: aiohttp.ClientSession | None = None
         self.max_api_calls_per_gap = 50  # Maximum calls to prevent infinite loops
         self.call_delay = 0.1  # Delay between API calls

@@ -10,28 +10,28 @@ from src.utils.warning_symbols import failed, invalid, missing
 from copy import copy
 import asyncio
 
-class Tactician:
-    """
 from src.core.decorators import handles_errors
 
-Refactored Tactician component with modular architecture and enhanced scenario-based predictions.
-This module orchestrates the tactics pipeline using specialized managers and integrates
-fractal scenario analysis with comprehensive technical indicators.
-"""
+class Tactician:
+    """
+    Refactored Tactician component with modular architecture and enhanced scenario-based predictions.
+    This module orchestrates the tactics pipeline using specialized managers and integrates
+    fractal scenario analysis with comprehensive technical indicators.
+    """
     def __init__(self, config: dict[str, Any]) -> None:
         """
-Initialize refactored tactician with enhanced scenario-based predictions.
+        Initialize refactored tactician with enhanced scenario-based predictions.
 
-Args:
-    config: Configuration dictionary
-"""
-self.config: dict[str, Any] = config
-self.logger = system_logger.getChild("Tactician")
+        Args:
+            config: Configuration dictionary
+        """
+        self.config: dict[str, Any] = config
+        self.logger = system_logger.getChild("Tactician")
 
-# Tactician state
-self.is_running: bool = False
-self.status: dict[str, Any] = {}
-self.history: list[dict[str, Any]] = []
+        # Tactician state
+        self.is_running: bool = False
+        self.status: dict[str, Any] = {}
+        self.history: list[dict[str, Any]] = []
 self.tactics_results: dict[str, Any] = {}
 
 # Configuration

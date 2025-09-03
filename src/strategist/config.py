@@ -41,6 +41,7 @@ class StrategistConfig(BaseModel):
     strategy_interval: int = Field(default=1800, ge=60, description='Strategy update interval in seconds')
     max_strategy_history: int = Field(default=50, ge=1, description='Maximum strategy history entries to keep')
     enable_risk_management: bool = Field(default=True, description='Enable risk management features')
+    enable_regime_detection: bool = Field(default=True, description='Enable regime detection for strategy adjustments')
     min_confidence_threshold: float = Field(default=0.6, ge=0, le=1, description='Minimum confidence threshold for strategies')
     strategy_type: StrategyType = Field(default=StrategyType.TECHNICAL_ANALYSIS, description='Type of strategy to use')
     technical_indicator_thresholds: TechnicalIndicatorThresholds = Field(default_factory=TechnicalIndicatorThresholds, description='Technical indicator thresholds')

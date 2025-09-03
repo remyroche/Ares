@@ -14,31 +14,17 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 from src.utils.logger import system_logger
-from src.core.domain import (
-    comprehensive_data_validation,
-    handle_errors,
-    memory_efficient,
-    resource_monitor,
-    secure_data_processing,
-    validate_data_structure,
-    with_tracing_span,
-    quality_gate
-)
+from src.core.decorators import handles_errors, validates
 
 logger = system_logger.getChild("Step8HMMBasedTrainingValidator")
 
-@traced(span_name="validate_hmm_based_training")
+# @traced(span_name="validate_hmm_based_training")
 # @quality_gate - removed, handled by validates
-    min_quality_score=0.7,
-    max_correlation=0.95,
-    required_grade="C"
-)
-@validates()
-@handles_errors
 # @memory_efficient - removed
 # @resource_monitor - removed, use log_execution_time
 # @secure_data_processing - removed, handled by validates
 @validates()
+@handles_errors()
 async def run_validator(
     training_input: Dict[str, Any],
     pipeline_state: Dict[str, Any],
@@ -86,7 +72,6 @@ async def run_validator(
         try:
             import pickle
             import numpy as np
-from src.core.decorators import handles_errors, traced
             
             # Load the models
             with open(hmm_models_path, 'rb') as f:
@@ -242,4 +227,4 @@ if __name__ == "__main__":
         result = await run_validator(test_input, test_state)
         print(f"Validation result: {result}")
 
-    asyncio.run( test())
+    asyncio.run(test())

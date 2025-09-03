@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Enhanced HMM-Based Training with Multi-Output Support and Regime-Specific Logic."
+"""Enhanced HMM-Based Training with Multi-Output Support and Regime-Specific Logic.
 
 This module extends the existing HMM-based training to support intelligent
 multi-output prediction for both direction and profit using the triple barrier
@@ -147,7 +147,7 @@ class EnhancedHMMBasedTrainingStep:
         """Print message using logger."""
         self.logger.info(message)
 
-    @handles_errors(exceptions=(Exception,), default_return=False)
+    @handles_errors(exceptions=(Exception,), default_return=None)
     async def initialize(self) -> None:
         """Initialize the enhanced HMM-based training step."""
         self.logger.info("🚀 Initializing Enhanced HMM-Based Training Step...")
@@ -1015,7 +1015,7 @@ class EnhancedHMMBasedTrainingStep:
             all_regime_data = pd.concat([train_data, val_data, test_data], ignore_index=True)
             
             # Prepare enhanced data
-            prepared_data = self.prepare_enhanced_data(
+            prepared_data = await self.prepare_enhanced_data(
                 all_regime_data, timeframe, regime_key
             )
             
@@ -1159,16 +1159,11 @@ class EnhancedHMMBasedTrainingStep:
                 
                 if os.path.exists(model_path) and os.path.exists(scaler_path):
                     import joblib
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import copy
-import os.path
-
-model = joblib.load(model_path)
-scaler = joblib.load(scaler_path)
+                    model = joblib.load(model_path)
+                    scaler = joblib.load(scaler_path)
                     
-# Store in models dict
-self.models[f"{model_name}_single"] = {
+                    # Store in models dict
+                    self.models[f"{model_name}_single"] = {
                         "model": model,
                         "scaler": scaler,
                         "model_type": "single_output"
@@ -1242,7 +1237,7 @@ async def run_enhanced_step(
         logger.info(f"✅ Loaded labeled data: {data.shape}")
         
         # Prepare enhanced data
-        prepared_data = enhanced_trainer.prepare_enhanced_data(data, "1m")
+        prepared_data = await enhanced_trainer.prepare_enhanced_data(data, "1m")
         
         # If regime column present, run per-regime training as well
         per_regime_results: dict[str, Any] = {}

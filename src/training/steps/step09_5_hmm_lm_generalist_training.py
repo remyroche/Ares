@@ -37,7 +37,7 @@ from src.core.domain import (
     with_tracing_span
 )
 from src.utils.logger import system_logger
-from src.core.decorators import handles_errors, traced
+from src.core.decorators import handles_errors, traced, timeout
 
 from src.utils.enhanced_mlflow_integration import (
     with_enhanced_mlflow_logging,
@@ -120,9 +120,9 @@ class HMMLMGeneralistTrainingStep:
     @traced(span_name="step9_5.execute")
     @validates(validation_level="WARNING")
     # @with_enhanced_mlflow_logging - removed, use traced"step09_5_hmm_lm_generalist_training")
-    @handles_errors
+    @handles_errors(
         default_return={"status": "FAILED", "error": "Execution failed"},
-        context="HMM-LM generalist training step execution",
+        context="HMM-LM generalist training step execution"
     )
     async def execute(
         self, training_input: dict[str, Any], pipeline_state: dict[str, Any]
@@ -1294,35 +1294,11 @@ class EfficientRegimeTrainer:
     required_packages=["torch", "numpy", "pandas", "sklearn", "lightgbm"],
     data_quality_checks={"check_data_completeness": True},
 )
-# @secure_data_processing - removed, handled by validates(
-    backup_before=True,
-    integrity_checks=True,
-    memory_cleanup=True,
-    data_validation=True,
-)
+# @secure_data_processing - removed, handled by validates
 # @prevent_data_leakage - removed, handled by validates
-    temporal_validation=True,
-    feature_leakage_detection=True,
-    cross_validation_isolation=True,
-    lookahead_bias_prevention=True,
-)
-# @resource_monitor - removed, use log_execution_time(
-    memory_threshold_gb=32.0,
-    cpu_threshold_percent=90.0,
-    disk_threshold_gb=10.0,
-    auto_cleanup=True,
-)
-# @memory_efficient - removed(
-    chunk_size=1000,
-    streaming_processing=True,
-    memory_pool=True,
-    cleanup_frequency=10,
-)
-# @debug_training_step - removed(
-    log_intermediate_results=True,
-    save_debug_artifacts=True,
-    performance_profiling=True,
-)
+# @resource_monitor - removed, use log_execution_time
+# @memory_efficient - removed
+# @debug_training_step - removed
 @circuit_breaker_protection(
     failure_threshold=3,
     recovery_timeout=300.0,
@@ -1332,9 +1308,6 @@ class EfficientRegimeTrainer:
     data_quality_checks={"check_output_completeness": True},
 )
 # @quality_gate - removed, handled by validates
-    model_performance_thresholds={"min_accuracy": 0.6},
-    data_quality_metrics={"completeness_threshold": 0.95},
-)
 @handles_errors(fallback=False)
 async def run_step(
     symbol: str,
@@ -1384,4 +1357,4 @@ if __name__ == "__main__":
     async def test() -> None:
         await run_step("ETHUSDT", "BINANCE", "data/training")
 
-    asyncio.run( test())
+    asyncio.run(test())

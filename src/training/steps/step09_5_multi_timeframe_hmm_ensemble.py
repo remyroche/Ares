@@ -16,7 +16,7 @@ from src.core.domain import (
     secure_data_processing
 )
 
-"""Step 9.5: Multi-Timeframe HMM Ensemble Training with Regime-Specific Logic."
+"""Step 9.5: Multi-Timeframe HMM Ensemble Training with Regime-Specific Logic.
 
 This step trains a multi-timeframe HMM cluster ensemble system that combines
 predictions from HMM clusters across multiple timeframes (5m, 15m, 30m, 1h)
@@ -38,13 +38,12 @@ import pandas as pd
 
 from copy import copy
 
+from src.training.steps.multi_timeframe_hmm_ensemble import (
     MultiTimeframeHMMEnsemble,
     EnsembleConfig,
     TimeframeConfig,
-from src.training.steps.multi_timeframe_hmm_ensemble import (
-from src.config.multi_timeframe_hmm_ensemble_config import (
-
 )
+from src.config.multi_timeframe_hmm_ensemble_config import (
     get_multi_timeframe_hmm_ensemble_config,
 )
 from src.utils.logger import system_logger
@@ -544,14 +543,8 @@ class RegimeSpecificMultiTimeframeEnsemble:
     },
     context="Multi-Timeframe HMM Ensemble Training",
 )
-# @secure_data_processing - removed, handled by validates(
-    backup_before=True, integrity_checks=True, memory_cleanup=True, data_validation=True,
-)
+# @secure_data_processing - removed, handled by validates
 # @prevent_data_leakage - removed, handled by validates
-    temporal_validation=True,
-    feature_leakage_detection=True,
-    lookahead_bias_prevention=True,
-)
 @log_execution_time(
     memory_threshold_gb=8.0,
     cpu_threshold_percent=80.0,
@@ -563,11 +556,6 @@ class RegimeSpecificMultiTimeframeEnsemble:
     chunk_size=5000, streaming_processing=True, memory_pool=True, cleanup_frequency=5,
 )
 # @quality_gate - removed, handled by validates
-    data_quality_threshold=0.9,
-    feature_quality_threshold=0.8,
-    model_quality_threshold=0.7,
-    validation_checks=["data_integrity", "feature_quality", "model_performance"],
-)
 @circuit_breaker(
     max_execution_time=3600,  # 1 hour
     max_memory_usage_gb=16.0,

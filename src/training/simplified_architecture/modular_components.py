@@ -32,31 +32,194 @@ class IDataSource(ABC):
         pass
 
 
-class BinanceDataSource(IDataSource):
-    """Responsible ONLY for fetching data from Binance."""
+class IExchangeDataSource(IDataSource):
+    """Base interface for exchange data sources."""
     
-    def __init__(self, api_key: str = None, api_secret: str = None):
+    @property
+    @abstractmethod
+    def exchange_name(self) -> str:
+        """Name of the exchange."""
+        pass
+    
+    @abstractmethod
+    def get_supported_symbols(self) -> List[str]:
+        """Get list of supported trading symbols."""
+        pass
+    
+    @abstractmethod
+    def get_supported_timeframes(self) -> List[str]:
+        """Get list of supported timeframes."""
+        pass
+
+
+class BaseExchangeDataSource(IExchangeDataSource):
+    """Base implementation for exchange data sources with common functionality."""
+    
+    def __init__(self, api_key: str = None, api_secret: str = None, testnet: bool = False):
         self.api_key = api_key
         self.api_secret = api_secret
+        self.testnet = testnet
+        self._connection_validated = False
+    
+    @property
+    @abstractmethod
+    def exchange_name(self) -> str:
+        """Must be implemented by subclasses."""
+        pass
+    
+    def validate_connection(self) -> bool:
+        """Base connection validation - can be overridden."""
+        if self._connection_validated:
+            return True
+        
+        # Attempt basic validation
+        try:
+            # Subclasses can override for specific validation
+            self._connection_validated = self._perform_connection_test()
+            return self._connection_validated
+        except Exception:
+            return False
+    
+    def _perform_connection_test(self) -> bool:
+        """Override in subclasses for exchange-specific connection tests."""
+        return True
+    
+    def _standardize_ohlcv_data(self, raw_data: Any) -> pd.DataFrame:
+        """Standardize OHLCV data format across exchanges."""
+        # Subclasses should convert their specific format to standard format
+        # Standard columns: timestamp, open, high, low, close, volume
+        raise NotImplementedError("Subclasses must implement data standardization")
+
+
+class BinanceDataSource(BaseExchangeDataSource):
+    """Binance-specific data source implementation."""
+    
+    @property
+    def exchange_name(self) -> str:
+        return "binance"
+    
+    def get_supported_symbols(self) -> List[str]:
+        """Get Binance trading pairs."""
+        # In real implementation, would fetch from API
+        return ["BTCUSDT", "ETHUSDT", "BNBUSDT", "SOLUSDT"]
+    
+    def get_supported_timeframes(self) -> List[str]:
+        """Get Binance supported timeframes."""
+        return ["1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"]
     
     async def fetch_data(self, symbol: str, start: datetime, end: datetime) -> pd.DataFrame:
         """Fetch OHLCV data from Binance."""
-        # Implementation would connect to Binance API
+        # Real implementation would use ccxt or binance-python
         # This is a mock implementation
+        hours = int((end - start).total_seconds() / 3600)
         data = pd.DataFrame({
-            'timestamp': pd.date_range(start, end, freq='1H'),
-            'open': np.random.randn(100) * 10 + 100,
-            'high': np.random.randn(100) * 10 + 105,
-            'low': np.random.randn(100) * 10 + 95,
-            'close': np.random.randn(100) * 10 + 100,
-            'volume': np.random.randint(1000, 10000, 100)
+            'timestamp': pd.date_range(start, end, freq='1H')[:hours],
+            'open': np.random.randn(hours) * 10 + 100,
+            'high': np.random.randn(hours) * 10 + 105,
+            'low': np.random.randn(hours) * 10 + 95,
+            'close': np.random.randn(hours) * 10 + 100,
+            'volume': np.random.randint(1000, 10000, hours)
         })
         return data.set_index('timestamp')
     
-    def validate_connection(self) -> bool:
-        """Check if Binance API is accessible."""
-        # Would implement actual connection check
+    def _perform_connection_test(self) -> bool:
+        """Test Binance API connectivity."""
+        # Would implement actual API ping
         return True
+
+
+class CoinbaseDataSource(BaseExchangeDataSource):
+    """Coinbase-specific data source implementation."""
+    
+    @property
+    def exchange_name(self) -> str:
+        return "coinbase"
+    
+    def get_supported_symbols(self) -> List[str]:
+        """Get Coinbase trading pairs."""
+        return ["BTC-USD", "ETH-USD", "SOL-USD", "MATIC-USD"]
+    
+    def get_supported_timeframes(self) -> List[str]:
+        """Get Coinbase supported timeframes."""
+        return ["1m", "5m", "15m", "1h", "6h", "1d"]
+    
+    async def fetch_data(self, symbol: str, start: datetime, end: datetime) -> pd.DataFrame:
+        """Fetch OHLCV data from Coinbase."""
+        # Convert symbol format if needed (BTCUSDT -> BTC-USD)
+        # Real implementation would use Coinbase API
+        hours = int((end - start).total_seconds() / 3600)
+        data = pd.DataFrame({
+            'timestamp': pd.date_range(start, end, freq='1H')[:hours],
+            'open': np.random.randn(hours) * 15 + 50000,
+            'high': np.random.randn(hours) * 15 + 50500,
+            'low': np.random.randn(hours) * 15 + 49500,
+            'close': np.random.randn(hours) * 15 + 50000,
+            'volume': np.random.randint(100, 1000, hours)
+        })
+        return data.set_index('timestamp')
+
+
+class KrakenDataSource(BaseExchangeDataSource):
+    """Kraken-specific data source implementation."""
+    
+    @property
+    def exchange_name(self) -> str:
+        return "kraken"
+    
+    def get_supported_symbols(self) -> List[str]:
+        """Get Kraken trading pairs."""
+        return ["XXBTZUSD", "XETHZUSD", "XLTCZUSD", "XXRPZUSD"]
+    
+    def get_supported_timeframes(self) -> List[str]:
+        """Get Kraken supported timeframes."""
+        return ["1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w"]
+    
+    async def fetch_data(self, symbol: str, start: datetime, end: datetime) -> pd.DataFrame:
+        """Fetch OHLCV data from Kraken."""
+        # Real implementation would use Kraken API
+        hours = int((end - start).total_seconds() / 3600)
+        data = pd.DataFrame({
+            'timestamp': pd.date_range(start, end, freq='1H')[:hours],
+            'open': np.random.randn(hours) * 12 + 45000,
+            'high': np.random.randn(hours) * 12 + 45500,
+            'low': np.random.randn(hours) * 12 + 44500,
+            'close': np.random.randn(hours) * 12 + 45000,
+            'volume': np.random.randint(500, 5000, hours)
+        })
+        return data.set_index('timestamp')
+
+
+class ExchangeDataSourceFactory:
+    """Factory for creating exchange data sources."""
+    
+    _registry: Dict[str, Type[IExchangeDataSource]] = {
+        'binance': BinanceDataSource,
+        'coinbase': CoinbaseDataSource,
+        'kraken': KrakenDataSource,
+    }
+    
+    @classmethod
+    def register_exchange(cls, name: str, data_source_class: Type[IExchangeDataSource]):
+        """Register a new exchange data source."""
+        cls._registry[name.lower()] = data_source_class
+    
+    @classmethod
+    def create(cls, exchange: str, **kwargs) -> IExchangeDataSource:
+        """Create data source for specified exchange."""
+        exchange_lower = exchange.lower()
+        
+        if exchange_lower not in cls._registry:
+            raise ValueError(
+                f"Unknown exchange: {exchange}. "
+                f"Available: {list(cls._registry.keys())}"
+            )
+        
+        return cls._registry[exchange_lower](**kwargs)
+    
+    @classmethod
+    def get_available_exchanges(cls) -> List[str]:
+        """Get list of available exchanges."""
+        return list(cls._registry.keys())
 
 
 class LocalDataSource(IDataSource):
@@ -364,11 +527,41 @@ class TechnicalIndicatorCalculator(IFeatureCalculator):
 # Model Training Components - Single Responsibility: Train models
 # ============================================================================
 
+class IModel(ABC):
+    """Base interface for trained models."""
+    
+    @abstractmethod
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        """Make predictions on input data."""
+        pass
+    
+    @abstractmethod
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        """Get prediction probabilities (for classifiers)."""
+        pass
+    
+    @abstractmethod
+    def save(self, path: Path) -> None:
+        """Save model to disk."""
+        pass
+    
+    @abstractmethod
+    def load(self, path: Path) -> None:
+        """Load model from disk."""
+        pass
+
+
 class IModelTrainer(ABC):
     """Interface for model trainers."""
     
+    @property
     @abstractmethod
-    def train(self, X: pd.DataFrame, y: pd.Series) -> Any:
+    def model_type(self) -> str:
+        """Type/name of the model."""
+        pass
+    
+    @abstractmethod
+    def train(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series] = None) -> IModel:
         """Train a model on the data."""
         pass
     
@@ -376,59 +569,429 @@ class IModelTrainer(ABC):
     def get_hyperparameters(self) -> Dict[str, Any]:
         """Get current hyperparameters."""
         pass
+    
+    @abstractmethod
+    def set_hyperparameters(self, **hyperparameters) -> None:
+        """Update hyperparameters."""
+        pass
+    
+    @abstractmethod
+    def get_feature_importance(self) -> Optional[pd.DataFrame]:
+        """Get feature importance if available."""
+        pass
 
 
-class LightGBMTrainer(IModelTrainer):
-    """Responsible ONLY for training LightGBM models."""
+class BaseModelTrainer(IModelTrainer):
+    """Base implementation with common functionality for model trainers."""
     
     def __init__(self, **hyperparameters):
-        self.hyperparameters = hyperparameters
+        self.hyperparameters = self._get_default_hyperparameters()
+        self.hyperparameters.update(hyperparameters)
         self.model = None
+        self.feature_importance_ = None
     
-    def train(self, X: pd.DataFrame, y: pd.Series) -> Any:
-        """Train LightGBM model."""
-        import lightgbm as lgb
-        
-        # Default parameters
-        params = {
+    @abstractmethod
+    def _get_default_hyperparameters(self) -> Dict[str, Any]:
+        """Get default hyperparameters for this model type."""
+        pass
+    
+    def get_hyperparameters(self) -> Dict[str, Any]:
+        """Get current hyperparameters."""
+        return self.hyperparameters.copy()
+    
+    def set_hyperparameters(self, **hyperparameters) -> None:
+        """Update hyperparameters."""
+        self.hyperparameters.update(hyperparameters)
+    
+    def get_feature_importance(self) -> Optional[pd.DataFrame]:
+        """Get feature importance if available."""
+        return self.feature_importance_
+
+
+class LightGBMModel(IModel):
+    """Wrapper for LightGBM model with standard interface."""
+    
+    def __init__(self, lgb_model):
+        self.model = lgb_model
+    
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        """Make predictions."""
+        return self.model.predict(X)
+    
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        """Get prediction probabilities."""
+        return self.model.predict_proba(X)
+    
+    def save(self, path: Path) -> None:
+        """Save model to disk."""
+        import joblib
+        path.parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump(self.model, path)
+    
+    def load(self, path: Path) -> None:
+        """Load model from disk."""
+        import joblib
+        self.model = joblib.load(path)
+
+
+class LightGBMTrainer(BaseModelTrainer):
+    """LightGBM model trainer."""
+    
+    @property
+    def model_type(self) -> str:
+        return "lightgbm"
+    
+    def _get_default_hyperparameters(self) -> Dict[str, Any]:
+        """Get LightGBM default hyperparameters."""
+        return {
             'objective': 'binary',
             'metric': 'binary_logloss',
             'num_leaves': 31,
             'learning_rate': 0.05,
-            'n_estimators': 100
+            'n_estimators': 100,
+            'random_state': 42,
+            'verbosity': -1
         }
-        params.update(self.hyperparameters)
+    
+    def train(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series] = None) -> IModel:
+        """Train LightGBM model."""
+        import lightgbm as lgb
         
-        self.model = lgb.LGBMClassifier(**params)
+        # Create model
+        self.model = lgb.LGBMClassifier(**self.hyperparameters)
+        
+        # Prepare validation data if provided
+        eval_set = [(X, y)]
+        if validation_data is not None:
+            X_val, y_val = validation_data
+            eval_set.append((X_val, y_val))
+        
+        # Train model
+        self.model.fit(
+            X, y,
+            eval_set=eval_set,
+            callbacks=[lgb.early_stopping(10), lgb.log_evaluation(0)]
+        )
+        
+        # Store feature importance
+        if hasattr(self.model, 'feature_importances_'):
+            self.feature_importance_ = pd.DataFrame({
+                'feature': X.columns,
+                'importance': self.model.feature_importances_
+            }).sort_values('importance', ascending=False)
+        
+        return LightGBMModel(self.model)
+
+
+class XGBoostModel(IModel):
+    """Wrapper for XGBoost model with standard interface."""
+    
+    def __init__(self, xgb_model):
+        self.model = xgb_model
+    
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        """Make predictions."""
+        return self.model.predict(X)
+    
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        """Get prediction probabilities."""
+        return self.model.predict_proba(X)
+    
+    def save(self, path: Path) -> None:
+        """Save model to disk."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.model.save_model(str(path))
+    
+    def load(self, path: Path) -> None:
+        """Load model from disk."""
+        self.model.load_model(str(path))
+
+
+class XGBoostTrainer(BaseModelTrainer):
+    """XGBoost model trainer."""
+    
+    @property
+    def model_type(self) -> str:
+        return "xgboost"
+    
+    def _get_default_hyperparameters(self) -> Dict[str, Any]:
+        """Get XGBoost default hyperparameters."""
+        return {
+            'objective': 'binary:logistic',
+            'eval_metric': 'logloss',
+            'max_depth': 6,
+            'learning_rate': 0.05,
+            'n_estimators': 100,
+            'random_state': 42,
+            'verbosity': 0
+        }
+    
+    def train(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series] = None) -> IModel:
+        """Train XGBoost model."""
+        import xgboost as xgb
+        
+        # Create model
+        self.model = xgb.XGBClassifier(**self.hyperparameters)
+        
+        # Prepare validation data if provided
+        eval_set = [(X, y)]
+        if validation_data is not None:
+            X_val, y_val = validation_data
+            eval_set.append((X_val, y_val))
+        
+        # Train model
+        self.model.fit(
+            X, y,
+            eval_set=eval_set,
+            early_stopping_rounds=10,
+            verbose=False
+        )
+        
+        # Store feature importance
+        if hasattr(self.model, 'feature_importances_'):
+            self.feature_importance_ = pd.DataFrame({
+                'feature': X.columns,
+                'importance': self.model.feature_importances_
+            }).sort_values('importance', ascending=False)
+        
+        return XGBoostModel(self.model)
+
+
+class RandomForestModel(IModel):
+    """Wrapper for Random Forest model with standard interface."""
+    
+    def __init__(self, rf_model):
+        self.model = rf_model
+    
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        """Make predictions."""
+        return self.model.predict(X)
+    
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        """Get prediction probabilities."""
+        return self.model.predict_proba(X)
+    
+    def save(self, path: Path) -> None:
+        """Save model to disk."""
+        import joblib
+        path.parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump(self.model, path)
+    
+    def load(self, path: Path) -> None:
+        """Load model from disk."""
+        import joblib
+        self.model = joblib.load(path)
+
+
+class RandomForestTrainer(BaseModelTrainer):
+    """Random Forest model trainer."""
+    
+    @property
+    def model_type(self) -> str:
+        return "random_forest"
+    
+    def _get_default_hyperparameters(self) -> Dict[str, Any]:
+        """Get Random Forest default hyperparameters."""
+        return {
+            'n_estimators': 100,
+            'max_depth': 10,
+            'min_samples_split': 2,
+            'min_samples_leaf': 1,
+            'random_state': 42,
+            'n_jobs': -1
+        }
+    
+    def train(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series] = None) -> IModel:
+        """Train Random Forest model."""
+        from sklearn.ensemble import RandomForestClassifier
+        
+        # Create and train model
+        self.model = RandomForestClassifier(**self.hyperparameters)
         self.model.fit(X, y)
         
-        return self.model
-    
-    def get_hyperparameters(self) -> Dict[str, Any]:
-        """Get current hyperparameters."""
-        return self.hyperparameters
+        # Store feature importance
+        self.feature_importance_ = pd.DataFrame({
+            'feature': X.columns,
+            'importance': self.model.feature_importances_
+        }).sort_values('importance', ascending=False)
+        
+        return RandomForestModel(self.model)
 
 
-class NeuralNetworkTrainer(IModelTrainer):
-    """Responsible ONLY for training neural network models."""
+class NeuralNetworkModel(IModel):
+    """Wrapper for Neural Network model with standard interface."""
     
-    def __init__(self, architecture: List[int], **hyperparameters):
-        self.architecture = architecture
-        self.hyperparameters = hyperparameters
-        self.model = None
+    def __init__(self, nn_model, scaler=None):
+        self.model = nn_model
+        self.scaler = scaler
     
-    def train(self, X: pd.DataFrame, y: pd.Series) -> Any:
-        """Train neural network model."""
-        # Would implement actual NN training
-        # This is a placeholder
-        return f"NN with architecture {self.architecture}"
+    def predict(self, X: pd.DataFrame) -> np.ndarray:
+        """Make predictions."""
+        import torch
+        
+        # Scale input if scaler provided
+        X_scaled = self.scaler.transform(X) if self.scaler else X.values
+        
+        # Convert to tensor
+        X_tensor = torch.FloatTensor(X_scaled)
+        
+        # Predict
+        self.model.eval()
+        with torch.no_grad():
+            outputs = self.model(X_tensor)
+            predictions = (outputs > 0.5).float().numpy().squeeze()
+        
+        return predictions
     
-    def get_hyperparameters(self) -> Dict[str, Any]:
-        """Get current hyperparameters."""
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        """Get prediction probabilities."""
+        import torch
+        
+        # Scale input if scaler provided
+        X_scaled = self.scaler.transform(X) if self.scaler else X.values
+        
+        # Convert to tensor
+        X_tensor = torch.FloatTensor(X_scaled)
+        
+        # Predict probabilities
+        self.model.eval()
+        with torch.no_grad():
+            outputs = torch.sigmoid(self.model(X_tensor)).numpy()
+        
+        # Return probabilities for both classes
+        proba = np.column_stack([1 - outputs, outputs])
+        return proba
+    
+    def save(self, path: Path) -> None:
+        """Save model to disk."""
+        import torch
+        import joblib
+        
+        path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Save model
+        torch.save(self.model.state_dict(), path.with_suffix('.pth'))
+        
+        # Save scaler if exists
+        if self.scaler:
+            joblib.dump(self.scaler, path.with_suffix('.scaler'))
+    
+    def load(self, path: Path) -> None:
+        """Load model from disk."""
+        import torch
+        import joblib
+        
+        # Load model
+        self.model.load_state_dict(torch.load(path.with_suffix('.pth')))
+        
+        # Load scaler if exists
+        scaler_path = path.with_suffix('.scaler')
+        if scaler_path.exists():
+            self.scaler = joblib.load(scaler_path)
+
+
+class NeuralNetworkTrainer(BaseModelTrainer):
+    """Neural Network model trainer using PyTorch."""
+    
+    @property
+    def model_type(self) -> str:
+        return "neural_network"
+    
+    def _get_default_hyperparameters(self) -> Dict[str, Any]:
+        """Get Neural Network default hyperparameters."""
         return {
-            'architecture': self.architecture,
-            **self.hyperparameters
+            'hidden_layers': [64, 32],
+            'activation': 'relu',
+            'dropout_rate': 0.2,
+            'learning_rate': 0.001,
+            'batch_size': 32,
+            'epochs': 100,
+            'early_stopping_patience': 10
         }
+    
+    def train(self, X: pd.DataFrame, y: pd.Series, validation_data: Tuple[pd.DataFrame, pd.Series] = None) -> IModel:
+        """Train Neural Network model."""
+        import torch
+        import torch.nn as nn
+        import torch.optim as optim
+        from sklearn.preprocessing import StandardScaler
+        
+        # Scale features
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+        
+        # Create model architecture
+        input_size = X.shape[1]
+        hidden_layers = self.hyperparameters['hidden_layers']
+        
+        layers = []
+        prev_size = input_size
+        
+        for hidden_size in hidden_layers:
+            layers.extend([
+                nn.Linear(prev_size, hidden_size),
+                nn.ReLU() if self.hyperparameters['activation'] == 'relu' else nn.Tanh(),
+                nn.Dropout(self.hyperparameters['dropout_rate'])
+            ])
+            prev_size = hidden_size
+        
+        layers.append(nn.Linear(prev_size, 1))  # Binary classification
+        
+        model = nn.Sequential(*layers)
+        
+        # Training setup
+        criterion = nn.BCEWithLogitsLoss()
+        optimizer = optim.Adam(model.parameters(), lr=self.hyperparameters['learning_rate'])
+        
+        # Convert to tensors
+        X_tensor = torch.FloatTensor(X_scaled)
+        y_tensor = torch.FloatTensor(y.values).unsqueeze(1)
+        
+        # Training loop (simplified)
+        model.train()
+        for epoch in range(self.hyperparameters['epochs']):
+            optimizer.zero_grad()
+            outputs = model(X_tensor)
+            loss = criterion(outputs, y_tensor)
+            loss.backward()
+            optimizer.step()
+        
+        self.model = model
+        return NeuralNetworkModel(model, scaler)
+
+
+class ModelTrainerFactory:
+    """Factory for creating model trainers."""
+    
+    _registry: Dict[str, Type[IModelTrainer]] = {
+        'lightgbm': LightGBMTrainer,
+        'xgboost': XGBoostTrainer,
+        'random_forest': RandomForestTrainer,
+        'neural_network': NeuralNetworkTrainer,
+    }
+    
+    @classmethod
+    def register_trainer(cls, name: str, trainer_class: Type[IModelTrainer]):
+        """Register a new model trainer."""
+        cls._registry[name.lower()] = trainer_class
+    
+    @classmethod
+    def create(cls, model_type: str, **hyperparameters) -> IModelTrainer:
+        """Create model trainer for specified type."""
+        model_type_lower = model_type.lower()
+        
+        if model_type_lower not in cls._registry:
+            raise ValueError(
+                f"Unknown model type: {model_type}. "
+                f"Available: {list(cls._registry.keys())}"
+            )
+        
+        return cls._registry[model_type_lower](**hyperparameters)
+    
+    @classmethod
+    def get_available_models(cls) -> List[str]:
+        """Get list of available model types."""
+        return list(cls._registry.keys())
 
 
 # ============================================================================

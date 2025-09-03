@@ -29,19 +29,30 @@ This directory contains the implementation of a simplified, maintainable ML pipe
   - Clear documentation of pipeline structure
 
 ### 4. Modular Components (`modular_components.py`)
-- **Purpose**: Each component has a single responsibility
+- **Purpose**: Each component has a single responsibility with abstract interfaces
 - **Benefits**:
   - Easy to understand and maintain
   - Components can be tested in isolation
   - Reusable across different pipelines
   - Clear separation of concerns
+  - **Extensible through abstract interfaces**:
+    - `IExchangeDataSource` - Base for all exchange implementations
+    - `IModelTrainer` - Base for all ML model trainers
+    - Factory patterns for easy extension without modifying existing code
 
-## Usage Example
+## Usage Examples
 
+### Basic Pipeline Usage
 ```python
 # 1. Create configuration file (config/pipeline.yaml)
 name: ML_Trading_Pipeline
 version: 1.0.0
+global_settings:
+  data_source:
+    type: exchange
+    exchange: binance  # Can use: binance, coinbase, kraken, etc.
+  model:
+    type: lightgbm    # Can use: lightgbm, xgboost, random_forest, neural_network
 steps:
   data_loading:
     class_name: DataLoadingStep
@@ -54,6 +65,60 @@ from src.training.simplified_architecture.integrated_example import IntegratedPi
 
 pipeline = IntegratedPipeline("config/pipeline.yaml")
 results = await pipeline.run()
+```
+
+### Adding New Exchange Support
+```python
+from src.training.simplified_architecture.modular_components import (
+    BaseExchangeDataSource, ExchangeDataSourceFactory
+)
+
+class MyExchangeDataSource(BaseExchangeDataSource):
+    @property
+    def exchange_name(self) -> str:
+        return "myexchange"
+    
+    async def fetch_data(self, symbol, start, end):
+        # Your implementation here
+        pass
+
+# Register the new exchange
+ExchangeDataSourceFactory.register_exchange('myexchange', MyExchangeDataSource)
+
+# Now it can be used in configuration
+config = {
+    "data_source": {
+        "type": "exchange",
+        "exchange": "myexchange"
+    }
+}
+```
+
+### Adding New Model Support
+```python
+from src.training.simplified_architecture.modular_components import (
+    BaseModelTrainer, ModelTrainerFactory
+)
+
+class MyModelTrainer(BaseModelTrainer):
+    @property
+    def model_type(self) -> str:
+        return "mymodel"
+    
+    def train(self, X, y, validation_data=None):
+        # Your implementation here
+        pass
+
+# Register the new model
+ModelTrainerFactory.register_trainer('mymodel', MyModelTrainer)
+
+# Now it can be used in configuration
+config = {
+    "model": {
+        "type": "mymodel",
+        "hyperparameters": {...}
+    }
+}
 ```
 
 ## Migration from Original Architecture

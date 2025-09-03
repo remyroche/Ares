@@ -26,13 +26,11 @@ warnings.filterwarnings('ignore')
 # Import MLflow for experiment tracking
 try:
     import mlflow
-except Exception as e:
-    pass  # TODO: Handle exception properly
-import os.path
-
-MLFLOW_AVAILABLE = True
-    except ImportError:
+    MLFLOW_AVAILABLE = True
+except ImportError:
     MLFLOW_AVAILABLE = False
+
+import os.path
 
 
 class ComprehensiveParameterIntegration:

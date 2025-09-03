@@ -2,7 +2,7 @@
 
 from src.core.decorators import handles_errors
 
-"""Efficiency Optimizer for Hyperparameter Optimization."
+"""Efficiency Optimizer for Hyperparameter Optimization.
 
 This module implements various computational efficiency improvements to speed up
 the hyperparameter optimization process while maintaining quality.
@@ -771,8 +771,7 @@ if __name__ == "__main__":
 
     # Run optimization
     import asyncio
-import os.path
-
+    
     async def test() -> None:
         await optimizer.initialize()
         await optimizer.optimize_trial_efficiency(

@@ -53,7 +53,6 @@ class DataQualityDashboard:
     """Web-based data quality dashboard."""
 
     def __init__(self, data_cache_path: str = "data_cache", config: DashboardConfig | None = None):
-        self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok=True)
         self.config = config or DashboardConfig()
 

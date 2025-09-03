@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from utils.data_loader import PartitionedDataLoader
-from utils.logger import system_logger
+from src.utils.logger import system_logger
 
 # Add src to path for imports
 sys.path.append(str(Path(__file__).parent.parent / "src"))

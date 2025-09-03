@@ -21,7 +21,7 @@ import pandas as pd
 from sklearn.impute import SimpleImputer
 from sklearn.linear_model import LinearRegression
 
-from utils.logger import system_logger
+from src.utils.logger import system_logger
 
 # Add the src directory to the Python path
 current_dir=Path(__file__).parent

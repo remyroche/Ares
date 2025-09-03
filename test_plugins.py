@@ -97,8 +97,8 @@ def test_auto_fixer():
     print("\n🧪 Testing Auto Fixer...")
 
     try:
-        from code_quality.core.config import get_default_config
-        from code_quality.fixers.auto_fixer import AutoFixer
+        from code_quality.core.config import get_default_config as get_default_config_code_quality_core_config
+        from code_quality.fixers.auto_fixer import AutoFixer as AutoFixer_code_quality_fixers_auto_fixer
 
         # Get default config
         config=get_default_config()

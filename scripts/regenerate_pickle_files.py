@@ -19,7 +19,7 @@ from typing import Any
 import pandas as pd
 
 from src.utils.error_handler import handle_errors
-from src.utils.warning_symbols import missing, warning
+from src.utils.warning_symbols import missing as missing_src_utils_warning_symbols, warning
 
 # Add the project root to the path
 project_root=Path(__file__).parent.parent

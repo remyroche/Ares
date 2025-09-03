@@ -26,7 +26,7 @@ from src.interfaces.base_interfaces import (
 from src.supervisor.performance_reporter import PerformanceReporter
 from src.utils.logger import system_logger
 from src.utils.state_manager import StateManager
-from src.utils.warning_symbols import failed
+from src.utils.warning_symbols import failed as failed_src_utils_warning_symbols
 
 
 class TradingSystemFactory:

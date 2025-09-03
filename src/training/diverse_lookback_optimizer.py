@@ -23,7 +23,7 @@ import pandas as pd
 import shap
 from sklearn.ensemble import RandomForestRegressor
 
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 from src.utils.logger import system_logger
 
 

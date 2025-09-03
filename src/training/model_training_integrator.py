@@ -20,7 +20,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 from sklearn.model_selection import cross_val_score
 
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 from src.utils.comprehensive_logger import get_component_logger
 from src.utils.data_optimizer import get_data_optimizer
 from src.utils.warning_symbols import (

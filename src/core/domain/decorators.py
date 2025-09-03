@@ -12,7 +12,7 @@ import logging
 import time
 from enum import Enum
 from functools import wraps
-from typing import Any, Callable, Dict, List, Optional, TypeVar, Union
+from typing import A, Callableny, Callable, Dict, List, Optional, TypeVar, Union
 
 import numpy as np
 import pandas as pd

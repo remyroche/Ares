@@ -1,0 +1,601 @@
+{
+  "timestamp": "2025-09-03T12:10:04.910513",
+  "files_processed": 367,
+  "files_fixed": 171,
+  "changes_by_file": {
+    "./GUI/api_server.py": [
+      "Added alias MetricsDashboard_src_monitoring_metrics_dashboard for MetricsDashboard from src.monitoring.metrics_dashboard",
+      "Added alias MLMonitor_src_monitoring_ml_monitor for MLMonitor from src.monitoring.ml_monitor"
+    ],
+    "./code_quality/analyzers/concurrency_analyzer.py": [
+      "Added alias CodeQualityConfig_minimal_config for CodeQualityConfig from minimal_config",
+      "Added alias find_python_files_minimal_file_utils for find_python_files from minimal_file_utils"
+    ],
+    "./code_quality/fixers/auto_fixer.py": [
+      "Added alias Autopep8Fixer_code_quality_plugins_autopep8_fixer for Autopep8Fixer from code_quality.plugins.autopep8_fixer",
+      "Added alias DocformatterFixer_2 for DocformatterFixer from code_quality.plugins.docformatter_fixer"
+    ],
+    "./code_quality/map_code_interactions.py": [
+      "Added alias get_default_config_core_config for get_default_config from core.config",
+      "Added alias ArchitectureAnalyzer_3 for ArchitectureAnalyzer from analyzers.architecture_analyzer",
+      "Added alias CallGraphAnalyzer_analyzers_call_graph_analyzer for CallGraphAnalyzer from analyzers.call_graph_analyzer",
+      "Added alias ComplexityAnalyzer_analyzers_complexity_analyzer for ComplexityAnalyzer from analyzers.complexity_analyzer",
+      "Added alias DependencyAnalyzer_analyzers_dependency_analyzer for DependencyAnalyzer from analyzers.dependency_analyzer",
+      "Added alias ImportAnalyzer_analyzers_import_analyzer for ImportAnalyzer from analyzers.import_analyzer"
+    ],
+    "./code_quality/tests/test_common_operations.py": [
+      "Added alias *_src_utils_common_operations for * from src.utils.common_operations"
+    ],
+    "./comprehensive_analysis_core.py": [
+      "Added alias get_default_config_minimal_config for get_default_config from minimal_config",
+      "Added alias AdvancedASTAnalyzer_2 for AdvancedASTAnalyzer from code_quality.analyzers.advanced_ast_analyzer",
+      "Added alias ConcurrencyAnalyzer_2 for ConcurrencyAnalyzer from code_quality.analyzers.concurrency_analyzer",
+      "Added alias ErrorHandlingAnalyzer_2 for ErrorHandlingAnalyzer from code_quality.analyzers.error_handling_analyzer",
+      "Added alias TypeChecker_code_quality_analyzers_type_checker for TypeChecker from code_quality.analyzers.type_checker"
+    ],
+    "./comprehensive_analysis_simplified.py": [
+      "Added alias get_default_config_minimal_config for get_default_config from minimal_config",
+      "Added alias AdvancedASTAnalyzer_2 for AdvancedASTAnalyzer from code_quality.analyzers.advanced_ast_analyzer",
+      "Added alias ConcurrencyAnalyzer_2 for ConcurrencyAnalyzer from code_quality.analyzers.concurrency_analyzer",
+      "Added alias ErrorHandlingAnalyzer_2 for ErrorHandlingAnalyzer from code_quality.analyzers.error_handling_analyzer",
+      "Added alias TypeChecker_code_quality_analyzers_type_checker for TypeChecker from code_quality.analyzers.type_checker",
+      "Added alias ComplexityAnalyzer_3 for ComplexityAnalyzer from code_quality.analyzers.complexity_analyzer",
+      "Added alias DeadCodeAnalyzer_3 for DeadCodeAnalyzer from code_quality.analyzers.dead_code_analyzer",
+      "Added alias SignatureAnalyzer_2 for SignatureAnalyzer from code_quality.analyzers.signature_analyzer",
+      "Added alias SyntaxValidator_3 for SyntaxValidator from code_quality.analyzers.syntax_validator"
+    ],
+    "./comprehensive_professional_analysis.py": [
+      "Added alias get_default_config_code_quality_core_config for get_default_config from code_quality.core.config",
+      "Added alias AdvancedASTAnalyzer_2 for AdvancedASTAnalyzer from code_quality.analyzers.advanced_ast_analyzer",
+      "Added alias ConcurrencyAnalyzer_2 for ConcurrencyAnalyzer from code_quality.analyzers.concurrency_analyzer",
+      "Added alias ErrorHandlingAnalyzer_2 for ErrorHandlingAnalyzer from code_quality.analyzers.error_handling_analyzer",
+      "Added alias TypeChecker_code_quality_analyzers_type_checker for TypeChecker from code_quality.analyzers.type_checker",
+      "Added alias SequentialFixer_3 for SequentialFixer from code_quality.fixers.sequential_fixer",
+      "Added alias PluginManager_code_quality_core_plugins for PluginManager from code_quality.core.plugins",
+      "Added alias AutoFixer_code_quality_fixers_auto_fixer for AutoFixer from code_quality.fixers.auto_fixer",
+      "Added alias ComplexityAnalyzer_3 for ComplexityAnalyzer from code_quality.analyzers.complexity_analyzer",
+      "Added alias DeadCodeAnalyzer_3 for DeadCodeAnalyzer from code_quality.analyzers.dead_code_analyzer",
+      "Added alias SignatureAnalyzer_2 for SignatureAnalyzer from code_quality.analyzers.signature_analyzer",
+      "Added alias SyntaxValidator_3 for SyntaxValidator from code_quality.analyzers.syntax_validator"
+    ],
+    "./data_quality/unified_quality_orchestrator.py": [
+      "Added alias PipelineStandards_src_utils_pipeline_standards for PipelineStandards from src.utils.pipeline_standards"
+    ],
+    "./exchange/base_exchange.py": [
+      "Added alias IExchangeClient_src_interfaces_base_interfaces for IExchangeClient from src.interfaces.base_interfaces"
+    ],
+    "./final_comprehensive_analysis.py": [
+      "Added alias get_default_config_minimal_config for get_default_config from minimal_config"
+    ],
+    "./run_sequential_fixer.py": [
+      "Added alias get_default_config_code_quality_core_config for get_default_config from code_quality.core.config",
+      "Added alias SequentialFixer_3 for SequentialFixer from code_quality.fixers.sequential_fixer"
+    ],
+    "./run_sequential_fixer_simple.py": [
+      "Added alias get_default_config_code_quality_core_config for get_default_config from code_quality.core.config",
+      "Added alias SequentialFixer_3 for SequentialFixer from code_quality.fixers.sequential_fixer"
+    ],
+    "./scripts/bot_monitor.py": [
+      "Added alias error_src_utils_warning_symbols for error from src.utils.warning_symbols"
+    ],
+    "./scripts/check_notifications.py": [
+      "Added alias missing_src_utils_warning_symbols for missing from src.utils.warning_symbols"
+    ],
+    "./scripts/compare_agg_trades_formats.py": [
+      "Added alias missing_src_utils_warning_symbols for missing from src.utils.warning_symbols"
+    ],
+    "./scripts/consolidate_binance_15m.py": [
+      "Added alias error_src_utils_warning_symbols for error from src.utils.warning_symbols"
+    ],
+    "./scripts/database_migration.py": [
+      "Added alias failed_src_utils_warning_symbols for failed from src.utils.warning_symbols"
+    ],
+    "./scripts/download_mexc_agg_trades.py": [
+      "Added alias error_src_utils_warning_symbols for error from src.utils.warning_symbols"
+    ],
+    "./scripts/fix_consolidated_data.py": [
+      "Added alias failed_src_utils_warning_symbols for failed from src.utils.warning_symbols"
+    ],
+    "./scripts/fix_corrupted_data.py": [
+      "Added alias warning_src_utils_warning_symbols for warning from src.utils.warning_symbols"
+    ],
+    "./scripts/launch_with_monitoring.py": [
+      "Added alias warning_src_utils_warning_symbols for warning from src.utils.warning_symbols"
+    ],
+    "./scripts/regenerate_pickle_files.py": [
+      "Added alias missing_src_utils_warning_symbols for missing from src.utils.warning_symbols"
+    ],
+    "./scripts/rename_data_files.py": [
+      "Added alias failed_src_utils_warning_symbols for failed from src.utils.warning_symbols"
+    ],
+    "./scripts/resume_training.py": [
+      "Added alias error_src_utils_warning_symbols for error from src.utils.warning_symbols"
+    ],
+    "./scripts/run_enhanced_training.py": [
+      "Added alias failed_src_utils_warning_symbols for failed from src.utils.warning_symbols"
+    ],
+    "./scripts/run_scans.py": [
+      "Added alias error_src_utils_warning_symbols for error from src.utils.warning_symbols"
+    ],
+    "./scripts/setup_challenger_model.py": [
+      "Added alias error_src_utils_warning_symbols for error from src.utils.warning_symbols"
+    ],
+    "./scripts/show_timeframe_config.py": [
+      "Added alias missing_src_utils_warning_symbols for missing from src.utils.warning_symbols"
+    ],
+    "./scripts/training_cli.py": [
+      "Added alias error_src_utils_warning_symbols for error from src.utils.warning_symbols"
+    ],
+    "./scripts/update_logging_warnings.py": [
+      "Added alias missing_src_utils_warning_symbols for missing from src.utils.warning_symbols"
+    ],
+    "./src/analyst/data_utils.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/analyst/dynamic_regime_mapper.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/analyst/multi_timeframe_feature_engineering.py": [
+      "Added alias error_src_utils_warning_symbols for error from src.utils.warning_symbols",
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/analyst/predictive_ensembles.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/components/modular_analyst.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/components/modular_strategist.py": [
+      "Added alias error_src_utils_warning_symbols for error from src.utils.warning_symbols",
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/components/modular_supervisor.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/components/modular_tactician.py": [
+      "Added alias error_src_utils_warning_symbols for error from src.utils.warning_symbols",
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/core/config_service.py": [
+      "Added alias error_src_utils_warning_symbols for error from src.utils.warning_symbols",
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/core/decorators/validate.py": [
+      "Added alias ValidationError_src_core_errors_base for ValidationError from src.core.errors.base"
+    ],
+    "./src/core/domain/__init__.py": [
+      "Added alias cached_src_core_decorators for cached from src.core.decorators",
+      "Added alias timeout_src_core_decorators for timeout from src.core.decorators"
+    ],
+    "./src/core/enhanced_factories.py": [
+      "Added alias failed_src_utils_warning_symbols for failed from src.utils.warning_symbols"
+    ],
+    "./src/core/examples/decorator_usage.py": [
+      "Added alias cache_stats_src_core_decorators for cache_stats from src.core.decorators",
+      "Added alias get_current_trace_src_core_decorators for get_current_trace from src.core.decorators",
+      "Added alias get_trace_summary_src_core_decorators for get_trace_summary from src.core.decorators",
+      "Added alias span_attribute_src_core_decorators for span_attribute from src.core.decorators",
+      "Added alias trace_method_src_core_decorators for trace_method from src.core.decorators"
+    ],
+    "./src/core/service_registry.py": [
+      "Added alias ModularStrategist_2 for ModularStrategist from src.components.modular_strategist",
+      "Added alias EventBus_src_interfaces_event_bus for EventBus from src.interfaces.event_bus",
+      "Added alias Tactician_src_tactician_tactician for Tactician from src.tactician.tactician",
+      "Added alias Strategist_src_strategist_strategist for Strategist from src.strategist.strategist"
+    ],
+    "./src/custom_types/validation.py": [
+      "Added alias validation_error_src_utils_warning_symbols for validation_error from src.utils.warning_symbols"
+    ],
+    "./src/database/efficient_features_database.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/database/firestore_manager.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/database/sqlite_manager.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/interfaces/event_bus.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/monitoring/advanced_tracer.py": [
+      "Added alias PerformanceLevel_src_core_domain for PerformanceLevel from src.core.domain",
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/monitoring/correlation_manager.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/monitoring/csv_exporter.py": [
+      "Added alias PerformanceLevel_src_core_domain for PerformanceLevel from src.core.domain",
+      "Added alias cached_src_core_decorators for cached from src.core.decorators"
+    ],
+    "./src/monitoring/enhanced_ml_tracker.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/monitoring/error_detection_system.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/monitoring/fractional_system_monitor.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/monitoring/integration_manager.py": [
+      "Added alias PerformanceLevel_src_core_domain for PerformanceLevel from src.core.domain",
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/monitoring/metrics_dashboard.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/monitoring/ml_monitor.py": [
+      "Added alias PerformanceLevel_src_core_domain for PerformanceLevel from src.core.domain",
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/monitoring/performance_dashboard.py": [
+      "Added alias PerformanceLevel_src_core_domain for PerformanceLevel from src.core.domain",
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators",
+      "Added alias cached_src_core_decorators for cached from src.core.decorators"
+    ],
+    "./src/monitoring/performance_monitor.py": [
+      "Added alias PerformanceLevel_src_core_domain for PerformanceLevel from src.core.domain",
+      "Added alias cached_src_core_decorators for cached from src.core.decorators"
+    ],
+    "./src/monitoring/regime_sr_tracker.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/monitoring/report_scheduler.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/monitoring/surrogate_optimization_monitor.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/monitoring/tracking_system.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/monitoring/trade_conditions_monitor.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/pipelines/base_pipeline.py": [
+      "Added alias PerformanceLevel_src_core_domain for PerformanceLevel from src.core.domain"
+    ],
+    "./src/protocols/trading_protocols.py": [
+      "Added alias ModelInput_src_custom_types_ml_types for ModelInput from src.custom_types.ml_types"
+    ],
+    "./src/strategist/strategist.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators",
+      "Added alias Tactician_src_tactician_tactician for Tactician from src.tactician.tactician"
+    ],
+    "./src/supervisor/dynamic_weighter.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/supervisor/enhanced_model_monitor.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators",
+      "Added alias PerformanceMonitor_2 for PerformanceMonitor from src.supervisor.performance_monitor"
+    ],
+    "./src/supervisor/exchange_volume_adapter.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/supervisor/global_portfolio_manager.py": [
+      "Added alias error_src_utils_warning_symbols for error from src.utils.warning_symbols",
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/supervisor/main.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators",
+      "Added alias RiskAllocator_src_supervisor_risk_allocator for RiskAllocator from src.supervisor.risk_allocator"
+    ],
+    "./src/supervisor/model_behavior_tracker.py": [
+      "Added alias error_src_utils_warning_symbols for error from src.utils.warning_symbols",
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators",
+      "Added alias PerformanceMonitor_2 for PerformanceMonitor from src.supervisor.performance_monitor"
+    ],
+    "./src/supervisor/monitoring.py": [
+      "Added alias error_src_utils_warning_symbols for error from src.utils.warning_symbols",
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/supervisor/optimizer.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/supervisor/performance_monitor.py": [
+      "Added alias error_src_utils_warning_symbols for error from src.utils.warning_symbols",
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/supervisor/performance_reporter.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/supervisor/pnl_loss_functions.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/supervisor/risk_allocator.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/tactician/async_order_executor.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/tactician/enhanced_order_manager.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/tactician/enhanced_scenario_based_predictor.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/tactician/fully_migrated_tactician.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/tactician/leverage_sizer.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/tactician/ml_tactics_manager.py": [
+      "Added alias failed_src_utils_warning_symbols for failed from src.utils.warning_symbols",
+      "Added alias validate_data_quality_src_core_domain for validate_data_quality from src.core.domain",
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/tactician/ml_target_updater.py": [
+      "Added alias validate_data_quality_src_core_domain for validate_data_quality from src.core.domain",
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/tactician/ml_target_validator.py": [
+      "Added alias validate_data_quality_src_core_domain for validate_data_quality from src.core.domain",
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/tactician/position_closing.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/tactician/position_sizer.py": [
+      "Added alias error_src_utils_warning_symbols for error from src.utils.warning_symbols",
+      "Added alias validate_data_quality_src_core_domain for validate_data_quality from src.core.domain",
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/tactician/sr_detection_optimization.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/tactician/sr_weight_optimizer.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/tactician/step17_optimized_tactician.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/tactician/tactics_orchestrator.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators",
+      "Added alias MLTacticsManager_src_tactician_ml_tactics_manager for MLTacticsManager from src.tactician.ml_tactics_manager"
+    ],
+    "./src/tasks.py": [
+      "Added alias get_environment_settings_src_config for get_environment_settings from src.config"
+    ],
+    "./src/tracking/trade_tracker.py": [
+      "Added alias failed_src_utils_warning_symbols for failed from src.utils.warning_symbols",
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/trading/live_wavelet_analyzer.py": [
+      "Added alias initialization_error_src_utils_warning_symbols for initialization_error from src.utils.warning_symbols",
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/trading/live_wavelet_integration.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/adaptive_optimizer.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/bayesian_optimizer.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/core/pipeline_base.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/core/stage_registry.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/data_sharing_manager.py": [
+      "Added alias prevent_data_leakage_src_core_domain for prevent_data_leakage from src.core.domain"
+    ],
+    "./src/training/diverse_lookback_optimizer.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/dual_model_system.py": [
+      "Added alias prevent_data_leakage_src_core_domain for prevent_data_leakage from src.core.domain"
+    ],
+    "./src/training/enhanced_dynamic_feature_selection.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/enhanced_feature_engineering_optimizer.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/enhanced_matrix_gpu_integration.py": [
+      "Added alias prevent_data_leakage_src_core_domain for prevent_data_leakage from src.core.domain"
+    ],
+    "./src/training/enhanced_optimization_orchestrator.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/feature_engineering_optimizer.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/feature_selection_manager.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/gpu_acceleration_m1.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators",
+      "Added alias cached_src_core_decorators for cached from src.core.decorators",
+      "Added alias quality_gate_src_core_domain for quality_gate from src.core.domain"
+    ],
+    "./src/training/launcher_integration_patch.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/matrix_diverse_lookback_optimizer.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/matrix_enhancement_manager.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/model_specific_pruning.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/model_training_integrator.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/optimization/adaptive_trial_allocator.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/optimization/advanced_surrogate_models.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/optimization/cached_optimizer.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/optimization/parallel_optimizer.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/optimization/problem_specific_strategies.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/optimization/progressive_optimizer.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/optimization/rollback_manager.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/optimization/transfer_learning_system.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/optimization_manager.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/performance_comparison.py": [
+      "Added alias get_logger_src_utils_comprehensive_logger for get_logger from src.utils.comprehensive_logger"
+    ],
+    "./src/training/progress_manager.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/step_orchestrator.py": [
+      "Added alias ProgressManager_src_training_progress_manager for ProgressManager from src.training.progress_manager"
+    ],
+    "./src/training/steps/data_downloader.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/steps/multi_timeframe_hmm_ensemble.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/steps/multi_timeframe_training/multi_timeframe_training_manager.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/steps/sr_outcome_model_trainer.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators",
+      "Added alias validate_feature_engineering_with_lookahead_bias_detection_3 for validate_feature_engineering_with_lookahead_bias_detection from src.core.domain"
+    ],
+    "./src/training/steps/step12_analyst_enhancement_validator.py": [
+      "Added alias BaseValidator_src_utils_base_validator for BaseValidator from src.utils.base_validator"
+    ],
+    "./src/training/steps/step13_analyst_ensemble_creation_validator.py": [
+      "Added alias error_src_utils_warning_symbols for error from src.utils.warning_symbols",
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/steps/step15_tactician_specialist_training_validator.py": [
+      "Added alias BaseValidator_src_utils_base_validator for BaseValidator from src.utils.base_validator"
+    ],
+    "./src/training/steps/step16_confidence_calibration_validator.py": [
+      "Added alias BaseValidator_src_utils_base_validator for BaseValidator from src.utils.base_validator"
+    ],
+    "./src/training/steps/step17_final_parameters_optimization_validator.py": [
+      "Added alias BaseValidator_src_utils_base_validator for BaseValidator from src.utils.base_validator"
+    ],
+    "./src/training/steps/step1_5_data_converter.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators",
+      "Added alias PipelineStandards_src_utils_pipeline_standards for PipelineStandards from src.utils.pipeline_standards"
+    ],
+    "./src/training/steps/step1_data_collection.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators",
+      "Added alias PipelineStandards_src_utils_pipeline_standards for PipelineStandards from src.utils.pipeline_standards"
+    ],
+    "./src/training/steps/step20_ab_testing_validator.py": [
+      "Added alias failed_src_utils_warning_symbols for failed from src.utils.warning_symbols",
+      "Added alias BaseValidator_src_utils_base_validator for BaseValidator from src.utils.base_validator"
+    ],
+    "./src/training/steps/step21_saving_validator.py": [
+      "Added alias BaseValidator_src_utils_base_validator for BaseValidator from src.utils.base_validator"
+    ],
+    "./src/training/steps/step2_feature_engineering_validator.py": [
+      "Added alias BaseValidator_src_utils_base_validator for BaseValidator from src.utils.base_validator"
+    ],
+    "./src/training/steps/step3_hmm_regime_discovery_validator.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/steps/step7_enhanced_matrix_operations_validator.py": [
+      "Added alias BaseValidator_src_utils_base_validator for BaseValidator from src.utils.base_validator"
+    ],
+    "./src/training/timeframe_relevance_analyzer.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/unified_data_orchestrator.py": [
+      "Added alias prevent_data_leakage_src_core_domain for prevent_data_leakage from src.core.domain"
+    ],
+    "./src/training/vectorized_training_pipeline.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/training/wavelet_feature_selection_workflow.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators",
+      "Added alias TreeExplainer_shap for TreeExplainer from shap"
+    ],
+    "./src/utils/async_utils.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/utils/config_loader.py": [
+      "Added alias error_src_utils_warning_symbols for error from src.utils.warning_symbols",
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/utils/enhanced_config_management.py": [
+      "Added alias PipelineStandards_src_utils_pipeline_standards for PipelineStandards from src.utils.pipeline_standards"
+    ],
+    "./src/utils/enhanced_data_quality_validator.py": [
+      "Added alias PipelineStandards_src_utils_pipeline_standards for PipelineStandards from src.utils.pipeline_standards"
+    ],
+    "./src/utils/enhanced_mlflow_integration.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/utils/enhanced_outlier_handler.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/utils/feature_output_validator.py": [
+      "Added alias critical_src_utils_warning_symbols for critical from src.utils.warning_symbols"
+    ],
+    "./src/utils/hmm_composite_manager.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/utils/lookahead_bias_detector.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/utils/mlflow_utils.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/utils/parallel_processing_optimizer.py": [
+      "Added alias Callable_collections_abc for Callable from collections.abc"
+    ],
+    "./src/utils/parquet_utils.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/utils/prometheus_metrics.py": [
+      "Added alias failed_src_utils_warning_symbols for failed from src.utils.warning_symbols"
+    ],
+    "./src/utils/security_framework.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/utils/signal_handler.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/utils/standardized_model_manager.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/utils/state_manager.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/utils/steps_1_7_compatibility_framework.py": [
+      "Added alias handles_errors_src_core_decorators for handles_errors from src.core.decorators"
+    ],
+    "./src/validation/critical_path_validators.py": [
+      "Added alias error_src_utils_warning_symbols for error from src.utils.warning_symbols",
+      "Added alias get_correlation_id_src_utils_structured_logging for get_correlation_id from src.utils.structured_logging"
+    ],
+    "./standalone_analyzers.py": [
+      "Added alias CodeQualityConfig_minimal_config for CodeQualityConfig from minimal_config"
+    ],
+    "./test_plugins.py": [
+      "Added alias get_default_config_code_quality_core_config for get_default_config from code_quality.core.config",
+      "Added alias AutoFixer_code_quality_fixers_auto_fixer for AutoFixer from code_quality.fixers.auto_fixer"
+    ]
+  },
+  "files_requiring_manual_review": []
+}

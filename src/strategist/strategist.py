@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 import pandas as pd
 
-from src.core.decorators import handles_errors
+from src.core.decorators import handles_errors as handles_errors_src_core_decorators
 from src.core.domain import handle_specific_errors
 from src.utils.logger import system_logger
 
@@ -32,7 +32,7 @@ from .utils import (
 
 if TYPE_CHECKING:
     from src.analyst.analyst import Analyst
-    from src.tactician.tactician import Tactician
+    from src.tactician.tactician import Tactician as Tactician_src_tactician_tactician
 
 
 class Strategist:

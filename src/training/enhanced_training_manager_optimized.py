@@ -26,11 +26,9 @@ except ImportError:  # pragma: no cover - optional
 
 import contextlib
 
-from src.utils.error_handler import handle_specific_errors
 from src.utils.logger import system_logger
 
 # Note: Avoid global warning suppression; use scoped suppression with warnings.catch_warnings in specific call sites if necessary
-
 
 def _make_hashable(obj: Any) -> Any:
     """Recursively convert potentially unhashable objects (lists, dicts, arrays) into hashable tuples.
@@ -45,7 +43,6 @@ def _make_hashable(obj: Any) -> Any:
     if isinstance(obj, np.ndarray):
         return tuple(obj.tolist())
     return obj
-
 
 class CachedBacktester:
     """Cached backtesting to avoid redundant calculations."""
@@ -163,7 +160,6 @@ class CachedBacktester:
         # Placeholder using random; replace with actual logic using indicators
         return float(random.uniform(-1.0, 1.0))
 
-
 class ProgressiveEvaluator:
     """Progressive evaluation to stop unpromising trials early."""
 
@@ -224,7 +220,6 @@ class ProgressiveEvaluator:
         except Exception as e:
             self.logger.warning(f"Failed to log progressive evaluation complete: {e}")
         return final_score
-
 
 class ParallelBacktester:
     """Parallel backtesting for multiple parameter combinations."""
@@ -295,7 +290,6 @@ class ParallelBacktester:
             except Exception:
                 pass
 
-
 class IncrementalTrainer:
     """Incremental training to reuse model states."""
 
@@ -338,7 +332,6 @@ class IncrementalTrainer:
         """Create new model with given parameters (placeholder)."""
         # Placeholder: return a simple dict that mimics a model container
         return {"params": params.copy()}
-
 
 class StreamingDataProcessor:
     """Streaming processor for large datasets."""
@@ -422,6 +415,7 @@ class StreamingDataProcessor:
             import pyarrow.parquet as pq_mod  # type: ignore
 import copy
 import json
+from src.core.decorators import handles_errors
 
             writer = None
             for df in chunks_iter:
@@ -436,7 +430,6 @@ import json
         except Exception as e:
             self.logger.exception(f"Incremental Parquet write failed: {e}")
             raise
-
 
 class AdaptiveSampler:
     """Adaptive sampling to focus on promising regions."""
@@ -537,7 +530,6 @@ class AdaptiveSampler:
                 perturbed[param_name] = base_value
 
         return perturbed
-
 
 class MemoryEfficientDataManager:
     """Memory-efficient data structures for large datasets."""
@@ -658,7 +650,6 @@ class MemoryEfficientDataManager:
         """Get numpy array subset for efficient computation."""
         return df.iloc[start_idx:end_idx].values
 
-
 class MemoryManager:
     """Manage memory usage during optimization."""
 
@@ -698,7 +689,6 @@ class MemoryManager:
             "used_gb": float(memory_info.used / (1024**3)),
             "percentage": float(memory_info.percent),
         }
-
 
 class EnhancedTrainingManagerOptimized:
     """Enhanced training manager with comprehensive optimization strategies.
@@ -777,7 +767,7 @@ class EnhancedTrainingManagerOptimized:
 
         self.logger.info("Loaded optimization configuration")
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid configuration"),
             AttributeError: (False, "Missing required parameters"),
@@ -1169,7 +1159,6 @@ class EnhancedTrainingManagerOptimized:
             self.memory_manager._cleanup_memory()
 
         self.logger.info("✅ Cleanup completed")
-
 
 class ParquetDatasetManager:
     """Efficient parquet dataset management for large-scale data operations."""

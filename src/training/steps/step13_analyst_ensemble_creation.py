@@ -7,7 +7,7 @@ from typing import Any, Optional, Tuple
 import joblib
 import pandas as pd
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
@@ -33,7 +33,6 @@ REQUIRED_MODULES = [
 # Validate environment dependencies
 dependency_status = PipelineStandards.validate_environment_dependencies(REQUIRED_MODULES)
 
-
 class AnalystEnsembleCreationStep:
     """Step 7: Analyst Ensemble Creation - Combines multiple models into ensemble predictions."""
 
@@ -52,7 +51,7 @@ class AnalystEnsembleCreationStep:
             self.logger.warning(f"Missing modules: {missing_modules}")
             # Continue with available modules, using fallbacks where needed
 
-    @handle_errors
+    @handles_errors
     def execute(
         self, symbol: str, exchange: str, data_dir: str, training_input: dict[str, Any],
     ) -> bool:
@@ -336,7 +335,6 @@ import os.path
 
         except Exception as e:
             logger.exception(f"❌ Error saving ensemble summary: {e}")
-
 
 def step7_analyst_ensemble_creation(
     symbol: str,

@@ -15,14 +15,13 @@ from src.config_optuna import (
     get_optimizable_parameters,
     get_optuna_config,
 )
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
     failed,
     missing,
 )
-
 
 class FinalParametersOptimizationStep:
     """Step 12: Final Parameters Optimization using Optuna with advanced features."""
@@ -42,11 +41,7 @@ class FinalParametersOptimizationStep:
         self.optuna_config = get_optuna_config()
         self.optimizable_params = get_optimizable_parameters()
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="final parameters optimization step initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> None:
         """Initialize the final parameters optimization step."""
         self.logger.info("🚀 Initializing Final Parameters Optimization Step...")
@@ -65,8 +60,7 @@ class FinalParametersOptimizationStep:
             "✅ Final Parameters Optimization Step initialized successfully",
         )
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="final parameters optimization step execution",
     )
@@ -1672,7 +1666,6 @@ class FinalParametersOptimizationStep:
                 "sharpe_ratio": 1.0,
             }
 
-
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
     artifact_versioning,
@@ -1699,7 +1692,6 @@ from src.utils.enhanced_mlflow_integration import (
     log_step_dataframe_with_standardized_name,
     log_step_artifact_with_standardized_name
 )
-
 
 # For backward compatibility with existing step structure
 @deterministic_seed(42)
@@ -1802,7 +1794,6 @@ async def run_step(symbol: str, exchange: str = "BINANCE", data_dir: str = "data
 
     except Exception:
         return False
-
 
 if __name__ == "__main__":
     # Test the step

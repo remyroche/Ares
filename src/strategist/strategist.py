@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 import pandas as pd
 import numpy as np
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, initialization_error, invalid, missing
 
@@ -30,7 +30,6 @@ if TYPE_CHECKING:
     from src.analyst.analyst import Analyst
     from src.tactician.tactician import Tactician
 import copy
-
 
 class Strategist:
     """
@@ -76,7 +75,7 @@ class Strategist:
         self.analyst: Optional["Analyst"] = None
         self.tactician: Optional["Tactician"] = None
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid strategist configuration"),
             AttributeError: (False, "Missing required strategist parameters"),
@@ -122,7 +121,7 @@ class Strategist:
             log_error(self.logger, "Error initializing strategy components", e)
             raise
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValidationError: (None, "Invalid market data for strategy generation"),
             CalculationError: (None, "Error in market calculations"),
@@ -406,11 +405,7 @@ class Strategist:
         """Get strategy history."""
         return self.strategy_history.copy()
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="strategist stop",
-    )
+    @handles_errors(fallback=False)
     async def stop(self) -> bool:
         """Stop the strategist component."""
         try:

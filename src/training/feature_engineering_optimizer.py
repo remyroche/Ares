@@ -29,8 +29,7 @@ from sklearn.metrics import mean_squared_error, accuracy_score
 import optuna
 
 from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors
-
+from src.core.decorators import handles_errors
 
 class FeatureEngineeringOptimizer:
     """
@@ -142,7 +141,7 @@ class FeatureEngineeringOptimizer:
         
         self.logger.info("🚀 Feature Engineering Optimizer initialized with interaction engineering")
     
-    @handle_errors(exceptions=(Exception,), default_return={})
+    @handles_errors(fallback={})
     async def optimize_feature_parameters(
         self,
         data: pd.DataFrame,
@@ -645,7 +644,7 @@ class FeatureEngineeringOptimizer:
         
         return cci
     
-    @handle_errors(exceptions=(Exception,), default_return={})
+    @handles_errors(fallback={})
     async def _engineer_feature_interactions(
         self, 
         data: pd.DataFrame, 
@@ -876,7 +875,7 @@ class FeatureEngineeringOptimizer:
         else:
             return pd.DataFrame()
     
-    @handle_errors(exceptions=(Exception,), default_return=pd.DataFrame())
+    @handles_errors(fallback=pd.DataFrame())
     async def _select_optimal_interactions(
         self, 
         interactions: pd.DataFrame, 
@@ -911,7 +910,7 @@ class FeatureEngineeringOptimizer:
             self.logger.error(f"Interaction selection failed: {e}")
             return interactions.iloc[:, :min(50, interactions.shape[1])]  # Return first 50 interactions as fallback
     
-    @handle_errors(exceptions=(Exception,), default_return={})
+    @handles_errors(fallback={})
     async def _calculate_interaction_importance(
         self, 
         interactions: pd.DataFrame, 
@@ -951,7 +950,7 @@ class FeatureEngineeringOptimizer:
             self.logger.error(f"Interaction importance calculation failed: {e}")
             return {}
     
-    @handle_errors(exceptions=(Exception,), default_return={})
+    @handles_errors(fallback={})
     async def _evaluate_interaction_performance(
         self, 
         interactions: pd.DataFrame, 

@@ -12,7 +12,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.centralized_decorators import (
 import asyncio
 
@@ -20,7 +20,6 @@ import asyncio
     PerformanceLevel,
 )
 from src.utils.logger import system_logger
-
 
 class DriftType(Enum):
     """Drift types for model monitoring."""
@@ -30,7 +29,6 @@ class DriftType(Enum):
     LABEL_DRIFT = "label_drift"
     FEATURE_DRIFT = "feature_drift"
 
-
 class ModelStatus(Enum):
     """Model status enumeration."""
 
@@ -38,7 +36,6 @@ class ModelStatus(Enum):
     WARNING = "warning"
     CRITICAL = "critical"
     RETRAINING = "retraining"
-
 
 @dataclass
 class ModelDriftAlert:
@@ -53,7 +50,6 @@ class ModelDriftAlert:
     features_affected: List[str]
     severity: str  # "low", "medium", "high", "critical"
     description: str
-
 
 @dataclass
 class ModelPerformance:
@@ -71,7 +67,6 @@ class ModelPerformance:
     feature_importance_stability: float = 0.0
     concept_drift_score: float = 0.0
     data_drift_score: float = 0.0
-
 
 class MLMonitor:
     """
@@ -94,7 +89,7 @@ class MLMonitor:
         self.alerts: List[ModelDriftAlert] = []
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid ML monitor configuration"),
             AttributeError: (False, "Missing ML monitor parameters"),
@@ -109,7 +104,7 @@ class MLMonitor:
         self.logger.info("✅ ML Monitor initialization completed")
         return True
 
-    @handle_errors(default_return=None, context="ml_monitor.record_performance")
+    @handles_errors(fallback=None)
     async def record_performance(self, perf: ModelPerformance) -> None:
         self.performances.append(perf)
 

@@ -31,7 +31,7 @@ from src.utils.centralized_decorators import (
 
 # Import optimization utilities
 from src.utils.data_type_optimizer import optimize_feature_engineering_pipeline
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.intelligent_feature_cache import cache_feature_engineering
 from src.utils.logger import system_logger
 from src.utils.lookahead_bias_detector import (
@@ -92,7 +92,6 @@ FEATURE_OPTIMIZATION_CONFIG = {
         "max_parallel_workers": 4
     }
 }
-
 
 class OptimizedResampler:
     """Optimized resampling with caching for improved performance."""
@@ -203,7 +202,6 @@ class OptimizedResampler:
             "hit_rate": hit_rate,
             "cache_size": len(self.resampling_cache),
         }
-
 
 class WaveletFeatureCache:
     """Comprehensive caching system for wavelet features with pre-computation support.
@@ -681,7 +679,6 @@ class WaveletFeatureCache:
             self.logger.exception(f"🚨 Error getting cache stats: {e}")
             return {}
 
-
 class VectorizedVolatilityRegimeModel:
     """Vectorized volatility regime modeling for advanced feature engineering."""
 
@@ -801,7 +798,6 @@ class VectorizedVolatilityRegimeModel:
             self.logger.exception(f"❌ Error in volatility modeling: {e}")
             return {}
 
-
 class VectorizedCorrelationAnalyzer:
     """Vectorized correlation analysis for market microstructure."""
 
@@ -859,7 +855,6 @@ class VectorizedCorrelationAnalyzer:
         except Exception as e:
             self.logger.exception(f"❌ Error in correlation analysis: {e}")
             return {}
-
 
 class VectorizedMomentumAnalyzer:
     """Vectorized momentum analysis for trend detection."""
@@ -950,7 +945,6 @@ class VectorizedMomentumAnalyzer:
         except Exception as e:
             self.logger.exception(f"❌ Error in momentum analysis: {e}")
             return {}
-
 
 class VectorizedLiquidityAnalyzer:
     """Vectorized liquidity analysis for market microstructure."""
@@ -1043,7 +1037,6 @@ class VectorizedLiquidityAnalyzer:
             self.logger.exception(f"❌ Error in liquidity analysis: {e}")
             return {}
 
-
 class VectorizedCandlestickPatternAnalyzer:
     """Vectorized candlestick pattern analysis."""
 
@@ -1132,7 +1125,6 @@ class VectorizedCandlestickPatternAnalyzer:
             self.logger.exception(f"❌ Error in candlestick pattern analysis: {e}")
             return {}
 
-
 class VectorizedSRDistanceCalculator:
     """Vectorized support/resistance distance calculator."""
 
@@ -1203,7 +1195,6 @@ class VectorizedSRDistanceCalculator:
         except Exception as e:
             self.logger.exception(f"❌ Error in S/R distance calculation: {e}")
             return {}
-
 
 class VectorizedWaveletTransformAnalyzer:
     """Vectorized wavelet transform analyzer."""
@@ -1368,7 +1359,6 @@ class VectorizedWaveletTransformAnalyzer:
             self.logger.exception(f"❌ Error removing constant features: {e}")
             return features
 
-
 class VectorizedAdvancedFeatureEngineering:
     """Comprehensive vectorized advanced feature engineering system.
     Integrates all feature engineering components including wavelet transforms.
@@ -1494,11 +1484,7 @@ class VectorizedAdvancedFeatureEngineering:
 
         self.is_initialized = False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="vectorized advanced feature engineering initialization"
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize vectorized advanced feature engineering components."""
         try:
@@ -2219,11 +2205,7 @@ class VectorizedAdvancedFeatureEngineering:
             self.logger.exception(f"🚨 Error in inline NaN handling: {e}")
             return features
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="vectorized advanced feature engineering"
-    )
+    @handles_errors(fallback=None)
     # Temporarily disabled decorators for debugging
     # @validate_step_prerequisites(
     #     required_directories=["data_cache", "data/feature_cache"],
@@ -2296,8 +2278,7 @@ class VectorizedAdvancedFeatureEngineering:
     #     overfitting_detection=True,
     #     validation_score_requirements={"feature_engineering_score": 0.8},
     # )
-    # @handle_errors(
-    #     exceptions=(ValueError, AttributeError),
+    # @handles_errors
     #     default_return=None,
     #     context="vectorized advanced feature engineering",
     # )
@@ -3987,8 +3968,6 @@ class VectorizedAdvancedFeatureEngineering:
             self.logger.debug(f"🔍 Exception details: {type(e).__name__}: {e!s}")
             return {}
 
-
-
     def _select_optimal_features_vectorized(
         self, features: dict[str, Any], ) -> dict[str, Any]:
         """Select optimal features based on variance and correlation."""
@@ -4045,7 +4024,6 @@ class VectorizedAdvancedFeatureEngineering:
             return {
                 col: features[col] for col in non_constant if col in features
             }
-
 
         except Exception as e:
             self.logger.exception(f"🚨 Error selecting optimal features: {e}")
@@ -5020,10 +4998,6 @@ class VectorizedAdvancedFeatureEngineering:
             self.logger.exception(f"🚨 Error calculating regime transitions: {e}")
             return np.zeros(len(cluster_ids))
 
-
-
-
-
     async def _generate_meta_labels_vectorized(
         self, price_data: pd.DataFrame, volume_data: pd.DataFrame, order_flow_data: pd.DataFrame | None = None
     ) -> dict[str, Any]:
@@ -5152,11 +5126,7 @@ class VectorizedAdvancedFeatureEngineering:
         overfitting_detection=True,
         validation_score_requirements={"feature_engineering_score": 0.8}
     )
-    @handle_errors(
-        exceptions=(ValueError, AttributeError, MemoryError),
-        default_return={},
-        context="difference and acceleration feature engineering"
-    )
+    @handles_errors
     async def _engineer_difference_and_acceleration_features(
         self, features: dict[str, Any], price_data: pd.DataFrame) -> dict[str, Any]:
         """Engineer difference and acceleration features with proper normalization and interaction features.
@@ -5465,11 +5435,7 @@ class VectorizedAdvancedFeatureEngineering:
             self.logger.exception(f"🚨 Error engineering difference and acceleration features: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=pd.Series(),
-        context="rolling z-score normalization"
-    )
+    @handles_errors(fallback=pd.Series())
     @memory_efficient(
         chunk_size=1000,
         streaming_processing=False,
@@ -5507,16 +5473,11 @@ class VectorizedAdvancedFeatureEngineering:
             # Fill NaN values
             return z_score.fillna(0)
 
-
         except Exception as e:
             self.logger.exception(f"🚨 Error in rolling Z-score normalization: {e}")
             return series.fillna(0)
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError, MemoryError),
-        default_return={},
-        context="interaction feature generation"
-    )
+    @handles_errors
     @memory_efficient(
         chunk_size=2000,
         streaming_processing=True,
@@ -5693,11 +5654,7 @@ class VectorizedAdvancedFeatureEngineering:
             self.logger.exception(f"🚨 Error generating interaction features: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError, MemoryError),
-        default_return={},
-        context="cross-timeframe feature generation"
-    )
+    @handles_errors
     @memory_efficient(
         chunk_size=2000,
         streaming_processing=True,

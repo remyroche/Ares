@@ -105,7 +105,6 @@ else:
     log_step_dataframe_with_standardized_name = enhanced_mlflow.log_step_dataframe_with_standardized_name
     log_step_artifact_with_standardized_name = enhanced_mlflow.log_step_artifact_with_standardized_name
 
-
 class RegimeDataSplittingStep:
     """Step 8: Unified Regime Data Creation with standardized data quality management."""
 
@@ -129,7 +128,7 @@ class RegimeDataSplittingStep:
             self.logger.info("✅ All required dependencies available")
 
     @with_tracing_span("step8_regime_splitting.initialize", log_args=False)
-    @handle_errors(exceptions=(Exception,), default_return=None, context="step8_initialization")
+    @handles_errors(fallback=None)
     async def initialize(self) -> None:
         """Initialize the regime data splitting step."""
         self.logger.info("🚀 Initializing Step 8: Unified HMM Composite Regime Data Creation...")
@@ -141,7 +140,7 @@ class RegimeDataSplittingStep:
 
     @with_enhanced_mlflow_logging("step08")
     @with_tracing_span("step8_regime_splitting.execute", log_args=False)
-    @handle_errors(exceptions=(Exception,), default_return={"success": False, "error": "Execution failed"}, context="step8_execution")
+    @handles_errors, default_return={"success": False, "error": "Execution failed"}, context="step8_execution")
     async def execute(self) -> dict[str, Any]:
         """Execute the unified regime data creation step."""
         try:
@@ -150,6 +149,7 @@ class RegimeDataSplittingStep:
             from src.config.constants import (
 import numpy as np
 import os.path
+from src.core.decorators import handles_errors
 
                 BLANK_TRAINING_LOOKBACK_DAYS,
             )
@@ -347,7 +347,7 @@ import os.path
             # Don't fail the step if MLflow logging fails
 
     @with_tracing_span("step8_regime_splitting._save_unified_regime_dataset", log_args=False)
-    @handle_errors(exceptions=(Exception,), default_return=False, context="save_unified_regime_dataset")
+    @handles_errors(fallback=False)
     def _save_unified_regime_dataset(self, unified_data: pd.DataFrame, unique_clusters: list) -> bool:
         """Save unified dataset with regime labels."""
         try:
@@ -451,7 +451,7 @@ import os.path
             return {}
 
     @with_tracing_span("step8_regime_splitting._create_regime_summary", log_args=False)
-    @handle_errors(exceptions=(Exception,), default_return={}, context="create_regime_summary")
+    @handles_errors(fallback={})
     def _create_regime_summary(self, unified_data: pd.DataFrame, unique_clusters: list) -> dict[str, Any]:
         """Create a summary of the unified regime dataset."""
         summary = {
@@ -480,7 +480,6 @@ import os.path
         }
 
         return summary
-
 
 @deterministic_seed(42)
 @idempotent_step(step_key="step8_regime_data_splitting")
@@ -546,7 +545,7 @@ import os.path
     validation_score_requirements={"creation_accuracy": 0.8},
 )
 @auto_fix_data_quality_issues
-@handle_errors(exceptions=(Exception,), default_return=False, context="step8_regime_data_splitting")
+@handles_errors(fallback=False)
 async def run_step(
     symbol: str, 
     exchange: str, 
@@ -574,7 +573,6 @@ async def run_step(
     await step.initialize()
     result = await step.execute()
     return result.get("success", False)
-
 
 if __name__ == "__main__":
     async def await _test() -> None:

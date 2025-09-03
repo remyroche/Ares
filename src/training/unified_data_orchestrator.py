@@ -31,7 +31,7 @@ from src.training.data_sharing_manager import DataSharingManager
 
 # Import existing components
 from src.training.steps.unified_data_loader import UnifiedDataLoader
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 
 # Import training pipeline decorators for security and troubleshooting
@@ -48,7 +48,6 @@ import copy
     validate_step_output,
     validate_step_prerequisites,
 )
-
 
 class UnifiedDataOrchestrator:
     """Unified Data Orchestrator - Single source of truth for all data operations.
@@ -178,11 +177,7 @@ class UnifiedDataOrchestrator:
         data_quality_metrics={},
         validation_score_requirements={"initialization_success": 1.0},
     )
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="orchestrator initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize the orchestrator."""
         start_time = time.time()
@@ -248,8 +243,7 @@ class UnifiedDataOrchestrator:
     @quality_gate(
         data_quality_metrics={}, validation_score_requirements={"cleanup_success": 1.0},
     )
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="orchestrator cleanup",
+    @handles_errors, default_return=None, context="orchestrator cleanup",
     )
     async def cleanup(self) -> None:
         """Cleanup resources."""
@@ -340,8 +334,7 @@ class UnifiedDataOrchestrator:
         data_quality_metrics={"completeness": 0.9, "consistency": 0.8},
         validation_score_requirements={"data_integrity": 0.7},
     )
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="unified data loading",
+    @handles_errors, default_return=None, context="unified data loading",
     )
     async def get_unified_data(
         self,
@@ -564,11 +557,7 @@ class UnifiedDataOrchestrator:
             "timeframe_alignment": 0.8,
         },
     )
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="multi-timeframe data loading",
-    )
+    @handles_errors(fallback=None)
     async def get_multi_timeframe_data(
         self,
         symbol: str,
@@ -783,8 +772,7 @@ class UnifiedDataOrchestrator:
         data_quality_metrics={"completeness": 0.8, "consistency": 0.7},
         validation_score_requirements={"resampling_accuracy": 0.9},
     )
-    @handle_errors(
-        exceptions=(Exception,), default_return=None, context="data resampling",
+    @handles_errors, default_return=None, context="data resampling",
     )
     async def _resample_data(
         self,
@@ -1014,11 +1002,7 @@ class UnifiedDataOrchestrator:
         data_quality_metrics={"completeness": 0.7, "consistency": 0.6},
         validation_score_requirements={"data_quality": 0.8},
     )
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="data validation and repair",
-    )
+    @handles_errors(fallback=None)
     async def _validate_and_repair_data(
         self,
         data: pd.DataFrame,
@@ -1241,11 +1225,7 @@ class UnifiedDataOrchestrator:
         data_quality_metrics={"completeness": 0.8, "consistency": 0.7},
         validation_score_requirements={"conversion_accuracy": 0.9},
     )
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="raw data loading and conversion",
-    )
+    @handles_errors(fallback=None)
     async def _load_and_convert_raw_data(
         self,
         symbol: str,
@@ -1525,7 +1505,6 @@ class UnifiedDataOrchestrator:
 # Global instance
 _unified_data_orchestrator: UnifiedDataOrchestrator | None = None
 
-
 def get_unified_data_orchestrator(config: dict[str, Any]) -> UnifiedDataOrchestrator:
     """Get or create the global unified data orchestrator instance."""
     global _unified_data_orchestrator
@@ -1536,7 +1515,6 @@ def get_unified_data_orchestrator(config: dict[str, Any]) -> UnifiedDataOrchestr
         _unified_data_orchestrator.config = config
 
     return _unified_data_orchestrator
-
 
 async def initialize_unified_data_orchestrator(config: dict[str, Any]) -> bool:
     """Initialize the global unified data orchestrator."""
@@ -1553,7 +1531,6 @@ async def initialize_unified_data_orchestrator(config: dict[str, Any]) -> bool:
         system_logger.getChild("UnifiedDataOrchestrator").error("Initialization failed")
 
     return success
-
 
 async def cleanup_unified_data_orchestrator() -> None:
     """Cleanup the global unified data orchestrator."""

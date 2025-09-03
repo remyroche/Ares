@@ -22,12 +22,11 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
 
 from src.utils.logger import get_logger
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.centralized_decorators import (
     validate_data_quality,
     validate_feature_engineering_with_lookahead_bias_detection,
 )
-
 
 class FractionalFeatureSelector:
     """Intelligent feature selector for Step 7 with fractional label alignment."""
@@ -73,7 +72,7 @@ class FractionalFeatureSelector:
         
         self.logger.info("✅ Fractional Feature Selector initialized successfully")
     
-    @handle_errors("Fractional feature selection")
+    @handles_errors
     @validate_data_quality
     @validate_feature_engineering_with_lookahead_bias_detection
     def select_features(
@@ -698,7 +697,6 @@ import datetime as datetime
         except Exception as e:
             self.logger.error(f"Failed to export feature selection report: {e}")
             return ""
-
 
 # Configuration helper
 def get_fractional_feature_selector_config(

@@ -1,10 +1,9 @@
 from datetime import datetime
 from typing import Any
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 import asyncio
-
 
 class StageRegistry:
     """Stage registry with comprehensive error handling and type safety."""
@@ -37,7 +36,7 @@ class StageRegistry:
             True,
         )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid stage registry configuration"),
             AttributeError: (False, "Missing required stage registry parameters"),
@@ -74,11 +73,7 @@ class StageRegistry:
             self.logger.exception(f"❌ Stage Registry initialization failed: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="stage configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_stage_configuration(self) -> None:
         """Load stage configuration."""
         try:

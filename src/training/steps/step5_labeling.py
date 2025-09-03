@@ -101,7 +101,6 @@ else:
 
 logger = system_logger.getChild("Step5Labeling")
 
-
 class LabelingStep:
     """Step 5: Labeling with standardized data quality management and regime-aware triple barrier method."""
 
@@ -195,7 +194,7 @@ class LabelingStep:
     )
     @with_enhanced_mlflow_logging("step5_labeling")
     @comprehensive_data_validation
-    @handle_errors
+    @handles_errors
     @memory_efficient
     @resource_monitor
     @secure_data_processing
@@ -511,8 +510,6 @@ class LabelingStep:
             self.logger.exception(f"❌ Error generating comprehensive labels: {e}")
             return None
 
-
-
     async def _create_composite_label(self, data: pd.DataFrame) -> pd.Series:
         """Create composite label from multiple labeling strategies."""
         try:
@@ -605,6 +602,7 @@ class LabelingStep:
 import copy
 import numpy as np
 import pandas as pd
+from src.core.decorators import handles_errors
 
                     RegimeAwareTripleBarrierLabeling
                 )
@@ -637,7 +635,6 @@ import pandas as pd
         except Exception as e:
             self.logger.exception(f"❌ Error in regime-aware labeling: {e}")
             return None
-
 
 async def run_step(
     symbol: str,
@@ -700,7 +697,6 @@ async def run_step(
         data_dir=data_dir,
         force_rerun=force_rerun,
     )
-
 
 if __name__ == "__main__":
     # Test the step

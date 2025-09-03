@@ -18,10 +18,9 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 
-from .error_handler import handle_errors
+from src.core.decorators import handles_errors
 from .logger import system_logger
 from .pipeline_standards import PipelineStandards, pipeline_standards
-
 
 class GapType(Enum):
     """Types of data gaps."""
@@ -30,7 +29,6 @@ class GapType(Enum):
     MEDIUM = "medium"  # 5-60 seconds, download data
     LARGE = "large"  # > 60 seconds, download data with warning
     CRITICAL = "critical"  # > 300 seconds, require manual intervention
-
 
 class GapInfo:
     """Information about a data gap."""
@@ -46,7 +44,6 @@ class GapInfo:
 
     def __str__(self):
         return f"Gap({self.start_time} -> {self.end_time}, size={self.gap_size}s, type={self.gap_type.value})"
-
 
 class EnhancedMissingValueHandler:
     """Enhanced missing value handler with intelligent gap filling."""
@@ -79,7 +76,7 @@ class EnhancedMissingValueHandler:
             GapType.CRITICAL: "manual_intervention",
         }
 
-    @handle_errors(exceptions=(Exception,), default_return=None, context="missing value handling")
+    @handles_errors(fallback=None)
     def handle_missing_values_intelligently(
         self,
         data: pd.DataFrame,
@@ -533,7 +530,6 @@ import copy
         }
 
         return report
-
 
 # Global enhanced missing value handler instance
 enhanced_missing_value_handler = EnhancedMissingValueHandler()

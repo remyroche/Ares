@@ -15,11 +15,7 @@ import pandas as pd
 import pywt
 
 from src.config import CONFIG
-from src.utils.error_handler import (
-import logging
-import asyncio
-    handle_errors,
-)
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -30,7 +26,6 @@ from src.utils.centralized_decorators_simple import (
     validate_data_quality,
     with_tracing_span,
 )
-
 
 class CandlestickPatternAnalyzer:
     """
@@ -54,11 +49,7 @@ class CandlestickPatternAnalyzer:
 
         self.is_initialized = False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="candlestick pattern analyzer initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize candlestick pattern analyzer."""
         try:
@@ -72,11 +63,7 @@ class CandlestickPatternAnalyzer:
             )
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return={},
-        context="candlestick pattern analysis",
-    )
+    @handles_errors
     async def analyze_patterns(self, price_data: pd.DataFrame) -> dict[str, Any]:
         """
         Analyze candlestick patterns and return features for ML training.
@@ -688,7 +675,6 @@ class CandlestickPatternAnalyzer:
 
             return {}
 
-
 class FeatureInteractionEngine:
     """
     Engine for creating feature interaction terms to capture complex market dynamics.
@@ -763,11 +749,7 @@ class FeatureInteractionEngine:
 
         self.is_initialized = False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="feature interaction engine initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize feature interaction engine."""
         try:
@@ -781,11 +763,7 @@ class FeatureInteractionEngine:
             )
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return={},
-        context="feature interaction generation",
-    )
+    @handles_errors
     async def generate_interactions(self, features: dict[str, Any]) -> dict[str, Any]:
         """
         Generate feature interaction terms from normalized features.
@@ -1157,7 +1135,6 @@ class FeatureInteractionEngine:
         """Print message with proper formatting."""
         print(message)
 
-
 class AdvancedFeatureEngineering:
     """
     Advanced feature engineering with market microstructure analysis,
@@ -1250,11 +1227,7 @@ class AdvancedFeatureEngineering:
 
         self.is_initialized = False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="advanced feature engineering initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize advanced feature engineering components."""
         try:
@@ -1306,11 +1279,7 @@ import copy
             )
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="advanced feature engineering",
-    )
+    @handles_errors(fallback=None)
     async def engineer_features(
         self,
         price_data: pd.DataFrame,
@@ -2174,7 +2143,6 @@ import copy
             self.logger.error(f"Error selecting optimal features: {e}")
             return features
 
-
 class VolatilityRegimeModel:
     """Model volatility regimes using GARCH and other methods."""
 
@@ -2257,7 +2225,6 @@ class VolatilityRegimeModel:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             return pd.Series()
 
-
 class CorrelationAnalyzer:
     """Analyze correlations between different assets and timeframes."""
 
@@ -2308,7 +2275,6 @@ class CorrelationAnalyzer:
             self.logger.error("Error analyzing correlations: {e}")
 
             return {}
-
 
 class MomentumAnalyzer:
     """Analyze momentum patterns and signals."""
@@ -2375,7 +2341,6 @@ class MomentumAnalyzer:
             self.logger.error("Error analyzing momentum: {e}")
 
             return {}
-
 
 class LiquidityAnalyzer:
     """Analyze liquidity conditions and market depth."""

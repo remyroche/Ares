@@ -26,7 +26,7 @@ sys.path.insert(0, str(project_root))
 
 # MetaLabelingSystem removed - using only HMM market regimes
 from src.config import CONFIG
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     error,
@@ -34,7 +34,6 @@ from src.utils.warning_symbols import (
     initialization_error,
     warning,
 )
-
 
 class RegimeSpecificTPSLOptimizer:
     """Optimizes Take Profit (TP) and Stop Loss (SL) parameters based on HMM market regimes.
@@ -204,7 +203,7 @@ class RegimeSpecificTPSLOptimizer:
         self.optimization_results: dict[str, dict[str, Any]] = {}
         self.last_optimization_time: datetime | None = None
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (
                 False,
@@ -299,11 +298,7 @@ import os.path
         except Exception:
             self.print(failed("Failed to save optimization results: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="regime identification",
-    )
+    @handles_errors(fallback=None)
     async def identify_current_regime(
         self, current_data: pd.DataFrame, ) -> tuple[str, float, dict[str, Any]]:
         """Identify the current dominant meta-label driven market regime.
@@ -378,11 +373,7 @@ import os.path
             self.print(error(f"Error identifying regime: {e}"))
             return "SIDEWAYS_RANGE", 0.5, {"method": "fallback", "error": str(e)}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="regime-specific TP/SL optimization",
-    )
+    @handles_errors(fallback=None)
     async def optimize_tpsl_for_regime(
         self, regime: str, historical_data: pd.DataFrame, current_data: pd.DataFrame, ) -> dict[str, Any]:
         """Optimize TP/SL parameters for a specific label-driven market regime.
@@ -574,11 +565,7 @@ import os.path
 
         return trades
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="regime-specific TP/SL prediction",
-    )
+    @handles_errors(fallback=None)
     async def get_optimized_tpsl(
         self, current_data: pd.DataFrame, historical_data: pd.DataFrame, force_optimization: bool = False
     ) -> dict[str, Any]:

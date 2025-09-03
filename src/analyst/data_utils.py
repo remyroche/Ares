@@ -7,12 +7,7 @@ import numpy as np
 import pandas as pd
 from scipy.signal import find_peaks  # For volume profile peaks
 
-from src.utils.error_handler import (
-import logging
-import asyncio
-    handle_errors,
-    handle_specific_errors,
-)
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
 import copy
@@ -26,7 +21,6 @@ import copy
     validation_error,
     warning,
 )
-
 
 class DataUtils:
     """
@@ -68,7 +62,7 @@ class DataUtils:
             True,
         )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid data utils configuration"),
             AttributeError: (False, "Missing required data utils parameters"),
@@ -108,11 +102,7 @@ class DataUtils:
 
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="data utils configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_data_utils_configuration(self) -> None:
         """Load data utils configuration."""
         try:
@@ -140,12 +130,7 @@ class DataUtils:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.error("Error loading data utils configuration: {e}")
 
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         """
         Validate data utils configuration.
@@ -188,11 +173,7 @@ class DataUtils:
 
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="data utils modules initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_data_utils_modules(self) -> None:
         """Initialize data utils modules."""
         try:
@@ -220,11 +201,7 @@ class DataUtils:
                 initialization_error("Error initializing data utils modules: {e}"),
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="data cleaning initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_data_cleaning(self) -> None:
         """Initialize data cleaning module."""
         try:
@@ -242,12 +219,7 @@ class DataUtils:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.error(initialization_"Error initializing data cleaning: {e}")
 
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="data validation initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_data_validation(self) -> None:
         """Initialize data validation module."""
         try:
@@ -265,12 +237,7 @@ class DataUtils:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.error(validation_"Error initializing data validation: {e}")
 
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="data transformation initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_data_transformation(self) -> None:
         """Initialize data transformation module."""
         try:
@@ -290,11 +257,7 @@ class DataUtils:
                 initialization_error("Error initializing data transformation: {e}"),
             )
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="data aggregation initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_data_aggregation(self) -> None:
         """Initialize data aggregation module."""
         try:
@@ -312,8 +275,7 @@ class DataUtils:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.error(initialization_"Error initializing data aggregation: {e}")
 
-
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid processing parameters"),
             AttributeError: (False, "Missing processing components"),
@@ -379,11 +341,7 @@ class DataUtils:
             self.is_processing = False
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="processing inputs validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_processing_inputs(self, processing_input: dict[str, Any]) -> bool:
         """
         Validate processing inputs.
@@ -423,11 +381,7 @@ class DataUtils:
 
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="data cleaning",
-    )
+    @handles_errors(fallback=None)
     async def _perform_data_cleaning(
         self,
         processing_input: dict[str, Any],
@@ -477,11 +431,7 @@ class DataUtils:
 
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="data validation",
-    )
+    @handles_errors(fallback=None)
     async def _perform_data_validation(
         self,
         processing_input: dict[str, Any],
@@ -531,11 +481,7 @@ class DataUtils:
 
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="data transformation",
-    )
+    @handles_errors(fallback=None)
     async def _perform_data_transformation(
         self,
         processing_input: dict[str, Any],
@@ -588,11 +534,7 @@ class DataUtils:
 
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="data aggregation",
-    )
+    @handles_errors(fallback=None)
     async def _perform_data_aggregation(
         self,
         processing_input: dict[str, Any],
@@ -966,11 +908,7 @@ class DataUtils:
 
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="processing results storage",
-    )
+    @handles_errors(fallback=None)
     async def _store_processing_results(self) -> None:
         """Store processing results."""
         try:
@@ -990,12 +928,7 @@ class DataUtils:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.error("Error storing processing results: {e}")
 
-
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="processing results getting",
-    )
+    @handles_errors(fallback=None)
     def get_processing_results(
         self,
         processing_type: str | None = None,
@@ -1020,11 +953,7 @@ class DataUtils:
 
             return {}
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="processing history getting",
-    )
+    @handles_errors(fallback=None)
     def get_processing_history(self, limit: int | None = None) -> list[dict[str, Any]]:
         """
         Get processing history.
@@ -1073,11 +1002,7 @@ class DataUtils:
             "processing_history_count": len(self.processing_history),
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="data utils cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop the data utils."""
         self.logger.info("🛑 Stopping Data Utils...")
@@ -1098,17 +1023,10 @@ class DataUtils:
             self.logger.debug(f"Error in {self.__class__.__name__}: {e}")
             self.logger.error("Error stopping data utils: {e}")
 
-
-
 # Global data utils instance
 data_utils: DataUtils | None = None
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="data utils setup",
-)
+@handles_errors(fallback=None)
 async def setup_data_utils(config: dict[str, Any] | None = None) -> DataUtils | None:
     """
     Setup global data utils.
@@ -1146,7 +1064,6 @@ async def setup_data_utils(config: dict[str, Any] | None = None) -> DataUtils | 
     except Exception as e:
         print(f"Error setting up data utils: {e}")
         return None
-
 
 def validate_klines_data(df: pd.DataFrame) -> tuple[bool, str]:
     """Validate klines data quality."""
@@ -1192,7 +1109,6 @@ def validate_klines_data(df: pd.DataFrame) -> tuple[bool, str]:
             return False, f"Zero values found in {col}"
 
     return True, "Data quality validation passed"
-
 
 def load_klines_data(filename):
     """Loads k-line data from a CSV file with strict quality validation."""
@@ -1313,18 +1229,14 @@ def load_klines_data(filename):
         )
         return pd.DataFrame()
 
-
 def load_agg_trades_data(filename):
     raise NotImplementedError("Removed unused function: load_agg_trades_data")
-
 
 def load_futures_data(filename):
     raise NotImplementedError("Removed unused function: load_futures_data")
 
-
 def simulate_order_book_data(current_price):
     raise NotImplementedError("Removed unused function: simulate_order_book_data")
-
 
 def _get_column_names(klines_df: pd.DataFrame) -> tuple[str, str, str, str]:
     """Get standardized column names for OHLCV data."""
@@ -1333,7 +1245,6 @@ def _get_column_names(klines_df: pd.DataFrame) -> tuple[str, str, str, str]:
     low_col = "Low" if "Low" in klines_df.columns else "low"
     volume_col = "Volume" if "Volume" in klines_df.columns else "volume"
     return close_col, high_col, low_col, volume_col
-
 
 def _calculate_price_range(
     klines_df: pd.DataFrame,
@@ -1358,7 +1269,6 @@ def _calculate_price_range(
 
     return min_price, max_price
 
-
 def _filter_reasonable_data(
     klines_df: pd.DataFrame,
     min_price: float,
@@ -1378,7 +1288,6 @@ def _filter_reasonable_data(
     ]
 
     return reasonable_data if len(reasonable_data) > 0 else klines_df
-
 
 def _create_volume_profile(
     klines_df: pd.DataFrame,
@@ -1412,7 +1321,6 @@ def _create_volume_profile(
     volume_profile = volume_profile_series.rename(index=bin_midpoints_map)
     return volume_profile.fillna(0)  # Fill bins with no volume as 0
 
-
 def _detect_peaks_with_prominence(
     volume_profile: pd.Series,
 ) -> list[tuple[float, float]]:
@@ -1435,7 +1343,6 @@ def _detect_peaks_with_prominence(
         hvn_strengths[level] = strength
 
     return [(level, hvn_strengths[level]) for level in hvn_levels]
-
 
 def _detect_peaks_with_percentiles(
     volume_profile: pd.Series,
@@ -1483,7 +1390,6 @@ def _detect_peaks_with_percentiles(
 
     return [(level, hvn_strengths[level]) for level in hvn_levels]
 
-
 def _detect_local_maxima(volume_profile: pd.Series) -> list[tuple[float, float]]:
     """Detect local maxima using multiple window sizes."""
     hvn_levels = []
@@ -1521,7 +1427,6 @@ def _detect_local_maxima(volume_profile: pd.Series) -> list[tuple[float, float]]
 
     return [(level, hvn_strengths[level]) for level in hvn_levels]
 
-
 def _add_volume_weighted_levels(volume_profile: pd.Series) -> list[tuple[float, float]]:
     """Add levels based on volume distribution."""
     hvn_levels = []
@@ -1541,7 +1446,6 @@ def _add_volume_weighted_levels(volume_profile: pd.Series) -> list[tuple[float, 
             hvn_strengths[level] = strength
 
     return [(level, hvn_strengths[level]) for level in hvn_levels]
-
 
 def _add_distributed_levels(volume_profile: pd.Series) -> list[tuple[float, float]]:
     """Add levels at regular intervals across the price range."""
@@ -1563,7 +1467,6 @@ def _add_distributed_levels(volume_profile: pd.Series) -> list[tuple[float, floa
             hvn_strengths[closest_level] = strength
 
     return [(level, hvn_strengths[level]) for level in hvn_levels]
-
 
 def _ensure_minimum_levels(
     volume_profile: pd.Series,
@@ -1591,7 +1494,6 @@ def _ensure_minimum_levels(
             all_levels.append((level, strength))
 
     return all_levels
-
 
 def _consolidate_hvn_results(
     all_levels: list[tuple[float, float]],
@@ -1621,14 +1523,11 @@ def _consolidate_hvn_results(
     hvn_results.sort(key=lambda x: x["strength"], reverse=True)
     return hvn_results
 
-
 def calculate_volume_profile(klines_df: pd.DataFrame, num_bins: int = 100):
     raise NotImplementedError("Removed unused function: calculate_volume_profile")
 
-
 def create_dummy_data(filename, data_type, num_records=1000, start_date="2023-01-01"):
     raise NotImplementedError("Removed unused function: create_dummy_data")
-
 
 def create_ethusdt_1h_csv():
     """Convert downloaded klines data to the expected ETHUSDT_1h.csv format."""

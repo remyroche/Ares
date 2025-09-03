@@ -27,7 +27,6 @@ from src.utils.centralized_decorators import (
 
 logger = system_logger.getChild("Step8HMMBasedTrainingValidator")
 
-
 @with_tracing_span("validate_hmm_based_training")
 @quality_gate(
     min_quality_score=0.7,
@@ -35,7 +34,7 @@ logger = system_logger.getChild("Step8HMMBasedTrainingValidator")
     required_grade="C"
 )
 @comprehensive_data_validation
-@handle_errors
+@handles_errors
 @memory_efficient
 @resource_monitor
 @secure_data_processing
@@ -87,6 +86,7 @@ async def run_validator(
         try:
             import pickle
             import numpy as np
+from src.core.decorators import handles_errors
             
             # Load the models
             with open(hmm_models_path, 'rb') as f:
@@ -227,7 +227,6 @@ async def run_validator(
             "validation_passed": False,
             "error": f"Validation error: {e}",
         }
-
 
 if __name__ == "__main__":
     # Test the validator

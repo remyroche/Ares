@@ -14,8 +14,7 @@ import numpy as np
 import pandas as pd
 
 from src.utils.logger import get_logger
-from src.utils.error_handler import handle_errors
-
+from src.core.decorators import handles_errors
 
 class FractionalSystemMonitor:
     """Monitor performance of combined fractional system in production."""
@@ -79,7 +78,7 @@ class FractionalSystemMonitor:
         monitoring_duration = datetime.now() - self.monitoring_start_time
         self.logger.info(f"⏹️ Stopped fractional system monitoring (duration: {monitoring_duration})")
     
-    @handle_errors("Fractional system monitoring")
+    @handles_errors
     def track_performance(
         self, 
         features: pd.DataFrame, 
@@ -659,7 +658,6 @@ class FractionalSystemMonitor:
         except Exception as e:
             self.logger.error(f"Failed to export monitoring report: {e}")
             return ""
-
 
 # Configuration helper
 def get_fractional_system_monitor_config(

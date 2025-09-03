@@ -71,7 +71,6 @@ if "numba" in globals() and numba is not None:
             
         return labels, profit_pcts
 
-
 class OptimizedTripleBarrierLabeling:
     """Optimized Triple Barrier Method for labeling using vectorized operations.
 
@@ -125,11 +124,7 @@ class OptimizedTripleBarrierLabeling:
                 "   → Consider using binary_classification=True for better results"
             )
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.DataFrame(),
-        context="optimized_triple_barrier_labeling.vectorized"
-    )
+    @handles_errors(fallback=pd.DataFrame())
     @guard_dataframe_nulls(mode="warn", arg_index=1)
     @with_tracing_span("TripleBarrier.apply_vectorized", log_args=False)
     def apply_triple_barrier_labeling_vectorized(
@@ -365,11 +360,7 @@ class OptimizedTripleBarrierLabeling:
         )
         return labeled_data
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.DataFrame(),
-        context="optimized_triple_barrier_labeling.parallel"
-    )
+    @handles_errors(fallback=pd.DataFrame())
     def apply_triple_barrier_labeling_parallel(
         self, 
         data: pd.DataFrame, 
@@ -387,11 +378,7 @@ class OptimizedTripleBarrierLabeling:
         # Disabled due to boundary lookahead correctness issues.
         return self.apply_triple_barrier_labeling_vectorized(data)
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.DataFrame(),
-        context="optimized_triple_barrier_labeling.process_chunk"
-    )
+    @handles_errors(fallback=pd.DataFrame())
     def _process_chunk(self, chunk: pd.DataFrame) -> pd.DataFrame:
         """Process a single chunk of data.
 
@@ -417,9 +404,8 @@ class OptimizedTripleBarrierLabeling:
         labeled_data = self.apply_triple_barrier_labeling_vectorized(data)
         return labeled_data['label']
 
-
 @with_tracing_span("benchmark_triple_barrier_methods", log_args=False)
-@handle_errors(exceptions=(Exception,), default_return={}, context="benchmark_triple_barrier")
+@handles_errors(fallback={})
 def benchmark_triple_barrier_methods(data: pd.DataFrame) -> dict[str, float]:
     """Benchmark different triple barrier labeling methods.
 
@@ -456,12 +442,12 @@ def benchmark_triple_barrier_methods(data: pd.DataFrame) -> dict[str, float]:
         "parallel_speedup": original_time / parallel_time,
     }
 
-
 if __name__ == "__main__":
     # Example usage
     import numpy as np
 import asyncio
 import copy
+from src.core.decorators import handles_errors
 
     # Create sample data
     dates = pd.date_range("2024-01-01", periods=1000, freq="1min")

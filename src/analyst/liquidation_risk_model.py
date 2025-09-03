@@ -1,7 +1,7 @@
 # src/analyst/liquidation_risk_model.py
 from src.utils.logger import system_logger
 from typing import Any
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 import pandas as pd
 from src.utils.centralized_decorators_simple import (
 import logging
@@ -66,7 +66,7 @@ class LiquidationRiskModel:
             100: 0.02,  # 100x leverage: can handle 2% adverse movement
         }
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid liquidation risk model configuration"),
             AttributeError: (False, "Missing required risk model parameters"),
@@ -101,11 +101,7 @@ class LiquidationRiskModel:
             self.logger.error(f"Failed to initialize Liquidation Risk Model: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="risk configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_risk_configuration(self) -> None:
         """Load risk model configuration."""
         self.logger.info("Loading liquidation risk model configuration...")
@@ -113,11 +109,7 @@ class LiquidationRiskModel:
         # Additional configuration can be loaded here
         self.logger.info("Risk model configuration loaded successfully")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         """Validate risk model configuration."""
         try:
@@ -144,7 +136,7 @@ class LiquidationRiskModel:
             self.logger.error("Configuration validation failed: {e}")
             return False
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (None, "Invalid input data for liquidation risk calculation"),
             AttributeError: (None, "Model not properly initialized"),
@@ -410,11 +402,7 @@ class LiquidationRiskModel:
             "max_adverse_risk": self.max_adverse_risk,
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="liquidation risk model cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Clean up liquidation risk model resources."""
         try:

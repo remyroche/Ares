@@ -13,10 +13,7 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from src.config import CONFIG
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.logger import system_logger
-from src.utils.error_handler import (
-import logging
-    handle_errors,
-)
+from src.core.decorators import handles_errors
 from src.utils.warning_symbols import (
     warning,
 )
@@ -25,7 +22,6 @@ from src.utils.centralized_decorators_simple import (
     validate_data_quality,
     with_tracing_span,
 )
-
 
 class UnifiedRegimeClassifier:
     """
@@ -333,11 +329,7 @@ class UnifiedRegimeClassifier:
                     warning(f"NumPy RNG unpickle shim not applied (URC): {_shim_exc}")
                 )
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="UnifiedRegimeClassifier.initialize",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """
         Initialize the UnifiedRegimeClassifier.
@@ -785,11 +777,7 @@ class UnifiedRegimeClassifier:
             self.logger.error(f"Error adding basic S/R features: {e}")
             return features_df
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="UnifiedRegimeClassifier._calculate_rsi",
-    )
+    @handles_errors(fallback=None)
     def _calculate_rsi(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
         """Calculate RSI indicator using price differences."""
         # Use price differences instead of absolute prices
@@ -800,11 +788,7 @@ class UnifiedRegimeClassifier:
         df["rsi"] = 100 - (100 / (1 + rs))
         return df
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="UnifiedRegimeClassifier._calculate_macd",
-    )
+    @handles_errors(fallback=None)
     def _calculate_macd(
         self,
         df: pd.DataFrame,
@@ -822,11 +806,7 @@ class UnifiedRegimeClassifier:
         df["macd_histogram"] = df["macd"] - df["macd_signal"]
         return df
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="UnifiedRegimeClassifier._calculate_adx",
-    )
+    @handles_errors(fallback=None)
     def _calculate_adx(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
         """Calculate the Average Directional Index (ADX)."""
         high = df["high"]
@@ -860,11 +840,7 @@ class UnifiedRegimeClassifier:
 
         return df
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="UnifiedRegimeClassifier._calculate_bollinger_bands",
-    )
+    @handles_errors(fallback=None)
     def _calculate_bollinger_bands(
         self,
         df: pd.DataFrame,
@@ -884,11 +860,7 @@ class UnifiedRegimeClassifier:
         df["bb_width"] = (df["bb_upper"] - df["bb_lower"]) / sma
         return df
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="UnifiedRegimeClassifier._calculate_atr",
-    )
+    @handles_errors(fallback=None)
     def _calculate_atr(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
         """Calculate Average True Range using price differences."""
         # Use price differences instead of absolute prices

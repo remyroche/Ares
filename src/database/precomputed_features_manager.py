@@ -9,7 +9,7 @@ import json
 import pandas as pd
 
 from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.warning_symbols import error, failed, warning
 import asyncio
 
@@ -22,7 +22,6 @@ import os.path
 except Exception:
     InfluxDBManager = None  # type: ignore
     INFLUXDB_AVAILABLE = False
-
 
 class PrecomputedFeaturesManager:
     """
@@ -83,11 +82,7 @@ class PrecomputedFeaturesManager:
             "log_return",
         }
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="precomputed features manager initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize the precomputed features manager."""
         self.logger.info("🚀 Initializing PrecomputedFeaturesManager...")
@@ -150,11 +145,7 @@ class PrecomputedFeaturesManager:
 
         return category, timeframe, name
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="feature storage",
-    )
+    @handles_errors(fallback=False)
     async def store_features(
         self,
         features_df: pd.DataFrame,
@@ -210,11 +201,7 @@ class PrecomputedFeaturesManager:
         self.logger.info(f"✅ Successfully stored features for {symbol}")
         return True
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.DataFrame(),
-        context="feature retrieval",
-    )
+    @handles_errors(fallback=pd.DataFrame())
     async def retrieve_features(
         self,
         symbol: str,

@@ -14,6 +14,7 @@ import logging
 from .comprehensive_enhanced_scenario_predictor import ComprehensiveEnhancedScenarioPredictor
 import os.path
 import asyncio
+from src.core.decorators import handles_errors
 
 # Simple logger setup
 logger = logging.getLogger(__name__)
@@ -28,7 +29,6 @@ def handle_errors(func):
             logger.error(f"Error in {func.__name__}: {e}")
             return None
     return wrapper
-
 
 class Step17OptimizedTactician:
     """
@@ -217,7 +217,7 @@ class Step17OptimizedTactician:
             self.logger.error(f"❌ Configuration validation failed: {e}")
             return False
 
-    @handle_errors
+    @handles_errors
     async def generate_predictions(
         self,
         market_data: pd.DataFrame,

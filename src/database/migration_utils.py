@@ -56,7 +56,7 @@ class DatabaseMigrationUtils:
             temp_db = SQLiteManager(export_path)
             await temp_db.initialize()
 
-            # Remove backtest-specific data that shouldn't be on trading computer'
+            # Remove backtest-specific data that shouldn't be on trading computer
             await self._clean_for_trading(temp_db)
 
             # Calculate checksum
@@ -89,7 +89,7 @@ class DatabaseMigrationUtils:
             return export_path
 
         except Exception as e:
-            self.print(failed("Failed to create trading export: {e}"))
+            self.logger.error(failed(f"Failed to create trading export: {e}"))
             return ""
 
     async def _clean_for_trading(self, temp_db: SQLiteManager):
@@ -134,7 +134,7 @@ class DatabaseMigrationUtils:
         try:
             # Verify file exists
             if not os.path.exists(import_path):
-                self.print(missing("Import file not found: {import_path}"))
+                self.logger.error(missing(f"Import file not found: {import_path}"))
                 return False
 
             # Calculate checksum of import file
@@ -176,7 +176,7 @@ class DatabaseMigrationUtils:
             return False
 
         except Exception as e:
-            self.print(failed("Failed to import for trading: {e}"))
+            self.logger.error(failed(f"Failed to import for trading: {e}"))
             return False
 
     async def export_backtest_results(self, export_name: str = None) -> str:
@@ -407,7 +407,6 @@ async def validate_migration_file(file_path: str) -> dict[str, Any]:
 
 if __name__ == "__main__":
     import sys
-import os.path
 
     if len(sys.argv) < 2:
         print("Usage:")

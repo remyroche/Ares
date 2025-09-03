@@ -11,6 +11,8 @@ import time
 
 # Import decorators
 from src.core.decorators import (
+import numpy as np
+
     CachePolicy,
     authenticated,
     cached,

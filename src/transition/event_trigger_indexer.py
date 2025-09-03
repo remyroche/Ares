@@ -11,6 +11,7 @@ import pandas as pd
 from src.analyst.meta_labeling_system import CompositeHMMRegimeSystem
 from src.training.core.training_manager import create_training_manager
 from src.utils.logger import system_logger
+from copy import copy
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

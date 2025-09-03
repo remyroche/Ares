@@ -1,36 +1,23 @@
 from __future__ import annotations
-
-"""
-Retry, timeout, and circuit breaker decorators.
-
-Provides resilience patterns for handling transient failures,
-timeouts, and cascading failures.
-"""
-
+'\nRetry, timeout, and circuit breaker decorators.\n\nProvides resilience patterns for handling transient failures,\ntimeouts, and cascading failures.\n'
 import asyncio
 import random
 import time
 from dataclasses import dataclass
 from enum import Enum
-
 from src.core.errors.base import ServiceUnavailableError
 from src.core.errors.base import TimeoutError as AppTimeoutError
-
 from .compose import P, R, uniform_wrapper
-
 
 class CircuitState(Enum):
     """Circuit breaker states."""
-
-    CLOSED = "closed"  # Normal operation
-    OPEN = "open"  # Failing, reject requests
-    HALF_OPEN = "half_open"  # Testing recovery
-
+    CLOSED = 'closed'
+    OPEN = 'open'
+    HALF_OPEN = 'half_open'
 
 @dataclass
 class CircuitBreakerStats:
     """Statistics for circuit breaker."""
-
     failure_count: int = 0
     success_count: int = 0
     last_failure_time: float | None = None
@@ -38,22 +25,14 @@ class CircuitBreakerStats:
     consecutive_failures: int = 0
     consecutive_successes: int = 0
 
-
 class CircuitBreaker:
     """Circuit breaker implementation."""
 
-    def __init__(
-        self,
-        failure_threshold: int = 5,
-        recovery_timeout: float = 60.0,
-        success_threshold: int = 3,
-        expected_exception: type[Exception] = Exception,
-    ):
+    def __init__(self, failure_threshold: int=5, recovery_timeout: float=60.0, success_threshold: int=3, expected_exception: type[Exception]=Exception) -> None:
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.success_threshold = success_threshold
         self.expected_exception = expected_exception
-
         self.state = CircuitState.CLOSED
         self.stats = CircuitBreakerStats()
         self._state_change_callbacks: list[Callable] = []
@@ -64,16 +43,8 @@ class CircuitBreaker:
             if self._should_attempt_reset():
                 self._transition_to_half_open()
             else:
-                msg = "Circuit breaker is OPEN"
-                raise ServiceUnavailableError(
-                    msg,
-                    service_name=func.__name__,
-                    details={
-                        "failures": self.stats.failure_count,
-                        "last_failure": self.stats.last_failure_time,
-                    },
-                )
-
+                msg = 'Circuit breaker is OPEN'
+                raise ServiceUnavailableError(msg, service_name=func.__name__, details={'failures': self.stats.failure_count, 'last_failure': self.stats.last_failure_time})
         try:
             result = func(*args, **kwargs)
             self._on_success()
@@ -88,16 +59,8 @@ class CircuitBreaker:
             if self._should_attempt_reset():
                 self._transition_to_half_open()
             else:
-                msg = "Circuit breaker is OPEN"
-                raise ServiceUnavailableError(
-                    msg,
-                    service_name=func.__name__,
-                    details={
-                        "failures": self.stats.failure_count,
-                        "last_failure": self.stats.last_failure_time,
-                    },
-                )
-
+                msg = 'Circuit breaker is OPEN'
+                raise ServiceUnavailableError(msg, service_name=func.__name__, details={'failures': self.stats.failure_count, 'last_failure': self.stats.last_failure_time})
         try:
             result = await func(*args, **kwargs)
             self._on_success()
@@ -108,10 +71,7 @@ class CircuitBreaker:
 
     def _should_attempt_reset(self) -> bool:
         """Check if we should try to reset the circuit."""
-        return (
-            self.stats.last_failure_time is not None
-            and time.time() - self.stats.last_failure_time >= self.recovery_timeout
-        )
+        return self.stats.last_failure_time is not None and time.time() - self.stats.last_failure_time >= self.recovery_timeout
 
     def _on_success(self) -> None:
         """Handle successful call."""
@@ -119,7 +79,6 @@ class CircuitBreaker:
         self.stats.consecutive_successes += 1
         self.stats.consecutive_failures = 0
         self.stats.last_success_time = time.time()
-
         if self.state == CircuitState.HALF_OPEN:
             if self.stats.consecutive_successes >= self.success_threshold:
                 self._transition_to_closed()
@@ -130,11 +89,7 @@ class CircuitBreaker:
         self.stats.consecutive_failures += 1
         self.stats.consecutive_successes = 0
         self.stats.last_failure_time = time.time()
-
-        if self.state == CircuitState.HALF_OPEN or (
-            self.state == CircuitState.CLOSED
-            and self.stats.consecutive_failures >= self.failure_threshold
-        ):
+        if self.state == CircuitState.HALF_OPEN or (self.state == CircuitState.CLOSED and self.stats.consecutive_failures >= self.failure_threshold):
             self._transition_to_open()
 
     def _transition_to_closed(self) -> None:
@@ -161,26 +116,14 @@ class CircuitBreaker:
             try:
                 callback(self.state)
             except Exception:
-                pass  # Ignore callback errors
+                pass
 
     def on_state_change(self, callback: Callable[[CircuitState], None]) -> None:
         """Register callback for state changes."""
         self._state_change_callbacks.append(callback)
-
-
-# Global circuit breakers registry
 _circuit_breakers: dict[str, CircuitBreaker] = {}
 
-
-def retry(
-    *,
-    max_attempts: int = 3,
-    delay: float = 1.0,
-    backoff: float = 2.0,
-    max_delay: float = 60.0,
-    jitter: bool = True,
-    exceptions: tuple[type[Exception], ...] = (Exception,),
-) -> Callable[[Callable[P, R]], Callable[P, R]]:
+def retry(*, max_attempts: int=3, delay: float=1.0, backoff: float=2.0, max_delay: float=60.0, jitter: bool=True, exceptions: tuple[type[Exception], ...]=(Exception,)) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Retry decorator with exponential backoff.
 
@@ -201,70 +144,37 @@ def retry(
 
     def calculate_delay(attempt: int) -> float:
         """Calculate delay for attempt with backoff and jitter."""
-        delay_time = min(delay * (backoff ** (attempt - 1)), max_delay)
+        delay_time = min(delay * backoff ** (attempt - 1), max_delay)
         if jitter:
-            # Add random jitter between 0% and 25% of delay
             delay_time *= 1 + random.random() * 0.25
         return delay_time
 
     def sync_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
         last_exception = None
-
         for attempt in range(1, max_attempts + 1):
             try:
                 return func(*args, **kwargs)
             except exceptions as e:
                 last_exception = e
-
                 if attempt < max_attempts:
                     sleep_time = calculate_delay(attempt)
                     time.sleep(sleep_time)
+        msg = f'Failed after {max_attempts} attempts'
+        raise ServiceUnavailableError(msg, service_name=func.__name__, cause=last_exception, details={'attempts': max_attempts, 'last_error': str(last_exception)})
 
-        # All attempts failed
-        msg = f"Failed after {max_attempts} attempts"
-        raise ServiceUnavailableError(
-            msg,
-            service_name=func.__name__,
-            cause=last_exception,
-            details={
-                "attempts": max_attempts,
-                "last_error": str(last_exception),
-            },
-        )
-
-    async def async_handler(
-        func: Callable[P, R], *args: P.args, **kwargs: P.kwargs
-    ) -> R:
+    async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
         last_exception = None
-
         for attempt in range(1, max_attempts + 1):
             try:
                 return await func(*args, **kwargs)
             except exceptions as e:
                 last_exception = e
-
                 if attempt < max_attempts:
                     sleep_time = calculate_delay(attempt)
                     await asyncio.sleep(sleep_time)
-
-        # All attempts failed
-        msg = f"Failed after {max_attempts} attempts"
-        raise ServiceUnavailableError(
-            msg,
-            service_name=func.__name__,
-            cause=last_exception,
-            details={
-                "attempts": max_attempts,
-                "last_error": str(last_exception),
-            },
-        )
-
-    return uniform_wrapper(
-        f"retry(max_attempts={max_attempts})",
-        sync_handler,
-        async_handler,
-    )
-
+        msg = f'Failed after {max_attempts} attempts'
+        raise ServiceUnavailableError(msg, service_name=func.__name__, cause=last_exception, details={'attempts': max_attempts, 'last_error': str(last_exception)})
+    return uniform_wrapper(f'retry(max_attempts={max_attempts})', sync_handler, async_handler)
 
 def timeout(seconds: float) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
@@ -281,47 +191,19 @@ def timeout(seconds: float) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
 
     def sync_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
-        # For sync functions, we can't easily implement timeout without threads
-        # Log a warning and execute normally
         import logging
-
-        logging.getLogger(__name__).warning(
-            f"Timeout decorator on sync function {func.__name__} has no effect. "
-            "Consider making the function async.",
-        )
+        logging.getLogger(__name__).warning(f'Timeout decorator on sync function {func.__name__} has no effect. Consider making the function async.')
         return func(*args, **kwargs)
 
-    async def async_handler(
-        func: Callable[P, R], *args: P.args, **kwargs: P.kwargs
-    ) -> R:
+    async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
         try:
-            return await asyncio.wait_for(
-                func(*args, **kwargs),
-                timeout=seconds,
-            )
+            return await asyncio.wait_for(func(*args, **kwargs), timeout=seconds)
         except TimeoutError as e:
-            msg = f"Operation timed out after {seconds} seconds"
-            raise AppTimeoutError(
-                msg,
-                timeout_seconds=seconds,
-                details={"function": func.__name__},
-            ) from e
+            msg = f'Operation timed out after {seconds} seconds'
+            raise AppTimeoutError(msg, timeout_seconds=seconds, details={'function': func.__name__}) from e
+    return uniform_wrapper(f'timeout({seconds}s)', sync_handler, async_handler)
 
-    return uniform_wrapper(
-        f"timeout({seconds}s)",
-        sync_handler,
-        async_handler,
-    )
-
-
-def circuit_breaker(
-    *,
-    failure_threshold: int = 5,
-    recovery_timeout: float = 60.0,
-    success_threshold: int = 3,
-    expected_exception: type[Exception] = Exception,
-    breaker_name: str | None = None,
-) -> Callable[[Callable[P, R]], Callable[P, R]]:
+def circuit_breaker(*, failure_threshold: int=5, recovery_timeout: float=60.0, success_threshold: int=3, expected_exception: type[Exception]=Exception, breaker_name: str | None=None) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Circuit breaker decorator to prevent cascading failures.
 
@@ -341,12 +223,7 @@ def circuit_breaker(
     def get_or_create_breaker(name: str) -> CircuitBreaker:
         """Get existing breaker or create new one."""
         if name not in _circuit_breakers:
-            _circuit_breakers[name] = CircuitBreaker(
-                failure_threshold=failure_threshold,
-                recovery_timeout=recovery_timeout,
-                success_threshold=success_threshold,
-                expected_exception=expected_exception,
-            )
+            _circuit_breakers[name] = CircuitBreaker(failure_threshold=failure_threshold, recovery_timeout=recovery_timeout, success_threshold=success_threshold, expected_exception=expected_exception)
         return _circuit_breakers[name]
 
     def sync_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
@@ -354,29 +231,13 @@ def circuit_breaker(
         breaker = get_or_create_breaker(name)
         return breaker.call(func, *args, **kwargs)
 
-    async def async_handler(
-        func: Callable[P, R], *args: P.args, **kwargs: P.kwargs
-    ) -> R:
+    async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
         name = breaker_name or func.__name__
         breaker = get_or_create_breaker(name)
         return await breaker.async_call(func, *args, **kwargs)
+    return uniform_wrapper(f"circuit_breaker({breaker_name or 'auto'})", sync_handler, async_handler)
 
-    return uniform_wrapper(
-        f"circuit_breaker({breaker_name or 'auto'})",
-        sync_handler,
-        async_handler,
-    )
-
-
-def retry_with_circuit_breaker(
-    *,
-    max_attempts: int = 3,
-    delay: float = 1.0,
-    backoff: float = 2.0,
-    failure_threshold: int = 5,
-    recovery_timeout: float = 60.0,
-    exceptions: tuple[type[Exception], ...] = (Exception,),
-) -> Callable[[Callable[P, R]], Callable[P, R]]:
+def retry_with_circuit_breaker(*, max_attempts: int=3, delay: float=1.0, backoff: float=2.0, failure_threshold: int=5, recovery_timeout: float=60.0, exceptions: tuple[type[Exception], ...]=(Exception,)) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Combine retry and circuit breaker patterns.
 
@@ -392,26 +253,9 @@ def retry_with_circuit_breaker(
         async def resilient_api_call() -> dict:
             return await external_api.fetch()
     """
-    # Compose the decorators
-    return compose(
-        retry(
-            max_attempts=max_attempts,
-            delay=delay,
-            backoff=backoff,
-            exceptions=exceptions,
-        ),
-        circuit_breaker(
-            failure_threshold=failure_threshold,
-            recovery_timeout=recovery_timeout,
-            expected_exception=exceptions[0] if exceptions else Exception,
-        ),
-    )
+    return compose(retry(max_attempts=max_attempts, delay=delay, backoff=backoff, exceptions=exceptions), circuit_breaker(failure_threshold=failure_threshold, recovery_timeout=recovery_timeout, expected_exception=exceptions[0] if exceptions else Exception))
 
-
-def fallback(
-    fallback_value: Any | Callable[[], Any],
-    exceptions: tuple[type[Exception], ...] = (Exception,),
-) -> Callable[[Callable[P, R]], Callable[P, R]]:
+def fallback(fallback_value: Any | Callable[[], Any], exceptions: tuple[type[Exception], ...]=(Exception,)) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """
     Provide fallback value on failure.
 
@@ -433,9 +277,7 @@ def fallback(
                 return fallback_value()
             return fallback_value
 
-    async def async_handler(
-        func: Callable[P, R], *args: P.args, **kwargs: P.kwargs
-    ) -> R:
+    async def async_handler(func: Callable[P, R], *args: P.args, **kwargs: P.kwargs) -> R:
         try:
             return await func(*args, **kwargs)
         except exceptions:
@@ -444,9 +286,5 @@ def fallback(
                     return await fallback_value()
                 return fallback_value()
             return fallback_value
-
-    return uniform_wrapper("fallback", sync_handler, async_handler)
-
-
-# Import compose for the retry_with_circuit_breaker decorator
+    return uniform_wrapper('fallback', sync_handler, async_handler)
 from .compose import compose

@@ -13,6 +13,8 @@ from src.core.decorators import validates
 from src.core.decorators import handles_errors as core_handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import invalid, warning
+from copy import copy
+import asyncio
 
 # Optional: use the training serializer/version manager if available for loading persisted models
 try:

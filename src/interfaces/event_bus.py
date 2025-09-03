@@ -8,6 +8,8 @@ from enum import Enum
 
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+from copy import copy
+
     error,
     failed,
     initialization_error,

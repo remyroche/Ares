@@ -1,0 +1,62 @@
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/workspace/code_quality/pipelines/pipeline_unified_enhanced.py", line 735, in <module>
+    main()
+    ~~~~^^
+  File "/workspace/code_quality/pipelines/pipeline_unified_enhanced.py", line 731, in main
+    pipeline.run_all()
+    ~~~~~~~~~~~~~~~~^^
+  File "/workspace/code_quality/pipelines/pipeline_unified_enhanced.py", line 571, in run_all
+    "circular_imports": self.detect_circular_imports(),
+                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/workspace/code_quality/pipelines/pipeline_unified_enhanced.py", line 124, in detect_circular_imports
+    cycles = detector.find_circular_imports()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'ImportAnalyzer' object has no attribute 'find_circular_imports'
+
+================================================================================
+UNIFIED CODE QUALITY PIPELINE - ENHANCED
+================================================================================
+Project root: /workspace/src
+Timestamp: 20250903_162417
+
+============================================================
+Running Advanced Syntax Fixes
+============================================================
+Checking 608 Python files for syntax errors...
+Found 105 files with syntax errors
+
+Fixed 0 files
+Failed to fix 105 files
+
+Common unfixed error patterns:
+  invalid syntax: 98 files
+  unmatched ')': 5 files
+  unterminated string literal (detected at line 230): 1 files
+  unexpected indent: 1 files
+
+============================================================
+Running Import Fixes
+============================================================
+Found 608 Python files to analyze
+Progress: 0/608 files processed
+Progress: 50/608 files processed
+Progress: 100/608 files processed
+Progress: 150/608 files processed
+Progress: 200/608 files processed
+Progress: 250/608 files processed
+Progress: 300/608 files processed
+Progress: 350/608 files processed
+Progress: 400/608 files processed
+Progress: 450/608 files processed
+Progress: 500/608 files processed
+Progress: 550/608 files processed
+Progress: 600/608 files processed
+
+Fixed 0 files
+Failed to fix 509 files
+
+============================================================
+Detecting Circular Imports
+============================================================

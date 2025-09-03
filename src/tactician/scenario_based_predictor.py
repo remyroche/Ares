@@ -17,6 +17,7 @@ import lightgbm as lgb
 import numpy as np
 from sklearn.metrics import accuracy_score, log_loss
 from sklearn.model_selection import train_test_split
+import asyncio
 
 if TYPE_CHECKING:
     import pandas as pd

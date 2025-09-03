@@ -96,9 +96,11 @@ class WalkForwardValidationStep:
 
             # Persist WFV results as Parquet partitioned by fold/horizon for pruning
             try:
-import pandas as pd  # local import to keep optional
-from src.training.enhanced_training_manager_optimized import (
-
+                import pandas as pd  # local import to keep optional
+                from src.training.enhanced_training_manager_optimized import (
+                    EnhancedTrainingManagerOptimized
+                )
+                
                 pdm = ParquetDatasetManager(logger=self.logger)
                 wfv_base = os.path.join(data_dir, "parquet", "wfv")
                 os.makedirs(os.path.join(wfv_base, "summary"), exist_ok=True)
@@ -144,6 +146,7 @@ from src.training.enhanced_training_manager_optimized import (
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
+from src.training.decorators import (
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,

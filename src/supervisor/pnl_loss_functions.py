@@ -22,6 +22,7 @@ from .loss_functions.pnl_aware import create_pnl_aware_loss
 # Import all calculator classes
 from .loss_functions.pnl_calculator import PnLCalculator
 from .loss_functions.risk_metrics import RiskMetricsCalculator
+from copy import copy
 
 
 class PnLLossFunctions:

@@ -5,6 +5,7 @@ import pandas as pd
 
 from src.core.decorators import traced, validates
 from src.utils.logger import system_logger
+from copy import copy
 
 
 class HMMFeatureEnhancer:

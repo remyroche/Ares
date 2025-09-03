@@ -20,6 +20,8 @@ import numpy as np
 # Core ML libraries
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import (
+from copy import copy
+
     RBF,
     ConstantKernel,
     Matern,

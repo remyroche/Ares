@@ -17,6 +17,7 @@ from src.utils.enhanced_mlflow_integration import (
     log_step_report,
 )
 from src.core.decorators import cached, circuit_breaker, log_call, log_execution_time, timeout, validates
+
 class MonteCarloValidationStep:
     """Step 14: Monte Carlo Validation using existing step7_monte_carlo_validation."""
 
@@ -138,8 +139,10 @@ class MonteCarloValidationStep:
             # Persist Monte Carlo scenario distributions as partitioned Parquet for pruning
             try:
                 import pandas as pd  # local optional import
-from src.training.enhanced_training_manager_optimized import (
-
+                from src.training.enhanced_training_manager_optimized import (
+                    EnhancedTrainingManagerOptimized
+                )
+                
                 pdm = ParquetDatasetManager(logger=self.logger)
                 mc_base = os.path.join(data_dir, "parquet", "mc")
                 os.makedirs(mc_base, exist_ok=True)
@@ -194,6 +197,7 @@ from src.training.enhanced_training_manager_optimized import (
 
 
 # Import training pipeline decorators for comprehensive security and troubleshooting
+from src.training.decorators import (
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,

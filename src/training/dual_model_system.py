@@ -10,6 +10,8 @@ import pandas as pd
 # Import ML Confidence Predictor
 from src.analyst.ml_confidence_predictor import MLConfidencePredictor
 from src.core.decorators import (
+import asyncio
+
     cached,
     circuit_breaker,
     handles_errors,

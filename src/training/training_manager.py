@@ -4,6 +4,7 @@ import warnings
 from datetime import datetime
 from typing import Any, Number
 import asyncio
+from copy import copy
 
 warnings.filterwarnings("ignore")
 

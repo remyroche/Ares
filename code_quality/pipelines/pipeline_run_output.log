@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/workspace/code_quality/pipelines/pipeline_unified_enhanced.py", line 28, in <module>
+    from comprehensive_code_review import CodeQualityReviewer
+  File "/workspace/code_quality/comprehensive_code_review.py", line 27, in <module>
+    import astroid
+ModuleNotFoundError: No module named 'astroid'

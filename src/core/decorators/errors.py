@@ -13,6 +13,7 @@ from src.core.errors.base import AppError
 from src.core.errors.mapping import error_mapper
 
 from .compose import P, R, uniform_wrapper
+import asyncio
 
 logger = logging.getLogger(__name__)
 

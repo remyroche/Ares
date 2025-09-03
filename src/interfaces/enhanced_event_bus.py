@@ -14,6 +14,8 @@ import json
 
 from src.core.decorators import handles_errors
 from src.core.domain import (
+from copy import copy
+
     PerformanceLevel,
     performance_monitor,
 )

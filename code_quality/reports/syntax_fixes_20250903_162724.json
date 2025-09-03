@@ -1,0 +1,543 @@
+{
+  "fixed_files": [],
+  "failed_files": [
+    {
+      "file": "/workspace/src/config.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/paper_trader.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/components/modular_analyst.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/components/modular_supervisor.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/interfaces/event_bus.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/interfaces/enhanced_event_bus.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/supervisor/exchange_volume_adapter.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/pipelines/live_trading_pipeline.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/sentinel/sentinel.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/tactician/sr_weight_optimizer.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/tactician/position_closing.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/tactician/ml_target_updater.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/tactician/position_division_strategy.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/tactician/position_monitor.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/tactician/enhanced_order_manager.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/tactician/step17_optimized_tactician.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/tactician/ml_target_validator.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/tactician/async_order_executor.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/model_trainer.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/simplified_training_manager.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/regularization.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/feature_engineering.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/enhanced_matrix_operations.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/enhanced_lm_optimizer.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/step_orchestrator.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/data_sharing_manager.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/integration_guide.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/unified_data_orchestrator.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/comprehensive_sr_training_pipeline.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/dual_model_system.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/performance_comparison.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/wavelet_feature_selection_demo.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/multi_output_model_trainer.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/calibration_manager.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/training_orchestrator.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/enhanced_matrix_gpu_integration.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/ensemble_manager.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/model_training_integrator.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/wavelet_feature_selection_workflow.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/data_efficiency_optimizer.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/optimization_manager.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/validator.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/vectorized_training_pipeline.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/enhanced_optimization_orchestrator.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/data_manager.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/wavelet_caching_workflow.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/exchange/binance.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/core/di_integration.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/core/enhanced_factories.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/core/generic_base.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/core/dependency_injection.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/config/config_manager.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/utils/vif_calculator.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/utils/enhanced_mlflow_integration.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/utils/model_manager.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/strategist/strategist_backup.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/strategist/strategist.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/validation/critical_path_validators.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/analyst/enhanced_prediction_integrator.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/analyst/predictive_ensembles.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/analyst/liquidation_risk_model.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/analyst/data_utils.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/analyst/ml_confidence_predictor.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/analyst/di_analyst.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/analyst/unified_regime_classifier.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/analyst/analyst.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/database/efficient_features_database.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/database/influxdb_manager.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/analyst/predictive_ensembles/multi_timeframe_ensemble.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/core/examples/decorator_usage.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/optimization/cached_optimizer.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/optimization/progressive_optimizer.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/optimization/advanced_surrogate_models.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/optimization/adaptive_trial_allocator.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/fractional_feature_selector.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/step10_unified_regime_intelligence.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/step18_walk_forward_validation_validator.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/step17_final_parameters_optimization_new.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/step19_monte_carlo_validation_validator.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/step21_saving.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/combined_fractional_system.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/precompute_wavelet_features.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/step11_analyst_creation.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/step09_hmm_based_training.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/step16_confidence_calibration_validator.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/step15_tactician_specialist_training.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/step13_analyst_ensemble_creation.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/core/checkpoint_manager.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/feature_engineering/step06_feature_engineering.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/multi_timeframe_training/multi_timeframe_training_manager.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/data_preparation/step02_data_reading.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/market_analysis/step03_hmm_regime_discovery.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/market_analysis/step03_5_final_regime_clustering.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/step07_enhanced_matrix_operations.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/step09_hmm_based_training.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/step04_5_triple_barrier_method.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/validation/step19_monte_carlo_validation.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/validation/step17_final_parameters_optimization.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/validation/step18_walk_forward_validation.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/tests/test_step11_analyst_creation.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/tests/test_step12_analyst_enhancement.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/tests/test_step10_unified_regime_intelligence.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/pipelines/components/monitoring_manager.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/pipelines/components/lifecycle_manager.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/pipelines/components/data_manager.py",
+      "error": "Unknown syntax error"
+    }
+  ],
+  "syntax_errors": {
+    "invalid syntax": [
+      "/workspace/src/config.py",
+      "/workspace/src/paper_trader.py",
+      "/workspace/src/components/modular_analyst.py",
+      "/workspace/src/components/modular_supervisor.py",
+      "/workspace/src/interfaces/event_bus.py",
+      "/workspace/src/interfaces/enhanced_event_bus.py",
+      "/workspace/src/supervisor/exchange_volume_adapter.py",
+      "/workspace/src/pipelines/live_trading_pipeline.py",
+      "/workspace/src/sentinel/sentinel.py",
+      "/workspace/src/tactician/sr_weight_optimizer.py",
+      "/workspace/src/tactician/position_closing.py",
+      "/workspace/src/tactician/ml_target_updater.py",
+      "/workspace/src/tactician/position_division_strategy.py",
+      "/workspace/src/tactician/position_monitor.py",
+      "/workspace/src/tactician/enhanced_order_manager.py",
+      "/workspace/src/tactician/step17_optimized_tactician.py",
+      "/workspace/src/tactician/ml_target_validator.py",
+      "/workspace/src/tactician/async_order_executor.py",
+      "/workspace/src/training/model_trainer.py",
+      "/workspace/src/training/simplified_training_manager.py",
+      "/workspace/src/training/regularization.py",
+      "/workspace/src/training/feature_engineering.py",
+      "/workspace/src/training/enhanced_matrix_operations.py",
+      "/workspace/src/training/enhanced_lm_optimizer.py",
+      "/workspace/src/training/data_sharing_manager.py",
+      "/workspace/src/training/unified_data_orchestrator.py",
+      "/workspace/src/training/comprehensive_sr_training_pipeline.py",
+      "/workspace/src/training/dual_model_system.py",
+      "/workspace/src/training/performance_comparison.py",
+      "/workspace/src/training/wavelet_feature_selection_demo.py",
+      "/workspace/src/training/multi_output_model_trainer.py",
+      "/workspace/src/training/calibration_manager.py",
+      "/workspace/src/training/training_orchestrator.py",
+      "/workspace/src/training/enhanced_matrix_gpu_integration.py",
+      "/workspace/src/training/ensemble_manager.py",
+      "/workspace/src/training/model_training_integrator.py",
+      "/workspace/src/training/wavelet_feature_selection_workflow.py",
+      "/workspace/src/training/data_efficiency_optimizer.py",
+      "/workspace/src/training/optimization_manager.py",
+      "/workspace/src/training/validator.py",
+      "/workspace/src/training/vectorized_training_pipeline.py",
+      "/workspace/src/training/enhanced_optimization_orchestrator.py",
+      "/workspace/src/training/data_manager.py",
+      "/workspace/src/training/wavelet_caching_workflow.py",
+      "/workspace/src/exchange/binance.py",
+      "/workspace/src/core/di_integration.py",
+      "/workspace/src/core/enhanced_factories.py",
+      "/workspace/src/core/generic_base.py",
+      "/workspace/src/core/dependency_injection.py",
+      "/workspace/src/config/config_manager.py",
+      "/workspace/src/utils/vif_calculator.py",
+      "/workspace/src/utils/enhanced_mlflow_integration.py",
+      "/workspace/src/utils/model_manager.py",
+      "/workspace/src/strategist/strategist_backup.py",
+      "/workspace/src/strategist/strategist.py",
+      "/workspace/src/validation/critical_path_validators.py",
+      "/workspace/src/analyst/enhanced_prediction_integrator.py",
+      "/workspace/src/analyst/predictive_ensembles.py",
+      "/workspace/src/analyst/liquidation_risk_model.py",
+      "/workspace/src/analyst/data_utils.py",
+      "/workspace/src/analyst/ml_confidence_predictor.py",
+      "/workspace/src/analyst/di_analyst.py",
+      "/workspace/src/analyst/unified_regime_classifier.py",
+      "/workspace/src/analyst/analyst.py",
+      "/workspace/src/database/efficient_features_database.py",
+      "/workspace/src/database/influxdb_manager.py",
+      "/workspace/src/analyst/predictive_ensembles/multi_timeframe_ensemble.py",
+      "/workspace/src/core/examples/decorator_usage.py",
+      "/workspace/src/training/optimization/cached_optimizer.py",
+      "/workspace/src/training/optimization/progressive_optimizer.py",
+      "/workspace/src/training/optimization/advanced_surrogate_models.py",
+      "/workspace/src/training/optimization/adaptive_trial_allocator.py",
+      "/workspace/src/training/steps/fractional_feature_selector.py",
+      "/workspace/src/training/steps/step10_unified_regime_intelligence.py",
+      "/workspace/src/training/steps/step18_walk_forward_validation_validator.py",
+      "/workspace/src/training/steps/step17_final_parameters_optimization_new.py",
+      "/workspace/src/training/steps/step19_monte_carlo_validation_validator.py",
+      "/workspace/src/training/steps/step21_saving.py",
+      "/workspace/src/training/steps/combined_fractional_system.py",
+      "/workspace/src/training/steps/precompute_wavelet_features.py",
+      "/workspace/src/training/steps/step11_analyst_creation.py",
+      "/workspace/src/training/steps/step09_hmm_based_training.py",
+      "/workspace/src/training/steps/step16_confidence_calibration_validator.py",
+      "/workspace/src/training/steps/step15_tactician_specialist_training.py",
+      "/workspace/src/training/steps/step13_analyst_ensemble_creation.py",
+      "/workspace/src/training/core/checkpoint_manager.py",
+      "/workspace/src/training/steps/feature_engineering/step06_feature_engineering.py",
+      "/workspace/src/training/steps/multi_timeframe_training/multi_timeframe_training_manager.py",
+      "/workspace/src/training/steps/data_preparation/step02_data_reading.py",
+      "/workspace/src/training/steps/market_analysis/step03_hmm_regime_discovery.py",
+      "/workspace/src/training/steps/model_training/step07_enhanced_matrix_operations.py",
+      "/workspace/src/training/steps/model_training/step09_hmm_based_training.py",
+      "/workspace/src/training/steps/model_training/tests/test_step11_analyst_creation.py",
+      "/workspace/src/training/steps/model_training/tests/test_step12_analyst_enhancement.py",
+      "/workspace/src/training/steps/model_training/tests/test_step10_unified_regime_intelligence.py",
+      "/workspace/src/pipelines/components/monitoring_manager.py",
+      "/workspace/src/pipelines/components/lifecycle_manager.py",
+      "/workspace/src/pipelines/components/data_manager.py"
+    ],
+    "unmatched ')'": [
+      "/workspace/src/training/step_orchestrator.py",
+      "/workspace/src/training/steps/model_training/step04_5_triple_barrier_method.py",
+      "/workspace/src/training/steps/validation/step19_monte_carlo_validation.py",
+      "/workspace/src/training/steps/validation/step17_final_parameters_optimization.py",
+      "/workspace/src/training/steps/validation/step18_walk_forward_validation.py"
+    ],
+    "unterminated string literal (detected at line 230)": [
+      "/workspace/src/training/integration_guide.py"
+    ],
+    "unexpected indent": [
+      "/workspace/src/training/steps/market_analysis/step03_5_final_regime_clustering.py"
+    ]
+  },
+  "total_fixed": 0,
+  "total_failed": 105,
+  "execution_time": 1.050689935684204
+}

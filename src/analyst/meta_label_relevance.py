@@ -13,6 +13,7 @@ import pandas as pd
 
 from src.utils.logger import system_logger
 import logging
+from copy import copy
 
 
 @handles_errors(

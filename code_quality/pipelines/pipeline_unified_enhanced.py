@@ -34,7 +34,7 @@ from scripts.detect_circular_imports import ImportAnalyzer as CircularImportDete
 from scripts.enhanced_type_hints import TypeHintEnhancer
 from scripts.robust_async_fixer import RobustAsyncFixer
 from scripts.safe_import_fixer import SafeImportFixer
-from scripts.simple_interaction_mapper import extract_interactions, generate_report
+from scripts.simple_interaction_mapper import extract_interactions, generate_interaction_summary
 from utils.report_aggregator import ReportAggregator
 
 
@@ -62,11 +62,12 @@ class UnifiedEnhancedPipeline:
 
         start_time = time.time()
         fixer = AdvancedSyntaxFixer(str(self.project_root))
-        fixer.fix_all_files()
+        fixer.fix_all_syntax_errors(dry_run=False)
 
         result = {
             "fixed_files": fixer.fixed_files,
-            "failed_files": fixer.failed_files,
+            "failed_files": [{"file": f, "error": fixer.syntax_errors.get(f, "Unknown syntax error")} 
+                           for f in fixer.failed_files],
             "syntax_errors": dict(fixer.syntax_errors),
             "total_fixed": len(fixer.fixed_files),
             "total_failed": len(fixer.failed_files),
@@ -91,12 +92,20 @@ class UnifiedEnhancedPipeline:
 
         start_time = time.time()
         fixer = SafeImportFixer(str(self.project_root))
-        fixer.fix_all_files()
+        fixer.fix_project(dry_run=False)
 
+        # Convert fixed_files to proper format for report aggregator
+        fixed_files_formatted = []
+        for file_path in fixer.fixed_files:
+            fixed_files_formatted.append({
+                "file": file_path,
+                "imports_added": []  # SafeImportFixer doesn't track specific imports added
+            })
+        
         result = {
-            "fixed_files": fixer.fixed_files,
+            "fixed_files": fixed_files_formatted,
             "failed_files": fixer.failed_files,
-            "import_errors": dict(fixer.import_errors),
+            "import_errors": {},  # SafeImportFixer doesn't have import_errors attribute
             "total_fixed": len(fixer.fixed_files),
             "total_failed": len(fixer.failed_files),
             "execution_time": time.time() - start_time,
@@ -120,14 +129,16 @@ class UnifiedEnhancedPipeline:
 
         start_time = time.time()
         detector = CircularImportDetector(str(self.project_root))
-        cycles = detector.find_circular_imports()
-
+        report = detector.generate_report()
+        
+        cycles = report.get("circular_imports", {}).get("cycles", [])
+        
         result = {
             "circular_imports": cycles,
             "total_cycles": len(cycles),
             "affected_modules": list({
                 module for cycle in cycles
-                for module in cycle
+                for module in cycle.get("modules", [])
             }),
             "execution_time": time.time() - start_time,
         }
@@ -150,10 +161,18 @@ class UnifiedEnhancedPipeline:
 
         start_time = time.time()
         fixer = RobustAsyncFixer(str(self.project_root))
-        fixer.fix_all_files()
+        fixer.fix_all_async_issues(dry_run=False)
 
+        # Convert fixed_files to proper format for report aggregator
+        fixed_files_formatted = []
+        for file_path in fixer.fixed_files:
+            fixed_files_formatted.append({
+                "file": file_path,
+                "changes": []  # RobustAsyncFixer doesn't track specific changes
+            })
+        
         result = {
-            "fixed_files": fixer.fixed_files,
+            "fixed_files": fixed_files_formatted,
             "failed_files": fixer.failed_files,
             "total_fixed": len(fixer.fixed_files),
             "total_failed": len(fixer.failed_files),
@@ -267,14 +286,14 @@ class UnifiedEnhancedPipeline:
 
         start_time = time.time()
         validator = FunctionValidator(str(self.project_root))
-        validator.validate_all_files()
+        validation_result = validator.validate_project()
 
         result = {
-            "issues": [issue.__dict__ for issue in validator.issues],
-            "total_issues": len(validator.issues),
-            "files_analyzed": validator.files_analyzed,
-            "total_files": len(validator.files_analyzed),
-            "issue_summary": validator.get_issue_summary(),
+            "issues": validation_result.get("issues", []),
+            "total_issues": validation_result.get("total_issues", 0),
+            "files_analyzed": validation_result.get("files_analyzed", []),
+            "total_files": len(validation_result.get("files_analyzed", [])),
+            "issue_summary": validation_result.get("issues_by_type", {}),
             "execution_time": time.time() - start_time,
         }
 
@@ -328,7 +347,7 @@ class UnifiedEnhancedPipeline:
         print("="*60)
 
         start_time = time.time()
-        reviewer = CodeQualityReviewer()
+        reviewer = CodeQualityReviewer(str(self.project_root))
         reviewer.review_directory(str(self.project_root))
         report = reviewer.generate_report()
 
@@ -361,7 +380,7 @@ class UnifiedEnhancedPipeline:
         start_time = time.time()
 
         # Use the comprehensive review data
-        reviewer = CodeQualityReviewer()
+        reviewer = CodeQualityReviewer(str(self.project_root))
         reviewer.review_directory(str(self.project_root))
         report_data = reviewer.generate_report()
 
@@ -369,7 +388,7 @@ class UnifiedEnhancedPipeline:
         interactions = extract_interactions(report_data)
 
         # Generate readable report
-        report_content = generate_report(interactions)
+        # report_content = generate_report(interactions)  # This function doesn't exist, interactions already contain the data
 
         result = {
             "interactions": interactions,

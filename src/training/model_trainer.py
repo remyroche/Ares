@@ -1,5 +1,8 @@
 # src/training/model_trainer.py
 
+from copy import copy
+import numpy as np
+
 from src.core.decorators import (
     cached,
     circuit_breaker,
@@ -540,12 +543,13 @@ class RayModelTrainer:
                         f"Labeled/enhanced data file not found: {labeled_path} or {labeled_csv}",
                     )
                     return None
+            
             data = handle_missing_data(data)
             
             # Check if we have multi-output targets (direction and profit)
             has_direction = "direction" in data.columns
             has_profit = "potential_profit_pct" in data.columns
-        
+            
             # Use all columns except labels as features
             exclude_cols = ["label", "tactician_label", "target", "direction", "potential_profit_pct"]
             feature_cols = [col for col in data.columns if col not in exclude_cols]
@@ -605,6 +609,7 @@ class RayModelTrainer:
                         "has_multi_output": True,
                     }
                 }
+            
                 self.logger.info(
                     "✅ Training data prepared successfully from labeled/enhanced pipeline output",
                 )

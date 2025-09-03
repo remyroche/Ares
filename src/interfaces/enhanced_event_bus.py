@@ -21,7 +21,12 @@ from datetime import (
 )
 from collections import defaultdict
 from src.utils.logger import system_logger
-from src.utils.advanced_decorators import PerformanceLevel
+# PerformanceLevel enum - to be replaced with new monitoring system
+from enum import Enum
+
+class PerformanceLevel(Enum):
+    BASIC = "basic"
+    DETAILED = "detailed"
 from src.utils.warning_symbols import (
     error,
     failed,

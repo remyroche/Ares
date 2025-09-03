@@ -31,7 +31,7 @@ from src.utils.warning_symbols import (
     warning,
 )
 from src.paper_trader import PaperTrader, setup_paper_trader
-from src.utils.centralized_decorators_simple import secure_data_processing
+from src.core.decorators import validates as secure_data_processing
 
 if TYPE_CHECKING:  # Only for type hints to avoid runtime import of corrupted modules
     from src.reports.paper_trading_reporter import PaperTradingReporter

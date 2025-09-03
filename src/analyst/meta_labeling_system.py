@@ -17,10 +17,10 @@ from src.utils.warning_symbols import (
     error,
     warning,
 )
-from src.utils.centralized_decorators_simple import (
-    comprehensive_data_validation,
-    validate_data_quality,
-    with_tracing_span,
+from src.core.decorators import (
+    validates as comprehensive_data_validation,
+    validates as validate_data_quality,
+    traced as with_tracing_span,
 )
 
 

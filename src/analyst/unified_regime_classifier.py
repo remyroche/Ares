@@ -13,8 +13,8 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from src.config import CONFIG
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 from src.utils.logger import system_logger
-from src.utils.error_handler import (
 import logging
+from src.utils.error_handler import (
     handle_errors,
 )
 from src.utils.warning_symbols import (
@@ -46,7 +46,7 @@ class UnifiedRegimeClassifier:
     ):
         # Ensure NumPy RNG pickles created under different versions can be loaded
         self._enable_numpy_rng_unpickle_compat(system_logger)
-        self.config = config.get("analyst", {}).get("unified_regime_classifier", {})
+        self.config = config.get("analystf", {}).get("unified_regime_classifier", {})
         self.global_config = config
         self.logger = system_logger.getChild("UnifiedRegimeClassifier")
         self.exchange = exchange
@@ -335,7 +335,7 @@ class UnifiedRegimeClassifier:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=False,
+            default_return=False,
         context="UnifiedRegimeClassifier.initialize",
     )
     async def initialize(self) -> bool:
@@ -787,7 +787,7 @@ class UnifiedRegimeClassifier:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
+            default_return=None,
         context="UnifiedRegimeClassifier._calculate_rsi",
     )
     def _calculate_rsi(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
@@ -802,7 +802,7 @@ class UnifiedRegimeClassifier:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
+            default_return=None,
         context="UnifiedRegimeClassifier._calculate_macd",
     )
     def _calculate_macd(
@@ -824,7 +824,7 @@ class UnifiedRegimeClassifier:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
+            default_return=None,
         context="UnifiedRegimeClassifier._calculate_adx",
     )
     def _calculate_adx(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:
@@ -862,7 +862,7 @@ class UnifiedRegimeClassifier:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
+            default_return=None,
         context="UnifiedRegimeClassifier._calculate_bollinger_bands",
     )
     def _calculate_bollinger_bands(
@@ -886,7 +886,7 @@ class UnifiedRegimeClassifier:
 
     @handle_errors(
         exceptions=(Exception,),
-        default_return=None,
+            default_return=None,
         context="UnifiedRegimeClassifier._calculate_atr",
     )
     def _calculate_atr(self, df: pd.DataFrame, period: int = 14) -> pd.DataFrame:

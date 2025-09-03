@@ -297,7 +297,7 @@ class MultiTimeframeFeatureEngineering:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError),
-        default_return=pd.DataFrame(),
+            default_return=pd.DataFrame(),
         context="multi-timeframe feature generation",
     )
     async def generate_multi_timeframe_features(
@@ -820,7 +820,7 @@ class MultiTimeframeFeatureEngineering:
                 del self.feature_cache[oldest_key]
 
         except Exception:
-            self.print(error("Error caching features for {timeframe}: {e}"))
+            self.print(error(f"Error caching features for {timeframe}: {e}"))
 
     def _clean_cache(self) -> None:
         """Clean old entries from the feature cache."""
@@ -849,7 +849,7 @@ class MultiTimeframeFeatureEngineering:
                 self.last_cache_cleanup = current_time
 
         except Exception:
-            self.print(error("Error cleaning cache: {e}"))
+            self.print(error(f"Error cleaning cache: {e}"))
 
     def get_timeframe_parameters(self, timeframe: str) -> dict[str, Any]:
         """Get parameters for a specific timeframe.

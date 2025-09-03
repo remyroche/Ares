@@ -44,7 +44,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return=None, context="ensemble initialization",
+            default_return=None, context="ensemble initialization",
     )
     def __init__(self, config: dict, ensemble_name: str):
         self.config = config.get("analyst", {}).get(ensemble_name, {})
@@ -361,7 +361,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return=None, context="ensemble training",
+            default_return=None, context="ensemble training",
     )
     def train_ensemble(
         self, historical_features: pd.DataFrame,
@@ -469,7 +469,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return=False, context="ensemble state validation",
+            default_return=False, context="ensemble state validation",
     )
     def _validate_ensemble_state(self) -> bool:
         """Validate that the ensemble is properly trained and ready for prediction."""
@@ -509,7 +509,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return={"prediction": "HOLD", "confidence": 0.0},
+            default_return={"prediction": "HOLD", "confidence": 0.0},
         context="ensemble prediction",
     )
     def get_prediction(self, current_features: pd.DataFrame, **kwargs: Any) -> dict:
@@ -567,7 +567,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return=None, context="SMOTE training",
+            default_return=None, context="SMOTE training",
     )
     def _train_with_smote(self, model: Any, X: pd.DataFrame | np.ndarray, y: pd.Series | np.ndarray) -> Any:
         """Applies SMOTE to balance the dataset before training."""
@@ -587,7 +587,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return={},
+            default_return={},
         context="hyperparameter tuning",
     )
     def _tune_hyperparameters(self, model_class: Callable[..., Any], search_space_func: Callable[[Any], dict[str, Any]], X: pd.DataFrame, y: np.ndarray, n_trials: int = 25) -> dict[str, Any]:
@@ -623,7 +623,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return={},
+            default_return={},
         context="LightGBM search space",
     )
     def _get_lgbm_search_space(self, trial: optuna.trial.Trial) -> dict[str, Any]:
@@ -674,7 +674,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return=LogisticRegression(),
+            default_return=LogisticRegression(),
         context="regularized logistic regression",
     )
     def _get_regularized_logistic_regression(self) -> LogisticRegression:
@@ -709,7 +709,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return={},
+            default_return={},
         context="SVM search space",
     )
     def _get_svm_search_space(self, trial: optuna.trial.Trial) -> dict[str, Any]:
@@ -722,7 +722,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return=None, context="meta learner training",
+            default_return=None, context="meta learner training",
     )
     def _train_meta_learner(self, X: pd.DataFrame, y: np.ndarray, params: dict[str, Any]) -> None:
         self.meta_learner = LGBMClassifier(**params, random_state=42, verbose=-1)
@@ -730,7 +730,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return={"prediction": "HOLD", "confidence": 0.0},
+            default_return={"prediction": "HOLD", "confidence": 0.0},
         context="meta prediction",
     )
     def _get_meta_prediction(self, meta_input_pca: np.ndarray) -> dict[str, Any]:
@@ -745,7 +745,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return=pd.DataFrame(),
+            default_return=pd.DataFrame(),
         context="historical prediction",
     )
     def get_prediction_on_historical_data(
@@ -841,7 +841,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return={"status": "unhealthy", "issues": ["Unknown error"]},
+            default_return={"status": "unhealthy", "issues": ["Unknown error"]},
         context="ensemble health check",
     )
     def check_ensemble_health(self) -> dict[str, Any]:
@@ -924,7 +924,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError, OSError),
-        default_return=None, context="model saving",
+            default_return=None, context="model saving",
     )
     def save_model(self, path: str) -> None:
         """Saves the entire ensemble instance to a file."""
@@ -946,7 +946,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError, OSError),
-        default_return=False, context="model loading",
+            default_return=False, context="model loading",
     )
     def load_model(self, path: str) -> bool:
         """Loads the entire ensemble instance from a file."""
@@ -999,7 +999,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return={"support": [], "resistance": []},
+            default_return={"support": [], "resistance": []},
         context="pivot levels extraction",
     )
     def _extract_pivot_levels(
@@ -1053,7 +1053,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return={"support": [], "resistance": []},
+            default_return={"support": [], "resistance": []},
         context="HVN levels extraction",
     )
     def _extract_hvn_levels(
@@ -1280,7 +1280,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return={"strength": 0.0, "touches": 0, "volume": 0.0, "age": 0.0},
+            default_return={"strength": 0.0, "touches": 0, "volume": 0.0, "age": 0.0},
         context="level strength data extraction",
     )
     def _get_nearest_level_strength_data(
@@ -1347,7 +1347,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return={},
+            default_return={},
         context="meta features extraction",
     )
     def _get_meta_features(
@@ -1374,7 +1374,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return=None, context="feature normalization",
+            default_return=None, context="feature normalization",
     )
     def normalize_non_price_features(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -1611,7 +1611,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return=pd.Series(dtype=float),
+            default_return=pd.Series(dtype=float),
         context="rolling z-score calculation",
     )
     def _calculate_rolling_z_score(
@@ -1640,7 +1640,7 @@ class BaseEnsemble:
 
     @handle_errors(
         exceptions=(ValueError, AttributeError, KeyError, TypeError),
-        default_return=None, context="feature winsorization",
+            default_return=None, context="feature winsorization",
     )
     def _winsorize_features(self, df: pd.DataFrame, percentile: float = 0.01) -> None:
         """

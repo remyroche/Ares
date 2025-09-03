@@ -29,6 +29,8 @@ from sklearn.tree import DecisionTreeRegressor
 from xgboost import XGBRegressor
 
 from src.utils.decorators import (
+import asyncio
+
     enforce_ndarray,
     guard_array_nan_inf,
     guard_dataframe_nulls,
@@ -1755,6 +1757,7 @@ async def create_computational_optimization_manager(
 
     # Get the valid field names for ComputationalOptimizationConfig
     from dataclasses import fields
+import copy
 
     valid_fields = {field.name for field in fields(ComputationalOptimizationConfig)}
 

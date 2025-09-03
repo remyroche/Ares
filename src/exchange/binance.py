@@ -7,6 +7,8 @@ from urllib.parse import urlencode
 import aiohttp
 
 from src.utils.error_handler import (
+import asyncio
+
     handle_errors,
     handle_network_operations,
     handle_specific_errors,

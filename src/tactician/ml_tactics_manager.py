@@ -11,6 +11,8 @@ import pandas as pd
 import lightgbm as lgb
 from sklearn.model_selection import train_test_split
 from sklearn.calibration import CalibratedClassifierCV
+import copy
+import asyncio
 
 class MLTacticsManager:
     """

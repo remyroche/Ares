@@ -6,6 +6,7 @@ import pandas as pd
 
 from src.utils.decorators import guard_dataframe_nulls, with_tracing_span
 from src.utils.logger import system_logger
+import copy
 
 
 class HMMFeatureEnhancer:

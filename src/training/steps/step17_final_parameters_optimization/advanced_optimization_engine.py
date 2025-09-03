@@ -41,6 +41,8 @@ except ImportError:
 # Import MLflow for experiment tracking
 try:
     import mlflow
+import copy
+
     MLFLOW_AVAILABLE = True
 except ImportError:
     MLFLOW_AVAILABLE = False

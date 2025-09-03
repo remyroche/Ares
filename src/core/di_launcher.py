@@ -13,6 +13,7 @@ from src.core.service_registry import ServiceRegistry
 from src.utils.logger import system_logger
 from typing import Any
 from src.config import CONFIG
+import asyncio
 
 
 class DILauncher:

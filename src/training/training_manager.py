@@ -3,6 +3,7 @@
 import warnings
 from datetime import datetime
 from typing import Any, Number
+import asyncio
 
 warnings.filterwarnings("ignore")
 
@@ -212,6 +213,7 @@ class TrainingManager:
         """Initialize feature integration manager."""
         try:
             from src.training.feature_integration import FeatureIntegrationManager
+import copy
 
             self.feature_integration_manager = FeatureIntegrationManager(self.config)
             await self.feature_integration_manager.initialize()

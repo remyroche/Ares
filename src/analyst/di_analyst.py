@@ -19,6 +19,7 @@ from src.analyst.market_health_analyzer import MarketHealthAnalyzer
 from src.core.injectable_base import AnalystBase
 from src.interfaces.base_interfaces import (
 import logging
+import asyncio
     AnalysisResult,
     IAnalyst,
     IEventBus,

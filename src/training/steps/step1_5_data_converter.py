@@ -1897,11 +1897,14 @@ if __name__ == "__main__":
 		gc.collect()
 
 	try:
-		asyncio.run(_main())
+		asyncio.run(await _main())
 	except KeyboardInterrupt:
 		pass
 	except Exception:
 		pass
 	finally:
 		import gc
-		gc.collect()
+import copy
+import os.path
+
+gc.collect()

@@ -459,6 +459,8 @@ class EnhancedCoarseOptimizer:
                     from shap.explainers import TreeExplainer
                 except ImportError:
                     from shap import TreeExplainer
+import copy
+
                 explainer = TreeExplainer(model)
                 shap_values = explainer.shap_values(X_sample)
 

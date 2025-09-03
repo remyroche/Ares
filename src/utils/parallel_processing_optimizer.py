@@ -25,6 +25,7 @@ import pandas as pd
 import psutil
 
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
+import copy
 
 logger = logging.getLogger(__name__)
 

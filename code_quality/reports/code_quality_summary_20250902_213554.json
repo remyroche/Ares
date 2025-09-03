@@ -1,0 +1,37 @@
+{
+  "timestamp": "20250902_213554",
+  "project_root": "/workspace/src",
+  "fixes_applied": [
+    {
+      "type": "imports",
+      "files_to_fix": 347,
+      "summary": {
+        "datetime": 208,
+        "argparse": 3,
+        "asyncio": 61,
+        "pandas": 146,
+        "copy": 161,
+        "numpy": 162,
+        "os.path": 90,
+        "json": 25,
+        "logging": 72
+      }
+    },
+    {
+      "type": "async_await",
+      "files_to_fix": 100,
+      "total_issues": 197
+    },
+    {
+      "type": "circular_imports",
+      "cycles_found": 0
+    }
+  ],
+  "recommendations": [
+    "1. Review and apply the import fixes to resolve undefined function errors",
+    "2. Fix async/await patterns to ensure proper asynchronous execution",
+    "3. Add type hints to improve code readability and catch type errors",
+    "4. Use the common_operations utility module for frequently used functions",
+    "5. Run these fixes regularly as part of your development workflow"
+  ]
+}

@@ -4,6 +4,8 @@ from datetime import datetime
 from typing import Any
 
 from src.utils.error_handler import (
+import asyncio
+
     handle_errors,
     handle_specific_errors,
 )
@@ -126,6 +128,7 @@ class CalibrationManager:
         try:
             # Initialize ML confidence predictor for calibration
             from src.analyst.ml_confidence_predictor import MLConfidencePredictor
+import copy
 
             self.ml_confidence_predictor = MLConfidencePredictor(self.config)
             await self.ml_confidence_predictor.initialize()

@@ -1785,6 +1785,9 @@ class RawDataQualityChecker:
         try:
             import glob
             import os
+import copy
+import numpy as np
+import os.path
 
             # Look for the most recent data file
             patterns = [

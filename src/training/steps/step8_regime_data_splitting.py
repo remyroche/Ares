@@ -8,6 +8,8 @@ from typing import Any
 from pathlib import Path
 
 # Add project root to path
+import pandas as pd
+
 project_root = Path(__file__).parent.parent.parent
 import sys
 sys.path.insert(0, str(project_root))
@@ -146,6 +148,9 @@ class RegimeDataSplittingStep:
             self.logger.info("🔄 Loading unified data for HMM composite regime data creation...")
             data_loader = get_unified_data_loader(self.config)
             from src.config.constants import (
+import numpy as np
+import os.path
+
                 BLANK_TRAINING_LOOKBACK_DAYS,
             )
 
@@ -572,7 +577,7 @@ async def run_step(
 
 
 if __name__ == "__main__":
-    async def _test() -> None:
+    async def await _test() -> None:
         await run_step("ETHUSDT", "BINANCE", "data/training")
 
     asyncio.run(_test())

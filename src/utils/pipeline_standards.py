@@ -22,6 +22,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
 import pandas as pd
+import copy
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent

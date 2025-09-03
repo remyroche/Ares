@@ -8,7 +8,8 @@ import numpy as np
 
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
-
+import copy
+import os.path
 
 class AdvancedReportingEngine:
     """Advanced reporting engine with real-time analytics and comprehensive analysis."""

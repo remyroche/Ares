@@ -16,6 +16,8 @@ from src.analyst.di_analyst import DIAnalyst
 from src.config import CONFIG
 from src.training.di_training_manager import DITrainingManager
 from src.interfaces.base_interfaces import (
+import asyncio
+
     IAnalyst,
     IEventBus,
     IStrategist,

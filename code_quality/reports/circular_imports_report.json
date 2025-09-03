@@ -1,0 +1,237 @@
+{
+  "total_modules": 478,
+  "total_imports": 1396,
+  "circular_imports": {
+    "count": 0,
+    "cycles": []
+  },
+  "import_depths": {
+    "max_depth": 3,
+    "average_depth": 0.6383866481223922,
+    "deep_modules": []
+  },
+  "highly_imported": [
+    {
+      "module": "src.utils.logger",
+      "imported_by_count": 300,
+      "imported_by": [
+        "training.memory_profiler",
+        "tactician.sr_weight_optimizer",
+        "training.steps.step18_walk_forward_validation",
+        "transition.multitask_rf",
+        "monitoring.fractional_system_monitor"
+      ]
+    },
+    {
+      "module": "src.utils.error_handler",
+      "imported_by_count": 171,
+      "imported_by": [
+        "tactician.sr_weight_optimizer",
+        "training.steps.fractional_feature_selector",
+        "monitoring.fractional_system_monitor",
+        "exchange.binance",
+        "training.steps.step10_unified_regime_intelligence_validator"
+      ]
+    },
+    {
+      "module": "src.utils.warning_symbols",
+      "imported_by_count": 134,
+      "imported_by": [
+        "tactician.sr_weight_optimizer",
+        "training.steps.step18_walk_forward_validation",
+        "training.steps.step15_tactician_specialist_training_validator",
+        "exchange.binance",
+        "training.steps.multi_timeframe_training.multi_timeframe_training_manager"
+      ]
+    },
+    {
+      "module": "src.utils.pipeline_standards",
+      "imported_by_count": 69,
+      "imported_by": [
+        "utils.lookahead_bias_detector",
+        "training.steps.step15_tactician_specialist_training",
+        "training.steps.step2_data_reading",
+        "utils.model_performance_monitor",
+        "utils.enhanced_validation_decorators"
+      ]
+    },
+    {
+      "module": "src.utils.centralized_decorators",
+      "imported_by_count": 60,
+      "imported_by": [
+        "training.steps.step2_data_reading_validator",
+        "training.steps.integrated_data_quality_pipeline",
+        "pipelines.base_pipeline",
+        "training.steps.fractional_feature_selector",
+        "utils.model_performance_monitor"
+      ]
+    },
+    {
+      "module": "src.config",
+      "imported_by_count": 38,
+      "imported_by": [
+        "analyst.autoencoder_feature_generator",
+        "training.steps.step15_tactician_specialist_training_validator",
+        "training.steps.step2_feature_engineering_validator",
+        "analyst.unified_regime_classifier",
+        "analyst.advanced_feature_engineering"
+      ]
+    },
+    {
+      "module": "src.utils.base_validator",
+      "imported_by_count": 22,
+      "imported_by": [
+        "training.steps.step15_tactician_specialist_training_validator",
+        "training.steps.step2_feature_engineering_validator",
+        "training.steps.step5_regime_data_splitting_validator",
+        "training.steps.step6_feature_engineering_validator",
+        "utils.enhanced_validation_decorators"
+      ]
+    },
+    {
+      "module": "src.utils.training_pipeline_decorators",
+      "imported_by_count": 20,
+      "imported_by": [
+        "training.unified_data_orchestrator",
+        "training.steps.step15_tactician_specialist_training",
+        "training.steps.step18_walk_forward_validation",
+        "training.gpu_acceleration_m1",
+        "training.dual_model_system"
+      ]
+    },
+    {
+      "module": "src.utils.enhanced_mlflow_integration",
+      "imported_by_count": 17,
+      "imported_by": [
+        "training.steps_1_7_comprehensive_executor",
+        "training.steps.step2_5_sr_optimization",
+        "training.steps.step16_confidence_calibration",
+        "training.steps.step11_analyst_creation",
+        "training.steps.step18_walk_forward_validation"
+      ]
+    },
+    {
+      "module": "src.tactician.sr_breakout_predictor",
+      "imported_by_count": 11,
+      "imported_by": [
+        "tactician.sr_weight_optimizer",
+        "training.steps.step2_5_sr_optimization",
+        "tactician.sr_levels_manager",
+        "tactician.sr_detection_optimization",
+        "training.steps.step10_unified_regime_intelligence_validator"
+      ]
+    }
+  ],
+  "highly_importing": [
+    {
+      "module": "ares_pipeline",
+      "imports_count": 19,
+      "imports": [
+        "src.database.sqlite_manager",
+        "src.utils.observability",
+        "src.core.dependency_injection",
+        "src.core.config_service",
+        "src.utils.logger"
+      ]
+    },
+    {
+      "module": "training.enhanced_training_manager",
+      "imports_count": 19,
+      "imports": [
+        "src.utils.statistical_distribution_validation",
+        "src.utils.training_pipeline_decorators",
+        "src.training.enhanced_training_manager_optimized",
+        "src.utils.logger",
+        "src.utils.feature_engineering_validation"
+      ]
+    },
+    {
+      "module": "training.steps_1_7_comprehensive_executor",
+      "imports_count": 18,
+      "imports": [
+        "src.training.steps.step3_hmm_regime_discovery_validator",
+        "src.training.steps.step6_feature_engineering",
+        "src.training.steps.step5_labeling",
+        "src.training.steps.step1_5_data_converter",
+        "src.training.steps.step4_regime_data_splitting"
+      ]
+    },
+    {
+      "module": "training.steps.vectorized_advanced_feature_engineering",
+      "imports_count": 14,
+      "imports": [
+        "src.utils.error_handler",
+        "src.training.steps.step4_analyst_labeling_feature_engineering_components.profit_based_feature_engineering",
+        "src.training.comprehensive_feature_optimizer",
+        "src.utils.parallel_processing_optimizer",
+        "src.utils.lookahead_bias_detector"
+      ]
+    },
+    {
+      "module": "training.enhanced_training_manager_backup",
+      "imports_count": 13,
+      "imports": [
+        "src.training.steps.multi_timeframe_training.multi_timeframe_training_manager",
+        "src.utils.validator_orchestrator",
+        "src.utils.error_handler",
+        "src.training.optimization.computational_optimization_manager",
+        "src.training.steps.step1_5_data_converter"
+      ]
+    },
+    {
+      "module": "core.service_registry",
+      "imports_count": 12,
+      "imports": [
+        "src.analyst.analyst",
+        "src.strategist.strategist",
+        "src.components.modular_tactician",
+        "src.interfaces.event_bus",
+        "src.components.modular_analyst"
+      ]
+    },
+    {
+      "module": "training.steps.step9_hmm_based_training",
+      "imports_count": 12,
+      "imports": [
+        "src.utils.pipeline_standards",
+        "src.utils.hmm_composite_manager",
+        "training.multi_output_probability_trainer",
+        "src.utils.vif_calculator",
+        "src.utils.training_pipeline_decorators"
+      ]
+    },
+    {
+      "module": "training.steps.step12_analyst_enhancement",
+      "imports_count": 12,
+      "imports": [
+        "src.utils.pipeline_standards",
+        "src.utils.error_handler",
+        "src.config.constants",
+        "src.utils.warning_symbols",
+        "src.utils.vif_calculator"
+      ]
+    },
+    {
+      "module": "supervisor.main",
+      "imports_count": 11,
+      "imports": [
+        "src.utils.model_manager",
+        "src.utils.error_handler",
+        "src.sentinel.sentinel",
+        "src.supervisor.risk_allocator",
+        "src.supervisor.monitoring"
+      ]
+    },
+    {
+      "module": "tactician.tactics_orchestrator",
+      "imports_count": 11,
+      "imports": [
+        "src.tactician.leverage_sizer",
+        "src.utils.error_handler",
+        "src.utils.warning_symbols",
+        "src.tactician.sr_breakout_predictor",
+        "src.tactician.enhanced_order_manager"
+      ]
+    }
+  ]
+}

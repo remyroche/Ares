@@ -701,6 +701,7 @@ if __name__ == "__main__":
     # Example usage
     import numpy as np
     import pandas as pd
+import copy
     
     # Create sample data
     dates = pd.date_range("2024-01-01", periods=1000, freq="1min")

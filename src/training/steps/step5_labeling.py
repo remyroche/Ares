@@ -602,6 +602,10 @@ class LabelingStep:
             try:
                 # Use the regime-aware triple barrier labeling
                 from src.training.steps.step4_analyst_labeling_feature_engineering_components.regime_aware_triple_barrier_labeling import (
+import copy
+import numpy as np
+import pandas as pd
+
                     RegimeAwareTripleBarrierLabeling
                 )
                 

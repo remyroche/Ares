@@ -22,6 +22,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.decomposition import PCA
 import talib
+import asyncio
 
 # Configure logging
 logger = logging.getLogger(__name__)

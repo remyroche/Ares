@@ -25,6 +25,7 @@ from src.utils.structured_logging import get_correlation_id
 from src.utils.warning_symbols import error, failed
 
 import logging
+import copy
 
 logger = logging.getLogger(__name__)
 

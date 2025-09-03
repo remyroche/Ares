@@ -40,6 +40,8 @@ from src.utils.logger import system_logger
 
 if TYPE_CHECKING:
     from sklearn.preprocessing import LabelEncoder, StandardScaler
+import copy
+import os.path
 
 # Enhanced logging setup
 logger = system_logger.getChild("MultiTimeframeHMMEnsemble")

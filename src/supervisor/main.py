@@ -15,6 +15,7 @@ from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.model_manager import ModelManager
 from src.utils.state_manager import StateManager
+import copy
 
 
 class Supervisor:

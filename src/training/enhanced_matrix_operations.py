@@ -1526,6 +1526,7 @@ class EnhancedMatrixOperations:
         try:
             from sklearn.model_selection import cross_val_score
             from sklearn.linear_model import LogisticRegression
+import copy
             
             for feature in features_df.columns:
                 try:

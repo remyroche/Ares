@@ -12,6 +12,8 @@ from typing import Any
 
 from src.config_optuna import get_parameter_value
 from src.utils.error_handler import handle_errors, handle_specific_errors
+import copy
+import asyncio
 
 
 class LeverageSizer:

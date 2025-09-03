@@ -13,6 +13,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import logging
 
 from .enhanced_scenario_based_predictor import EnhancedScenarioBasedPredictor
+import os.path
+import asyncio
 
 # Simple logger setup
 logger = logging.getLogger(__name__)

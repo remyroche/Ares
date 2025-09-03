@@ -16,6 +16,7 @@ import pandas as pd
 from src.utils.logger import system_logger
 from src.utils.error_handler import handle_errors
 from src.utils.validator_base import BaseValidator
+import asyncio
 
 
 class Step9_5MultiTimeframeHMMEnsembleValidator(BaseValidator):

@@ -6,6 +6,8 @@ from typing import Any
 from src.utils.error_handler import handle_errors, handle_specific_errors
 from src.utils.warning_symbols import error, initialization_error, invalid, missing
 import numpy as np
+import copy
+import asyncio
 
 class ModularStrategist:
     """

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from src.training.enhanced_training_manager import EnhancedTrainingManager
 import numpy as np
 import pandas as pd
+import copy
 
 if TYPE_CHECKING:
     pass  # TODO: Add proper implementation

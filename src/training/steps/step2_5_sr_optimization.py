@@ -87,7 +87,7 @@ class SROptimizationStep:
             self.logger.info("✅ SR Data Integration initialized successfully")
             
             # Initialize SR Levels Manager
-            self.sr_levels_manager = create_sr_levels_manager(self.config)
+            self.sr_levels_manager = await create_sr_levels_manager(self.config)
             if self.sr_levels_manager:
                 self.logger.info("✅ SR Levels Manager initialized successfully")
             else:
@@ -1509,6 +1509,7 @@ async def run_step(config: dict[str, Any]) -> bool:
 if __name__ == "__main__":
     # Test the step
     import asyncio
+import copy
     
     # Load test configuration
     test_config = {

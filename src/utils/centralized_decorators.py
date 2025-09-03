@@ -9,6 +9,7 @@ import logging
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+import pandas as pd
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -103,6 +104,9 @@ from src.utils.error_handler import (
     handle_specific_errors,
 )
 from src.utils.training_pipeline_decorators import (
+import copy
+import numpy as np
+
     artifact_versioning,
     artifact_write_lock,
     circuit_breaker_protection,

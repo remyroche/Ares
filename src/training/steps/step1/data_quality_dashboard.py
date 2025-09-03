@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """Data Quality Dashboard Web Interface.
 
-from .enhanced_data_quality_manager import EnhancedDataQualityManager
-from .data_quality_monitor import DataQualityMonitor
 This module provides a web-based dashboard for monitoring and managing data quality.
 It includes real-time metrics, alert management, and quality control features.
 """
@@ -18,8 +16,7 @@ from typing import Any
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-
-)
+from src.core.decorators import traced
 from src.utils.logger import system_logger
 
 logger = system_logger.getChild("DataQualityDashboard")
@@ -55,6 +52,7 @@ class DataQualityDashboard:
     """Web-based data quality dashboard."""
 
     def __init__(self, data_cache_path: str = "data_cache", config: DashboardConfig | None = None):
+        self.data_cache_path = Path(data_cache_path)
         self.data_cache_path.mkdir(exist_ok=True)
         self.config = config or DashboardConfig()
 
@@ -69,12 +67,14 @@ class DataQualityDashboard:
     def _initialize_components(self) -> None:
         """Initialize dashboard components."""
         try:
+            from .enhanced_data_quality_manager import EnhancedDataQualityManager
             self.quality_manager = EnhancedDataQualityManager(str(self.data_cache_path))
             logger.info("✅ Enhanced data quality manager initialized for dashboard")
         except ImportError as e:
             logger.warning(f"⚠️ Could not import EnhancedDataQualityManager: {e}")
 
         try:
+            from .data_quality_monitor import DataQualityMonitor
             self.monitor = DataQualityMonitor(str(self.data_cache_path))
             logger.info("✅ Data quality monitor initialized for dashboard")
         except ImportError as e:

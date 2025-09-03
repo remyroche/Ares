@@ -1,4 +1,4 @@
-"""Data Preparation for Step1_5."
+"""Data Preparation for Step1_5.
 
 Prepares data for step1_5_data_converter.py processing. This module focuses on:
 1. Loading and validating klines data
@@ -22,7 +22,6 @@ from src.utils.logger import system_logger
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(project_root))
-import copy
 
 from src.core.domain import (
     ValidationLevel,
@@ -105,7 +104,7 @@ class DataPreparation:
     def load_klines_data(
         self, symbol: str, exchange: str, start_date: datetime | None = None, end_date: datetime | None = None
     ) -> pd.DataFrame:
-        """Load and combine klines data from multiple files."
+        """Load and combine klines data from multiple files.
 
         Args:
             symbol: Trading symbol
@@ -190,7 +189,7 @@ class DataPreparation:
         context="data_resampler.prepare_for_step1_5"
     )
     def prepare_for_step1_5(self, symbol: str, exchange: str) -> dict:
-        """Prepare data for step1_5_data_converter.py processing."
+        """Prepare data for step1_5_data_converter.py processing.
 
         Args:
             symbol: Trading symbol
@@ -269,13 +268,13 @@ class DataPreparation:
     def save_resampled_data(
         self, df: pd.DataFrame, symbol: str, exchange: str, timeframe: str, output_format: str = "parquet"
     ) -> Path:
-        """Save resampled data with proper formatting and indexing."
+        """Save resampled data with proper formatting and indexing.
 
         Args:
             df: Resampled DataFrame
             symbol: Trading symbol
             exchange: Exchange name
-            timeframe: Timeframe (e.g. = '5m', '15m')
+            timeframe: Timeframe (e.g., '5m', '15m')
             output_format: Output format ('parquet' or 'csv')
 
         Returns:
@@ -342,7 +341,7 @@ class DataPreparation:
     )
     def create_partitioned_dataset(
         self, df: pd.DataFrame, symbol: str, exchange: str, timeframe: str, ) -> Path:
-        """Create partitioned Parquet dataset for efficient querying."
+        """Create partitioned Parquet dataset for efficient querying.
 
         Args:
             df: Resampled DataFrame
@@ -417,12 +416,12 @@ class DataPreparation:
     def resample_all_timeframes(
         self, symbol: str, exchange: str, timeframes: list[str] | None = None, start_date: datetime | None = None, end_date: datetime | None = None, create_partitions: bool = True
     ) -> dict:
-        """Resample data to all specified timeframes."
+        """Resample data to all specified timeframes.
 
         Args:
             symbol: Trading symbol
             exchange: Exchange name
-            timeframes: List of timeframes to resample to (default: ['5m' = '15m', '30m'])
+            timeframes: List of timeframes to resample to (default: ['5m', '15m', '30m'])
             start_date: Start date filter
             end_date: End date filter
             create_partitions: Whether to create partitioned datasets
@@ -559,7 +558,7 @@ class DataPreparation:
     )
     def validate_resampled_data(
         self, symbol: str, exchange: str, timeframe: str, ) -> dict:
-        """Validate resampled data quality."
+        """Validate resampled data quality.
 
         Args:
             symbol: Trading symbol
@@ -653,11 +652,11 @@ class DataPreparation:
         context="data_resampler.resample_to_timeframe"
     )
     def resample_to_timeframe(self, df: pd.DataFrame, timeframe: str) -> pd.DataFrame:
-        """Resample DataFrame to specified timeframe."
+        """Resample DataFrame to specified timeframe.
 
         Args:
             df: Source DataFrame with OHLCV data
-            timeframe: Target timeframe (e.g. = '5m', '15m', '30m')
+            timeframe: Target timeframe (e.g., '5m', '15m', '30m')
 
         Returns:
             Resampled DataFrame
@@ -717,7 +716,7 @@ class DataPreparation:
         context="data_resampler.validate_resampled_data_quality"
     )
     def validate_resampled_data_quality(self, df: pd.DataFrame, timeframe: str) -> dict:
-        """Validate quality of resampled data."
+        """Validate quality of resampled data.
 
         Args:
             df: Resampled DataFrame
@@ -791,15 +790,14 @@ class DataPreparation:
 
     def generate_resampling_report(self, symbol: str, exchange: str) -> str:
         """Generate a comprehensive resampling report."""
-        report = f""""
+        report = f"""
 🔄 RESAMPLING REPORT FOR {exchange}_{symbol}
 {'='*60}
 
 📊 AVAILABLE TIMEFRAMES:
-    pass
 """
-for timeframe in self.SUPPORTED_TIMEFRAMES:
-    # Check if resampled file exists
+        for timeframe in self.SUPPORTED_TIMEFRAMES:
+            # Check if resampled file exists
             output_dir = self.data_cache_path / "resampled" / exchange / symbol
             filename = f"klines_{exchange}_{symbol}_{timeframe}_resampled.parquet"
             file_path = output_dir / filename
@@ -813,10 +811,10 @@ for timeframe in self.SUPPORTED_TIMEFRAMES:
             else:
                 report += f"• {timeframe}: ❌ Not available\n"
 
-        report += f""""
+        report += f"""
 {'='*60}
 """
-return report
+        return report
 
     @traced(span_name="create_1m_consolidated_data")
     @handles_errors(
@@ -841,7 +839,7 @@ return report
         context="data_resampler.create_1m_consolidated_data"
     )
     def create_1m_consolidated_data(self, symbol: str, exchange: str) -> dict:
-        """Create 1m consolidated data from klines files."
+        """Create 1m consolidated data from klines files.
 
         Args:
             symbol: Trading symbol

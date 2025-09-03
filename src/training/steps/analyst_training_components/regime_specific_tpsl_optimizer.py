@@ -4,7 +4,7 @@ from src.core.decorators import handles_errors
 
 from src.core.domain import handle_specific_errors
 
-"""Regime-Specific SL/TP Optimizer."
+"""Regime-Specific SL/TP Optimizer.
 
 This module provides regime-specific optimization of Stop Loss (SL) and Take Profit (TP)
 parameters based on the current market context identified by the meta-labeling system.
@@ -45,7 +45,7 @@ class RegimeSpecificTPSLOptimizer:
     and then applies regime-specific optimization based on backtest performance.
     """
     def __init__(self, config: dict[str, Any]) -> None:
-        """Initialize the regime-specific TP/SL optimizer."
+        """Initialize the regime-specific TP/SL optimizer.
 
         Args:
             config: Configuration dictionary
@@ -220,10 +220,10 @@ class RegimeSpecificTPSLOptimizer:
         context="regime-specific TP/SL optimizer initialization",
     )
     async def initialize(self) -> bool:
-        """Initialize the regime-specific TP/SL optimizer."
+        """Initialize the regime-specific TP/SL optimizer.
 
         Returns:
-            bool: True if initialization successful = False otherwise
+            bool: True if initialization successful, False otherwise
 
         """
         try:
@@ -251,10 +251,10 @@ class RegimeSpecificTPSLOptimizer:
             return False
 
     async def _initialize_meta_label_system(self) -> bool:
-        """Initialize the MetaLabelingSystem."
+        """Initialize the MetaLabelingSystem.
 
         Returns:
-            bool: True if initialization successful = False otherwise
+            bool: True if initialization successful, False otherwise
 
         """
         try:
@@ -292,15 +292,12 @@ class RegimeSpecificTPSLOptimizer:
         try:
             results_file = os.path.join(self.model_dir, "optimization_results.json")
             import json
-        except Exception as e:
-            pass  # TODO: Handle exception properly
-import os.path
-
-with open(results_file, "w") as f:
-    json.dump(self.optimization_results, f, indent=2, default=str)
+            
+            with open(results_file, "w") as f:
+                json.dump(self.optimization_results, f, indent=2, default=str)
             self.logger.info("✅ Saved optimization results")
-        except Exception:
-            self.print(failed("Failed to save optimization results: {e}"))
+        except Exception as e:
+            self.print(failed(f"Failed to save optimization results: {e}"))
 
     @handles_errors(
         exceptions=(ValueError, AttributeError),
@@ -309,12 +306,12 @@ with open(results_file, "w") as f:
     )
     async def identify_current_regime(
         self, current_data: pd.DataFrame, ) -> tuple[str, float, dict[str, Any]]:
-        """Identify the current dominant meta-label driven market regime."
+        """Identify the current dominant meta-label driven market regime.
 
         Args:
             current_data: Current market OHLCV data
 
-        Returns: Tuple of (regime_label = confidence, additional_info)
+        Returns: Tuple of (regime_label, confidence, additional_info)
 
         """
         try:
@@ -388,7 +385,7 @@ with open(results_file, "w") as f:
     )
     async def optimize_tpsl_for_regime(
         self, regime: str, historical_data: pd.DataFrame, current_data: pd.DataFrame, ) -> dict[str, Any]:
-        """Optimize TP/SL parameters for a specific label-driven market regime."
+        """Optimize TP/SL parameters for a specific label-driven market regime.
 
         Args:
             regime: Regime/meta-label to optimize for
@@ -455,7 +452,7 @@ with open(results_file, "w") as f:
 
     def _evaluate_tpsl_parameters(
         self, trial: optuna.Trial, regime: str, historical_data: pd.DataFrame, base_params: dict[str, Any], ) -> float:
-        """Evaluate TP/SL parameters using backtesting simulation."
+        """Evaluate TP/SL parameters using backtesting simulation.
 
         Args:
             trial: Optuna trial object
@@ -519,7 +516,7 @@ with open(results_file, "w") as f:
 
     def _simulate_trades(
         self, data: pd.DataFrame, target_pct: float, stop_pct: float, regime: str, ) -> list[dict[str, Any]]:
-        """Simulate trades using given TP/SL parameters."
+        """Simulate trades using given TP/SL parameters.
 
         Args:
             data: Historical price data
@@ -547,8 +544,9 @@ with open(results_file, "w") as f:
                     position_open = True
                     entry_price = current_price
                     entry_time = data.index[i]
+            else:
                 # Check for TP/SL
-                elif high_price >= entry_price * (1 + target_pct):
+                if high_price >= entry_price * (1 + target_pct):
                     # Take profit hit
                     trades.append(
                         {
@@ -585,7 +583,7 @@ with open(results_file, "w") as f:
     async def get_optimized_tpsl(
         self, current_data: pd.DataFrame, historical_data: pd.DataFrame, force_optimization: bool = False
     ) -> dict[str, Any]:
-        """Get optimized TP/SL parameters for the current label-driven market regime."
+        """Get optimized TP/SL parameters for the current label-driven market regime.
 
         Args:
             current_data: Current market data (OHLCV)
@@ -636,7 +634,7 @@ with open(results_file, "w") as f:
             }
 
     def get_regime_statistics(self) -> dict[str, Any]:
-        """Get statistics about regime-specific TP/SL optimization."
+        """Get statistics about regime-specific TP/SL optimization.
 
         Returns:
             Dictionary with optimization statistics

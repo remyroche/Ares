@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
+from src.core.decorators import handles_errors, traced, validates
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent
@@ -69,12 +70,7 @@ class EnhancedDataQualityManager:
             logger.warning(f"⚠️ Could not import AggtradesValidator: {e}")
 
     @traced(span_name="comprehensive_data_quality_check")
-    # @quality_gate - removed, handled by validates
-        min_quality_score=0.6,
-        max_correlation=0.95,
-        required_grade="C"
-    )
-    @handles_errors
+    @handles_errors(
         default_return={"success": False, "issues": ["Quality check failed"]},
         context="enhanced_data_quality_manager.comprehensive_quality_check"
     )
@@ -465,7 +461,6 @@ class EnhancedDataQualityManager:
             # Try to run step1_5 data conversion if needed
             try:
                 from ..step1_5_data_converter import run_step as run_step1_5
-from src.core.decorators import handles_errors, traced
                 step1_5_success = await run_step1_5(
                     symbol=symbol,
                     exchange=exchange,

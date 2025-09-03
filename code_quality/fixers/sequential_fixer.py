@@ -37,6 +37,13 @@ class SequentialFixer:
         self.start_time = None
         self.end_time = None
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Make auto-fix more conservative
+        if self.config.auto_fix:
+            # Only use safe tools
+            self.config.auto_fix.tools = ["isort"]  # Only isort for now
+            self.config.auto_fix.aggressive = False
+            self.config.auto_fix.max_line_length = 120
 
     def run_pipeline(self, target: str | list[str],
                     output_dir: str | None = None,

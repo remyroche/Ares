@@ -12,6 +12,8 @@ from functools import wraps
 from typing import TypeVar
 
 from src.custom_types import (
+from copy import copy
+
     OrderRequest,
     PositionInfo,
     TradeDecision,

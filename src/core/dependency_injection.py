@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from typing import TypeVar
 
 from src.interfaces import (
+import asyncio
+
     IAnalyst,
     IStrategist,
     ISupervisor,

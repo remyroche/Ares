@@ -23,6 +23,8 @@ import numpy as _np
 import numpy.random._mt19937 as _mt  # type: ignore[attr-defined]
 import asyncio
 from src.core.decorators import (
+from copy import copy
+
     validates as comprehensive_data_validation,
     validates as validate_data_quality,
     traced as with_tracing_span,

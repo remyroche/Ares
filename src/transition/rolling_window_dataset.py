@@ -11,6 +11,8 @@ import pandas as pd
 from src.transition.path_targets import PathTargetEngineer
 from src.transition.state_sequence_builder import StateSequenceBuilder
 from src.utils.logger import system_logger
+from copy import copy
+import asyncio
 
 FEATURE_POOL_COLUMNS, [
     "log_returns",

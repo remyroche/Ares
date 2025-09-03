@@ -13,6 +13,7 @@ import uuid
 from contextvars import ContextVar
 
 from .compose import P, R, uniform_wrapper
+import asyncio
 
 # Context variable for correlation ID
 correlation_id_var: ContextVar[str | None] = ContextVar("correlation_id", default=None)

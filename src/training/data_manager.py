@@ -8,6 +8,8 @@ from typing import Any
 
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+from copy import copy
+
     error,
 )
 import pandas as pd

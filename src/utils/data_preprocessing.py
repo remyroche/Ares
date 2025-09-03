@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from copy import copy
 
 logger = logging.getLogger(__name__)
 

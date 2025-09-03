@@ -1,6 +1,8 @@
 from src.core.decorators import handles_errors, retry, timeout
 
 from src.core.domain import (
+import asyncio
+
     handle_network_operations
 )
 import hashlib

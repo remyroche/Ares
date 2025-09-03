@@ -7,6 +7,8 @@ from src.utils.logger import system_logger
 from src.utils.warning_symbols import initialization_error, invalid, missing
 
 # src/components/modular_tactician.py
+from copy import copy
+import asyncio
 
 
 class ModularTactician:

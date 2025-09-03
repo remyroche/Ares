@@ -12,6 +12,8 @@ from typing import Any
 from src.core.domain import handle_specific_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import initialization_error, invalid
+from copy import copy
+import asyncio
 
 # src/supervisor/global_portfolio_manager.py
 

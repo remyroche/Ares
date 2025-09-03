@@ -17,6 +17,9 @@ from pathlib import Path
 from typing import Any
 
 from src.core.decorators import (
+import asyncio
+import pandas as pd
+
     cached,
     handles_errors,
     log_execution_time,

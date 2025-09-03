@@ -19,6 +19,7 @@ from typing import Any
 import aiohttp
 import certifi
 import pandas as pd
+from copy import copy
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent

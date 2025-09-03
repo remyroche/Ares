@@ -18,6 +18,7 @@ from src.core.decorators import handles_errors, validates, traced
 import pandas as pd
 
 from src.utils.logger import system_logger
+from copy import copy
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent.parent

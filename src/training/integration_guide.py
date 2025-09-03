@@ -9,6 +9,7 @@ import asyncio
 import sys
 from pathlib import Path
 from typing import Any
+from copy import copy
 
 # Add project root to path
 project_root = Path(__file__).parent.parent

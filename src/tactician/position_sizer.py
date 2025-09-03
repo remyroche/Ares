@@ -16,6 +16,8 @@ from kelly_criterion_fix import calculate_correct_kelly_position_size
 from src.utils.confidence import normalize_dual_confidence
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import initialization_error, missing
+from copy import copy
+import asyncio
 
 
 class PositionSizer:

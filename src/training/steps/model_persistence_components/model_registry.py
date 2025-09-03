@@ -1,65 +1,41 @@
 """Model registry component for model persistence."""
-
 import asyncio
 import json
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
 from src.core.decorators import handles_errors, log_execution_time
 from src.utils.logger import system_logger
 
-
 class ModelRegistry:
     """Handles model registration and cataloging."""
-    
-    def __init__(self, config: Dict[str, Any]):
+
+    def __init__(self, config: Dict[str, Any]) -> None:
         """Initialize the model registry.
         
         Args:
             config: Configuration dictionary
         """
-        self.config = config.get("registry", {})
-        self.logger = system_logger.getChild("model_registry")
-        
-        # Registry configuration
-        self.backend = self.config.get("backend", "local")
-        self.base_dir = Path(self.config.get("base_dir", "models"))
-        self.registry_file = self.base_dir / "model_registry.json"
-        
-        # Load or initialize registry
+        self.config = config.get('registry', {})
+        self.logger = system_logger.getChild('model_registry')
+        self.backend = self.config.get('backend', 'local')
+        self.base_dir = Path(self.config.get('base_dir', 'models'))
+        self.registry_file = self.base_dir / 'model_registry.json'
         self.registry = self._load_registry()
-    
+
     def _load_registry(self) -> Dict[str, Any]:
         """Load registry from storage."""
-        if self.backend == "local":
+        if self.backend == 'local':
             if self.registry_file.exists():
                 try:
                     with open(self.registry_file, 'r') as f:
                         return json.load(f)
                 except Exception as e:
-                    self.logger.warning(f"Failed to load registry: {str(e)}")
-        
-        # Initialize new registry
-        return {
-            "models": {},
-            "tags": {},
-            "deployments": {},
-            "created_at": datetime.now().isoformat(),
-            "registry_version": "1.0"
-        }
-    
-    @handles_errors(
-        exceptions=(Exception,),
-        default_return=[],
-        context="model registration"
-    )
-    async def register_models(
-        self,
-        artifacts: Dict[str, Any],
-        metadata: Dict[str, Any],
-        version_info: Dict[str, Any]
-    ) -> List[str]:
+                    self.logger.warning(f'Failed to load registry: {str(e)}')
+        return {'models': {}, 'tags': {}, 'deployments': {}, 'created_at': datetime.now().isoformat(), 'registry_version': '1.0'}
+
+    @handles_errors(exceptions=(Exception,), default_return=[], context='model registration')
+    async def register_models(self, artifacts: Dict[str, Any], metadata: Dict[str, Any], version_info: Dict[str, Any]) -> List[str]:
         """Register models in the registry.
         
         Args:
@@ -71,37 +47,19 @@ class ModelRegistry:
             List of registered model IDs
         """
         registered_models = []
-        
         for category, paths in artifacts.items():
-            if category in ["metadata", "training_report"]:
+            if category in ['metadata', 'training_report']:
                 continue
-            
             if isinstance(paths, dict):
                 for model_key, model_path in paths.items():
-                    if model_path and not model_key.endswith("_importance"):
-                        model_id = await self._register_single_model(
-                            model_key,
-                            model_path,
-                            category,
-                            metadata,
-                            version_info
-                        )
+                    if model_path and (not model_key.endswith('_importance')):
+                        model_id = await self._register_single_model(model_key, model_path, category, metadata, version_info)
                         if model_id:
                             registered_models.append(model_id)
-        
-        # Save updated registry
         self._save_registry()
-        
         return registered_models
-    
-    async def _register_single_model(
-        self,
-        model_name: str,
-        model_path: str,
-        category: str,
-        metadata: Dict[str, Any],
-        version_info: Dict[str, Any]
-    ) -> Optional[str]:
+
+    async def _register_single_model(self, model_name: str, model_path: str, category: str, metadata: Dict[str, Any], version_info: Dict[str, Any]) -> Optional[str]:
         """Register a single model.
         
         Args:
@@ -115,64 +73,31 @@ class ModelRegistry:
             Model ID or None
         """
         try:
-            # Generate model ID
             model_id = f"{version_info['version']}_{model_name}"
-            
-            # Create registry entry
-            registry_entry = {
-                "model_id": model_id,
-                "model_name": model_name,
-                "category": category,
-                "version": version_info["version"],
-                "path": model_path,
-                "registered_at": datetime.now().isoformat(),
-                "status": "registered",
-                "metadata": {
-                    "symbol": version_info.get("symbol"),
-                    "exchange": version_info.get("exchange"),
-                    "training_date": metadata.get("created_at")
-                }
-            }
-            
-            # Extract performance metrics if available
-            if "performance_metrics" in metadata:
-                perf = metadata["performance_metrics"]
-                if "training_metrics" in perf:
-                    registry_entry["performance"] = perf["training_metrics"]
-            
-            # Add to registry
-            self.registry["models"][model_id] = registry_entry
-            
-            self.logger.info(f"Registered model: {model_id}")
-            
+            registry_entry = {'model_id': model_id, 'model_name': model_name, 'category': category, 'version': version_info['version'], 'path': model_path, 'registered_at': datetime.now().isoformat(), 'status': 'registered', 'metadata': {'symbol': version_info.get('symbol'), 'exchange': version_info.get('exchange'), 'training_date': metadata.get('created_at')}}
+            if 'performance_metrics' in metadata:
+                perf = metadata['performance_metrics']
+                if 'training_metrics' in perf:
+                    registry_entry['performance'] = perf['training_metrics']
+            self.registry['models'][model_id] = registry_entry
+            self.logger.info(f'Registered model: {model_id}')
             return model_id
-            
         except Exception as e:
-            self.logger.error(f"Failed to register model {model_name}: {str(e)}")
+            self.logger.error(f'Failed to register model {model_name}: {str(e)}')
             return None
-    
+
     def _save_registry(self) -> None:
         """Save registry to storage."""
-        if self.backend == "local":
+        if self.backend == 'local':
             try:
                 self.base_dir.mkdir(parents=True, exist_ok=True)
                 with open(self.registry_file, 'w') as f:
                     json.dump(self.registry, f, indent=2)
             except Exception as e:
-                self.logger.error(f"Failed to save registry: {str(e)}")
-    
-    @handles_errors(
-        exceptions=(Exception,),
-        default_return=[],
-        context="model search"
-    )
-    async def search_models(
-        self,
-        category: Optional[str] = None,
-        version: Optional[str] = None,
-        symbol: Optional[str] = None,
-        tags: Optional[List[str]] = None
-    ) -> List[Dict[str, Any]]:
+                self.logger.error(f'Failed to save registry: {str(e)}')
+
+    @handles_errors(exceptions=(Exception,), default_return=[], context='model search')
+    async def search_models(self, category: Optional[str]=None, version: Optional[str]=None, symbol: Optional[str]=None, tags: Optional[List[str]]=None) -> List[Dict[str, Any]]:
         """Search for models in the registry.
         
         Args:
@@ -185,37 +110,22 @@ class ModelRegistry:
             List of matching models
         """
         matching_models = []
-        
-        for model_id, model_info in self.registry["models"].items():
-            # Apply filters
-            if category and model_info.get("category") != category:
+        for model_id, model_info in self.registry['models'].items():
+            if category and model_info.get('category') != category:
                 continue
-            if version and model_info.get("version") != version:
+            if version and model_info.get('version') != version:
                 continue
-            if symbol and model_info.get("metadata", {}).get("symbol") != symbol:
+            if symbol and model_info.get('metadata', {}).get('symbol') != symbol:
                 continue
-            
-            # Check tags
             if tags:
-                model_tags = self.registry["tags"].get(model_id, [])
-                if not any(tag in model_tags for tag in tags):
+                model_tags = self.registry['tags'].get(model_id, [])
+                if not any((tag in model_tags for tag in tags)):
                     continue
-            
             matching_models.append(model_info)
-        
-        # Sort by registration date (newest first)
-        matching_models.sort(
-            key=lambda x: x.get("registered_at", ""),
-            reverse=True
-        )
-        
+        matching_models.sort(key=lambda x: x.get('registered_at', ''), reverse=True)
         return matching_models
-    
-    @handles_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="model retrieval"
-    )
+
+    @handles_errors(exceptions=(Exception,), default_return=None, context='model retrieval')
     async def get_model(self, model_id: str) -> Optional[Dict[str, Any]]:
         """Get a specific model from the registry.
         
@@ -225,19 +135,10 @@ class ModelRegistry:
         Returns:
             Model information or None
         """
-        return self.registry["models"].get(model_id)
-    
-    @handles_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="model tagging"
-    )
-    async def tag_model(
-        self,
-        model_id: str,
-        tags: List[str],
-        replace: bool = False
-    ) -> bool:
+        return self.registry['models'].get(model_id)
+
+    @handles_errors(exceptions=(Exception,), default_return=False, context='model tagging')
+    async def tag_model(self, model_id: str, tags: List[str], replace: bool=False) -> bool:
         """Tag a model in the registry.
         
         Args:
@@ -248,42 +149,25 @@ class ModelRegistry:
         Returns:
             Success status
         """
-        if model_id not in self.registry["models"]:
-            self.logger.error(f"Model not found: {model_id}")
+        if model_id not in self.registry['models']:
+            self.logger.error(f'Model not found: {model_id}')
             return False
-        
-        if model_id not in self.registry["tags"]:
-            self.registry["tags"][model_id] = []
-        
+        if model_id not in self.registry['tags']:
+            self.registry['tags'][model_id] = []
         if replace:
-            self.registry["tags"][model_id] = tags
+            self.registry['tags'][model_id] = tags
         else:
-            # Add new tags
-            existing_tags = set(self.registry["tags"][model_id])
+            existing_tags = set(self.registry['tags'][model_id])
             existing_tags.update(tags)
-            self.registry["tags"][model_id] = list(existing_tags)
-        
-        # Update model info
-        self.registry["models"][model_id]["tags"] = self.registry["tags"][model_id]
-        self.registry["models"][model_id]["updated_at"] = datetime.now().isoformat()
-        
+            self.registry['tags'][model_id] = list(existing_tags)
+        self.registry['models'][model_id]['tags'] = self.registry['tags'][model_id]
+        self.registry['models'][model_id]['updated_at'] = datetime.now().isoformat()
         self._save_registry()
-        
-        self.logger.info(f"Tagged model {model_id} with: {tags}")
-        
+        self.logger.info(f'Tagged model {model_id} with: {tags}')
         return True
-    
-    @handles_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="model deployment"
-    )
-    async def mark_for_deployment(
-        self,
-        model_id: str,
-        environment: str,
-        notes: Optional[str] = None
-    ) -> bool:
+
+    @handles_errors(exceptions=(Exception,), default_return=False, context='model deployment')
+    async def mark_for_deployment(self, model_id: str, environment: str, notes: Optional[str]=None) -> bool:
         """Mark a model for deployment.
         
         Args:
@@ -294,91 +178,36 @@ class ModelRegistry:
         Returns:
             Success status
         """
-        if model_id not in self.registry["models"]:
-            self.logger.error(f"Model not found: {model_id}")
+        if model_id not in self.registry['models']:
+            self.logger.error(f'Model not found: {model_id}')
             return False
-        
-        # Create deployment entry
         deployment_id = f"{model_id}_{environment}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        
-        deployment_entry = {
-            "deployment_id": deployment_id,
-            "model_id": model_id,
-            "environment": environment,
-            "status": "pending",
-            "marked_at": datetime.now().isoformat(),
-            "notes": notes
-        }
-        
-        # Add to deployments
-        if deployment_id not in self.registry["deployments"]:
-            self.registry["deployments"][deployment_id] = deployment_entry
-        
-        # Update model status
-        self.registry["models"][model_id]["deployment_status"] = {
-            environment: "pending"
-        }
-        
-        # Tag model
-        await self.tag_model(model_id, [f"deploy_{environment}"])
-        
+        deployment_entry = {'deployment_id': deployment_id, 'model_id': model_id, 'environment': environment, 'status': 'pending', 'marked_at': datetime.now().isoformat(), 'notes': notes}
+        if deployment_id not in self.registry['deployments']:
+            self.registry['deployments'][deployment_id] = deployment_entry
+        self.registry['models'][model_id]['deployment_status'] = {environment: 'pending'}
+        await self.tag_model(model_id, [f'deploy_{environment}'])
         self._save_registry()
-        
-        self.logger.info(f"Marked model {model_id} for deployment to {environment}")
-        
+        self.logger.info(f'Marked model {model_id} for deployment to {environment}')
         return True
-    
-    @handles_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="registry statistics"
-    )
+
+    @handles_errors(exceptions=(Exception,), default_return={}, context='registry statistics')
     async def get_registry_stats(self) -> Dict[str, Any]:
         """Get registry statistics.
         
         Returns:
             Registry statistics
         """
-        stats = {
-            "total_models": len(self.registry["models"]),
-            "models_by_category": {},
-            "models_by_version": {},
-            "tagged_models": 0,
-            "deployment_queue": 0,
-            "recent_registrations": []
-        }
-        
-        # Count by category
-        for model_info in self.registry["models"].values():
-            category = model_info.get("category", "unknown")
-            stats["models_by_category"][category] = stats["models_by_category"].get(category, 0) + 1
-            
-            # Count by version
-            version = model_info.get("version", "unknown")
-            stats["models_by_version"][version] = stats["models_by_version"].get(version, 0) + 1
-        
-        # Count tagged models
-        stats["tagged_models"] = len(self.registry["tags"])
-        
-        # Count deployment queue
-        for deployment in self.registry["deployments"].values():
-            if deployment.get("status") == "pending":
-                stats["deployment_queue"] += 1
-        
-        # Get recent registrations
-        recent_models = sorted(
-            self.registry["models"].values(),
-            key=lambda x: x.get("registered_at", ""),
-            reverse=True
-        )[:5]
-        
-        stats["recent_registrations"] = [
-            {
-                "model_id": m["model_id"],
-                "category": m.get("category"),
-                "registered_at": m.get("registered_at")
-            }
-            for m in recent_models
-        ]
-        
+        stats = {'total_models': len(self.registry['models']), 'models_by_category': {}, 'models_by_version': {}, 'tagged_models': 0, 'deployment_queue': 0, 'recent_registrations': []}
+        for model_info in self.registry['models'].values():
+            category = model_info.get('category', 'unknown')
+            stats['models_by_category'][category] = stats['models_by_category'].get(category, 0) + 1
+            version = model_info.get('version', 'unknown')
+            stats['models_by_version'][version] = stats['models_by_version'].get(version, 0) + 1
+        stats['tagged_models'] = len(self.registry['tags'])
+        for deployment in self.registry['deployments'].values():
+            if deployment.get('status') == 'pending':
+                stats['deployment_queue'] += 1
+        recent_models = sorted(self.registry['models'].values(), key=lambda x: x.get('registered_at', ''), reverse=True)[:5]
+        stats['recent_registrations'] = [{'model_id': m['model_id'], 'category': m.get('category'), 'registered_at': m.get('registered_at')} for m in recent_models]
         return stats

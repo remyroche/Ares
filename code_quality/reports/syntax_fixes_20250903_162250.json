@@ -1,0 +1,85 @@
+{
+  "fixed_files": [],
+  "failed_files": [
+    {
+      "file": "/workspace/src/training/model_trainer.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/step_orchestrator.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/integration_guide.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/exchange/binance.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/utils/model_manager.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/step18_walk_forward_validation_validator.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/step19_monte_carlo_validation_validator.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/step21_saving.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/market_analysis/step03_5_final_regime_clustering.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/model_training/step04_5_triple_barrier_method.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/validation/step19_monte_carlo_validation.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/validation/step17_final_parameters_optimization.py",
+      "error": "Unknown syntax error"
+    },
+    {
+      "file": "/workspace/src/training/steps/validation/step18_walk_forward_validation.py",
+      "error": "Unknown syntax error"
+    }
+  ],
+  "syntax_errors": {
+    "unindent does not match any outer indentation level": [
+      "/workspace/src/training/model_trainer.py"
+    ],
+    "unexpected indent": [
+      "/workspace/src/training/step_orchestrator.py",
+      "/workspace/src/training/steps/step21_saving.py",
+      "/workspace/src/training/steps/market_analysis/step03_5_final_regime_clustering.py"
+    ],
+    "unterminated string literal (detected at line 229)": [
+      "/workspace/src/training/integration_guide.py"
+    ],
+    "invalid syntax": [
+      "/workspace/src/exchange/binance.py",
+      "/workspace/src/utils/model_manager.py",
+      "/workspace/src/training/steps/step18_walk_forward_validation_validator.py",
+      "/workspace/src/training/steps/step19_monte_carlo_validation_validator.py"
+    ],
+    "unmatched ')'": [
+      "/workspace/src/training/steps/model_training/step04_5_triple_barrier_method.py",
+      "/workspace/src/training/steps/validation/step19_monte_carlo_validation.py",
+      "/workspace/src/training/steps/validation/step17_final_parameters_optimization.py",
+      "/workspace/src/training/steps/validation/step18_walk_forward_validation.py"
+    ]
+  },
+  "total_fixed": 0,
+  "total_failed": 13,
+  "execution_time": 0.991274356842041
+}

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
+import asyncio
 
 if TYPE_CHECKING:
     from src.custom_types.base_types import Symbol, Timestamp

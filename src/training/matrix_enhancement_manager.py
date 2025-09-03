@@ -21,6 +21,7 @@ from sklearn.metrics.pairwise import euclidean_distances
 from sklearn.preprocessing import StandardScaler
 
 from src.utils.logger import system_logger
+from copy import copy
 
 
 @dataclass

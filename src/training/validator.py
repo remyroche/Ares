@@ -4,6 +4,8 @@ import time
 from typing import Any
 
 from src.training.steps.data_preparation_components.training_validation_config import (
+from copy import copy
+
     VALIDATION_FUNCTIONS,
     can_proceed_to_step,
     get_progression_rules,

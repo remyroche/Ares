@@ -8,6 +8,8 @@ import numpy as np
 import pandas as pd
 
 from src.core.decorators import (
+import asyncio
+
     cached,
     circuit_breaker,
     handles_errors,

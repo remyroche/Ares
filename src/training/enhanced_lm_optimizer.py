@@ -26,6 +26,8 @@ import torch
 from optuna.samplers import TPESampler
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.feature_selection import (
+from copy import copy
+
     VarianceThreshold,
     mutual_info_classif,
     mutual_info_regression,

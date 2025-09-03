@@ -19,9 +19,12 @@ import numpy as np
 import pandas as pd
 import torch
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
-from sklearn.feature_selection import (
 import asyncio
-
+from src.utils.common_operations import (
+    get_current_datetime, format_datetime, ensure_directory,
+    safe_read_parquet, safe_to_parquet, safe_copy
+)
+from sklearn.feature_selection import (
     f_classif,
     f_regression,
     mutual_info_classif,
@@ -74,7 +77,7 @@ class EnhancedHMMBasedTrainingStep:
         self.label_encoders = {}
 
         # Initialize SRBreakoutPredictor for S/R level integration with optimized parameters
-        sr_config = config.copy()
+        sr_config = safe_copy(config, deep=True)
         sr_config["sr_breakout_predictor"] = sr_config.get("sr_breakout_predictor", {})
         sr_config["sr_breakout_predictor"]["use_optimized_params"] = True
         self.sr_predictor = SRBreakoutPredictor(sr_config)
@@ -186,7 +189,7 @@ class EnhancedHMMBasedTrainingStep:
                 self.logger.error(f"❌ Unified data not found: {unified_data_path}")
                 return pd.DataFrame()
             
-            unified_data = pd.read_parquet(unified_data_path)
+            unified_data = safe_read_parquet(unified_data_path)
             
             # Check if regime column exists
             if 'composite_cluster_id' not in unified_data.columns:
@@ -195,7 +198,7 @@ class EnhancedHMMBasedTrainingStep:
             
             # Filter for specific regime
             regime_mask = unified_data['composite_cluster_id'] == regime
-            regime_data = unified_data[regime_mask].copy()
+            regime_data = safe_copy(unified_data[regime_mask])
             
             # Regime-specific data validation
             if len(regime_data) < self.regime_config["min_regime_samples"]:
@@ -394,7 +397,7 @@ class EnhancedHMMBasedTrainingStep:
             
             validation_results = {
                 "regime": regime,
-                "validation_timestamp": datetime.now().isoformat(),
+                "validation_timestamp": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S"),
                 "metrics": {},
                 "quality_checks": {},
                 "success": True
@@ -507,7 +510,7 @@ class EnhancedHMMBasedTrainingStep:
             for regime, results in self.regime_results.items():
                 if results.get("success", False):
                     regime_save_path = f"{data_dir}/enhanced_models/{symbol}/regime_{regime}"
-                    os.makedirs(regime_save_path, exist_ok=True)
+                    ensure_directory(regime_save_path)
                     
                     # Save regime-specific model
                     self.save_enhanced_models(results, regime_save_path)
@@ -605,7 +608,7 @@ class EnhancedHMMBasedTrainingStep:
             "timestamp", "timeframe", "composite_cluster_id", "sample_weight"
         ]
         feature_columns = [col for col in data.columns if col not in exclude_columns]
-        features = data[feature_columns].copy()
+        features = safe_copy(data[feature_columns])
         
         # Handle missing values
         features = features.fillna(0)
@@ -667,7 +670,7 @@ class EnhancedHMMBasedTrainingStep:
             "regime_key": prepared_data["regime_key"],
             "single_output_results": None,
             "multi_output_results": None,
-            "training_timestamp": datetime.now().isoformat()
+            "training_timestamp": format_datetime(get_current_datetime(), "%Y-%m-%dT%H:%M:%S")
         }
         
         # Train multi-output model if data is available
@@ -965,12 +968,12 @@ class EnhancedHMMBasedTrainingStep:
             save_path: Path to save models
         """
         try:
-            os.makedirs(save_path, exist_ok=True)
+            ensure_directory(save_path)
             
             # Save multi-output models
             if results.get("multi_output_results") and self.multi_output_trainer:
                 multi_output_dir = os.path.join(save_path, "multi_output_models")
-                os.makedirs(multi_output_dir, exist_ok=True)
+                ensure_directory(multi_output_dir)
                 
                 # Save the multi-output trainer
                 model_path = os.path.join(multi_output_dir, f"{results['model_name']}_multi_output.pkl")
@@ -980,7 +983,7 @@ class EnhancedHMMBasedTrainingStep:
             # Save single-output models
             if results.get("single_output_results"):
                 single_output_dir = os.path.join(save_path, "single_output_models")
-                os.makedirs(single_output_dir, exist_ok=True)
+                ensure_directory(single_output_dir)
                 
                 single_result = results["single_output_results"]
                 model_path = os.path.join(single_output_dir, f"{results['model_name']}_single.pkl")
@@ -1115,7 +1118,7 @@ async def run_enhanced_step(
             logger.error(f"❌ Labeled data not found: {labeled_path}")
             return False
         
-        data = pd.read_parquet(labeled_path)
+        data = safe_read_parquet(labeled_path)
         logger.info(f"✅ Loaded labeled data: {data.shape}")
         
         # Prepare enhanced data
@@ -1158,10 +1161,10 @@ async def run_enhanced_step(
             # Save per-regime models if available
             if per_regime_results:
                 per_regime_dir = os.path.join(save_path, "per_regime")
-                os.makedirs(per_regime_dir, exist_ok=True)
+                ensure_directory(per_regime_dir)
                 for regime_key, regime_result in per_regime_results.items():
                     regime_dir = os.path.join(per_regime_dir, f"regime_{regime_key}")
-                    os.makedirs(regime_dir, exist_ok=True)
+                    ensure_directory(regime_dir)
                     try:
                         enhanced_trainer.save_enhanced_models(regime_result, regime_dir)
                     except Exception:

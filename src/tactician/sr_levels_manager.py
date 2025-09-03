@@ -23,11 +23,10 @@ import pandas as pd
 import numpy as np
 
 from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.tactician.sr_breakout_predictor import SRBreakoutPredictor
 
 logger = system_logger.getChild("SRLevelsManager")
-
 
 class SRLevel:
     """Individual Support/Resistance Level with comprehensive information."""
@@ -140,7 +139,6 @@ class SRLevel:
         score += self.isolation_score * 0.1
         
         return min(1.0, score)
-
 
 class SRLevelsManager:
     """
@@ -843,7 +841,6 @@ class SRLevelsManager:
                 
         except Exception as e:
             self.logger.error(f"❌ Error saving to history: {e}")
-
 
 async def create_sr_levels_manager(config: Dict[str, Any]) -> SRLevelsManager:
     """Factory function to create and initialize SR Levels Manager."""

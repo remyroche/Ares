@@ -23,7 +23,7 @@ import pandas as pd
 
 from src.analyst.feature_engineering_orchestrator import FeatureEngineeringEngine
 from src.config import CONFIG
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error
 import logging
@@ -295,11 +295,7 @@ class MultiTimeframeFeatureEngineering:
             },
         }
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-            default_return=pd.DataFrame(),
-        context="multi-timeframe feature generation",
-    )
+    @handles_errors(fallback=pd.DataFrame())
     async def generate_multi_timeframe_features(
         self, data_dict: dict[str, pd.DataFrame],
         agg_trades_dict: dict[str, pd.DataFrame] | None = None,

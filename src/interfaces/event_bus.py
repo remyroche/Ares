@@ -8,7 +8,7 @@ from enum import Enum
 from typing import Any
 import asyncio
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.warning_symbols import (
     error,
     failed,
@@ -17,7 +17,6 @@ from src.utils.warning_symbols import (
 )
 from src.utils.logger import system_logger
 import copy
-
 
 class EventType(Enum):
     """Event types for the trading system"""
@@ -34,7 +33,6 @@ class EventType(Enum):
     COMPONENT_STARTED = "component_started"
     COMPONENT_STOPPED = "component_stopped"
 
-
 @dataclass
 class Event:
     """Event structure"""
@@ -44,7 +42,6 @@ class Event:
     timestamp: datetime
     source: str
     correlation_id: str | None = None
-
 
 class EventBus:
     """
@@ -67,7 +64,7 @@ class EventBus:
         self.event_queue: asyncio.Queue = asyncio.Queue()
         self.event_history: list[dict[str, Any]] = []
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid event bus configuration"),
             AttributeError: (False, "Missing required event bus parameters"),
@@ -90,11 +87,7 @@ class EventBus:
             self.logger.error(failed(f"❌ Event Bus initialization failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="event bus configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_event_bus_configuration(self) -> None:
         try:
             self.event_bus_config.setdefault("processing_interval", 10)
@@ -105,11 +98,7 @@ class EventBus:
         except Exception as e:
             self.logger.error(error(f"Error loading event bus configuration: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         try:
             if self.processing_interval <= 0:
@@ -124,11 +113,7 @@ class EventBus:
             self.logger.error(error(f"Error validating configuration: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="event processing initialization",
-    )
+    @handles_errors(fallback=None)
     async def _initialize_event_processing(self) -> None:
         try:
             # Initialize event processing components
@@ -140,7 +125,7 @@ class EventBus:
                 initialization_error(f"Error initializing event processing: {e}")
             )
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             Exception: (False, "Event bus run failed"),
         },
@@ -160,11 +145,7 @@ class EventBus:
             self.is_running = False
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="event processing",
-    )
+    @handles_errors(fallback=None)
     async def _process_events(self) -> None:
         try:
             now = datetime.now().isoformat()
@@ -182,11 +163,7 @@ class EventBus:
         except Exception as e:
             self.logger.error(error(f"Error in event processing: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="event dispatch",
-    )
+    @handles_errors(fallback=None)
     async def _dispatch_event(self, event: dict[str, Any]) -> None:
         try:
             event_type = event.get("type", "unknown")
@@ -228,11 +205,7 @@ class EventBus:
         except Exception as e:
             self.logger.error(error(f"Error dispatching event: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="event bus stop",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         self.logger.info("🛑 Stopping Event Bus...")
         try:
@@ -242,11 +215,7 @@ class EventBus:
         except Exception as e:
             self.logger.error(error(f"Error stopping event bus: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="event subscription",
-    )
+    @handles_errors(fallback=None)
     def subscribe(self, event_type: EventType | str, callback: Callable) -> None:
         """Subscribe to an event type."""
         try:
@@ -258,11 +227,7 @@ class EventBus:
         except Exception as e:
             self.logger.error(error(f"Error subscribing to event: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="event unsubscription",
-    )
+    @handles_errors(fallback=None)
     def unsubscribe(
         self,
         event_type: EventType | str,
@@ -281,11 +246,7 @@ class EventBus:
         except Exception as e:
             self.logger.error(error(f"Error unsubscribing from event: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="event publishing",
-    )
+    @handles_errors(fallback=None)
     async def publish(self, event_type: EventType | str, data: Any) -> None:
         """Publish an event to the bus."""
         try:
@@ -320,16 +281,10 @@ class EventBus:
     def get_subscribers(self) -> dict[str, list[Callable]]:
         return dict(self.subscribers)
 
-
 # Global instance
 event_bus: EventBus | None = None
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="event bus setup",
-)
+@handles_errors(fallback=None)
 async def setup_event_bus(config: dict[str, Any] | None = None) -> EventBus | None:
     try:
         global event_bus

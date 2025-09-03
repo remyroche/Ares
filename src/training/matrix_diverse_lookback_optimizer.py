@@ -27,9 +27,8 @@ import optuna
 from optuna.samplers import TPESampler
 
 from src.utils.logger import system_logger
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 import copy
-
 
 class MatrixDiverseLookbackOptimizer:
     """
@@ -140,7 +139,7 @@ class MatrixDiverseLookbackOptimizer:
         self.logger.info("🚀 Matrix-Based Diverse Lookback Optimizer initialized")
         self.logger.info(f"📁 Output directory: {self.output_dir.absolute()}")
     
-    @handle_errors(exceptions=(Exception,), default_return={})
+    @handles_errors(fallback={})
     async def find_diverse_lookback_periods_matrix(
         self,
         data: pd.DataFrame,

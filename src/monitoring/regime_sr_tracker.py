@@ -10,10 +10,9 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Dict
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 import asyncio
-
 
 class RegimeType(Enum):
     BULL_TREND = "bull_trend"
@@ -22,7 +21,6 @@ class RegimeType(Enum):
     HIGH_VOLATILITY = "high_volatility"
     LOW_VOLATILITY = "low_volatility"
 
-
 class RegimeSRTracker:
     """Regime and S/R tracker scaffold."""
 
@@ -30,7 +28,7 @@ class RegimeSRTracker:
         self.config = config
         self.logger = system_logger.getChild("RegimeSRTracker")
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid regime tracker configuration"),
             AttributeError: (False, "Missing regime tracker parameters"),

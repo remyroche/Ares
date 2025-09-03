@@ -18,7 +18,7 @@ from typing import Any, Dict, List, Optional
 from src.tactician.enhanced_order_manager import EnhancedOrderManager
 from src.tactician.position_division_strategy import PositionDivisionStrategy
 from src.utils.confidence import normalize_dual_confidence
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
     failed,
@@ -121,11 +121,7 @@ class PositionMonitor:
         self.monitoring_task: Optional[asyncio.Task] = None
         self.is_monitoring = False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="position monitor initialization"
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """"
         Initialize the position monitor.
@@ -182,11 +178,7 @@ class PositionMonitor:
             self.logger.error(failed(f"❌ Configuration validation failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="position monitoring start"
-    )
+    @handles_errors(fallback=None)
     async def start_monitoring(self) -> bool:
         """"
         Start continuous position monitoring.
@@ -209,11 +201,7 @@ class PositionMonitor:
             self.logger.error(failed(f"❌ Failed to start position monitoring: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="position monitoring stop"
-    )
+    @handles_errors(fallback=None)
     async def stop_monitoring(self) -> bool:
         """"
         Stop continuous position monitoring.

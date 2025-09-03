@@ -29,7 +29,6 @@ from src.core.decorators import traced as with_tracing_span
 from src.utils.logger import system_logger
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 
-
 class ModelPerformanceMonitor:
     """Comprehensive model performance monitoring system."""
 
@@ -62,7 +61,7 @@ class ModelPerformanceMonitor:
         # Initialize performance tracking
         self._initialize_performance_tracking()
 
-    @handle_errors(exceptions=(Exception,), default_return=False, context="model_performance_monitor_initialization")
+    @handles_errors(fallback=False)
     def _initialize_performance_tracking(self) -> None:
         """Initialize performance tracking structures."""
         self.logger.info("🔧 Initializing model performance tracking...")
@@ -97,7 +96,7 @@ class ModelPerformanceMonitor:
     @secure_step_execution(error_handling=True, rollback_on_failure=True, data_validation=True, resource_cleanup=True)
     @with_tracing_span("track_model_performance")
     @quality_gate(min_quality_score=0.7, max_correlation=0.95, required_grade="C")
-    @handle_errors(exceptions=(Exception,), default_return=False, context="track_model_performance")
+    @handles_errors(fallback=False)
     async def track_model_performance(
         self,
         model_type: str,
@@ -167,7 +166,7 @@ class ModelPerformanceMonitor:
             }
 
     @with_tracing_span("calculate_performance_metrics")
-    @handle_errors(exceptions=(Exception,), default_return={}, context="calculate_performance_metrics")
+    @handles_errors(fallback={})
     async def _calculate_performance_metrics(
         self, predictions: np.ndarray, actual_values: np.ndarray, confidence_scores: Optional[np.ndarray] = None
     ) -> Dict[str, Any]:
@@ -219,7 +218,7 @@ class ModelPerformanceMonitor:
             self.logger.exception(f"❌ Error calculating performance metrics: {e}")
             return {"error": str(e)}
 
-    @handle_errors(exceptions=(Exception,), default_return={}, context="calculate_classification_metrics")
+    @handles_errors(fallback={})
     async def _calculate_classification_metrics(
         self, predictions: np.ndarray, actual_values: np.ndarray
     ) -> Dict[str, Any]:
@@ -275,7 +274,7 @@ class ModelPerformanceMonitor:
                 "model_type": "classification",
             }
 
-    @handle_errors(exceptions=(Exception,), default_return={}, context="calculate_regression_metrics")
+    @handles_errors(fallback={})
     async def _calculate_regression_metrics(self, predictions: np.ndarray, actual_values: np.ndarray) -> Dict[str, Any]:
         """Calculate regression-specific metrics.
 
@@ -319,7 +318,7 @@ class ModelPerformanceMonitor:
                 "model_type": "regression",
             }
 
-    @handle_errors(exceptions=(Exception,), default_return={}, context="calculate_confidence_metrics")
+    @handles_errors(fallback={})
     async def _calculate_confidence_metrics(
         self, confidence_scores: np.ndarray, predictions: np.ndarray, actual_values: np.ndarray
     ) -> Dict[str, Any]:
@@ -366,7 +365,7 @@ class ModelPerformanceMonitor:
             self.logger.warning(f"⚠️ Error calculating confidence metrics: {e}")
             return {"confidence_mean": 0.0, "confidence_std": 0.0, "calibration_error": float("inf"), "error": str(e)}
 
-    @handle_errors(exceptions=(Exception,), default_return={}, context="detect_model_drift")
+    @handles_errors(fallback={})
     async def _detect_model_drift(self, predictions: np.ndarray, actual_values: np.ndarray) -> Dict[str, Any]:
         """Detect model drift using statistical tests.
 
@@ -379,6 +378,7 @@ class ModelPerformanceMonitor:
         """
         try:
             from scipy import stats
+from src.core.decorators import handles_errors
 
             # Calculate prediction errors
             errors = predictions - actual_values
@@ -419,7 +419,7 @@ class ModelPerformanceMonitor:
             }
 
     @with_tracing_span("store_performance_metrics")
-    @handle_errors(exceptions=(Exception,), default_return=False, context="store_performance_metrics")
+    @handles_errors(fallback=False)
     async def _store_performance_metrics(self, model_type: str, model_name: str, metrics: Dict[str, Any]) -> bool:
         """Store performance metrics in history.
 
@@ -450,7 +450,7 @@ class ModelPerformanceMonitor:
             self.logger.exception(f"❌ Error storing performance metrics: {e}")
             return False
 
-    @handle_errors(exceptions=(Exception,), default_return=False, context="save_metrics_to_file")
+    @handles_errors(fallback=False)
     async def _save_metrics_to_file(self, model_type: str, model_name: str, metrics: Dict[str, Any]) -> bool:
         """Save metrics to file for persistence.
 
@@ -485,9 +485,7 @@ class ModelPerformanceMonitor:
             self.logger.exception(f"❌ Error saving metrics to file: {e}")
             return False
 
-    @handle_errors(
-        exceptions=(Exception,), default_return={"status": "UNKNOWN"}, context="check_performance_thresholds"
-    )
+    @handles_errors(fallback={"status": "UNKNOWN"})
     async def _check_performance_thresholds(self, metrics: Dict[str, Any]) -> Dict[str, Any]:
         """Check if performance meets thresholds.
 
@@ -541,7 +539,7 @@ class ModelPerformanceMonitor:
             self.logger.exception(f"❌ Error checking performance thresholds: {e}")
             return {"status": "ERROR", "error": str(e)}
 
-    @handle_errors(exceptions=(Exception,), default_return=False, context="update_model_registry")
+    @handles_errors(fallback=False)
     async def _update_model_registry(
         self, model_type: str, model_name: str, metrics: Dict[str, Any], performance_status: Dict[str, Any]
     ) -> bool:
@@ -586,7 +584,7 @@ class ModelPerformanceMonitor:
             self.logger.exception(f"❌ Error updating model registry: {e}")
             return False
 
-    @handle_errors(exceptions=(Exception,), default_return=None, context="log_performance_summary")
+    @handles_errors(fallback=None)
     async def _log_performance_summary(
         self, model_type: str, model_name: str, metrics: Dict[str, Any], performance_status: Dict[str, Any]
     ) -> None:
@@ -632,7 +630,7 @@ class ModelPerformanceMonitor:
             self.logger.exception(f"❌ Error logging performance summary: {e}")
 
     @with_tracing_span("generate_performance_report")
-    @handle_errors(exceptions=(Exception,), default_return={}, context="generate_performance_report")
+    @handles_errors(fallback={})
     async def generate_performance_report(self, model_type: Optional[str] = None) -> Dict[str, Any]:
         """Generate a comprehensive performance report.
 
@@ -674,7 +672,7 @@ class ModelPerformanceMonitor:
             self.logger.exception(f"❌ Error generating performance report: {e}")
             return {"error": str(e)}
 
-    @handle_errors(exceptions=(Exception,), default_return={}, context="generate_model_type_summary")
+    @handles_errors(fallback={})
     async def _generate_model_type_summary(self, model_type: str) -> Dict[str, Any]:
         """Generate summary for a specific model type.
 
@@ -715,7 +713,7 @@ class ModelPerformanceMonitor:
             self.logger.exception(f"❌ Error generating model type summary: {e}")
             return {"error": str(e)}
 
-    @handle_errors(exceptions=(Exception,), default_return=[], context="generate_recommendations")
+    @handles_errors(fallback=[])
     async def _generate_recommendations(self, summary: Dict[str, Any]) -> List[str]:
         """Generate recommendations based on performance summary.
 
@@ -767,7 +765,7 @@ class ModelPerformanceMonitor:
             self.logger.exception(f"❌ Error generating recommendations: {e}")
             return [f"Error generating recommendations: {str(e)}"]
 
-    @handle_errors(exceptions=(Exception,), default_return=False, context="save_performance_report")
+    @handles_errors(fallback=False)
     async def _save_performance_report(self, report: Dict[str, Any]) -> bool:
         """Save performance report to file.
 
@@ -796,7 +794,7 @@ class ModelPerformanceMonitor:
             self.logger.exception(f"❌ Error saving performance report: {e}")
             return False
 
-    @handle_errors(exceptions=(Exception,), default_return={}, context="get_model_performance")
+    @handles_errors(fallback={})
     async def get_model_performance(
         self, model_type: str, model_name: Optional[str] = None, include_history: bool = False
     ) -> Dict[str, Any]:

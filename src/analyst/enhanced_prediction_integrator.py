@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, warning, failed, missing
 import logging
@@ -25,7 +25,6 @@ from src.utils.centralized_decorators import (
     ValidationLevel,
     PerformanceLevel,
 )
-
 
 class EnhancedPredictionIntegrator:
     """"
@@ -70,11 +69,7 @@ class EnhancedPredictionIntegrator:
         self.confidence_threshold: float = self.integrator_config.get("confidence_threshold", 0.7)
         self.price_prediction_threshold: float = self.integrator_config.get("price_prediction_threshold", 0.6)
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return=False,
-        context="enhanced prediction integrator initialization",
-    )
+    @handles_errors(fallback=False)
     @comprehensive_validation(validation_level=ValidationLevel.STRICT)
     @performance_monitor(performance_level=PerformanceLevel.HIGH)
     async def initialize(self) -> bool:
@@ -110,11 +105,7 @@ class EnhancedPredictionIntegrator:
             self.logger.error(failed(f"❌ Enhanced Prediction Integrator initialization failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return={},
-        context="loading HMM models",
-    )
+    @handles_errors
     @with_tracing_span("load_hmm_models")
     @intelligent_caching(cache_key="hmm_models")
     async def _load_hmm_models(self) -> None:
@@ -140,11 +131,7 @@ class EnhancedPredictionIntegrator:
         except Exception as e:
             self.logger.error(error(f"❌ Error loading HMM models: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return={},
-        context="loading analyst enhanced models",
-    )
+    @handles_errors
     async def _load_analyst_enhanced_models(self) -> None:
         """Load analyst enhanced models from step 9."""
         try:
@@ -175,11 +162,7 @@ class EnhancedPredictionIntegrator:
         except Exception as e:
             self.logger.error(error(f"❌ Error loading analyst enhanced models: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return={},
-        context="loading calibration results",
-    )
+    @handles_errors
     async def _load_calibration_results(self) -> None:
         """Load confidence calibration results from step 11."""
         try:
@@ -203,11 +186,7 @@ class EnhancedPredictionIntegrator:
         except Exception as e:
             self.logger.error(error(f"❌ Error loading calibration results: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return={},
-        context="loading optimization results",
-    )
+    @handles_errors
     async def _load_optimization_results(self) -> None:
         """Load optimization results from step 12-14."""
         try:
@@ -231,11 +210,7 @@ class EnhancedPredictionIntegrator:
         except Exception as e:
             self.logger.error(error(f"❌ Error loading optimization results: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return=False,
-        context="applying optimized parameters",
-    )
+    @handles_errors(fallback=False)
     @with_tracing_span("apply_optimized_parameters")
     async def _apply_optimized_parameters(self) -> bool:
         """Apply optimized parameters from step 12 optimization."""
@@ -263,11 +238,7 @@ class EnhancedPredictionIntegrator:
             self.logger.error(error(f"❌ Error applying optimized parameters: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return={},
-        context="generating enhanced predictions",
-    )
+    @handles_errors
     @validate_data_quality(validation_level="WARNING")
     @with_tracing_span("generate_enhanced_predictions")
     @performance_monitor(performance_level=PerformanceLevel.HIGH)
@@ -342,11 +313,7 @@ class EnhancedPredictionIntegrator:
             self.logger.error(error(f"❌ Error generating enhanced predictions: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return={},
-        context="generating HMM predictions",
-    )
+    @handles_errors
     async def _generate_hmm_predictions(
         self,
         market_data: pd.DataFrame,
@@ -384,11 +351,7 @@ class EnhancedPredictionIntegrator:
             self.logger.error(error(f"❌ Error generating HMM predictions: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return={},
-        context="generating analyst predictions",
-    )
+    @handles_errors
     async def _generate_analyst_predictions(
         self,
         market_data: pd.DataFrame,
@@ -429,11 +392,7 @@ class EnhancedPredictionIntegrator:
             self.logger.error(error(f"❌ Error generating analyst predictions: {e}"))
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return={},
-        context="applying confidence calibration",
-    )
+    @handles_errors
     async def _apply_confidence_calibration(
         self,
         predictions: dict[str, Any],
@@ -465,11 +424,7 @@ class EnhancedPredictionIntegrator:
             self.logger.error(error(f"❌ Error applying confidence calibration: {e}"))
             return predictions
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return={},
-        context="applying optimization weights",
-    )
+    @handles_errors
     async def _apply_optimization_weights(
         self,
         calibrated_predictions: dict[str, Any],
@@ -500,11 +455,7 @@ class EnhancedPredictionIntegrator:
             self.logger.error(error(f"❌ Error applying optimization weights: {e}"))
             return {name: 1.0 for name in calibrated_predictions.keys()}
 
-    @handle_errors(
-        exceptions=(Exception,),
-            default_return={},
-        context="generating final confidence scores",
-    )
+    @handles_errors
     async def _generate_final_confidence_scores(
         self,
         calibrated_predictions: dict[str, Any],

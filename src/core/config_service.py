@@ -10,11 +10,7 @@ import os
 import time
 import importlib
 from dataclasses import asdict, dataclass
-from src.utils.error_handler import (
-    handle_errors,
-    handle_file_operations,
-    handle_specific_errors,
-)
+from src.core.decorators import handles_errors
 from src.utils.warning_symbols import error, failed, warning
 import yaml
 import copy
@@ -34,7 +30,6 @@ except Exception:
     Observer = None
     FileSystemEventHandler = None
 
-
 @dataclass
 class DatabaseConfig:
     """Database configuration dataclass."""
@@ -47,7 +42,6 @@ class DatabaseConfig:
     journal_mode: str = "WAL"
     max_recovery_attempts: int = 3
     recovery_cooldown: int = 60
-
 
 @dataclass
 class ExchangeConfig:
@@ -62,7 +56,6 @@ class ExchangeConfig:
     retry_attempts: int = 3
     retry_delay: int = 1
 
-
 @dataclass
 class ModelTrainingConfig:
     """Model training configuration dataclass."""
@@ -76,7 +69,6 @@ class ModelTrainingConfig:
     lookback_days: int = 730
     min_data_points: int = 100000
 
-
 @dataclass
 class RiskConfig:
     """Risk management configuration dataclass."""
@@ -87,7 +79,6 @@ class RiskConfig:
     take_profit_percentage: float = 0.15
     max_drawdown: float = 0.20
     risk_free_rate: float = 0.02
-
 
 if WATCHDOG_AVAILABLE:
     pass  # TODO: Add proper implementation
@@ -126,7 +117,6 @@ else:
         def on_modified(self, event):
             """Handle file modification events."""
             # No-op when watchdog is not available
-
 
 class ConfigurationService:
     """
@@ -203,7 +193,7 @@ class ConfigurationService:
             # Fallback in case logger is not available for any reason
             print(message)
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid configuration service setup"),
             AttributeError: (False, "Missing required configuration parameters"),
@@ -254,11 +244,7 @@ class ConfigurationService:
             )
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_configuration(self) -> None:
         """Load configuration from multiple sources."""
         try:
@@ -296,7 +282,7 @@ class ConfigurationService:
         except Exception as e:
             self.print(error(f"Error loading configuration: {e}"))
 
-    @handle_file_operations(
+    @handles_errors(
         default_return=None,
         context="config file loading",
     )
@@ -587,10 +573,8 @@ class ConfigurationService:
         except Exception as e:
             self.logger.exception(f"Error during shutdown: {e}")
 
-
 # Global configuration service instance
 config_service: ConfigurationService | None = None
-
 
 def get_config_service() -> ConfigurationService:
     """Get the global configuration service instance."""

@@ -17,11 +17,10 @@ import pandas as pd
 from src.utils.centralized_decorators import guard_dataframe_nulls
 from src.core.decorators import traced as with_tracing_span
 from src.utils.comprehensive_logger import get_component_logger
-from src.utils.compat import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.pipeline_standards import PipelineStandards, pipeline_standards
 from src.utils.warning_symbols import error, initialization_error, missing
 import asyncio
-
 
 class DataOptimizer:
     """
@@ -57,26 +56,18 @@ class DataOptimizer:
         # Not used directly, but preserved for API stability
         return
 
-
 # Shared column projection helpers for Parquet reads
-
 
 def ohlcv_columns() -> list[str]:
     return ["timestamp", "open", "high", "low", "close", "volume"]
 
-
 def trade_columns() -> list[str]:
     return ["timestamp", "price", "quantity", "is_buyer_maker", "agg_trade_id"]
-
 
 def regime_columns() -> list[str]:
     return ["timestamp", "regime", "confidence"]
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="data optimizer initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> bool:
         """Initialize Data Optimizer."""
         self.logger.info("Initializing Data Optimizer...")
@@ -102,7 +93,7 @@ def regime_columns() -> list[str]:
         except Exception as e:  # pragma: no cover - safety
             self.logger.error(initialization_error(f"Error initializing cache: {e}"))
 
-    @handle_errors(exceptions=(Exception,), default_return=lambda self, df, **_: df, context="optimize dataframe")
+    @handles_errors, default_return=lambda self, df, **_: df, context="optimize dataframe")
     async def optimize_dataframe(self, df: pd.DataFrame, strategy: str = "auto") -> pd.DataFrame:
         """Optimize DataFrame for better performance and memory usage."""
         self.logger.info(f"Optimizing DataFrame with strategy: {strategy}")
@@ -135,7 +126,7 @@ def regime_columns() -> list[str]:
 
     @with_tracing_span("DataOptimizer._apply_auto_optimization", log_args=False)
     @guard_dataframe_nulls(mode="warn", arg_index=1)
-    @handle_errors(exceptions=(Exception,), default_return=lambda self, df: df, context="auto optimization")
+    @handles_errors, default_return=lambda self, df: df, context="auto optimization")
     async def _apply_auto_optimization(self, df: pd.DataFrame) -> pd.DataFrame:
         """Apply automatic optimization based on data characteristics."""
         # Check data size and apply appropriate strategy
@@ -153,7 +144,7 @@ def regime_columns() -> list[str]:
 
     @with_tracing_span("DataOptimizer._optimize_memory_usage", log_args=False)
     @guard_dataframe_nulls(mode="warn", arg_index=1)
-    @handle_errors(exceptions=(Exception,), default_return=lambda self, df: df, context="memory optimization")
+    @handles_errors, default_return=lambda self, df: df, context="memory optimization")
     async def _optimize_memory_usage(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame for memory usage."""
         self.logger.info("🔄 Optimizing DataFrame for memory usage...")
@@ -176,7 +167,7 @@ def regime_columns() -> list[str]:
 
     @with_tracing_span("DataOptimizer._optimize_data_types", log_args=False)
     @guard_dataframe_nulls(mode="warn", arg_index=1)
-    @handle_errors(exceptions=(Exception,), default_return=lambda self, df: df, context="dtype optimization")
+    @handles_errors, default_return=lambda self, df: df, context="dtype optimization")
     async def _optimize_data_types(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame data types for memory efficiency."""
         for column in df.columns:
@@ -208,7 +199,7 @@ def regime_columns() -> list[str]:
 
         return df
 
-    @handle_errors(exceptions=(Exception,), default_return=lambda self, df: df, context="compression")
+    @handles_errors, default_return=lambda self, df: df, context="compression")
     async def _apply_compression(self, df: pd.DataFrame) -> pd.DataFrame:
         """Apply lightweight compression to DataFrame when safe.
 
@@ -231,7 +222,7 @@ def regime_columns() -> list[str]:
 
     @with_tracing_span("DataOptimizer._remove_unnecessary_columns", log_args=False)
     @guard_dataframe_nulls(mode="warn", arg_index=1)
-    @handle_errors(exceptions=(Exception,), default_return=lambda self, df: df, context="remove unnecessary columns")
+    @handles_errors, default_return=lambda self, df: df, context="remove unnecessary columns")
     async def _remove_unnecessary_columns(self, df: pd.DataFrame) -> pd.DataFrame:
         """Remove unnecessary columns from DataFrame."""
         # Remove columns with all null values
@@ -251,7 +242,7 @@ def regime_columns() -> list[str]:
 
     @with_tracing_span("DataOptimizer._optimize_index", log_args=False)
     @guard_dataframe_nulls(mode="warn", arg_index=1)
-    @handle_errors(exceptions=(Exception,), default_return=lambda self, df: df, context="index optimization")
+    @handles_errors, default_return=lambda self, df: df, context="index optimization")
     async def _optimize_index(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame index."""
         # Reset index if it's not meaningful
@@ -261,7 +252,7 @@ def regime_columns() -> list[str]:
 
     @with_tracing_span("DataOptimizer._optimize_for_speed", log_args=False)
     @guard_dataframe_nulls(mode="warn", arg_index=1)
-    @handle_errors(exceptions=(Exception,), default_return=lambda self, df: df, context="speed optimization")
+    @handles_errors, default_return=lambda self, df: df, context="speed optimization")
     async def _optimize_for_speed(self, df: pd.DataFrame) -> pd.DataFrame:
         """Optimize DataFrame for processing speed."""
         self.logger.info("🔄 Optimizing DataFrame for speed...")
@@ -272,7 +263,7 @@ def regime_columns() -> list[str]:
 
     @with_tracing_span("DataOptimizer._optimize_for_vectorization", log_args=False)
     @guard_dataframe_nulls(mode="warn", arg_index=1)
-    @handle_errors(exceptions=(Exception,), default_return=lambda self, df: df, context="vectorization optimization")
+    @handles_errors, default_return=lambda self, df: df, context="vectorization optimization")
     async def _optimize_for_vectorization(self, df: pd.DataFrame) -> pd.DataFrame:
         """Ensure columns are numeric where appropriate to enable vectorized ops."""
         for column in df.select_dtypes(include=["object"]).columns:
@@ -280,7 +271,7 @@ def regime_columns() -> list[str]:
                 df[column] = pd.to_numeric(df[column], errors="ignore")
         return df
 
-    @handle_errors(exceptions=(Exception,), default_return=lambda self, df: df, context="apply caching")
+    @handles_errors, default_return=lambda self, df: df, context="apply caching")
     async def _apply_caching(self, df: pd.DataFrame) -> pd.DataFrame:
         """Apply caching to DataFrame operations.
 
@@ -300,7 +291,7 @@ def regime_columns() -> list[str]:
 
     @with_tracing_span("DataOptimizer._optimize_balanced", log_args=False)
     @guard_dataframe_nulls(mode="warn", arg_index=1)
-    @handle_errors(exceptions=(Exception,), default_return=lambda self, df: df, context="balanced optimization")
+    @handles_errors, default_return=lambda self, df: df, context="balanced optimization")
     async def _optimize_balanced(self, df: pd.DataFrame) -> pd.DataFrame:
         """Apply balanced optimization strategy."""
         self.logger.info("🔄 Applying balanced optimization...")
@@ -338,8 +329,7 @@ def regime_columns() -> list[str]:
 
     @with_tracing_span("DataOptimizer.optimize_market_data", log_args=False)
     @guard_dataframe_nulls(mode="warn", arg_index=1)
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=lambda self, market_data: market_data,
         context="market data optimization",
     )
@@ -376,8 +366,7 @@ def regime_columns() -> list[str]:
         self.logger.info(f"Market data optimized: {len(market_data)} rows")
         return market_data
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=lambda self, ensemble_data: ensemble_data,
         context="ensemble data optimization",
     )
@@ -432,11 +421,7 @@ def regime_columns() -> list[str]:
             self.logger.error(error(f"Error getting optimization stats: {e}"))
             return {"error": str(e)}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="data optimizer cleanup",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         """Stop Data Optimizer."""
         self.logger.info("Stopping Data Optimizer...")
@@ -454,10 +439,8 @@ def regime_columns() -> list[str]:
         self.logger.info("✅ Data Optimizer stopped successfully")
         return None
 
-
 # Global data optimizer instance
 data_optimizer: DataOptimizer | None = None
-
 
 async def setup_data_optimizer(config: dict[str, Any]) -> DataOptimizer:
     """Setup global data optimizer."""
@@ -469,7 +452,6 @@ async def setup_data_optimizer(config: dict[str, Any]) -> DataOptimizer:
         await data_optimizer.initialize()
 
     return data_optimizer
-
 
 def get_data_optimizer() -> DataOptimizer | None:
     """Get global data optimizer instance."""

@@ -102,7 +102,6 @@ else:
 
 logger = system_logger.getChild("Step3HMMRegimeDiscovery")
 
-
 class HMMRegimeDiscoveryStep:
     """Step 3: HMM Regime Discovery with standardized data quality management."""
 
@@ -147,11 +146,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.warning("⚠️ SR Breakout Predictor not available")
             self.sr_predictor = None
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="hmm_regime_discovery_initialization"
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> None:
         """Initialize the HMM regime discovery step."""
         self.start_time = time.time()
@@ -207,8 +202,7 @@ class HMMRegimeDiscoveryStep:
         required_grade="C"
     )
     @with_enhanced_mlflow_logging("step3_hmm_regime_discovery")
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"success": False, "regimes": [], "error": "HMM discovery failed"},
         context="hmm_regime_discovery.execute"
     )
@@ -541,11 +535,7 @@ class HMMRegimeDiscoveryStep:
 
     @with_tracing_span("ensure_data_quality")
     @secure_data_processing
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="data_quality_validation"
-    )
+    @handles_errors(fallback=False)
     async def _ensure_data_quality(self, training_input: dict[str, Any]) -> bool:
         """Ensure data quality and readiness for HMM regime discovery."""
         self.logger.info("🔍 Starting data quality validation...")
@@ -604,8 +594,7 @@ class HMMRegimeDiscoveryStep:
             return False
 
     @with_tracing_span("fix_missing_data")
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"success": False, "error": "Data fix failed"},
         context="fix_missing_data"
     )
@@ -682,8 +671,7 @@ class HMMRegimeDiscoveryStep:
     @with_tracing_span("load_and_prepare_data")
     @memory_efficient
     @comprehensive_data_validation
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"success": False, "error": "Data loading failed"},
         context="load_and_prepare_data"
     )
@@ -787,11 +775,7 @@ class HMMRegimeDiscoveryStep:
     @with_tracing_span("prepare_hmm_features")
     @validate_data_structure
     @monitor_feature_engineering()
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.DataFrame(),
-        context="prepare_hmm_features"
-    )
+    @handles_errors(fallback=pd.DataFrame())
     async def _prepare_hmm_features(self, df: Any) -> Any:
         """Prepare comprehensive features for HMM regime discovery including momentum, S/R, volume, and volatility."""
         try:
@@ -973,11 +957,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f"❌ Error preparing HMM features: {e}")
             raise
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.Series(),
-        context="calculate_rsi"
-    )
+    @handles_errors(fallback=pd.Series())
     def _calculate_rsi(self, prices: Any, window: int = 14) -> Any:
         """Calculate Relative Strength Index."""
         self.logger.debug(f"Calculating RSI with window {window}...")
@@ -988,11 +968,7 @@ class HMMRegimeDiscoveryStep:
         rsi = 100 - (100 / (1 + rs))
         return rsi
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.Series(),
-        context="calculate_macd"
-    )
+    @handles_errors(fallback=pd.Series())
     def _calculate_macd(self, prices: Any, fast: int = 12, slow: int = 26, signal: int = 9) -> Any:
         """Calculate MACD (Moving Average Convergence Divergence)."""
         self.logger.debug(f"Calculating MACD (fast={fast}, slow={slow}, signal={signal})...")
@@ -1001,11 +977,7 @@ class HMMRegimeDiscoveryStep:
         macd = ema_fast - ema_slow
         return macd
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.Series(),
-        context="calculate_atr"
-    )
+    @handles_errors(fallback=pd.Series())
     def _calculate_atr(self, df: Any, window: int = 14) -> Any:
         """Calculate Average True Range (ATR)."""
         self.logger.debug(f"Calculating ATR with window {window}...")
@@ -1021,11 +993,7 @@ class HMMRegimeDiscoveryStep:
         atr = tr.rolling(window=window).mean()
         return atr
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.Series(),
-        context="calculate_bollinger_bands"
-    )
+    @handles_errors(fallback=pd.Series())
     def _calculate_bollinger_bands(self, prices: Any, window: int = 20, num_std: float = 2) -> Any:
         """Calculate Bollinger Bands."""
         self.logger.debug(f"Calculating Bollinger Bands (window={window}, std={num_std})...")
@@ -1047,11 +1015,7 @@ class HMMRegimeDiscoveryStep:
         
         return bb_features
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.Series(),
-        context="calculate_adx"
-    )
+    @handles_errors(fallback=pd.Series())
     def _calculate_adx(self, df: Any, window: int = 14) -> Any:
         """Calculate Average Directional Index (ADX)."""
         self.logger.debug(f"Calculating ADX with window {window}...")
@@ -1087,11 +1051,7 @@ class HMMRegimeDiscoveryStep:
         
         return adx
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.Series(),
-        context="calculate_sr_strength"
-    )
+    @handles_errors(fallback=pd.Series())
     def _calculate_sr_strength(self, df: Any, window: int = 20) -> Any:
         """Calculate support/resistance strength indicator."""
         self.logger.debug(f"Calculating S/R strength with window {window}...")
@@ -1109,11 +1069,7 @@ class HMMRegimeDiscoveryStep:
         sr_strength = (high_strength + low_strength) / 2
         return sr_strength
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="log_feature_categories"
-    )
+    @handles_errors(fallback=None)
     def _log_feature_categories(self, features: Any) -> None:
         """Log feature categories for analysis."""
         try:
@@ -1156,8 +1112,7 @@ class HMMRegimeDiscoveryStep:
 
     @with_tracing_span("perform_hmm_regime_discovery")
     @resource_monitor
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"success": False, "error": "HMM regime discovery failed"},
         context="perform_hmm_regime_discovery"
     )
@@ -1209,8 +1164,7 @@ class HMMRegimeDiscoveryStep:
             return {"success": False, "error": str(e)}
 
     @with_tracing_span("perform_hmmlearn_regime_discovery")
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"success": False, "error": "HMMLearn regime discovery failed"},
         context="perform_hmmlearn_regime_discovery"
     )
@@ -1375,8 +1329,7 @@ class HMMRegimeDiscoveryStep:
             return {"success": False, "error": str(e)}
 
     @with_tracing_span("perform_simple_regime_discovery")
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"success": False, "error": "Simple regime discovery failed"},
         context="perform_simple_regime_discovery"
     )
@@ -1474,8 +1427,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f"❌ Error in simple regime discovery: {e}")
             return {"success": False, "error": str(e)}
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"state_to_regime_map": {}, "state_analysis": {}},
         context="interpret_hmm_states"
     )
@@ -1534,11 +1486,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f"❌ Error interpreting HMM states: {e}")
             return {"state_to_regime_map": {}, "state_analysis": {}}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return="unknown_regime",
-        context="map_state_to_regime"
-    )
+    @handles_errors(fallback="unknown_regime")
     def _map_state_to_regime(self, state_char: dict[str, Any]) -> str:
         """Map state characteristics to regime name."""
         try:
@@ -1576,11 +1524,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.warning(f"Error mapping state to regime: {e}")
             return "unknown_regime"
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="calculate_regime_transitions"
-    )
+    @handles_errors
     def _calculate_regime_transitions(self, regimes: List[str]) -> dict[str, Any]:
         """Calculate regime transition probabilities."""
         self.logger.info("🔄 Calculating regime transition probabilities...")
@@ -1608,8 +1552,7 @@ class HMMRegimeDiscoveryStep:
         self.logger.info(f"✅ Transition matrix calculated for {len(transitions)} regimes")
         return transitions
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"success": False, "error": "Enhanced regime change detection failed"},
         context="enhanced_regime_change_detection"
     )
@@ -1688,8 +1631,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f"❌ Error in advanced regime change detection: {e}")
             return {"success": False, "error": str(e)}
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=np.zeros(0, dtype=bool),
         context="apply_persistence_filter"
     )
@@ -1720,8 +1662,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.warning(f"⚠️ Error applying persistence filter: {e}")
             return transitions
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=np.zeros(0, dtype=float),
         context="calculate_transition_confidence"
     )
@@ -1749,8 +1690,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.warning(f"⚠️ Error calculating transition confidence: {e}")
             return np.zeros(len(transitions), dtype=float)
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=np.zeros(0, dtype=float),
         context="calculate_regime_strength"
     )
@@ -1777,11 +1717,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.warning(f"⚠️ Error calculating regime strength: {e}")
             return np.zeros(len(hmm_states), dtype=float)
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=[],
-        context="create_regime_change_events"
-    )
+    @handles_errors(fallback=[])
     def _create_regime_change_events(
         self, 
         transitions: np.ndarray, 
@@ -1811,8 +1747,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.warning(f"⚠️ Error creating regime change events: {e}")
             return []
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=np.zeros(0, dtype=int),
         context="calculate_regime_durations"
     )
@@ -1843,11 +1778,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.warning(f"⚠️ Error calculating regime durations: {e}")
             return np.zeros(len(states), dtype=int)
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="calculate_adaptive_regime_boundaries"
-    )
+    @handles_errors
     def _calculate_adaptive_regime_boundaries(self, features: pd.DataFrame) -> dict[str, Any]:
         """Calculate adaptive regime boundaries using clustering of regime characteristics."""
         try:
@@ -1898,11 +1829,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f"❌ Error calculating adaptive regime boundaries: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.DataFrame(),
-        context="extract_regime_characteristics"
-    )
+    @handles_errors(fallback=pd.DataFrame())
     def _extract_regime_characteristics(self, features: pd.DataFrame) -> pd.DataFrame:
         """Extract regime characteristics for boundary calculation."""
         try:
@@ -1941,11 +1868,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.warning(f"⚠️ Error extracting regime characteristics: {e}")
             return pd.DataFrame()
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="model_regime_persistence"
-    )
+    @handles_errors
     def _model_regime_persistence(self, regime_sequence: np.ndarray) -> dict[str, Any]:
         """Model how long regimes typically persist using statistical distributions."""
         try:
@@ -2044,11 +1967,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.exception(f"❌ Error modeling regime persistence: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=float('inf'),
-        context="calculate_aic"
-    )
+    @handles_errors(fallback=float('inf'))
     def _calculate_aic(self, data: np.ndarray, pdf_func, *params) -> float:
         """Calculate Akaike Information Criterion for distribution fitting."""
         try:
@@ -2065,11 +1984,7 @@ class HMMRegimeDiscoveryStep:
             self.logger.warning(f"⚠️ Error calculating AIC: {e}")
             return float('inf')
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=np.array([]),
-        context="calculate_transition_matrix"
-    )
+    @handles_errors(fallback=np.array([]))
     def _calculate_transition_matrix(self, regime_sequence: np.ndarray) -> np.ndarray:
         """Calculate regime transition probability matrix."""
         try:
@@ -2209,13 +2124,8 @@ class HMMRegimeDiscoveryStep:
             self.logger.error(f"Error creating SR regime features: {e}")
             return {}
 
-
 @monitor_feature_engineering()
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=False,
-    context="step3_hmm_regime_discovery",
-)
+@handles_errors(fallback=False)
 async def run_step(
     symbol: str, 
     exchange: str, 
@@ -2360,11 +2270,7 @@ async def run_step(
 
     # === COMPOSITE HMM HELPER METHODS ===
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.DataFrame(),
-        context="create_composite_features"
-    )
+    @handles_errors(fallback=pd.DataFrame())
     def _create_composite_features(self, features: Any, hmm_states: Any, hmm_probs: Any) -> Any:
         """Create composite features combining HMM states with original features."""
         try:
@@ -2404,11 +2310,7 @@ async def run_step(
             self.logger.exception(f"❌ Error creating composite features: {e}")
             return pd.DataFrame()
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="calculate_cluster_quality_metrics"
-    )
+    @handles_errors
     def _calculate_cluster_quality_metrics(self, features_scaled: Any, cluster_labels: Any, kmeans_model: Any) -> dict[str, Any]:
         """Calculate comprehensive cluster quality metrics."""
         try:
@@ -2466,11 +2368,7 @@ async def run_step(
             self.logger.exception(f"❌ Error calculating cluster quality metrics: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="analyze_composite_clusters"
-    )
+    @handles_errors
     def _analyze_composite_clusters(self, features: Any, hmm_states: Any, cluster_labels: Any, cluster_metrics: dict[str, Any]) -> dict[str, Any]:
         """Analyze composite clusters and their characteristics."""
         try:
@@ -2530,11 +2428,7 @@ async def run_step(
             self.logger.exception(f"❌ Error analyzing composite clusters: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="generate_comprehensive_reports"
-    )
+    @handles_errors
     async def _generate_comprehensive_reports(self, features: Any, hmm_states: Any, cluster_labels: Any, composite_analysis: dict[str, Any], cluster_metrics: dict[str, Any]) -> dict[str, Any]:
         """Generate comprehensive reports for the composite HMM analysis."""
         try:
@@ -2570,11 +2464,7 @@ async def run_step(
             self.logger.exception(f"❌ Error generating reports: {e}")
             return {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.DataFrame(),
-        context="create_composite_cluster_dataframe"
-    )
+    @handles_errors(fallback=pd.DataFrame())
     def _create_composite_cluster_dataframe(self, features: Any, hmm_states: Any, cluster_labels: Any, composite_analysis: dict[str, Any]) -> Any:
         """Create composite cluster DataFrame with all relevant information."""
         try:
@@ -2606,11 +2496,7 @@ async def run_step(
             self.logger.exception(f"❌ Error creating composite cluster DataFrame: {e}")
             return pd.DataFrame()
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=pd.DataFrame(),
-        context="create_intensity_dataframe"
-    )
+    @handles_errors(fallback=pd.DataFrame())
     def _create_intensity_dataframe(self, features: Any, hmm_states: Any, cluster_labels: Any, composite_analysis: dict[str, Any]) -> Any:
         """Create intensity DataFrame for cluster analysis."""
         try:
@@ -2649,11 +2535,7 @@ async def run_step(
             self.logger.exception(f"❌ Error creating intensity DataFrame: {e}")
             return pd.DataFrame()
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return={},
-        context="create_meta_information"
-    )
+    @handles_errors
     def _create_meta_information(self, hmm_model: Any, kmeans_model: Any, composite_analysis: dict[str, Any], cluster_metrics: dict[str, Any], reports: dict[str, Any]) -> dict[str, Any]:
         """Create meta information for the composite HMM analysis."""
         try:
@@ -3317,7 +3199,6 @@ async def run_step(
         except Exception as e:
             self.logger.exception(f"❌ Error applying optimized parameters: {e}")
 
-
 if __name__ == "__main__":
     # Parse command line arguments
     import asyncio
@@ -3380,5 +3261,6 @@ import copy
 import numpy as np
 import os.path
 import pandas as pd
+from src.core.decorators import handles_errors
 
 gc.collect()

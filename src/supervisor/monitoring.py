@@ -10,7 +10,7 @@ import asyncio
 from datetime import datetime
 from typing import Any
 
-from src.utils.error_handler import handle_errors, handle_specific_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import error, failed, invalid
 from src.utils.warning_symbols import (
@@ -37,7 +37,7 @@ class Monitoring:
         self.alerts: list[dict[str, Any]] = []
         self.metrics: dict[str, Any] = {}
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid monitoring configuration"),
             AttributeError: (False, "Missing required monitoring parameters"),
@@ -59,11 +59,7 @@ class Monitoring:
             print(failed("❌ Monitoring initialization failed: {e}"))
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=None,
-        context="monitoring configuration loading",
-    )
+    @handles_errors(fallback=None)
     async def _load_monitoring_configuration(self) -> None:
         try:
             self.monitoring_config.setdefault("check_interval", 30)
@@ -74,11 +70,7 @@ class Monitoring:
         except Exception:
             print(error("Error loading monitoring configuration: {e}"))
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
-        default_return=False,
-        context="configuration validation",
-    )
+    @handles_errors(fallback=False)
     def _validate_configuration(self) -> bool:
         try:
             if self.check_interval <= 0:
@@ -93,7 +85,7 @@ class Monitoring:
             print(error("Error validating configuration: {e}"))
             return False
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             Exception: (False, "Monitoring run failed"),
         },
@@ -113,11 +105,7 @@ class Monitoring:
             self.is_running = False
             return False
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="monitoring step",
-    )
+    @handles_errors(fallback=None)
     async def _perform_monitoring(self) -> None:
         try:
             now = datetime.now().isoformat()
@@ -131,11 +119,7 @@ class Monitoring:
         except Exception:
             print(error("Error in monitoring step: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="system health check",
-    )
+    @handles_errors(fallback=None)
     async def _check_system_health(self) -> None:
         try:
             # Simulate system health checks
@@ -150,11 +134,7 @@ class Monitoring:
         except Exception:
             print(error("Error checking system health: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="metrics update",
-    )
+    @handles_errors(fallback=None)
     async def _update_metrics(self) -> None:
         try:
             # Update various metrics
@@ -164,11 +144,7 @@ class Monitoring:
         except Exception:
             print(error("Error updating metrics: {e}"))
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=None,
-        context="monitoring stop",
-    )
+    @handles_errors(fallback=None)
     async def stop(self) -> None:
         self.logger.info("🛑 Stopping Monitoring...")
         try:
@@ -193,15 +169,9 @@ class Monitoring:
     def get_alerts(self) -> list[dict[str, Any]]:
         return self.alerts.copy()
 
-
 monitoring: Monitoring | None = None
 
-
-@handle_errors(
-    exceptions=(Exception,),
-    default_return=None,
-    context="monitoring setup",
-)
+@handles_errors(fallback=None)
 async def setup_monitoring(
     config: dict[str, Any] | None = None,
 ) -> Monitoring | None:

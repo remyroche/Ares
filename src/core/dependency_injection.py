@@ -5,9 +5,9 @@ from src.utils.logger import system_logger
 from typing import Any, TypeVar
 
 from dataclasses import dataclass
-from src.interfaces import (
 import asyncio
 
+from src.interfaces import (
     IAnalyst,
     IStrategist,
     ISupervisor,

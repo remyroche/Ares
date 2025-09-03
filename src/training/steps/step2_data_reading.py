@@ -100,7 +100,6 @@ else:
 
 logger = system_logger.getChild("Step2DataReading")
 
-
 class DataReadingStep:
     """Step 2: Data Reading and Validation with standardized data quality management."""
 
@@ -270,6 +269,7 @@ class DataReadingStep:
         except Exception as e:
             pass  # TODO: Handle exception properly
 import pandas as pd
+from src.core.decorators import handles_errors
             
 # Create reports directory
             reports_dir = ensure_directory(Path(data_dir) / "reports" / "data_quality")
@@ -303,7 +303,7 @@ import pandas as pd
 
     @with_enhanced_mlflow_logging("step2_data_reading")
     @with_tracing_span("execute_data_reading_step")
-    @handle_errors
+    @handles_errors
     @resource_monitor
     async def execute(self, symbol: str, exchange: str, timeframe: str, data_dir: str, **kwargs) -> Dict[str, Any]:
         """Execute the complete data reading step."""
@@ -506,7 +506,6 @@ import pandas as pd
             self.logger.error(f"❌ Failed to log step 2 artifacts and reports: {e}")
             # Don't fail the step if MLflow logging fails'
 
-
 async def run_step_enhanced(
     symbol: str,
     exchange: str,
@@ -545,7 +544,6 @@ async def run_step_enhanced(
     
     return result
 
-
 async def run_step(
     symbol: str,
     exchange: str,
@@ -557,7 +555,6 @@ async def run_step(
     
     result = await run_step_enhanced(symbol, exchange, timeframe, data_dir, **kwargs)
     return result["success"]
-
 
 if __name__ == "__main__":
     # Test the step

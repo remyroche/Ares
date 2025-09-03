@@ -116,7 +116,6 @@ else:
 # Suppress warnings
 warnings.filterwarnings("ignore")
 
-
 class HMMBasedTrainingStep:
     """Step 9: HMM-Based Model Training with Standardized Data Quality Management."
 
@@ -358,11 +357,7 @@ class HMMBasedTrainingStep:
         """Print message using logger."""
         self.logger.info(message)
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=False,
-        context="HMM-based training step initialization",
-    )
+    @handles_errors(fallback=False)
     async def initialize(self) -> None:
         """Initialize the HMM-based training step."""
         self.logger.info("Initializing HMM-Based Training Step...")
@@ -442,8 +437,7 @@ class HMMBasedTrainingStep:
             raise RuntimeError(msg)
 
     @with_enhanced_mlflow_logging("step9_hmm_based_training")
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return={"status": "FAILED", "error": "Execution failed"},
         context="HMM-based training step execution",
     )
@@ -3090,9 +3084,7 @@ class HMMBasedTrainingStep:
         # Fallback: return original artifact
         return artifact
 
-
 # Model Architectures
-
 
 class CNNModel(nn.Module):
     """CNN model for 1m timeframe."""
@@ -3132,8 +3124,6 @@ class CNNModel(nn.Module):
         x = self.dropout(x)
         return self.fc2(x)
 
-
-
 class TCNModel(nn.Module):
     """Temporal Convolutional Network for 5m timeframe."""
 
@@ -3166,8 +3156,6 @@ class TCNModel(nn.Module):
         x = x[:, -1, :]  # Take last timestep,
         x = self.dropout(x)
         return self.fc(x)
-
-
 
 class TemporalBlock(nn.Module):
     """Temporal block for TCN."""
@@ -3215,7 +3203,6 @@ class TemporalBlock(nn.Module):
 
         return self.relu(out + x)
 
-
 class TransformerModel(nn.Module):
     """Transformer model for 15m timeframe."""
 
@@ -3248,8 +3235,6 @@ class TransformerModel(nn.Module):
         x = self.dropout(x)
         return self.fc(x)
 
-
-
 class PositionalEncoding(nn.Module):
     """Positional encoding for Transformer."""
 
@@ -3271,9 +3256,7 @@ class PositionalEncoding(nn.Module):
     def forward(self, x):
         return x + self.pe[: x.size(0), :]
 
-
 # Trainers
-
 
 class CNNTrainer:
     """Trainer for CNN model."""
@@ -3343,7 +3326,6 @@ class CNNTrainer:
             history["test_acc"].append(test_acc)
 
         return history
-
 
 class TCNTrainer:
     """Trainer for TCN model."""
@@ -4720,7 +4702,6 @@ class TCNTrainer:
         except Exception as e:
             self.logger.warning(f"⚠️ Error logging category breakdown: {e}")
 
-
 class TransformerTrainer:
     """Trainer for Transformer model."""
 
@@ -5123,7 +5104,6 @@ class TransformerTrainer:
             system_logger.error(f"❌ Error in HMM-based training step: {e}")
             return False
 
-
 # Import training pipeline decorators for comprehensive security and troubleshooting
 from src.utils.training_pipeline_decorators import (
     artifact_versioning,
@@ -5142,7 +5122,6 @@ from src.utils.training_pipeline_decorators import (
     validate_step_output,
     validate_step_prerequisites,
 )
-
 
 @deterministic_seed(42)
 @idempotent_step(step_key="step6_hmm_based_training")
@@ -5265,6 +5244,7 @@ async def run_step(symbol: str = "ETHUSDT", data_dir: str = "data/training", met
 import copy
 import numpy as np
 import os.path
+from src.core.decorators import handles_errors
 
 # Create configuration
         config = {

@@ -9,9 +9,8 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.linear_model import Lasso
 
-from src.utils.error_handler import handle_errors
+from src.core.decorators import handles_errors
 from src.utils.logger import system_logger
-
 
 class ModelSpecificPruning:
     """Model-specific feature pruning for different ML architectures.
@@ -46,11 +45,7 @@ class ModelSpecificPruning:
         # Pruning metadata cache
         self.pruning_metadata = {}
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=(pd.DataFrame(), {}),
-        context="neural network pruning",
-    )
+    @handles_errors(fallback=(pd.DataFrame(), {}))
     def prune_for_neural_networks(
         self,
         features_df: pd.DataFrame,
@@ -121,11 +116,7 @@ class ModelSpecificPruning:
             self.logger.exception(f"❌ Neural network pruning failed: {e}")
             raise
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=(pd.DataFrame(), {}),
-        context="linear model pruning",
-    )
+    @handles_errors(fallback=(pd.DataFrame(), {}))
     def prune_for_linear_models(
         self,
         features_df: pd.DataFrame,
@@ -191,11 +182,7 @@ class ModelSpecificPruning:
             self.logger.exception(f"❌ Linear model pruning failed: {e}")
             raise
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=(pd.DataFrame(), {}),
-        context="ensemble model pruning",
-    )
+    @handles_errors(fallback=(pd.DataFrame(), {}))
     def prune_for_ensemble_models(
         self,
         features_df: pd.DataFrame,
@@ -256,11 +243,7 @@ class ModelSpecificPruning:
             self.logger.exception(f"❌ Ensemble model pruning failed: {e}")
             raise
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=(pd.DataFrame(), {}),
-        context="step06 hmm model pruning",
-    )
+    @handles_errors(fallback=(pd.DataFrame(), {}))
     def prune_for_step6_hmm_models(
         self,
         features_df: pd.DataFrame,
@@ -302,11 +285,7 @@ class ModelSpecificPruning:
             self.logger.exception(f"❌ Step 6 pruning failed: {e}")
             raise
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=(pd.DataFrame(), {}),
-        context="step06.5 unified regime pruning",
-    )
+    @handles_errors(fallback=(pd.DataFrame(), {}))
     def prune_for_step6_5_unified_regime(
         self,
         features_df: pd.DataFrame,
@@ -356,11 +335,7 @@ class ModelSpecificPruning:
             self.logger.exception(f"❌ Step 6.5 pruning failed: {e}")
             raise
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=(pd.DataFrame(), {}),
-        context="step07 ensemble pruning",
-    )
+    @handles_errors(fallback=(pd.DataFrame(), {}))
     def prune_for_step7_ensemble(
         self,
         features_df: pd.DataFrame,
@@ -400,11 +375,7 @@ class ModelSpecificPruning:
             self.logger.exception(f"❌ Step 7 pruning failed: {e}")
             raise
 
-    @handle_errors(
-        exceptions=(Exception,),
-        default_return=(pd.DataFrame(), {}),
-        context="step09 tactician pruning",
-    )
+    @handles_errors(fallback=(pd.DataFrame(), {}))
     def prune_for_step9_tactician(
         self,
         features_df: pd.DataFrame,
@@ -541,7 +512,6 @@ class ModelSpecificPruning:
         # Keep top features and remove highly correlated ones
         top_features = mi_ranking.head(len(features_df.columns) // 2).index.tolist()
         return self._remove_highly_correlated_features(features_df[top_features], threshold=0.9)
-
 
     def _balance_feature_categories(self, features_df: pd.DataFrame, target_features: int) -> list[str]:
         """Balance features across categories for ensemble diversity."""

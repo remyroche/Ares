@@ -39,10 +39,7 @@ from src.monitoring.performance_monitor import (
     PerformanceMonitor,
     setup_performance_monitor,
 )
-from src.utils.error_handler import (
-    handle_errors,
-    handle_specific_errors,
-)
+from src.core.decorators import handles_errors
 from src.utils.warning_symbols import (
     critical,
     error,
@@ -103,7 +100,7 @@ class AresPipeline:
         self.cycle_count: int = 0
         self.last_cycle_time: datetime | None = None
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ValueError: (False, "Invalid pipeline configuration"),
             AttributeError: (False, "Missing required pipeline components"),
@@ -149,8 +146,7 @@ class AresPipeline:
             self.logger.exception("❌ Ares Pipeline initialization failed")
             return False
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
+    @handles_errors
         default_return=None, context="configuration service initialization",
     )
     async def _initialize_configuration_service(self) -> None:
@@ -184,8 +180,7 @@ class AresPipeline:
             self.logger.exception("Error initializing configuration service")
             raise
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
+    @handles_errors
         default_return=None, context="core service registration",
     )
     async def _register_core_services(self) -> None:
@@ -308,8 +303,7 @@ class AresPipeline:
             self.logger.exception("Error registering core services")
             raise
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
+    @handles_errors
         default_return=None, context="pipeline component resolution",
     )
     async def _resolve_pipeline_components(self) -> None:
@@ -387,8 +381,7 @@ class AresPipeline:
             self.logger.exception("Error resolving pipeline components")
             raise
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
+    @handles_errors
         default_return=None, context="component initialization",
     )
     async def _initialize_components(self) -> None:
@@ -418,8 +411,7 @@ class AresPipeline:
         except Exception:
             self.logger.exception("Error initializing components")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
+    @handles_errors
         default_return=None, context="signal handler setup",
     )
     def _setup_signal_handlers(self) -> None:
@@ -438,7 +430,7 @@ class AresPipeline:
         self.logger.info(f"Received signal {signum}, initiating graceful shutdown...")
         asyncio.create_task(self.stop())
 
-    @handle_specific_errors(
+    @handles_errors(
         error_handlers={
             ConnectionError: (None, "Failed to connect to exchange"),
             TimeoutError: (None, "Pipeline operation timed out"),
@@ -576,8 +568,7 @@ class AresPipeline:
             print("🧹 Pipeline cleanup completed")
             self.logger.info("🧹 Pipeline cleanup completed")
 
-    @handle_errors(
-        exceptions=(ValueError, AttributeError),
+    @handles_errors
         default_return=None, context="pipeline cycle execution",
     )
     async def _execute_cycle(self) -> None:
@@ -948,8 +939,7 @@ class AresPipeline:
 
         return status
 
-    @handle_errors(
-        exceptions=(Exception,),
+    @handles_errors
         default_return=None, context="pipeline cleanup",
     )
     async def stop(self) -> None:
@@ -1098,7 +1088,6 @@ class AresPipeline:
                 },
             }
 
-
 async def main():
     """Main entry point for the Ares Pipeline."""
 
@@ -1152,7 +1141,6 @@ async def main():
         print(error(f"💥 Unexpected error: {e}"))
         await pipeline.stop()
         sys.exit(1)
-
 
 if __name__== "__main__":
     asyncio.run(main())

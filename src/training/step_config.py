@@ -7,8 +7,8 @@ This module defines the standardized step configuration, including:
 - Required inputs/outputs
 """
 
-from typing import Dict, List, Any
 from dataclasses import dataclass, field
+from typing import Any, Dict, List
 
 
 @dataclass

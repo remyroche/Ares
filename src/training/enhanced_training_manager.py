@@ -132,7 +132,7 @@ def _sanitize_identifier(value: str) -> str:
         raise ValueError(msg)
     return value
 
-class EnhancedTrainingManager:
+class TrainingManager:
     """Enhanced training manager with comprehensive 16-step pipeline."
 
     This is the MAIN PIPELINE that orchestrates the complete training pipeline including
@@ -167,7 +167,7 @@ class EnhancedTrainingManager:
 
         """
         self.config: dict[str, Any] = config
-        self.logger = system_logger.getChild("EnhancedTrainingManager")
+        self.logger = system_logger.getChild("TrainingManager")
 
         # Enhanced training manager state
         self.is_training: bool = False
@@ -2542,7 +2542,7 @@ class EnhancedTrainingManager:
 from src.training.steps.step12_analyst_enhancement import RegimeAwareAnalystEnhancementStep
 from src.training.steps import step8_tactician_labeling
 from src.training.steps.step15_tactician_specialist_training import RegimeAwareTacticianSpecialistTrainingStep
-from src.training.steps.step16_confidence_calibration import RegimeAwareConfidenceCalibrationStep
+from src.training.steps.validation.step16_confidence_calibration import RegimeAwareConfidenceCalibrationStep
 from src.analyst.meta_label_relevance import MetaLabelRelevanceEvaluator
 import pandas as _pd
 from src.training.steps import step12_walk_forward_validation
@@ -5589,18 +5589,18 @@ patterns = self.ARTIFACT_PATTERNS.get(step_name, [])
 )
 async def setup_enhanced_training_manager(
     config: dict[str, Any] | None,
-) -> EnhancedTrainingManager | None:
-    """Setup and return a configured EnhancedTrainingManager instance."
+) -> TrainingManager | None:
+    """Setup and return a configured TrainingManager instance."
 
     Args:
         config: Configuration dictionary
 
     Returns:
-        EnhancedTrainingManager: Configured enhanced training manager instance
+        TrainingManager: Configured enhanced training manager instance
 
     """
     try:
-        manager = EnhancedTrainingManager(config or {})
+        manager = TrainingManager(config or {})
         if await manager.initialize():
             return manager
         return None

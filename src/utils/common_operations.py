@@ -20,7 +20,8 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from pathlib import Path
 from typing import (
-    A, Callableny,
+    A,
+    Callableny,
 )
 
 import numpy as np

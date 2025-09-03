@@ -6,17 +6,18 @@ and recovery mechanisms.
 """
 
 import asyncio
-import pytest
-from unittest.mock import Mock, AsyncMock, patch
 from typing import Any, Dict
+from unittest.mock import AsyncMock, Mock, patch
+
+import pytest
 
 from src.supervisor.coordinator import (
-    SystemCoordinator,
     CircuitBreaker,
-    OnlineLearningManager,
     ComponentMonitor,
     HealthMonitor,
+    OnlineLearningManager,
     RecoveryManager,
+    SystemCoordinator,
 )
 
 

@@ -66,7 +66,7 @@ class PaperTradingIntegration:
         self.report_interval = self.integration_config.get("report_interval", 3600)
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
-    @handle_specific_errors(
+    @handle_specific_errors()
         error_handlers={
             ValueError: (False, "Invalid integration configuration"),
             AttributeError: (False, "Missing required integration parameters"),
@@ -125,7 +125,7 @@ setup_paper_trading_reporter as _setup_reporter,
                 f"❌ Paper Trading Integration initialization failed: {e}",
             return False
 
-    @handles_errors(
+    @handles_errors()
         exceptions=(ValueError, AttributeError),
         default_return=False,
         context="integration validation",
@@ -153,7 +153,7 @@ setup_paper_trading_reporter as _setup_reporter,
     @performance_monitor(level=PerformanceLevel.DETAILED)
     @secure_data_processing
     @comprehensive_validation()
-    @handle_specific_errors(
+    @handle_specific_errors()
         error_handlers={
             ValueError: (False, "Invalid trade parameters"),
             AttributeError: (False, "Missing trade components"),
@@ -255,7 +255,7 @@ setup_paper_trading_reporter as _setup_reporter,
             return False
 
     @performance_monitor(level=PerformanceLevel.DETAILED)
-    @handles_errors(
+    @handles_errors()
         exceptions=(Exception,),
         default_return=None,
         context="real-time report generation",
@@ -358,7 +358,7 @@ setup_paper_trading_reporter as _setup_reporter,
             return {}
 
     @performance_monitor(level=PerformanceLevel.BASIC)
-    @handles_errors(
+    @handles_errors()
         exceptions=(Exception,),
         default_return=None,
         context="basic report generation",
@@ -417,7 +417,7 @@ setup_paper_trading_reporter as _setup_reporter,
         }
 
     @performance_monitor(level=PerformanceLevel.BASIC)
-    @handles_errors(
+    @handles_errors()
         exceptions=(Exception,),
         default_return=None,
         context="integration cleanup",
@@ -438,7 +438,7 @@ setup_paper_trading_reporter as _setup_reporter,
         except Exception as e:
             self.logger.error(error(f"Error stopping integration: {e}"))
 
-@handles_errors(
+@handles_errors()
     exceptions=(Exception,),
     default_return=None,
     context="paper trading integration setup",

@@ -428,7 +428,7 @@ for df in chunks_iter:
                         str(target), table.schema, compression=compression,
                     )
                 writer.write_table(table)
-            if writer is not None:
+                if writer is not None:
                 writer.close()
         except Exception as e:
             self.logger.exception(f"Incremental Parquet write failed: {e}")

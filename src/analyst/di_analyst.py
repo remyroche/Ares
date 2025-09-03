@@ -8,19 +8,17 @@ Dependency injection-aware Analyst implementation.
 This module provides an Analyst implementation that properly supports
 dependency injection patterns and modern architectural practices.
 """
+import asyncio
+import logging
 from datetime import datetime
 from typing import Any
-import logging
 
 import pandas as pd
 
-from src.training.dual_model_system import DualModelSystem
 from src.analyst.feature_engineering_orchestrator import FeatureEngineeringOrchestrator
 from src.analyst.liquidation_risk_model import LiquidationRiskModel
 from src.analyst.market_health_analyzer import MarketHealthAnalyzer
 from src.core.injectable_base import AnalystBase
-import logging
-import asyncio
 from src.interfaces.base_interfaces import (
     AnalysisResult,
     IAnalyst,
@@ -29,6 +27,7 @@ from src.interfaces.base_interfaces import (
     IStateManager,
     MarketData,
 )
+from src.training.dual_model_system import DualModelSystem
 from src.utils.warning_symbols import (
     failed,
     initialization_error,

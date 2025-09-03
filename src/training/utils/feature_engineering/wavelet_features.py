@@ -3,15 +3,16 @@
 This module provides wavelet-based feature extraction capabilities.
 """
 
-from typing import Dict, Any, Optional, List, Tuple
-import pandas as pd
-import numpy as np
-import pywt
 from pathlib import Path
-import joblib
+from typing import Any, Dict, List, Optional, Tuple
 
-from src.utils.logger import system_logger
+import joblib
+import numpy as np
+import pandas as pd
+import pywt
+
 from src.core.decorators import handles_errors
+from src.utils.logger import system_logger
 
 
 class WaveletFeatureCache:

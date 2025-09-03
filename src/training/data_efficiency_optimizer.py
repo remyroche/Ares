@@ -1,6 +1,5 @@
 # src/training/data_efficiency_optimizer.py
 
-from src.core.decorators import handles_errors
 
 import gc
 import os
@@ -16,10 +15,12 @@ import pyarrow.parquet as pq
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-from src.database.sqlite_manager import SQLiteManager
 
 from src.utils.logger import system_logger
 from src.utils.warning_symbols import (
+from src.core.decorators import handles_errors
+from src.database.sqlite_manager import SQLiteManager
+import pickle
     error,
     failed,
     validation_error,
@@ -92,7 +93,7 @@ class DataEfficiencyOptimizer:
                     data_type TEXT NOT NULL,  -- 'klines', 'agg_trades', 'futures'
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
-            """),"
+            """),""""
             )
 
             # Create indexes for efficient querying
@@ -1012,7 +1013,6 @@ class DataEfficiencyOptimizer:
             self.logger.info(f"Migrating pickle file to Parquet: {pickle_file_path}")
 
             # Load pickle data
-            import pickle
         except Exception as e:
             pass  # TODO: Handle exception properly
 import asyncio

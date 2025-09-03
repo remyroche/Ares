@@ -1,4 +1,5 @@
 """
+from src.core.domain import handle_specific_errors
 Strategist module for trading strategy generation.
 
 This module provides the Strategist class which is responsible for:
@@ -8,7 +9,6 @@ This module provides the Strategist class which is responsible for:
 """
 from src.core.decorators import handles_errors, retry, timeout
 
-from src.core.domain import handle_specific_errors
 
 # src/strategist/strategist.py
 

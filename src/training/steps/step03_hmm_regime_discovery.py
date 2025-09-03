@@ -173,12 +173,7 @@ class HMMRegimeDiscoveryStep:
         self.step_timings[step_name] = elapsed
         self.logger.info(f"⏱️ {step_name} completed in {elapsed:.2f} seconds")
 
-    @validates()(
-        step_name="hmm_regime_discovery",
-        validation_level="CRITICAL",
-        enable_rollback=True,
-        max_retries=2
-    )
+    @validates(step_name="hmm_regime_discovery", validation_level="CRITICAL", enable_rollback=True, max_retries=2)
     @ensure_data_integrity(
         check_schema=True,
         check_constraints=True,
@@ -196,16 +191,7 @@ class HMMRegimeDiscoveryStep:
         resource_cleanup=True
     )
     @traced(span_name="execute_hmm_regime_discovery")
-    # @quality_gate - removed, handled by validates
-        min_quality_score=0.7,
-        max_correlation=0.95,
-        required_grade="C"
-    )
-    # @with_enhanced_mlflow_logging - removed, use traced"step03_hmm_regime_discovery")
-    @handles_errors
-        default_return={"success": False, "regimes": [], "error": "HMM discovery failed"},
-        context="hmm_regime_discovery.execute"
-    )
+    @handles_errors(default_return={"success": False, "regimes": [], "error": "HMM discovery failed"}, context="hmm_regime_discovery.execute")
     async def execute(
         self, 
         training_input: dict[str, Any], 
@@ -1182,6 +1168,16 @@ class HMMRegimeDiscoveryStep:
             self.logger.info("📊 Scaling features for HMM...")
             scaler = StandardScaler()
             features_scaled = scaler.fit_transform(features)
+
+            # Downsample for initial fit if configured (e.g., 3m/5m equivalent)
+            max_initial_points = int(self.config.get("hmm", {}).get("max_initial_points", 250_000))
+            if features_scaled.shape[0] > max_initial_points:
+                self.logger.info(f"⚡ Downsampling for initial HMM fit to {max_initial_points} rows (from {features_scaled.shape[0]})")
+                # Uniform stride downsample
+                stride = max(1, features_scaled.shape[0] // max_initial_points)
+                features_init = features_scaled[::stride]
+            else:
+                features_init = features_scaled
             
             # === PHASE 1: HMM State Discovery ===
             # Configure HMM parameters for initial state discovery
@@ -1191,18 +1187,56 @@ class HMMRegimeDiscoveryStep:
             
             self.logger.info(f"🎯 Phase 1: Training HMM with {n_hmm_states} states...")
             
-            # Train Gaussian HMM
+            # Train Gaussian HMM with adaptive iterations and warm-start
             hmm_model = hmm.GaussianHMM(
                 n_components=n_hmm_states,
-                n_iter=n_iter,
+                n_iter=min(n_iter, int(self.config.get("hmm", {}).get("max_iterations", 100))),
                 random_state=random_state,
                 covariance_type="full",
                 init_params="stmc",
-                params="stmc"
+                params="stmc",
+                tol=float(self.config.get("hmm", {}).get("tol", 1e-3)),
             )
-            
-            # Fit the model
-            hmm_model.fit(features_scaled)
+
+            # Persist/restore parameters for warm-start if available
+            model_ckpt_dir = Path(self.config.get("hmm", {}).get("checkpoint_dir", "data/hmm_ckpts"))
+            model_ckpt_dir.mkdir(parents=True, exist_ok=True)
+            ckpt_path = model_ckpt_dir / f"{self.config.get('EXCHANGE','EX')}_{self.config.get('SYMBOL','SYM')}_{self.config.get('TIMEFRAME','1m')}_hmm_{n_hmm_states}.npz"
+            try:
+                if ckpt_path.exists():
+                    self.logger.info(f"♻️  Loading HMM checkpoint: {ckpt_path}")
+                    with np.load(ckpt_path, allow_pickle=True) as npz:
+                        hmm_model.startprob_ = npz["startprob_"]
+                        hmm_model.transmat_ = npz["transmat_"]
+                        hmm_model.means_ = npz["means_"]
+                        hmm_model.covars_ = npz["covars_"]
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to load HMM checkpoint: {e}")
+
+            # Phase 1 fit on downsampled data
+            hmm_model.fit(features_init)
+
+            # If not converged, continue with limited iterations on full data
+            remaining_iter = int(self.config.get("hmm", {}).get("refine_iterations", 20))
+            if remaining_iter > 0 and features_scaled.shape[0] != features_init.shape[0]:
+                self.logger.info(f"🔁 Refining HMM on full data for {remaining_iter} additional iterations")
+                hmm_model.n_iter = remaining_iter
+                # Set init_params to empty to warm-start without resetting
+                hmm_model.init_params = ""
+                hmm_model.fit(features_scaled)
+
+            # Save checkpoint
+            try:
+                np.savez_compressed(
+                    ckpt_path,
+                    startprob_=hmm_model.startprob_,
+                    transmat_=hmm_model.transmat_,
+                    means_=hmm_model.means_,
+                    covars_=hmm_model.covars_,
+                )
+                self.logger.info(f"💾 Saved HMM checkpoint: {ckpt_path}")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to save HMM checkpoint: {e}")
             
             # Get HMM state sequence and probabilities
             hmm_state_sequence = hmm_model.predict(features_scaled)
@@ -1303,6 +1337,23 @@ class HMMRegimeDiscoveryStep:
                 "reports_generated": list(reports.keys())
             }
             
+            # Persist standardized composite clusters parquet
+            try:
+                out_dir = Path("data/hmm_regimes")
+                out_dir.mkdir(parents=True, exist_ok=True)
+                exchange = self.config.get('EXCHANGE', 'EX')
+                symbol = self.config.get('SYMBOL', 'SYM')
+                timeframe_cfg = self.config.get('TIMEFRAME', '1m')
+                out_path = out_dir / f"{exchange}_{symbol}_{timeframe_cfg}_composite_clusters.parquet"
+                save_df = composite_df.copy()
+                # Attach timestamp if available in features
+                if isinstance(features, pd.DataFrame) and 'timestamp' in features.columns and 'timestamp' not in save_df.columns:
+                    save_df['timestamp'] = features['timestamp'].values
+                save_df.to_parquet(out_path, compression='snappy', index=False)
+                self.logger.info(f"💾 Saved composite clusters to: {out_path}")
+            except Exception as e:
+                self.logger.warning(f"⚠️ Failed to save composite clusters parquet: {e}")
+
             self.logger.info(f"✅ Composite HMM regime discovery completed successfully")
             self.logger.info(f"📊 HMM States: {n_hmm_states}, Composite Clusters: {n_clusters}")
             self.logger.info(f"📈 Cluster Quality - Silhouette: {cluster_metrics['silhouette_score']:.4f}")

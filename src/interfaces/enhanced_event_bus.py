@@ -23,6 +23,7 @@ from src.utils.warning_symbols import (
     invalid,
     validation_error,
     warning,
+)
 
 # src/interfaces/enhanced_event_bus.py
 
@@ -456,7 +457,7 @@ class EnhancedEventBus:
             "replays_performed": 0,
         }
 
-    @handle_specific_errors(
+    @handle_specific_errors()
         error_handlers={
             ValueError: (False, "Invalid event bus configuration"),
             AttributeError: (False, "Missing required event bus parameters"),
@@ -466,6 +467,7 @@ class EnhancedEventBus:
         context="enhanced event bus initialization",
     )
     @performance_monitor(level=PerformanceLevel.DETAILED)
+
     async def initialize(self) -> bool:
         """Initialize the enhanced event bus"""
         try:
@@ -938,4 +940,4 @@ async def setup_enhanced_event_bus(
 
     except Exception as e:
         print(f"Error setting up enhanced event bus: {e}")
-        return None
+        return None)

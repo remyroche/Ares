@@ -34,33 +34,26 @@ sys.modules["pandas"] = pandas_mock
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import pytest
 
-from src.utils.common_operations import (
+from src.utils.common_operations import (  # File operations; Hashing operations; DateTime operations; Collection operations; Type conversions; String operations; Async operations
     chunked_iterable,
     create_async_task,
-    # File operations
     ensure_directory,
     format_bytes,
     format_datetime,
     generate_cache_key,
-    # Hashing operations
     generate_hash,
-    # DateTime operations
     get_current_datetime,
     get_today,
     parse_datetime,
-    # Collection operations
     safe_append,
     safe_dict_get,
     safe_file_exists,
-    # Type conversions
     safe_float,
     safe_int,
     safe_join,
     safe_json_dump,
     safe_json_load,
-    # String operations
     safe_lower,
-    # Async operations
     safe_sleep,
     safe_upper,
     validate_numeric_range,

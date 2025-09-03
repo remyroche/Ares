@@ -19,7 +19,8 @@ project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
 # Import pipeline standards
-from src.utils.pipeline_standards import PipelineStandards as PipelineStandards_src_utils_pipeline_standards, pipeline_standards
+from src.utils.pipeline_standards import PipelineStandards as PipelineStandards_src_utils_pipeline_standards
+from src.utils.pipeline_standards import pipeline_standards
 
 # Standardized import management
 REQUIRED_MODULES = [
@@ -1238,6 +1239,7 @@ if __name__ == "__main__":
     finally:
         # Final cleanup
         import gc
+
 import os.path
 
 gc.collect()

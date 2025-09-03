@@ -13,6 +13,9 @@ from typing import Any
 
 import numpy as np
 
+from copy import copy
+import asyncio
+
 from src.config.constants import (
     DEFAULT_COMMISSION_RATE,
     DEFAULT_INITIAL_BALANCE,

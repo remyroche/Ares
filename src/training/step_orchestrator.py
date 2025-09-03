@@ -4,7 +4,7 @@ from __future__ import annotations
 """Step Orchestrator for Training Pipeline."
 
 This module orchestrates the execution of training steps with progress saving
-and resuming capabilities. Now uses EnhancedTrainingManager for 16-step pipeline.
+and resuming capabilities. Now uses TrainingManager for 16-step pipeline.
 """
 import asyncio
 import importlib
@@ -18,10 +18,11 @@ from src.utils.warning_symbols import (
     error,
     failed,
 )
+from src.utils.step_dependency_validator import validate_step_dependencies
 
 
 class StepOrchestrator:
-    """Orchestrates training step execution with progress management using EnhancedTrainingManager."""
+    """Orchestrates training step execution with progress management using TrainingManager."""
 
     def __init__(
         self, symbol: str, exchange: str, data_dir: str = "data/training"
@@ -82,7 +83,7 @@ class StepOrchestrator:
 
         """
         try:
-            from src.training.enhanced_training_manager import (
+            from src.training.core.training_manager import create_training_manager
                 setup_enhanced_training_manager,
             )
 
@@ -178,6 +179,16 @@ class StepOrchestrator:
             return True
 
         try:
+            # Guard dependencies before running
+            try:
+                pipeline_state = self._build_pipeline_state(step_name)
+                deps_ok = await validate_step_dependencies(step_name, pipeline_state)
+                if not deps_ok:
+                    self.print(failed(f"❌ Dependencies not satisfied for {step_name}"))
+                    return False
+            except Exception as e:
+                self.logger.warning(f"⚠️ Dependency validation error for {step_name}: {e}")
+
             # Set up enhanced training manager if not already done
             if not self.enhanced_training_manager:
                 setup_success = await self._setup_enhanced_training_manager(config)

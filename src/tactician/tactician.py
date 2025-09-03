@@ -97,7 +97,7 @@ self.is_initialized = False
 self.current_position = None
 self.position_history = []
 
-    @handles_errors(
+@handles_errors(
         error_handlers={
             ValueError: (False, "Invalid tactician configuration"),
             AttributeError: (False, "Missing required tactician parameters"),
